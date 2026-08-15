@@ -43874,6 +43874,13 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        CREATE INDEX IF NOT EXISTS {schema}_asset_borrow_link_asset_idx
+        ON {schema}.asset_borrowing_links(
+            company_id,
+            asset_id,
+            status
+        );
+
         CREATE TABLE IF NOT EXISTS {schema}.asset_borrowing_costs (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -43887,6 +43894,20 @@ class DatabaseService:
             capitalization_ratio NUMERIC(9,6) NOT NULL DEFAULT 1.0,
             capitalization_date DATE NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_borrow_cost_asset_idx
+        ON {schema}.asset_borrowing_costs(
+            company_id,
+            asset_id,
+            capitalization_date
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_borrow_cost_loan_idx
+        ON {schema}.asset_borrowing_costs(
+            company_id,
+            loan_id,
+            capitalization_date
         );
 
         CREATE TABLE IF NOT EXISTS {schema}.loan_schedules (
@@ -45074,6 +45095,11 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS allow_expenses BOOLEAN NOT NULL DEFAULT TRUE,
         ADD COLUMN IF NOT EXISTS project_settings JSONB NOT NULL DEFAULT '{{}}'::jsonb;
 
+        ALTER TABLE {schema}.projects
+        ADD COLUMN IF NOT EXISTS is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS closed_by INT NULL;
+
         UPDATE {schema}.projects
         SET baseline_start_date = COALESCE(baseline_start_date, start_date),
             baseline_end_date = COALESCE(baseline_end_date, expected_end_date),
@@ -45205,6 +45231,90 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL;
 
+        ALTER TABLE {schema}.project_tasks
+        ADD COLUMN IF NOT EXISTS task_type TEXT NOT NULL DEFAULT 'task',
+        ADD COLUMN IF NOT EXISTS wbs_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS sequence_no INT NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal',
+        ADD COLUMN IF NOT EXISTS baseline_start_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS baseline_end_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS duration_days INT NULL,
+        ADD COLUMN IF NOT EXISTS is_summary BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS deliverable TEXT NULL,
+        ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ NULL;
+
+        UPDATE {schema}.project_tasks
+        SET baseline_start_date = COALESCE(baseline_start_date, start_date),
+            baseline_end_date = COALESCE(baseline_end_date, expected_end_date)
+        WHERE baseline_start_date IS NULL
+           OR baseline_end_date IS NULL;
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_tasks_parent_idx
+        ON {schema}.project_tasks(company_id, project_id, parent_task_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_tasks_type_idx
+        ON {schema}.project_tasks(company_id, project_id, task_type);
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_tasks_sequence_idx
+        ON {schema}.project_tasks(company_id, project_id, sequence_no);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_tasks_type_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.project_tasks
+             ADD CONSTRAINT %I
+             CHECK (task_type IN (''phase'',''task'',''milestone''))',
+            '{schema}',
+            '{schema}_project_tasks_type_chk'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_tasks_priority_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.project_tasks
+             ADD CONSTRAINT %I
+             CHECK (priority IN (''low'',''normal'',''high'',''critical''))',
+            '{schema}',
+            '{schema}_project_tasks_priority_chk'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_tasks_progress_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.project_tasks
+             ADD CONSTRAINT %I
+             CHECK (progress_percent >= 0 AND progress_percent <= 100)',
+            '{schema}',
+            '{schema}_project_tasks_progress_chk'
+            );
+        END IF;
+        END $$;
+
         CREATE INDEX IF NOT EXISTS {schema}_project_tasks_project_idx
         ON {schema}.project_tasks(company_id, project_id);
 
@@ -45266,6 +45376,994 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_project_cost_codes_active_idx
         ON {schema}.project_cost_codes(company_id, is_active);
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_team_members (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            project_id INT NOT NULL REFERENCES {schema}.projects(id) ON DELETE CASCADE,
+
+            user_id INT NOT NULL,
+            project_role TEXT NULL,
+            role_type TEXT NOT NULL DEFAULT 'member',
+
+            allocation_percent NUMERIC(9,4) NOT NULL DEFAULT 100,
+            start_date DATE NULL,
+            end_date DATE NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.project_team_members
+        ADD COLUMN IF NOT EXISTS hourly_cost_rate NUMERIC(18,6) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS hourly_bill_rate NUMERIC(18,6) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS labour_cost_code_id INT NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_team_member_uniq
+        ON {schema}.project_team_members(company_id, project_id, user_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_team_project_idx
+        ON {schema}.project_team_members(company_id, project_id);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_team_role_type_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.project_team_members
+             ADD CONSTRAINT %I
+             CHECK (role_type IN (
+                ''manager'',
+                ''lead'',
+                ''member'',
+                ''reviewer'',
+                ''approver'',
+                ''observer''
+             ))',
+            '{schema}',
+            '{schema}_project_team_role_type_chk'
+            );
+        END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_task_assignments (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL REFERENCES {schema}.projects(id) ON DELETE CASCADE,
+            task_id INT NOT NULL REFERENCES {schema}.project_tasks(id) ON DELETE CASCADE,
+
+            user_id INT NOT NULL,
+
+            assignment_role TEXT NULL,
+            allocation_percent NUMERIC(9,4) NOT NULL DEFAULT 100,
+
+            assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            assigned_by INT NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_task_assignment_uniq
+        ON {schema}.project_task_assignments(
+            company_id,
+            project_id,
+            task_id,
+            user_id
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_task_assignment_task_idx
+        ON {schema}.project_task_assignments(company_id, project_id, task_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_task_dependencies (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL REFERENCES {schema}.projects(id) ON DELETE CASCADE,
+
+            predecessor_task_id INT NOT NULL
+                REFERENCES {schema}.project_tasks(id) ON DELETE CASCADE,
+
+            successor_task_id INT NOT NULL
+                REFERENCES {schema}.project_tasks(id) ON DELETE CASCADE,
+
+            dependency_type TEXT NOT NULL DEFAULT 'finish_to_start',
+            lag_days INT NOT NULL DEFAULT 0,
+
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_task_dependency_uniq
+        ON {schema}.project_task_dependencies(
+            company_id,
+            project_id,
+            predecessor_task_id,
+            successor_task_id
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_task_dependency_project_idx
+        ON {schema}.project_task_dependencies(company_id, project_id);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_task_dependency_type_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.project_task_dependencies
+             ADD CONSTRAINT %I
+             CHECK (dependency_type IN (
+                ''finish_to_start'',
+                ''start_to_start'',
+                ''finish_to_finish'',
+                ''start_to_finish''
+             ))',
+            '{schema}',
+            '{schema}_project_task_dependency_type_chk'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_task_dependency_self_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.project_task_dependencies
+             ADD CONSTRAINT %I
+             CHECK (predecessor_task_id <> successor_task_id)',
+            '{schema}',
+            '{schema}_project_task_dependency_self_chk'
+            );
+        END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_time_entries (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL
+                REFERENCES {schema}.projects(id)
+                ON DELETE CASCADE,
+
+            task_id INT NULL
+                REFERENCES {schema}.project_tasks(id)
+                ON DELETE SET NULL,
+
+            user_id INT NOT NULL,
+            work_date DATE NOT NULL,
+
+            hours NUMERIC(12,4) NOT NULL DEFAULT 0,
+
+            billable BOOLEAN NOT NULL DEFAULT FALSE,
+
+            hourly_cost_rate NUMERIC(18,6) NOT NULL DEFAULT 0,
+            hourly_bill_rate NUMERIC(18,6) NOT NULL DEFAULT 0,
+
+            labour_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            billable_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            description TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            submitted_at TIMESTAMPTZ NULL,
+            submitted_by INT NULL,
+
+            approved_at TIMESTAMPTZ NULL,
+            approved_by INT NULL,
+
+            rejected_at TIMESTAMPTZ NULL,
+            rejected_by INT NULL,
+            rejection_reason TEXT NULL,
+
+            source TEXT NOT NULL DEFAULT 'manual',
+            source_id INT NULL,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.project_time_entries
+        ADD COLUMN IF NOT EXISTS capitalizable BOOLEAN NOT NULL DEFAULT FALSE;
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_time_project_idx
+        ON {schema}.project_time_entries(
+            company_id,
+            project_id,
+            work_date
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_time_task_idx
+        ON {schema}.project_time_entries(
+            company_id,
+            task_id
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_time_user_idx
+        ON {schema}.project_time_entries(
+            company_id,
+            user_id,
+            work_date
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_time_status_idx
+        ON {schema}.project_time_entries(
+            company_id,
+            status
+        );
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n
+                ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_time_status_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_time_entries
+                ADD CONSTRAINT %I
+                CHECK (
+                    status IN (
+                        ''draft'',
+                        ''submitted'',
+                        ''approved'',
+                        ''rejected''
+                    )
+                )',
+                '{schema}',
+                '{schema}_project_time_status_chk'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n
+                ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_time_hours_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_time_entries
+                ADD CONSTRAINT %I
+                CHECK (hours > 0 AND hours <= 24)',
+                '{schema}',
+                '{schema}_project_time_hours_chk'
+            );
+        END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_expenses (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL
+                REFERENCES {schema}.projects(id)
+                ON DELETE CASCADE,
+
+            task_id INT NULL
+                REFERENCES {schema}.project_tasks(id)
+                ON DELETE SET NULL,
+
+            cost_code_id INT NULL,
+
+            expense_date DATE NOT NULL,
+            description TEXT NOT NULL,
+
+            supplier_name TEXT NULL,
+            reference TEXT NULL,
+
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            tax_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            account_code TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            approved_at TIMESTAMPTZ NULL,
+            approved_by INT NULL,
+
+            posted_journal_id INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+
+            source TEXT NOT NULL DEFAULT 'manual',
+            source_id INT NULL,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.project_expenses
+        ADD COLUMN IF NOT EXISTS capitalizable BOOLEAN NOT NULL DEFAULT FALSE;
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_expense_project_idx
+        ON {schema}.project_expenses(
+            company_id,
+            project_id,
+            expense_date
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_expense_task_idx
+        ON {schema}.project_expenses(
+            company_id,
+            task_id
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_expense_status_idx
+        ON {schema}.project_expenses(
+            company_id,
+            status
+        );
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n
+                ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_expense_status_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_expenses
+                ADD CONSTRAINT %I
+                CHECK (
+                    status IN (
+                        ''draft'',
+                        ''approved'',
+                        ''posted'',
+                        ''cancelled''
+                    )
+                )',
+                '{schema}',
+                '{schema}_project_expense_status_chk'
+            );
+        END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_changes (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL
+                REFERENCES {schema}.projects(id)
+                ON DELETE CASCADE,
+
+            change_no TEXT NOT NULL,
+            change_type TEXT NOT NULL DEFAULT 'change_request',
+
+            title TEXT NOT NULL,
+            description TEXT NULL,
+            reason TEXT NULL,
+
+            requested_by INT NULL,
+            requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            cost_impact NUMERIC(18,2) NOT NULL DEFAULT 0,
+            revenue_impact NUMERIC(18,2) NOT NULL DEFAULT 0,
+            schedule_impact_days INT NOT NULL DEFAULT 0,
+
+            proposed_end_date DATE NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            submitted_at TIMESTAMPTZ NULL,
+            submitted_by INT NULL,
+
+            approved_at TIMESTAMPTZ NULL,
+            approved_by INT NULL,
+
+            rejected_at TIMESTAMPTZ NULL,
+            rejected_by INT NULL,
+            rejection_reason TEXT NULL,
+
+            applied_at TIMESTAMPTZ NULL,
+            applied_by INT NULL,
+
+            notes TEXT NULL,
+            meta JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_change_no_uniq
+        ON {schema}.project_changes(
+            company_id,
+            project_id,
+            lower(trim(change_no))
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_change_project_idx
+        ON {schema}.project_changes(
+            company_id,
+            project_id,
+            status
+        );
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n
+                ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_change_type_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_changes
+                ADD CONSTRAINT %I
+                CHECK (
+                    change_type IN (
+                        ''change_request'',
+                        ''variation_order'',
+                        ''scope_change'',
+                        ''budget_change'',
+                        ''schedule_change''
+                    )
+                )',
+                '{schema}',
+                '{schema}_project_change_type_chk'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n
+                ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_change_status_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_changes
+                ADD CONSTRAINT %I
+                CHECK (
+                    status IN (
+                        ''draft'',
+                        ''submitted'',
+                        ''approved'',
+                        ''rejected'',
+                        ''applied'',
+                        ''cancelled''
+                    )
+                )',
+                '{schema}',
+                '{schema}_project_change_status_chk'
+            );
+        END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_budget_revisions (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL
+                REFERENCES {schema}.projects(id)
+                ON DELETE CASCADE,
+
+            change_id INT NULL
+                REFERENCES {schema}.project_changes(id)
+                ON DELETE SET NULL,
+
+            revision_no INT NOT NULL,
+
+            previous_budget NUMERIC(18,2) NOT NULL DEFAULT 0,
+            revision_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            revised_budget NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            reason TEXT NULL,
+
+            approved_by INT NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_budget_revision_uniq
+        ON {schema}.project_budget_revisions(
+            company_id,
+            project_id,
+            revision_no
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_risks (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL
+                REFERENCES {schema}.projects(id)
+                ON DELETE CASCADE,
+
+            risk_code TEXT NULL,
+            title TEXT NOT NULL,
+            description TEXT NULL,
+
+            category TEXT NULL,
+            owner_user_id INT NULL,
+
+            probability INT NOT NULL DEFAULT 1,
+            impact INT NOT NULL DEFAULT 1,
+            risk_score INT NOT NULL DEFAULT 1,
+
+            mitigation_plan TEXT NULL,
+            contingency_plan TEXT NULL,
+
+            due_date DATE NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+
+            closed_at TIMESTAMPTZ NULL,
+            closed_by INT NULL,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_risks_project_idx
+        ON {schema}.project_risks(
+            company_id,
+            project_id,
+            status
+        );
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n
+                ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_risk_status_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_risks
+                ADD CONSTRAINT %I
+                CHECK (
+                    status IN (
+                        ''open'',
+                        ''monitoring'',
+                        ''mitigated'',
+                        ''closed''
+                    )
+                )',
+                '{schema}',
+                '{schema}_project_risk_status_chk'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n
+                ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_risk_rating_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_risks
+                ADD CONSTRAINT %I
+                CHECK (
+                    probability BETWEEN 1 AND 5
+                    AND impact BETWEEN 1 AND 5
+                )',
+                '{schema}',
+                '{schema}_project_risk_rating_chk'
+            );
+        END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_issues (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL
+                REFERENCES {schema}.projects(id)
+                ON DELETE CASCADE,
+
+            task_id INT NULL
+                REFERENCES {schema}.project_tasks(id)
+                ON DELETE SET NULL,
+
+            issue_code TEXT NULL,
+            title TEXT NOT NULL,
+            description TEXT NULL,
+
+            category TEXT NULL,
+            priority TEXT NOT NULL DEFAULT 'normal',
+            owner_user_id INT NULL,
+
+            raised_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            due_date DATE NULL,
+
+            resolution TEXT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+
+            resolved_at TIMESTAMPTZ NULL,
+            resolved_by INT NULL,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_issues_project_idx
+        ON {schema}.project_issues(
+            company_id,
+            project_id,
+            status
+        );
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n
+                ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_issue_status_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_issues
+                ADD CONSTRAINT %I
+                CHECK (
+                    status IN (
+                        ''open'',
+                        ''in_progress'',
+                        ''blocked'',
+                        ''resolved'',
+                        ''closed''
+                    )
+                )',
+                '{schema}',
+                '{schema}_project_issue_status_chk'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n
+                ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_issue_priority_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_issues
+                ADD CONSTRAINT %I
+                CHECK (
+                    priority IN (
+                        ''low'',
+                        ''normal'',
+                        ''high'',
+                        ''critical''
+                    )
+                )',
+                '{schema}',
+                '{schema}_project_issue_priority_chk'
+            );
+        END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_documents (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL
+                REFERENCES {schema}.projects(id)
+                ON DELETE CASCADE,
+
+            task_id INT NULL
+                REFERENCES {schema}.project_tasks(id)
+                ON DELETE SET NULL,
+
+            document_type TEXT NOT NULL DEFAULT 'other',
+            title TEXT NOT NULL,
+
+            file_name TEXT NULL,
+            file_url TEXT NULL,
+            storage_key TEXT NULL,
+
+            reference TEXT NULL,
+            version_no TEXT NULL,
+
+            notes TEXT NULL,
+
+            uploaded_by INT NULL,
+            uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_documents_project_idx
+        ON {schema}.project_documents(
+            company_id,
+            project_id
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_activity_log (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL
+                REFERENCES {schema}.projects(id)
+                ON DELETE CASCADE,
+
+            entity_type TEXT NOT NULL,
+            entity_id INT NULL,
+
+            action TEXT NOT NULL,
+            description TEXT NULL,
+
+            user_id INT NULL,
+            meta JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_activity_idx
+        ON {schema}.project_activity_log(
+            company_id,
+            project_id,
+            created_at DESC
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_forecasts (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            project_id INT NOT NULL REFERENCES {schema}.projects(id) ON DELETE CASCADE,
+
+            forecast_date DATE NOT NULL,
+            progress_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+
+            budget_at_completion NUMERIC(18,2) NOT NULL DEFAULT 0,
+            actual_cost_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
+            committed_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            estimate_to_complete NUMERIC(18,2) NOT NULL DEFAULT 0,
+            estimate_at_completion NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            forecast_revenue NUMERIC(18,2) NOT NULL DEFAULT 0,
+            forecast_margin NUMERIC(18,2) NOT NULL DEFAULT 0,
+            forecast_margin_percent NUMERIC(7,2) NOT NULL DEFAULT 0,
+
+            expected_end_date DATE NULL,
+            notes TEXT NULL,
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_forecasts_project_idx
+        ON {schema}.project_forecasts(company_id, project_id, forecast_date DESC);
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_capitalisations (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            project_id INT NOT NULL REFERENCES {schema}.projects(id) ON DELETE CASCADE,
+
+            capitalisation_date DATE NULL,
+            asset_name TEXT NOT NULL,
+            asset_class_id INT NULL,
+            asset_category TEXT NULL,
+            location TEXT NULL,
+
+            cip_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            capitalise_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            residual_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            cip_account_code TEXT NULL,
+            asset_account_code TEXT NULL,
+
+            useful_life_months INT NULL,
+            residual_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+            depreciation_method TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            requested_by INT NULL,
+            requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            approved_by INT NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            asset_acquisition_id INT NULL,
+            asset_id INT NULL,
+
+            capitalised_at TIMESTAMPTZ NULL,
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.project_capitalisations
+        ADD COLUMN IF NOT EXISTS posted_journal_id INT NULL;
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_capitalisations_project_idx
+        ON {schema}.project_capitalisations(company_id, project_id, status);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_capitalisation_status_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_capitalisations
+                ADD CONSTRAINT %I
+                CHECK (status IN (
+                    ''draft'',
+                    ''submitted'',
+                    ''approved'',
+                    ''capitalised'',
+                    ''cancelled''
+                ))',
+                '{schema}',
+                '{schema}_project_capitalisation_status_chk'
+            );
+        END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_asset_links (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL
+                REFERENCES {schema}.projects(id)
+                ON DELETE CASCADE,
+
+            asset_id INT NOT NULL
+                REFERENCES {schema}.assets(id)
+                ON DELETE CASCADE,
+
+            link_type TEXT NOT NULL DEFAULT 'cip',
+            is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+
+            linked_by INT NULL,
+            linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            notes TEXT NULL,
+
+            UNIQUE(company_id, project_id, asset_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_asset_links_project_idx
+        ON {schema}.project_asset_links(company_id, project_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_asset_links_asset_idx
+        ON {schema}.project_asset_links(company_id, asset_id);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_asset_link_type_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_asset_links
+                ADD CONSTRAINT %I
+                CHECK (link_type IN (
+                    ''cip'',
+                    ''capital_asset'',
+                    ''component''
+                ))',
+                '{schema}',
+                '{schema}_project_asset_link_type_chk'
+            );
+        END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_closeouts (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            project_id INT NOT NULL REFERENCES {schema}.projects(id) ON DELETE CASCADE,
+
+            closeout_date DATE NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            completion_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+            final_billing_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+            commitments_cleared BOOLEAN NOT NULL DEFAULT FALSE,
+            costs_finalised BOOLEAN NOT NULL DEFAULT FALSE,
+
+            commissioned_asset_id INT NULL,
+            commissioning_acquisition_id INT NULL,
+            commissioning_journal_id INT NULL,
+            commissioned_at TIMESTAMPTZ NULL,
+
+            notes TEXT NULL,
+
+            closed_by INT NULL,
+            closed_at TIMESTAMPTZ NULL,
+            reopened_by INT NULL,
+            reopened_at TIMESTAMPTZ NULL,
+            reopen_reason TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id, project_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_closeout_status_idx
+        ON {schema}.project_closeouts(company_id, status);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_closeout_status_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.project_closeouts
+                ADD CONSTRAINT %I
+                CHECK (status IN (
+                    ''draft'',
+                    ''ready'',
+                    ''closed'',
+                    ''reopened''
+                ))',
+                '{schema}',
+                '{schema}_project_closeout_status_chk'
+            );
+        END IF;
+        END $$;
 
         CREATE TABLE IF NOT EXISTS {schema}.project_budget_lines (
             id SERIAL PRIMARY KEY,
@@ -54276,7 +55374,7 @@ class DatabaseService:
         END IF;
         END $fk_vpa_bill_company$;                
         """
-        BOOTSTRAP_MIGRATION_VERSION=25
+        BOOTSTRAP_MIGRATION_VERSION=26
         AP_MIGRATION_VERSION=2
         TENANT_SYNC_MIGRATION_VERSION = 1
 
@@ -109518,6 +110616,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return self.fetch_all(sql, tuple(params)) or []
 
+    def list_project_revenue_contracts(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        return self.list_revenue_contracts(
+            company_id=int(company_id),
+            limit=500,
+            project_id=int(project_id),
+        )
+
     def list_revenue_recognition_runs(self, company_id: int, limit: int = 50, contract_id: int | None = None):
         schema = self.company_schema(company_id)
         where = ["1=1"]
@@ -114656,6 +115765,158 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             for row in rows
         ]
 
+    def list_project_revenue_obligations(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                ro.*,
+                rc.contract_number,
+                rc.contract_title,
+                rc.status AS contract_status,
+
+                NULLIF(
+                    ro.payload_json->>'project_task_id',
+                    ''
+                )::INT AS linked_project_task_id,
+
+                t.task_code AS project_task_code,
+                t.task_name AS project_task_name
+
+            FROM {schema}.revenue_obligations ro
+
+            JOIN {schema}.revenue_contracts rc
+                ON rc.company_id = ro.company_id
+            AND rc.id = ro.contract_id
+
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = ro.company_id
+            AND t.project_id = rc.project_id
+            AND t.id = NULLIF(
+                    ro.payload_json->>'project_task_id',
+                    ''
+            )::INT
+
+            WHERE ro.company_id = %s
+            AND rc.project_id = %s
+
+            ORDER BY
+                rc.id,
+                ro.id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+    def get_project_revenue_summary(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> dict:
+        contracts = self.list_project_revenue_contracts(
+            company_id,
+            project_id,
+        )
+
+        transaction_price = sum(
+            float(
+                x.get("transaction_price")
+                or 0
+            )
+            for x in contracts
+        )
+
+        recognized = sum(
+            float(
+                x.get("recognized_revenue_to_date")
+                or 0
+            )
+            for x in contracts
+        )
+
+        billed = sum(
+            float(
+                x.get("billed_to_date")
+                or 0
+            )
+            for x in contracts
+        )
+
+        collected = sum(
+            float(
+                x.get("cash_received_to_date")
+                or 0
+            )
+            for x in contracts
+        )
+
+        contract_asset = sum(
+            max(
+                0,
+                float(
+                    x.get(
+                        "recognized_revenue_to_date"
+                    ) or 0
+                )
+                - float(
+                    x.get("billed_to_date")
+                    or 0
+                ),
+            )
+            for x in contracts
+        )
+
+        contract_liability = sum(
+            max(
+                0,
+                float(
+                    x.get("billed_to_date")
+                    or 0
+                )
+                - float(
+                    x.get(
+                        "recognized_revenue_to_date"
+                    ) or 0
+                ),
+            )
+            for x in contracts
+        )
+
+        unbilled = max(
+            0,
+            recognized - billed,
+        )
+
+        outstanding = max(
+            0,
+            billed - collected,
+        )
+
+        remaining_revenue = max(
+            0,
+            transaction_price - recognized,
+        )
+
+        return {
+            "contract_count": len(contracts),
+            "transaction_price": transaction_price,
+            "recognized_revenue": recognized,
+            "billed_to_date": billed,
+            "cash_collected": collected,
+            "unbilled_revenue": unbilled,
+            "outstanding_receivables": outstanding,
+            "contract_asset": contract_asset,
+            "contract_liability": contract_liability,
+            "remaining_revenue": remaining_revenue,
+        }
+
     def sync_obligation_progress_to_project_task(self, company_id: int, obligation_id: int, cur=None):
         schema = self.company_schema(company_id)
 
@@ -119713,12 +120974,283 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             (company_id, project_id),
         )
 
+        team = self.list_project_team(company_id, project_id)
+
+        assignments = self.list_project_task_assignments(
+            company_id,
+            project_id,
+        )
+
+        dependencies = self.list_project_task_dependencies(
+            company_id,
+            project_id,
+        )
+
+        time_entries = self.list_project_time_entries(
+            company_id,
+            project_id,
+        )
+
+        expenses = self.list_project_expenses(
+            company_id,
+            project_id,
+        )
+
+        commitments = self.list_project_commitments(
+            company_id,
+            project_id,
+        )
+
+        changes = self.list_project_changes(
+            company_id,
+            project_id,
+        )
+
+        revenue_contracts = (
+            self.list_project_revenue_contracts(
+                company_id,
+                project_id,
+            )
+            if project.get("revenue_enabled")
+            else []
+        )
+
+        revenue_obligations = (
+            self.list_project_revenue_obligations(
+                company_id,
+                project_id,
+            )
+            if project.get("revenue_enabled")
+            else []
+        )
+
+        revenue_summary = (
+            self.get_project_revenue_summary(
+                company_id,
+                project_id,
+            )
+            if project.get("revenue_enabled")
+            else {}
+        )
+
+        forecasts = self.list_project_forecasts(
+            company_id,
+            project_id,
+        )
+
+        asset_links = self.list_project_asset_links(
+            company_id,
+            project_id,
+        ) if project.get("accounting_mode") == "capital" else []
+
+        capitalisations = (
+            self.list_project_capitalisations(company_id, project_id)
+            if project.get("accounting_mode") == "capital"
+            else []
+        )
+
+        risks = self.list_project_risks(
+            company_id,
+            project_id,
+        )
+
+        issues = self.list_project_issues(
+            company_id,
+            project_id,
+        )
+
+        documents = self.list_project_documents(
+            company_id,
+            project_id,
+        )
+
+        activity = self.list_project_activity(
+            company_id,
+            project_id,
+            limit=50,
+        )
+
+        cost_summary = self.get_project_cost_summary(
+            company_id,
+            project_id,
+        )
+
         project["tasks"] = tasks
         project["budget_lines"] = budget_lines
+        project["team"] = team
+        project["task_assignments"] = assignments
+        project["task_dependencies"] = dependencies
+        project["time_entries"] = time_entries
+        project["expenses"] = expenses
+        project["commitments"] = commitments
+        project["changes"] = changes
+        project["risks"] = risks
+        project["issues"] = issues
+        project["documents"] = documents
+        project["activity"] = activity
+        project["cost_summary"] = cost_summary
+
+        project["revenue_contracts"] = (
+            revenue_contracts
+        )
+
+        project["revenue_obligations"] = (
+            revenue_obligations
+        )
+
+        project["revenue_summary"] = (
+            revenue_summary
+        )
+        project["forecasts"] = forecasts
+        project["asset_links"] = asset_links
+        project["capitalisations"] = capitalisations
+
+        borrowing_links = (
+            self.list_project_borrowing_links(
+                company_id,
+                project_id,
+            )
+            if project.get("accounting_mode") == "capital"
+            else []
+        )
+
+        project["borrowing_links"] = borrowing_links
+
+        closeout = self.get_project_closeout(
+            company_id,
+            project_id,
+        )
+
+        project["closeout"] = closeout
 
         project["totals"] = {
             "task_count": len(tasks),
-            "budget_total": sum(float(x.get("budget_amount") or 0) for x in budget_lines),
+
+            "phase_count": len([
+                x for x in tasks
+                if x.get("task_type") == "phase"
+            ]),
+
+            "milestone_count": len([
+                x for x in tasks
+                if x.get("task_type") == "milestone"
+            ]),
+
+            "team_count": len(team),
+
+            "budget_total": sum(
+                float(x.get("budget_amount") or 0)
+                for x in budget_lines
+            ),
+
+            "labour_hours": sum(
+                float(x.get("hours") or 0)
+                for x in time_entries
+                if x.get("status") == "approved"
+            ),
+
+            "labour_cost": sum(
+                float(x.get("labour_cost") or 0)
+                for x in time_entries
+                if x.get("status") == "approved"
+            ),
+
+            "billable_hours": sum(
+                float(x.get("hours") or 0)
+                for x in time_entries
+                if x.get("status") == "approved"
+                and x.get("billable")
+            ),
+
+            "billable_time_value": sum(
+                float(x.get("billable_amount") or 0)
+                for x in time_entries
+                if x.get("status") == "approved"
+            ),
+
+            "expense_cost":
+                cost_summary["expense_cost"],
+
+            "material_cost":
+                cost_summary["material_cost"],
+
+            "actual_cost":
+                cost_summary["actual_cost"],
+
+            "committed_cost":
+                cost_summary["committed_cost"],
+
+            "cost_exposure":
+                cost_summary["cost_exposure"],
+
+            "change_count": len(changes),
+
+            "approved_change_value": sum(
+                float(x.get("cost_impact") or 0)
+                for x in changes
+                if x.get("status") in {
+                    "approved",
+                    "applied",
+                }
+            ),
+
+            "pending_change_value": sum(
+                float(x.get("cost_impact") or 0)
+                for x in changes
+                if x.get("status") == "submitted"
+            ),
+
+            "open_risk_count": len([
+                x for x in risks
+                if x.get("status") != "closed"
+            ]),
+
+            "high_risk_count": len([
+                x for x in risks
+                if int(x.get("risk_score") or 0) >= 15
+                and x.get("status") != "closed"
+            ]),
+
+            "open_issue_count": len([
+                x for x in issues
+                if x.get("status") not in {
+                    "resolved",
+                    "closed",
+                }
+            ]),
+
+            "document_count": len(documents),
+
+            "revenue_contract_count":
+                len(revenue_contracts),
+
+            "recognized_revenue":
+                float(
+                    revenue_summary.get(
+                        "recognized_revenue"
+                    ) or 0
+                ),
+
+            "billed_to_date":
+                float(
+                    revenue_summary.get(
+                        "billed_to_date"
+                    ) or 0
+                ),
+
+            "cash_collected":
+                float(
+                    revenue_summary.get(
+                        "cash_collected"
+                    ) or 0
+                ),
+
+            "unbilled_revenue":
+                float(
+                    revenue_summary.get(
+                        "unbilled_revenue"
+                    ) or 0
+                ),
         }
 
         return project
@@ -119840,28 +121372,103 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     return v
             return default
 
+        project_id = int(pick("project_id", "projectId"))
+        task_name = (pick("task_name", "taskName", "name") or "").strip()
+        task_type = str(pick("task_type", "taskType", default="task") or "task").strip().lower()
+        progress = float(pick("progress_percent", "progressPercent", default=0) or 0)
+
+        if not task_name:
+            raise ValueError("task_name is required")
+
+        if task_type not in {"phase", "task", "milestone"}:
+            raise ValueError("Invalid task_type")
+
+        if progress < 0 or progress > 100:
+            raise ValueError("progress_percent must be between 0 and 100")
+
+        parent_task_id = pick("parent_task_id", "parentTaskId")
+
+        if parent_task_id:
+            parent = self.fetch_one(
+                f"""
+                SELECT id
+                FROM {schema}.project_tasks
+                WHERE company_id = %s
+                AND project_id = %s
+                AND id = %s
+                AND COALESCE(is_archived, FALSE) = FALSE
+                """,
+                (
+                    int(company_id),
+                    int(project_id),
+                    int(parent_task_id),
+                ),
+            )
+
+            if not parent:
+                raise ValueError("PARENT_TASK_NOT_FOUND")
+
+        start_date = pick("start_date", "startDate")
+        end_date = pick("expected_end_date", "expectedEndDate")
+
+        if task_type == "milestone":
+            start_date = start_date or end_date
+            end_date = end_date or start_date
+
         row = self.fetch_one(
             f"""
             INSERT INTO {schema}.project_tasks (
-                company_id, project_id, task_code, task_name, parent_task_id,
-                status, start_date, expected_end_date, actual_end_date,
-                budget_value, progress_percent, notes, meta
+                company_id,
+                project_id,
+                task_code,
+                task_name,
+                task_type,
+                wbs_code,
+                sequence_no,
+                parent_task_id,
+                priority,
+                status,
+                start_date,
+                expected_end_date,
+                actual_end_date,
+                baseline_start_date,
+                baseline_end_date,
+                duration_days,
+                is_summary,
+                deliverable,
+                budget_value,
+                progress_percent,
+                notes,
+                meta
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s
+            )
             RETURNING id
             """,
             (
-                company_id,
-                int(pick("project_id", "projectId")),
+                int(company_id),
+                int(project_id),
                 pick("task_code", "taskCode", "code"),
-                (pick("task_name", "taskName", "name") or "").strip(),
-                pick("parent_task_id", "parentTaskId"),
+                task_name,
+                task_type,
+                pick("wbs_code", "wbsCode"),
+                int(pick("sequence_no", "sequenceNo", default=0) or 0),
+                parent_task_id,
+                pick("priority", default="normal"),
                 pick("status", default="open"),
-                pick("start_date", "startDate"),
-                pick("expected_end_date", "expectedEndDate"),
+                start_date,
+                end_date,
                 pick("actual_end_date", "actualEndDate"),
+                pick("baseline_start_date", "baselineStartDate") or start_date,
+                pick("baseline_end_date", "baselineEndDate") or end_date,
+                pick("duration_days", "durationDays"),
+                bool(pick("is_summary", "isSummary", default=task_type == "phase")),
+                pick("deliverable"),
                 float(pick("budget_value", "budgetValue", default=0) or 0),
-                float(pick("progress_percent", "progressPercent", default=0) or 0),
+                progress,
                 pick("notes"),
                 psycopg2.extras.Json(data.get("meta") or {}),
             ),
@@ -119982,16 +121589,3490 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             tuple(params),
         )
 
-    def list_project_tasks(self, company_id: int, project_id: int) -> list[dict]:
+    def list_project_tasks(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                t.*,
+                p.task_code AS parent_task_code,
+                p.task_name AS parent_task_name,
+
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM {schema}.project_task_assignments a
+                    WHERE a.company_id = t.company_id
+                    AND a.project_id = t.project_id
+                    AND a.task_id = t.id
+                    AND a.is_active = TRUE
+                ), 0) AS assignment_count,
+
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM {schema}.project_task_dependencies d
+                    WHERE d.company_id = t.company_id
+                    AND d.project_id = t.project_id
+                    AND d.successor_task_id = t.id
+                ), 0) AS predecessor_count
+
+            FROM {schema}.project_tasks t
+            LEFT JOIN {schema}.project_tasks p
+                ON p.company_id = t.company_id
+               AND p.project_id = t.project_id
+               AND p.id = t.parent_task_id
+
+            WHERE t.company_id = %s
+            AND t.project_id = %s
+            AND COALESCE(t.is_archived, FALSE) = FALSE
+
+            ORDER BY
+                COALESCE(t.sequence_no, 0),
+                t.id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+    def list_project_team(self, company_id: int, project_id: int) -> list[dict]:
         schema = self.company_schema(company_id)
 
         return self.fetch_all(
             f"""
             SELECT *
+            FROM {schema}.project_team_members
+            WHERE company_id = %s
+            AND project_id = %s
+            AND is_active = TRUE
+            ORDER BY role_type ASC, id ASC
+            """,
+            (int(company_id), int(project_id)),
+        )
+
+
+    def add_project_team_member(
+        self,
+        company_id: int,
+        project_id: int,
+        data: Dict[str, Any],
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        user_id = int(data.get("user_id") or data.get("userId") or 0)
+        if not user_id:
+            raise ValueError("user_id is required")
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_team_members (
+                company_id,
+                project_id,
+                user_id,
+                project_role,
+                role_type,
+                allocation_percent,
+                start_date,
+                end_date,
+                hourly_cost_rate,
+                hourly_bill_rate,
+                labour_cost_code_id,
+                is_active,
+                notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s)
+            ON CONFLICT (
+                company_id,
+                project_id,
+                user_id
+            )
+            DO UPDATE SET
+                project_role = EXCLUDED.project_role,
+                role_type = EXCLUDED.role_type,
+                allocation_percent = EXCLUDED.allocation_percent,
+                start_date = EXCLUDED.start_date,
+                end_date = EXCLUDED.end_date,
+                hourly_cost_rate =
+                    EXCLUDED.hourly_cost_rate,
+
+                hourly_bill_rate =
+                    EXCLUDED.hourly_bill_rate,
+
+                labour_cost_code_id =
+                    EXCLUDED.labour_cost_code_id,
+                is_active = TRUE,
+                notes = EXCLUDED.notes,
+                updated_at = NOW()
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                user_id,
+                data.get("project_role") or data.get("projectRole"),
+                data.get("role_type") or data.get("roleType") or "member",
+                float(data.get("allocation_percent") or data.get("allocationPercent") or 100),
+                data.get("start_date") or data.get("startDate"),
+                data.get("end_date") or data.get("endDate"),
+                float(
+                    data.get("hourly_cost_rate")
+                    or data.get("hourlyCostRate")
+                    or 0
+                ),
+
+                float(
+                    data.get("hourly_bill_rate")
+                    or data.get("hourlyBillRate")
+                    or 0
+                ),
+
+                data.get("labour_cost_code_id")
+                or data.get("labourCostCodeId"),
+                data.get("notes"),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+
+    def remove_project_team_member(
+        self,
+        company_id: int,
+        project_id: int,
+        member_id: int,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_team_members
+            SET is_active = FALSE,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(member_id),
+            ),
+        )
+
+        return bool(row)
+    
+    def list_project_task_assignments(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                a.*,
+                t.task_code,
+                t.task_name
+            FROM {schema}.project_task_assignments a
+            JOIN {schema}.project_tasks t
+                ON t.company_id = a.company_id
+               AND t.project_id = a.project_id
+               AND t.id = a.task_id
+            WHERE a.company_id = %s
+            AND a.project_id = %s
+            AND a.is_active = TRUE
+            ORDER BY t.sequence_no, t.id, a.id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+    def assert_project_unlocked(self, company_id: int, project_id: int) -> None:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT is_locked
+            FROM {schema}.projects
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (company_id, project_id),
+        )
+
+        if not row:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        if row.get("is_locked"):
+            raise ValueError("PROJECT_IS_CLOSED_AND_LOCKED")
+
+    def create_project_time_entry(
+        self,
+        company_id: int,
+        project_id: int,
+        data: Dict[str, Any],
+    ) -> int:
+        schema = self.company_schema(company_id)
+        self.assert_project_unlocked(
+            company_id,
+            project_id,
+        )
+        user_id = int(
+            data.get("user_id")
+            or data.get("userId")
+            or 0
+        )
+
+        task_id = (
+            data.get("task_id")
+            or data.get("taskId")
+        )
+
+        hours = float(
+            data.get("hours")
+            or 0
+        )
+
+        if not user_id:
+            raise ValueError("user_id is required")
+
+        if hours <= 0 or hours > 24:
+            raise ValueError(
+                "hours must be greater than 0 and not exceed 24"
+            )
+
+        project = self.fetch_one(
+            f"""
+            SELECT id, allow_time_entries
+            FROM {schema}.projects
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+        if not project:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        if project.get("allow_time_entries") is False:
+            raise ValueError(
+                "PROJECT_TIME_ENTRIES_DISABLED"
+            )
+
+        if task_id:
+            task = self.fetch_one(
+                f"""
+                SELECT id
+                FROM {schema}.project_tasks
+                WHERE company_id = %s
+                AND project_id = %s
+                AND id = %s
+                AND COALESCE(is_archived, FALSE) = FALSE
+                """,
+                (
+                    int(company_id),
+                    int(project_id),
+                    int(task_id),
+                ),
+            )
+
+            if not task:
+                raise ValueError(
+                    "PROJECT_TASK_NOT_FOUND"
+                )
+
+        team = self.fetch_one(
+            f"""
+            SELECT
+                hourly_cost_rate,
+                hourly_bill_rate
+            FROM {schema}.project_team_members
+            WHERE company_id = %s
+            AND project_id = %s
+            AND user_id = %s
+            AND is_active = TRUE
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                user_id,
+            ),
+        ) or {}
+
+        cost_rate = float(
+            data.get("hourly_cost_rate")
+            or data.get("hourlyCostRate")
+            or team.get("hourly_cost_rate")
+            or 0
+        )
+
+        bill_rate = float(
+            data.get("hourly_bill_rate")
+            or data.get("hourlyBillRate")
+            or team.get("hourly_bill_rate")
+            or 0
+        )
+
+        billable = bool(
+            data.get("billable", False)
+        )
+
+        labour_cost = round(
+            hours * cost_rate,
+            2,
+        )
+
+        billable_amount = round(
+            hours * bill_rate,
+            2,
+        ) if billable else 0
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_time_entries (
+                company_id,
+                project_id,
+                task_id,
+                user_id,
+                work_date,
+                hours,
+                billable,
+                hourly_cost_rate,
+                hourly_bill_rate,
+                labour_cost,
+                billable_amount,
+                capitalizable,
+                description,
+                status,
+                source,
+                created_by
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,'draft','manual',%s
+            )
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(task_id)
+                    if task_id else None,
+                user_id,
+                data.get("work_date")
+                    or data.get("workDate"),
+                hours,
+                billable,
+                cost_rate,
+                bill_rate,
+                labour_cost,
+                billable_amount,
+                bool(data.get("capitalizable", False)),
+                data.get("description"),
+                data.get("created_by")
+                    or data.get("createdBy"),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def list_project_time_entries(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                te.*,
+                t.task_code,
+                t.task_name
+            FROM {schema}.project_time_entries te
+
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = te.company_id
+            AND t.project_id = te.project_id
+            AND t.id = te.task_id
+
+            WHERE te.company_id = %s
+            AND te.project_id = %s
+
+            ORDER BY
+                te.work_date DESC,
+                te.id DESC
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+    def update_project_time_entry(
+        self,
+        company_id: int,
+        project_id: int,
+        entry_id: int,
+        data: Dict[str, Any],
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        current = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.project_time_entries
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(entry_id),
+            ),
+        )
+
+        if not current:
+            return False
+
+        if current.get("status") not in {
+            "draft",
+            "rejected",
+        }:
+            raise ValueError(
+                "Only draft or rejected entries can be edited"
+            )
+
+        hours = float(
+            data.get(
+                "hours",
+                current.get("hours") or 0,
+            )
+        )
+
+        cost_rate = float(
+            data.get(
+                "hourly_cost_rate",
+                current.get("hourly_cost_rate") or 0,
+            )
+        )
+
+        bill_rate = float(
+            data.get(
+                "hourly_bill_rate",
+                current.get("hourly_bill_rate") or 0,
+            )
+        )
+
+        billable = bool(
+            data.get(
+                "billable",
+                current.get("billable"),
+            )
+        )
+
+        labour_cost = round(
+            hours * cost_rate,
+            2,
+        )
+
+        billable_amount = round(
+            hours * bill_rate,
+            2,
+        ) if billable else 0
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_time_entries
+            SET task_id = %s,
+                work_date = %s,
+                hours = %s,
+                billable = %s,
+                hourly_cost_rate = %s,
+                hourly_bill_rate = %s,
+                labour_cost = %s,
+                billable_amount = %s,
+                capitalizable = %s,
+                description = %s,
+                status = 'draft',
+                rejection_reason = NULL,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            (
+                data.get(
+                    "task_id",
+                    current.get("task_id"),
+                ),
+                data.get(
+                    "work_date",
+                    current.get("work_date"),
+                ),
+                hours,
+                billable,
+                cost_rate,
+                bill_rate,
+                labour_cost,
+                billable_amount,
+                bool(
+                    data.get(
+                        "capitalizable",
+                        current.get("capitalizable"),
+                    )
+                ),
+                data.get(
+                    "description",
+                    current.get("description"),
+                ),
+                int(company_id),
+                int(project_id),
+                int(entry_id),
+            ),
+        )
+
+        return bool(row)
+
+    def set_project_time_status(
+        self,
+        company_id: int,
+        project_id: int,
+        entry_id: int,
+        *,
+        action: str,
+        user_id: int | None = None,
+        reason: str | None = None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+        action = str(action or "").lower()
+
+        current = self.fetch_one(
+            f"""
+            SELECT status
+            FROM {schema}.project_time_entries
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(entry_id),
+            ),
+        )
+
+        if not current:
+            return False
+
+        status = current.get("status")
+
+        if action == "submit":
+            if status not in {"draft", "rejected"}:
+                raise ValueError(
+                    "Entry cannot be submitted"
+                )
+
+            sql = """
+                status='submitted',
+                submitted_at=NOW(),
+                submitted_by=%s,
+                rejected_at=NULL,
+                rejected_by=NULL,
+                rejection_reason=NULL
+            """
+            params = [user_id]
+
+        elif action == "approve":
+            if status != "submitted":
+                raise ValueError(
+                    "Only submitted entries can be approved"
+                )
+
+            sql = """
+                status='approved',
+                approved_at=NOW(),
+                approved_by=%s
+            """
+            params = [user_id]
+
+        elif action == "reject":
+            if status != "submitted":
+                raise ValueError(
+                    "Only submitted entries can be rejected"
+                )
+
+            sql = """
+                status='rejected',
+                rejected_at=NOW(),
+                rejected_by=%s,
+                rejection_reason=%s
+            """
+            params = [
+                user_id,
+                reason,
+            ]
+
+        else:
+            raise ValueError(
+                "Invalid timesheet action"
+            )
+
+        params.extend([
+            int(company_id),
+            int(project_id),
+            int(entry_id),
+        ])
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_time_entries
+            SET {sql},
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND project_id=%s
+            AND id=%s
+            RETURNING id
+            """,
+            tuple(params),
+        )
+
+        return bool(row)
+
+    def create_project_expense(
+        self,
+        company_id: int,
+        project_id: int,
+        data: Dict[str, Any],
+    ) -> int:
+        schema = self.company_schema(company_id)
+        self.assert_project_unlocked(
+            company_id,
+            project_id,
+        )
+        description = (
+            data.get("description") or ""
+        ).strip()
+
+        amount = float(
+            data.get("amount") or 0
+        )
+
+        tax_amount = float(
+            data.get("tax_amount")
+            or data.get("taxAmount")
+            or 0
+        )
+
+        if not description:
+            raise ValueError(
+                "description is required"
+            )
+
+        if amount < 0 or tax_amount < 0:
+            raise ValueError(
+                "Expense amounts cannot be negative"
+            )
+
+        project = self.fetch_one(
+            f"""
+            SELECT
+                id,
+                allow_expenses
+            FROM {schema}.projects
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+        if not project:
+            raise ValueError(
+                "PROJECT_NOT_FOUND"
+            )
+
+        if project.get("allow_expenses") is False:
+            raise ValueError(
+                "PROJECT_EXPENSES_DISABLED"
+            )
+
+        task_id = (
+            data.get("task_id")
+            or data.get("taskId")
+        )
+
+        if task_id:
+            task = self.fetch_one(
+                f"""
+                SELECT id
+                FROM {schema}.project_tasks
+                WHERE company_id = %s
+                AND project_id = %s
+                AND id = %s
+                AND COALESCE(is_archived, FALSE) = FALSE
+                """,
+                (
+                    int(company_id),
+                    int(project_id),
+                    int(task_id),
+                ),
+            )
+
+            if not task:
+                raise ValueError(
+                    "PROJECT_TASK_NOT_FOUND"
+                )
+
+        total_amount = round(
+            amount + tax_amount,
+            2,
+        )
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_expenses (
+                company_id,
+                project_id,
+                task_id,
+                cost_code_id,
+                expense_date,
+                description,
+                supplier_name,
+                reference,
+                amount,
+                tax_amount,
+                total_amount,
+                account_code,
+                capitalizable,
+                status,
+                source,
+                created_by
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,'draft','manual',%s
+            )
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(task_id)
+                    if task_id else None,
+                data.get("cost_code_id")
+                    or data.get("costCodeId"),
+                data.get("expense_date")
+                    or data.get("expenseDate"),
+                description,
+                data.get("supplier_name")
+                    or data.get("supplierName"),
+                data.get("reference"),
+                amount,
+                tax_amount,
+                total_amount,
+                data.get("account_code")
+                    or data.get("accountCode"),
+                bool(data.get("capitalizable", False)),
+                data.get("created_by")
+                    or data.get("createdBy"),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def list_project_expenses(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                e.*,
+                t.task_code,
+                t.task_name,
+                cc.code AS cost_code,
+                cc.name AS cost_code_name
+            FROM {schema}.project_expenses e
+
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = e.company_id
+            AND t.id = e.task_id
+
+            LEFT JOIN {schema}.project_cost_codes cc
+                ON cc.company_id = e.company_id
+            AND cc.id = e.cost_code_id
+
+            WHERE e.company_id = %s
+            AND e.project_id = %s
+
+            ORDER BY
+                e.expense_date DESC,
+                e.id DESC
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+    def approve_project_expense(
+        self,
+        company_id: int,
+        project_id: int,
+        expense_id: int,
+        user_id: int | None = None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_expenses
+            SET status = 'approved',
+                approved_at = NOW(),
+                approved_by = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            AND status = 'draft'
+            RETURNING id
+            """,
+            (
+                user_id,
+                int(company_id),
+                int(project_id),
+                int(expense_id),
+            ),
+        )
+
+        return bool(row)
+
+    def list_project_commitments(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                po.id AS purchase_order_id,
+                po.po_number,
+                po.status AS po_status,
+
+                pol.id AS line_id,
+                pol.project_id,
+                pol.task_id,
+                pol.cost_code_id,
+
+                t.task_name,
+                cc.code AS cost_code,
+
+                pol.description,
+                pol.quantity,
+                pol.unit_price,
+
+                COALESCE(
+                    pol.quantity,
+                    0
+                ) * COALESCE(
+                    pol.unit_price,
+                    0
+                ) AS ordered_amount
+
+            FROM {schema}.purchase_order_lines pol
+
+            JOIN {schema}.purchase_orders po
+                ON po.company_id = pol.company_id
+            AND po.id = pol.purchase_order_id
+
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = pol.company_id
+            AND t.id = pol.task_id
+
+            LEFT JOIN {schema}.project_cost_codes cc
+                ON cc.company_id = pol.company_id
+            AND cc.id = pol.cost_code_id
+
+            WHERE pol.company_id = %s
+            AND COALESCE(
+                pol.project_id,
+                po.project_id
+            ) = %s
+
+            AND COALESCE(
+                pol.line_status,
+                'open'
+            ) <> 'cancelled'
+
+            ORDER BY
+                po.id DESC,
+                pol.id ASC
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+    def get_project_cost_summary(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        expenses = self.list_project_expenses(
+            company_id,
+            project_id,
+        )
+
+        commitments = self.list_project_commitments(
+            company_id,
+            project_id,
+        )
+
+        time_entries = self.list_project_time_entries(
+            company_id,
+            project_id,
+        )
+
+        material = self.fetch_one(
+            f"""
+            SELECT
+                COALESCE(
+                    SUM(
+                        COALESCE(
+                            extended_cost,
+                            0
+                        )
+                    ),
+                    0
+                ) AS material_cost
+            FROM {schema}.inventory_tx_lines
+            WHERE company_id = %s
+            AND project_id = %s
+            AND COALESCE(
+                usage_type,
+                ''
+            ) = 'consumed'
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        ) or {}
+
+        expense_cost = sum(
+            float(x.get("amount") or 0)
+            for x in expenses
+            if x.get("status") in {
+                "approved",
+                "posted",
+            }
+        )
+
+        labour_cost = sum(
+            float(x.get("labour_cost") or 0)
+            for x in time_entries
+            if x.get("status") == "approved"
+        )
+
+        committed_cost = sum(
+            float(x.get("ordered_amount") or 0)
+            for x in commitments
+            if str(
+                x.get("po_status") or ""
+            ).lower() not in {
+                "cancelled",
+                "closed",
+            }
+        )
+
+        material_cost = float(
+            material.get("material_cost") or 0
+        )
+
+        actual_cost = (
+            material_cost
+            + labour_cost
+            + expense_cost
+        )
+
+        return {
+            "material_cost": material_cost,
+            "labour_cost": labour_cost,
+            "expense_cost": expense_cost,
+            "actual_cost": actual_cost,
+            "committed_cost": committed_cost,
+            "cost_exposure":
+                actual_cost + committed_cost,
+        }
+
+    def list_project_changes(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.project_changes
+            WHERE company_id = %s
+            AND project_id = %s
+            ORDER BY id DESC
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+    def create_project_change(
+        self,
+        company_id: int,
+        project_id: int,
+        data: Dict[str, Any],
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        self.assert_project_unlocked(
+            company_id,
+            project_id,
+        )
+        title = (
+            data.get("title") or ""
+        ).strip()
+
+        if not title:
+            raise ValueError(
+                "title is required"
+            )
+
+        next_no = self.fetch_one(
+            f"""
+            SELECT COALESCE(
+                MAX(id),
+                0
+            ) + 1 AS next_no
+            FROM {schema}.project_changes
+            WHERE company_id = %s
+            AND project_id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        ) or {}
+
+        change_no = (
+            data.get("change_no")
+            or data.get("changeNo")
+            or f"CHG-{int(next_no.get('next_no') or 1):03d}"
+        )
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_changes (
+                company_id,
+                project_id,
+                change_no,
+                change_type,
+                title,
+                description,
+                reason,
+                requested_by,
+                cost_impact,
+                revenue_impact,
+                schedule_impact_days,
+                proposed_end_date,
+                status,
+                notes,
+                meta
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,'draft',%s,%s
+            )
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                change_no,
+                data.get("change_type")
+                    or data.get("changeType")
+                    or "change_request",
+                title,
+                data.get("description"),
+                data.get("reason"),
+                data.get("requested_by")
+                    or data.get("requestedBy"),
+                float(
+                    data.get("cost_impact")
+                    or data.get("costImpact")
+                    or 0
+                ),
+                float(
+                    data.get("revenue_impact")
+                    or data.get("revenueImpact")
+                    or 0
+                ),
+                int(
+                    data.get("schedule_impact_days")
+                    or data.get("scheduleImpactDays")
+                    or 0
+                ),
+                data.get("proposed_end_date")
+                    or data.get("proposedEndDate"),
+                data.get("notes"),
+                psycopg2.extras.Json(
+                    data.get("meta") or {}
+                ),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def set_project_change_status(
+        self,
+        company_id: int,
+        project_id: int,
+        change_id: int,
+        *,
+        action: str,
+        user_id: int | None = None,
+        reason: str | None = None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+        action = str(action or "").lower()
+
+        row = self.fetch_one(
+            f"""
+            SELECT status
+            FROM {schema}.project_changes
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(change_id),
+            ),
+        )
+
+        if not row:
+            return False
+
+        status = row.get("status")
+
+        if action == "submit":
+            if status not in {
+                "draft",
+                "rejected",
+            }:
+                raise ValueError(
+                    "Change cannot be submitted"
+                )
+
+            sql = """
+                status='submitted',
+                submitted_at=NOW(),
+                submitted_by=%s,
+                rejected_at=NULL,
+                rejected_by=NULL,
+                rejection_reason=NULL
+            """
+            params = [user_id]
+
+        elif action == "approve":
+            if status != "submitted":
+                raise ValueError(
+                    "Only submitted changes can be approved"
+                )
+
+            sql = """
+                status='approved',
+                approved_at=NOW(),
+                approved_by=%s
+            """
+            params = [user_id]
+
+        elif action == "reject":
+            if status != "submitted":
+                raise ValueError(
+                    "Only submitted changes can be rejected"
+                )
+
+            sql = """
+                status='rejected',
+                rejected_at=NOW(),
+                rejected_by=%s,
+                rejection_reason=%s
+            """
+            params = [
+                user_id,
+                reason,
+            ]
+
+        else:
+            raise ValueError(
+                "Invalid change action"
+            )
+
+        params.extend([
+            int(company_id),
+            int(project_id),
+            int(change_id),
+        ])
+
+        updated = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_changes
+            SET {sql},
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND project_id=%s
+            AND id=%s
+            RETURNING id
+            """,
+            tuple(params),
+        )
+
+        return bool(updated)
+
+    def apply_project_change(
+        self,
+        company_id: int,
+        project_id: int,
+        change_id: int,
+        user_id: int | None = None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        change = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.project_changes
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(change_id),
+            ),
+        )
+
+        if not change:
+            return False
+
+        if change.get("status") != "approved":
+            raise ValueError(
+                "Only approved changes can be applied"
+            )
+
+        project = self.fetch_one(
+            f"""
+            SELECT
+                budget_value,
+                contract_value,
+                expected_end_date
+            FROM {schema}.projects
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+        if not project:
+            raise ValueError(
+                "PROJECT_NOT_FOUND"
+            )
+
+        old_budget = float(
+            project.get("budget_value") or 0
+        )
+
+        cost_impact = float(
+            change.get("cost_impact") or 0
+        )
+
+        revenue_impact = float(
+            change.get("revenue_impact") or 0
+        )
+
+        new_budget = (
+            old_budget + cost_impact
+        )
+
+        new_contract = (
+            float(
+                project.get("contract_value") or 0
+            )
+            + revenue_impact
+        )
+
+        new_end_date = (
+            change.get("proposed_end_date")
+            or project.get("expected_end_date")
+        )
+
+        revision = self.fetch_one(
+            f"""
+            SELECT COALESCE(
+                MAX(revision_no),
+                0
+            ) + 1 AS next_no
+            FROM {schema}.project_budget_revisions
+            WHERE company_id = %s
+            AND project_id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        ) or {}
+
+        revision_no = int(
+            revision.get("next_no") or 1
+        )
+
+        self.execute(
+            f"""
+            INSERT INTO {schema}.project_budget_revisions (
+                company_id,
+                project_id,
+                change_id,
+                revision_no,
+                previous_budget,
+                revision_amount,
+                revised_budget,
+                reason,
+                approved_by,
+                approved_at
+            )
+            VALUES (
+                %s,%s,%s,%s,
+                %s,%s,%s,%s,
+                %s,NOW()
+            )
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(change_id),
+                revision_no,
+                old_budget,
+                cost_impact,
+                new_budget,
+                change.get("reason"),
+                user_id,
+            ),
+        )
+
+        self.execute(
+            f"""
+            UPDATE {schema}.projects
+            SET budget_value = %s,
+                contract_value = %s,
+                expected_end_date = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                new_budget,
+                new_contract,
+                new_end_date,
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+        self.execute(
+            f"""
+            UPDATE {schema}.project_changes
+            SET status = 'applied',
+                applied_at = NOW(),
+                applied_by = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            """,
+            (
+                user_id,
+                int(company_id),
+                int(project_id),
+                int(change_id),
+            ),
+        )
+
+        return True
+
+    def assign_project_task(
+        self,
+        company_id: int,
+        project_id: int,
+        task_id: int,
+        data: Dict[str, Any],
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        user_id = int(data.get("user_id") or data.get("userId") or 0)
+        if not user_id:
+            raise ValueError("user_id is required")
+
+        task = self.fetch_one(
+            f"""
+            SELECT id
             FROM {schema}.project_tasks
             WHERE company_id = %s
             AND project_id = %s
-            ORDER BY id ASC
+            AND id = %s
+            AND COALESCE(is_archived, FALSE) = FALSE
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(task_id),
+            ),
+        )
+
+        if not task:
+            raise ValueError("PROJECT_TASK_NOT_FOUND")
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_task_assignments (
+                company_id,
+                project_id,
+                task_id,
+                user_id,
+                assignment_role,
+                allocation_percent,
+                assigned_by,
+                is_active,
+                notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,TRUE,%s)
+            ON CONFLICT (
+                company_id,
+                project_id,
+                task_id,
+                user_id
+            )
+            DO UPDATE SET
+                assignment_role = EXCLUDED.assignment_role,
+                allocation_percent = EXCLUDED.allocation_percent,
+                assigned_by = EXCLUDED.assigned_by,
+                assigned_at = NOW(),
+                is_active = TRUE,
+                notes = EXCLUDED.notes,
+                updated_at = NOW()
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(task_id),
+                user_id,
+                data.get("assignment_role") or data.get("assignmentRole"),
+                float(data.get("allocation_percent") or data.get("allocationPercent") or 100),
+                data.get("assigned_by") or data.get("assignedBy"),
+                data.get("notes"),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def list_project_task_dependencies(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                d.*,
+                pred.task_code AS predecessor_code,
+                pred.task_name AS predecessor_name,
+                succ.task_code AS successor_code,
+                succ.task_name AS successor_name
+            FROM {schema}.project_task_dependencies d
+
+            JOIN {schema}.project_tasks pred
+                ON pred.company_id = d.company_id
+               AND pred.project_id = d.project_id
+               AND pred.id = d.predecessor_task_id
+
+            JOIN {schema}.project_tasks succ
+                ON succ.company_id = d.company_id
+               AND succ.project_id = d.project_id
+               AND succ.id = d.successor_task_id
+
+            WHERE d.company_id = %s
+            AND d.project_id = %s
+
+            ORDER BY d.id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+
+    def create_project_task_dependency(
+        self,
+        company_id: int,
+        project_id: int,
+        data: Dict[str, Any],
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        predecessor_id = int(
+            data.get("predecessor_task_id")
+            or data.get("predecessorTaskId")
+            or 0
+        )
+
+        successor_id = int(
+            data.get("successor_task_id")
+            or data.get("successorTaskId")
+            or 0
+        )
+
+        if not predecessor_id or not successor_id:
+            raise ValueError("Both predecessor_task_id and successor_task_id are required")
+
+        if predecessor_id == successor_id:
+            raise ValueError("A task cannot depend on itself")
+
+        valid_count = self.fetch_one(
+            f"""
+            SELECT COUNT(*) AS count
+            FROM {schema}.project_tasks
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id IN (%s, %s)
+            AND COALESCE(is_archived, FALSE) = FALSE
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                predecessor_id,
+                successor_id,
+            ),
+        ) or {}
+
+        if int(valid_count.get("count") or 0) != 2:
+            raise ValueError("One or more dependency tasks were not found")
+
+        reverse = self.fetch_one(
+            f"""
+            SELECT id
+            FROM {schema}.project_task_dependencies
+            WHERE company_id = %s
+            AND project_id = %s
+            AND predecessor_task_id = %s
+            AND successor_task_id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                successor_id,
+                predecessor_id,
+            ),
+        )
+
+        if reverse:
+            raise ValueError("Reverse dependency already exists")
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_task_dependencies (
+                company_id,
+                project_id,
+                predecessor_task_id,
+                successor_task_id,
+                dependency_type,
+                lag_days,
+                notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (
+                company_id,
+                project_id,
+                predecessor_task_id,
+                successor_task_id
+            )
+            DO UPDATE SET
+                dependency_type = EXCLUDED.dependency_type,
+                lag_days = EXCLUDED.lag_days,
+                notes = EXCLUDED.notes
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                predecessor_id,
+                successor_id,
+                data.get("dependency_type")
+                or data.get("dependencyType")
+                or "finish_to_start",
+                int(data.get("lag_days") or data.get("lagDays") or 0),
+                data.get("notes"),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+    
+    def log_project_activity(
+        self,
+        company_id: int,
+        project_id: int,
+        *,
+        entity_type: str,
+        entity_id: int | None,
+        action: str,
+        description: str | None = None,
+        user_id: int | None = None,
+        meta: dict | None = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        self.execute(
+            f"""
+            INSERT INTO {schema}.project_activity_log (
+                company_id,
+                project_id,
+                entity_type,
+                entity_id,
+                action,
+                description,
+                user_id,
+                meta
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                entity_type,
+                entity_id,
+                action,
+                description,
+                user_id,
+                psycopg2.extras.Json(meta or {}),
+            ),
+        )
+
+    def list_project_risks(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.project_risks
+            WHERE company_id = %s
+            AND project_id = %s
+            ORDER BY
+                risk_score DESC,
+                id DESC
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+    def create_project_risk(
+        self,
+        company_id: int,
+        project_id: int,
+        data: Dict[str, Any],
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        self.assert_project_unlocked(
+            company_id,
+            project_id,
+        )
+
+        title = (
+            data.get("title") or ""
+        ).strip()
+
+        if not title:
+            raise ValueError(
+                "title is required"
+            )
+
+        probability = int(
+            data.get("probability") or 1
+        )
+
+        impact = int(
+            data.get("impact") or 1
+        )
+
+        if probability not in range(1, 6):
+            raise ValueError(
+                "probability must be 1 to 5"
+            )
+
+        if impact not in range(1, 6):
+            raise ValueError(
+                "impact must be 1 to 5"
+            )
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_risks (
+                company_id,
+                project_id,
+                risk_code,
+                title,
+                description,
+                category,
+                owner_user_id,
+                probability,
+                impact,
+                risk_score,
+                mitigation_plan,
+                contingency_plan,
+                due_date,
+                status,
+                created_by
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s
+            )
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                data.get("risk_code")
+                    or data.get("riskCode"),
+                title,
+                data.get("description"),
+                data.get("category"),
+                data.get("owner_user_id")
+                    or data.get("ownerUserId"),
+                probability,
+                impact,
+                probability * impact,
+                data.get("mitigation_plan")
+                    or data.get("mitigationPlan"),
+                data.get("contingency_plan")
+                    or data.get("contingencyPlan"),
+                data.get("due_date")
+                    or data.get("dueDate"),
+                data.get("status") or "open",
+                data.get("created_by"),
+            ),
+        ) or {}
+
+        risk_id = int(
+            row.get("id") or 0
+        )
+
+        self.log_project_activity(
+            company_id,
+            project_id,
+            entity_type="risk",
+            entity_id=risk_id,
+            action="created",
+            description=title,
+            user_id=data.get("created_by"),
+        )
+
+        return risk_id
+
+    def update_project_risk(
+        self,
+        company_id: int,
+        project_id: int,
+        risk_id: int,
+        data: Dict[str, Any],
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        current = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.project_risks
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(risk_id),
+            ),
+        )
+
+        if not current:
+            return False
+
+        probability = int(
+            data.get(
+                "probability",
+                current.get("probability") or 1,
+            )
+        )
+
+        impact = int(
+            data.get(
+                "impact",
+                current.get("impact") or 1,
+            )
+        )
+
+        status = data.get(
+            "status",
+            current.get("status"),
+        )
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_risks
+            SET title = %s,
+                description = %s,
+                category = %s,
+                owner_user_id = %s,
+                probability = %s,
+                impact = %s,
+                risk_score = %s,
+                mitigation_plan = %s,
+                contingency_plan = %s,
+                due_date = %s,
+                status = %s,
+                closed_at = CASE
+                    WHEN %s = 'closed'
+                    THEN COALESCE(closed_at, NOW())
+                    ELSE NULL
+                END,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            (
+                data.get(
+                    "title",
+                    current.get("title"),
+                ),
+                data.get(
+                    "description",
+                    current.get("description"),
+                ),
+                data.get(
+                    "category",
+                    current.get("category"),
+                ),
+                data.get(
+                    "owner_user_id",
+                    current.get("owner_user_id"),
+                ),
+                probability,
+                impact,
+                probability * impact,
+                data.get(
+                    "mitigation_plan",
+                    current.get("mitigation_plan"),
+                ),
+                data.get(
+                    "contingency_plan",
+                    current.get("contingency_plan"),
+                ),
+                data.get(
+                    "due_date",
+                    current.get("due_date"),
+                ),
+                status,
+                status,
+                int(company_id),
+                int(project_id),
+                int(risk_id),
+            ),
+        )
+
+        return bool(row)
+
+    def list_project_issues(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                i.*,
+                t.task_code,
+                t.task_name
+            FROM {schema}.project_issues i
+
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = i.company_id
+            AND t.id = i.task_id
+
+            WHERE i.company_id = %s
+            AND i.project_id = %s
+
+            ORDER BY
+                CASE i.priority
+                    WHEN 'critical' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'normal' THEN 3
+                    ELSE 4
+                END,
+                i.id DESC
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+    def create_project_issue(
+        self,
+        company_id: int,
+        project_id: int,
+        data: Dict[str, Any],
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        self.assert_project_unlocked(
+            company_id,
+            project_id,
+        )
+        title = (
+            data.get("title") or ""
+        ).strip()
+
+        if not title:
+            raise ValueError(
+                "title is required"
+            )
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_issues (
+                company_id,
+                project_id,
+                task_id,
+                issue_code,
+                title,
+                description,
+                category,
+                priority,
+                owner_user_id,
+                raised_date,
+                due_date,
+                status,
+                created_by
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s
+            )
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                data.get("task_id")
+                    or data.get("taskId"),
+                data.get("issue_code")
+                    or data.get("issueCode"),
+                title,
+                data.get("description"),
+                data.get("category"),
+                data.get("priority") or "normal",
+                data.get("owner_user_id")
+                    or data.get("ownerUserId"),
+                data.get("raised_date")
+                    or data.get("raisedDate"),
+                data.get("due_date")
+                    or data.get("dueDate"),
+                data.get("status") or "open",
+                data.get("created_by"),
+            ),
+        ) or {}
+
+        issue_id = int(
+            row.get("id") or 0
+        )
+
+        self.log_project_activity(
+            company_id,
+            project_id,
+            entity_type="issue",
+            entity_id=issue_id,
+            action="created",
+            description=title,
+            user_id=data.get("created_by"),
+        )
+
+        return issue_id
+
+    def update_project_issue(
+        self,
+        company_id: int,
+        project_id: int,
+        issue_id: int,
+        data: Dict[str, Any],
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        current = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.project_issues
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(issue_id),
+            ),
+        )
+
+        if not current:
+            return False
+
+        status = data.get(
+            "status",
+            current.get("status"),
+        )
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_issues
+            SET task_id = %s,
+                title = %s,
+                description = %s,
+                category = %s,
+                priority = %s,
+                owner_user_id = %s,
+                due_date = %s,
+                resolution = %s,
+                status = %s,
+                resolved_at = CASE
+                    WHEN %s IN ('resolved','closed')
+                    THEN COALESCE(resolved_at, NOW())
+                    ELSE NULL
+                END,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            (
+                data.get(
+                    "task_id",
+                    current.get("task_id"),
+                ),
+                data.get(
+                    "title",
+                    current.get("title"),
+                ),
+                data.get(
+                    "description",
+                    current.get("description"),
+                ),
+                data.get(
+                    "category",
+                    current.get("category"),
+                ),
+                data.get(
+                    "priority",
+                    current.get("priority"),
+                ),
+                data.get(
+                    "owner_user_id",
+                    current.get("owner_user_id"),
+                ),
+                data.get(
+                    "due_date",
+                    current.get("due_date"),
+                ),
+                data.get(
+                    "resolution",
+                    current.get("resolution"),
+                ),
+                status,
+                status,
+                int(company_id),
+                int(project_id),
+                int(issue_id),
+            ),
+        )
+
+        return bool(row)
+
+    def list_project_documents(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                d.*,
+                t.task_name
+            FROM {schema}.project_documents d
+
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = d.company_id
+            AND t.id = d.task_id
+
+            WHERE d.company_id = %s
+            AND d.project_id = %s
+            AND d.is_archived = FALSE
+
+            ORDER BY
+                d.uploaded_at DESC,
+                d.id DESC
+            """,
+            (
+                int(company_id),
+                int(project_id),
+            ),
+        )
+
+    def create_project_document(
+        self,
+        company_id: int,
+        project_id: int,
+        data: Dict[str, Any],
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        title = (
+            data.get("title") or ""
+        ).strip()
+
+        if not title:
+            raise ValueError(
+                "title is required"
+            )
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_documents (
+                company_id,
+                project_id,
+                task_id,
+                document_type,
+                title,
+                file_name,
+                file_url,
+                storage_key,
+                reference,
+                version_no,
+                notes,
+                uploaded_by
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s
+            )
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                data.get("task_id")
+                    or data.get("taskId"),
+                data.get("document_type")
+                    or data.get("documentType")
+                    or "other",
+                title,
+                data.get("file_name")
+                    or data.get("fileName"),
+                data.get("file_url")
+                    or data.get("fileUrl"),
+                data.get("storage_key")
+                    or data.get("storageKey"),
+                data.get("reference"),
+                data.get("version_no")
+                    or data.get("versionNo"),
+                data.get("notes"),
+                data.get("uploaded_by"),
+            ),
+        ) or {}
+
+        return int(
+            row.get("id") or 0
+        )
+
+    def list_project_activity(
+        self,
+        company_id: int,
+        project_id: int,
+        limit: int = 100,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.project_activity_log
+            WHERE company_id = %s
+            AND project_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(limit),
+            ),
+        )
+
+    def get_project_performance(self, company_id: int, project_id: int) -> dict:
+        project = self.get_project(company_id, project_id)
+        if not project:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        cost = project.get("cost_summary") or {}
+        revenue = project.get("revenue_summary") or {}
+
+        budget = float(project.get("budget_value") or 0)
+        baseline_budget = float(project.get("baseline_budget_value") or 0)
+        progress = float(project.get("progress_percent") or 0)
+
+        actual_cost = float(cost.get("actual_cost") or 0)
+        committed_cost = float(cost.get("committed_cost") or 0)
+
+        contract_value = float(project.get("contract_value") or 0)
+        recognized = float(revenue.get("recognized_revenue") or 0)
+
+        eac_from_progress = actual_cost / (progress / 100) if progress > 0 else actual_cost
+        minimum_eac = actual_cost + committed_cost
+        eac = max(eac_from_progress, minimum_eac)
+        etc = max(0, eac - actual_cost)
+
+        forecast_revenue = max(contract_value, recognized)
+        forecast_margin = forecast_revenue - eac
+        margin_percent = (forecast_margin / forecast_revenue * 100) if forecast_revenue else 0
+
+        baseline_end = project.get("baseline_end_date")
+        expected_end = project.get("expected_end_date")
+
+        schedule_variance_days = (
+            (expected_end - baseline_end).days
+            if baseline_end and expected_end
+            else 0
+        )
+
+        return {
+            "budget": budget,
+            "baseline_budget": baseline_budget,
+            "progress_percent": progress,
+            "actual_cost": actual_cost,
+            "committed_cost": committed_cost,
+            "estimate_to_complete": etc,
+            "estimate_at_completion": eac,
+            "budget_variance": budget - eac,
+            "cost_variance": budget - actual_cost,
+            "baseline_variance": baseline_budget - eac,
+            "forecast_revenue": forecast_revenue,
+            "forecast_margin": forecast_margin,
+            "forecast_margin_percent": margin_percent,
+            "recognized_revenue": recognized,
+            "expected_end_date": project.get("expected_end_date"),
+            "baseline_end_date": project.get("baseline_end_date"),
+            "schedule_variance_days": schedule_variance_days,
+        }
+
+    def create_project_forecast(
+        self,
+        company_id: int,
+        project_id: int,
+        data: dict | None = None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+        data = data or {}
+
+        self.assert_project_unlocked(
+            company_id,
+            project_id,
+        )
+
+        perf = self.get_project_performance(company_id, project_id)
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_forecasts (
+                company_id,
+                project_id,
+                forecast_date,
+                progress_percent,
+                budget_at_completion,
+                actual_cost_to_date,
+                committed_cost,
+                estimate_to_complete,
+                estimate_at_completion,
+                forecast_revenue,
+                forecast_margin,
+                forecast_margin_percent,
+                expected_end_date,
+                notes,
+                created_by
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                data.get("forecast_date") or data.get("forecastDate"),
+                perf["progress_percent"],
+                perf["budget"],
+                perf["actual_cost"],
+                perf["committed_cost"],
+                perf["estimate_to_complete"],
+                perf["estimate_at_completion"],
+                perf["forecast_revenue"],
+                perf["forecast_margin"],
+                perf["forecast_margin_percent"],
+                data.get("expected_end_date") or perf["expected_end_date"],
+                data.get("notes"),
+                data.get("created_by"),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def list_project_forecasts(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.project_forecasts
+            WHERE company_id = %s
+            AND project_id = %s
+            ORDER BY forecast_date DESC, id DESC
+            """,
+            (int(company_id), int(project_id)),
+        )
+
+    def list_project_capitalisations(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.project_capitalisations
+            WHERE company_id = %s
+            AND project_id = %s
+            ORDER BY id DESC
+            """,
+            (int(company_id), int(project_id)),
+        )
+
+    def create_project_capitalisation(
+        self,
+        company_id: int,
+        project_id: int,
+        data: Dict[str, Any],
+    ) -> int:
+        schema = self.company_schema(company_id)
+        position = self.get_project_capital_position(company_id, project_id)
+
+        asset_name = (data.get("asset_name") or data.get("assetName") or "").strip()
+        amount = float(data.get("capitalise_amount") or data.get("capitaliseAmount") or 0)
+
+        if not asset_name:
+            raise ValueError("asset_name is required")
+
+        if amount <= 0:
+            raise ValueError("capitalise_amount must be greater than 0")
+
+        if amount > position["available_to_capitalise"]:
+            raise ValueError("CAPITALISE_AMOUNT_EXCEEDS_AVAILABLE_CIP")
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_capitalisations (
+                company_id,
+                project_id,
+                capitalisation_date,
+                asset_name,
+                asset_class_id,
+                asset_category,
+                location,
+                cip_amount,
+                capitalise_amount,
+                residual_amount,
+                cip_account_code,
+                asset_account_code,
+                useful_life_months,
+                residual_value,
+                depreciation_method,
+                status,
+                requested_by,
+                notes
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,'draft',%s,%s
+            )
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                data.get("capitalisation_date") or data.get("capitalisationDate"),
+                asset_name,
+                data.get("asset_class_id") or data.get("assetClassId"),
+                data.get("asset_category") or data.get("assetCategory"),
+                data.get("location"),
+                position["available_to_capitalise"],
+                amount,
+                max(0, position["available_to_capitalise"] - amount),
+                position["cip_account_code"],
+                data.get("asset_account_code") or data.get("assetAccountCode"),
+                data.get("useful_life_months") or data.get("usefulLifeMonths"),
+                float(data.get("residual_value") or data.get("residualValue") or 0),
+                data.get("depreciation_method") or data.get("depreciationMethod"),
+                data.get("requested_by"),
+                data.get("notes"),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def set_project_capitalisation_status(
+        self,
+        company_id: int,
+        project_id: int,
+        capitalisation_id: int,
+        *,
+        action: str,
+        user_id: int | None = None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT status
+            FROM {schema}.project_capitalisations
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            """,
+            (int(company_id), int(project_id), int(capitalisation_id)),
+        )
+
+        if not row:
+            return False
+
+        status = row.get("status")
+        action = str(action or "").lower()
+
+        if action == "submit":
+            if status != "draft":
+                raise ValueError("Only draft capitalisations can be submitted")
+            set_sql = "status='submitted'"
+
+        elif action == "approve":
+            if status != "submitted":
+                raise ValueError("Only submitted capitalisations can be approved")
+            set_sql = "status='approved', approved_by=%s, approved_at=NOW()"
+
+        elif action == "cancel":
+            if status == "capitalised":
+                raise ValueError("Capitalised requests cannot be cancelled")
+            set_sql = "status='cancelled'"
+
+        else:
+            raise ValueError("Invalid capitalisation action")
+
+        params = [user_id] if action == "approve" else []
+        params += [int(company_id), int(project_id), int(capitalisation_id)]
+
+        updated = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_capitalisations
+            SET {set_sql},
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            tuple(params),
+        )
+
+        return bool(updated)
+
+    def list_project_asset_links(self, company_id: int, project_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                pal.*,
+                a.asset_code,
+                a.asset_name,
+                a.asset_class,
+                a.asset_class_group,
+                a.asset_account_code,
+                a.cost,
+                a.status AS asset_status,
+                a.is_qualifying_asset,
+                a.ready_for_use_date,
+                a.available_for_use_date
+            FROM {schema}.project_asset_links pal
+            JOIN {schema}.assets a
+            ON a.company_id = pal.company_id
+            AND a.id = pal.asset_id
+            WHERE pal.company_id = %s
+            AND pal.project_id = %s
+            ORDER BY pal.is_primary DESC, pal.id ASC
+            """,
+            (int(company_id), int(project_id)),
+        )
+
+    def link_project_asset(
+        self,
+        company_id: int,
+        project_id: int,
+        asset_id: int,
+        data: dict | None = None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+        data = data or {}
+
+        self.assert_project_unlocked(
+            company_id,
+            project_id,
+        )
+
+        project = self.fetch_one(
+            f"""
+            SELECT id, project_type, accounting_mode
+            FROM {schema}.projects
+            WHERE company_id = %s AND id = %s
+            """,
+            (int(company_id), int(project_id)),
+        )
+
+        if not project:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        if project.get("accounting_mode") != "capital":
+            raise ValueError("PROJECT_NOT_CAPITAL")
+
+        asset = self.fetch_one(
+            f"""
+            SELECT id
+            FROM {schema}.assets
+            WHERE company_id = %s AND id = %s
+            """,
+            (int(company_id), int(asset_id)),
+        )
+
+        if not asset:
+            raise ValueError("ASSET_NOT_FOUND")
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_asset_links (
+                company_id, project_id, asset_id,
+                link_type, is_primary, linked_by, notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (company_id, project_id, asset_id)
+            DO UPDATE SET
+                link_type = EXCLUDED.link_type,
+                is_primary = EXCLUDED.is_primary,
+                notes = EXCLUDED.notes
+            RETURNING id
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                int(asset_id),
+                data.get("link_type") or "cip",
+                bool(data.get("is_primary", False)),
+                data.get("linked_by"),
+                data.get("notes"),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def get_project_capital_position(self, company_id: int, project_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        project = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.projects
+            WHERE company_id = %s AND id = %s
+            """,
+            (int(company_id), int(project_id)),
+        )
+
+        if not project:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        if project.get("accounting_mode") != "capital":
+            raise ValueError("PROJECT_NOT_CAPITAL")
+
+        cost = self.get_project_cost_summary(company_id, project_id)
+
+        labour = self.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(labour_cost), 0) AS amount
+            FROM {schema}.project_time_entries
+            WHERE company_id = %s
+            AND project_id = %s
+            AND status = 'approved'
+            AND capitalizable = TRUE
+            """,
+            (int(company_id), int(project_id)),
+        ) or {}
+
+        expenses = self.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(amount), 0) AS amount
+            FROM {schema}.project_expenses
+            WHERE company_id = %s
+            AND project_id = %s
+            AND status IN ('approved', 'posted')
+            AND capitalizable = TRUE
+            """,
+            (int(company_id), int(project_id)),
+        ) or {}
+
+        borrowing = self.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(abc.capitalized_amount), 0) AS amount
+            FROM {schema}.asset_borrowing_costs abc
+            JOIN {schema}.project_asset_links pal
+            ON pal.company_id = abc.company_id
+            AND pal.asset_id = abc.asset_id
+            WHERE pal.company_id = %s
+            AND pal.project_id = %s
+            """,
+            (int(company_id), int(project_id)),
+        ) or {}
+
+        material_cost = float(cost.get("material_cost") or 0)
+        labour_cost = float(labour.get("amount") or 0)
+        expense_cost = float(expenses.get("amount") or 0)
+        borrowing_cost = float(borrowing.get("amount") or 0)
+
+        cip_total = material_cost + labour_cost + expense_cost + borrowing_cost
+
+        return {
+            "material_cost": material_cost,
+            "capitalizable_labour": labour_cost,
+            "capitalizable_expenses": expense_cost,
+            "capitalized_borrowing_costs": borrowing_cost,
+            "cip_total": cip_total,
+            "cip_account_code": project.get("wip_account_code"),
+        }
+
+    def list_project_borrowing_options(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        project = self.fetch_one(
+            f"""
+            SELECT id, accounting_mode
+            FROM {schema}.projects
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (company_id, project_id),
+        )
+
+        if not project:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        if project.get("accounting_mode") != "capital":
+            raise ValueError("PROJECT_NOT_CAPITAL")
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                l.id,
+                l.loan_name,
+                l.loan_reference,
+                l.lender_name,
+                l.principal_amount,
+                l.outstanding_principal,
+                l.annual_interest_rate,
+                l.currency,
+                l.status,
+
+                abl.id AS borrowing_link_id,
+                abl.asset_id AS linked_asset_id,
+                abl.capitalization_start_date,
+                abl.capitalization_end_date,
+                abl.capitalization_ratio,
+                abl.status AS link_status
+
+            FROM {schema}.loans l
+
+            LEFT JOIN {schema}.asset_borrowing_links abl
+            ON abl.company_id = l.company_id
+            AND abl.loan_id = l.id
+
+            WHERE l.company_id = %s
+            AND l.status IN ('draft', 'active', 'restructured')
+
+            ORDER BY
+                CASE WHEN l.status = 'active' THEN 0 ELSE 1 END,
+                l.loan_name,
+                l.id
+            """,
+            (company_id,),
+        )
+
+    def list_project_borrowing_links(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                abl.id,
+                abl.asset_id,
+                abl.loan_id,
+                abl.capitalization_start_date,
+                abl.capitalization_end_date,
+                abl.capitalization_ratio,
+                abl.status,
+                abl.notes,
+
+                a.asset_code,
+                a.asset_name,
+                a.asset_class,
+                a.is_qualifying_asset,
+                a.ready_for_use_date,
+
+                l.loan_name,
+                l.loan_reference,
+                l.lender_name,
+                l.principal_amount,
+                l.outstanding_principal,
+                l.annual_interest_rate,
+                l.currency,
+
+                COALESCE(bc.interest_amount, 0)
+                    AS interest_incurred,
+
+                COALESCE(bc.capitalized_amount, 0)
+                    AS capitalized_amount,
+
+                COALESCE(bc.expensed_amount, 0)
+                    AS expensed_amount
+
+            FROM {schema}.project_asset_links pal
+
+            JOIN {schema}.assets a
+            ON a.company_id = pal.company_id
+            AND a.id = pal.asset_id
+
+            JOIN {schema}.asset_borrowing_links abl
+            ON abl.company_id = a.company_id
+            AND abl.asset_id = a.id
+
+            JOIN {schema}.loans l
+            ON l.company_id = abl.company_id
+            AND l.id = abl.loan_id
+
+            LEFT JOIN (
+                SELECT
+                    company_id,
+                    asset_id,
+                    loan_id,
+                    SUM(interest_amount) AS interest_amount,
+                    SUM(capitalized_amount) AS capitalized_amount,
+                    SUM(expensed_amount) AS expensed_amount
+                FROM {schema}.asset_borrowing_costs
+                GROUP BY company_id, asset_id, loan_id
+            ) bc
+            ON bc.company_id = abl.company_id
+            AND bc.asset_id = abl.asset_id
+            AND bc.loan_id = abl.loan_id
+
+            WHERE pal.company_id = %s
+            AND pal.project_id = %s
+            AND pal.link_type = 'cip'
+
+            ORDER BY abl.id DESC
+            """,
+            (company_id, project_id),
+        )
+
+    def save_project_borrowing_link(
+        self,
+        company_id: int,
+        project_id: int,
+        data: dict,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        self.assert_project_unlocked(
+            company_id,
+            project_id,
+        )
+        loan_id = int(data.get("loan_id") or 0)
+        asset_id = int(data.get("asset_id") or 0)
+
+        start_date = _safe_date(
+            data.get("capitalization_start_date")
+        )
+
+        end_date = _safe_date(
+            data.get("capitalization_end_date")
+        )
+
+        ratio = Decimal(str(
+            data.get("capitalization_ratio") or 1
+        ))
+
+        if not loan_id:
+            raise ValueError("LOAN_REQUIRED")
+
+        if not asset_id:
+            raise ValueError("CIP_ASSET_REQUIRED")
+
+        if not start_date:
+            raise ValueError("CAPITALIZATION_START_DATE_REQUIRED")
+
+        if ratio < 0 or ratio > 1:
+            raise ValueError(
+                "CAPITALIZATION_RATIO_MUST_BE_BETWEEN_0_AND_1"
+            )
+
+        if end_date and end_date < start_date:
+            raise ValueError(
+                "CAPITALIZATION_END_BEFORE_START"
+            )
+
+        asset = self.fetch_one(
+            f"""
+            SELECT
+                a.id,
+                a.is_qualifying_asset,
+                a.ready_for_use_date
+            FROM {schema}.project_asset_links pal
+            JOIN {schema}.assets a
+            ON a.company_id = pal.company_id
+            AND a.id = pal.asset_id
+            WHERE pal.company_id = %s
+            AND pal.project_id = %s
+            AND pal.asset_id = %s
+            AND pal.link_type = 'cip'
+            """,
+            (
+                company_id,
+                project_id,
+                asset_id,
+            ),
+        )
+
+        if not asset:
+            raise ValueError(
+                "ASSET_NOT_LINKED_TO_PROJECT"
+            )
+
+        if not asset.get("is_qualifying_asset"):
+            raise ValueError(
+                "CIP_ASSET_NOT_MARKED_AS_QUALIFYING"
+            )
+
+        loan = self.fetch_one(
+            f"""
+            SELECT id
+            FROM {schema}.loans
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (company_id, loan_id),
+        )
+
+        if not loan:
+            raise ValueError("LOAN_NOT_FOUND")
+
+        existing = self.fetch_one(
+            f"""
+            SELECT id
+            FROM {schema}.asset_borrowing_links
+            WHERE company_id = %s
+            AND loan_id = %s
+            LIMIT 1
+            """,
+            (company_id, loan_id),
+        )
+
+        if existing:
+            self.execute(
+                f"""
+                UPDATE {schema}.asset_borrowing_links
+                SET
+                    asset_id = %s,
+                    capitalization_start_date = %s,
+                    capitalization_end_date = %s,
+                    capitalization_ratio = %s,
+                    status = 'active',
+                    notes = %s
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    asset_id,
+                    start_date,
+                    end_date,
+                    ratio,
+                    data.get("notes"),
+                    company_id,
+                    existing["id"],
+                ),
+            )
+
+            return int(existing["id"])
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.asset_borrowing_links (
+                company_id,
+                asset_id,
+                loan_id,
+                capitalization_start_date,
+                capitalization_end_date,
+                capitalization_ratio,
+                status,
+                notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,'active',%s)
+            RETURNING id
+            """,
+            (
+                company_id,
+                asset_id,
+                loan_id,
+                start_date,
+                end_date,
+                ratio,
+                data.get("notes"),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def stop_project_borrowing_link(
+        self,
+        company_id: int,
+        project_id: int,
+        link_id: int,
+        end_date,
+    ) -> None:
+        schema = self.company_schema(company_id)
+        end_date = _safe_date(end_date)
+
+        if not end_date:
+            raise ValueError("END_DATE_REQUIRED")
+
+        row = self.fetch_one(
+            f"""
+            SELECT
+                abl.id,
+                abl.capitalization_start_date
+            FROM {schema}.asset_borrowing_links abl
+            JOIN {schema}.project_asset_links pal
+            ON pal.company_id = abl.company_id
+            AND pal.asset_id = abl.asset_id
+            WHERE abl.company_id = %s
+            AND pal.project_id = %s
+            AND abl.id = %s
+            """,
+            (
+                company_id,
+                project_id,
+                link_id,
+            ),
+        )
+
+        if not row:
+            raise ValueError("BORROWING_LINK_NOT_FOUND")
+
+        if end_date < row["capitalization_start_date"]:
+            raise ValueError("END_DATE_BEFORE_START_DATE")
+
+        self.execute(
+            f"""
+            UPDATE {schema}.asset_borrowing_links
+            SET
+                capitalization_end_date = %s,
+                status = 'ended'
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                end_date,
+                company_id,
+                link_id,
+            ),
+        )
+
+    def get_internal_project_summary(self, company_id: int, project_id: int) -> dict:
+        project = self.get_project(company_id, project_id)
+        if not project:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        cost = project.get("cost_summary") or {}
+
+        budget = float(project.get("budget_value") or 0)
+        actual = float(cost.get("actual_cost") or 0)
+        committed = float(cost.get("committed_cost") or 0)
+
+        return {
+            "budget": budget,
+            "actual_cost": actual,
+            "committed_cost": committed,
+            "cost_exposure": actual + committed,
+            "remaining_budget": budget - actual - committed,
+            "progress_percent": float(project.get("progress_percent") or 0),
+        }
+
+    def get_project_closeout_assessment(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> dict:
+        project = self.get_project(company_id, project_id)
+        if not project:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        tasks = project.get("tasks") or []
+        expenses = project.get("expenses") or []
+        changes = project.get("changes") or []
+        issues = project.get("issues") or []
+        risks = project.get("risks") or []
+        time_entries = project.get("time_entries") or []
+        commitments = project.get("commitments") or []
+        revenue = project.get("revenue_summary") or {}
+        borrowing = project.get("borrowing_links") or []
+        assets = project.get("asset_links") or []
+
+        incomplete_tasks = [
+            x for x in tasks
+            if float(x.get("progress_percent") or 0) < 100
+            and str(x.get("status") or "").lower()
+            not in {"completed", "closed", "cancelled"}
+        ]
+
+        open_commitments = [
+            x for x in commitments
+            if str(x.get("po_status") or "").lower()
+            not in {"closed", "cancelled", "void"}
+        ]
+
+        pending_time = [
+            x for x in time_entries
+            if x.get("status") == "submitted"
+        ]
+
+        draft_expenses = [
+            x for x in expenses
+            if x.get("status") == "draft"
+        ]
+
+        pending_changes = [
+            x for x in changes
+            if x.get("status") in {"draft", "submitted", "approved"}
+        ]
+
+        open_issues = [
+            x for x in issues
+            if x.get("status") not in {"resolved", "closed"}
+        ]
+
+        open_risks = [
+            x for x in risks
+            if x.get("status") != "closed"
+        ]
+
+        active_borrowings = [
+            x for x in borrowing
+            if x.get("status") == "active"
+        ]
+
+        is_capital = project.get("accounting_mode") == "capital"
+        cip_assets = [x for x in assets if x.get("link_type") == "cip"]
+
+        blockers = []
+        warnings = []
+
+        if incomplete_tasks:
+            blockers.append(f"{len(incomplete_tasks)} incomplete task(s)")
+
+        if open_commitments:
+            blockers.append(f"{len(open_commitments)} open commitment(s)")
+
+        if pending_time:
+            blockers.append(f"{len(pending_time)} submitted time entrie(s) awaiting approval")
+
+        if draft_expenses:
+            blockers.append(f"{len(draft_expenses)} draft expense(s)")
+
+        if pending_changes:
+            blockers.append(f"{len(pending_changes)} unapplied change(s)")
+
+        if open_issues:
+            blockers.append(f"{len(open_issues)} unresolved issue(s)")
+
+        if is_capital and not cip_assets:
+            blockers.append("Capital project has no CIP asset")
+
+        if is_capital and active_borrowings:
+            blockers.append(f"{len(active_borrowings)} active IAS 23 borrowing link(s)")
+
+        unbilled = float(revenue.get("unbilled_revenue") or 0)
+        outstanding = float(revenue.get("outstanding_receivables") or 0)
+
+        if unbilled > 0:
+            warnings.append(f"Unbilled revenue remains: {unbilled:.2f}")
+
+        if outstanding > 0:
+            warnings.append(f"Customer receivables remain: {outstanding:.2f}")
+
+        if open_risks:
+            warnings.append(f"{len(open_risks)} risk(s) remain open")
+
+        return {
+            "can_close": not blockers,
+            "blockers": blockers,
+            "warnings": warnings,
+            "incomplete_task_count": len(incomplete_tasks),
+            "open_commitment_count": len(open_commitments),
+            "pending_time_count": len(pending_time),
+            "draft_expense_count": len(draft_expenses),
+            "pending_change_count": len(pending_changes),
+            "open_issue_count": len(open_issues),
+            "open_risk_count": len(open_risks),
+            "active_borrowing_count": len(active_borrowings),
+            "unbilled_revenue": unbilled,
+            "outstanding_receivables": outstanding,
+            "is_capital_project": is_capital,
+        }
+
+    def get_project_closeout(self, company_id: int, project_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.project_closeouts
+            WHERE company_id = %s
+            AND project_id = %s
+            """,
+            (company_id, project_id),
+        ) or {}
+
+    def record_project_commissioning(
+        self,
+        company_id: int,
+        project_id: int,
+        data: dict,
+    ) -> None:
+        schema = self.company_schema(company_id)
+
+        asset_id = int(data.get("asset_id") or 0)
+        acquisition_id = int(data.get("acquisition_id") or 0)
+        journal_id = int(data.get("journal_id") or 0)
+
+        if not asset_id:
+            raise ValueError("ASSET_ID_REQUIRED")
+
+        if not acquisition_id:
+            raise ValueError("ACQUISITION_ID_REQUIRED")
+
+        if not journal_id:
+            raise ValueError("POSTED_JOURNAL_ID_REQUIRED")
+
+        self.execute(
+            f"""
+            INSERT INTO {schema}.project_closeouts (
+                company_id,
+                project_id,
+                status,
+                commissioned_asset_id,
+                commissioning_acquisition_id,
+                commissioning_journal_id,
+                commissioned_at
+            )
+            VALUES (%s,%s,'draft',%s,%s,%s,NOW())
+            ON CONFLICT (company_id, project_id)
+            DO UPDATE SET
+                commissioned_asset_id = EXCLUDED.commissioned_asset_id,
+                commissioning_acquisition_id = EXCLUDED.commissioning_acquisition_id,
+                commissioning_journal_id = EXCLUDED.commissioning_journal_id,
+                commissioned_at = NOW(),
+                updated_at = NOW()
+            """,
+            (
+                company_id,
+                project_id,
+                asset_id,
+                acquisition_id,
+                journal_id,
+            ),
+        )
+
+        self.execute(
+            f"""
+            UPDATE {schema}.project_asset_links
+            SET link_type = 'capital_asset'
+            WHERE company_id = %s
+            AND project_id = %s
+            AND asset_id = %s
+            """,
+            (company_id, project_id, asset_id),
+        )
+
+    def close_project(
+        self,
+        company_id: int,
+        project_id: int,
+        data: dict,
+        user_id: int | None = None,
+    ) -> None:
+        schema = self.company_schema(company_id)
+
+        assessment = self.get_project_closeout_assessment(
+            company_id,
+            project_id,
+        )
+
+        if not assessment["can_close"]:
+            raise ValueError(
+                "PROJECT_CLOSEOUT_BLOCKED|"
+                + "; ".join(assessment["blockers"])
+            )
+
+        project = self.fetch_one(
+            f"""
+            SELECT accounting_mode
+            FROM {schema}.projects
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (company_id, project_id),
+        )
+
+        if not project:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        closeout = self.get_project_closeout(
+            company_id,
+            project_id,
+        )
+
+        if project.get("accounting_mode") == "capital":
+            if not closeout.get("commissioning_journal_id"):
+                raise ValueError(
+                    "CAPITAL_PROJECT_NOT_COMMISSIONED"
+                )
+
+        closeout_date = (
+            data.get("closeout_date")
+            or data.get("closeoutDate")
+        )
+
+        if not closeout_date:
+            raise ValueError("CLOSEOUT_DATE_REQUIRED")
+
+        self.execute(
+            f"""
+            INSERT INTO {schema}.project_closeouts (
+                company_id,
+                project_id,
+                closeout_date,
+                status,
+                completion_confirmed,
+                final_billing_confirmed,
+                commitments_cleared,
+                costs_finalised,
+                notes,
+                closed_by,
+                closed_at
+            )
+            VALUES (
+                %s,%s,%s,'closed',
+                TRUE,%s,TRUE,TRUE,
+                %s,%s,NOW()
+            )
+            ON CONFLICT (company_id, project_id)
+            DO UPDATE SET
+                closeout_date = EXCLUDED.closeout_date,
+                status = 'closed',
+                completion_confirmed = TRUE,
+                final_billing_confirmed = EXCLUDED.final_billing_confirmed,
+                commitments_cleared = TRUE,
+                costs_finalised = TRUE,
+                notes = EXCLUDED.notes,
+                closed_by = EXCLUDED.closed_by,
+                closed_at = NOW(),
+                updated_at = NOW()
+            """,
+            (
+                company_id,
+                project_id,
+                closeout_date,
+                bool(data.get("final_billing_confirmed", False)),
+                data.get("notes"),
+                user_id,
+            ),
+        )
+
+        self.execute(
+            f"""
+            UPDATE {schema}.projects
+            SET is_locked = TRUE,
+                actual_end_date = %s,
+                progress_percent = 100,
+                closed_at = NOW(),
+                closed_by = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                closeout_date,
+                user_id,
+                company_id,
+                project_id,
+            ),
+        )
+
+    def reopen_project(
+        self,
+        company_id: int,
+        project_id: int,
+        reason: str,
+        user_id: int | None = None,
+    ) -> None:
+        schema = self.company_schema(company_id)
+        reason = (reason or "").strip()
+
+        if not reason:
+            raise ValueError("REOPEN_REASON_REQUIRED")
+
+        closeout = self.get_project_closeout(
+            company_id,
+            project_id,
+        )
+
+        if not closeout:
+            raise ValueError("PROJECT_NOT_CLOSED")
+
+        self.execute(
+            f"""
+            UPDATE {schema}.project_closeouts
+            SET status = 'reopened',
+                reopened_by = %s,
+                reopened_at = NOW(),
+                reopen_reason = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND project_id = %s
+            """,
+            (
+                user_id,
+                reason,
+                company_id,
+                project_id,
+            ),
+        )
+
+        self.execute(
+            f"""
+            UPDATE {schema}.projects
+            SET is_locked = FALSE,
+                closed_at = NULL,
+                closed_by = NULL,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
             """,
             (company_id, project_id),
         )
@@ -120028,34 +125109,46 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return rows
 
-    def update_project_task(self, company_id: int, project_id: int, task_id: int, data: Dict[str, Any]) -> bool:
+    def update_project_task(
+        self,
+        company_id: int,
+        project_id: int,
+        task_id: int,
+        data: Dict[str, Any],
+    ) -> bool:
         schema = self.company_schema(company_id)
 
         allowed = {
             "task_code": ("task_code", "taskCode", "code"),
             "task_name": ("task_name", "taskName", "name"),
+            "task_type": ("task_type", "taskType"),
+            "wbs_code": ("wbs_code", "wbsCode"),
+            "sequence_no": ("sequence_no", "sequenceNo"),
             "parent_task_id": ("parent_task_id", "parentTaskId"),
+            "priority": ("priority",),
             "status": ("status",),
             "start_date": ("start_date", "startDate"),
             "expected_end_date": ("expected_end_date", "expectedEndDate"),
             "actual_end_date": ("actual_end_date", "actualEndDate"),
+            "baseline_start_date": ("baseline_start_date", "baselineStartDate"),
+            "baseline_end_date": ("baseline_end_date", "baselineEndDate"),
+            "duration_days": ("duration_days", "durationDays"),
+            "is_summary": ("is_summary", "isSummary"),
+            "deliverable": ("deliverable",),
             "budget_value": ("budget_value", "budgetValue"),
             "progress_percent": ("progress_percent", "progressPercent"),
             "notes": ("notes",),
             "meta": ("meta",),
         }
 
-        sets = []
-        params = []
+        sets, params = [], []
 
         for col, keys in allowed.items():
-            found = False
-            value = None
+            found, value = False, None
 
             for k in keys:
                 if k in data:
-                    value = data.get(k)
-                    found = True
+                    value, found = data.get(k), True
                     break
 
             if not found:
@@ -120066,8 +125159,52 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 if not value:
                     raise ValueError("task_name is required")
 
-            if col in {"budget_value", "progress_percent"}:
+            if col == "task_type":
+                value = str(value or "task").strip().lower()
+                if value not in {"phase", "task", "milestone"}:
+                    raise ValueError("Invalid task_type")
+
+            if col == "priority":
+                value = str(value or "normal").strip().lower()
+                if value not in {"low", "normal", "high", "critical"}:
+                    raise ValueError("Invalid priority")
+
+            if col == "progress_percent":
                 value = float(value or 0)
+                if value < 0 or value > 100:
+                    raise ValueError("progress_percent must be between 0 and 100")
+
+            if col == "parent_task_id" and value:
+                if int(value) == int(task_id):
+                    raise ValueError("TASK_CANNOT_BE_ITS_OWN_PARENT")
+
+                parent = self.fetch_one(
+                    f"""
+                    SELECT id
+                    FROM {schema}.project_tasks
+                    WHERE company_id = %s
+                    AND project_id = %s
+                    AND id = %s
+                    AND COALESCE(is_archived, FALSE) = FALSE
+                    """,
+                    (
+                        int(company_id),
+                        int(project_id),
+                        int(value),
+                    ),
+                )
+
+                if not parent:
+                    raise ValueError("PARENT_TASK_NOT_FOUND")
+
+            if col in {"sequence_no", "duration_days"}:
+                value = int(value) if value not in (None, "") else None
+
+            if col == "budget_value":
+                value = float(value or 0)
+
+            if col == "is_summary":
+                value = bool(value)
 
             if col == "meta":
                 value = psycopg2.extras.Json(value or {})
@@ -120078,8 +125215,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not sets:
             return False
 
+        if data.get("status") == "completed":
+            sets.append("completed_at = COALESCE(completed_at, NOW())")
+        elif "status" in data:
+            sets.append("completed_at = NULL")
+
         sets.append("updated_at = NOW()")
-        params.extend([int(company_id), int(project_id), int(task_id)])
+        params.extend([
+            int(company_id),
+            int(project_id),
+            int(task_id),
+        ])
 
         row = self.fetch_one(
             f"""
@@ -120094,7 +125240,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         return bool(row)
-
+    
     def update_project_budget_line(self, company_id: int, project_id: int, line_id: int, data: Dict[str, Any]) -> bool:
         schema = self.company_schema(company_id)
 

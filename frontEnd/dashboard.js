@@ -4617,6 +4617,164 @@ const ENDPOINTS = {
     update: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}`,
 
+    teamList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/team`,
+
+    teamCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/team`,
+
+    teamDelete: (cid, projectId, memberId) =>
+      `/api/companies/${cid}/projects/${projectId}/team/${memberId}`,
+
+    taskAssignmentsList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/task-assignments`,
+
+    taskAssign: (cid, projectId, taskId) =>
+      `/api/companies/${cid}/projects/${projectId}/tasks/${taskId}/assign`,
+
+    dependenciesList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/dependencies`,
+
+    dependenciesCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/dependencies`,
+
+    timeList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/time`,
+
+    timeCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/time`,
+
+    timeUpdate: (cid, projectId, entryId) =>
+      `/api/companies/${cid}/projects/${projectId}/time/${entryId}`,
+
+    timeAction: (cid, projectId, entryId, action) =>
+      `/api/companies/${cid}/projects/${projectId}/time/${entryId}/${action}`,
+
+    expensesList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/expenses`,
+
+    expensesCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/expenses`,
+
+    expenseApprove: (cid, projectId, expenseId) =>
+      `/api/companies/${cid}/projects/${projectId}/expenses/${expenseId}/approve`,
+
+    commitmentsList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/commitments`,
+
+    changesList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/changes`,
+
+    changesCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/changes`,
+
+    changeAction: (
+      cid,
+      projectId,
+      changeId,
+      action
+    ) =>
+      `/api/companies/${cid}/projects/${projectId}/changes/${changeId}/${action}`,
+
+    risksList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/risks`,
+
+    risksCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/risks`,
+
+    riskUpdate: (cid, projectId, riskId) =>
+      `/api/companies/${cid}/projects/${projectId}/risks/${riskId}`,
+
+    issuesList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/issues`,
+
+    issuesCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/issues`,
+
+    issueUpdate: (cid, projectId, issueId) =>
+      `/api/companies/${cid}/projects/${projectId}/issues/${issueId}`,
+
+    documentsList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/documents`,
+
+    documentsCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/documents`,
+
+    activityList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/activity`,
+
+    performance: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/performance`,
+
+    forecastsList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/forecasts`,
+
+    forecastsCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/forecasts`,
+
+    capitalPosition: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/capital-position`,
+
+    capitalisationsList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/capitalisations`,
+
+    capitalisationsCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/capitalisations`,
+
+    capitalisationAction: (cid, projectId, capitalisationId, action) =>
+      `/api/companies/${cid}/projects/${projectId}/capitalisations/${capitalisationId}/${action}`,
+
+    internalSummary: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/internal-summary`,
+
+    assetLinks: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/assets`,
+
+    assetLinkCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/assets`,
+
+    capitalPosition: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/capital-position`,
+
+    assetCreate: (cid) =>
+      `/api/companies/${cid}/assets`,
+
+    assetOne: (cid, assetId) =>
+      `/api/companies/${cid}/assets/${assetId}`,
+
+    borrowingOptions: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/borrowing-options`,
+
+    borrowingLinks: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/borrowing-links`,
+
+    borrowingLinkCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/borrowing-links`,
+
+    borrowingLinkStop: (cid, projectId, linkId) =>
+      `/api/companies/${cid}/projects/${projectId}/borrowing-links/${linkId}/stop`,
+
+    closeoutAssessment: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/closeout-assessment`,
+
+    commissioningComplete: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/commissioning-complete`,
+
+    close: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/close`,
+
+    reopen: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/reopen`,
+
+    assetUpdate: (cid, assetId) =>
+      `/api/companies/${cid}/assets/${assetId}`,
+
+    assetAcquisitionCreate: (cid, assetId) =>
+      `/api/companies/${cid}/assets/${assetId}/acquisitions`,
+
+    assetAcquisitionPost: (cid, acquisitionId) =>
+      `/api/companies/${cid}/asset-acquisitions/${acquisitionId}/post`,
+
     tasksList: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/tasks`,
 
@@ -4655,6 +4813,9 @@ const ENDPOINTS = {
 
     inventoryItemsLite: (cid) =>
       `/api/companies/${cid}/inventory/items-lite`,
+  
+    revenue: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/revenue`,
   },
 
   // ✅ ADD THIS as a sibling object
@@ -96457,6 +96618,125 @@ async function renderContractPreview(c = {}) {
     toggleRevenueProgressDriverFields
   }
 
+  async function openRevenueProjectHandoff() {
+    const ctx =
+      window._PENDING_REVENUE_PROJECT_CTX;
+
+    if (!ctx?.project_id) return;
+
+    window._PENDING_REVENUE_PROJECT_CTX =
+      null;
+
+    const projectId =
+      Number(ctx.project_id);
+
+    const customerId =
+      Number(ctx.customer_id || 0)
+      || null;
+
+    const contractId =
+      Number(ctx.contract_id || 0)
+      || null;
+
+    if (customerId && $("revCustomerId")) {
+      $("revCustomerId").value =
+        String(customerId);
+    }
+
+    await populateRevenueProjectDropdown(
+      customerId
+    );
+
+    if ($("revProjectId")) {
+      $("revProjectId").value =
+        String(projectId);
+    }
+
+    if (contractId) {
+      let contract =
+        (state.contracts || []).find(
+          x =>
+            Number(x.id) === contractId
+        );
+
+      if (!contract) {
+        const out = await apiFetch(
+          ENDPOINTS.revenue.contract(
+            state.cid,
+            contractId
+          ),
+          {
+            method: "GET",
+          }
+        );
+
+        contract =
+          out?.data ||
+          out ||
+          null;
+      }
+
+      if (!contract) return;
+
+      state.selectedContract = contract;
+
+      hydrateContractForm(contract);
+      renderContractPreview(contract);
+      renderContractKpis(contract);
+
+      setContractViewMode("preview");
+
+      await loadObligations(contract.id);
+      await loadBillingOverview(contract.id);
+      await loadCashOverview(contract.id);
+
+      return;
+    }
+
+    state.selectedContract = null;
+    state.selectedObligation = null;
+
+    hydrateContractForm({
+      customer_id: customerId,
+      project_id: projectId,
+
+      contract_title:
+        ctx.project_name ||
+        ctx.project_code ||
+        "",
+
+      transaction_price:
+        Number(
+          ctx.contract_value || 0
+        ),
+
+      billing_method:
+        ctx.billing_method ||
+        "milestone",
+
+      start_date:
+        ctx.start_date ||
+        null,
+
+      end_date:
+        ctx.end_date ||
+        null,
+
+      status: "draft",
+    });
+
+    setContractViewMode("form");
+
+    $("revSaveContract")
+      ?.classList.remove("hidden");
+
+    $("revUpdateContract")
+      ?.classList.add("hidden");
+
+    $("revContractNumber")
+      ?.focus();
+  }
+
   let bound = false;
 
   window.bindRevenueScreen = async function bindRevenueScreen(name = "revenue") {
@@ -96502,6 +96782,7 @@ async function renderContractPreview(c = {}) {
     await populateRevenueProjectDropdown?.();
     await loadRevenueObligationCatalog?.();   // <-- add this
     bindRevenueObligationCatalogPicker?.();   // <-- add this
+    await openRevenueProjectHandoff?.();
     await loadRuns();
     await openRevenueFromApprovalHandoff();
     await loadRevenueCashBankAccounts();
@@ -96760,6 +97041,49 @@ async function renderContractPreview(c = {}) {
 
     setMsg("Revenue contract approval review loaded.");
   };
+
+  window.openRevenueForProject =
+    async function openRevenueForProject(
+      project,
+      contractId = null
+    ) {
+      if (!project?.id) return;
+
+      window._PENDING_REVENUE_PROJECT_CTX = {
+        project_id: Number(project.id),
+        customer_id:
+          Number(project.customer_id || 0)
+          || null,
+
+        contract_id:
+          Number(contractId || 0)
+          || null,
+
+        project_code:
+          project.project_code || "",
+
+        project_name:
+          project.project_name || "",
+
+        contract_value:
+          Number(
+            project.contract_value || 0
+          ),
+
+        billing_method:
+          project.billing_method ||
+          "milestone",
+
+        start_date:
+          project.start_date || null,
+
+        end_date:
+          project.expected_end_date ||
+          null,
+      };
+
+      await switchScreen("revenue");
+    };
 })();
 
 async function waitForInvoiceReady(timeoutMs = 4000) {
@@ -123799,12 +124123,396 @@ async function loadProjectDetail(projectId) {
 
 window.loadProjectDetail = loadProjectDetail;
 
+function renderProjectActivityMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No activity recorded yet.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="space-y-2">
+      ${items.slice(0, 20).map(x => `
+        <div class="border-b pb-2">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <span class="font-medium">
+                ${esc(x.action || "")}
+              </span>
+
+              <span class="text-slate-500">
+                • ${esc(x.entity_type || "")}
+              </span>
+            </div>
+
+            <div class="text-[10px] text-slate-400">
+              ${esc(String(x.created_at || ""))}
+            </div>
+          </div>
+
+          ${x.description ? `
+            <div class="text-slate-500 mt-1">
+              ${esc(x.description)}
+            </div>
+          ` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderProjectRevenueContractsMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No Revenue contract linked.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">
+              Contract
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Status
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Value
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Recognised
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Billed
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Action
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+
+              <td class="px-2 py-1">
+                <div class="font-medium">
+                  ${esc(
+                    x.contract_number ||
+                    ""
+                  )}
+                </div>
+
+                <div class="text-slate-500">
+                  ${esc(
+                    x.contract_title ||
+                    ""
+                  )}
+                </div>
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.transaction_price || 0
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.recognized_revenue_to_date
+                  || 0
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.billed_to_date || 0
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                <button
+                  class="underline"
+                  data-project-revenue-open=
+                    "${esc(String(x.id))}">
+                  Open
+                </button>
+              </td>
+
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectRevenueObligationsMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No performance obligations.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">
+              Obligation
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Project Task
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Method
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Progress
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Revenue
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+
+              <td class="px-2 py-1">
+                ${esc(
+                  x.obligation_name ||
+                  x.obligation_code ||
+                  ""
+                )}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(
+                  x.project_task_name ||
+                  "—"
+                )}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(
+                  x.progress_method ||
+                  x.recognition_timing ||
+                  ""
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${Number(
+                  x.progress_percent || 0
+                ).toFixed(0)}%
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.revenue_to_date || 0
+                )}
+              </td>
+
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadProjectPerformance(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return {};
+
+  const out = await apiFetch(
+    ENDPOINTS.projects.performance(cid, projectId)
+  );
+
+  return out?.data || out || {};
+}
+
+function renderProjectPerformance(perf = {}) {
+  return `
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Actual Cost</div>
+        <div class="font-semibold">${fmtMoney(perf.actual_cost || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">ETC</div>
+        <div class="font-semibold">${fmtMoney(perf.estimate_to_complete || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">EAC</div>
+        <div class="font-semibold">${fmtMoney(perf.estimate_at_completion || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Budget Variance</div>
+        <div class="font-semibold">${fmtMoney(perf.budget_variance || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Forecast Margin</div>
+        <div class="font-semibold">${fmtMoney(perf.forecast_margin || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Margin %</div>
+        <div class="font-semibold">
+          ${Number(perf.forecast_margin_percent || 0).toFixed(1)}%
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+function renderProjectForecastsMini(items = []) {
+  if (!items.length) {
+    return `<div class="text-slate-500">No forecast snapshots yet.</div>`;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Date</th>
+            <th class="text-right px-2 py-1">Progress</th>
+            <th class="text-right px-2 py-1">EAC</th>
+            <th class="text-right px-2 py-1">Margin</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(toDateInputValue?.(x.forecast_date) || x.forecast_date || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${Number(x.progress_percent || 0).toFixed(0)}%
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.estimate_at_completion || 0)}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.forecast_margin || 0)}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectCapitalPosition(pos = {}) {
+  return `
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Materials</div>
+        <div class="font-semibold">${fmtMoney(pos.material_cost || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Labour</div>
+        <div class="font-semibold">${fmtMoney(pos.capitalizable_labour || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Expenses</div>
+        <div class="font-semibold">${fmtMoney(pos.capitalizable_expenses || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Borrowing Costs</div>
+        <div class="font-semibold">${fmtMoney(pos.capitalized_borrowing_costs || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Total CIP</div>
+        <div class="font-semibold">${fmtMoney(pos.cip_total || 0)}</div>
+      </div>
+
+    </div>
+  `;
+}
+
 function renderProjectDetail(p) {
   const mount = document.getElementById("projectDetailMount");
   if (!mount) return;
+  const team =
+    p.team || [];
+
+  const dependencies =
+    p.task_dependencies || [];
 
   const tasks = p.tasks || [];
   const budget = p.budget_lines || [];
+  const timeEntries = p.time_entries || [];
+  const expenses = p.expenses || [];
+  const commitments = p.commitments || [];
+  const costSummary = p.cost_summary || {};
+  const changes = p.changes || [];
+  const risks = p.risks || [];
+  const issues = p.issues || [];
+  const documents = p.documents || [];
+  const activity = p.activity || [];
+  const revenueContracts =
+    p.revenue_contracts || [];
+
+  const revenueObligations =
+    p.revenue_obligations || [];
+
+  const revenueSummary =
+    p.revenue_summary || {};
+  const forecasts = p.forecasts || [];
+  const capitalisations = p.capitalisations || [];
+  const assetLinks = p.asset_links || [];
+  const borrowingLinks = p.borrowing_links || [];
+  const closeout = p.closeout || {};
+  const projectClosed = p.is_locked || closeout.status === "closed";
   const projectType = String(p.project_type || "customer_project").replaceAll("_", " ");
   const accountingMode = String(p.accounting_mode || "contract").replaceAll("_", " ");
   const progress = Number(p.progress_percent || 0);
@@ -123848,7 +124556,7 @@ function renderProjectDetail(p) {
             + Budget Line
           </button>
 
-          ${p.inventory_enabled !== false ? `
+          ${!projectClosed && p.inventory_enabled !== false ? `
             <button class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded"
                     data-project-issue="${esc(String(p.id))}">
               Issue Materials
@@ -123981,8 +124689,557 @@ function renderProjectDetail(p) {
         </div>
 
       </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+
+      <div class="border rounded p-2">
+        <div class="flex items-center justify-between mb-2">
+          <div class="font-semibold">Project Team</div>
+
+          <button
+            class="px-2 py-1 text-[11px] border rounded"
+            data-project-team-new="${esc(String(p.id))}">
+            + Team Member
+          </button>
+        </div>
+
+        ${renderProjectTeamMini(team)}
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="flex items-center justify-between mb-2">
+          <div class="font-semibold">Dependencies</div>
+
+          <button
+            class="px-2 py-1 text-[11px] border rounded"
+            data-project-dependency-new="${esc(String(p.id))}">
+            + Dependency
+          </button>
+        </div>
+
+        ${renderProjectDependenciesMini(dependencies)}
+      </div>
+
+    </div>
+
+    ${p.allow_time_entries !== false ? `
+      <div class="border rounded p-2 mt-3">
+
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <div class="font-semibold">Time & Labour</div>
+            <div class="text-slate-500">
+              ${Number(p?.totals?.labour_hours || 0).toFixed(2)} hrs
+              • ${fmtMoney(p?.totals?.labour_cost || 0)} cost
+              • ${fmtMoney(p?.totals?.billable_time_value || 0)} billable
+            </div>
+          </div>
+
+          <button
+            class="px-2 py-1 text-[11px] border rounded"
+            data-project-time-new="${esc(String(p.id))}">
+            + Time Entry
+          </button>
+        </div>
+
+        ${renderProjectTimeMini(timeEntries)}
+      </div>
+    ` : ""}
+
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3">
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Materials</div>
+          <div class="font-semibold">
+            ${fmtMoney(costSummary.material_cost || 0)}
+          </div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Labour</div>
+          <div class="font-semibold">
+            ${fmtMoney(costSummary.labour_cost || 0)}
+          </div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Expenses</div>
+          <div class="font-semibold">
+            ${fmtMoney(costSummary.expense_cost || 0)}
+          </div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Actual Cost</div>
+          <div class="font-semibold">
+            ${fmtMoney(costSummary.actual_cost || 0)}
+          </div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Committed</div>
+          <div class="font-semibold">
+            ${fmtMoney(costSummary.committed_cost || 0)}
+          </div>
+        </div>
+
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+
+        ${p.allow_expenses !== false ? `
+          <div class="border rounded p-2">
+
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-semibold">Project Expenses</div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-expense-new="${esc(String(p.id))}">
+                + Expense
+              </button>
+            </div>
+
+            ${renderProjectExpensesMini(expenses)}
+          </div>
+        ` : ""}
+
+        <div class="border rounded p-2">
+
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-semibold">Commitments</div>
+
+            <div class="text-slate-500">
+              ${fmtMoney(costSummary.committed_cost || 0)}
+            </div>
+          </div>
+
+          ${renderProjectCommitmentsMini(commitments)}
+        </div>
+
+      </div>
+
+      <div class="border rounded p-2 mt-3">
+
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <div class="font-semibold">Change Control</div>
+            <div class="text-slate-500">
+              ${changes.length} change${changes.length === 1 ? "" : "s"}
+              • Pending ${fmtMoney(p?.totals?.pending_change_value || 0)}
+            </div>
+          </div>
+
+          <button
+            class="px-2 py-1 text-[11px] border rounded"
+            data-project-change-new="${esc(String(p.id))}">
+            + Change
+          </button>
+        </div>
+
+        ${renderProjectChangesMini(changes)}
+      </div>
+
+      ${p.revenue_enabled !== false &&
+      p.accounting_mode === "contract" ? `
+
+        <div class="border rounded p-2 mt-3">
+
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <div class="font-semibold">
+                Billing & Revenue
+              </div>
+
+              <div class="text-slate-500">
+                ${revenueContracts.length}
+                contract${revenueContracts.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            <div class="flex gap-2">
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-revenue-desk="${esc(String(p.id))}">
+                Revenue Desk
+              </button>
+
+              ${p.customer_id ? `
+                <button
+                  class="px-2 py-1 text-[11px] bg-[var(--fs-navy)] text-white rounded"
+                  data-project-revenue-new="${esc(String(p.id))}">
+                  + Revenue Contract
+                </button>
+              ` : ""}
+
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">
+                Contract Value
+              </div>
+
+              <div class="font-semibold">
+                ${fmtMoney(
+                  revenueSummary.transaction_price
+                  || 0
+                )}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">
+                Recognised
+              </div>
+
+              <div class="font-semibold">
+                ${fmtMoney(
+                  revenueSummary.recognized_revenue
+                  || 0
+                )}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">
+                Billed
+              </div>
+
+              <div class="font-semibold">
+                ${fmtMoney(
+                  revenueSummary.billed_to_date
+                  || 0
+                )}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">
+                Collected
+              </div>
+
+              <div class="font-semibold">
+                ${fmtMoney(
+                  revenueSummary.cash_collected
+                  || 0
+                )}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">
+                Contract Asset
+              </div>
+
+              <div class="font-semibold">
+                ${fmtMoney(
+                  revenueSummary.contract_asset
+                  || 0
+                )}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">
+                Contract Liability
+              </div>
+
+              <div class="font-semibold">
+                ${fmtMoney(
+                  revenueSummary.contract_liability
+                  || 0
+                )}
+              </div>
+            </div>
+
+          </div>
+
+          ${renderProjectRevenueContractsMini(
+            revenueContracts
+          )}
+
+          ${revenueObligations.length ? `
+            <div class="mt-3">
+              <div class="font-semibold mb-2">
+                Performance Obligations
+              </div>
+
+              ${renderProjectRevenueObligationsMini(
+                revenueObligations
+              )}
+            </div>
+          ` : ""}
+
+        </div>
+
+      ` : ""}
+
+      <div class="border rounded p-2 mt-3">
+
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <div class="font-semibold">Forecast & Performance</div>
+            <div class="text-slate-500">Budget vs actual vs forecast</div>
+          </div>
+
+          <button
+            class="px-2 py-1 text-[11px] border rounded"
+            data-project-forecast-save="${esc(String(p.id))}">
+            Save Forecast
+          </button>
+        </div>
+
+        <div id="projectPerformanceMount-${esc(String(p.id))}">
+          <div class="text-slate-500">Loading performance...</div>
+        </div>
+
+        <div class="mt-3">
+          <div class="font-semibold mb-2">Forecast History</div>
+          ${renderProjectForecastsMini(forecasts)}
+        </div>
+
+        <div class="border-t mt-3 pt-3">
+
+          <div class="flex items-center
+                      justify-between mb-2">
+
+            <div>
+              <div class="font-semibold">
+                IAS 23 Borrowing Costs
+              </div>
+
+              <div class="text-slate-500">
+                Borrowings linked to qualifying CIP assets
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px]
+                    border rounded"
+              data-project-borrowing-new="${esc(String(p.id))}">
+              + Link Borrowing
+            </button>
+
+          </div>
+
+          ${renderProjectBorrowingsMini(
+            borrowingLinks
+          )}
+
+        </div>
+      </div>
+
+      ${p.accounting_mode === "capital" ? `
+        <div class="border rounded p-2 mt-3">
+
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">Capital Project</div>
+              <div class="text-slate-500">
+                CIP accumulation and asset capitalisation
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-project-capitalise="${esc(String(p.id))}">
+              + Capitalise
+            </button>
+          </div>
+
+          ${renderProjectCapitalisationsMini(capitalisations)}
+
+        </div>
+      ` : ""}
+
+      ${p.accounting_mode === "capital" ? `
+        <div class="border rounded p-2 mt-3">
+
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">Capital Project / CIP</div>
+              <div class="text-slate-500">
+                Assets under construction and capitalisable project costs
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-project-cip-new="${esc(String(p.id))}">
+              + CIP Asset
+            </button>
+          </div>
+
+          <div id="projectCapitalPosition-${esc(String(p.id))}" class="mb-3">
+            <div class="text-slate-500">Loading CIP position...</div>
+          </div>
+
+          ${renderProjectAssetsMini(assetLinks)}
+
+        </div>
+      ` : ""}
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+
+        <div class="border rounded p-2">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">Risks</div>
+              <div class="text-slate-500">
+                ${p?.totals?.open_risk_count || 0} open
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-project-risk-new="${esc(String(p.id))}">
+              + Risk
+            </button>
+          </div>
+
+          ${renderProjectRisksMini(risks)}
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">Issues</div>
+              <div class="text-slate-500">
+                ${p?.totals?.open_issue_count || 0} open
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-project-issue-register-new="${esc(String(p.id))}">
+              + Issue
+            </button>
+          </div>
+
+          ${renderProjectIssuesMini(issues)}
+        </div>
+
+      </div>
+
+      <div class="border rounded p-2 mt-3">
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <div class="font-semibold">Project Documents</div>
+            <div class="text-slate-500">
+              ${documents.length} document${documents.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          <button
+            class="px-2 py-1 text-[11px] border rounded"
+            data-project-document-new="${esc(String(p.id))}">
+            + Document
+          </button>
+        </div>
+
+        ${renderProjectDocumentsMini(documents)}
+      </div>
+
+      <div class="border rounded p-2 mt-3">
+
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="font-semibold">Project Closeout</div>
+
+            <div class="text-slate-500">
+              ${projectClosed
+                ? `Closed ${esc(
+                    toDateInputValue?.(closeout.closeout_date) ||
+                    closeout.closeout_date ||
+                    ""
+                  )}`
+                : "Project remains open"
+              }
+            </div>
+          </div>
+
+          <div class="flex gap-2">
+
+            ${p.accounting_mode === "capital" &&
+              !closeout.commissioning_journal_id &&
+              !projectClosed ? `
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-commission="${esc(String(p.id))}">
+                Commission Asset
+              </button>
+            ` : ""}
+
+            ${!projectClosed ? `
+              <button
+                class="px-2 py-1 text-[11px] bg-[var(--fs-navy)] text-white rounded"
+                data-project-close="${esc(String(p.id))}">
+                Close Project
+              </button>
+            ` : `
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-reopen="${esc(String(p.id))}">
+                Reopen
+              </button>
+            `}
+
+          </div>
+        </div>
+
+      </div>
+
+      <div class="border rounded p-2 mt-3">
+
+        <div class="flex items-center justify-between mb-2">
+          <div class="font-semibold">Project Activity</div>
+
+          <div class="text-slate-500">
+            Latest ${Math.min(activity.length, 20)}
+          </div>
+        </div>
+
+        ${renderProjectActivityMini(activity)}
+      </div>
     </div>
   `;
+
+  if (p.accounting_mode === "capital") {
+    loadProjectCapitalPosition(p.id)
+      .then(pos => {
+        const el = document.getElementById(
+          `projectCapitalPosition-${p.id}`
+        );
+
+        if (el) {
+          el.innerHTML = renderProjectCapitalPosition(pos);
+        }
+      })
+      .catch(err => {
+        console.error("[Projects] capital position failed", err);
+      });
+  }
+
+  loadProjectPerformance(p.id)
+    .then(perf => {
+      const el = document.getElementById(
+        `projectPerformanceMount-${p.id}`
+      );
+
+      if (el) {
+        el.innerHTML = renderProjectPerformance(perf);
+      }
+    })
+    .catch(err => {
+      console.error(
+        "[Projects] performance load failed",
+        err
+      );
+    });
 
   mount.querySelector("[data-project-task-new]")?.addEventListener("click", () => {
     openProjectTaskModal?.(p.id);
@@ -124000,6 +125257,16 @@ function renderProjectDetail(p) {
     openProjectCreateModal?.(p);
   });
 
+  bindProjectPlanningModalsOnce?.();
+
+  mount.querySelector("[data-project-team-new]")?.addEventListener("click", () => {
+    openProjectTeamModal?.(p.id);
+  });
+
+  mount.querySelector("[data-project-dependency-new]")?.addEventListener("click", () => {
+    openProjectDependencyModal?.(p.id, tasks);
+  });
+
   mount.querySelectorAll("[data-task-edit]").forEach(btn => {
     btn.addEventListener("click", e => {
       e.stopPropagation();
@@ -124008,6 +125275,19 @@ function renderProjectDetail(p) {
       const task = (p.tasks || []).find(x => Number(x.id) === id);
 
       if (task) openProjectTaskModal(p.id, task);
+    });
+  });
+
+  mount.querySelectorAll("[data-task-assign]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+
+      const id = Number(btn.dataset.taskAssign);
+      const task = tasks.find(x => Number(x.id) === id);
+
+      if (task) {
+        openProjectAssignModal?.(p.id, task);
+      }
     });
   });
 
@@ -124021,45 +125301,599 @@ function renderProjectDetail(p) {
       if (line) openProjectBudgetModal(p.id, line);
     });
   });
+
+  mount.querySelectorAll("[data-team-remove]").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.stopPropagation();
+
+      const memberId = Number(btn.dataset.teamRemove);
+      if (!memberId) return;
+
+      const cid =
+        getActiveCompanyId?.() ||
+        CURRENT_COMPANY_ID;
+
+      if (!confirm("Remove this project team member?")) return;
+
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.teamDelete(
+            cid,
+            p.id,
+            memberId
+          ),
+          { method: "DELETE" }
+        );
+
+        await loadProjectDetail(p.id);
+
+      } catch (err) {
+        alert(
+          err?.message ||
+          "Failed to remove team member."
+        );
+      }
+    });
+  });
+
+  mount.querySelector("[data-project-time-new]")
+    ?.addEventListener("click", () => {
+      openProjectTimeModal?.(p.id);
+    });
+
+  mount.querySelectorAll("[data-time-edit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.timeEdit);
+
+      const entry = timeEntries.find(
+        x => Number(x.id) === id
+      );
+
+      if (entry) {
+        openProjectTimeModal?.(
+          p.id,
+          entry
+        );
+      }
+    });
+  });
+
+  mount.querySelectorAll("[data-time-submit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      runProjectTimeAction(
+        p.id,
+        Number(btn.dataset.timeSubmit),
+        "submit"
+      );
+    });
+  });
+
+  mount.querySelectorAll("[data-time-approve]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      runProjectTimeAction(
+        p.id,
+        Number(btn.dataset.timeApprove),
+        "approve"
+      );
+    });
+  });
+
+  mount.querySelectorAll("[data-time-reject]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const reason = prompt(
+        "Reason for rejection:"
+      );
+
+      if (reason === null) return;
+
+      runProjectTimeAction(
+        p.id,
+        Number(btn.dataset.timeReject),
+        "reject",
+        reason
+      );
+    });
+  });
+
+  mount.querySelector("[data-project-expense-new]")
+    ?.addEventListener("click", () => {
+      openProjectExpenseModal?.(p.id);
+    });
+
+  mount.querySelectorAll("[data-expense-approve]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const cid =
+        getActiveCompanyId?.() ||
+        CURRENT_COMPANY_ID;
+
+      const expenseId = Number(
+        btn.dataset.expenseApprove
+      );
+
+      if (!expenseId) return;
+
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.expenseApprove(
+            cid,
+            p.id,
+            expenseId
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify({}),
+          }
+        );
+
+        await loadProjectDetail(p.id);
+
+      } catch (err) {
+        alert(
+          err?.message ||
+          "Failed to approve expense."
+        );
+      }
+    });
+  });
+
+  mount.querySelector("[data-project-change-new]")
+    ?.addEventListener("click", () => {
+      openProjectChangeModal?.(p.id);
+    });
+
+  mount.querySelectorAll("[data-change-submit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      runProjectChangeAction(
+        p.id,
+        Number(btn.dataset.changeSubmit),
+        "submit"
+      );
+    });
+  });
+
+  mount.querySelectorAll("[data-change-approve]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      runProjectChangeAction(
+        p.id,
+        Number(btn.dataset.changeApprove),
+        "approve"
+      );
+    });
+  });
+
+  mount.querySelectorAll("[data-change-reject]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const reason = prompt(
+        "Reason for rejection:"
+      );
+
+      if (reason === null) return;
+
+      runProjectChangeAction(
+        p.id,
+        Number(btn.dataset.changeReject),
+        "reject",
+        reason
+      );
+    });
+  });
+
+  mount.querySelectorAll("[data-change-apply]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (!confirm(
+        "Apply this approved change to the project?"
+      )) {
+        return;
+      }
+
+      runProjectChangeAction(
+        p.id,
+        Number(btn.dataset.changeApply),
+        "apply"
+      );
+    });
+  });
+
+  bindProjectControlModalsOnce?.();
+
+  mount.querySelector("[data-project-risk-new]")
+    ?.addEventListener("click", () => {
+      openProjectRiskModal?.(p.id);
+    });
+
+  mount.querySelector("[data-project-issue-register-new]")
+    ?.addEventListener("click", () => {
+      openProjectIssueRegisterModal?.(p.id);
+    });
+
+  mount.querySelector("[data-project-document-new]")
+    ?.addEventListener("click", () => {
+      openProjectDocumentModal?.(p.id);
+    });
+
+  mount.querySelectorAll("[data-risk-edit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.riskEdit);
+
+      const risk = risks.find(
+        x => Number(x.id) === id
+      );
+
+      if (risk) {
+        openProjectRiskModal?.(
+          p.id,
+          risk
+        );
+      }
+    });
+  });
+
+  mount.querySelectorAll("[data-issue-edit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.issueEdit);
+
+      const issue = issues.find(
+        x => Number(x.id) === id
+      );
+
+      if (issue) {
+        openProjectIssueRegisterModal?.(
+          p.id,
+          issue
+        );
+      }
+    });
+  });
+
+  mount.querySelector("[data-project-revenue-new]")
+    ?.addEventListener("click", async () => {
+      if (!p.customer_id) {
+        alert(
+          "A customer is required before creating a revenue contract."
+        );
+        return;
+      }
+
+      await window.openRevenueForProject?.(
+        p
+      );
+    });
+
+  mount.querySelector("[data-project-revenue-desk]")
+    ?.addEventListener("click", async () => {
+      const first =
+        revenueContracts[0] ||
+        null;
+
+      await window.openRevenueForProject?.(
+        p,
+        first?.id || null
+      );
+    });
+
+  mount.querySelectorAll(
+    "[data-project-revenue-open]"
+  ).forEach(btn => {
+    btn.addEventListener(
+      "click",
+      async () => {
+        const contractId = Number(
+          btn.dataset.projectRevenueOpen
+        );
+
+        if (!contractId) return;
+
+        await window.openRevenueForProject?.(
+          p,
+          contractId
+        );
+      }
+    );
+  });
+
+  mount.querySelector("[data-project-forecast-save]")?.addEventListener("click", async () => {
+    const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+    if (!cid) return;
+
+    try {
+      await apiFetch(
+        ENDPOINTS.projects.forecastsCreate(cid, p.id),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            forecast_date: new Date().toISOString().slice(0, 10),
+          }),
+        }
+      );
+
+      await loadProjectDetail(p.id);
+    } catch (err) {
+      alert(
+        err?.message ||
+        "Failed to save forecast."
+      );
+    }
+  });
+
+  mount.querySelector("[data-project-capitalise]")
+    ?.addEventListener("click", () => {
+      openProjectCapitaliseModal?.(p);
+    });
+
+  mount.querySelectorAll("[data-capitalisation-submit]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+      const id = Number(btn.dataset.capitalisationSubmit);
+
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.capitalisationAction(cid, p.id, id, "submit"),
+          { method: "POST", body: "{}" }
+        );
+
+        await loadProjectDetail(p.id);
+      } catch (err) {
+        alert(err?.message || "Failed to submit capitalisation.");
+      }
+    });
+  });
+
+  mount.querySelectorAll("[data-capitalisation-approve]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+      const id = Number(btn.dataset.capitalisationApprove);
+
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.capitalisationAction(cid, p.id, id, "approve"),
+          { method: "POST", body: "{}" }
+        );
+
+        await loadProjectDetail(p.id);
+      } catch (err) {
+        alert(err?.message || "Failed to approve capitalisation.");
+      }
+    });
+  });
+
+  mount.querySelector("[data-project-cip-new]")
+    ?.addEventListener("click", () => {
+      openProjectCipAssetModal?.(p);
+    });
+
+  mount.querySelectorAll("[data-project-asset-open]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const assetId = Number(btn.dataset.projectAssetOpen);
+      if (!assetId) return;
+
+      await window.openFixedAssetsDrawer?.({
+        mode: "acquire",
+        assetId,
+      });
+    });
+  });
+
+  mount.querySelector(
+    "[data-project-borrowing-new]"
+  )?.addEventListener("click", () => {
+    openProjectBorrowingModal?.(p);
+  });
+
+  mount.querySelectorAll(
+    "[data-project-borrow-stop]"
+  ).forEach(btn => {
+
+    btn.addEventListener(
+      "click",
+      async () => {
+
+        const cid =
+          getActiveCompanyId?.() ||
+          CURRENT_COMPANY_ID;
+
+        const linkId = Number(
+          btn.dataset.projectBorrowStop
+        );
+
+        if (!cid || !linkId) return;
+
+        const endDate = prompt(
+          "Capitalisation end date (YYYY-MM-DD):",
+          new Date().toISOString().slice(0, 10)
+        );
+
+        if (!endDate) return;
+
+        try {
+          await apiFetch(
+            ENDPOINTS.projects.borrowingLinkStop(
+              cid,
+              p.id,
+              linkId
+            ),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                end_date: endDate,
+              }),
+            }
+          );
+
+          await loadProjectDetail(
+            p.id
+          );
+
+        } catch (err) {
+          alert(
+            err?.message ||
+            "Failed to stop capitalisation."
+          );
+        }
+      }
+    );
+  });
+
+  mount.querySelector("[data-project-commission]")
+    ?.addEventListener("click", () => {
+      openProjectCommissionModal?.(p);
+    });
+
+  mount.querySelector("[data-project-close]")
+    ?.addEventListener("click", () => {
+      openProjectCloseoutModal?.(p);
+    });
+
+  mount.querySelector("[data-project-reopen]")
+    ?.addEventListener("click", async () => {
+      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+      const reason = prompt("Reason for reopening project:");
+
+      if (!reason?.trim()) return;
+
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.reopen(cid, p.id),
+          {
+            method: "POST",
+            body: JSON.stringify({
+              reason: reason.trim(),
+            }),
+          }
+        );
+
+        await loadProjectDetail(p.id);
+      } catch (err) {
+        alert(err?.message || "Failed to reopen project."
+
+      );
+    }
+  });
 }
 
 window.renderProjectDetail = renderProjectDetail;
 
 function renderProjectTasksMini(tasks) {
   if (!tasks.length) {
-    return `<div class="text-slate-500">No tasks yet.</div>`;
+    return `<div class="text-slate-500">No project plan yet.</div>`;
   }
 
-  return `
-    <table class="w-full text-xs">
-      <thead class="bg-slate-50 border-b">
-        <tr>
-          <th class="text-left px-2 py-1">Code</th>
-          <th class="text-left px-2 py-1">Task</th>
-          <th class="text-left px-2 py-1">Status</th>
-          <th class="text-right px-2 py-1">Progress</th>
-          <th class="text-right px-2 py-1">Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${tasks.map(t => `
-          <tr class="border-b hover:bg-slate-50">
-            <td class="px-2 py-1">${esc(t.task_code || "")}</td>
-            <td class="px-2 py-1">${esc(t.task_name || "")}</td>
-            <td class="px-2 py-1">${esc(t.status || "")}</td>
-            <td class="px-2 py-1 text-right">${esc(String(t.progress_percent || 0))}%</td>
-            <td class="px-2 py-1 text-right">
+  const byParent = new Map();
+
+  tasks.forEach(t => {
+    const parent = Number(t.parent_task_id || 0);
+
+    if (!byParent.has(parent)) {
+      byParent.set(parent, []);
+    }
+
+    byParent.get(parent).push(t);
+  });
+
+  byParent.forEach(items => {
+    items.sort((a, b) =>
+      Number(a.sequence_no || 0) -
+      Number(b.sequence_no || 0)
+    );
+  });
+
+  const icon = type => ({
+    phase: "▾",
+    milestone: "◆",
+    task: "•",
+  }[type] || "•");
+
+  const rows = [];
+
+  function walk(parentId = 0, depth = 0) {
+    const children = byParent.get(Number(parentId)) || [];
+
+    children.forEach(t => {
+      rows.push(`
+        <tr class="border-b hover:bg-slate-50">
+          <td class="px-2 py-1">
+            ${esc(t.wbs_code || t.task_code || "")}
+          </td>
+
+          <td class="px-2 py-1">
+            <div style="padding-left:${depth * 18}px">
+              ${icon(t.task_type)}
+              <span class="${t.task_type === "phase" ? "font-semibold" : ""}">
+                ${esc(t.task_name || "")}
+              </span>
+            </div>
+          </td>
+
+          <td class="px-2 py-1 capitalize">
+            ${esc(t.task_type || "task")}
+          </td>
+
+          <td class="px-2 py-1">
+            ${esc(t.status || "")}
+          </td>
+
+          <td class="px-2 py-1">
+            ${esc(t.priority || "normal")}
+          </td>
+
+          <td class="px-2 py-1 text-right">
+            ${Number(t.progress_percent || 0).toFixed(0)}%
+          </td>
+
+          <td class="px-2 py-1 text-right">
+            ${esc(String(t.assignment_count || 0))}
+          </td>
+
+          <td class="px-2 py-1 text-right">
+            <div class="flex justify-end gap-1">
+
               <button
-                class="px-2 py-1 border rounded text-[11px]"
-                data-task-edit="${esc(String(t.id))}"
-              >
+                class="px-2 py-1
+                      border rounded text-[11px]"
+                data-task-assign=
+                  "${esc(String(t.id))}">
+                Assign
+              </button>
+
+              <button
+                class="px-2 py-1
+                      border rounded text-[11px]"
+                data-task-edit=
+                  "${esc(String(t.id))}">
                 Edit
               </button>
-            </td>
+
+            </div>
+          </td>
+        </tr>
+      `);
+
+      walk(t.id, depth + 1);
+    });
+  }
+
+  walk();
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">WBS</th>
+            <th class="text-left px-2 py-1">Work Item</th>
+            <th class="text-left px-2 py-1">Type</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-left px-2 py-1">Priority</th>
+            <th class="text-right px-2 py-1">Progress</th>
+            <th class="text-right px-2 py-1">Assigned</th>
+            <th class="text-right px-2 py-1">Action</th>
           </tr>
-        `).join("")}
-      </tbody>
-    </table>
+        </thead>
+
+        <tbody>
+          ${rows.join("")}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
@@ -124103,31 +125937,113 @@ function renderProjectBudgetMini(lines) {
   `;
 }
 
-function openProjectTaskModal(projectId, task = null) {
+async function populateProjectTaskParentDropdown(
+  projectId,
+  selectedId = "",
+  excludeTaskId = ""
+) {
+  const sel = document.getElementById("projectTaskParentId");
+  if (!sel) return;
+
+  const tasks = await getProjectTasks(projectId);
+
+  const allowed = tasks.filter(t =>
+    String(t.id) !== String(excludeTaskId || "")
+  );
+
+  sel.innerHTML = `
+    <option value="">Top level</option>
+    ${allowed.map(t => `
+      <option value="${esc(String(t.id))}"
+        ${String(t.id) === String(selectedId || "") ? "selected" : ""}>
+        ${esc(t.wbs_code || t.task_code || "")}
+        — ${esc(t.task_name || "")}
+      </option>
+    `).join("")}
+  `;
+}
+
+async function openProjectTaskModal(projectId, task = null) {
   bindProjectTaskModalOnce();
   ACTIVE_PROJECT_ID = Number(projectId);
 
   const isEdit = !!task?.id;
 
-  document.getElementById("projectTaskProjectId").value = String(projectId);
-  document.getElementById("projectTaskId").value = isEdit ? String(task.id) : "";
+  document.getElementById("projectTaskProjectId").value =
+    String(projectId);
 
-  document.getElementById("projectTaskCode").value = task?.task_code || "";
-  document.getElementById("projectTaskName").value = task?.task_name || "";
-  document.getElementById("projectTaskStatus").value = task?.status || "open";
-  document.getElementById("projectTaskBudgetValue").value = task?.budget_value || "";
-  document.getElementById("projectTaskStartDate").value = task?.start_date || "";
-  document.getElementById("projectTaskExpectedEndDate").value = task?.expected_end_date || "";
-  document.getElementById("projectTaskNotes").value = task?.notes || "";
+  document.getElementById("projectTaskId").value =
+    isEdit ? String(task.id) : "";
+
+  document.getElementById("projectTaskCode").value =
+    task?.task_code || "";
+
+  document.getElementById("projectTaskName").value =
+    task?.task_name || "";
+
+  document.getElementById("projectTaskType").value =
+    task?.task_type || "task";
+
+  document.getElementById("projectTaskWbsCode").value =
+    task?.wbs_code || "";
+
+  document.getElementById("projectTaskPriority").value =
+    task?.priority || "normal";
+
+  document.getElementById("projectTaskSequence").value =
+    task?.sequence_no || 0;
+
+  document.getElementById("projectTaskStatus").value =
+    task?.status || "open";
+
+  document.getElementById("projectTaskProgress").value =
+    task?.progress_percent || 0;
+
+  document.getElementById("projectTaskBudgetValue").value =
+    task?.budget_value || "";
+
+  document.getElementById("projectTaskStartDate").value =
+    task?.start_date || "";
+
+  document.getElementById("projectTaskExpectedEndDate").value =
+    task?.expected_end_date || "";
+
+  document.getElementById("projectTaskBaselineStart").value =
+    task?.baseline_start_date || task?.start_date || "";
+
+  document.getElementById("projectTaskBaselineEnd").value =
+    task?.baseline_end_date || task?.expected_end_date || "";
+
+  document.getElementById("projectTaskDeliverable").value =
+    task?.deliverable || "";
+
+  document.getElementById("projectTaskNotes").value =
+    task?.notes || "";
+
+  await populateProjectTaskParentDropdown(
+    projectId,
+    task?.parent_task_id || "",
+    task?.id || ""
+  );
 
   const saveBtn = document.getElementById("projectTaskSaveBtn");
-  if (saveBtn) saveBtn.textContent = isEdit ? "Update Task" : "Save Task";
+  if (saveBtn) {
+    saveBtn.textContent =
+      isEdit ? "Update Work Item" : "Save Work Item";
+  }
 
-  const archiveBtn = document.getElementById("projectTaskArchiveBtn");
-  if (archiveBtn) archiveBtn.classList.toggle("hidden", !isEdit);
+  const archiveBtn =
+    document.getElementById("projectTaskArchiveBtn");
+
+  if (archiveBtn) {
+    archiveBtn.classList.toggle("hidden", !isEdit);
+  }
 
   setElText("projectTaskMsg", "");
-  document.getElementById("projectTaskModal")?.classList.remove("hidden");
+
+  document
+    .getElementById("projectTaskModal")
+    ?.classList.remove("hidden");
 }
 
 function bindProjectCreateModalOnce() {
@@ -124319,12 +126235,3622 @@ window.submitProjectCreate = submitProjectCreate;
 
 let ACTIVE_PROJECT_ID = null;
 
+function bindProjectPlanningModalsOnce() {
+  bindProjectTeamModalOnce();
+  bindProjectAssignModalOnce();
+  bindProjectDependencyModalOnce();
+}
+
+function bindProjectTeamModalOnce() {
+  const m =
+    document.getElementById("projectTeamModal");
+
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document
+    .getElementById("projectTeamOverlay")
+    ?.addEventListener(
+      "click",
+      closeProjectTeamModal
+    );
+
+  document
+    .getElementById("projectTeamCloseBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectTeamModal
+    );
+
+  document
+    .getElementById("projectTeamCancelBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectTeamModal
+    );
+
+  document
+    .getElementById("projectTeamSaveBtn")
+    ?.addEventListener(
+      "click",
+      submitProjectTeamMember
+    );
+}
+
+function bindProjectAssignModalOnce() {
+  const m =
+    document.getElementById("projectAssignModal");
+
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document
+    .getElementById("projectAssignOverlay")
+    ?.addEventListener(
+      "click",
+      closeProjectAssignModal
+    );
+
+  document
+    .getElementById("projectAssignCloseBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectAssignModal
+    );
+
+  document
+    .getElementById("projectAssignCancelBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectAssignModal
+    );
+
+  document
+    .getElementById("projectAssignSaveBtn")
+    ?.addEventListener(
+      "click",
+      submitProjectTaskAssignment
+    );
+}
+
+function bindProjectDependencyModalOnce() {
+  const m =
+    document.getElementById(
+      "projectDependencyModal"
+    );
+
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document
+    .getElementById(
+      "projectDependencyOverlay"
+    )
+    ?.addEventListener(
+      "click",
+      closeProjectDependencyModal
+    );
+
+  document
+    .getElementById(
+      "projectDependencyCloseBtn"
+    )
+    ?.addEventListener(
+      "click",
+      closeProjectDependencyModal
+    );
+
+  document
+    .getElementById(
+      "projectDependencyCancelBtn"
+    )
+    ?.addEventListener(
+      "click",
+      closeProjectDependencyModal
+    );
+
+  document
+    .getElementById(
+      "projectDependencySaveBtn"
+    )
+    ?.addEventListener(
+      "click",
+      submitProjectDependency
+    );
+}
+
+function bindProjectExpenseModalOnce() {
+  const m =
+    document.getElementById(
+      "projectExpenseModal"
+    );
+
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("projectExpenseOverlay")
+    ?.addEventListener(
+      "click",
+      closeProjectExpenseModal
+    );
+
+  document.getElementById("projectExpenseCloseBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectExpenseModal
+    );
+
+  document.getElementById("projectExpenseCancelBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectExpenseModal
+    );
+
+  document.getElementById("projectExpenseSaveBtn")
+    ?.addEventListener(
+      "click",
+      submitProjectExpense
+    );
+}
+
+function bindProjectControlModalsOnce() {
+  bindProjectRiskModalOnce();
+  bindProjectIssueRegisterModalOnce();
+  bindProjectDocumentModalOnce();
+}
+
+function bindProjectRiskModalOnce() {
+  const m = document.getElementById("projectRiskModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document.getElementById("projectRiskOverlay")
+    ?.addEventListener("click", closeProjectRiskModal);
+
+  document.getElementById("projectRiskCloseBtn")
+    ?.addEventListener("click", closeProjectRiskModal);
+
+  document.getElementById("projectRiskCancelBtn")
+    ?.addEventListener("click", closeProjectRiskModal);
+
+  document.getElementById("projectRiskSaveBtn")
+    ?.addEventListener("click", submitProjectRisk);
+}
+
+function bindProjectIssueRegisterModalOnce() {
+  const m = document.getElementById("projectIssueRegisterModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document.getElementById("projectIssueRegisterOverlay")
+    ?.addEventListener("click", closeProjectIssueRegisterModal);
+
+  document.getElementById("projectIssueRegisterCloseBtn")
+    ?.addEventListener("click", closeProjectIssueRegisterModal);
+
+  document.getElementById("projectIssueRegisterCancelBtn")
+    ?.addEventListener("click", closeProjectIssueRegisterModal);
+
+  document.getElementById("projectIssueRegisterSaveBtn")
+    ?.addEventListener("click", submitProjectIssueRegister);
+}
+
+function bindProjectDocumentModalOnce() {
+  const m = document.getElementById("projectDocumentModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document.getElementById("projectDocumentOverlay")
+    ?.addEventListener("click", closeProjectDocumentModal);
+
+  document.getElementById("projectDocumentCloseBtn")
+    ?.addEventListener("click", closeProjectDocumentModal);
+
+  document.getElementById("projectDocumentCancelBtn")
+    ?.addEventListener("click", closeProjectDocumentModal);
+
+  document.getElementById("projectDocumentSaveBtn")
+    ?.addEventListener("click", submitProjectDocument);
+}
+
+function bindProjectBorrowingModalOnce() {
+  const m = document.getElementById(
+    "projectBorrowingModal"
+  );
+
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  [
+    "projectBorrowingOverlay",
+    "projectBorrowingCloseBtn",
+    "projectBorrowingCancelBtn",
+  ].forEach(id => {
+    document.getElementById(id)
+      ?.addEventListener(
+        "click",
+        closeProjectBorrowingModal
+      );
+  });
+
+  document.getElementById(
+    "projectBorrowingSaveBtn"
+  )?.addEventListener(
+    "click",
+    submitProjectBorrowingLink
+  );
+}
+
+function bindProjectCommissionModalOnce() {
+  const m = document.getElementById("projectCommissionModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  [
+    "projectCommissionOverlay",
+    "projectCommissionCloseBtn",
+    "projectCommissionCancelBtn",
+  ].forEach(id => {
+    document.getElementById(id)
+      ?.addEventListener("click", closeProjectCommissionModal);
+  });
+
+  document.getElementById("projectCommissionSaveBtn")
+    ?.addEventListener("click", submitProjectCommissioning);
+}
+
+function closeProjectCommissionModal() {
+  document.getElementById("projectCommissionModal")
+    ?.classList.add("hidden");
+}
+
+async function openProjectCommissionModal(p) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !p?.id) return;
+
+  bindProjectCommissionModalOnce();
+
+  const cipAsset = (p.asset_links || []).find(
+    x => x.link_type === "cip"
+  );
+
+  if (!cipAsset) {
+    alert("No CIP asset is linked to this project.");
+    return;
+  }
+
+  const activeBorrowing = (p.borrowing_links || []).some(
+    x => x.status === "active"
+  );
+
+  if (activeBorrowing) {
+    alert("Stop IAS 23 borrowing-cost capitalisation before commissioning.");
+    return;
+  }
+
+  const posOut = await apiFetch(
+    ENDPOINTS.projects.capitalPosition(cid, p.id)
+  );
+
+  const pos = posOut?.data || posOut || {};
+
+  document.getElementById("projectCommissionProjectId").value = p.id;
+  document.getElementById("projectCommissionAssetId").value = cipAsset.asset_id;
+  document.getElementById("projectCommissionDate").value =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("projectCommissionClass").value = "";
+  document.getElementById("projectCommissionClassGroup").value = "";
+  document.getElementById("projectCommissionAssetAccount").value = "";
+  document.getElementById("projectCommissionAccumDep").value = "";
+  document.getElementById("projectCommissionDepExpense").value = "";
+  document.getElementById("projectCommissionMethod").value = "SL";
+  document.getElementById("projectCommissionLife").value = "";
+  document.getElementById("projectCommissionResidual").value = "0";
+  document.getElementById("projectCommissionRbRate").value = "";
+  document.getElementById("projectCommissionUopUnits").value = "";
+
+  setElText(
+    "projectCommissionMsg",
+    `CIP to commission: ${fmtMoney(pos.cip_total || 0)}`
+  );
+
+  window._PROJECT_COMMISSION_POSITION = pos;
+
+  document.getElementById("projectCommissionModal")
+    ?.classList.remove("hidden");
+}
+
+async function submitProjectCommissioning() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectCommissionProjectId")?.value || 0
+  );
+
+  const assetId = Number(
+    document.getElementById("projectCommissionAssetId")?.value || 0
+  );
+
+  const readyDate =
+    document.getElementById("projectCommissionDate")?.value || null;
+
+  const assetClass =
+    document.getElementById("projectCommissionClass")?.value?.trim();
+
+  const classGroup =
+    document.getElementById("projectCommissionClassGroup")?.value?.trim();
+
+  const assetAccount =
+    document.getElementById("projectCommissionAssetAccount")?.value?.trim();
+
+  const accumDep =
+    document.getElementById("projectCommissionAccumDep")?.value?.trim();
+
+  const depExpense =
+    document.getElementById("projectCommissionDepExpense")?.value?.trim();
+
+  const method =
+    document.getElementById("projectCommissionMethod")?.value || "SL";
+
+  const usefulLife = Number(
+    document.getElementById("projectCommissionLife")?.value || 0
+  );
+
+  const residual = Number(
+    document.getElementById("projectCommissionResidual")?.value || 0
+  );
+
+  const rbRate = Number(
+    document.getElementById("projectCommissionRbRate")?.value || 0
+  );
+
+  const uopUnits = Number(
+    document.getElementById("projectCommissionUopUnits")?.value || 0
+  );
+
+  const pos = window._PROJECT_COMMISSION_POSITION || {};
+  const amount = Number(pos.cip_total || 0);
+  const cipAccount = pos.cip_account_code;
+
+  if (!cid || !projectId || !assetId) return;
+
+  if (!readyDate || !assetClass || !classGroup || !assetAccount) {
+    setElText(
+      "projectCommissionMsg",
+      "Date, asset class, class group and asset account are required."
+    );
+    return;
+  }
+
+  if (!cipAccount || amount <= 0) {
+    setElText(
+      "projectCommissionMsg",
+      "No valid CIP balance is available for commissioning."
+    );
+    return;
+  }
+
+  if (method === "SL" && usefulLife <= 0) {
+    setElText(
+      "projectCommissionMsg",
+      "Useful life is required for straight-line depreciation."
+    );
+    return;
+  }
+
+  if (method === "RB" && rbRate <= 0) {
+    setElText(
+      "projectCommissionMsg",
+      "Reducing-balance rate is required."
+    );
+    return;
+  }
+
+  if (method === "UOP" && uopUnits <= 0) {
+    setElText(
+      "projectCommissionMsg",
+      "Total production units are required."
+    );
+    return;
+  }
+
+  setElText(
+    "projectCommissionMsg",
+    "Commissioning asset..."
+  );
+
+  try {
+    const assetPatch = {
+      asset_class: assetClass,
+      asset_class_group: classGroup,
+      asset_account_code: assetAccount,
+      accum_dep_account_code: accumDep || null,
+      dep_expense_account_code: depExpense || null,
+      available_for_use_date: readyDate,
+      ready_for_use_date: readyDate,
+      residual_value: residual,
+      depreciation_method: method,
+      useful_life_months: method === "SL" ? usefulLife : 0,
+      rb_rate_percent: method === "RB" ? rbRate : null,
+      uop_total_units: method === "UOP" ? uopUnits : null,
+      status: "active",
+    };
+
+    await apiFetch(
+      ENDPOINTS.projects.assetUpdate(cid, assetId),
+      {
+        method: "PUT",
+        body: JSON.stringify(assetPatch),
+      }
+    );
+
+    const acqOut = await apiFetch(
+      ENDPOINTS.projects.assetAcquisitionCreate(cid, assetId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          acquisition_date: readyDate,
+          posting_date: readyDate,
+          amount,
+          net_amount: amount,
+          gross_amount: amount,
+          vat_amount: 0,
+          vat_treatment: "no_vat",
+          vat_input_claimable: false,
+          funding_source: "other",
+          credit_account_code: cipAccount,
+          reference: `PROJECT-CAP-${projectId}`,
+          notes: "Capital project commissioning from CIP",
+          status: "draft",
+        }),
+      }
+    );
+
+    const acquisitionId = Number(
+      acqOut?.id ||
+      acqOut?.data?.id ||
+      0
+    );
+
+    if (!acquisitionId) {
+      throw new Error(
+        "Asset acquisition created but no acquisition ID was returned."
+      );
+    }
+
+    const postOut = await apiFetch(
+      ENDPOINTS.projects.assetAcquisitionPost(
+        cid,
+        acquisitionId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      }
+    );
+
+    const journalId = Number(
+      postOut?.posted_journal_id ||
+      postOut?.journal_id ||
+      postOut?.id ||
+      postOut?.data?.posted_journal_id ||
+      postOut?.data?.journal_id ||
+      0
+    );
+
+    if (!journalId) {
+      throw new Error(
+        "Commissioning posted but no journal ID was returned."
+      );
+    }
+
+    await apiFetch(
+      ENDPOINTS.projects.commissioningComplete(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          asset_id: assetId,
+          acquisition_id: acquisitionId,
+          journal_id: journalId,
+        }),
+      }
+    );
+
+    closeProjectCommissionModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectCommissionMsg",
+      err?.message ||
+      "Failed to commission asset."
+    );
+  }
+}
+
+function renderProjectCloseoutAssessment(a = {}) {
+  const blockers = a.blockers || [];
+  const warnings = a.warnings || [];
+
+  return `
+    <div class="border rounded p-3">
+
+      <div class="font-semibold mb-2">
+        Closeout Assessment
+      </div>
+
+      <div class="mb-2">
+        ${a.can_close
+          ? `<span class="font-semibold">✓ Ready to close</span>`
+          : `<span class="font-semibold text-red-600">
+               ${blockers.length} blocker${blockers.length === 1 ? "" : "s"}
+             </span>`
+        }
+      </div>
+
+      ${blockers.length ? `
+        <div class="mb-2">
+          ${blockers.map(x => `
+            <div class="text-red-600">• ${esc(x)}</div>
+          `).join("")}
+        </div>
+      ` : ""}
+
+      ${warnings.length ? `
+        <div>
+          ${warnings.map(x => `
+            <div class="text-amber-700">• ${esc(x)}</div>
+          `).join("")}
+        </div>
+      ` : ""}
+
+    </div>
+  `;
+}
+
+function bindProjectCloseoutModalOnce() {
+  const m = document.getElementById("projectCloseoutModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  [
+    "projectCloseoutOverlay",
+    "projectCloseoutCloseBtn",
+    "projectCloseoutCancelBtn",
+  ].forEach(id => {
+    document.getElementById(id)
+      ?.addEventListener("click", closeProjectCloseoutModal);
+  });
+
+  document.getElementById("projectCloseoutSaveBtn")
+    ?.addEventListener("click", submitProjectCloseout);
+}
+
+async function openProjectCloseoutModal(p) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !p?.id) return;
+
+  bindProjectCloseoutModalOnce();
+
+  document.getElementById("projectCloseoutProjectId").value = p.id;
+  document.getElementById("projectCloseoutDate").value =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("projectCloseoutFinalBilling").checked =
+    p.billing_enabled === false;
+
+  document.getElementById("projectCloseoutNotes").value = "";
+
+  const out = await apiFetch(
+    ENDPOINTS.projects.closeoutAssessment(cid, p.id)
+  );
+
+  const assessment = out?.data || out || {};
+
+  window._PROJECT_CLOSEOUT_ASSESSMENT = assessment;
+
+  document.getElementById("projectCloseoutAssessment").innerHTML =
+    renderProjectCloseoutAssessment(assessment);
+
+  document.getElementById("projectCloseoutSaveBtn").disabled =
+    !assessment.can_close;
+
+  setElText("projectCloseoutMsg", "");
+
+  document.getElementById("projectCloseoutModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectCloseoutModal() {
+  document.getElementById("projectCloseoutModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectCloseout() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectCloseoutProjectId")?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    closeout_date:
+      document.getElementById("projectCloseoutDate")?.value || null,
+
+    final_billing_confirmed:
+      !!document.getElementById("projectCloseoutFinalBilling")?.checked,
+
+    notes:
+      document.getElementById("projectCloseoutNotes")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.closeout_date) {
+    setElText("projectCloseoutMsg", "Closeout date is required.");
+    return;
+  }
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.close(cid, projectId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectCloseoutModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectCloseoutMsg",
+      err?.message || "Failed to close project."
+    );
+  }
+}
+
+async function openProjectBorrowingModal(p) {
+  bindProjectBorrowingModalOnce();
+
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  if (!cid || !p?.id) return;
+
+  const assets = (p.asset_links || []).filter(
+    x =>
+      x.link_type === "cip" &&
+      x.is_qualifying_asset
+  );
+
+  if (!assets.length) {
+    alert(
+      "Create a qualifying CIP asset first."
+    );
+    return;
+  }
+
+  const out = await apiFetch(
+    ENDPOINTS.projects.borrowingOptions(
+      cid,
+      p.id
+    )
+  );
+
+  const loans = out?.items || [];
+
+  const assetSel = document.getElementById(
+    "projectBorrowingAssetId"
+  );
+
+  const loanSel = document.getElementById(
+    "projectBorrowingLoanId"
+  );
+
+  assetSel.innerHTML = assets.map(x => `
+    <option value="${x.asset_id}">
+      ${esc(x.asset_code || "")}
+      — ${esc(x.asset_name || "")}
+    </option>
+  `).join("");
+
+  loanSel.innerHTML =
+    `<option value="">Select loan</option>` +
+    loans.map(x => `
+      <option value="${x.id}">
+        ${esc(x.loan_name || "")}
+        ${x.lender_name
+          ? `— ${esc(x.lender_name)}`
+          : ""}
+      </option>
+    `).join("");
+
+  document.getElementById(
+    "projectBorrowingProjectId"
+  ).value = p.id;
+
+  document.getElementById(
+    "projectBorrowingStartDate"
+  ).value =
+    toDateInputValue?.(p.start_date) ||
+    p.start_date ||
+    "";
+
+  document.getElementById(
+    "projectBorrowingEndDate"
+  ).value = "";
+
+  document.getElementById(
+    "projectBorrowingRatio"
+  ).value = "100";
+
+  document.getElementById(
+    "projectBorrowingNotes"
+  ).value = "";
+
+  setElText(
+    "projectBorrowingMsg",
+    ""
+  );
+
+  document.getElementById(
+    "projectBorrowingModal"
+  )?.classList.remove("hidden");
+}
+
+function closeProjectBorrowingModal() {
+  document.getElementById(
+    "projectBorrowingModal"
+  )?.classList.add("hidden");
+}
+
+async function submitProjectBorrowingLink() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById(
+      "projectBorrowingProjectId"
+    )?.value || 0
+  );
+
+  const loanId = Number(
+    document.getElementById(
+      "projectBorrowingLoanId"
+    )?.value || 0
+  );
+
+  const assetId = Number(
+    document.getElementById(
+      "projectBorrowingAssetId"
+    )?.value || 0
+  );
+
+  const ratioPct = Number(
+    document.getElementById(
+      "projectBorrowingRatio"
+    )?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  if (!loanId || !assetId) {
+    setElText(
+      "projectBorrowingMsg",
+      "Select a CIP asset and loan."
+    );
+    return;
+  }
+
+  if (ratioPct < 0 || ratioPct > 100) {
+    setElText(
+      "projectBorrowingMsg",
+      "Capitalisation must be between 0% and 100%."
+    );
+    return;
+  }
+
+  const payload = {
+    loan_id: loanId,
+    asset_id: assetId,
+
+    capitalization_start_date:
+      document.getElementById(
+        "projectBorrowingStartDate"
+      )?.value || null,
+
+    capitalization_end_date:
+      document.getElementById(
+        "projectBorrowingEndDate"
+      )?.value || null,
+
+    capitalization_ratio:
+      ratioPct / 100,
+
+    notes:
+      document.getElementById(
+        "projectBorrowingNotes"
+      )?.value?.trim() || null,
+  };
+
+  setElText(
+    "projectBorrowingMsg",
+    "Linking borrowing..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.borrowingLinkCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectBorrowingModal();
+
+    await loadProjectDetail(
+      projectId
+    );
+
+  } catch (err) {
+    setElText(
+      "projectBorrowingMsg",
+      err?.message ||
+      "Failed to link borrowing."
+    );
+  }
+}
+
+function renderProjectBorrowingsMini(items = []) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No borrowing linked to this project.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">
+              Borrowing
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Period
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Rate
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Capitalised
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Expensed
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Action
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+
+              <td class="px-2 py-1">
+                <div class="font-medium">
+                  ${esc(x.loan_name || "")}
+                </div>
+
+                <div class="text-slate-500">
+                  ${esc(x.lender_name || "")}
+                </div>
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(
+                  toDateInputValue?.(
+                    x.capitalization_start_date
+                  ) ||
+                  x.capitalization_start_date ||
+                  "—"
+                )}
+                →
+                ${esc(
+                  toDateInputValue?.(
+                    x.capitalization_end_date
+                  ) ||
+                  x.capitalization_end_date ||
+                  "Open"
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${(
+                  Number(
+                    x.capitalization_ratio || 0
+                  ) * 100
+                ).toFixed(2)}%
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.capitalized_amount || 0
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.expensed_amount || 0
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${
+                  x.status === "active"
+                    ? `
+                      <button
+                        class="underline"
+                        data-project-borrow-stop="${x.id}">
+                        Stop
+                      </button>
+                    `
+                    : esc(x.status || "ended")
+                }
+              </td>
+
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function openProjectRiskModal(
+  projectId,
+  risk = null
+) {
+  bindProjectRiskModalOnce();
+
+  document.getElementById("projectRiskProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectRiskId").value =
+    risk?.id || "";
+
+  document.getElementById("projectRiskTitle").value =
+    risk?.title || "";
+
+  document.getElementById("projectRiskCategory").value =
+    risk?.category || "";
+
+  document.getElementById("projectRiskOwnerId").value =
+    risk?.owner_user_id || "";
+
+  document.getElementById("projectRiskStatus").value =
+    risk?.status || "open";
+
+  document.getElementById("projectRiskProbability").value =
+    risk?.probability || 1;
+
+  document.getElementById("projectRiskImpact").value =
+    risk?.impact || 1;
+
+  document.getElementById("projectRiskDueDate").value =
+    risk?.due_date || "";
+
+  document.getElementById("projectRiskDescription").value =
+    risk?.description || "";
+
+  document.getElementById("projectRiskMitigation").value =
+    risk?.mitigation_plan || "";
+
+  document.getElementById("projectRiskContingency").value =
+    risk?.contingency_plan || "";
+
+  document.getElementById("projectRiskSaveBtn").textContent =
+    risk?.id ? "Update Risk" : "Save Risk";
+
+  setElText("projectRiskMsg", "");
+
+  document.getElementById("projectRiskModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectRiskModal() {
+  document.getElementById("projectRiskModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectRisk() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectRiskProjectId")
+      ?.value || 0
+  );
+
+  const riskId = Number(
+    document.getElementById("projectRiskId")
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    title:
+      document.getElementById("projectRiskTitle")
+        ?.value?.trim(),
+
+    category:
+      document.getElementById("projectRiskCategory")
+        ?.value?.trim() || null,
+
+    owner_user_id: Number(
+      document.getElementById("projectRiskOwnerId")
+        ?.value || 0
+    ) || null,
+
+    status:
+      document.getElementById("projectRiskStatus")
+        ?.value || "open",
+
+    probability: Number(
+      document.getElementById("projectRiskProbability")
+        ?.value || 1
+    ),
+
+    impact: Number(
+      document.getElementById("projectRiskImpact")
+        ?.value || 1
+    ),
+
+    due_date:
+      document.getElementById("projectRiskDueDate")
+        ?.value || null,
+
+    description:
+      document.getElementById("projectRiskDescription")
+        ?.value?.trim() || null,
+
+    mitigation_plan:
+      document.getElementById("projectRiskMitigation")
+        ?.value?.trim() || null,
+
+    contingency_plan:
+      document.getElementById("projectRiskContingency")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.title) {
+    setElText(
+      "projectRiskMsg",
+      "Risk title is required."
+    );
+    return;
+  }
+
+  setElText(
+    "projectRiskMsg",
+    riskId
+      ? "Updating risk..."
+      : "Saving risk..."
+  );
+
+  try {
+    await apiFetch(
+      riskId
+        ? ENDPOINTS.projects.riskUpdate(
+            cid,
+            projectId,
+            riskId
+          )
+        : ENDPOINTS.projects.risksCreate(
+            cid,
+            projectId
+          ),
+      {
+        method: riskId ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectRiskModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectRiskMsg",
+      err?.message ||
+      "Failed to save risk."
+    );
+  }
+}
+
+async function openProjectIssueRegisterModal(
+  projectId,
+  issue = null
+) {
+  bindProjectIssueRegisterModalOnce();
+
+  document.getElementById("projectIssueRegisterProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectIssueRegisterId").value =
+    issue?.id || "";
+
+  document.getElementById("projectIssueRegisterTitle").value =
+    issue?.title || "";
+
+  document.getElementById("projectIssueRegisterCategory").value =
+    issue?.category || "";
+
+  document.getElementById("projectIssueRegisterPriority").value =
+    issue?.priority || "normal";
+
+  document.getElementById("projectIssueRegisterOwnerId").value =
+    issue?.owner_user_id || "";
+
+  document.getElementById("projectIssueRegisterStatus").value =
+    issue?.status || "open";
+
+  document.getElementById("projectIssueRegisterDueDate").value =
+    issue?.due_date || "";
+
+  document.getElementById("projectIssueRegisterDescription").value =
+    issue?.description || "";
+
+  document.getElementById("projectIssueRegisterResolution").value =
+    issue?.resolution || "";
+
+  await populateProjectTaskSelect(
+    "projectIssueRegisterTaskId",
+    projectId,
+    "No task"
+  );
+
+  document.getElementById("projectIssueRegisterTaskId").value =
+    issue?.task_id || "";
+
+  document.getElementById("projectIssueRegisterSaveBtn").textContent =
+    issue?.id ? "Update Issue" : "Save Issue";
+
+  setElText("projectIssueRegisterMsg", "");
+
+  document.getElementById("projectIssueRegisterModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectIssueRegisterModal() {
+  document.getElementById("projectIssueRegisterModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectIssueRegister() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectIssueRegisterProjectId")
+      ?.value || 0
+  );
+
+  const issueId = Number(
+    document.getElementById("projectIssueRegisterId")
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    title:
+      document.getElementById("projectIssueRegisterTitle")
+        ?.value?.trim(),
+
+    task_id: Number(
+      document.getElementById("projectIssueRegisterTaskId")
+        ?.value || 0
+    ) || null,
+
+    category:
+      document.getElementById("projectIssueRegisterCategory")
+        ?.value?.trim() || null,
+
+    priority:
+      document.getElementById("projectIssueRegisterPriority")
+        ?.value || "normal",
+
+    owner_user_id: Number(
+      document.getElementById("projectIssueRegisterOwnerId")
+        ?.value || 0
+    ) || null,
+
+    status:
+      document.getElementById("projectIssueRegisterStatus")
+        ?.value || "open",
+
+    due_date:
+      document.getElementById("projectIssueRegisterDueDate")
+        ?.value || null,
+
+    description:
+      document.getElementById("projectIssueRegisterDescription")
+        ?.value?.trim() || null,
+
+    resolution:
+      document.getElementById("projectIssueRegisterResolution")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.title) {
+    setElText(
+      "projectIssueRegisterMsg",
+      "Issue title is required."
+    );
+    return;
+  }
+
+  setElText(
+    "projectIssueRegisterMsg",
+    issueId
+      ? "Updating issue..."
+      : "Saving issue..."
+  );
+
+  try {
+    await apiFetch(
+      issueId
+        ? ENDPOINTS.projects.issueUpdate(
+            cid,
+            projectId,
+            issueId
+          )
+        : ENDPOINTS.projects.issuesCreate(
+            cid,
+            projectId
+          ),
+      {
+        method: issueId ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectIssueRegisterModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectIssueRegisterMsg",
+      err?.message ||
+      "Failed to save issue."
+    );
+  }
+}
+
+async function openProjectDocumentModal(
+  projectId
+) {
+  bindProjectDocumentModalOnce();
+
+  document.getElementById("projectDocumentProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectDocumentTitle").value =
+    "";
+
+  document.getElementById("projectDocumentType").value =
+    "other";
+
+  document.getElementById("projectDocumentVersion").value =
+    "";
+
+  document.getElementById("projectDocumentReference").value =
+    "";
+
+  document.getElementById("projectDocumentFileName").value =
+    "";
+
+  document.getElementById("projectDocumentFileUrl").value =
+    "";
+
+  document.getElementById("projectDocumentNotes").value =
+    "";
+
+  await populateProjectTaskSelect(
+    "projectDocumentTaskId",
+    projectId,
+    "No task"
+  );
+
+  setElText("projectDocumentMsg", "");
+
+  document.getElementById("projectDocumentModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectDocumentModal() {
+  document.getElementById("projectDocumentModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectDocument() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectDocumentProjectId")
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    title:
+      document.getElementById("projectDocumentTitle")
+        ?.value?.trim(),
+
+    document_type:
+      document.getElementById("projectDocumentType")
+        ?.value || "other",
+
+    task_id: Number(
+      document.getElementById("projectDocumentTaskId")
+        ?.value || 0
+    ) || null,
+
+    version_no:
+      document.getElementById("projectDocumentVersion")
+        ?.value?.trim() || null,
+
+    reference:
+      document.getElementById("projectDocumentReference")
+        ?.value?.trim() || null,
+
+    file_name:
+      document.getElementById("projectDocumentFileName")
+        ?.value?.trim() || null,
+
+    file_url:
+      document.getElementById("projectDocumentFileUrl")
+        ?.value?.trim() || null,
+
+    notes:
+      document.getElementById("projectDocumentNotes")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.title) {
+    setElText(
+      "projectDocumentMsg",
+      "Document title is required."
+    );
+    return;
+  }
+
+  setElText(
+    "projectDocumentMsg",
+    "Saving document..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.documentsCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectDocumentModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectDocumentMsg",
+      err?.message ||
+      "Failed to save document."
+    );
+  }
+}
+
+function openProjectTeamModal(projectId) {
+  bindProjectTeamModalOnce();
+
+  document
+    .getElementById("projectTeamProjectId")
+    .value = String(projectId);
+
+  document
+    .getElementById("projectTeamUserId")
+    .value = "";
+
+  document
+    .getElementById("projectTeamRoleType")
+    .value = "member";
+
+  document
+    .getElementById("projectTeamRole")
+    .value = "";
+
+  document
+    .getElementById("projectTeamAllocation")
+    .value = "100";
+
+  document
+    .getElementById("projectTeamStartDate")
+    .value = "";
+
+  document
+    .getElementById("projectTeamEndDate")
+    .value = "";
+
+  document
+    .getElementById("projectTeamNotes")
+    .value = "";
+
+  setElText("projectTeamMsg", "");
+
+  document
+    .getElementById("projectTeamModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectTeamModal() {
+  document
+    .getElementById("projectTeamModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectTeamMember() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document
+      .getElementById("projectTeamProjectId")
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    user_id: Number(
+      document
+        .getElementById("projectTeamUserId")
+        ?.value || 0
+    ),
+
+    role_type:
+      document
+        .getElementById("projectTeamRoleType")
+        ?.value || "member",
+
+    project_role:
+      document
+        .getElementById("projectTeamRole")
+        ?.value?.trim() || null,
+
+    allocation_percent: Number(
+      document
+        .getElementById("projectTeamAllocation")
+        ?.value || 100
+    ),
+
+    start_date:
+      document
+        .getElementById("projectTeamStartDate")
+        ?.value || null,
+
+    end_date:
+      document
+        .getElementById("projectTeamEndDate")
+        ?.value || null,
+
+    notes:
+      document
+        .getElementById("projectTeamNotes")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.user_id) {
+    setElText(
+      "projectTeamMsg",
+      "User is required."
+    );
+    return;
+  }
+
+  if (
+    payload.allocation_percent < 0 ||
+    payload.allocation_percent > 100
+  ) {
+    setElText(
+      "projectTeamMsg",
+      "Allocation must be 0–100%."
+    );
+    return;
+  }
+
+  setElText(
+    "projectTeamMsg",
+    "Saving team member..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.teamCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectTeamModal();
+
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectTeamMsg",
+      err?.message ||
+      "Failed to save team member."
+    );
+  }
+}
+
+async function openProjectCapitaliseModal(project) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !project?.id) return;
+
+  bindProjectCapitaliseModalOnce();
+
+  try {
+    const out = await apiFetch(
+      ENDPOINTS.projects.capitalPosition(cid, project.id)
+    );
+
+    const pos = out?.data || out || {};
+
+    document.getElementById("projectCapitaliseProjectId").value = project.id;
+    document.getElementById("projectCapitaliseAssetName").value = project.project_name || "";
+    document.getElementById("projectCapitaliseDate").value = new Date().toISOString().slice(0, 10);
+    document.getElementById("projectCapitaliseAmount").value = pos.available_to_capitalise || 0;
+    document.getElementById("projectCapitaliseAssetClassId").value = "";
+    document.getElementById("projectCapitaliseAssetAccount").value = "";
+    document.getElementById("projectCapitaliseLife").value = "";
+    document.getElementById("projectCapitaliseResidual").value = "0";
+    document.getElementById("projectCapitaliseMethod").value = "straight_line";
+    document.getElementById("projectCapitaliseLocation").value = project.location || "";
+    document.getElementById("projectCapitaliseNotes").value = "";
+
+    setElText(
+      "projectCapitaliseMsg",
+      `Available CIP: ${fmtMoney(pos.available_to_capitalise || 0)}`
+    );
+
+    document.getElementById("projectCapitaliseModal")
+      ?.classList.remove("hidden");
+  } catch (err) {
+    alert(err?.message || "Failed to load capital position.");
+  }
+}
+
+function closeProjectCapitaliseModal() {
+  document.getElementById("projectCapitaliseModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectCapitalisation() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(
+    document.getElementById("projectCapitaliseProjectId")?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    asset_name: document.getElementById("projectCapitaliseAssetName")?.value?.trim(),
+    capitalisation_date: document.getElementById("projectCapitaliseDate")?.value || null,
+    asset_class_id: Number(document.getElementById("projectCapitaliseAssetClassId")?.value || 0) || null,
+    capitalise_amount: Number(document.getElementById("projectCapitaliseAmount")?.value || 0),
+    asset_account_code: document.getElementById("projectCapitaliseAssetAccount")?.value?.trim() || null,
+    useful_life_months: Number(document.getElementById("projectCapitaliseLife")?.value || 0) || null,
+    residual_value: Number(document.getElementById("projectCapitaliseResidual")?.value || 0),
+    depreciation_method: document.getElementById("projectCapitaliseMethod")?.value || null,
+    location: document.getElementById("projectCapitaliseLocation")?.value?.trim() || null,
+    notes: document.getElementById("projectCapitaliseNotes")?.value?.trim() || null,
+  };
+
+  if (!payload.asset_name) {
+    setElText("projectCapitaliseMsg", "Asset name is required.");
+    return;
+  }
+
+  if (payload.capitalise_amount <= 0) {
+    setElText("projectCapitaliseMsg", "Capitalisation amount must be greater than 0.");
+    return;
+  }
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.capitalisationsCreate(cid, projectId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectCapitaliseModal();
+    await loadProjectDetail(projectId);
+  } catch (err) {
+    setElText(
+      "projectCapitaliseMsg",
+      err?.message || "Failed to create capitalisation request."
+    );
+  }
+}
+
+function renderProjectCapitalisationsMini(items = []) {
+  if (!items.length) {
+    return `<div class="text-slate-500">No capitalisation requests yet.</div>`;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Asset</th>
+            <th class="text-right px-2 py-1">Amount</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">${esc(x.asset_name || "")}</td>
+              <td class="px-2 py-1 text-right">${fmtMoney(x.capitalise_amount || 0)}</td>
+              <td class="px-2 py-1">${esc(x.status || "")}</td>
+              <td class="px-2 py-1 text-right">${renderProjectCapitalisationActions(x)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectCapitalisationActions(x) {
+  if (x.status === "draft") {
+    return `
+      <button class="underline"
+              data-capitalisation-submit="${esc(String(x.id))}">
+        Submit
+      </button>
+    `;
+  }
+
+  if (x.status === "submitted") {
+    return `
+      <button class="underline"
+              data-capitalisation-approve="${esc(String(x.id))}">
+        Approve
+      </button>
+    `;
+  }
+
+  if (x.status === "approved") {
+    return `<span class="text-slate-500">Ready for Fixed Assets</span>`;
+  }
+
+  return "—";
+}
+
+function openProjectAssignModal(
+  projectId,
+  task
+) {
+  bindProjectAssignModalOnce();
+
+  document
+    .getElementById("projectAssignProjectId")
+    .value = String(projectId);
+
+  document
+    .getElementById("projectAssignTaskId")
+    .value = String(task.id);
+
+  setElText(
+    "projectAssignTaskName",
+    `${task.wbs_code || task.task_code || ""} ` +
+    `— ${task.task_name || ""}`
+  );
+
+  document
+    .getElementById("projectAssignUserId")
+    .value = "";
+
+  document
+    .getElementById("projectAssignRole")
+    .value = "";
+
+  document
+    .getElementById("projectAssignAllocation")
+    .value = "100";
+
+  document
+    .getElementById("projectAssignNotes")
+    .value = "";
+
+  setElText("projectAssignMsg", "");
+
+  document
+    .getElementById("projectAssignModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectAssignModal() {
+  document
+    .getElementById("projectAssignModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectTaskAssignment() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document
+      .getElementById(
+        "projectAssignProjectId"
+      )
+      ?.value || 0
+  );
+
+  const taskId = Number(
+    document
+      .getElementById(
+        "projectAssignTaskId"
+      )
+      ?.value || 0
+  );
+
+  if (!cid || !projectId || !taskId) {
+    return;
+  }
+
+  const payload = {
+    user_id: Number(
+      document
+        .getElementById(
+          "projectAssignUserId"
+        )
+        ?.value || 0
+    ),
+
+    assignment_role:
+      document
+        .getElementById(
+          "projectAssignRole"
+        )
+        ?.value?.trim() || null,
+
+    allocation_percent: Number(
+      document
+        .getElementById(
+          "projectAssignAllocation"
+        )
+        ?.value || 100
+    ),
+
+    notes:
+      document
+        .getElementById(
+          "projectAssignNotes"
+        )
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.user_id) {
+    setElText(
+      "projectAssignMsg",
+      "User is required."
+    );
+    return;
+  }
+
+  if (
+    payload.allocation_percent < 0 ||
+    payload.allocation_percent > 100
+  ) {
+    setElText(
+      "projectAssignMsg",
+      "Allocation must be 0–100%."
+    );
+    return;
+  }
+
+  setElText(
+    "projectAssignMsg",
+    "Assigning task..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.taskAssign(
+        cid,
+        projectId,
+        taskId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectAssignModal();
+
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectAssignMsg",
+      err?.message ||
+      "Failed to assign task."
+    );
+  }
+}
+
+function openProjectDependencyModal(
+  projectId,
+  tasks = []
+) {
+  bindProjectDependencyModalOnce();
+
+  document
+    .getElementById(
+      "projectDependencyProjectId"
+    )
+    .value = String(projectId);
+
+  const options = `
+    <option value="">
+      Select task...
+    </option>
+
+    ${tasks.map(t => `
+      <option value="${esc(String(t.id))}">
+        ${esc(
+          t.wbs_code ||
+          t.task_code ||
+          ""
+        )}
+        — ${esc(t.task_name || "")}
+      </option>
+    `).join("")}
+  `;
+
+  document
+    .getElementById(
+      "projectDependencyPredecessor"
+    )
+    .innerHTML = options;
+
+  document
+    .getElementById(
+      "projectDependencySuccessor"
+    )
+    .innerHTML = options;
+
+  document
+    .getElementById(
+      "projectDependencyType"
+    )
+    .value = "finish_to_start";
+
+  document
+    .getElementById(
+      "projectDependencyLagDays"
+    )
+    .value = "0";
+
+  document
+    .getElementById(
+      "projectDependencyNotes"
+    )
+    .value = "";
+
+  setElText(
+    "projectDependencyMsg",
+    ""
+  );
+
+  document
+    .getElementById(
+      "projectDependencyModal"
+    )
+    ?.classList.remove("hidden");
+}
+
+function closeProjectDependencyModal() {
+  document
+    .getElementById(
+      "projectDependencyModal"
+    )
+    ?.classList.add("hidden");
+}
+
+async function submitProjectDependency() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document
+      .getElementById(
+        "projectDependencyProjectId"
+      )
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    predecessor_task_id: Number(
+      document
+        .getElementById(
+          "projectDependencyPredecessor"
+        )
+        ?.value || 0
+    ),
+
+    successor_task_id: Number(
+      document
+        .getElementById(
+          "projectDependencySuccessor"
+        )
+        ?.value || 0
+    ),
+
+    dependency_type:
+      document
+        .getElementById(
+          "projectDependencyType"
+        )
+        ?.value ||
+      "finish_to_start",
+
+    lag_days: Number(
+      document
+        .getElementById(
+          "projectDependencyLagDays"
+        )
+        ?.value || 0
+    ),
+
+    notes:
+      document
+        .getElementById(
+          "projectDependencyNotes"
+        )
+        ?.value?.trim() || null,
+  };
+
+  if (
+    !payload.predecessor_task_id ||
+    !payload.successor_task_id
+  ) {
+    setElText(
+      "projectDependencyMsg",
+      "Select both tasks."
+    );
+    return;
+  }
+
+  if (
+    payload.predecessor_task_id ===
+    payload.successor_task_id
+  ) {
+    setElText(
+      "projectDependencyMsg",
+      "A task cannot depend on itself."
+    );
+    return;
+  }
+
+  setElText(
+    "projectDependencyMsg",
+    "Saving dependency..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.dependenciesCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectDependencyModal();
+
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectDependencyMsg",
+      err?.message ||
+      "Failed to save dependency."
+    );
+  }
+}
+
+function renderProjectTeamMini(team = []) {
+  if (!team.length) {
+    return `
+      <div class="text-slate-500">
+        No project team yet.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">
+              User
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Role
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Type
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Allocation
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Action
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${team.map(m => `
+            <tr class="border-b">
+
+              <td class="px-2 py-1">
+                ${esc(String(m.user_id || ""))}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(m.project_role || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(m.role_type || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${Number(
+                  m.allocation_percent || 0
+                ).toFixed(0)}%
+              </td>
+
+              <td class="px-2 py-1 text-right">
+
+                <button
+                  class="text-red-600 underline"
+                  data-team-remove=
+                    "${esc(String(m.id))}">
+                  Remove
+                </button>
+
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectDependenciesMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No dependencies yet.
+      </div>
+    `;
+  }
+
+  const typeLabel = type => ({
+    finish_to_start: "FS",
+    start_to_start: "SS",
+    finish_to_finish: "FF",
+    start_to_finish: "SF",
+  }[type] || type);
+
+  return `
+    <div class="overflow-auto">
+
+      <table class="w-full text-xs">
+
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">
+              Predecessor
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Type
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Successor
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Lag
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(d => `
+            <tr class="border-b">
+
+              <td class="px-2 py-1">
+                ${esc(
+                  d.predecessor_code ||
+                  d.predecessor_name ||
+                  ""
+                )}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(
+                  typeLabel(
+                    d.dependency_type
+                  )
+                )}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(
+                  d.successor_code ||
+                  d.successor_name ||
+                  ""
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${esc(
+                  String(d.lag_days || 0)
+                )}
+              </td>
+
+            </tr>
+          `).join("")}
+        </tbody>
+
+      </table>
+    </div>
+  `;
+}
+
+function bindProjectTimeModalOnce() {
+  const m = document.getElementById("projectTimeModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document.getElementById("projectTimeOverlay")
+    ?.addEventListener("click", closeProjectTimeModal);
+
+  document.getElementById("projectTimeCloseBtn")
+    ?.addEventListener("click", closeProjectTimeModal);
+
+  document.getElementById("projectTimeCancelBtn")
+    ?.addEventListener("click", closeProjectTimeModal);
+
+  document.getElementById("projectTimeSaveBtn")
+    ?.addEventListener("click", submitProjectTime);
+}
+
+function bindProjectChangeModalOnce() {
+  const m =
+    document.getElementById(
+      "projectChangeModal"
+    );
+
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("projectChangeOverlay")
+    ?.addEventListener(
+      "click",
+      closeProjectChangeModal
+    );
+
+  document.getElementById("projectChangeCloseBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectChangeModal
+    );
+
+  document.getElementById("projectChangeCancelBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectChangeModal
+    );
+
+  document.getElementById("projectChangeSaveBtn")
+    ?.addEventListener(
+      "click",
+      submitProjectChange
+    );
+}
+
+async function openProjectTimeModal(
+  projectId,
+  entry = null
+) {
+  bindProjectTimeModalOnce();
+
+  const today =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("projectTimeId").value =
+    entry?.id || "";
+
+  document.getElementById("projectTimeProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectTimeUserId").value =
+    entry?.user_id || "";
+
+  document.getElementById("projectTimeDate").value =
+    entry?.work_date || today;
+
+  document.getElementById("projectTimeHours").value =
+    entry?.hours || "";
+
+  document.getElementById("projectTimeCostRate").value =
+    entry?.hourly_cost_rate || "";
+
+  document.getElementById("projectTimeBillRate").value =
+    entry?.hourly_bill_rate || "";
+
+  document.getElementById("projectTimeBillable").checked =
+    !!entry?.billable;
+
+  const project = window.ACTIVE_PROJECT_DETAIL || null;
+
+  document.getElementById("projectTimeCapitalizable").checked =
+    !!entry?.capitalizable;
+
+  document.getElementById("projectTimeCapitalizableWrap")
+    ?.classList.toggle(
+      "hidden",
+      project?.accounting_mode !== "capital"
+    );
+
+  document.getElementById("projectTimeDescription").value =
+    entry?.description || "";
+
+  await populateProjectTaskSelect(
+    "projectTimeTaskId",
+    projectId,
+    "No task"
+  );
+
+  document.getElementById("projectTimeTaskId").value =
+    entry?.task_id || "";
+
+  setElText("projectTimeMsg", "");
+
+  document.getElementById("projectTimeModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectTimeModal() {
+  document.getElementById("projectTimeModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectTime() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectTimeProjectId")
+      ?.value || 0
+  );
+
+  const entryId = Number(
+    document.getElementById("projectTimeId")
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    user_id: Number(
+      document.getElementById("projectTimeUserId")
+        ?.value || 0
+    ),
+
+    task_id: Number(
+      document.getElementById("projectTimeTaskId")
+        ?.value || 0
+    ) || null,
+
+    work_date:
+      document.getElementById("projectTimeDate")
+        ?.value || null,
+
+    hours: Number(
+      document.getElementById("projectTimeHours")
+        ?.value || 0
+    ),
+
+    hourly_cost_rate: Number(
+      document.getElementById("projectTimeCostRate")
+        ?.value || 0
+    ),
+
+    hourly_bill_rate: Number(
+      document.getElementById("projectTimeBillRate")
+        ?.value || 0
+    ),
+
+    billable:
+      !!document.getElementById("projectTimeBillable")
+        ?.checked,
+
+    capitalizable:
+      !!document.getElementById("projectTimeCapitalizable")?.checked,
+
+    description:
+      document.getElementById("projectTimeDescription")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.user_id) {
+    setElText(
+      "projectTimeMsg",
+      "User is required."
+    );
+    return;
+  }
+
+  if (payload.hours <= 0 || payload.hours > 24) {
+    setElText(
+      "projectTimeMsg",
+      "Hours must be between 0 and 24."
+    );
+    return;
+  }
+
+  setElText(
+    "projectTimeMsg",
+    entryId
+      ? "Updating time..."
+      : "Saving time..."
+  );
+
+  try {
+    await apiFetch(
+      entryId
+        ? ENDPOINTS.projects.timeUpdate(
+            cid,
+            projectId,
+            entryId
+          )
+        : ENDPOINTS.projects.timeCreate(
+            cid,
+            projectId
+          ),
+      {
+        method: entryId ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectTimeModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectTimeMsg",
+      err?.message ||
+      "Failed to save time."
+    );
+  }
+}
+
+function renderProjectTimeMini(items = []) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No time recorded yet.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Date</th>
+            <th class="text-left px-2 py-1">User</th>
+            <th class="text-left px-2 py-1">Task</th>
+            <th class="text-right px-2 py-1">Hours</th>
+            <th class="text-right px-2 py-1">Cost</th>
+            <th class="text-right px-2 py-1">Billable</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(toDateInputValue?.(x.work_date) || x.work_date || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(String(x.user_id || ""))}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.task_name || "—")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${Number(x.hours || 0).toFixed(2)}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.labour_cost || 0)}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.billable_amount || 0)}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${renderProjectTimeActions(x)}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectTimeActions(x) {
+  if (["draft", "rejected"].includes(x.status)) {
+    return `
+      <div class="flex justify-end gap-1">
+        <button
+          class="underline"
+          data-time-edit="${esc(String(x.id))}">
+          Edit
+        </button>
+
+        <button
+          class="underline"
+          data-time-submit="${esc(String(x.id))}">
+          Submit
+        </button>
+      </div>
+    `;
+  }
+
+  if (x.status === "submitted") {
+    return `
+      <div class="flex justify-end gap-1">
+        <button
+          class="underline"
+          data-time-approve="${esc(String(x.id))}">
+          Approve
+        </button>
+
+        <button
+          class="underline text-red-600"
+          data-time-reject="${esc(String(x.id))}">
+          Reject
+        </button>
+      </div>
+    `;
+  }
+
+  return "—";
+}
+
+async function runProjectTimeAction(
+  projectId,
+  entryId,
+  action,
+  reason = null
+) {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  if (!cid || !projectId || !entryId) {
+    return;
+  }
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.timeAction(
+        cid,
+        projectId,
+        entryId,
+        action
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          reason,
+        }),
+      }
+    );
+
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    alert(
+      err?.message ||
+      `Failed to ${action} time entry.`
+    );
+  }
+}
+
+async function openProjectExpenseModal(
+  projectId
+) {
+  bindProjectExpenseModalOnce();
+
+  const today =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("projectExpenseProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectExpenseDate").value =
+    today;
+
+  document.getElementById("projectExpenseSupplier").value =
+    "";
+
+  document.getElementById("projectExpenseReference").value =
+    "";
+
+  document.getElementById("projectExpenseAccount").value =
+    "";
+
+  document.getElementById("projectExpenseCapitalizable").checked = false;
+
+  document.getElementById("projectExpenseAmount").value =
+    "";
+
+  document.getElementById("projectExpenseTax").value =
+    "";
+
+  document.getElementById("projectExpenseDescription").value =
+    "";
+
+  await populateProjectTaskSelect(
+    "projectExpenseTaskId",
+    projectId,
+    "No task"
+  );
+
+  await populateProjectCostCodeSelect(
+    "projectExpenseCostCodeId",
+    "No cost code"
+  );
+
+  setElText(
+    "projectExpenseMsg",
+    ""
+  );
+
+  document.getElementById("projectExpenseModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectExpenseModal() {
+  document.getElementById("projectExpenseModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectExpense() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById(
+      "projectExpenseProjectId"
+    )?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    expense_date:
+      document.getElementById(
+        "projectExpenseDate"
+      )?.value || null,
+
+    task_id: Number(
+      document.getElementById(
+        "projectExpenseTaskId"
+      )?.value || 0
+    ) || null,
+
+    cost_code_id: Number(
+      document.getElementById(
+        "projectExpenseCostCodeId"
+      )?.value || 0
+    ) || null,
+
+    supplier_name:
+      document.getElementById(
+        "projectExpenseSupplier"
+      )?.value?.trim() || null,
+
+    reference:
+      document.getElementById(
+        "projectExpenseReference"
+      )?.value?.trim() || null,
+
+    account_code:
+      document.getElementById(
+        "projectExpenseAccount"
+      )?.value?.trim() || null,
+
+    amount: Number(
+      document.getElementById(
+        "projectExpenseAmount"
+      )?.value || 0
+    ),
+
+    tax_amount: Number(
+      document.getElementById(
+        "projectExpenseTax"
+      )?.value || 0
+    ),
+
+    capitalizable:
+      !!document.getElementById("projectExpenseCapitalizable")?.checked,
+
+    description:
+      document.getElementById(
+        "projectExpenseDescription"
+      )?.value?.trim(),
+  };
+
+  if (!payload.description) {
+    setElText(
+      "projectExpenseMsg",
+      "Description is required."
+    );
+    return;
+  }
+
+  if (payload.amount < 0) {
+    setElText(
+      "projectExpenseMsg",
+      "Amount cannot be negative."
+    );
+    return;
+  }
+
+  setElText(
+    "projectExpenseMsg",
+    "Saving expense..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.expensesCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectExpenseModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectExpenseMsg",
+      err?.message ||
+      "Failed to save expense."
+    );
+  }
+}
+
+function renderProjectExpensesMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No direct expenses yet.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Date</th>
+            <th class="text-left px-2 py-1">Description</th>
+            <th class="text-left px-2 py-1">Task</th>
+            <th class="text-right px-2 py-1">Amount</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(
+                  toDateInputValue?.(
+                    x.expense_date
+                  ) ||
+                  x.expense_date ||
+                  ""
+                )}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.description || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.task_name || "—")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.total_amount || 0)}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${x.status === "draft" ? `
+                  <button
+                    class="underline"
+                    data-expense-approve="${esc(String(x.id))}">
+                    Approve
+                  </button>
+                ` : "—"}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectCommitmentsMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No open commitments.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">PO</th>
+            <th class="text-left px-2 py-1">Description</th>
+            <th class="text-left px-2 py-1">Task</th>
+            <th class="text-left px-2 py-1">Cost Code</th>
+            <th class="text-right px-2 py-1">Committed</th>
+            <th class="text-left px-2 py-1">Status</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(x.po_number || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.description || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.task_name || "—")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.cost_code || "—")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.ordered_amount || 0)}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.po_status || "")}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function openProjectChangeModal(projectId) {
+  bindProjectChangeModalOnce();
+
+  document.getElementById("projectChangeProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectChangeType").value =
+    "change_request";
+
+  document.getElementById("projectChangeTitle").value =
+    "";
+
+  document.getElementById("projectChangeCostImpact").value =
+    "0";
+
+  document.getElementById("projectChangeRevenueImpact").value =
+    "0";
+
+  document.getElementById("projectChangeScheduleDays").value =
+    "0";
+
+  document.getElementById("projectChangeEndDate").value =
+    "";
+
+  document.getElementById("projectChangeReason").value =
+    "";
+
+  document.getElementById("projectChangeDescription").value =
+    "";
+
+  setElText(
+    "projectChangeMsg",
+    ""
+  );
+
+  document.getElementById("projectChangeModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectChangeModal() {
+  document.getElementById("projectChangeModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectChange() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById(
+      "projectChangeProjectId"
+    )?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    change_type:
+      document.getElementById(
+        "projectChangeType"
+      )?.value || "change_request",
+
+    title:
+      document.getElementById(
+        "projectChangeTitle"
+      )?.value?.trim(),
+
+    cost_impact: Number(
+      document.getElementById(
+        "projectChangeCostImpact"
+      )?.value || 0
+    ),
+
+    revenue_impact: Number(
+      document.getElementById(
+        "projectChangeRevenueImpact"
+      )?.value || 0
+    ),
+
+    schedule_impact_days: Number(
+      document.getElementById(
+        "projectChangeScheduleDays"
+      )?.value || 0
+    ),
+
+    proposed_end_date:
+      document.getElementById(
+        "projectChangeEndDate"
+      )?.value || null,
+
+    reason:
+      document.getElementById(
+        "projectChangeReason"
+      )?.value?.trim() || null,
+
+    description:
+      document.getElementById(
+        "projectChangeDescription"
+      )?.value?.trim() || null,
+  };
+
+  if (!payload.title) {
+    setElText(
+      "projectChangeMsg",
+      "Title is required."
+    );
+    return;
+  }
+
+  setElText(
+    "projectChangeMsg",
+    "Saving change..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.changesCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectChangeModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectChangeMsg",
+      err?.message ||
+      "Failed to save change."
+    );
+  }
+}
+
 function bindProjectOperationalModalsOnce() {
   bindProjectTaskModalOnce();
   bindProjectBudgetModalOnce();
   bindProjectIssueModalOnce();
 }
 
+function bindProjectCipAssetModalOnce() {
+  const m = document.getElementById("projectCipAssetModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document.getElementById("projectCipAssetOverlay")
+    ?.addEventListener("click", closeProjectCipAssetModal);
+
+  document.getElementById("projectCipAssetCloseBtn")
+    ?.addEventListener("click", closeProjectCipAssetModal);
+
+  document.getElementById("projectCipAssetCancelBtn")
+    ?.addEventListener("click", closeProjectCipAssetModal);
+
+  document.getElementById("projectCipAssetSaveBtn")
+    ?.addEventListener("click", submitProjectCipAsset);
+}
+
+function openProjectCipAssetModal(project) {
+  bindProjectCipAssetModalOnce();
+
+  document.getElementById("projectCipProjectId").value = project.id;
+  document.getElementById("projectCipAssetCode").value =
+    `${project.project_code || "PROJECT"}-CIP`;
+
+  document.getElementById("projectCipAssetName").value =
+    `${project.project_name || "Project"} - CIP`;
+
+  document.getElementById("projectCipAccount").value =
+    project.wip_account_code || "";
+
+  document.getElementById("projectCipStartDate").value =
+    toDateInputValue?.(project.start_date) || project.start_date || "";
+
+  document.getElementById("projectCipQualifying").checked = false;
+  document.getElementById("projectCipNotes").value = "";
+
+  setElText("projectCipAssetMsg", "");
+
+  document.getElementById("projectCipAssetModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectCipAssetModal() {
+  document.getElementById("projectCipAssetModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectCipAsset() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(
+    document.getElementById("projectCipProjectId")?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const assetCode =
+    document.getElementById("projectCipAssetCode")?.value?.trim();
+
+  const assetName =
+    document.getElementById("projectCipAssetName")?.value?.trim();
+
+  const cipAccount =
+    document.getElementById("projectCipAccount")?.value?.trim();
+
+  const startDate =
+    document.getElementById("projectCipStartDate")?.value || null;
+
+  if (!assetCode || !assetName || !cipAccount || !startDate) {
+    setElText(
+      "projectCipAssetMsg",
+      "Asset code, name, CIP account and start date are required."
+    );
+    return;
+  }
+
+  const payload = {
+    entry_mode: "acquisition",
+    asset_code: assetCode,
+    asset_name: assetName,
+    asset_class: "Assets under construction",
+    asset_class_group: "Assets under construction",
+    category: "Capital project",
+    acquisition_date: startDate,
+    available_for_use_date: null,
+    ready_for_use_date: null,
+    cost: 0,
+    residual_value: 0,
+    depreciation_method: "APP",
+    useful_life_months: 0,
+    accounting_standard: "ias16",
+    measurement_basis: "cost",
+    asset_account_code: cipAccount,
+    is_qualifying_asset:
+      !!document.getElementById("projectCipQualifying")?.checked,
+    notes:
+      document.getElementById("projectCipNotes")?.value?.trim() || null,
+  };
+
+  setElText("projectCipAssetMsg", "Creating CIP asset...");
+
+  try {
+    const out = await apiFetch(
+      ENDPOINTS.projects.assetCreate(cid),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const assetId = Number(
+      out?.id ||
+      out?.asset_id ||
+      out?.data?.id ||
+      out?.data?.asset_id ||
+      0
+    );
+
+    if (!assetId) {
+      throw new Error("Asset created but no asset ID was returned.");
+    }
+
+    await apiFetch(
+      ENDPOINTS.projects.assetLinkCreate(cid, projectId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          asset_id: assetId,
+          link_type: "cip",
+          is_primary: true,
+        }),
+      }
+    );
+
+    closeProjectCipAssetModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectCipAssetMsg",
+      err?.message || "Failed to create CIP asset."
+    );
+  }
+}
+
+async function loadProjectCapitalPosition(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return {};
+
+  const out = await apiFetch(
+    ENDPOINTS.projects.capitalPosition(cid, projectId)
+  );
+
+  return out?.data || out || {};
+}
+
+function renderProjectAssetsMini(items = []) {
+  if (!items.length) {
+    return `<div class="text-slate-500">No CIP asset linked yet.</div>`;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Asset</th>
+            <th class="text-left px-2 py-1">Class</th>
+            <th class="text-left px-2 py-1">CIP Account</th>
+            <th class="text-left px-2 py-1">IAS 23</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                <div class="font-medium">${esc(x.asset_code || "")}</div>
+                <div class="text-slate-500">${esc(x.asset_name || "")}</div>
+              </td>
+
+              <td class="px-2 py-1">${esc(x.asset_class || "")}</td>
+              <td class="px-2 py-1">${esc(x.asset_account_code || "—")}</td>
+
+              <td class="px-2 py-1">
+                ${x.is_qualifying_asset ? "Qualifying" : "No"}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                <button
+                  class="underline"
+                  data-project-asset-open="${esc(String(x.asset_id))}">
+                  Open
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function runProjectChangeAction(
+  projectId,
+  changeId,
+  action,
+  reason = null
+) {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  if (!cid || !changeId) return;
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.changeAction(
+        cid,
+        projectId,
+        changeId,
+        action
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          reason,
+        }),
+      }
+    );
+
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    alert(
+      err?.message ||
+      `Failed to ${action} change.`
+    );
+  }
+}
+
+function renderProjectChangesMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No project changes yet.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">No.</th>
+            <th class="text-left px-2 py-1">Change</th>
+            <th class="text-right px-2 py-1">Cost</th>
+            <th class="text-right px-2 py-1">Revenue</th>
+            <th class="text-right px-2 py-1">Days</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+
+              <td class="px-2 py-1">
+                ${esc(x.change_no || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.title || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.cost_impact || 0)}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.revenue_impact || 0)}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${esc(String(
+                  x.schedule_impact_days || 0
+                ))}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${renderProjectChangeActions(x)}
+              </td>
+
+            </tr>
+          `).join("")}
+        </tbody>
+
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectChangeActions(x) {
+  if (["draft", "rejected"].includes(x.status)) {
+    return `
+      <button
+        class="underline"
+        data-change-submit="${esc(String(x.id))}">
+        Submit
+      </button>
+    `;
+  }
+
+  if (x.status === "submitted") {
+    return `
+      <div class="flex justify-end gap-1">
+        <button
+          class="underline"
+          data-change-approve="${esc(String(x.id))}">
+          Approve
+        </button>
+
+        <button
+          class="underline text-red-600"
+          data-change-reject="${esc(String(x.id))}">
+          Reject
+        </button>
+      </div>
+    `;
+  }
+
+  if (x.status === "approved") {
+    return `
+      <button
+        class="underline"
+        data-change-apply="${esc(String(x.id))}">
+        Apply
+      </button>
+    `;
+  }
+
+  return "—";
+}
+
+function renderProjectRisksMini(items = []) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No risks recorded.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Risk</th>
+            <th class="text-right px-2 py-1">P</th>
+            <th class="text-right px-2 py-1">I</th>
+            <th class="text-right px-2 py-1">Score</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(x.title || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${esc(String(x.probability || 0))}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${esc(String(x.impact || 0))}
+              </td>
+
+              <td class="px-2 py-1 text-right font-semibold">
+                ${esc(String(x.risk_score || 0))}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                <button
+                  class="underline"
+                  data-risk-edit="${esc(String(x.id))}">
+                  Edit
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectIssuesMini(items = []) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No issues recorded.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Issue</th>
+            <th class="text-left px-2 py-1">Task</th>
+            <th class="text-left px-2 py-1">Priority</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(x.title || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.task_name || "—")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.priority || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                <button
+                  class="underline"
+                  data-issue-edit="${esc(String(x.id))}">
+                  Edit
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectDocumentsMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No documents attached.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Document</th>
+            <th class="text-left px-2 py-1">Type</th>
+            <th class="text-left px-2 py-1">Version</th>
+            <th class="text-right px-2 py-1">Open</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(x.title || x.file_name || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.document_type || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.version_no || "—")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${x.file_url ? `
+                  <a
+                    href="${esc(x.file_url)}"
+                    target="_blank"
+                    class="underline">
+                    Open
+                  </a>
+                ` : "—"}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
 function bindProjectTaskModalOnce() {
   const m = document.getElementById("projectTaskModal");
   if (!m || m.dataset.bound === "1") return;
@@ -124363,35 +129889,146 @@ function closeProjectTaskModal() {
 }
 
 async function submitProjectTask() {
-  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-  const projectId = Number(document.getElementById("projectTaskProjectId")?.value || ACTIVE_PROJECT_ID || 0);
+  const cid =
+    getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectTaskProjectId")?.value
+    || ACTIVE_PROJECT_ID
+    || 0
+  );
+
   if (!cid || !projectId) return;
 
-  const taskId = Number(document.getElementById("projectTaskId")?.value || 0);
+  const taskId = Number(
+    document.getElementById("projectTaskId")?.value || 0
+  );
+
   const isEdit = !!taskId;
 
   const payload = {
-    task_code: document.getElementById("projectTaskCode")?.value?.trim(),
-    task_name: document.getElementById("projectTaskName")?.value?.trim(),
-    status: document.getElementById("projectTaskStatus")?.value || "open",
-    budget_value: Number(document.getElementById("projectTaskBudgetValue")?.value || 0),
-    start_date: document.getElementById("projectTaskStartDate")?.value || null,
-    expected_end_date: document.getElementById("projectTaskExpectedEndDate")?.value || null,
-    notes: document.getElementById("projectTaskNotes")?.value?.trim(),
+    task_code:
+      document.getElementById("projectTaskCode")
+        ?.value?.trim() || null,
+
+    task_name:
+      document.getElementById("projectTaskName")
+        ?.value?.trim(),
+
+    task_type:
+      document.getElementById("projectTaskType")
+        ?.value || "task",
+
+    wbs_code:
+      document.getElementById("projectTaskWbsCode")
+        ?.value?.trim() || null,
+
+    parent_task_id:
+      Number(
+        document.getElementById("projectTaskParentId")
+          ?.value || 0
+      ) || null,
+
+    priority:
+      document.getElementById("projectTaskPriority")
+        ?.value || "normal",
+
+    sequence_no:
+      Number(
+        document.getElementById("projectTaskSequence")
+          ?.value || 0
+      ),
+
+    status:
+      document.getElementById("projectTaskStatus")
+        ?.value || "open",
+
+    progress_percent:
+      Number(
+        document.getElementById("projectTaskProgress")
+          ?.value || 0
+      ),
+
+    budget_value:
+      Number(
+        document.getElementById("projectTaskBudgetValue")
+          ?.value || 0
+      ),
+
+    start_date:
+      document.getElementById("projectTaskStartDate")
+        ?.value || null,
+
+    expected_end_date:
+      document.getElementById("projectTaskExpectedEndDate")
+        ?.value || null,
+
+    baseline_start_date:
+      document.getElementById("projectTaskBaselineStart")
+        ?.value || null,
+
+    baseline_end_date:
+      document.getElementById("projectTaskBaselineEnd")
+        ?.value || null,
+
+    deliverable:
+      document.getElementById("projectTaskDeliverable")
+        ?.value?.trim() || null,
+
+    notes:
+      document.getElementById("projectTaskNotes")
+        ?.value?.trim() || null,
   };
 
   if (!payload.task_name) {
-    setElText("projectTaskMsg", "Task name is required.");
+    setElText(
+      "projectTaskMsg",
+      "Task / phase / milestone name is required."
+    );
     return;
   }
 
-  setElText("projectTaskMsg", isEdit ? "Updating task..." : "Saving task...");
+  if (
+    payload.progress_percent < 0 ||
+    payload.progress_percent > 100
+  ) {
+    setElText(
+      "projectTaskMsg",
+      "Progress must be between 0% and 100%."
+    );
+    return;
+  }
+
+  if (
+    taskId &&
+    Number(payload.parent_task_id) === Number(taskId)
+  ) {
+    setElText(
+      "projectTaskMsg",
+      "A work item cannot be its own parent."
+    );
+    return;
+  }
+
+  setElText(
+    "projectTaskMsg",
+    isEdit
+      ? "Updating work item..."
+      : "Saving work item..."
+  );
 
   try {
     await apiFetch(
       isEdit
-        ? ENDPOINTS.projects.tasksUpdate(cid, projectId, taskId)
-        : ENDPOINTS.projects.tasksCreate(cid, projectId),
+        ? ENDPOINTS.projects.tasksUpdate(
+            cid,
+            projectId,
+            taskId
+          )
+        : ENDPOINTS.projects.tasksCreate(
+            cid,
+            projectId
+          ),
       {
         method: isEdit ? "PATCH" : "POST",
         body: JSON.stringify(payload),
@@ -124399,12 +130036,17 @@ async function submitProjectTask() {
     );
 
     closeProjectTaskModal();
+
     await loadProjects?.();
     await loadProjectDetail(projectId);
+
   } catch (err) {
     setElText(
       "projectTaskMsg",
-      err?.message || (isEdit ? "Failed to update task." : "Failed to create task.")
+      err?.message ||
+      (isEdit
+        ? "Failed to update work item."
+        : "Failed to create work item.")
     );
   }
 }
@@ -124639,23 +130281,102 @@ function bindProjectIssueModalOnce() {
 }
 
 async function openProjectIssueModal(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return;
+
   bindProjectIssueModalOnce();
   ACTIVE_PROJECT_ID = Number(projectId);
 
-  document.getElementById("projectIssueProjectId").value = String(projectId);
-  document.getElementById("projectIssueDate").value = new Date().toISOString().slice(0, 10);
-  document.getElementById("projectIssueUsageType").value = "consumed";
+  try {
+    const project = await apiFetch(
+      ENDPOINTS.projects.one(cid, projectId)
+    );
 
-  await populateProjectTaskSelect("projectIssueTaskId", projectId, "Select task...");
-  await populateProjectCostCodeSelect("projectIssueCostCodeId", "Select cost code...");
+    if (!project) {
+      alert("Project not found.");
+      return;
+    }
 
-  const tbody = document.getElementById("projectIssueLines");
-  if (tbody) tbody.innerHTML = "";
+    if (project.inventory_enabled === false) {
+      alert("Inventory usage is disabled for this project.");
+      return;
+    }
 
-  await addProjectIssueLine();
+    if (["closed", "cancelled"].includes(
+      String(project.status || "").toLowerCase()
+    )) {
+      alert("Materials cannot be issued to a closed or cancelled project.");
+      return;
+    }
 
-  setElText("projectIssueMsg", "");
-  document.getElementById("projectIssueModal")?.classList.remove("hidden");
+    const mode = String(
+      project.accounting_mode || "contract"
+    ).toLowerCase();
+
+    const account =
+      ["contract", "wip", "capital"].includes(mode)
+        ? project.wip_account_code
+        : project.cost_account_code;
+
+    if (!account) {
+      alert(
+        ["contract", "wip", "capital"].includes(mode)
+          ? "Configure the project's WIP/CIP account before issuing materials."
+          : "Configure the project's cost/expense account before issuing materials."
+      );
+      return;
+    }
+
+    document.getElementById("projectIssueProjectId").value =
+      String(projectId);
+
+    document.getElementById("projectIssueDate").value =
+      new Date().toISOString().slice(0, 10);
+
+    document.getElementById("projectIssueUsageType").value =
+      "consumed";
+
+    await populateProjectTaskSelect(
+      "projectIssueTaskId",
+      projectId,
+      "Select task..."
+    );
+
+    await populateProjectCostCodeSelect(
+      "projectIssueCostCodeId",
+      "Select cost code..."
+    );
+
+    const tbody = document.getElementById("projectIssueLines");
+    if (tbody) tbody.innerHTML = "";
+
+    await addProjectIssueLine();
+
+    const modeLabel = {
+      contract: "Contract / WIP",
+      wip: "Work in Progress",
+      capital: "Capital / CIP",
+      expense: "Project Expense",
+      none: "Operational Expense",
+    }[mode] || mode;
+
+    setElText(
+      "projectIssueMsg",
+      `Accounting: ${modeLabel} • Debit account: ${account}`
+    );
+
+    document
+      .getElementById("projectIssueModal")
+      ?.classList.remove("hidden");
+
+  } catch (err) {
+    console.error("[Projects] open material issue failed", err);
+
+    alert(
+      err?.message ||
+      "Failed to prepare material issue."
+    );
+  }
 }
 
 function closeProjectIssueModal() {

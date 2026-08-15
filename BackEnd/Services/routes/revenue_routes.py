@@ -796,16 +796,48 @@ def api_revenue_contracts(company_id: int):
 
     if request.method == "GET":
         try:
-            limit = int(request.args.get("limit", 100) or 100)
-            q = (request.args.get("q") or "").strip()
-            status = (request.args.get("status") or "").strip()
+            limit = int(
+                request.args.get("limit", 100)
+                or 100
+            )
+
+            q = (
+                request.args.get("q")
+                or ""
+            ).strip()
+
+            status = (
+                request.args.get("status")
+                or ""
+            ).strip()
+
+            project_id = request.args.get(
+                "project_id"
+            )
+
+            customer_id = request.args.get(
+                "customer_id"
+            )
+
             items = db_service.list_revenue_contracts(
                 company_id=int(company_id),
                 limit=limit,
                 q=q or None,
                 status=status or None,
+                project_id=(
+                    int(project_id)
+                    if project_id else None
+                ),
+                customer_id=(
+                    int(customer_id)
+                    if customer_id else None
+                ),
             )
-            return jsonify({"ok": True, "items": items}), 200
+
+            return jsonify({
+                "ok": True,
+                "items": items,
+            }), 200
         except Exception as e:
             current_app.logger.exception("list_revenue_contracts failed")
             return jsonify({"ok": False, "error": str(e)}), 400
