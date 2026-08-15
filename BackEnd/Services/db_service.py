@@ -50081,75 +50081,104 @@ class DatabaseService:
         ALTER TABLE {schema}.audit_trail
         ALTER COLUMN before_json SET NOT NULL,
         ALTER COLUMN before_json SET DEFAULT '{{}}'::jsonb,
-        ALTER COLUMN after_json  SET NOT NULL,
-        ALTER COLUMN after_json  SET DEFAULT '{{}}'::jsonb;
+        ALTER COLUMN after_json SET NOT NULL,
+        ALTER COLUMN after_json SET DEFAULT '{{}}'::jsonb;
 
-        -- actor FK (kept, works with NULLs)
+        -- normalize legacy severity values
+        UPDATE {schema}.audit_trail
+        SET severity = CASE
+            WHEN LOWER(BTRIM(COALESCE(severity, ''))) = 'warning' THEN 'warn'
+            WHEN BTRIM(COALESCE(severity, '')) = '' THEN 'info'
+            ELSE LOWER(BTRIM(severity))
+        END;
+
+        ALTER TABLE {schema}.audit_trail
+        ALTER COLUMN severity SET DEFAULT 'info',
+        ALTER COLUMN severity SET NOT NULL;
+
+        -- audit amounts may legitimately be negative
+        UPDATE {schema}.audit_trail
+        SET amount = 0
+        WHERE amount IS NULL;
+
+        ALTER TABLE {schema}.audit_trail
+        ALTER COLUMN amount SET DEFAULT 0,
+        ALTER COLUMN amount SET NOT NULL;
+
+        -- remove old restriction that prevented negative audit amounts
+        ALTER TABLE {schema}.audit_trail
+        DROP CONSTRAINT IF EXISTS {schema}_audit_amt_ck;
+
+        -- make legacy empty audit rows valid
+        UPDATE {schema}.audit_trail
+        SET message = 'Legacy audit event'
+        WHERE message IS NULL
+          AND before_json = '{{}}'::jsonb
+          AND after_json = '{{}}'::jsonb;
+
+        -- actor FK
         DO $$
         BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_audit_actor_fk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.audit_trail
-            ADD CONSTRAINT %I
-            FOREIGN KEY (actor_user_id)
-            REFERENCES public.users(id)
-            ON DELETE RESTRICT',
-            '{schema}', '{schema}_audit_actor_fk'
-            );
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_audit_actor_fk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.audit_trail
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (actor_user_id)
+                     REFERENCES public.users(id)
+                     ON DELETE RESTRICT',
+                    '{schema}',
+                    '{schema}_audit_actor_fk'
+                );
+            END IF;
         END $$;
 
         -- checks
         DO $$
         BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_audit_severity_ck' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.audit_trail
-            ADD CONSTRAINT %I
-            CHECK (severity IN (''info'',''warn'',''critical''))',
-            '{schema}', '{schema}_audit_severity_ck'
-            );
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_audit_severity_ck'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.audit_trail
+                     ADD CONSTRAINT %I
+                     CHECK (severity IN (''info'',''warn'',''critical''))',
+                    '{schema}',
+                    '{schema}_audit_severity_ck'
+                );
+            END IF;
 
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_audit_amt_ck' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.audit_trail
-            ADD CONSTRAINT %I
-            CHECK (amount >= 0)',
-            '{schema}', '{schema}_audit_amt_ck'
-            );
-        END IF;
-
-        -- prevent junk rows: require message OR before/after not empty
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_audit_nonempty_ck' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.audit_trail
-            ADD CONSTRAINT %I
-            CHECK (
-                message IS NOT NULL
-                    OR before_json <> ''{{}}''::jsonb
-                    OR after_json <> ''{{}}''::jsonb
-
-            )',
-            '{schema}', '{schema}_audit_nonempty_ck'
-            );
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_audit_nonempty_ck'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.audit_trail
+                     ADD CONSTRAINT %I
+                     CHECK (
+                         message IS NOT NULL
+                         OR before_json <> ''{{}}''::jsonb
+                         OR after_json <> ''{{}}''::jsonb
+                     )',
+                    '{schema}',
+                    '{schema}_audit_nonempty_ck'
+                );
+            END IF;
         END $$;
 
         -- indexes (existing + extra)
@@ -55393,7 +55422,7 @@ class DatabaseService:
         END IF;
         END $fk_vpa_bill_company$;                
         """
-        BOOTSTRAP_MIGRATION_VERSION=26
+        BOOTSTRAP_MIGRATION_VERSION=27
         AP_MIGRATION_VERSION=2
         TENANT_SYNC_MIGRATION_VERSION = 1
 
@@ -122557,99 +122586,73 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ),
         )
 
-    def get_project_cost_summary(
+    def list_project_commitments(
         self,
         company_id: int,
         project_id: int,
-    ) -> dict:
+    ) -> list[dict]:
         schema = self.company_schema(company_id)
 
-        expenses = self.list_project_expenses(
-            company_id,
-            project_id,
-        )
-
-        commitments = self.list_project_commitments(
-            company_id,
-            project_id,
-        )
-
-        time_entries = self.list_project_time_entries(
-            company_id,
-            project_id,
-        )
-
-        material = self.fetch_one(
+        return self.fetch_all(
             f"""
             SELECT
+                po.id AS purchase_order_id,
+                po.po_no AS po_number,
+                po.status AS po_status,
+
+                pol.id AS line_id,
+                pol.project_id,
+                pol.task_id,
+                pol.cost_code_id,
+
+                t.task_name,
+                cc.code AS cost_code,
+
+                pol.memo AS description,
+                pol.ordered_qty AS quantity,
+                pol.unit_cost AS unit_price,
+
                 COALESCE(
-                    SUM(
-                        COALESCE(
-                            extended_cost,
-                            0
-                        )
-                    ),
+                    pol.ordered_qty,
                     0
-                ) AS material_cost
-            FROM {schema}.inventory_tx_lines
-            WHERE company_id = %s
-            AND project_id = %s
+                ) * COALESCE(
+                    pol.unit_cost,
+                    0
+                ) AS ordered_amount
+
+            FROM {schema}.purchase_order_lines pol
+
+            JOIN {schema}.purchase_orders po
+                ON po.company_id = pol.company_id
+            AND po.id = pol.po_id
+
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = pol.company_id
+            AND t.id = pol.task_id
+
+            LEFT JOIN {schema}.project_cost_codes cc
+                ON cc.company_id = pol.company_id
+            AND cc.id = pol.cost_code_id
+
+            WHERE pol.company_id = %s
             AND COALESCE(
-                usage_type,
-                ''
-            ) = 'consumed'
+                pol.project_id,
+                po.project_id
+            ) = %s
+            AND COALESCE(
+                pol.line_status,
+                'open'
+            ) <> 'cancelled'
+
+            ORDER BY
+                po.id DESC,
+                pol.id ASC
             """,
             (
                 int(company_id),
                 int(project_id),
             ),
-        ) or {}
-
-        expense_cost = sum(
-            float(x.get("amount") or 0)
-            for x in expenses
-            if x.get("status") in {
-                "approved",
-                "posted",
-            }
         )
-
-        labour_cost = sum(
-            float(x.get("labour_cost") or 0)
-            for x in time_entries
-            if x.get("status") == "approved"
-        )
-
-        committed_cost = sum(
-            float(x.get("ordered_amount") or 0)
-            for x in commitments
-            if str(
-                x.get("po_status") or ""
-            ).lower() not in {
-                "cancelled",
-                "closed",
-            }
-        )
-
-        material_cost = float(
-            material.get("material_cost") or 0
-        )
-
-        actual_cost = (
-            material_cost
-            + labour_cost
-            + expense_cost
-        )
-
-        return {
-            "material_cost": material_cost,
-            "labour_cost": labour_cost,
-            "expense_cost": expense_cost,
-            "actual_cost": actual_cost,
-            "committed_cost": committed_cost,
-            "cost_exposure":
-                actual_cost + committed_cost,
-        }
 
     def list_project_changes(
         self,
