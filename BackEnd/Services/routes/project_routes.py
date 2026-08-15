@@ -1042,24 +1042,6 @@ def project_forecasts_route(cid: int, project_id: int):
         return jsonify({"error": str(e)}), 400
 
 @projects_bp.route(
-    "/api/companies/<int:cid>/projects/<int:project_id>/capital-position",
-    methods=["GET"],
-)
-@require_auth
-def project_capital_position_route(cid: int, project_id: int):
-    company_id = int(cid)
-
-    user, err = _company_auth_or_403(company_id)
-    if err:
-        return err
-
-    try:
-        data = db_service.get_project_capital_position(company_id, project_id)
-        return jsonify({"data": data}), 200
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-
-@projects_bp.route(
     "/api/companies/<int:cid>/projects/<int:project_id>/capitalisations",
     methods=["GET", "POST"],
 )
