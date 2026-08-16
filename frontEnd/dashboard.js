@@ -65029,6 +65029,16 @@ async function saveEditModal() {
       showPayrollStatus("Bonus scheme saved.","success");
   }
 
+  function payrollEmployeeName(employee = {}) {
+    return [
+      employee.first_name,
+      employee.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || "Unnamed employee";
+  }
+
   async function openPayrollBonusAssignment(item = {}) {
     const employees = payrollState.employees || [];
     const schemes = payrollState.employeeBenefits.bonusSchemes || [];
@@ -65044,7 +65054,9 @@ async function saveEditModal() {
         required: true,
         options: employees.map(e => ({
           value: e.id,
-          label: [e.employee_no, e.first_name, e.last_name].filter(Boolean).join(" "),
+          label: [e.first_name, e.last_name]
+            .filter(Boolean)
+            .join(" "),
         })),
       },
       {
@@ -67953,9 +67965,7 @@ async function saveEditModal() {
       <option value="">All employees</option>
       ${employees.map(employee=>`
         <option value="${employee.id}">
-          ${esc(employee.employee_no||"")} —
-          ${esc(employee.first_name||"")}
-          ${esc(employee.last_name||"")}
+          ${`${employee.first_name || ""} ${employee.last_name || ""}`.trim()}
         </option>
       `).join("")}`;
 
@@ -123834,6 +123844,321 @@ function getWorkUnitLabel() {
 
 window.getWorkUnitLabel = getWorkUnitLabel;
 
+const projectLookupState = {
+  employees: [],
+  departments: [],
+};
+
+async function loadProjectPeopleAndDepartments() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  if (!cid) {
+    return;
+  }
+
+  try {
+    /*
+     * Reuse payroll state first because payrollLoadAll()
+     * already populates employees and setup.
+     */
+    let employees =
+      window.payrollState?.employees ||
+      [];
+
+    let departments =
+      window.payrollState?.setup?.departments ||
+      [];
+
+    /*
+     * payrollState is scoped inside the payroll IIFE in
+     * the code you shared, so it may not be exposed on
+     * window. If not, load the same sources directly.
+     */
+    if (!employees.length) {
+      const employeeOut = await apiFetch(
+        ENDPOINTS.payroll.employees(
+          cid,
+          { status: "" }
+        )
+      );
+
+      employees =
+        employeeOut?.items ||
+        employeeOut?.data?.items ||
+        employeeOut?.data ||
+        [];
+    }
+
+    /*
+     * If departments were not exposed globally,
+     * bootstrap gives us the same setup object used
+     * by Payroll.
+     */
+    if (!departments.length) {
+      const bootstrapOut = await apiFetch(
+        ENDPOINTS.payroll.bootstrap(cid)
+      );
+
+      const data =
+        bootstrapOut?.data ||
+        {};
+
+      departments =
+        data.setup?.departments ||
+        [];
+    }
+
+    projectLookupState.employees =
+      (Array.isArray(employees)
+        ? employees
+        : []
+      );
+
+    projectLookupState.departments =
+      (Array.isArray(departments)
+        ? departments
+        : []
+      );
+
+  } catch (err) {
+    console.error(
+      "[Projects] failed to load employees/departments",
+      err
+    );
+
+    projectLookupState.employees = [];
+    projectLookupState.departments = [];
+  }
+}
+
+function fillProjectDepartmentSelect(
+  selectedId = ""
+) {
+  const el =
+    document.getElementById(
+      "projectDepartmentId"
+    );
+
+  if (!el) return;
+
+  const departments =
+    projectLookupState.departments
+      .filter(department =>
+        department &&
+        department.id &&
+        department.is_active !== false
+      )
+      .sort((a, b) =>
+        String(
+          a.name ||
+          a.department_name ||
+          ""
+        ).localeCompare(
+          String(
+            b.name ||
+            b.department_name ||
+            ""
+          )
+        )
+      );
+
+  el.innerHTML = `
+    <option value="">
+      Select department…
+    </option>
+
+    ${departments.map(department => {
+      const name =
+        department.name ||
+        department.department_name ||
+        `Department ${department.id}`;
+
+      return `
+        <option
+          value="${esc(
+            String(department.id)
+          )}"
+          ${
+            String(department.id) ===
+            String(selectedId)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(name)}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
+function projectEmployeeUserId(employee) {
+  return (
+    employee.user_id ||
+    employee.app_user_id ||
+    employee.system_user_id ||
+    null
+  );
+}
+
+function fillProjectManagerSelect(
+  selectedUserId = ""
+) {
+  const el =
+    document.getElementById(
+      "projectManagerUserId"
+    );
+
+  if (!el) return;
+
+  const employees =
+    projectLookupState.employees
+      .filter(employee => {
+        const status = String(
+          employee.employment_status ||
+          "active"
+        ).toLowerCase();
+
+        return (
+          status === "active" &&
+          projectEmployeeUserId(employee)
+        );
+      })
+      .sort((a, b) => {
+        const aName =
+          `${a.first_name || ""} ${a.last_name || ""}`
+            .trim();
+
+        const bName =
+          `${b.first_name || ""} ${b.last_name || ""}`
+            .trim();
+
+        return aName.localeCompare(bName);
+      });
+
+  el.innerHTML = `
+    <option value="">
+      Select project manager…
+    </option>
+
+    ${employees.map(employee => {
+      const userId =
+        projectEmployeeUserId(employee);
+
+      const name =
+        `${employee.first_name || ""} ${
+          employee.last_name || ""
+        }`.trim();
+
+      return `
+        <option
+          value="${esc(
+            String(userId)
+          )}"
+          ${
+            String(userId) ===
+            String(selectedUserId)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(name)}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
+function fillProjectSponsorSelect(
+  selectedUserId = ""
+) {
+  const el =
+    document.getElementById(
+      "projectSponsorUserId"
+    );
+
+  if (!el) return;
+
+  const employees =
+    projectLookupState.employees
+      .filter(employee => {
+        const status = String(
+          employee.employment_status ||
+          "active"
+        ).toLowerCase();
+
+        return (
+          status === "active" &&
+          projectEmployeeUserId(employee)
+        );
+      })
+      .sort((a, b) => {
+        const aName =
+          `${a.first_name || ""} ${a.last_name || ""}`
+            .trim();
+
+        const bName =
+          `${b.first_name || ""} ${b.last_name || ""}`
+            .trim();
+
+        return aName.localeCompare(bName);
+      });
+
+  el.innerHTML = `
+    <option value="">
+      Select sponsor / owner…
+    </option>
+
+    ${employees.map(employee => {
+      const userId =
+        projectEmployeeUserId(employee);
+
+      const name =
+        `${employee.first_name || ""} ${
+          employee.last_name || ""
+        }`.trim();
+
+      return `
+        <option
+          value="${esc(
+            String(userId)
+          )}"
+          ${
+            String(userId) ===
+            String(selectedUserId)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(name)}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
+async function loadProjectLookupDropdowns(
+  project = null
+) {
+  await loadProjectPeopleAndDepartments();
+
+  fillProjectManagerSelect(
+    project?.project_manager_user_id || ""
+  );
+
+  fillProjectSponsorSelect(
+    project?.sponsor_user_id ||
+    project?.owner_user_id ||
+    ""
+  );
+
+  fillProjectDepartmentSelect(
+    project?.department_id || ""
+  );
+}
+
 async function loadProjectInventoryItems() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
 
@@ -123971,6 +124296,248 @@ async function populateProjectCustomerDropdown() {
       </option>
     `).join("")}
   `;
+}
+
+function projectPostingAccounts(kind = "all") {
+  const rows =
+    window.COA_CACHE ||
+    window.COMPANY_COA ||
+    window.CHART_OF_ACCOUNTS ||
+    [];
+
+  const accounts = (Array.isArray(rows) ? rows : [])
+    .map(account => {
+      const code = String(
+        account.code ||
+        account.account_code ||
+        account.template_code ||
+        ""
+      ).trim();
+
+      const name = String(
+        account.name ||
+        account.account_name ||
+        account.description ||
+        ""
+      ).trim();
+
+      const posting =
+        account.posting === undefined ||
+        account.posting === null
+          ? true
+          : !["false", "0", "no"].includes(
+              String(account.posting).toLowerCase()
+            );
+
+      const active =
+        account.is_active === undefined ||
+        account.is_active === null
+          ? true
+          : !["false", "0", "no"].includes(
+              String(account.is_active).toLowerCase()
+            );
+
+      return {
+        ...account,
+        code,
+        name,
+        posting,
+        active,
+      };
+    })
+    .filter(account =>
+      account.code &&
+      account.name &&
+      account.posting &&
+      account.active
+    );
+
+  const filtered = accounts.filter(account => {
+    const section = String(
+      account.section ||
+      account.account_section ||
+      ""
+    ).toLowerCase();
+
+    const category = String(
+      account.category ||
+      account.account_category ||
+      ""
+    ).toLowerCase();
+
+    const type = String(
+      account.account_type ||
+      account.type ||
+      ""
+    ).toLowerCase();
+
+    const role = String(
+      account.role || ""
+    ).toLowerCase();
+
+    const name = String(
+      account.name || ""
+    ).toLowerCase();
+
+    const text = [
+      section,
+      category,
+      type,
+      role,
+      name,
+    ].join(" ");
+
+    if (kind === "all") {
+      return true;
+    }
+
+    if (kind === "asset") {
+      return (
+        section.includes("asset") ||
+        category.includes("asset") ||
+        type.includes("asset") ||
+        /asset|work in progress|\bwip\b|construction in progress|\bcip\b|inventory/.test(text)
+      );
+    }
+
+    if (kind === "revenue") {
+      return (
+        section.includes("revenue") ||
+        category.includes("revenue") ||
+        type.includes("revenue") ||
+        /revenue|income|sales|contract revenue/.test(text)
+      );
+    }
+
+    if (kind === "expense") {
+      return (
+        section.includes("expense") ||
+        category.includes("expense") ||
+        type.includes("expense") ||
+        /expense|cost|cost of sales|materials|labour|subcontract/.test(text)
+      );
+    }
+
+    return true;
+  });
+
+  return (filtered.length ? filtered : accounts)
+    .sort((a, b) => {
+      const nameCompare = a.name.localeCompare(b.name);
+
+      if (nameCompare !== 0) {
+        return nameCompare;
+      }
+
+      return a.code.localeCompare(b.code);
+    });
+}
+
+function fillProjectAccountSelect(
+  selectId,
+  kind = "all",
+  selectedCode = ""
+) {
+  const el = document.getElementById(selectId);
+  if (!el) return;
+
+  const accounts = projectPostingAccounts(kind);
+
+  const placeholderMap = {
+    asset: "Select WIP / CIP account…",
+    revenue: "Select revenue account…",
+    expense: "Select cost / expense account…",
+    all: "Select account…",
+  };
+
+  el.innerHTML = `
+    <option value="">
+      ${esc(
+        placeholderMap[kind] ||
+        placeholderMap.all
+      )}
+    </option>
+
+    ${accounts.map(account => `
+      <option
+        value="${esc(account.code)}"
+        ${
+          String(account.code) === String(selectedCode)
+            ? "selected"
+            : ""
+        }
+      >
+        ${esc(account.name)}
+      </option>
+    `).join("")}
+  `;
+
+  // Preserve a saved account even if it no longer matches
+  // the current filter or has been made inactive.
+  if (
+    selectedCode &&
+    !accounts.some(
+      account =>
+        String(account.code) === String(selectedCode)
+    )
+  ) {
+    const allRows =
+      window.COA_CACHE ||
+      window.COMPANY_COA ||
+      window.CHART_OF_ACCOUNTS ||
+      [];
+
+    const savedAccount = (
+      Array.isArray(allRows) ? allRows : []
+    ).find(account => {
+      const code = String(
+        account.code ||
+        account.account_code ||
+        account.template_code ||
+        ""
+      ).trim();
+
+      return code === String(selectedCode);
+    });
+
+    const savedName =
+      savedAccount?.name ||
+      savedAccount?.account_name ||
+      savedAccount?.description ||
+      selectedCode;
+
+    el.insertAdjacentHTML(
+      "beforeend",
+      `
+        <option
+          value="${esc(String(selectedCode))}"
+          selected
+        >
+          ${esc(String(savedName))}
+        </option>
+      `
+    );
+  }
+}
+
+function loadProjectAccountDropdowns(project = null) {
+  fillProjectAccountSelect(
+    "projectWipAccountCode",
+    "asset",
+    project?.wip_account_code || ""
+  );
+
+  fillProjectAccountSelect(
+    "projectRevenueAccountCode",
+    "revenue",
+    project?.revenue_account_code || ""
+  );
+
+  fillProjectAccountSelect(
+    "projectCostAccountCode",
+    "expense",
+    project?.cost_account_code || ""
+  );
 }
 
 function applyProjectTypeBehaviour() {
@@ -126943,9 +127510,17 @@ function bindProjectCreateModalOnce() {
   document.getElementById("projectType")?.addEventListener("change", applyProjectTypeBehaviour);
 }
 
-async function openProjectCreateModal(project = null) {
+async function openProjectCreateModal(
+  project = null
+) {
   bindProjectCreateModalOnce();
-  await populateProjectCustomerDropdown?.();
+
+  await Promise.all([
+    populateProjectCustomerDropdown?.(),
+    loadProjectLookupDropdowns(project),
+  ]);
+
+  loadProjectAccountDropdowns(project);
 
   const isEdit = !!project?.id;
   const today = new Date().toISOString().slice(0, 10);
