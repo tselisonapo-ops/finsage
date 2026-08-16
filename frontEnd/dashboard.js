@@ -71007,12 +71007,12 @@ async function saveEditModal() {
         const name = [
           employee.first_name,
           employee.last_name,
-        ].filter(Boolean).join(" ");
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
 
-        return (
-          `${employee.employee_no || "No number"} — ` +
-          `${name || "Unnamed employee"}`
-        );
+        return name || "Unnamed employee";
       }
     );
 
@@ -123994,17 +123994,12 @@ function fillProjectDepartmentSelect(
   `;
 }
 
-function projectEmployeeUserId(employee) {
-  return (
-    employee.user_id ||
-    employee.app_user_id ||
-    employee.system_user_id ||
-    null
-  );
+function projectEmployeeUserId(employee = {}) {
+  return Number(employee.id || 0) || null;
 }
 
 function fillProjectManagerSelect(
-  selectedUserId = ""
+  selectedEmployeeId = ""
 ) {
   const el =
     document.getElementById(
@@ -124014,7 +124009,7 @@ function fillProjectManagerSelect(
   if (!el) return;
 
   const employees =
-    projectLookupState.employees
+    (projectLookupState.employees || [])
       .filter(employee => {
         const status = String(
           employee.employment_status ||
@@ -124022,18 +124017,24 @@ function fillProjectManagerSelect(
         ).toLowerCase();
 
         return (
-          status === "active" &&
-          projectEmployeeUserId(employee)
+          status !== "inactive" &&
+          Number(employee.id || 0) > 0
         );
       })
       .sort((a, b) => {
-        const aName =
-          `${a.first_name || ""} ${a.last_name || ""}`
-            .trim();
+        const aName = [
+          a.first_name,
+          a.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
 
-        const bName =
-          `${b.first_name || ""} ${b.last_name || ""}`
-            .trim();
+        const bName = [
+          b.first_name,
+          b.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
 
         return aName.localeCompare(bName);
       });
@@ -124044,22 +124045,19 @@ function fillProjectManagerSelect(
     </option>
 
     ${employees.map(employee => {
-      const userId =
-        projectEmployeeUserId(employee);
-
-      const name =
-        `${employee.first_name || ""} ${
-          employee.last_name || ""
-        }`.trim();
+      const name = [
+        employee.first_name,
+        employee.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ");
 
       return `
         <option
-          value="${esc(
-            String(userId)
-          )}"
+          value="${esc(String(employee.id))}"
           ${
-            String(userId) ===
-            String(selectedUserId)
+            String(employee.id) ===
+            String(selectedEmployeeId)
               ? "selected"
               : ""
           }
@@ -124072,7 +124070,7 @@ function fillProjectManagerSelect(
 }
 
 function fillProjectSponsorSelect(
-  selectedUserId = ""
+  selectedEmployeeId = ""
 ) {
   const el =
     document.getElementById(
@@ -124082,7 +124080,7 @@ function fillProjectSponsorSelect(
   if (!el) return;
 
   const employees =
-    projectLookupState.employees
+    (projectLookupState.employees || [])
       .filter(employee => {
         const status = String(
           employee.employment_status ||
@@ -124090,18 +124088,24 @@ function fillProjectSponsorSelect(
         ).toLowerCase();
 
         return (
-          status === "active" &&
-          projectEmployeeUserId(employee)
+          status !== "inactive" &&
+          Number(employee.id || 0) > 0
         );
       })
       .sort((a, b) => {
-        const aName =
-          `${a.first_name || ""} ${a.last_name || ""}`
-            .trim();
+        const aName = [
+          a.first_name,
+          a.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
 
-        const bName =
-          `${b.first_name || ""} ${b.last_name || ""}`
-            .trim();
+        const bName = [
+          b.first_name,
+          b.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
 
         return aName.localeCompare(bName);
       });
@@ -124112,22 +124116,19 @@ function fillProjectSponsorSelect(
     </option>
 
     ${employees.map(employee => {
-      const userId =
-        projectEmployeeUserId(employee);
-
-      const name =
-        `${employee.first_name || ""} ${
-          employee.last_name || ""
-        }`.trim();
+      const name = [
+        employee.first_name,
+        employee.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ");
 
       return `
         <option
-          value="${esc(
-            String(userId)
-          )}"
+          value="${esc(String(employee.id))}"
           ${
-            String(userId) ===
-            String(selectedUserId)
+            String(employee.id) ===
+            String(selectedEmployeeId)
               ? "selected"
               : ""
           }
