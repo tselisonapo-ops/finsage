@@ -43,7 +43,6 @@ export default function App(){
         <Route path="/people" element={<Protected><PeoplePage/></Protected>}/>
         <Route path="/organisation" element={<Protected><OrganisationPage/></Protected>}/>
         <Route path="/governance" element={<Protected><GovernancePage/></Protected>}/>
-        <Route path="/settings" element={<Protected><SettingsPage/></Protected>}/>
 
         <Route path="/requests" element={<Protected><RequestsPage/></Protected>}/>
         <Route path="/requests/new" element={<Protected><RequestPage/></Protected>}/>
@@ -57,7 +56,6 @@ export default function App(){
         <Route path="/procurement/vendors" element={<Protected><ProcurementVendorsPage/></Protected>}/>
         <Route path="/procurement/settings" element={<Protected><ProcurementSettingsPage/></Protected>}/>
 
-        <Route path="/settings" element={<Protected><SettingsPage/></Protected>}/>
         <Route path="/settings/company" element={<Protected><SettingsPage section="company"/></Protected>}/>
         <Route path="/settings/email" element={<Protected><SettingsPage section="email"/></Protected>}/>
         <Route path="/settings/users" element={<Protected><SettingsPage section="users"/></Protected>}/>

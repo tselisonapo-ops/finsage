@@ -129452,7 +129452,78 @@ function renderProjectCapitalisationActions(x) {
   return "—";
 }
 
-function openProjectAssignModal(
+function fillProjectTaskAssigneeSelect(
+  selectedEmployeeId = ""
+) {
+  const el =
+    document.getElementById(
+      "projectAssignUserId"
+    );
+
+  if (!el) return;
+
+  const employees =
+    (projectLookupState.employees || [])
+      .filter(employee => {
+        const status = String(
+          employee.employment_status ||
+          "active"
+        ).toLowerCase();
+
+        return (
+          status !== "inactive" &&
+          Number(employee.id || 0) > 0
+        );
+      })
+      .sort((a, b) => {
+        const aName = [
+          a.first_name,
+          a.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        const bName = [
+          b.first_name,
+          b.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        return aName.localeCompare(bName);
+      });
+
+  el.innerHTML = `
+    <option value="">
+      Select employee…
+    </option>
+
+    ${employees.map(employee => {
+      const name = [
+        employee.first_name,
+        employee.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return `
+        <option
+          value="${esc(String(employee.id))}"
+          ${
+            String(employee.id) ===
+            String(selectedEmployeeId)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(name)}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
+async function openProjectAssignModal(
   projectId,
   task
 ) {
@@ -129472,9 +129543,13 @@ function openProjectAssignModal(
     `— ${task.task_name || ""}`
   );
 
-  document
-    .getElementById("projectAssignUserId")
-    .value = "";
+  if (
+    !projectLookupState.employees?.length
+  ) {
+    await loadProjectPeopleAndDepartments();
+  }
+
+  fillProjectTaskAssigneeSelect();
 
   document
     .getElementById("projectAssignRole")
@@ -129488,7 +129563,10 @@ function openProjectAssignModal(
     .getElementById("projectAssignNotes")
     .value = "";
 
-  setElText("projectAssignMsg", "");
+  setElText(
+    "projectAssignMsg",
+    ""
+  );
 
   document
     .getElementById("projectAssignModal")

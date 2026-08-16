@@ -25627,7 +25627,7 @@ class DatabaseService:
         )
 
     
-    OPS_MIGRATION_VERSION = 14
+    OPS_MIGRATION_VERSION = 15
     def ensure_company_ops(
         self,
         company_id:int,
@@ -28813,6 +28813,368 @@ class DatabaseService:
         ON {schema}.ops_rfq_snapshots(
             sourcing_event_id,
             version_no DESC
+        );
+
+        -- ============================================================
+        -- FINFLOW PHASE 3C — VENDOR PORTAL + QUOTE SUBMISSION
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_portal_users(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            vendor_id INT NOT NULL
+                REFERENCES {schema}.vendors(id)
+                ON DELETE CASCADE,
+
+            email TEXT NOT NULL,
+            first_name TEXT NULL,
+            last_name TEXT NULL,
+            phone TEXT NULL,
+
+            password_hash TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'invited',
+
+            email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+
+            last_login_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id,email),
+
+            CHECK(
+                status IN(
+                    'invited',
+                    'active',
+                    'suspended',
+                    'disabled'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_portal_users_vendor_idx
+        ON {schema}.ops_vendor_portal_users(
+            vendor_id,
+            status
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_portal_invites(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            vendor_id INT NOT NULL
+                REFERENCES {schema}.vendors(id)
+                ON DELETE CASCADE,
+
+            sourcing_event_id BIGINT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            sourcing_event_vendor_id BIGINT NULL
+                REFERENCES {schema}.ops_sourcing_event_vendors(id)
+                ON DELETE CASCADE,
+
+            email TEXT NOT NULL,
+
+            token_hash TEXT NOT NULL,
+
+            expires_at TIMESTAMPTZ NOT NULL,
+
+            status TEXT NOT NULL DEFAULT 'pending',
+
+            accepted_at TIMESTAMPTZ NULL,
+
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(token_hash),
+
+            CHECK(
+                status IN(
+                    'pending',
+                    'accepted',
+                    'expired',
+                    'revoked'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_portal_invites_vendor_idx
+        ON {schema}.ops_vendor_portal_invites(
+            vendor_id,
+            status
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_portal_invites_event_idx
+        ON {schema}.ops_vendor_portal_invites(
+            sourcing_event_id,
+            status
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_portal_sessions(
+            id BIGSERIAL PRIMARY KEY,
+
+            portal_user_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_portal_users(id)
+                ON DELETE CASCADE,
+
+            token_hash TEXT NOT NULL,
+
+            expires_at TIMESTAMPTZ NOT NULL,
+
+            revoked_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_seen_at TIMESTAMPTZ NULL,
+
+            user_agent TEXT NULL,
+            ip_address TEXT NULL,
+
+            UNIQUE(token_hash)
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_portal_sessions_user_idx
+        ON {schema}.ops_vendor_portal_sessions(
+            portal_user_id,
+            expires_at
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_quotes(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            sourcing_event_vendor_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_event_vendors(id)
+                ON DELETE CASCADE,
+
+            vendor_id INT NOT NULL
+                REFERENCES {schema}.vendors(id)
+                ON DELETE RESTRICT,
+
+            quote_no TEXT NULL,
+
+            vendor_quote_reference TEXT NULL,
+
+            quote_date DATE NULL,
+            valid_until DATE NULL,
+
+            currency_code TEXT NULL,
+
+            subtotal NUMERIC(18,2) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            tax_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            delivery_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            lead_time_days INT NULL,
+            warranty_text TEXT NULL,
+            payment_terms TEXT NULL,
+            delivery_terms TEXT NULL,
+
+            notes TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            revision_no INT NOT NULL DEFAULT 1,
+
+            submitted_at TIMESTAMPTZ NULL,
+            submitted_by_portal_user_id BIGINT NULL
+                REFERENCES {schema}.ops_vendor_portal_users(id)
+                ON DELETE SET NULL,
+
+            withdrawn_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(sourcing_event_vendor_id,revision_no),
+
+            CHECK(
+                status IN(
+                    'draft',
+                    'submitted',
+                    'withdrawn',
+                    'superseded',
+                    'accepted',
+                    'rejected'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_quotes_event_idx
+        ON {schema}.ops_vendor_quotes(
+            sourcing_event_id,
+            status
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_quotes_vendor_idx
+        ON {schema}.ops_vendor_quotes(
+            vendor_id,
+            status
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_quote_lines(
+            id BIGSERIAL PRIMARY KEY,
+
+            quote_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_quotes(id)
+                ON DELETE CASCADE,
+
+            sourcing_event_item_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_event_items(id)
+                ON DELETE RESTRICT,
+
+            line_no INT NOT NULL,
+
+            description TEXT NOT NULL,
+
+            quantity NUMERIC(18,4) NOT NULL DEFAULT 0,
+
+            unit_price NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            line_discount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            tax_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            line_total NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            offered_specification TEXT NULL,
+
+            manufacturer TEXT NULL,
+            model_no TEXT NULL,
+
+            lead_time_days INT NULL,
+
+            warranty_text TEXT NULL,
+
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(quote_id,line_no)
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_quote_lines_quote_idx
+        ON {schema}.ops_vendor_quote_lines(
+            quote_id,
+            line_no
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_quote_documents(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            quote_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_quotes(id)
+                ON DELETE CASCADE,
+
+            document_type TEXT NOT NULL DEFAULT 'quotation',
+
+            file_name TEXT NOT NULL,
+            storage_path TEXT NOT NULL,
+            mime_type TEXT NULL,
+            file_size BIGINT NULL,
+            checksum_sha256 TEXT NULL,
+
+            uploaded_by_portal_user_id BIGINT NULL
+                REFERENCES {schema}.ops_vendor_portal_users(id)
+                ON DELETE SET NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK(
+                document_type IN(
+                    'quotation',
+                    'technical_specification',
+                    'tax_document',
+                    'company_profile',
+                    'other'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_quote_documents_quote_idx
+        ON {schema}.ops_vendor_quote_documents(
+            quote_id,
+            document_type
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_sourcing_messages(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            vendor_id INT NULL
+                REFERENCES {schema}.vendors(id)
+                ON DELETE CASCADE,
+
+            sender_type TEXT NOT NULL,
+
+            sender_user_id INT NULL,
+            sender_portal_user_id BIGINT NULL,
+
+            subject TEXT NULL,
+            message TEXT NOT NULL,
+
+            visibility TEXT NOT NULL DEFAULT 'vendor_private',
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK(
+                sender_type IN(
+                    'internal',
+                    'vendor'
+                )
+            ),
+
+            CHECK(
+                visibility IN(
+                    'vendor_private',
+                    'all_invited_vendors'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_sourcing_messages_event_idx
+        ON {schema}.ops_sourcing_messages(
+            sourcing_event_id,
+            created_at
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_quote_snapshots(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            quote_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_quotes(id)
+                ON DELETE CASCADE,
+
+            revision_no INT NOT NULL,
+
+            snapshot_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(quote_id,revision_no)
         );
         """
 
