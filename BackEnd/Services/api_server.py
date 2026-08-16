@@ -285,21 +285,47 @@ app.config["GET_DB_CONNECTION"] = get_db_connection
 app.config["GET_TRIAL_BALANCE_FN"] = getattr(db_service, "get_trial_balance", None)
 
 import logging
+import os
+from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
+
+app_env = os.getenv("APP_ENV", "development").strip().lower()
+
+if app_env == "production":
+    signup_log_path = Path(
+        "/home/finspher/Finsage-Web-App/signup_debug.log"
+    )
+else:
+    signup_log_path = (
+        Path(__file__).resolve().parents[2]
+        / "signup_debug.log"
+    )
+
+signup_log_path.parent.mkdir(
+    parents=True,
+    exist_ok=True,
+)
+
 signup_log_handler = RotatingFileHandler(
-    "/home/finspher/Finsage-Web-App/signup_debug.log",
+    str(signup_log_path),
     maxBytes=2_000_000,
     backupCount=2,
+    encoding="utf-8",
 )
 
 signup_log_handler.setLevel(logging.INFO)
-signup_log_handler.setFormatter(logging.Formatter(
-    "%(asctime)s %(levelname)s %(message)s"
-))
+
+signup_log_handler.setFormatter(
+    logging.Formatter(
+        "%(asctime)s %(levelname)s %(message)s"
+    )
+)
 
 app.logger.addHandler(signup_log_handler)
 app.logger.setLevel(logging.INFO)
+
+print(f"[BOOT] Signup debug log: {signup_log_path}")
 
 bank_service = BankService(db_service)
 

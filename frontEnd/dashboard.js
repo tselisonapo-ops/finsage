@@ -123909,6 +123909,25 @@ async function populateProjectTaskSelect(selectId, projectId, blank = "None") {
   `;
 }
 
+function showProjectDashboard() {
+  const dashboard = document.getElementById("projectDashboardView");
+  const detail = document.getElementById("projectDetailView");
+
+  dashboard?.classList.remove("hidden");
+  detail?.classList.add("hidden");
+}
+
+function showProjectDetailView() {
+  const dashboard = document.getElementById("projectDashboardView");
+  const detail = document.getElementById("projectDetailView");
+
+  dashboard?.classList.add("hidden");
+  detail?.classList.remove("hidden");
+}
+
+window.showProjectDashboard = showProjectDashboard;
+window.showProjectDetailView = showProjectDetailView;
+
 async function populateProjectCostCodeSelect(selectId, blank = "None") {
   const sel = document.getElementById(selectId);
   if (!sel) return;
@@ -123975,7 +123994,312 @@ function applyProjectTypeBehaviour() {
 }
 window.applyProjectTypeBehaviour = applyProjectTypeBehaviour;
 
+function renderProjectDashboard(items = []) {
+  const rows = Array.isArray(items) ? items : [];
+
+  const total = rows.length;
+
+  const active = rows.filter(p =>
+    ["active", "approved"].includes(
+      String(p.status || "").toLowerCase()
+    )
+  ).length;
+
+  const contract = rows.reduce(
+    (sum, p) =>
+      sum + Number(p.contract_value || 0),
+    0
+  );
+
+  const budget = rows.reduce(
+    (sum, p) =>
+      sum + Number(
+        p.budget_lines_total ||
+        p.budget_value ||
+        0
+      ),
+    0
+  );
+
+  const tasks = rows.reduce(
+    (sum, p) =>
+      sum + Number(p.task_count || 0),
+    0
+  );
+
+  const avgProgress = total
+    ? rows.reduce(
+        (sum, p) =>
+          sum + Number(p.progress_percent || 0),
+        0
+      ) / total
+    : 0;
+
+  const set = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+
+  set("projectKpiTotal", String(total));
+  set("projectKpiActive", String(active));
+  set("projectKpiContract", fmtMoney(contract));
+  set("projectKpiBudget", fmtMoney(budget));
+  set("projectKpiTasks", String(tasks));
+  set(
+    "projectKpiProgress",
+    `${avgProgress.toFixed(0)}%`
+  );
+
+  set(
+    "projectPortfolioCount",
+    `${total} project${total === 1 ? "" : "s"}`
+  );
+
+  renderProjectStatusSummary(rows);
+  renderProjectProgressSummary(rows);
+  renderProjectValueSummary(
+    contract,
+    budget
+  );
+}
+
+window.renderProjectDashboard =
+  renderProjectDashboard;
+
+function renderProjectStatusSummary(items = []) {
+  const mount =
+    document.getElementById(
+      "projectStatusSummary"
+    );
+
+  if (!mount) return;
+
+  const statuses = [
+    ["active", "Active"],
+    ["approved", "Approved"],
+    ["draft", "Draft"],
+    ["on_hold", "On Hold"],
+    ["completed", "Completed"],
+    ["closed", "Closed"],
+  ];
+
+  const counts = {};
+
+  items.forEach(p => {
+    const key = String(
+      p.status || "unknown"
+    ).toLowerCase();
+
+    counts[key] =
+      Number(counts[key] || 0) + 1;
+  });
+
+  mount.innerHTML = statuses
+    .map(([key, label]) => {
+      const count =
+        Number(counts[key] || 0);
+
+      return `
+        <div
+          class="flex items-center justify-between border-b last:border-b-0 pb-2 last:pb-0">
+
+          <div class="text-slate-600">
+            ${label}
+          </div>
+
+          <div class="font-semibold">
+            ${count}
+          </div>
+
+        </div>
+      `;
+    })
+    .join("");
+}
+
+
+function renderProjectProgressSummary(items = []) {
+  const mount =
+    document.getElementById(
+      "projectProgressSummary"
+    );
+
+  if (!mount) return;
+
+  const total = items.length;
+
+  const avg = total
+    ? items.reduce(
+        (sum, p) =>
+          sum + Number(
+            p.progress_percent || 0
+          ),
+        0
+      ) / total
+    : 0;
+
+  const notStarted = items.filter(
+    p =>
+      Number(
+        p.progress_percent || 0
+      ) <= 0
+  ).length;
+
+  const inProgress = items.filter(p => {
+    const v = Number(
+      p.progress_percent || 0
+    );
+
+    return v > 0 && v < 100;
+  }).length;
+
+  const complete = items.filter(
+    p =>
+      Number(
+        p.progress_percent || 0
+      ) >= 100
+  ).length;
+
+  mount.innerHTML = `
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-slate-500">
+          Average progress
+        </span>
+
+        <span class="font-semibold">
+          ${avg.toFixed(0)}%
+        </span>
+      </div>
+
+      <div
+        class="w-full h-2 bg-slate-100 rounded overflow-hidden">
+
+        <div
+          class="h-full bg-[var(--fs-navy)]"
+          style="width:${Math.max(
+            0,
+            Math.min(100, avg)
+          )}%">
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-2">
+      <div class="border rounded p-2 text-center">
+        <div class="text-slate-500">
+          Not Started
+        </div>
+
+        <div class="font-semibold mt-1">
+          ${notStarted}
+        </div>
+      </div>
+
+      <div class="border rounded p-2 text-center">
+        <div class="text-slate-500">
+          In Progress
+        </div>
+
+        <div class="font-semibold mt-1">
+          ${inProgress}
+        </div>
+      </div>
+
+      <div class="border rounded p-2 text-center">
+        <div class="text-slate-500">
+          Complete
+        </div>
+
+        <div class="font-semibold mt-1">
+          ${complete}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+
+function renderProjectValueSummary(
+  contract = 0,
+  budget = 0
+) {
+  const mount =
+    document.getElementById(
+      "projectValueSummary"
+    );
+
+  if (!mount) return;
+
+  const variance =
+    Number(contract || 0) -
+    Number(budget || 0);
+
+  const budgetPct =
+    contract > 0
+      ? (budget / contract) * 100
+      : 0;
+
+  mount.innerHTML = `
+    <div>
+      <div class="text-slate-500">
+        Contract Value
+      </div>
+
+      <div class="font-semibold mt-1">
+        ${fmtMoney(contract)}
+      </div>
+    </div>
+
+    <div>
+      <div class="text-slate-500">
+        Budget
+      </div>
+
+      <div class="font-semibold mt-1">
+        ${fmtMoney(budget)}
+      </div>
+    </div>
+
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-slate-500">
+          Budget / Contract
+        </span>
+
+        <span class="font-semibold">
+          ${budgetPct.toFixed(1)}%
+        </span>
+      </div>
+
+      <div
+        class="w-full h-2 bg-slate-100 rounded overflow-hidden">
+
+        <div
+          class="h-full bg-[var(--fs-navy)]"
+          style="width:${Math.max(
+            0,
+            Math.min(100, budgetPct)
+          )}%">
+        </div>
+      </div>
+    </div>
+
+    <div class="border-t pt-2">
+      <div class="flex items-center justify-between">
+        <span class="text-slate-500">
+          Contract less Budget
+        </span>
+
+        <span class="font-semibold">
+          ${fmtMoney(variance)}
+        </span>
+      </div>
+    </div>
+  `;
+}
 async function bindProjectsScreen(name = "projects") {
+  showProjectLanding();
   applyProjectNamingLabels?.();
   bindProjectOperationalModalsOnce?.();
   const btnNew = document.getElementById("projectNewBtn");
@@ -124027,97 +124351,286 @@ async function loadProjects({ limit = 50, offset = 0 } = {}) {
   const q = (document.getElementById("projectSearch")?.value || "").trim();
   const status = (document.getElementById("projectStatus")?.value || "").trim();
   const projectType = document.getElementById("projectTypeFilter")?.value || "";
-  const accountingMode = document.getElementById("projectAccountingModeFilter")?.value || "";
+  const accountingMode =
+    document.getElementById("projectAccountingModeFilter")?.value || "";
+
   const params = new URLSearchParams();
+
   if (q) params.set("q", q);
   if (status) params.set("status", status);
   if (projectType) params.set("project_type", projectType);
   if (accountingMode) params.set("accounting_mode", accountingMode);
+
   params.set("limit", String(limit));
   params.set("offset", String(offset));
 
   const mount = document.getElementById("projectsTable");
+
   if (mount) {
-    mount.innerHTML = `<div class="text-xs text-slate-500">Loading projects…</div>`;
+    mount.innerHTML =
+      `<div class="text-xs text-slate-500">Loading projects…</div>`;
   }
 
   try {
-    const data = await apiFetch(ENDPOINTS.projects.list(cid, params.toString()));
-    renderProjectsTable(data?.items || []);
+    const data = await apiFetch(
+      ENDPOINTS.projects.list(cid, params.toString())
+    );
+
+    const items = data?.items || [];
+
+    renderProjectDashboard(items);
+    renderProjectsTable(items);
+
   } catch (err) {
-    if (mount) mount.innerHTML = renderApiError(err);
+    if (mount) {
+      mount.innerHTML = renderApiError(err);
+    }
   }
 }
 
 window.loadProjects = loadProjects;
 
-function renderProjectsTable(items) {
-  const mount = document.getElementById("projectsTable");
+function renderProjectsTable(items = []) {
+  const mount =
+    document.getElementById(
+      "projectsTable"
+    );
+
   if (!mount) return;
 
   if (!items.length) {
-    mount.innerHTML = `<div class="text-xs text-slate-500">No projects found.</div>`;
+    mount.innerHTML = `
+      <div class="border rounded-lg p-6 text-center text-xs text-slate-500">
+        No projects found.
+      </div>
+    `;
     return;
   }
 
-  const row = p => `
-    <tr class="border-b hover:bg-slate-50 cursor-pointer" data-project-id="${esc(String(p.id))}">
-      <td class="px-2 py-2">${esc(p.project_code || "")}</td>
-      <td class="px-2 py-2">
-        <div class="font-medium">${esc(p.project_name || "")}</div>
-        <div class="text-[10px] text-slate-400">${esc((p.project_type || "").replaceAll("_", " "))}</div>
-      </td>
-      <td class="px-2 py-2">${esc(p.customer_name || "Internal")}</td>
-      <td class="px-2 py-2">${esc((p.accounting_mode || "contract").replaceAll("_", " "))}</td>
-      <td class="px-2 py-2">${esc(p.status || "")}</td>
-      <td class="px-2 py-2 text-right">${Number(p.progress_percent || 0).toFixed(0)}%</td>
-      <td class="px-2 py-2 text-right">${fmtMoney(p.contract_value || 0)}</td>
-      <td class="px-2 py-2 text-right">${fmtMoney(p.budget_lines_total || 0)}</td>
-      <td class="px-2 py-2 text-right">${esc(String(p.task_count || 0))}</td>
-    </tr>
-  `;
+  const statusLabel = value =>
+    String(value || "")
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, c =>
+        c.toUpperCase()
+      );
+
+  const rows = items.map(p => {
+    const progress = Number(
+      p.progress_percent || 0
+    );
+
+    return `
+      <tr
+        class="border-b last:border-b-0 hover:bg-slate-50 cursor-pointer"
+        data-project-id="${esc(String(p.id))}">
+
+        <td class="px-3 py-3">
+          <div class="font-semibold">
+            ${esc(p.project_code || "")}
+          </div>
+        </td>
+
+        <td class="px-3 py-3">
+          <div class="font-medium text-slate-800">
+            ${esc(p.project_name || "")}
+          </div>
+
+          <div class="text-[10px] text-slate-400 mt-0.5">
+            ${esc(
+              String(
+                p.project_type || ""
+              ).replaceAll("_", " ")
+            )}
+          </div>
+        </td>
+
+        <td class="px-3 py-3">
+          ${esc(
+            p.customer_name ||
+            "Internal"
+          )}
+        </td>
+
+        <td class="px-3 py-3 capitalize">
+          ${esc(
+            String(
+              p.accounting_mode ||
+              "contract"
+            ).replaceAll("_", " ")
+          )}
+        </td>
+
+        <td class="px-3 py-3">
+          <span
+            class="inline-flex px-2 py-1 rounded border text-[10px]">
+            ${esc(
+              statusLabel(p.status)
+            )}
+          </span>
+        </td>
+
+        <td class="px-3 py-3 min-w-[140px]">
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <span>
+              ${progress.toFixed(0)}%
+            </span>
+          </div>
+
+          <div
+            class="w-full h-1.5 bg-slate-100 rounded overflow-hidden">
+
+            <div
+              class="h-full bg-[var(--fs-navy)]"
+              style="width:${Math.max(
+                0,
+                Math.min(
+                  100,
+                  progress
+                )
+              )}%">
+            </div>
+          </div>
+        </td>
+
+        <td class="px-3 py-3 text-right whitespace-nowrap">
+          ${fmtMoney(
+            p.contract_value || 0
+          )}
+        </td>
+
+        <td class="px-3 py-3 text-right whitespace-nowrap">
+          ${fmtMoney(
+            p.budget_lines_total ||
+            p.budget_value ||
+            0
+          )}
+        </td>
+
+        <td class="px-3 py-3 text-right">
+          ${esc(
+            String(
+              p.task_count || 0
+            )
+          )}
+        </td>
+
+        <td class="px-3 py-3 text-right">
+          <span class="text-[11px] font-medium">
+            Open →
+          </span>
+        </td>
+
+      </tr>
+    `;
+  }).join("");
 
   mount.innerHTML = `
-    <div class="overflow-auto border rounded">
+    <div class="border rounded-lg overflow-auto bg-white">
+
       <table class="w-full text-xs">
+
         <thead class="bg-slate-50 border-b">
           <tr class="text-slate-600">
-            <th class="text-left px-2 py-2">Code</th>
-            <th class="text-left px-2 py-2">Project</th>
-            <th class="text-left px-2 py-2">Customer / Owner</th>
-            <th class="text-left px-2 py-2">Accounting</th>
-            <th class="text-left px-2 py-2">Status</th>
-            <th class="text-right px-2 py-2">Progress</th>
-            <th class="text-right px-2 py-2">Contract</th>
-            <th class="text-right px-2 py-2">Budget</th>
-            <th class="text-right px-2 py-2">Tasks</th>
+
+            <th class="text-left px-3 py-2">
+              Code
+            </th>
+
+            <th class="text-left px-3 py-2">
+              Project
+            </th>
+
+            <th class="text-left px-3 py-2">
+              Customer / Owner
+            </th>
+
+            <th class="text-left px-3 py-2">
+              Accounting
+            </th>
+
+            <th class="text-left px-3 py-2">
+              Status
+            </th>
+
+            <th class="text-left px-3 py-2">
+              Progress
+            </th>
+
+            <th class="text-right px-3 py-2">
+              Contract
+            </th>
+
+            <th class="text-right px-3 py-2">
+              Budget
+            </th>
+
+            <th class="text-right px-3 py-2">
+              Tasks
+            </th>
+
+            <th class="text-right px-3 py-2">
+            </th>
+
           </tr>
         </thead>
-        <tbody>${items.map(row).join("")}</tbody>
+
+        <tbody>
+          ${rows}
+        </tbody>
+
       </table>
+
     </div>
   `;
 
-  mount.querySelectorAll("[data-project-id]").forEach(tr => {
-    tr.addEventListener("click", () => loadProjectDetail(Number(tr.dataset.projectId)));
-  });
+  mount
+    .querySelectorAll(
+      "[data-project-id]"
+    )
+    .forEach(row => {
+      row.addEventListener(
+        "click",
+        () => {
+          loadProjectDetail(
+            Number(
+              row.dataset.projectId
+            )
+          );
+        }
+      );
+    });
 }
-window.renderProjectsTable = renderProjectsTable;
 
+window.renderProjectsTable =
+  renderProjectsTable;
 async function loadProjectDetail(projectId) {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid || !projectId) return;
 
   const mount = document.getElementById("projectDetailMount");
+
+  showProjectDetailView();
+  showProjectDetail();
+
   if (mount) {
-    mount.innerHTML = `<div class="mt-3 text-xs text-slate-500">Loading project...</div>`;
+    mount.innerHTML = `
+      <div class="mt-3 text-xs text-slate-500">
+        Loading project...
+      </div>
+    `;
   }
 
   try {
-    const p = await apiFetch(ENDPOINTS.projects.one(cid, projectId));
+    const p = await apiFetch(
+      ENDPOINTS.projects.one(cid, projectId)
+    );
+
     renderProjectDetail(p);
+
   } catch (err) {
-    if (mount) mount.innerHTML = renderApiError(err);
+    if (mount) {
+      mount.innerHTML = renderApiError(err);
+    }
   }
 }
 
@@ -124479,6 +124992,29 @@ function renderProjectCapitalPosition(pos = {}) {
   `;
 }
 
+function showProjectLanding() {
+  document
+    .getElementById("projectLandingView")
+    ?.classList.remove("hidden");
+
+  document
+    .getElementById("projectDetailView")
+    ?.classList.add("hidden");
+}
+
+function showProjectDetail() {
+  document
+    .getElementById("projectLandingView")
+    ?.classList.add("hidden");
+
+  document
+    .getElementById("projectDetailView")
+    ?.classList.remove("hidden");
+}
+
+window.showProjectLanding = showProjectLanding;
+window.showProjectDetail = showProjectDetail;
+
 function renderProjectDetail(p) {
   const mount = document.getElementById("projectDetailMount");
   if (!mount) return;
@@ -124527,739 +125063,1008 @@ function renderProjectDetail(p) {
   mount.innerHTML = `
     <div class="mt-4 border rounded p-3 text-xs">
 
-      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-3">
-        <div>
-          <div class="font-bold text-sm">
-            ${esc(p.project_code || "")} — ${esc(p.project_name || "")}
-          </div>
-
-          <div class="text-slate-500 mt-1">
-            ${esc(p.customer_name || (internal ? "Internal Project" : "No customer"))}
-            • ${esc(projectType)}
-            • ${esc(p.status || "")}
-          </div>
-        </div>
+      <!-- ==================================================
+          PROJECT HEADER
+      ================================================== -->
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <button
+          type="button"
+          class="px-3 py-1.5 text-xs border rounded"
+          data-project-back>
+          ← Back to Projects
+        </button>
 
         <div class="flex flex-wrap items-center gap-2">
-          <button class="px-3 py-1 text-xs border rounded"
-                  data-project-edit="${esc(String(p.id))}">
+          <button
+            class="px-3 py-1 text-xs border rounded"
+            data-project-edit="${esc(String(p.id))}">
             Edit Project
           </button>
 
-          <button class="px-3 py-1 text-xs border rounded"
-                  data-project-task-new="${esc(String(p.id))}">
+          <button
+            class="px-3 py-1 text-xs border rounded"
+            data-project-task-new="${esc(String(p.id))}">
             + Task
           </button>
 
-          <button class="px-3 py-1 text-xs border rounded"
-                  data-project-budget-new="${esc(String(p.id))}">
+          <button
+            class="px-3 py-1 text-xs border rounded"
+            data-project-budget-new="${esc(String(p.id))}">
             + Budget Line
           </button>
 
           ${!projectClosed && p.inventory_enabled !== false ? `
-            <button class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded"
-                    data-project-issue="${esc(String(p.id))}">
+            <button
+              class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded"
+              data-project-issue="${esc(String(p.id))}">
               Issue Materials
             </button>
           ` : ""}
         </div>
       </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
+      <div class="mb-3">
+        <div class="font-bold text-sm">
+          ${esc(p.project_code || "")} — ${esc(p.project_name || "")}
+        </div>
 
+        <div class="text-slate-500 mt-1">
+          ${esc(
+            p.customer_name ||
+            (internal ? "Internal Project" : "No customer")
+          )}
+          • ${esc(projectType)}
+          • ${esc(p.status || "")}
+        </div>
+      </div>
+
+      <!-- ==================================================
+          PROJECT DETAIL NAVIGATION
+      ================================================== -->
+      <div class="project-detail-tabs">
+        <button
+          class="project-detail-tab active"
+          data-project-tab="planning">
+          Planning
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="costs">
+          Costs & Time
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="revenue">
+          Revenue
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="forecast">
+          Forecasts
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="controls">
+          Risks & Controls
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="closeout">
+          Documents & Closeout
+        </button>
+      </div>
+
+      <!-- ==================================================
+          PROJECT OVERVIEW
+          Always visible
+      ================================================== -->
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
         <div class="border rounded p-2">
           <div class="text-slate-500">Project Type</div>
-          <div class="font-semibold capitalize">${esc(projectType)}</div>
+          <div class="font-semibold capitalize">
+            ${esc(projectType)}
+          </div>
         </div>
 
         <div class="border rounded p-2">
           <div class="text-slate-500">Accounting</div>
-          <div class="font-semibold capitalize">${esc(accountingMode)}</div>
+          <div class="font-semibold capitalize">
+            ${esc(accountingMode)}
+          </div>
         </div>
 
         <div class="border rounded p-2">
           <div class="text-slate-500">Priority</div>
-          <div class="font-semibold capitalize">${esc(p.priority || "normal")}</div>
+          <div class="font-semibold capitalize">
+            ${esc(p.priority || "normal")}
+          </div>
         </div>
 
         <div class="border rounded p-2">
           <div class="text-slate-500">Progress</div>
-          <div class="font-semibold">${progress.toFixed(0)}%</div>
+          <div class="font-semibold">
+            ${progress.toFixed(0)}%
+          </div>
+
           <div class="w-full h-1.5 bg-slate-100 rounded mt-1 overflow-hidden">
-            <div class="h-full bg-[var(--fs-navy)]"
-                 style="width:${Math.max(0, Math.min(100, progress))}%"></div>
+            <div
+              class="h-full bg-[var(--fs-navy)]"
+              style="width:${Math.max(
+                0,
+                Math.min(100, progress)
+              )}%">
+            </div>
           </div>
         </div>
 
         <div class="border rounded p-2">
           <div class="text-slate-500">Contract Value</div>
-          <div class="font-semibold">${fmtMoney(p.contract_value || 0)}</div>
+          <div class="font-semibold">
+            ${fmtMoney(p.contract_value || 0)}
+          </div>
         </div>
 
         <div class="border rounded p-2">
           <div class="text-slate-500">Budget</div>
-          <div class="font-semibold">${fmtMoney(p?.totals?.budget_total || p.budget_value || 0)}</div>
+          <div class="font-semibold">
+            ${fmtMoney(
+              p?.totals?.budget_total ||
+              p.budget_value ||
+              0
+            )}
+          </div>
         </div>
-
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
-
         <div class="border rounded p-2">
-          <div class="text-slate-500 mb-1">Ownership</div>
-          <div><span class="text-slate-500">Manager:</span> ${esc(String(p.project_manager_user_id || "—"))}</div>
-          <div><span class="text-slate-500">Sponsor:</span> ${esc(String(p.sponsor_user_id || p.owner_user_id || "—"))}</div>
-          <div><span class="text-slate-500">Department:</span> ${esc(String(p.department_id || "—"))}</div>
-          <div><span class="text-slate-500">Business Unit:</span> ${esc(p.business_unit || "—")}</div>
+          <div class="text-slate-500 mb-1">
+            Ownership
+          </div>
+
+          <div>
+            <span class="text-slate-500">Manager:</span>
+            ${esc(String(
+              p.project_manager_user_id || "—"
+            ))}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Sponsor:</span>
+            ${esc(String(
+              p.sponsor_user_id ||
+              p.owner_user_id ||
+              "—"
+            ))}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Department:</span>
+            ${esc(String(p.department_id || "—"))}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Business Unit:</span>
+            ${esc(p.business_unit || "—")}
+          </div>
         </div>
 
         <div class="border rounded p-2">
-          <div class="text-slate-500 mb-1">Current Schedule</div>
-          <div><span class="text-slate-500">Start:</span> ${esc(toDateInputValue?.(p.start_date) || p.start_date || "—")}</div>
-          <div><span class="text-slate-500">Expected End:</span> ${esc(toDateInputValue?.(p.expected_end_date) || p.expected_end_date || "—")}</div>
-          <div><span class="text-slate-500">Actual End:</span> ${esc(toDateInputValue?.(p.actual_end_date) || p.actual_end_date || "—")}</div>
+          <div class="text-slate-500 mb-1">
+            Current Schedule
+          </div>
+
+          <div>
+            <span class="text-slate-500">Start:</span>
+            ${esc(
+              toDateInputValue?.(p.start_date) ||
+              p.start_date ||
+              "—"
+            )}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Expected End:</span>
+            ${esc(
+              toDateInputValue?.(p.expected_end_date) ||
+              p.expected_end_date ||
+              "—"
+            )}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Actual End:</span>
+            ${esc(
+              toDateInputValue?.(p.actual_end_date) ||
+              p.actual_end_date ||
+              "—"
+            )}
+          </div>
         </div>
 
         <div class="border rounded p-2">
-          <div class="text-slate-500 mb-1">Baseline</div>
-          <div><span class="text-slate-500">Start:</span> ${esc(toDateInputValue?.(p.baseline_start_date) || p.baseline_start_date || "—")}</div>
-          <div><span class="text-slate-500">End:</span> ${esc(toDateInputValue?.(p.baseline_end_date) || p.baseline_end_date || "—")}</div>
-          <div><span class="text-slate-500">Budget:</span> ${fmtMoney(p.baseline_budget_value || 0)}</div>
+          <div class="text-slate-500 mb-1">
+            Baseline
+          </div>
+
+          <div>
+            <span class="text-slate-500">Start:</span>
+            ${esc(
+              toDateInputValue?.(
+                p.baseline_start_date
+              ) ||
+              p.baseline_start_date ||
+              "—"
+            )}
+          </div>
+
+          <div>
+            <span class="text-slate-500">End:</span>
+            ${esc(
+              toDateInputValue?.(
+                p.baseline_end_date
+              ) ||
+              p.baseline_end_date ||
+              "—"
+            )}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Budget:</span>
+            ${fmtMoney(
+              p.baseline_budget_value || 0
+            )}
+          </div>
         </div>
 
         <div class="border rounded p-2">
-          <div class="text-slate-500 mb-1">Accounting Setup</div>
-          <div><span class="text-slate-500">WIP / CIP:</span> ${esc(p.wip_account_code || "—")}</div>
-          <div><span class="text-slate-500">Revenue:</span> ${esc(p.revenue_account_code || "—")}</div>
-          <div><span class="text-slate-500">Cost:</span> ${esc(p.cost_account_code || "—")}</div>
-          <div><span class="text-slate-500">Billing:</span> ${esc(p.billing_method || "—")}</div>
-        </div>
+          <div class="text-slate-500 mb-1">
+            Accounting Setup
+          </div>
 
+          <div>
+            <span class="text-slate-500">WIP / CIP:</span>
+            ${esc(p.wip_account_code || "—")}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Revenue:</span>
+            ${esc(p.revenue_account_code || "—")}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Cost:</span>
+            ${esc(p.cost_account_code || "—")}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Billing:</span>
+            ${esc(p.billing_method || "—")}
+          </div>
+        </div>
       </div>
 
       <div class="border rounded p-2 mb-3">
-        <div class="text-slate-500 mb-2">Enabled Project Features</div>
+        <div class="text-slate-500 mb-2">
+          Enabled Project Features
+        </div>
 
         <div class="flex flex-wrap gap-2">
-          ${feature(p.billing_enabled !== false, "Billing")}
-          ${feature(p.revenue_enabled !== false, "Revenue")}
-          ${feature(p.inventory_enabled !== false, "Inventory")}
-          ${feature(p.allow_time_entries !== false, "Timesheets")}
-          ${feature(p.allow_expenses !== false, "Expenses")}
+          ${feature(
+            p.billing_enabled !== false,
+            "Billing"
+          )}
+          ${feature(
+            p.revenue_enabled !== false,
+            "Revenue"
+          )}
+          ${feature(
+            p.inventory_enabled !== false,
+            "Inventory"
+          )}
+          ${feature(
+            p.allow_time_entries !== false,
+            "Timesheets"
+          )}
+          ${feature(
+            p.allow_expenses !== false,
+            "Expenses"
+          )}
         </div>
       </div>
 
       ${p.description || p.location || p.notes ? `
         <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
           <div class="border rounded p-2">
-            <div class="text-slate-500">Location</div>
-            <div>${esc(p.location || "—")}</div>
+            <div class="text-slate-500">
+              Location
+            </div>
+
+            <div>
+              ${esc(p.location || "—")}
+            </div>
           </div>
 
           <div class="border rounded p-2">
-            <div class="text-slate-500">Description</div>
-            <div class="whitespace-pre-wrap">${esc(p.description || "—")}</div>
+            <div class="text-slate-500">
+              Description
+            </div>
+
+            <div class="whitespace-pre-wrap">
+              ${esc(p.description || "—")}
+            </div>
           </div>
 
           <div class="border rounded p-2">
-            <div class="text-slate-500">Notes</div>
-            <div class="whitespace-pre-wrap">${esc(p.notes || "—")}</div>
+            <div class="text-slate-500">
+              Notes
+            </div>
+
+            <div class="whitespace-pre-wrap">
+              ${esc(p.notes || "—")}
+            </div>
           </div>
         </div>
       ` : ""}
 
-      <div
-        class="grid grid-cols-1 lg:grid-cols-2 gap-3"
-        data-project-panel="planning"
-      >
-
-        <div class="project-detail-tabs">
-          <button class="project-detail-tab active" data-project-tab="planning">
-            Planning
-          </button>
-
-          <button class="project-detail-tab" data-project-tab="costs">
-            Costs & Time
-          </button>
-
-          <button class="project-detail-tab" data-project-tab="revenue">
-            Revenue
-          </button>
-
-          <button class="project-detail-tab" data-project-tab="forecast">
-            Forecasts
-          </button>
-
-          <button class="project-detail-tab" data-project-tab="controls">
-            Risks & Controls
-          </button>
-
-          <button class="project-detail-tab" data-project-tab="closeout">
-            Documents & Closeout
-          </button>
-        </div>
-
-        <div class="border rounded p-2">
-          <div class="flex items-center justify-between mb-2">
-            <div class="font-semibold">Tasks</div>
-            <div class="text-slate-500">${tasks.length} task${tasks.length === 1 ? "" : "s"}</div>
-          </div>
-
-          ${renderProjectTasksMini(tasks)}
-        </div>
-
-        <div class="border rounded p-2">
-          <div class="flex items-center justify-between mb-2">
-            <div class="font-semibold">Budget Lines</div>
-            <div class="text-slate-500">${fmtMoney(p?.totals?.budget_total || 0)}</div>
-          </div>
-
-          ${renderProjectBudgetMini(budget)}
-        </div>
-
-      </div>
-
-      <div
-        class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3"
-        data-project-panel="planning"
-      >
-
-      <div class="border rounded p-2">
-        <div class="flex items-center justify-between mb-2">
-          <div class="font-semibold">Project Team</div>
-
-          <button
-            class="px-2 py-1 text-[11px] border rounded"
-            data-project-team-new="${esc(String(p.id))}">
-            + Team Member
-          </button>
-        </div>
-
-        ${renderProjectTeamMini(team)}
-      </div>
-
-      <div class="border rounded p-2">
-        <div class="flex items-center justify-between mb-2">
-          <div class="font-semibold">Dependencies</div>
-
-          <button
-            class="px-2 py-1 text-[11px] border rounded"
-            data-project-dependency-new="${esc(String(p.id))}">
-            + Dependency
-          </button>
-        </div>
-
-        ${renderProjectDependenciesMini(dependencies)}
-      </div>
-
-    </div>
-
-    ${p.allow_time_entries !== false ? `
-      <div
-        class="border rounded p-2 mt-3"
-        data-project-panel="costs"
-      >
-        <div class="flex items-center justify-between mb-2">
-          <div>
-            <div class="font-semibold">Time & Labour</div>
-            <div class="text-slate-500">
-              ${Number(p?.totals?.labour_hours || 0).toFixed(2)} hrs
-              • ${fmtMoney(p?.totals?.labour_cost || 0)} cost
-              • ${fmtMoney(p?.totals?.billable_time_value || 0)} billable
-            </div>
-          </div>
-
-          <button
-            class="px-2 py-1 text-[11px] border rounded"
-            data-project-time-new="${esc(String(p.id))}">
-            + Time Entry
-          </button>
-        </div>
-
-        ${renderProjectTimeMini(timeEntries)}
-      </div>
-    ` : ""}
-
-      <div
-        class="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3"
-        data-project-panel="costs"
-      >
-        <div class="border rounded p-2">
-          <div class="text-slate-500">Materials</div>
-          <div class="font-semibold">
-            ${fmtMoney(costSummary.material_cost || 0)}
-          </div>
-        </div>
-
-        <div class="border rounded p-2">
-          <div class="text-slate-500">Labour</div>
-          <div class="font-semibold">
-            ${fmtMoney(costSummary.labour_cost || 0)}
-          </div>
-        </div>
-
-        <div class="border rounded p-2">
-          <div class="text-slate-500">Expenses</div>
-          <div class="font-semibold">
-            ${fmtMoney(costSummary.expense_cost || 0)}
-          </div>
-        </div>
-
-        <div class="border rounded p-2">
-          <div class="text-slate-500">Actual Cost</div>
-          <div class="font-semibold">
-            ${fmtMoney(costSummary.actual_cost || 0)}
-          </div>
-        </div>
-
-        <div class="border rounded p-2">
-          <div class="text-slate-500">Committed</div>
-          <div class="font-semibold">
-            ${fmtMoney(costSummary.committed_cost || 0)}
-          </div>
-        </div>
-
-      </div>
-
-      <div
-        class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3"
-        data-project-panel="costs"
-      >
-        ${p.allow_expenses !== false ? `
+      <!-- ==================================================
+          PLANNING
+      ================================================== -->
+      <div data-project-panel="planning">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div class="border rounded p-2">
-
             <div class="flex items-center justify-between mb-2">
-              <div class="font-semibold">Project Expenses</div>
-
-              <button
-                class="px-2 py-1 text-[11px] border rounded"
-                data-project-expense-new="${esc(String(p.id))}">
-                + Expense
-              </button>
-            </div>
-
-            ${renderProjectExpensesMini(expenses)}
-          </div>
-        ` : ""}
-
-        <div class="border rounded p-2">
-
-          <div class="flex items-center justify-between mb-2">
-            <div class="font-semibold">Commitments</div>
-
-            <div class="text-slate-500">
-              ${fmtMoney(costSummary.committed_cost || 0)}
-            </div>
-          </div>
-
-          ${renderProjectCommitmentsMini(commitments)}
-        </div>
-
-      </div>
-
-      <div
-        class="border rounded p-2 mt-3"
-        data-project-panel="controls"
-      >
-        <div class="flex items-center justify-between mb-2">
-          <div>
-            <div class="font-semibold">Change Control</div>
-            <div class="text-slate-500">
-              ${changes.length} change${changes.length === 1 ? "" : "s"}
-              • Pending ${fmtMoney(p?.totals?.pending_change_value || 0)}
-            </div>
-          </div>
-
-          <button
-            class="px-2 py-1 text-[11px] border rounded"
-            data-project-change-new="${esc(String(p.id))}">
-            + Change
-          </button>
-        </div>
-
-        ${renderProjectChangesMini(changes)}
-      </div>
-
-      ${p.revenue_enabled !== false &&
-      p.accounting_mode === "contract" ? `
-
-        <div
-          class="border rounded p-2 mt-3"
-          data-project-panel="revenue"
-        >
-          <div class="flex items-center justify-between mb-3">
-            <div>
               <div class="font-semibold">
-                Billing & Revenue
+                Tasks
               </div>
 
               <div class="text-slate-500">
-                ${revenueContracts.length}
-                contract${revenueContracts.length === 1 ? "" : "s"}
+                ${tasks.length}
+                task${tasks.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            ${renderProjectTasksMini(tasks)}
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-semibold">
+                Budget Lines
+              </div>
+
+              <div class="text-slate-500">
+                ${fmtMoney(
+                  p?.totals?.budget_total || 0
+                )}
+              </div>
+            </div>
+
+            ${renderProjectBudgetMini(budget)}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-semibold">
+                Project Team
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-team-new="${esc(String(p.id))}">
+                + Team Member
+              </button>
+            </div>
+
+            ${renderProjectTeamMini(team)}
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-semibold">
+                Dependencies
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-dependency-new="${esc(String(p.id))}">
+                + Dependency
+              </button>
+            </div>
+
+            ${renderProjectDependenciesMini(
+              dependencies
+            )}
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================================================
+          COSTS & TIME
+      ================================================== -->
+      <div data-project-panel="costs">
+        ${p.allow_time_entries !== false ? `
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  Time & Labour
+                </div>
+
+                <div class="text-slate-500">
+                  ${Number(
+                    p?.totals?.labour_hours || 0
+                  ).toFixed(2)} hrs
+                  •
+                  ${fmtMoney(
+                    p?.totals?.labour_cost || 0
+                  )} cost
+                  •
+                  ${fmtMoney(
+                    p?.totals?.billable_time_value || 0
+                  )} billable
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-time-new="${esc(String(p.id))}">
+                + Time Entry
+              </button>
+            </div>
+
+            ${renderProjectTimeMini(timeEntries)}
+          </div>
+        ` : ""}
+
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3">
+          <div class="border rounded p-2">
+            <div class="text-slate-500">
+              Materials
+            </div>
+
+            <div class="font-semibold">
+              ${fmtMoney(
+                costSummary.material_cost || 0
+              )}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">
+              Labour
+            </div>
+
+            <div class="font-semibold">
+              ${fmtMoney(
+                costSummary.labour_cost || 0
+              )}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">
+              Expenses
+            </div>
+
+            <div class="font-semibold">
+              ${fmtMoney(
+                costSummary.expense_cost || 0
+              )}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">
+              Actual Cost
+            </div>
+
+            <div class="font-semibold">
+              ${fmtMoney(
+                costSummary.actual_cost || 0
+              )}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">
+              Committed
+            </div>
+
+            <div class="font-semibold">
+              ${fmtMoney(
+                costSummary.committed_cost || 0
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+          ${p.allow_expenses !== false ? `
+            <div class="border rounded p-2">
+              <div class="flex items-center justify-between mb-2">
+                <div class="font-semibold">
+                  Project Expenses
+                </div>
+
+                <button
+                  class="px-2 py-1 text-[11px] border rounded"
+                  data-project-expense-new="${esc(String(p.id))}">
+                  + Expense
+                </button>
+              </div>
+
+              ${renderProjectExpensesMini(expenses)}
+            </div>
+          ` : ""}
+
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-semibold">
+                Commitments
+              </div>
+
+              <div class="text-slate-500">
+                ${fmtMoney(
+                  costSummary.committed_cost || 0
+                )}
+              </div>
+            </div>
+
+            ${renderProjectCommitmentsMini(
+              commitments
+            )}
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================================================
+          REVENUE
+      ================================================== -->
+      <div data-project-panel="revenue">
+        ${p.revenue_enabled !== false &&
+          p.accounting_mode === "contract" ? `
+
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <div class="font-semibold">
+                  Billing & Revenue
+                </div>
+
+                <div class="text-slate-500">
+                  ${revenueContracts.length}
+                  contract${revenueContracts.length === 1 ? "" : "s"}
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button
+                  class="px-2 py-1 text-[11px] border rounded"
+                  data-project-revenue-desk="${esc(String(p.id))}">
+                  Revenue Desk
+                </button>
+
+                ${p.customer_id ? `
+                  <button
+                    class="px-2 py-1 text-[11px] bg-[var(--fs-navy)] text-white rounded"
+                    data-project-revenue-new="${esc(String(p.id))}">
+                    + Revenue Contract
+                  </button>
+                ` : ""}
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Contract Value
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.transaction_price || 0
+                  )}
+                </div>
+              </div>
+
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Recognised
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.recognized_revenue || 0
+                  )}
+                </div>
+              </div>
+
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Billed
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.billed_to_date || 0
+                  )}
+                </div>
+              </div>
+
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Collected
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.cash_collected || 0
+                  )}
+                </div>
+              </div>
+
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Contract Asset
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.contract_asset || 0
+                  )}
+                </div>
+              </div>
+
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Contract Liability
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.contract_liability || 0
+                  )}
+                </div>
+              </div>
+            </div>
+
+            ${renderProjectRevenueContractsMini(
+              revenueContracts
+            )}
+
+            ${revenueObligations.length ? `
+              <div class="mt-3">
+                <div class="font-semibold mb-2">
+                  Performance Obligations
+                </div>
+
+                ${renderProjectRevenueObligationsMini(
+                  revenueObligations
+                )}
+              </div>
+            ` : ""}
+          </div>
+
+        ` : `
+          <div class="border rounded p-3 text-slate-500">
+            Revenue management is not enabled for this project.
+          </div>
+        `}
+      </div>
+
+      <!-- ==================================================
+          FORECASTS
+      ================================================== -->
+      <div data-project-panel="forecast">
+        <div class="border rounded p-2">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">
+                Forecast & Performance
+              </div>
+
+              <div class="text-slate-500">
+                Budget vs actual vs forecast
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-project-forecast-save="${esc(String(p.id))}">
+              Save Forecast
+            </button>
+          </div>
+
+          <div id="projectPerformanceMount-${esc(String(p.id))}">
+            <div class="text-slate-500">
+              Loading performance...
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <div class="font-semibold mb-2">
+              Forecast History
+            </div>
+
+            ${renderProjectForecastsMini(
+              forecasts
+            )}
+          </div>
+
+          <div class="border-t mt-3 pt-3">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  IAS 23 Borrowing Costs
+                </div>
+
+                <div class="text-slate-500">
+                  Borrowings linked to qualifying CIP assets
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-borrowing-new="${esc(String(p.id))}">
+                + Link Borrowing
+              </button>
+            </div>
+
+            ${renderProjectBorrowingsMini(
+              borrowingLinks
+            )}
+          </div>
+        </div>
+
+        ${p.accounting_mode === "capital" ? `
+          <div class="border rounded p-2 mt-3">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  Capital Project
+                </div>
+
+                <div class="text-slate-500">
+                  CIP accumulation and asset capitalisation
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-capitalise="${esc(String(p.id))}">
+                + Capitalise
+              </button>
+            </div>
+
+            ${renderProjectCapitalisationsMini(
+              capitalisations
+            )}
+          </div>
+
+          <div class="border rounded p-2 mt-3">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  Capital Project / CIP
+                </div>
+
+                <div class="text-slate-500">
+                  Assets under construction and capitalisable project costs
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-cip-new="${esc(String(p.id))}">
+                + CIP Asset
+              </button>
+            </div>
+
+            <div
+              id="projectCapitalPosition-${esc(String(p.id))}"
+              class="mb-3">
+              <div class="text-slate-500">
+                Loading CIP position...
+              </div>
+            </div>
+
+            ${renderProjectAssetsMini(assetLinks)}
+          </div>
+        ` : ""}
+      </div>
+
+      <!-- ==================================================
+          RISKS & CONTROLS
+      ================================================== -->
+      <div data-project-panel="controls">
+        <div class="border rounded p-2">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">
+                Change Control
+              </div>
+
+              <div class="text-slate-500">
+                ${changes.length}
+                change${changes.length === 1 ? "" : "s"}
+                • Pending
+                ${fmtMoney(
+                  p?.totals?.pending_change_value || 0
+                )}
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-project-change-new="${esc(String(p.id))}">
+              + Change
+            </button>
+          </div>
+
+          ${renderProjectChangesMini(changes)}
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  Risks
+                </div>
+
+                <div class="text-slate-500">
+                  ${p?.totals?.open_risk_count || 0}
+                  open
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-risk-new="${esc(String(p.id))}">
+                + Risk
+              </button>
+            </div>
+
+            ${renderProjectRisksMini(risks)}
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  Issues
+                </div>
+
+                <div class="text-slate-500">
+                  ${p?.totals?.open_issue_count || 0}
+                  open
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-issue-register-new="${esc(String(p.id))}">
+                + Issue
+              </button>
+            </div>
+
+            ${renderProjectIssuesMini(issues)}
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================================================
+          DOCUMENTS & CLOSEOUT
+      ================================================== -->
+      <div data-project-panel="closeout">
+        <div class="border rounded p-2">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">
+                Project Documents
+              </div>
+
+              <div class="text-slate-500">
+                ${documents.length}
+                document${documents.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-project-document-new="${esc(String(p.id))}">
+              + Document
+            </button>
+          </div>
+
+          ${renderProjectDocumentsMini(documents)}
+        </div>
+
+        <div class="border rounded p-2 mt-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-semibold">
+                Project Closeout
+              </div>
+
+              <div class="text-slate-500">
+                ${projectClosed
+                  ? `Closed ${esc(
+                      toDateInputValue?.(
+                        closeout.closeout_date
+                      ) ||
+                      closeout.closeout_date ||
+                      ""
+                    )}`
+                  : "Project remains open"
+                }
               </div>
             </div>
 
             <div class="flex gap-2">
+              ${p.accounting_mode === "capital" &&
+                !closeout.commissioning_journal_id &&
+                !projectClosed ? `
 
-              <button
-                class="px-2 py-1 text-[11px] border rounded"
-                data-project-revenue-desk="${esc(String(p.id))}">
-                Revenue Desk
-              </button>
-
-              ${p.customer_id ? `
                 <button
-                  class="px-2 py-1 text-[11px] bg-[var(--fs-navy)] text-white rounded"
-                  data-project-revenue-new="${esc(String(p.id))}">
-                  + Revenue Contract
+                  class="px-2 py-1 text-[11px] border rounded"
+                  data-project-commission="${esc(String(p.id))}">
+                  Commission Asset
                 </button>
+
               ` : ""}
 
+              ${!projectClosed ? `
+                <button
+                  class="px-2 py-1 text-[11px] bg-[var(--fs-navy)] text-white rounded"
+                  data-project-close="${esc(String(p.id))}">
+                  Close Project
+                </button>
+              ` : `
+                <button
+                  class="px-2 py-1 text-[11px] border rounded"
+                  data-project-reopen="${esc(String(p.id))}">
+                  Reopen
+                </button>
+              `}
             </div>
           </div>
+        </div>
 
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
-
-            <div class="border rounded p-2">
-              <div class="text-slate-500">
-                Contract Value
-              </div>
-
-              <div class="font-semibold">
-                ${fmtMoney(
-                  revenueSummary.transaction_price
-                  || 0
-                )}
-              </div>
+        <div class="border rounded p-2 mt-3">
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-semibold">
+              Project Activity
             </div>
 
-            <div class="border rounded p-2">
-              <div class="text-slate-500">
-                Recognised
-              </div>
-
-              <div class="font-semibold">
-                ${fmtMoney(
-                  revenueSummary.recognized_revenue
-                  || 0
-                )}
-              </div>
-            </div>
-
-            <div class="border rounded p-2">
-              <div class="text-slate-500">
-                Billed
-              </div>
-
-              <div class="font-semibold">
-                ${fmtMoney(
-                  revenueSummary.billed_to_date
-                  || 0
-                )}
-              </div>
-            </div>
-
-            <div class="border rounded p-2">
-              <div class="text-slate-500">
-                Collected
-              </div>
-
-              <div class="font-semibold">
-                ${fmtMoney(
-                  revenueSummary.cash_collected
-                  || 0
-                )}
-              </div>
-            </div>
-
-            <div class="border rounded p-2">
-              <div class="text-slate-500">
-                Contract Asset
-              </div>
-
-              <div class="font-semibold">
-                ${fmtMoney(
-                  revenueSummary.contract_asset
-                  || 0
-                )}
-              </div>
-            </div>
-
-            <div class="border rounded p-2">
-              <div class="text-slate-500">
-                Contract Liability
-              </div>
-
-              <div class="font-semibold">
-                ${fmtMoney(
-                  revenueSummary.contract_liability
-                  || 0
-                )}
-              </div>
-            </div>
-
-          </div>
-
-          ${renderProjectRevenueContractsMini(
-            revenueContracts
-          )}
-
-          ${revenueObligations.length ? `
-            <div class="mt-3">
-              <div class="font-semibold mb-2">
-                Performance Obligations
-              </div>
-
-              ${renderProjectRevenueObligationsMini(
-                revenueObligations
+            <div class="text-slate-500">
+              Latest ${Math.min(
+                activity.length,
+                20
               )}
             </div>
-          ` : ""}
-
-        </div>
-
-      ` : ""}
-
-      <div
-        class="border rounded p-2 mt-3"
-        data-project-panel="forecast"
-      >
-        <div class="flex items-center justify-between mb-2">
-          <div>
-            <div class="font-semibold">Forecast & Performance</div>
-            <div class="text-slate-500">Budget vs actual vs forecast</div>
           </div>
 
-          <button
-            class="px-2 py-1 text-[11px] border rounded"
-            data-project-forecast-save="${esc(String(p.id))}">
-            Save Forecast
-          </button>
-        </div>
-
-        <div id="projectPerformanceMount-${esc(String(p.id))}">
-          <div class="text-slate-500">Loading performance...</div>
-        </div>
-
-        <div class="mt-3">
-          <div class="font-semibold mb-2">Forecast History</div>
-          ${renderProjectForecastsMini(forecasts)}
-        </div>
-
-        <div class="border-t mt-3 pt-3">
-
-          <div class="flex items-center
-                      justify-between mb-2">
-
-            <div>
-              <div class="font-semibold">
-                IAS 23 Borrowing Costs
-              </div>
-
-              <div class="text-slate-500">
-                Borrowings linked to qualifying CIP assets
-              </div>
-            </div>
-
-            <button
-              class="px-2 py-1 text-[11px]
-                    border rounded"
-              data-project-borrowing-new="${esc(String(p.id))}">
-              + Link Borrowing
-            </button>
-
-          </div>
-
-          ${renderProjectBorrowingsMini(
-            borrowingLinks
-          )}
-
+          ${renderProjectActivityMini(activity)}
         </div>
       </div>
 
-      ${p.accounting_mode === "capital" ? `
-        <div
-          class="border rounded p-2 mt-3"
-          data-project-panel="forecast"
-        >
-          <div class="flex items-center justify-between mb-2">
-            <div>
-              <div class="font-semibold">Capital Project</div>
-              <div class="text-slate-500">
-                CIP accumulation and asset capitalisation
-              </div>
-            </div>
-
-            <button
-              class="px-2 py-1 text-[11px] border rounded"
-              data-project-capitalise="${esc(String(p.id))}">
-              + Capitalise
-            </button>
-          </div>
-
-          ${renderProjectCapitalisationsMini(capitalisations)}
-
-        </div>
-      ` : ""}
-
-      ${p.accounting_mode === "capital" ? `
-        <div class="border rounded p-2 mt-3">
-
-          <div class="flex items-center justify-between mb-2">
-            <div>
-              <div class="font-semibold">Capital Project / CIP</div>
-              <div class="text-slate-500">
-                Assets under construction and capitalisable project costs
-              </div>
-            </div>
-
-            <button
-              class="px-2 py-1 text-[11px] border rounded"
-              data-project-cip-new="${esc(String(p.id))}">
-              + CIP Asset
-            </button>
-          </div>
-
-          <div id="projectCapitalPosition-${esc(String(p.id))}" class="mb-3">
-            <div class="text-slate-500">Loading CIP position...</div>
-          </div>
-
-          ${renderProjectAssetsMini(assetLinks)}
-
-        </div>
-      ` : ""}
-
-      <div
-        class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3"
-        data-project-panel="controls"
-      >
-        <div class="border rounded p-2">
-          <div class="flex items-center justify-between mb-2">
-            <div>
-              <div class="font-semibold">Risks</div>
-              <div class="text-slate-500">
-                ${p?.totals?.open_risk_count || 0} open
-              </div>
-            </div>
-
-            <button
-              class="px-2 py-1 text-[11px] border rounded"
-              data-project-risk-new="${esc(String(p.id))}">
-              + Risk
-            </button>
-          </div>
-
-          ${renderProjectRisksMini(risks)}
-        </div>
-
-        <div class="border rounded p-2">
-          <div class="flex items-center justify-between mb-2">
-            <div>
-              <div class="font-semibold">Issues</div>
-              <div class="text-slate-500">
-                ${p?.totals?.open_issue_count || 0} open
-              </div>
-            </div>
-
-            <button
-              class="px-2 py-1 text-[11px] border rounded"
-              data-project-issue-register-new="${esc(String(p.id))}">
-              + Issue
-            </button>
-          </div>
-
-          ${renderProjectIssuesMini(issues)}
-        </div>
-
-      </div>
-
-      <div
-        class="border rounded p-2 mt-3"
-        data-project-panel="closeout"
-      >
-        <div class="flex items-center justify-between mb-2">
-          <div>
-            <div class="font-semibold">Project Documents</div>
-
-            <div class="text-slate-500">
-              ${documents.length} document${documents.length === 1 ? "" : "s"}
-            </div>
-          </div>
-
-          <button
-            class="px-2 py-1 text-[11px] border rounded"
-            data-project-document-new="${esc(String(p.id))}">
-            + Document
-          </button>
-        </div>
-
-        ${renderProjectDocumentsMini(documents)}
-      </div>
-
-      <div
-        class="border rounded p-2 mt-3"
-        data-project-panel="closeout"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <div class="font-semibold">Project Closeout</div>
-
-            <div class="text-slate-500">
-              ${projectClosed
-                ? `Closed ${esc(
-                    toDateInputValue?.(closeout.closeout_date) ||
-                    closeout.closeout_date ||
-                    ""
-                  )}`
-                : "Project remains open"
-              }
-            </div>
-          </div>
-
-          <div class="flex gap-2">
-            ${p.accounting_mode === "capital" &&
-              !closeout.commissioning_journal_id &&
-              !projectClosed ? `
-              <button
-                class="px-2 py-1 text-[11px] border rounded"
-                data-project-commission="${esc(String(p.id))}">
-                Commission Asset
-              </button>
-            ` : ""}
-
-            ${!projectClosed ? `
-              <button
-                class="px-2 py-1 text-[11px] bg-[var(--fs-navy)] text-white rounded"
-                data-project-close="${esc(String(p.id))}">
-                Close Project
-              </button>
-            ` : `
-              <button
-                class="px-2 py-1 text-[11px] border rounded"
-                data-project-reopen="${esc(String(p.id))}">
-                Reopen
-              </button>
-            `}
-          </div>
-        </div>
-      </div>
-
-      <div
-        class="border rounded p-2 mt-3"
-        data-project-panel="closeout"
-      >
-        <div class="flex items-center justify-between mb-2">
-          <div class="font-semibold">Project Activity</div>
-
-          <div class="text-slate-500">
-            Latest ${Math.min(activity.length, 20)}
-          </div>
-        </div>
-
-        ${renderProjectActivityMini(activity)}
-      </div>
     </div>
   `;
+
+  mount
+    .querySelector("[data-project-back]")
+    ?.addEventListener("click", () => {
+      showProjectLanding();
+    });
 
   const tabs = mount.querySelectorAll("[data-project-tab]");
   const panels = mount.querySelectorAll("[data-project-panel]");
@@ -131870,7 +132675,7 @@ window.addEventListener("popstate",async()=>{
   );
 });
 
-window.addEventListener("DOMContentLoaded", () => {
+function startDashboardApp() {
   init().catch((e) => console.error("🔥 init crashed", e));
    bindSmartHeader();
   // ✅ TRACE modal closers
@@ -131927,7 +132732,18 @@ window.addEventListener("DOMContentLoaded", () => {
       APP_RESTORING_ROUTE=false;
     }
   }
-});
-})(); // ✅ ONLY THIS ONE closing for the main IIFE
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    startDashboardApp,
+    { once: true }
+  );
+} else {
+  startDashboardApp();
+}
+
+})(); // ✅ ONLY THIS ONE closing for the main IIFE// ✅ ONLY THIS ONE closing for the main IIFE
 
 

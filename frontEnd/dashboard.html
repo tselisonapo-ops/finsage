@@ -9880,6 +9880,63 @@ tbody tr:hover {
   color: #0f2742;
   box-shadow: 0 1px 4px rgba(15, 23, 42, .10);
 }
+
+.project-detail-tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  width: 100%;
+  margin: 14px 0;
+  border: 1px solid #dbe5ec;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.project-detail-tab {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 0;
+  border-right: 1px solid #dbe5ec;
+  border-radius: 0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.project-detail-tab:last-child {
+  border-right: 0;
+}
+
+.project-detail-tab:hover {
+  background: #f1f5f9;
+}
+
+.project-detail-tab.active {
+  background: #fff;
+  color: #0f2742;
+  font-weight: 700;
+  box-shadow: inset 0 -3px 0 var(--fs-navy);
+}
+
+@media (max-width: 1100px) {
+  .project-detail-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .project-detail-tab:nth-child(3) {
+    border-right: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .project-detail-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
   </style>
 
 </head>
@@ -17565,55 +17622,308 @@ tbody tr:hover {
         <section id="screen-projects" class="screen hidden">
           <div class="card p-4 flex flex-col gap-4">
 
-            <div class="flex items-center justify-between">
-              <div>
-                <h3 id="projectScreenTitle" class="font-bold text-base">Projects</h3>
-                <div class="text-xs text-slate-500">
-                  Job costing, material issues, budgets, and project profitability
+            <div id="projectLandingView">
+
+              <!-- ==================================================
+                  HEADER
+              ================================================== -->
+              <div class="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3
+                    id="projectScreenTitle"
+                    class="font-bold text-base">
+                    Projects
+                  </h3>
+
+                  <div class="text-xs text-slate-500">
+                    Portfolio performance, delivery, costs and project activity
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <button
+                    id="projectNewBtn"
+                    class="px-3 py-1.5 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    + New Project
+                  </button>
+
+                  <button
+                    id="projectRefreshBtn"
+                    class="px-3 py-1.5 text-xs border rounded">
+                    Refresh
+                  </button>
                 </div>
               </div>
 
-              <div class="flex items-center gap-2">
-                <button id="projectNewBtn"
-                        class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded">
-                  + New Project
-                </button>
-                <button id="projectRefreshBtn"
-                        class="px-3 py-1 text-xs border rounded">
-                  Refresh
-                </button>
+
+              <!-- ==================================================
+                  KPI CARDS
+              ================================================== -->
+              <div
+                id="projectDashboardKpis"
+                class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Total Projects
+                  </div>
+
+                  <div
+                    id="projectKpiTotal"
+                    class="text-lg font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Active / Approved
+                  </div>
+
+                  <div
+                    id="projectKpiActive"
+                    class="text-lg font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Contract Value
+                  </div>
+
+                  <div
+                    id="projectKpiContract"
+                    class="text-sm font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Total Budget
+                  </div>
+
+                  <div
+                    id="projectKpiBudget"
+                    class="text-sm font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Open Tasks
+                  </div>
+
+                  <div
+                    id="projectKpiTasks"
+                    class="text-lg font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Avg. Progress
+                  </div>
+
+                  <div
+                    id="projectKpiProgress"
+                    class="text-lg font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
               </div>
-            </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-4 gap-3">
-              <div class="border rounded p-3 text-xs">
-                <div class="font-semibold mb-2">Filters</div>
 
-                <label class="block text-[11px] text-slate-500 mb-1">Search</label>
-                <input id="projectSearch"
-                      class="w-full border rounded px-2 py-1 text-xs"
-                      placeholder="Project code, name, location">
+              <!-- ==================================================
+                  PORTFOLIO SUMMARY
+              ================================================== -->
+              <div class="grid grid-cols-1 xl:grid-cols-3 gap-3 mb-4">
 
-                <label class="block text-[11px] text-slate-500 mt-2 mb-1">Status</label>
-                <select id="projectStatus"
-                        class="w-full border rounded px-2 py-1 text-xs">
-                  <option value="">All</option>
-                  <option value="draft">Draft</option>
-                  <option value="approved">Approved</option>
-                  <option value="active">Active</option>
-                  <option value="on_hold">On Hold</option>
-                  <option value="completed">Completed</option>
-                  <option value="closed">Closed</option>
-                </select>
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <div class="font-semibold text-xs">
+                        Portfolio Status
+                      </div>
+
+                      <div class="text-[11px] text-slate-500">
+                        Projects by current status
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    id="projectStatusSummary"
+                    class="space-y-2 text-xs">
+                    Loading...
+                  </div>
+                </div>
+
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <div class="font-semibold text-xs">
+                        Delivery Progress
+                      </div>
+
+                      <div class="text-[11px] text-slate-500">
+                        Portfolio completion
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    id="projectProgressSummary"
+                    class="space-y-3 text-xs">
+                    Loading...
+                  </div>
+                </div>
+
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <div class="font-semibold text-xs">
+                        Portfolio Value
+                      </div>
+
+                      <div class="text-[11px] text-slate-500">
+                        Contract value against budget
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    id="projectValueSummary"
+                    class="space-y-3 text-xs">
+                    Loading...
+                  </div>
+                </div>
+
               </div>
 
-              <div id="projectsTable"
-                  class="lg:col-span-3 border rounded p-2 text-xs text-slate-500">
+
+              <!-- ==================================================
+                  FILTERS
+              ================================================== -->
+              <div class="border rounded-lg p-3 bg-white mb-3">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-semibold text-xs">
+                      Project Portfolio
+                    </div>
+
+                    <div class="text-[11px] text-slate-500">
+                      Search, filter and open a project
+                    </div>
+                  </div>
+
+                  <div
+                    id="projectPortfolioCount"
+                    class="text-[11px] text-slate-500">
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
+
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">
+                      Search
+                    </label>
+
+                    <input
+                      id="projectSearch"
+                      class="w-full border rounded px-2 py-1.5 text-xs"
+                      placeholder="Project code, name, customer or location">
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">
+                      Status
+                    </label>
+
+                    <select
+                      id="projectStatus"
+                      class="w-full border rounded px-2 py-1.5 text-xs">
+
+                      <option value="">All statuses</option>
+                      <option value="draft">Draft</option>
+                      <option value="approved">Approved</option>
+                      <option value="active">Active</option>
+                      <option value="on_hold">On Hold</option>
+                      <option value="completed">Completed</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">
+                      Project Type
+                    </label>
+
+                    <select
+                      id="projectTypeFilter"
+                      class="w-full border rounded px-2 py-1.5 text-xs">
+
+                      <option value="">All types</option>
+                      <option value="customer_project">Customer Project</option>
+                      <option value="construction">Construction</option>
+                      <option value="implementation">Implementation</option>
+                      <option value="internal_project">Internal Project</option>
+                      <option value="capital_project">Capital Project</option>
+                      <option value="maintenance">Maintenance</option>
+                      <option value="research">Research</option>
+                      <option value="marketing">Marketing</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">
+                      Accounting
+                    </label>
+
+                    <select
+                      id="projectAccountingModeFilter"
+                      class="w-full border rounded px-2 py-1.5 text-xs">
+
+                      <option value="">All accounting</option>
+                      <option value="contract">Contract</option>
+                      <option value="wip">WIP</option>
+                      <option value="capital">Capital</option>
+                      <option value="expense">Expense</option>
+                      <option value="none">None</option>
+                    </select>
+                  </div>
+
+                </div>
+              </div>
+
+
+              <!-- ==================================================
+                  PROJECT TABLE
+              ================================================== -->
+              <div
+                id="projectsTable"
+                class="text-xs text-slate-500">
                 Loading projects...
               </div>
+
             </div>
 
-            <div id="projectDetailMount"></div>
+
+            <div
+              id="projectDetailView"
+              class="hidden">
+
+              <div id="projectDetailMount"></div>
+
+            </div>
           </div>
 
           <div id="projectCreateModal" class="fixed inset-0 z-50 hidden">
@@ -28605,16 +28915,70 @@ tbody tr:hover {
   </div>
 </div>
 <div id="fs-react-drawer-root"></div>
-<script src="/app/config.js"></script>
 
-<link rel="stylesheet" href="/app/dist/assets/hostMount.css?v=20260811b" />
-<script type="module" src="/app/dist/assets/hostMount.js?v=20260811b"></script>
+<script>
+    window.FS_APP_BASE =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1"
+            ? ""
+            : "/app";
+</script>
 
-<script src="/app/dashboard.js?v=20260812a" defer></script>
-<script src="/app/js/corporate-structure.js?v=20260807a" defer></script>
-<script src="/app/js/consolidation.js?v=20260807a" defer></script>
-<script src="/app/ias41.js"></script>
-<script src="/app/js/data-migration.js"></script>
+<script>
+    const FS_APP_BASE = window.FS_APP_BASE || "";
+
+    function loadScript(src, options = {}) {
+        const script = document.createElement("script");
+
+        script.src = `${FS_APP_BASE}${src}`;
+
+        if (options.module) {
+            script.type = "module";
+        } else {
+            // Critical for dynamically-inserted classic scripts:
+            // preserve insertion/execution order.
+            script.async = false;
+        }
+
+        document.head.appendChild(script);
+
+        return script;
+    }
+
+    function loadStylesheet(href) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = `${FS_APP_BASE}${href}`;
+        document.head.appendChild(link);
+    }
+
+    loadScript("/config.js");
+
+    loadStylesheet(
+        "/dist/assets/hostMount.css?v=20260811b"
+    );
+
+    loadScript(
+        "/dist/assets/hostMount.js?v=20260811b",
+        { module: true }
+    );
+
+    loadScript(
+        "/dashboard.js?v=20260812a"
+    );
+
+    loadScript(
+        "/js/corporate-structure.js?v=20260807a"
+    );
+
+    loadScript(
+        "/js/consolidation.js?v=20260807a"
+    );
+
+    loadScript("/ias41.js");
+
+    loadScript("/js/data-migration.js");
+</script>
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {
