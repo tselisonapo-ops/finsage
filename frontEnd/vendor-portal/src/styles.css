@@ -182,7 +182,7 @@ textarea{
 
 .portal-eyebrow{
   color:var(--brand);
-  font-size:7px;
+  font-size:11px; 
   font-weight:900;
   letter-spacing:.12em;
 }
@@ -957,7 +957,7 @@ textarea{
   max-width:560px;
   margin:0 0 28px;
   color:#c4dad4;
-  font-size:10px;
+  font-size:15px;
   line-height:1.8;
 }
 
@@ -978,12 +978,12 @@ textarea{
 
 .vendor-signin-feature strong{
   color:#fff;
-  font-size:9px;
+  font-size:14px;    /* ✅ Readable */
 }
 
 .vendor-signin-feature span{
   color:#b8d2cb;
-  font-size:8px;
+  font-size:13px;    /* ✅ Readable */
   line-height:1.5;
 }
 
@@ -1007,16 +1007,17 @@ textarea{
 .vendor-signin-form>p{
   margin:0 0 23px;
   color:var(--muted);
-  font-size:9px;
+  font-size:14px;    /* ✅ Readable */
   line-height:1.6;
 }
 
+/* AFTER */
 .vendor-signin-form label{
   display:block;
   margin:11px 0 5px;
   color:#52615c;
-  font-size:8px;
-  font-weight:750;
+  font-size:14px;    /* ✅ Readable */
+  font-weight:600;
 }
 
 .portal-input-icon{
@@ -1062,13 +1063,14 @@ textarea{
   text-align:center;
 }
 
+/* AFTER */
 .vendor-signin-help span{
   color:var(--muted);
-  font-size:7px;
+  font-size:12px;    /* ✅ Readable */
 }
 
 .vendor-signin-help strong{
-  font-size:8px;
+  font-size:13px;    /* ✅ Readable */
 }
 
 .vendor-profile-workspace{
@@ -2276,3 +2278,148 @@ textarea{
     grid-template-columns:1fr;
   }
 }
+
+/* ============================================
+   GLOBAL FONT SIZE FIXES - All Pages
+   ============================================ */
+
+/* ---- 1. SIDBAR & HEADER ---- */
+.vendor-portal-brand strong { font-size: 14px !important; }
+.vendor-portal-brand small { font-size: 12px !important; }
+.vendor-portal-user strong { font-size: 13px !important; }
+.vendor-portal-user span { font-size: 11px !important; }
+.vendor-portal-page-header p { font-size: 14px !important; }
+
+/* Global eyebrow labels */
+.portal-eyebrow { font-size: 11px !important; }
+
+/* Status badges */
+.portal-status { font-size: 11px !important; }
+
+/* ---- 2. RFQ / QUOTE PAGE ---- */
+.vendor-rfq-copy span { font-size: 12px !important; }
+.vendor-rfq-copy strong { font-size: 14px !important; }
+.vendor-rfq-copy small { font-size: 12px !important; }
+
+.vendor-rfq-summary span { font-size: 12px !important; }
+.vendor-rfq-summary strong { font-size: 14px !important; }
+
+.vendor-section-title strong { font-size: 14px !important; }
+.vendor-section-title span { font-size: 12px !important; }
+
+/* Quote table */
+.vendor-quote-table-head span { font-size: 11px !important; }
+.vendor-quote-table-row strong { font-size: 13px !important; }
+.vendor-quote-table-row small { font-size: 11px !important; }
+
+/* Totals */
+.vendor-quote-totals span { font-size: 12px !important; }
+.vendor-quote-totals strong { font-size: 13px !important; }
+
+/* Upload zone */
+.vendor-upload-zone strong { font-size: 13px !important; }
+.vendor-upload-zone span { font-size: 12px !important; }
+
+/* Document list */
+.vendor-document-row strong { font-size: 13px !important; }
+.vendor-document-row span { font-size: 11px !important; }
+
+/* Document panel */
+.vendor-rfq-document > p { font-size: 13px !important; }
+.vendor-rfq-document-meta span { font-size: 11px !important; }
+.vendor-rfq-document-meta strong { font-size: 12px !important; }
+.vendor-rfq-document-items > div > span { font-size: 12px !important; }
+.vendor-rfq-document-items strong { font-size: 13px !important; }
+.vendor-rfq-document-items small { font-size: 11px !important; }
+.vendor-rfq-document-items p { font-size: 11px !important; }
+
+/* Terms */
+.vendor-rfq-terms strong { font-size: 13px !important; }
+.vendor-rfq-terms p { font-size: 12px !important; line-height: 1.6 !important; }
+
+/* ---- 3. INVITE PAGE ---- */
+.vendor-invite-rfq span { font-size: 12px !important; }
+.vendor-invite-rfq strong { font-size: 14px !important; }
+.vendor-invite-rfq small { font-size: 12px !important; }
+.vendor-invite-security { font-size: 12px !important; }
+.vendor-invite-form > p { font-size: 14px !important; }
+.vendor-invite-form label,
+.vendor-quote-section label { font-size: 14px !important; font-weight: 600 !important; }
+.portal-back { font-size: 12px !important; }
+.vendor-empty p { font-size: 13px !important; }
+
+/* ---- 4. SIGNIN PAGE ---- */
+.vendor-signin-brand > p { font-size: 15px !important; line-height: 1.6 !important; }
+.vendor-signin-feature strong { font-size: 14px !important; }
+.vendor-signin-feature span { font-size: 13px !important; }
+.vendor-signin-form > p { font-size: 14px !important; }
+.vendor-signin-form label { font-size: 14px !important; font-weight: 600 !important; }
+.vendor-signin-help span { font-size: 12px !important; }
+.vendor-signin-help strong { font-size: 13px !important; }
+
+/* ---- 5. PROFILE PAGE ---- */
+.vendor-profile-card-heading strong { font-size: 14px !important; }
+.vendor-profile-card-heading span { font-size: 12px !important; }
+.vendor-profile-company-name strong { font-size: 15px !important; }
+.vendor-profile-company-name span { font-size: 12px !important; }
+.vendor-profile-info-grid span { font-size: 11px !important; }
+.vendor-profile-info-grid strong { font-size: 13px !important; }
+.vendor-profile-note strong { font-size: 13px !important; }
+.vendor-profile-note p { font-size: 12px !important; line-height: 1.6 !important; }
+.vendor-profile-customer-brand strong { font-size: 14px !important; }
+.vendor-profile-customer-info span { font-size: 11px !important; }
+.vendor-profile-customer-info strong { font-size: 13px !important; }
+
+/* ---- 6. PO LIST PAGE ---- */
+.vendor-po-stat span { font-size: 11px !important; }
+.vendor-po-row-main span { font-size: 11px !important; }
+.vendor-po-row-main strong { font-size: 13px !important; }
+.vendor-po-row-main small { font-size: 11px !important; }
+.vendor-po-row-date span,
+.vendor-po-row-amount span { font-size: 11px !important; }
+.vendor-po-row-date strong,
+.vendor-po-row-amount strong { font-size: 12px !important; }
+
+/* ---- 7. PO DETAIL PAGE ---- */
+.vendor-po-summary span { font-size: 11px !important; }
+.vendor-po-summary strong { font-size: 13px !important; }
+.vendor-po-customer strong { font-size: 14px !important; }
+.vendor-po-customer span { font-size: 11px !important; }
+
+/* PO lines table */
+.vendor-po-lines-head span { font-size: 11px !important; }
+.vendor-po-lines-row strong { font-size: 13px !important; }
+.vendor-po-lines-row span,
+.vendor-po-lines-row small { font-size: 11px !important; }
+
+/* PO totals */
+.vendor-po-totals span { font-size: 12px !important; }
+.vendor-po-totals strong { font-size: 13px !important; }
+
+/* Address & terms cards */
+.vendor-po-address-card span { font-size: 11px !important; }
+.vendor-po-address-card strong { font-size: 13px !important; line-height: 1.6 !important; }
+.vendor-po-term-grid span { font-size: 11px !important; }
+.vendor-po-term-grid strong { font-size: 13px !important; }
+.vendor-po-terms-text strong { font-size: 13px !important; }
+.vendor-po-terms-text p { font-size: 12px !important; line-height: 1.65 !important; }
+
+/* Action panel */
+.vendor-po-action-sticky > p { font-size: 13px !important; line-height: 1.6 !important; }
+.vendor-po-action-sticky > label { font-size: 14px !important; font-weight: 600 !important; }
+.vendor-po-ack-warning span { font-size: 12px !important; line-height: 1.55 !important; }
+
+/* Accepted/rejected cards */
+.vendor-po-accepted-card strong,
+.vendor-po-rejected-card strong { font-size: 13px !important; }
+.vendor-po-accepted-card span { font-size: 11px !important; }
+.vendor-po-accepted-card p,
+.vendor-po-rejected-card p { font-size: 11px !important; line-height: 1.55 !important; }
+
+/* Next step card */
+.vendor-po-next-step strong { font-size: 13px !important; }
+.vendor-po-next-step span { font-size: 11px !important; line-height: 1.55 !important; }
+
+/* ---- 8. MODAL ---- */
+.portal-modal > p { font-size: 13px !important; line-height: 1.6 !important; }
+.portal-modal label { font-size: 14px !important; font-weight: 600 !important; }
