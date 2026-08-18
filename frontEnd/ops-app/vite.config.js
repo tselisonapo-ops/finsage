@@ -5,8 +5,8 @@ export default defineConfig(({ mode }) => ({
   plugins: [react()],
 
   // Local dev: http://127.0.0.1:5174/
-  // Production: https://finspheresolutions.com/app/ops/
-  base: mode === "production" ? "/app/ops/" : "/",
+  // Production: https://finspheresolutions.com/ops/
+  base: mode === "production" ? "/ops/" : "/",
 
   server: {
     host: "127.0.0.1",

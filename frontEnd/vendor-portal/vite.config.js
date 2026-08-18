@@ -8,9 +8,9 @@ export default defineConfig(({ mode }) => ({
   // http://127.0.0.1:5175/
   //
   // Production:
-  // https://finspheresolutions.com/app/vendor/
+  // https://finspheresolutions.com/vendor-portal/
   base: mode === "production"
-    ? "/app/vendor/"
+    ? "/vendor-portal/"
     : "/",
 
   server: {
