@@ -1,5 +1,6 @@
 # BackEnd/Services/vat_settings.py
 from flask import Blueprint, request, jsonify, g, current_app
+from datetime import date
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.db_service import db_service
 
@@ -107,14 +108,16 @@ def get_vat_settings(company_id):
 def update_vat_settings(company_id: int):
 
     # -------------------------------------------------
-    # Auth guard (JWT company scope)
+    # Auth guard
     # -------------------------------------------------
     payload = getattr(request, "jwt_payload", {}) or {}
+
     deny = _deny_if_wrong_company(
         payload,
         int(company_id),
         db_service=db_service,
     )
+
     if deny:
         return deny
 
@@ -125,46 +128,346 @@ def update_vat_settings(company_id: int):
     # -------------------------------------------------
     data = request.get_json(silent=True) or {}
 
-    freq = (data.get("frequency") or "bi_monthly").lower()
-    if freq not in ("monthly", "bi_monthly", "quarterly", "semi_annual", "annual"):
-        freq = "bi_monthly"
+    # -------------------------------------------------
+    # Load existing settings FIRST
+    #
+    # IMPORTANT:
+    # Do not replace the whole JSON object because it
+    # may already contain VAT GL/account configuration.
+    # -------------------------------------------------
+    existing = (
+        db_service.get_vat_settings(company_id)
+        or {}
+    )
 
-    anchor_month = int(data.get("anchor_month") or 1)
-    anchor_month = max(1, min(12, anchor_month))
+    if not isinstance(existing, dict):
+        existing = {}
 
-    filing_lag_days = int(data.get("filing_lag_days") or 25)
-    filing_lag_days = max(0, filing_lag_days)
+    before_cfg = dict(existing)
 
-    reminder_days_before = int(data.get("reminder_days_before") or 10)
-    reminder_days_before = max(0, reminder_days_before)
+    # -------------------------------------------------
+    # Authority
+    #
+    # Authority should normally be resolved from the
+    # company's country, but an explicitly selected
+    # authority is accepted from the setup screen.
+    # -------------------------------------------------
+    authority_code = str(
+        data.get("authority_code")
+        or existing.get("authority_code")
+        or ""
+    ).strip().upper()
 
-    prices_include_vat = bool(
-        data.get("prices_include_vat")
-        or data.get("pricing_includes_vat")
-        or False
+    if not authority_code:
+
+        company = db_service.fetch_one("""
+            SELECT country
+            FROM public.companies
+            WHERE id=%s
+            LIMIT 1;
+        """, (int(company_id),)) or {}
+
+        country = str(
+            company.get("country")
+            or ""
+        ).strip().upper()
+
+        authority_map = {
+            "ZA": "SARS",
+            "ZAF": "SARS",
+            "SOUTH AFRICA": "SARS",
+
+            "LS": "RSL",
+            "LSO": "RSL",
+            "LESOTHO": "RSL",
+
+            "BW": "BURS",
+            "BWA": "BURS",
+            "BOTSWANA": "BURS",
+        }
+
+        authority_code = authority_map.get(
+            country
+        )
+
+    if authority_code:
+
+        authority = db_service.fetch_one("""
+            SELECT
+                id,
+                authority_code,
+                country_code,
+                name,
+                tax_name,
+                currency_code,
+                is_active
+            FROM public.vat_authorities
+            WHERE authority_code=%s
+              AND is_active=TRUE
+            LIMIT 1;
+        """, (authority_code,))
+
+        if not authority:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    f"Unsupported or inactive VAT authority: "
+                    f"{authority_code}"
+                ),
+            }), 400
+
+    # -------------------------------------------------
+    # Filing channel
+    # -------------------------------------------------
+    filing_channel = str(
+        data.get("filing_channel")
+        or existing.get("filing_channel")
+        or (
+            "efiling"
+            if authority_code == "SARS"
+            else "electronic"
+        )
+    ).strip().lower()
+
+    allowed_channels = {
+        "efiling",
+        "electronic",
+        "manual",
+    }
+
+    if filing_channel not in allowed_channels:
+        filing_channel = (
+            "efiling"
+            if authority_code == "SARS"
+            else "electronic"
+        )
+
+    # -------------------------------------------------
+    # VAT filing category
+    #
+    # New setup uses period_category/category_code.
+    # Keep both names compatible with older code.
+    # -------------------------------------------------
+    category_code = str(
+        data.get("period_category")
+        or data.get("category_code")
+        or existing.get("period_category")
+        or existing.get("category_code")
+        or ""
+    ).strip().upper()
+
+    # -------------------------------------------------
+    # VAT registration number
+    # -------------------------------------------------
+    vat_registration_number = str(
+        data.get("vat_registration_number")
+        or existing.get("vat_registration_number")
+        or ""
+    ).strip()
+
+    # -------------------------------------------------
+    # Customs / additional authority information
+    # -------------------------------------------------
+    customs_code = str(
+        data.get("customs_code")
+        or existing.get("customs_code")
+        or ""
+    ).strip()
+
+    # -------------------------------------------------
+    # Reminder
+    # -------------------------------------------------
+    try:
+        reminder_days_before = int(
+            data.get(
+                "reminder_days_before",
+                existing.get(
+                    "reminder_days_before",
+                    10
+                ),
+            )
+        )
+    except (TypeError, ValueError):
+        reminder_days_before = 10
+
+    reminder_days_before = max(
+        0,
+        reminder_days_before
     )
 
     # -------------------------------------------------
-    # Config object
+    # Prices include VAT
     # -------------------------------------------------
-    cfg = {
-        "frequency": freq,
-        "anchor_month": anchor_month,
-        "filing_lag_days": filing_lag_days,
-        "reminder_days_before": reminder_days_before,
-        "country": (data.get("country") or "").upper() or "ZA",
-        "prices_include_vat": prices_include_vat,
-    }
+    if (
+        "prices_include_vat" in data
+        or "pricing_includes_vat" in data
+    ):
+        prices_include_vat = bool(
+            data.get("prices_include_vat")
+            if "prices_include_vat" in data
+            else data.get("pricing_includes_vat")
+        )
+    else:
+        prices_include_vat = bool(
+            existing.get(
+                "prices_include_vat",
+                False
+            )
+        )
 
     # -------------------------------------------------
-    # Save settings
+    # Preserve existing legacy fields for compatibility
+    #
+    # We do NOT delete frequency / anchor_month yet.
+    # Existing VAT dashboard code may still read them.
     # -------------------------------------------------
-    ok = db_service.save_vat_settings(company_id, cfg)
+    cfg = dict(existing)
+
+    cfg.update({
+        "authority_code": authority_code,
+
+        "vat_registration_number":
+            vat_registration_number,
+
+        "filing_channel":
+            filing_channel,
+
+        "period_category":
+            category_code,
+
+        # compatibility with code that calls it category_code
+        "category_code":
+            category_code,
+
+        "customs_code":
+            customs_code,
+
+        "reminder_days_before":
+            reminder_days_before,
+
+        "prices_include_vat":
+            prices_include_vat,
+    })
+
+    # -------------------------------------------------
+    # Validate the selected filing category against
+    # the seeded authority rules.
+    #
+    # This prevents a company from saving something
+    # such as SARS Category Z when no such rule exists.
+    # -------------------------------------------------
+    if category_code:
+
+        today = date.today()
+
+        regime = db_service.fetch_one("""
+            SELECT id
+            FROM public.vat_regimes
+            WHERE authority_id=%s
+              AND is_active=TRUE
+              AND effective_from <= %s
+              AND (
+                  effective_to IS NULL
+                  OR effective_to >= %s
+              )
+            ORDER BY effective_from DESC, id DESC
+            LIMIT 1;
+        """, (
+            authority["id"],
+            today,
+            today,
+        ))
+
+        if not regime:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    f"No active VAT regime is configured "
+                    f"for {authority_code}."
+                ),
+            }), 400
+
+        period_rule = db_service.fetch_one("""
+            SELECT
+                id,
+                category_code,
+                name,
+                frequency,
+                period_months,
+                anchor_month,
+                return_due_rule,
+                payment_due_rule,
+                filing_channel,
+                effective_from,
+                effective_to,
+                is_default,
+                is_active
+            FROM public.vat_period_rules
+            WHERE regime_id=%s
+              AND category_code=%s
+              AND filing_channel=%s
+              AND is_active=TRUE
+              AND effective_from <= %s
+              AND (
+                  effective_to IS NULL
+                  OR effective_to >= %s
+              )
+            ORDER BY effective_from DESC, id DESC
+            LIMIT 1;
+        """, (
+            regime["id"],
+            category_code,
+            filing_channel,
+            today,
+            today,
+        ))
+
+        if not period_rule:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    f"No VAT filing rule exists for "
+                    f"{authority_code} Category "
+                    f"{category_code} using "
+                    f"{filing_channel}."
+                ),
+            }), 400
+
+        # Store the resolved rule information as useful
+        # configuration metadata.
+        cfg.update({
+            "frequency":
+                period_rule["frequency"],
+
+            "anchor_month":
+                period_rule["anchor_month"],
+
+            "period_months":
+                period_rule["period_months"],
+
+            "return_due_rule":
+                period_rule["return_due_rule"],
+
+            "payment_due_rule":
+                period_rule["payment_due_rule"],
+        })
+
+    # -------------------------------------------------
+    # Save
+    # -------------------------------------------------
+    ok = db_service.save_vat_settings(
+        company_id,
+        cfg
+    )
+
     if not ok:
-        return jsonify({"error": "Failed to save VAT settings"}), 500
+        return jsonify({
+            "ok": False,
+            "error": "Failed to save VAT settings",
+        }), 500
 
     # -------------------------------------------------
-    # AUDIT LOG (best-effort)
+    # Audit
     # -------------------------------------------------
     try:
         db_service.audit_log(
@@ -176,16 +479,205 @@ def update_vat_settings(company_id: int):
             entity_type="vat_settings",
             entity_id=str(company_id),
             entity_ref=f"VAT-{company_id}",
-            before_json={},           # you can load previous config if needed
+            before_json=before_cfg,
             after_json=cfg,
-            message="Updated VAT settings",
+            message="Updated VAT authority and filing settings",
             source="api",
         )
+
     except Exception:
         current_app.logger.exception(
             "audit_log failed (update_vat_settings)"
         )
 
-    return jsonify(cfg), 200
+    # -------------------------------------------------
+    # Return the saved configuration
+    # -------------------------------------------------
+    return jsonify({
+        "ok": True,
+        **cfg,
+    }), 200
 
+@bp.get("/api/companies/<int:company_id>/vat/rates")
+@require_auth
+def get_vat_rates(company_id: int):
 
+    payload = getattr(request, "jwt_payload", {}) or {}
+
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    # ---------------------------------------------
+    # Transaction date
+    # ---------------------------------------------
+    transaction_date = (
+        request.args.get("date")
+        or date.today().isoformat()
+    )
+
+    # ---------------------------------------------
+    # Resolve company VAT context
+    # ---------------------------------------------
+    try:
+        context = db_service.vat_company_context(
+            int(company_id),
+            transaction_date,
+        ) or {}
+    except Exception as exc:
+        current_app.logger.exception(
+            "VAT company context failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": "Could not resolve VAT authority context.",
+        }), 500
+
+    authority_code = str(
+        context.get("authority_code")
+        or ""
+    ).strip().upper()
+
+    regime_id = context.get("regime_id")
+
+    if not authority_code:
+        return jsonify({
+            "ok": False,
+            "error": (
+                "VAT authority is not configured "
+                "for this company."
+            ),
+        }), 400
+
+    # ---------------------------------------------
+    # If context did not return regime_id,
+    # resolve the active regime directly.
+    # ---------------------------------------------
+    if not regime_id:
+
+        regime = db_service.fetch_one("""
+            SELECT
+                vr.id,
+                vr.regime_code,
+                vr.regime_name
+            FROM public.vat_regimes vr
+            JOIN public.vat_authorities va
+                ON va.id = vr.authority_id
+            WHERE va.authority_code=%s
+              AND va.is_active=TRUE
+              AND vr.is_active=TRUE
+              AND vr.effective_from <= %s
+              AND (
+                    vr.effective_to IS NULL
+                    OR vr.effective_to >= %s
+              )
+            ORDER BY vr.effective_from DESC, vr.id DESC
+            LIMIT 1;
+        """, (
+            authority_code,
+            transaction_date,
+            transaction_date,
+        ))
+
+        if not regime:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    f"No active VAT regime found "
+                    f"for {authority_code}."
+                ),
+            }), 400
+
+        regime_id = regime["id"]
+
+    # ---------------------------------------------
+    # Get rates applicable on transaction date
+    # ---------------------------------------------
+    rates = db_service.fetch_all("""
+        SELECT
+            r.id,
+            r.rate_code,
+            r.name,
+            r.rate,
+            r.treatment,
+            r.recoverable_default,
+            r.applies_to_sales,
+            r.applies_to_purchases,
+            r.effective_from,
+            r.effective_to,
+            r.legislation_reference,
+            r.guidance_reference
+        FROM public.vat_rates r
+        WHERE r.regime_id=%s
+          AND r.is_active=TRUE
+          AND r.effective_from <= %s
+          AND (
+                r.effective_to IS NULL
+                OR r.effective_to >= %s
+          )
+        ORDER BY
+            CASE
+                WHEN r.rate_code='STANDARD' THEN 0
+                WHEN r.rate_code='STANDARD_15' THEN 0
+                ELSE 1
+            END,
+            r.rate DESC,
+            r.rate_code;
+    """, (
+        regime_id,
+        transaction_date,
+        transaction_date,
+    ))
+
+    # ---------------------------------------------
+    # Normalise response
+    # ---------------------------------------------
+    result = []
+
+    for row in rates:
+        result.append({
+            "id": row["id"],
+            "rate_code": row["rate_code"],
+            "name": row["name"],
+            "rate": float(row["rate"] or 0),
+            "rate_percent": float(row["rate"] or 0) * 100,
+            "treatment": row["treatment"],
+            "recoverable_default": bool(
+                row["recoverable_default"]
+            ),
+            "applies_to_sales": bool(
+                row["applies_to_sales"]
+            ),
+            "applies_to_purchases": bool(
+                row["applies_to_purchases"]
+            ),
+            "effective_from": (
+                row["effective_from"].isoformat()
+                if row["effective_from"]
+                else None
+            ),
+            "effective_to": (
+                row["effective_to"].isoformat()
+                if row["effective_to"]
+                else None
+            ),
+            "legislation_reference":
+                row["legislation_reference"],
+            "guidance_reference":
+                row["guidance_reference"],
+        })
+
+    return jsonify({
+        "ok": True,
+        "company_id": int(company_id),
+        "transaction_date": transaction_date,
+        "authority_code": authority_code,
+        "regime_id": regime_id,
+        "rates": result,
+    }), 200

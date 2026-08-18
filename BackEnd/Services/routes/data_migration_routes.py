@@ -3716,3 +3716,1143 @@ def migration_inventory_locations_preview(company_id:int,project_id:int,dataset_
             error,
             status=500,
         )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/inventory/opening",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_inventory_opening(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        data=db_service.migration_inventory_opening_get(
+            company_id,project_id
+        )
+
+        return jsonify({
+            "ok":True,
+            **_json_safe(data),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Opening inventory migration retrieval failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/inventory/opening/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_inventory_opening_settings(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            settings=db_service.migration_inventory_opening_settings_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(settings),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_inventory_opening_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Opening inventory settings failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/inventory/opening/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_inventory_opening_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_inventory_opening_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Opening inventory preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/inventory/opening/reconcile",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def migration_inventory_opening_reconcile(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            reconciliation=db_service.migration_inventory_opening_reconciliation_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "reconciliation":_json_safe(reconciliation),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                reconciliation=db_service.migration_inventory_opening_reconcile(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "reconciliation":_json_safe(reconciliation),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Opening inventory reconciliation failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/inventory/movements",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_inventory_movements(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        data=db_service.migration_inventory_movements_get(
+            company_id,project_id
+        )
+
+        return jsonify({
+            "ok":True,
+            **_json_safe(data),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Inventory movement migration retrieval failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/inventory/movements/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_inventory_movement_settings(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            settings=db_service.migration_inventory_movement_settings_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(settings),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_inventory_movement_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Inventory movement settings failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/inventory/movements/types",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_inventory_movement_types(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            mapping=db_service.migration_inventory_movement_types_detect(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "mapping":_json_safe(mapping),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                mapping=db_service.migration_inventory_movement_type_mappings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body().get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Inventory movement type mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/inventory/movements/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_inventory_movement_preview(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_inventory_movement_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Inventory movement preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/inventory/movements/reconcile",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def migration_inventory_movement_reconcile(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            reconciliation=db_service.migration_inventory_movement_reconciliation_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "reconciliation":_json_safe(reconciliation),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                reconciliation=db_service.migration_inventory_movement_reconcile(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "reconciliation":_json_safe(reconciliation),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Inventory movement reconciliation failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/pos/configuration",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_pos_configuration(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            data=db_service.migration_pos_get(
+                company_id,project_id
+            )
+
+            return jsonify({
+                "ok":True,
+                **_json_safe(data),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_pos_settings_save(
+                    company_id,
+                    project_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "POS migration configuration failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_pos_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_pos_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "POS migration preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/terminals",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_pos_terminals(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            mapping=db_service.migration_pos_terminals_detect(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "mapping":_json_safe(mapping),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                mapping=db_service.migration_pos_terminal_mappings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body().get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "POS terminal mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/payment-methods",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_pos_payment_methods(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            mapping=db_service.migration_pos_payment_methods_detect(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "mapping":_json_safe(mapping),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                mapping=db_service.migration_pos_payment_method_mappings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body().get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "POS payment method mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/catalogue",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_pos_catalogue(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            mapping=db_service.migration_pos_catalogue_detect(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "mapping":_json_safe(mapping),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                mapping=db_service.migration_pos_catalogue_mappings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body().get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "POS catalogue mapping failed",
+            error,
+            status=500,
+        )
+    
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/pos/reconcile",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def migration_pos_reconcile(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            reconciliation=db_service.migration_pos_reconciliation_get(
+                company_id,project_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "reconciliation":_json_safe(reconciliation),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                reconciliation=db_service.migration_pos_reconcile(
+                    company_id,
+                    project_id,
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "reconciliation":_json_safe(reconciliation),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "POS migration reconciliation failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/pos/menu",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_pos_menu(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        data=db_service.migration_pos_menu_get(
+            company_id,project_id
+        )
+
+        return jsonify({
+            "ok":True,
+            **_json_safe(data),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "POS menu migration retrieval failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/menu/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_pos_menu_settings(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            settings=db_service.migration_pos_menu_settings_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(settings),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_pos_menu_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("POS menu settings failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/menu/items",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_pos_menu_items(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            mapping=db_service.migration_pos_menu_items_detect(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "mapping":_json_safe(mapping),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                mapping=db_service.migration_pos_menu_items_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body().get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("POS menu mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/menu/components",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_pos_menu_components(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            mapping=db_service.migration_pos_menu_components_detect(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "mapping":_json_safe(mapping),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                mapping=db_service.migration_pos_menu_components_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body().get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("POS menu component mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/menu/addons",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_pos_menu_addons(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            mapping=db_service.migration_pos_menu_addons_detect(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "mapping":_json_safe(mapping),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                mapping=db_service.migration_pos_menu_addons_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body().get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("POS menu add-on mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/menu/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_pos_menu_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_pos_menu_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("POS menu preview failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/menu/reconcile",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def migration_pos_menu_reconcile(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            reconciliation=db_service.migration_pos_menu_reconciliation_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "reconciliation":_json_safe(reconciliation),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                reconciliation=db_service.migration_pos_menu_reconcile(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "reconciliation":_json_safe(reconciliation),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("POS menu reconciliation failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/pos/history",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_pos_history(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        data=db_service.migration_pos_history_get(
+            company_id,project_id
+        )
+
+        return jsonify({
+            "ok":True,
+            **_json_safe(data),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "POS history migration retrieval failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/history/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_pos_history_settings(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            settings=db_service.migration_pos_history_settings_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(settings),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_pos_history_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "POS history settings failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/history/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_pos_history_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_pos_history_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "POS history preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/pos/history/reconcile",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def migration_pos_history_reconcile(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            reconciliation=db_service.migration_pos_history_reconciliation_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "reconciliation":_json_safe(reconciliation),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                reconciliation=db_service.migration_pos_history_reconcile(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "reconciliation":_json_safe(reconciliation),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "POS history reconciliation failed",
+            error,
+            status=500,
+        )

@@ -1,4 +1,3 @@
-# utils/vat_utils.py
 from collections import defaultdict
 import os
 from BackEnd.Services.auth_middleware import _corsify, require_auth
@@ -14,6 +13,7 @@ from urllib.parse import urlencode
 import csv
 import io
 import zipfile
+import json
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side, Protection
 from openpyxl.utils import get_column_letter
@@ -28,6 +28,12 @@ from flask import (
 from BackEnd.Services.vat_pack_pdf_builder import (
     generate_vat_return_pdf,
     generate_vat_supporting_pdf,
+)
+from BackEnd.Services.vat_authority_compliance import (
+    authority_from_country,
+    authority_profile,
+    authority_due_date,
+    build_authority_return,
 )
 from flask import Blueprint
 
@@ -121,6 +127,7 @@ def _get_company_vat_pack_profile(company_id: int) -> dict:
           physical_address,
           postal_address,
           currency,
+          country,
           logo_url
         FROM public.companies
         WHERE id = %s
@@ -312,6 +319,8 @@ def _get_vat_lines(company_id: int, start_date, end_date):
             ABS(COALESCE(src.debit, 0) - COALESCE(src.credit, 0)) DESC
     )
     SELECT
+        vl.id AS ledger_line_id,
+        vl.journal_id,
         vl.date,
         vl.ref,
         vl.vat_account_code,
@@ -357,6 +366,8 @@ def _get_vat_lines(company_id: int, start_date, end_date):
         vat_name = r.get("vat_account_name") or ""
 
         lines.append({
+            "ledger_line_id": r.get("ledger_line_id"),
+            "journal_id": r.get("journal_id"),
             "date": r.get("date").isoformat() if r.get("date") else None,
             "ref": r.get("ref") or "",
 
@@ -376,6 +387,184 @@ def _get_vat_lines(company_id: int, start_date, end_date):
         })
 
     return lines
+
+
+def _vat_suggest_class(line: dict) -> str:
+    """
+    Conservative suggestion only. Suggested classes are NOT treated as
+    filing-ready until confirmed by a user.
+    """
+    side = str(line.get("vat_side") or "").lower()
+    source_name = str(line.get("source_account_name") or "").lower()
+    source_code = str(line.get("source_account_code") or "").upper()
+
+    looks_capital = any(x in source_name for x in (
+        "equipment", "vehicle", "motor", "land", "building",
+        "machinery", "plant", "computer", "furniture", "asset"
+    )) or source_code.startswith("BS_NCA")
+
+    if side == "output":
+        return "standard_capital" if looks_capital else "standard"
+    if side == "input":
+        return "local_capital" if looks_capital else "local_other"
+    return ""
+
+
+def _vat_authority_lines(company_id: int, start_date, end_date, authority_code: str, lines: list[dict]) -> list[dict]:
+    """
+    Enrich extracted VAT-control lines with confirmed authority classification.
+    Also append manual return lines for zero-rated/exempt/other transactions
+    that do not hit a VAT control account.
+    """
+    db_service.ensure_company_vat_authority_compliance(company_id)
+
+    ids = [
+        int(x["ledger_line_id"])
+        for x in lines
+        if x.get("ledger_line_id")
+    ]
+    saved = db_service.vat_line_classifications_get(
+        company_id,
+        authority_code,
+        ids,
+    )
+
+    enriched = []
+    profile = authority_profile(authority_code)
+    default_rate = float(profile.get("standard_rate") or 0)
+
+    for raw in lines:
+        line = dict(raw)
+        line_id = int(line.get("ledger_line_id") or 0)
+        classification = saved.get(line_id) or {}
+
+        line["vat_class"] = (
+            classification.get("vat_class")
+            or _vat_suggest_class(line)
+        )
+        line["classification_confirmed"] = bool(
+            classification.get("is_confirmed")
+        )
+        line["classification_source"] = (
+            classification.get("classification_source")
+            or "suggested"
+        )
+
+        line["taxable_value"] = classification.get("taxable_value")
+        line["gross_value"] = classification.get("gross_value")
+        line["vat_rate"] = (
+            classification.get("vat_rate")
+            if classification.get("vat_rate") is not None
+            else default_rate
+        )
+
+        enriched.append(line)
+
+    manual = db_service.vat_return_manual_lines_get(
+        company_id,
+        authority_code,
+        start_date,
+        end_date,
+    )
+
+    for row in manual:
+        enriched.append({
+            "ledger_line_id": None,
+            "journal_id": None,
+            "date": str(start_date),
+            "ref": row.get("reference") or "",
+            "source_account_code": "",
+            "source_account_name": row.get("description") or "Manual VAT return line",
+            "vat_account_code": "",
+            "vat_account_name": "",
+            "account_code": "",
+            "account_name": row.get("description") or "Manual VAT return line",
+            "debit": 0,
+            "credit": 0,
+            "vat_amount": float(row.get("vat_amount") or 0),
+            "vat_side": row.get("vat_side"),
+            "vat_class": row.get("vat_class"),
+            "taxable_value": float(row.get("taxable_value") or 0),
+            "gross_value": (
+                float(row.get("gross_value"))
+                if row.get("gross_value") is not None
+                else None
+            ),
+            "vat_rate": (
+                float(row.get("vat_rate"))
+                if row.get("vat_rate") is not None
+                else default_rate
+            ),
+            "classification_confirmed": bool(row.get("is_confirmed", True)),
+            "classification_source": "manual_return_line",
+        })
+
+    return enriched
+
+
+def _vat_authority_context(company_id: int, start_date, end_date, lines: list[dict], filing_channel: str = "electronic") -> dict:
+    company = _get_company_vat_pack_profile(company_id)
+    authority_code = authority_from_country(company.get("country"))
+    profile = authority_profile(authority_code)
+    authority_lines = _vat_authority_lines(
+        company_id,
+        start_date,
+        end_date,
+        authority_code,
+        lines,
+    )
+    authority_return = build_authority_return(
+        authority_code,
+        authority_lines,
+    )
+
+    authority_return["due_date"] = authority_due_date(
+        authority_code,
+        end_date,
+        filing_channel=filing_channel,
+    ).isoformat()
+    authority_return["filing_channel"] = filing_channel
+    authority_return["company_country"] = company.get("country")
+
+    return {
+        "authority_code": authority_code,
+        "profile": profile,
+        "lines": authority_lines,
+        "return": authority_return,
+    }
+
+
+def _authority_return_rows(authority_return: dict) -> list[list]:
+    rows = [
+        ["AUTHORITY VAT RETURN"],
+        ["Authority", authority_return.get("authority_code")],
+        ["Form", authority_return.get("form_code")],
+        ["Specification", authority_return.get("spec_version")],
+        ["Validation", authority_return.get("validation_status")],
+        ["Classification complete", authority_return.get("classification_complete")],
+        [],
+    ]
+
+    fields = authority_return.get("fields") or authority_return.get("boxes") or {}
+    rows.append(["RETURN BOX / FIELD", "AMOUNT"])
+    for key, value in fields.items():
+        rows.append([str(key), value])
+
+    rows += [
+        [],
+        ["Total Output Tax", authority_return.get("output_tax")],
+        ["Total Input Tax", authority_return.get("input_tax")],
+        ["Net VAT", authority_return.get("net_vat")],
+    ]
+
+    errors = authority_return.get("validation_errors") or []
+    if errors:
+        rows += [[], ["VALIDATION ERRORS"]]
+        for e in errors:
+            rows.append([e.get("code"), e.get("message"), e.get("line_id")])
+
+    return rows
+
 
 def _excel_safe(value):
     """
@@ -701,52 +890,266 @@ def resolve_account_by_role(company_id: int, role: str) -> dict:
         "name": row["name"],
     }
 
-@vat_utils_bp.route("/api/companies/<int:company_id>/vat/periods", methods=["GET", "OPTIONS"])
+@vat_utils_bp.route(
+    "/api/companies/<int:company_id>/vat/settings",
+    methods=["GET", "POST", "OPTIONS"],
+)
 @require_auth
-def vat_periods(company_id: int):
+def vat_settings(company_id: int):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
 
     user = getattr(g, "current_user", {}) or {}
+
+    if int(user.get("company_id") or 0) != int(company_id):
+        return jsonify({
+            "ok": False,
+            "error": "Not authorised",
+        }), 403
+
+    if request.method == "POST":
+        payload = request.get_json(force=True) or {}
+
+        try:
+            settings = db_service.update_vat_settings(
+                company_id,
+                payload,
+            )
+
+            context = db_service.vat_company_context(
+                company_id,
+                date.today(),
+            )
+
+            return jsonify({
+                "ok": True,
+                "settings": settings,
+                "context": context,
+            }), 200
+
+        except Exception as exc:
+            return jsonify({
+                "ok": False,
+                "error": str(exc),
+            }), 400
+
+    context = db_service.vat_company_context(
+        company_id,
+        date.today(),
+    )
+
+    return jsonify({
+        "ok": True,
+        "settings": db_service.get_vat_settings(company_id),
+        "context": context,
+    }), 200
+
+    
+@vat_utils_bp.route(
+    "/api/companies/<int:company_id>/vat/setup-options",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def vat_setup_options(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    user = getattr(g, "current_user", {}) or {}
+
     if int(user.get("company_id") or 0) != int(company_id):
         return jsonify({"error": "Not authorised"}), 403
 
-    cfg = db_service.get_vat_settings(company_id) or {}
-    today = date.today()
-
-    filing_lag_days = cfg.get("filing_lag_days")
-    if not isinstance(filing_lag_days, int):
-        filing_lag_days = 25
-
-    periods = (
-        _make_vat_periods_for_year(today.year - 1, cfg)
-        + _make_vat_periods_for_year(today.year, cfg)
-        + _make_vat_periods_for_year(today.year + 1, cfg)
+    ctx = db_service.vat_company_context(
+        company_id,
+        date.today(),
     )
 
-    out = []
-    for p in periods:
-        due_date = p["end_date"] + timedelta(days=filing_lag_days)
-        out.append({
-            "label": p["label"],
-            "start_date": p["start_date"].isoformat(),
-            "end_date": p["end_date"].isoformat(),
-            "due_date": due_date.isoformat(),
+    if not ctx.get("configured"):
+        return jsonify({
+            "ok": True,
+            "context": ctx,
+            "period_rules": [],
+            "rates": [],
         })
 
-    out.sort(key=lambda x: x["start_date"], reverse=True)
+    regime = ctx["regime"]
 
-    current = compute_current_vat_period(today, cfg)
+    rules = db_service.fetch_all("""
+        SELECT *
+        FROM public.vat_period_rules
+        WHERE regime_id=%s
+          AND is_active=TRUE
+        ORDER BY category_code, filing_channel;
+    """, (regime["id"],))
 
     return jsonify({
-        "periods": out,
-        "current": {
-            "label": current["label"],
-            "start_date": current["start_date"].isoformat(),
-            "end_date": current["end_date"].isoformat(),
-            "due_date": current["due_date"].isoformat() if current.get("due_date") else None,
-        } if current else None,
-    }), 200
+        "ok": True,
+        "context": ctx,
+        "period_rules": rules,
+        "rates": ctx.get("rates") or [],
+    })
+
+@vat_utils_bp.route(
+    "/api/companies/<int:company_id>/vat/periods",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def vat_periods(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(
+            make_response("", 204)
+        )
+
+    user = getattr(
+        g,
+        "current_user",
+        {},
+    ) or {}
+
+    if (
+        int(user.get("company_id") or 0)
+        != int(company_id)
+    ):
+        return jsonify({
+            "error": "Not authorised"
+        }), 403
+
+    today = date.today()
+
+    try:
+        ctx = db_service.vat_company_context(
+            company_id,
+            today,
+        )
+
+        if not ctx.get("configured"):
+            return jsonify({
+                "ok": True,
+                "periods": [],
+                "current": None,
+                "context": ctx,
+            }), 200
+
+        periods = (
+            db_service.vat_build_periods(
+                company_id,
+                today.year - 1,
+            )
+            +
+            db_service.vat_build_periods(
+                company_id,
+                today.year,
+            )
+            +
+            db_service.vat_build_periods(
+                company_id,
+                today.year + 1,
+            )
+        )
+
+        # remove duplicates
+        unique = {}
+
+        for p in periods:
+            key = (
+                p["start_date"],
+                p["end_date"],
+            )
+
+            unique[key] = p
+
+        periods = list(
+            unique.values()
+        )
+
+        periods.sort(
+            key=lambda p: p["start_date"],
+            reverse=True,
+        )
+
+        current = next(
+            (
+                p
+                for p in periods
+                if (
+                    p["start_date"]
+                    <= today
+                    <= p["end_date"]
+                )
+            ),
+            None,
+        )
+
+        def serialise_period(p):
+            if not p:
+                return None
+
+            return {
+                **p,
+                "start_date":
+                    p["start_date"].isoformat(),
+                "end_date":
+                    p["end_date"].isoformat(),
+                "due_date":
+                    p["due_date"].isoformat(),
+            }
+
+        return jsonify({
+            "ok": True,
+
+            "periods": [
+                serialise_period(p)
+                for p in periods
+            ],
+
+            "current":
+                serialise_period(current),
+
+            "context": {
+                "authority_code":
+                    ctx.get(
+                        "authority_code"
+                    ),
+
+                "authority_name":
+                    (
+                        ctx.get("authority")
+                        or {}
+                    ).get("name"),
+
+                "regime_code":
+                    (
+                        ctx.get("regime")
+                        or {}
+                    ).get("regime_code"),
+
+                "category_code":
+                    (
+                        ctx.get("period_rule")
+                        or {}
+                    ).get("category_code"),
+
+                "frequency":
+                    (
+                        ctx.get("period_rule")
+                        or {}
+                    ).get("frequency"),
+
+                "filing_channel":
+                    (
+                        ctx.get("period_rule")
+                        or {}
+                    ).get(
+                        "filing_channel"
+                    ),
+            },
+        }), 200
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+        }), 400
 
 @vat_utils_bp.route("/api/companies/<int:company_id>/vat_summary", methods=["GET", "OPTIONS"])
 @require_auth
@@ -883,8 +1286,8 @@ def vat_filings(company_id: int):
         return jsonify({"error": "Not authorised"}), 403
 
     try:
-        db_service.ensure_company_schema(company_id)
         db_service.ensure_company_vat_filings(company_id)
+        db_service.ensure_company_vat_authority_compliance(company_id)
     except Exception:
         pass
 
@@ -934,23 +1337,48 @@ def vat_prepare_filing(company_id: int):
         return jsonify({"ok": False, "error": "from and to are required"}), 400
 
     try:
-        db_service.ensure_company_schema(company_id)
         db_service.ensure_company_vat_filings(company_id)
     except Exception:
         pass
 
-    cfg = db_service.get_vat_settings(company_id) or {}
-    filing_lag_days = cfg.get("filing_lag_days")
-    if not isinstance(filing_lag_days, int):
-        filing_lag_days = 25
+    vat_ctx = db_service.vat_company_context(
+        company_id,
+        end_date,
+    )
 
-    due_date = end_date + timedelta(days=filing_lag_days)
+    if not vat_ctx.get("ok"):
+        return jsonify({
+            "ok": False,
+            "error": vat_ctx.get("reason") or "VAT authority could not be resolved."
+        }), 400
+
+    period_rule = vat_ctx.get("period_rule")
+
+    if not period_rule:
+        return jsonify({
+            "ok": False,
+            "error": "VAT filing category is not configured for this company."
+        }), 400
+
+    authority_code = vat_ctx.get("authority_code")
+
+    filing_channel = str(
+        period_rule.get("filing_channel")
+        or payload.get("filing_channel")
+        or "electronic"
+    ).strip().lower()
+
+    due_date = db_service.vat_due_date(
+        end_date,
+        period_rule.get("return_due_rule"),
+    )
 
     period_label = None
+
     periods = (
-        _make_vat_periods_for_year(start_date.year - 1, cfg)
-        + _make_vat_periods_for_year(start_date.year, cfg)
-        + _make_vat_periods_for_year(start_date.year + 1, cfg)
+        db_service.vat_build_periods(company_id, start_date.year - 1)
+        + db_service.vat_build_periods(company_id, start_date.year)
+        + db_service.vat_build_periods(company_id, start_date.year + 1)
     )
 
     for p in periods:
@@ -1001,7 +1429,39 @@ def vat_prepare_filing(company_id: int):
     output_total = round(float(output_total or 0), 2)
     net_vat = round(output_total - input_total, 2)
 
+    raw_vat_lines = _get_vat_lines(company_id, start_date, end_date)
+    authority_ctx = _vat_authority_context(
+        company_id,
+        start_date,
+        end_date,
+        raw_vat_lines,
+        filing_channel=filing_channel,
+    )
+    authority_return = authority_ctx["return"]
+
+    # Mandatory reconciliation: authority return totals must agree to the
+    # VAT control accounts before the filing can be considered valid.
+    return_output = round(float(authority_return.get("output_tax") or 0), 2)
+    return_input = round(float(authority_return.get("input_tax") or 0), 2)
+
+    reconciliation_errors = list(authority_return.get("validation_errors") or [])
+    if return_output != output_total:
+        reconciliation_errors.append({
+            "code": "OUTPUT_RECONCILIATION",
+            "message": f"Authority output tax {return_output:.2f} does not reconcile to VAT control {output_total:.2f}.",
+        })
+    if return_input != input_total:
+        reconciliation_errors.append({
+            "code": "INPUT_RECONCILIATION",
+            "message": f"Authority input tax {return_input:.2f} does not reconcile to VAT control {input_total:.2f}.",
+        })
+
+    authority_return["validation_errors"] = reconciliation_errors
+    authority_return["validation_status"] = "valid" if not reconciliation_errors else "needs_classification"
+    authority_return["classification_complete"] = not reconciliation_errors
+
     preview = _build_vat_settlement_preview(input_total, output_total)
+    preview["authority_return"] = authority_return
 
     if preview_only:
         return jsonify({
@@ -1043,6 +1503,19 @@ def vat_prepare_filing(company_id: int):
         engagement_id=payload.get("engagement_id"),
         created_by_user_id=int(current_user.get("id") or 0) or None,
         updated_by_user_id=int(current_user.get("id") or 0) or None,
+    )
+
+    db_service.update_vat_filing_authority_payload(
+        company_id,
+        filing_id,
+        authority_code=authority_ctx["authority_code"],
+        return_form_code=authority_return.get("form_code"),
+        return_spec_version=authority_return.get("spec_version"),
+        authority_payload=authority_return,
+        validation_status=authority_return.get("validation_status"),
+        validation_errors=authority_return.get("validation_errors") or [],
+        classification_complete=bool(authority_return.get("classification_complete")),
+        filing_channel=filing_channel,
     )
 
     journal_id = None
@@ -1248,6 +1721,15 @@ def vat_filing_export_pack(company_id: int):
     lines = _get_vat_lines(company_id, start_date, end_date)
 
     ctx = _get_company_vat_pack_profile(company_id)
+    filing_channel = str(filing.get("filing_channel") or "electronic")
+    authority_ctx = _vat_authority_context(
+        company_id,
+        start_date,
+        end_date,
+        lines,
+        filing_channel=filing_channel,
+    )
+    authority_return = filing.get("authority_payload") or authority_ctx["return"]
 
     company_name = ctx.get("company_name") or ctx.get("name") or f"Company {company_id}"
     currency = ctx.get("currency") or ""
@@ -1391,6 +1873,8 @@ def vat_filing_export_pack(company_id: int):
         ["This document is prepared by FinSage, no stamp required"],
     ]
 
+    authority_rows = _authority_return_rows(authority_return)
+
     # CSV bytes
     summary_csv_io = io.StringIO()
     csv.writer(summary_csv_io).writerows(summary_rows)
@@ -1399,6 +1883,11 @@ def vat_filing_export_pack(company_id: int):
     detail_csv_io = io.StringIO()
     csv.writer(detail_csv_io).writerows(detail_rows)
     detail_csv = detail_csv_io.getvalue()
+
+    authority_csv_io = io.StringIO()
+    csv.writer(authority_csv_io).writerows(authority_rows)
+    authority_csv = authority_csv_io.getvalue()
+    authority_json = json.dumps(authority_return, indent=2, default=str)
 
     # XLSX bytes
     summary_xlsx = _build_vat_summary_xlsx(summary_rows)
@@ -1410,6 +1899,7 @@ def vat_filing_export_pack(company_id: int):
         ctx,
         start_date=start_date,
         end_date=end_date,
+        authority_return=authority_return,
     )
 
     detail_pdf = generate_vat_supporting_pdf(
@@ -1426,6 +1916,15 @@ def vat_filing_export_pack(company_id: int):
     zip_buffer = io.BytesIO()
 
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        authority_name = str(authority_return.get("authority_code") or "VAT").lower()
+        zf.writestr(
+            f"vat_authority_return_{authority_name}_{company_id}_{safe_start}_{safe_end}.json",
+            authority_json,
+        )
+        zf.writestr(
+            f"vat_authority_return_{authority_name}_{company_id}_{safe_start}_{safe_end}.csv",
+            authority_csv,
+        )
         zf.writestr(
             f"vat_return_summary_{company_id}_{safe_start}_{safe_end}.csv",
             summary_csv,

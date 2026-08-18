@@ -2048,31 +2048,94 @@ def api_auth_signin():
                 )
 
         else:
-            # Existing FinSage behaviour.
-            primary_mem = db_service.fetch_one(
+            # =========================================================
+            # Normal FinSage sign-in
+            #
+            # RULE:
+            # - One active company:
+            #     allow it as a legacy fallback even if is_primary is missing.
+            #
+            # - More than one active company:
+            #     exactly ONE must be marked is_primary=TRUE.
+            #
+            # - Zero primary or multiple primaries:
+            #     refuse sign-in because FinSage cannot safely determine
+            #     the user's native/default company.
+            # =========================================================
+
+            memberships = db_service.fetch_all(
                 """
-                SELECT company_id,role,access_scope
+                SELECT
+                    company_id,
+                    role,
+                    access_scope,
+                    is_primary,
+                    membership_kind
                 FROM public.company_users
                 WHERE user_id=%s
                 AND is_active=TRUE
-                AND is_primary=TRUE
-                LIMIT 1;
+                ORDER BY company_id;
                 """,
                 (user_id,),
-            )
+            ) or []
 
-            if not primary_mem:
-                primary_mem = db_service.fetch_one(
-                    """
-                    SELECT company_id,role,access_scope
-                    FROM public.company_users
-                    WHERE user_id=%s
-                    AND is_active=TRUE
-                    ORDER BY company_id
-                    LIMIT 1;
-                    """,
-                    (user_id,),
-                )
+            if not memberships:
+                return jsonify({
+                    "error": "No active company membership is available for this account.",
+                    "code": "NO_ACTIVE_COMPANY",
+                }), 403
+
+            primary_memberships = [
+                row for row in memberships
+                if bool(row.get("is_primary"))
+            ]
+
+            # ---------------------------------------------------------
+            # More than one accessible company:
+            # exactly one MUST be primary.
+            # ---------------------------------------------------------
+            if len(memberships) > 1:
+                if len(primary_memberships) == 0:
+                    current_app.logger.error(
+                        "[AUTH] User %s has %s active companies but no primary company.",
+                        user_id,
+                        len(memberships),
+                    )
+
+                    return jsonify({
+                        "error": (
+                            "Your account has access to multiple companies, "
+                            "but no primary company has been configured."
+                        ),
+                        "code": "PRIMARY_COMPANY_REQUIRED",
+                    }), 403
+
+                if len(primary_memberships) > 1:
+                    current_app.logger.error(
+                        "[AUTH] User %s has multiple primary companies: %s",
+                        user_id,
+                        [
+                            int(row["company_id"])
+                            for row in primary_memberships
+                        ],
+                    )
+
+                    return jsonify({
+                        "error": (
+                            "Your account has more than one primary company configured. "
+                            "Please contact an administrator."
+                        ),
+                        "code": "MULTIPLE_PRIMARY_COMPANIES",
+                    }), 403
+
+                primary_mem = primary_memberships[0]
+
+            # ---------------------------------------------------------
+            # Exactly one active company:
+            # allow legacy accounts even if is_primary was never set.
+            # ---------------------------------------------------------
+            else:
+                primary_mem = memberships[0]
 
         if is_ops_signin:
             allowed_rows = db_service.fetch_all(
@@ -2424,10 +2487,21 @@ def api_auth_me():
         LIMIT 1;
     """, (user_id,))
 
+    # Permanent/default native company.
+    primary_company_id = (
+        int(primary_mem["company_id"])
+        if primary_mem and primary_mem.get("company_id")
+        else primary_company_id
+    )
+
+    # Active context:
+    # - primary/native company is the default
+    # - another company is used only when the token represents an
+    #   intentional company switch
     if token_cid and token_cid in native_allowed:
         company_id = token_cid
-    elif primary_mem and primary_mem.get("company_id"):
-        company_id = int(primary_mem["company_id"])
+    elif primary_company_id:
+        company_id = int(primary_company_id)
     elif native_allowed:
         company_id = native_allowed[0]
     else:
@@ -3445,6 +3519,80 @@ def api_test_company_email_settings(company_id):
             "is_verified":False,
             **(status or {}),
         }),400
+
+# ============================================================
+# COMPANY PROFILE SETTINGS
+# ============================================================
+
+@app.route(
+    "/api/companies/<int:company_id>/profile",
+    methods=["GET"],
+)
+@require_auth
+def api_get_company_profile(company_id):
+    deny=_require_company_email_admin(company_id)
+    if deny:
+        return deny
+
+    try:
+        row=db_service.get_company_profile(company_id)
+
+        if not row:
+            return jsonify({
+                "error":"Company not found."
+            }),404
+
+        return jsonify(row),200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "[COMPANY PROFILE] Failed to load company=%s",
+            company_id,
+        )
+
+        return jsonify({
+            "error":str(e)
+        }),500
+
+
+@app.route(
+    "/api/companies/<int:company_id>/profile",
+    methods=["PATCH"],
+)
+@require_auth
+def api_update_company_profile(company_id):
+    deny=_require_company_email_admin(company_id)
+    if deny:
+        return deny
+
+    payload=request.get_json(silent=True) or {}
+
+    try:
+        db_service.update_company_profile(
+            company_id,
+            payload,
+        )
+
+        row=db_service.get_company_profile(
+            company_id
+        )
+
+        return jsonify(row or {}),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "[COMPANY PROFILE] Failed to update company=%s",
+            company_id,
+        )
+
+        return jsonify({
+            "error":str(e)
+        }),500
 # ────────────────────────────────────────────────────────────────
 # COA template + company endpoints
 # ────────────────────────────────────────────────────────────────

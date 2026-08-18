@@ -987,7 +987,7 @@ html, body {
     color: var(--fs-navy);
   }
 
-  /* 🔥 Left accent bar for active */
+ 🔥 Left accent bar for active */
   .nav-item-link.active::before {
     content: "";
     position: absolute;
@@ -20420,42 +20420,146 @@ tbody tr:hover {
 
               <!-- VAT filing setup (your existing IDs) -->
               <div class="mt-4 border rounded-lg p-4 bg-white" id="vatSettingsCard">
+                <div class="mb-4">
+                  <div class="text-sm font-semibold text-slate-800">
+                    VAT Registration & Filing
+                  </div>
+                  <div class="text-[11px] text-slate-500 mt-1">
+                    Filing periods and due dates are determined from the selected revenue authority rules.
+                  </div>
+                </div>
+
                 <form id="vatSettingsForm" class="space-y-3">
+
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
                     <div>
-                      <label class="block text-[11px] text-slate-500 mb-1" for="vatFrequency">Filing frequency</label>
-                      <select id="vatFrequency" class="w-full border rounded px-2 py-2 text-sm">
-                        <option value="monthly">Monthly</option>
-                        <option value="bi_monthly">Every 2 months</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="semi_annual">Every 6 months</option>
-                        <option value="annual">Annual</option>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatAuthority"
+                      >
+                        Revenue authority
+                      </label>
+
+                      <select
+                        id="vatAuthority"
+                        class="w-full border rounded px-2 py-2 text-sm bg-slate-50"
+                        disabled
+                      >
+                        <option value="">Detecting...</option>
                       </select>
                     </div>
 
                     <div>
-                      <label class="block text-[11px] text-slate-500 mb-1" for="vatAnchorMonth">Anchor month (cycle start)</label>
-                      <select id="vatAnchorMonth" class="w-full border rounded px-2 py-2 text-sm"></select>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatRegistrationNumber"
+                      >
+                        VAT registration number
+                      </label>
+
+                      <input
+                        id="vatRegistrationNumber"
+                        type="text"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="VAT registration number"
+                      />
                     </div>
 
                     <div>
-                      <label class="block text-[11px] text-slate-500 mb-1" for="vatFilingLag">Filing lag (days after period end)</label>
-                      <input id="vatFilingLag" type="number" min="0" class="w-full border rounded px-2 py-2 text-sm"/>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatPeriodCategory"
+                      >
+                        VAT filing category
+                      </label>
+
+                      <select
+                        id="vatPeriodCategory"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                      >
+                        <option value="">Select category</option>
+                      </select>
+
+                      <div
+                        id="vatPeriodCategoryHint"
+                        class="text-[10px] text-slate-400 mt-1"
+                      ></div>
                     </div>
 
                     <div>
-                      <label class="block text-[11px] text-slate-500 mb-1" for="vatReminderDays">Reminder days before due date</label>
-                      <input id="vatReminderDays" type="number" min="0" class="w-full border rounded px-2 py-2 text-sm"/>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatFilingChannel"
+                      >
+                        Filing channel
+                      </label>
+
+                      <select
+                        id="vatFilingChannel"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                      ></select>
                     </div>
+
+                    <div>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatCustomsCode"
+                      >
+                        Customs code
+                      </label>
+
+                      <input
+                        id="vatCustomsCode"
+                        type="text"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="Optional"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatReminderDays"
+                      >
+                        Reminder days before due date
+                      </label>
+
+                      <input
+                        id="vatReminderDays"
+                        type="number"
+                        min="0"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                        value="7"
+                      />
+                    </div>
+
                   </div>
+
+                  <div
+                    id="vatResolvedRuleBox"
+                    class="rounded-lg border bg-slate-50 p-3 text-xs text-slate-600 hidden"
+                  ></div>
 
                   <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" id="vatSettingsReload" class="border rounded px-3 py-1 text-xs">Reset</button>
-                    <button type="submit" class="bg-emerald-600 text-white rounded px-3 py-1 text-xs">Save VAT settings</button>
+                    <button
+                      type="button"
+                      id="vatSettingsReload"
+                      class="border rounded px-3 py-1 text-xs"
+                    >
+                      Reset
+                    </button>
+
+                    <button
+                      type="submit"
+                      class="bg-emerald-600 text-white rounded px-3 py-1 text-xs"
+                    >
+                      Save VAT settings
+                    </button>
                   </div>
+
                 </form>
               </div>
-            </div>
 
             <!-- 4) INCOME TAX SETTINGS (global best-practice settings, reusable) -->
             <div class="company-view mt-4 hidden" data-view="income-tax">

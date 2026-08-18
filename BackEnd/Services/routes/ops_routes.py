@@ -1,9 +1,12 @@
 from pathlib import Path
+from werkzeug.utils import secure_filename
+import uuid
+import hashlib
 
 from flask import Blueprint,current_app,jsonify,request,send_file,g
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.auth_middleware import require_auth
-from BackEnd.Services.ops_auth import require_ops_access,require_ops_permission
+from BackEnd.Services.ops_auth import require_ops_access,require_ops_permission, require_vendor_portal_auth
 
 ops_bp=Blueprint(
     "ops",
@@ -1270,3 +1273,1457 @@ def procurement_case(company_id,case_id):
         return jsonify({
             "error":str(e)
         }),404
+
+
+@ops_bp.post(
+    "/vendor-portal/quotes/<int:quote_id>/documents"
+)
+@require_vendor_portal_auth
+def vendor_portal_upload_quote_document(
+    company_id,
+    quote_id,
+):
+    user=g.vendor_portal_user
+    schema=db_service.company_schema(
+        company_id
+    )
+
+    file=request.files.get("file")
+
+    if not file or not file.filename:
+        return jsonify({
+            "error":"Document file is required."
+        }),400
+
+    quote=db_service.fetch_one(
+        f"""
+        SELECT *
+        FROM {schema}.ops_vendor_quotes
+        WHERE company_id=%s
+        AND id=%s
+        AND vendor_id=%s
+        AND status='draft'
+        LIMIT 1;
+        """,
+        (
+            company_id,
+            quote_id,
+            user["vendor_id"],
+        ),
+    )
+
+    if not quote:
+        return jsonify({
+            "error":"Draft quotation not found."
+        }),404
+
+    filename=secure_filename(
+        file.filename
+    )
+
+    ext=Path(
+        filename
+    ).suffix.lower()
+
+    allowed={
+        ".pdf",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+    }
+
+    if ext not in allowed:
+        return jsonify({
+            "error":"Unsupported document type."
+        }),400
+
+    root=Path(current_app.root_path)
+
+    directory=(
+        root
+        /"static"
+        /"generated"
+        /"ops"
+        /f"company_{company_id}"
+        /"vendor-quotes"
+        /str(quote_id)
+    )
+
+    directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    stored_name=(
+        f"{uuid.uuid4().hex}_{filename}"
+    )
+
+    path=directory/stored_name
+
+    file.save(str(path))
+
+    data=path.read_bytes()
+
+    relative=str(
+        path.relative_to(root)
+    ).replace("\\","/")
+
+    row=db_service.fetch_one(
+        f"""
+        INSERT INTO {schema}.ops_vendor_quote_documents(
+            company_id,
+            quote_id,
+            document_type,
+            file_name,
+            storage_path,
+            mime_type,
+            file_size,
+            checksum_sha256,
+            uploaded_by_portal_user_id
+        )
+        VALUES(
+            %s,%s,%s,%s,%s,
+            %s,%s,%s,%s
+        )
+        RETURNING *;
+        """,
+        (
+            company_id,
+            quote_id,
+            (
+                request.form.get(
+                    "document_type"
+                )
+                or "quotation"
+            ),
+            filename,
+            relative,
+            file.mimetype,
+            len(data),
+            hashlib.sha256(
+                data
+            ).hexdigest(),
+            user["id"],
+        ),
+    )
+
+    return jsonify(row),201
+
+@ops_bp.get(
+    "/vendor-portal/invite/<token>"
+)
+def vendor_portal_invite(
+    company_id,
+    token,
+):
+    try:
+        row=db_service.get_ops_vendor_portal_invite(
+            company_id,
+            token,
+        )
+
+
+        return jsonify(row),200
+
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post(
+    "/vendor-portal/invite/<token>/accept"
+)
+def vendor_portal_accept_invite(
+    company_id,
+    token,
+):
+    try:
+        row=db_service.accept_ops_vendor_portal_invite(
+            company_id,
+            token=token,
+            payload=request.get_json(
+                silent=True
+            ) or {},
+        )
+
+
+        return jsonify(row),200
+
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post(
+    "/vendor-portal/signin"
+)
+def vendor_portal_signin(
+    company_id,
+):
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+
+    try:
+        row=db_service.signin_ops_vendor_portal(
+            company_id,
+            email=body.get("email"),
+            password=body.get("password"),
+        )
+
+
+        return jsonify(row),200
+
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),401
+
+@ops_bp.get(
+    "/vendor-portal/session"
+)
+@require_vendor_portal_auth
+def vendor_portal_session(
+    company_id,
+):
+    user=g.vendor_portal_user
+
+
+    company=db_service.fetch_one(
+        """
+        SELECT
+            id,
+            name,
+            logo_url,
+            company_email,
+            company_phone,
+            currency
+        FROM public.companies
+        WHERE id=%s;
+        """,
+        (company_id,),
+    )
+
+
+    vendor=db_service.fetch_one(
+        f"""
+        SELECT
+            id,
+            name,
+            email,
+            phone,
+            registration_no,
+            tax_number,
+            vat_number
+        FROM {db_service.company_schema(company_id)}.vendors
+        WHERE id=%s;
+        """,
+        (user["vendor_id"],),
+    )
+
+
+    return jsonify({
+        "user":{
+            "id":user["id"],
+            "email":user["email"],
+            "first_name":user["first_name"],
+            "last_name":user["last_name"],
+        },
+        "vendor":vendor,
+        "company":company,
+    }),200
+
+@ops_bp.get(
+    "/vendor-portal/rfqs"
+)
+@require_vendor_portal_auth
+def vendor_portal_rfqs(
+    company_id,
+):
+    user=g.vendor_portal_user
+
+
+    return jsonify({
+        "rows":
+            db_service.list_ops_vendor_portal_rfqs(
+                company_id,
+                vendor_id=user["vendor_id"],
+            )
+    }),200
+
+
+@ops_bp.get(
+    "/vendor-portal/rfqs/<int:event_id>"
+)
+@require_vendor_portal_auth
+def vendor_portal_rfq(
+    company_id,
+    event_id,
+):
+    user=g.vendor_portal_user
+
+
+    try:
+        return jsonify(
+            db_service.get_ops_vendor_portal_rfq(
+                company_id,
+                event_id,
+                vendor_id=user["vendor_id"],
+            )
+        ),200
+
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),404
+
+@ops_bp.patch(
+    "/vendor-portal/quotes/<int:quote_id>"
+)
+@require_vendor_portal_auth
+def vendor_portal_save_quote(
+    company_id,
+    quote_id,
+):
+    user=g.vendor_portal_user
+
+
+    try:
+        row=db_service.save_ops_vendor_quote(
+            company_id,
+            quote_id,
+            vendor_id=user["vendor_id"],
+            portal_user_id=user["id"],
+            payload=request.get_json(
+                silent=True
+            ) or {},
+        )
+
+
+        return jsonify(row),200
+
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post(
+    "/vendor-portal/quotes/<int:quote_id>/submit"
+)
+@require_vendor_portal_auth
+def vendor_portal_submit_quote(
+    company_id,
+    quote_id,
+):
+    user=g.vendor_portal_user
+
+
+    try:
+        row=db_service.submit_ops_vendor_quote(
+            company_id,
+            quote_id,
+            vendor_id=user["vendor_id"],
+            portal_user_id=user["id"],
+        )
+
+
+        return jsonify(row),200
+
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.patch("/vendor-portal/profile")
+@require_vendor_portal_auth
+def vendor_portal_update_profile(company_id):
+    user=g.vendor_portal_user
+
+    try:
+        row=db_service.update_ops_vendor_portal_profile(
+            company_id,
+            int(user["id"]),
+            payload=request.get_json(
+                silent=True
+            ) or {},
+        )
+
+        return jsonify({
+            "ok":True,
+            "message":"Profile updated.",
+            "user":row,
+        }),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.get(
+    "/companies/sourcing-events/<int:event_id>/comparison"
+)
+@require_auth
+def api_ops_quote_comparison(
+    company_id,
+    event_id,
+):
+    try:
+        return jsonify(
+            db_service.get_ops_quote_comparison(
+                company_id,
+                event_id,
+            )
+        ),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post(
+    "/companies/sourcing-events/<int:event_id>/evaluation/start"
+)
+@require_auth
+def api_ops_start_evaluation(
+    company_id,
+    event_id,
+):
+    user=g.current_user
+
+    try:
+        row=db_service.start_ops_sourcing_evaluation(
+            company_id,
+            event_id,
+            actor_user_id=int(user["id"]),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post(
+    "/companies/sourcing-events/<int:event_id>/evaluation/calculate"
+)
+@require_auth
+def api_ops_calculate_evaluation(
+    company_id,
+    event_id,
+):
+    try:
+        return jsonify(
+            db_service.calculate_ops_evaluation_results(
+                company_id,
+                event_id,
+            )
+        ),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.put(
+    "/companies/sourcing-events/<int:event_id>/evaluation/scores"
+)
+@require_auth
+def api_ops_save_evaluation_score(
+    company_id,
+    event_id,
+):
+    user=g.current_user
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        row=db_service.save_ops_evaluation_score(
+            company_id,
+            event_id,
+            quote_id=int(
+                body["quote_id"]
+            ),
+            criterion_id=int(
+                body["criterion_id"]
+            ),
+            evaluator_user_id=int(
+                user["id"]
+            ),
+            payload=body,
+        )
+
+        return jsonify(row),200
+
+    except (
+        KeyError,
+        TypeError,
+        ValueError
+    ) as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post(
+    "/companies/sourcing-events/<int:event_id>/evaluation/declaration"
+)
+@require_auth
+def api_ops_evaluation_declaration(
+    company_id,
+    event_id,
+):
+    user=g.current_user
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        row=db_service.declare_ops_sourcing_conflict(
+            company_id,
+            event_id,
+            evaluator_user_id=int(
+                user["id"]
+            ),
+            has_conflict=bool(
+                body.get("has_conflict")
+            ),
+            declaration_text=
+                body.get(
+                    "declaration_text"
+                ),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.post(
+    "/companies/sourcing-events/<int:event_id>/recommend"
+)
+@require_auth
+def api_ops_recommend_vendor(
+    company_id,
+    event_id,
+):
+    user=g.current_user
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        row=db_service.recommend_ops_vendor(
+            company_id,
+            event_id,
+            quote_id=int(
+                body["quote_id"]
+            ),
+            actor_user_id=int(
+                user["id"]
+            ),
+            reason=body.get(
+                "reason"
+            ),
+        )
+
+        return jsonify(row),200
+
+    except (
+        KeyError,
+        TypeError,
+        ValueError
+    ) as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.post("/sourcing-events/<int:event_id>/award")
+@require_auth
+@require_ops_permission("award.create")
+def create_vendor_award(company_id,event_id):
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        row=db_service.create_ops_award_request(
+            company_id,
+            event_id,
+            actor_user_id=_uid(),
+            deviation_reason=body.get(
+                "deviation_reason"
+            ),
+        )
+
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.get("/awards/<int:award_id>")
+@require_auth
+@require_ops_permission("award.view")
+def get_vendor_award(company_id,award_id):
+    try:
+        return jsonify(
+            db_service.get_ops_award(
+                company_id,
+                award_id,
+            )
+        ),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),404
+
+
+@ops_bp.post("/awards/<int:award_id>/submit")
+@require_auth
+@require_ops_permission("award.submit")
+def submit_vendor_award(company_id,award_id):
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        row=db_service.submit_ops_award(
+            company_id,
+            award_id,
+            actor_user_id=_uid(),
+            award_reason=body.get(
+                "award_reason"
+            ),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.get("/award-approvals")
+@require_auth
+@require_ops_permission("award.approve")
+def award_approval_inbox(company_id):
+    return jsonify({
+        "rows":
+            db_service.list_ops_award_approvals(
+                company_id,
+                user_id=_uid(),
+            )
+    }),200
+
+
+@ops_bp.post("/award-approvals/<int:task_id>/decision")
+@require_auth
+@require_ops_permission("award.approve")
+def decide_vendor_award(company_id,task_id):
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        row=db_service.decide_ops_award_approval(
+            company_id,
+            task_id,
+            actor_user_id=_uid(),
+            decision=body.get("decision"),
+            comment=body.get("comment"),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.post("/awards/<int:award_id>/purchase-order")
+@require_auth
+@require_ops_permission("po.create")
+def create_purchase_order(company_id,award_id):
+    try:
+        row=db_service.create_ops_purchase_order(
+            company_id,
+            award_id,
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.get("/purchase-orders/<int:po_id>")
+@require_auth
+@require_ops_permission("po.view")
+def get_purchase_order(company_id,po_id):
+    try:
+        row=db_service.get_ops_purchase_order(
+            company_id,
+            po_id,
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),404
+
+
+@ops_bp.patch("/purchase-orders/<int:po_id>")
+@require_auth
+@require_ops_permission("po.edit")
+def update_purchase_order(company_id,po_id):
+    try:
+        row=db_service.update_ops_purchase_order(
+            company_id,
+            po_id,
+            payload=request.get_json(
+                silent=True
+            ) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post("/purchase-orders/<int:po_id>/issue")
+@require_auth
+@require_ops_permission("po.issue")
+def issue_purchase_order(company_id,po_id):
+    try:
+        row=db_service.issue_ops_purchase_order(
+            company_id,
+            po_id,
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post("/purchase-orders/<int:po_id>/send")
+@require_auth
+@require_ops_permission("po.issue")
+def send_purchase_order(company_id,po_id):
+    try:
+        row=db_service.send_ops_purchase_order(
+            company_id,
+            po_id,
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post("/purchase-orders/<int:po_id>/cancel")
+@require_auth
+@require_ops_permission("po.cancel")
+def cancel_purchase_order(company_id,po_id):
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        row=db_service.cancel_ops_purchase_order(
+            company_id,
+            po_id,
+            actor_user_id=_uid(),
+            reason=body.get("reason"),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.get("/vendor-portal/purchase-orders")
+@require_vendor_portal_auth
+def vendor_portal_purchase_orders(company_id):
+    user=g.vendor_portal_user
+
+    return jsonify({
+        "rows":
+            db_service.list_ops_vendor_portal_purchase_orders(
+                company_id,
+                vendor_id=user["vendor_id"],
+            )
+    }),200
+
+
+@ops_bp.get("/vendor-portal/purchase-orders/<int:po_id>")
+@require_vendor_portal_auth
+def vendor_portal_purchase_order(company_id,po_id):
+    user=g.vendor_portal_user
+
+    try:
+        row=db_service.get_ops_vendor_portal_purchase_order(
+            company_id,
+            po_id,
+            vendor_id=user["vendor_id"],
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),404
+
+
+@ops_bp.post("/vendor-portal/purchase-orders/<int:po_id>/acknowledge")
+@require_vendor_portal_auth
+def vendor_portal_acknowledge_purchase_order(
+    company_id,
+    po_id,
+):
+    user=g.vendor_portal_user
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        row=db_service.acknowledge_ops_purchase_order(
+            company_id,
+            po_id,
+            vendor_id=user["vendor_id"],
+            portal_user_id=user["id"],
+            decision=body.get("decision"),
+            comment=body.get("comment"),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.post("/purchase-orders/<int:po_id>/receipts")
+@require_auth
+@require_ops_permission("receipt.create")
+def create_receipt(company_id,po_id):
+    try:
+        row=db_service.create_ops_receipt(
+            company_id,
+            po_id,
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.get("/receipts/<int:receipt_id>")
+@require_auth
+@require_ops_permission("receipt.view")
+def get_receipt(company_id,receipt_id):
+    try:
+        return jsonify(
+            db_service.get_ops_receipt(
+                company_id,
+                receipt_id,
+            )
+        ),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),404
+
+
+@ops_bp.patch("/receipts/<int:receipt_id>")
+@require_auth
+@require_ops_permission("receipt.create")
+def update_receipt(company_id,receipt_id):
+    try:
+        row=db_service.update_ops_receipt(
+            company_id,
+            receipt_id,
+            payload=request.get_json(
+                silent=True
+            ) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.put("/receipts/<int:receipt_id>/service-confirmation")
+@require_auth
+@require_ops_permission("receipt.create")
+def save_service_confirmation(company_id,receipt_id):
+    try:
+        row=db_service.save_ops_service_confirmation(
+            company_id,
+            receipt_id,
+            actor_user_id=_uid(),
+            payload=request.get_json(
+                silent=True
+            ) or {},
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.put("/receipts/<int:receipt_id>/asset-lines/<int:po_line_id>")
+@require_auth
+@require_ops_permission("receipt.create")
+def save_asset_receipt(
+    company_id,
+    receipt_id,
+    po_line_id,
+):
+    try:
+        row=db_service.save_ops_asset_receipt(
+            company_id,
+            receipt_id,
+            purchase_order_line_id=
+                po_line_id,
+            payload=request.get_json(
+                silent=True
+            ) or {},
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.put("/receipts/<int:receipt_id>/lease")
+@require_auth
+@require_ops_permission("receipt.create")
+def save_lease_receipt(company_id,receipt_id):
+    try:
+        row=db_service.save_ops_lease_receipt(
+            company_id,
+            receipt_id,
+            payload=request.get_json(
+                silent=True
+            ) or {},
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.post("/receipts/<int:receipt_id>/submit")
+@require_auth
+@require_ops_permission("receipt.create")
+def submit_receipt(company_id,receipt_id):
+    try:
+        row=db_service.submit_ops_receipt(
+            company_id,
+            receipt_id,
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post("/receipts/<int:receipt_id>/verify")
+@require_auth
+@require_ops_permission("receipt.verify")
+def verify_receipt(company_id,receipt_id):
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        row=db_service.verify_ops_receipt(
+            company_id,
+            receipt_id,
+            actor_user_id=_uid(),
+            comment=body.get(
+                "comment"
+            ),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post("/receipts/<int:receipt_id>/reject")
+@require_auth
+@require_ops_permission("receipt.reject")
+def reject_receipt(company_id,receipt_id):
+    body=request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        row=db_service.reject_ops_receipt(
+            company_id,
+            receipt_id,
+            actor_user_id=_uid(),
+            reason=body.get(
+                "reason"
+            ),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.get("/accounts-payable/invoices")
+@require_auth
+@require_ops_permission("invoice.view")
+def ap_invoices(company_id):
+    return jsonify({
+        "rows":db_service.list_ops_ap_invoices(company_id,status=request.args.get("status"))
+    }),200
+
+
+@ops_bp.post("/purchase-orders/<int:po_id>/invoices")
+@require_auth
+@require_ops_permission("invoice.create")
+def create_vendor_invoice(company_id,po_id):
+    try:
+        row=db_service.create_ops_vendor_invoice(
+            company_id,po_id,actor_user_id=_uid(),
+            payload=request.get_json(silent=True) or {},
+        )
+        return jsonify(row),201
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.get("/invoices/<int:invoice_id>")
+@require_auth
+@require_ops_permission("invoice.view")
+def get_vendor_invoice(company_id,invoice_id):
+    try:
+        return jsonify(db_service.get_ops_vendor_invoice(company_id,invoice_id)),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),404
+
+
+@ops_bp.post("/invoices/<int:invoice_id>/submit")
+@require_auth
+@require_ops_permission("invoice.create")
+def submit_vendor_invoice(company_id,invoice_id):
+    try:
+        return jsonify(db_service.submit_ops_vendor_invoice(
+            company_id,invoice_id,actor_user_id=_uid()
+        )),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.post("/invoices/<int:invoice_id>/match")
+@require_auth
+@require_ops_permission("invoice.match")
+def match_vendor_invoice(company_id,invoice_id):
+    try:
+        return jsonify(db_service.match_ops_vendor_invoice(
+            company_id,invoice_id,actor_user_id=_uid()
+        )),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+@ops_bp.patch("/invoices/<int:invoice_id>/review")
+@require_auth
+@require_ops_permission("invoice.review")
+def review_vendor_invoice(company_id,invoice_id):
+    try:
+        return jsonify(db_service.review_ops_vendor_invoice(
+            company_id,invoice_id,actor_user_id=_uid(),
+            payload=request.get_json(silent=True) or {},
+        )),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.post("/invoice-exceptions/<int:exception_id>/resolve")
+@require_auth
+@require_ops_permission("invoice.review")
+def resolve_invoice_exception(company_id,exception_id):
+    body=request.get_json(silent=True) or {}
+    try:
+        return jsonify(db_service.resolve_ops_invoice_exception(
+            company_id,exception_id,actor_user_id=_uid(),
+            resolution_comment=body.get("comment"),
+            waive=bool(body.get("waive")),
+        )),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.post("/invoices/<int:invoice_id>/accept")
+@require_auth
+@require_ops_permission("invoice.accept")
+def accept_vendor_invoice(company_id,invoice_id):
+    try:
+        return jsonify(db_service.accept_ops_vendor_invoice(
+            company_id,invoice_id,actor_user_id=_uid()
+        )),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.post("/invoices/<int:invoice_id>/reject")
+@require_auth
+@require_ops_permission("invoice.reject")
+def reject_vendor_invoice(company_id,invoice_id):
+    body=request.get_json(silent=True) or {}
+    try:
+        return jsonify(db_service.reject_ops_vendor_invoice(
+            company_id,invoice_id,actor_user_id=_uid(),reason=body.get("reason")
+        )),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+@ops_bp.post("/vendor-portal/purchase-orders/<int:po_id>/invoices")
+@require_vendor_portal_auth
+def vendor_portal_create_invoice(company_id,po_id):
+    user=g.vendor_portal_user
+    try:
+        row=db_service.create_ops_vendor_invoice(
+            company_id,po_id,
+            portal_user_id=user["id"],
+            vendor_id=user["vendor_id"],
+            payload=request.get_json(silent=True) or {},
+        )
+        return jsonify(row),201
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.get("/vendor-portal/invoices")
+@require_vendor_portal_auth
+def vendor_portal_invoices(company_id):
+    user=g.vendor_portal_user
+    schema=db_service.company_schema(company_id)
+
+    rows=db_service.fetch_all(
+        f"""SELECT i.*,po.po_no
+            FROM {schema}.ops_vendor_invoices i
+            LEFT JOIN {schema}.ops_purchase_orders po ON po.id=i.purchase_order_id
+            WHERE i.company_id=%s AND i.vendor_id=%s
+            ORDER BY i.invoice_date DESC,i.id DESC;""",
+        (company_id,user["vendor_id"]),
+    ) or []
+
+    return jsonify({"rows":rows}),200
+
+
+@ops_bp.get("/vendor-portal/invoices/<int:invoice_id>")
+@require_vendor_portal_auth
+def vendor_portal_invoice(company_id,invoice_id):
+    user=g.vendor_portal_user
+    data=db_service.get_ops_vendor_invoice(company_id,invoice_id)
+
+    if int(data["invoice"]["vendor_id"])!=int(user["vendor_id"]):
+        return jsonify({"error":"Invoice not found."}),404
+
+    return jsonify(data),200
+
+
+@ops_bp.post("/vendor-portal/invoices/<int:invoice_id>/submit")
+@require_vendor_portal_auth
+def vendor_portal_submit_invoice(company_id,invoice_id):
+    user=g.vendor_portal_user
+
+    try:
+        data=db_service.get_ops_vendor_invoice(company_id,invoice_id)
+        if int(data["invoice"]["vendor_id"])!=int(user["vendor_id"]):
+            return jsonify({"error":"Invoice not found."}),404
+
+        return jsonify(db_service.submit_ops_vendor_invoice(
+            company_id,invoice_id,portal_user_id=user["id"]
+        )),200
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+@ops_bp.get("/finance/context")
+@require_auth
+@require_ops_permission("finance.view")
+def finance_context(company_id):
+    return jsonify(
+        db_service.get_ops_finance_navigation(company_id,user_id=_uid())
+    ),200
+
+
+@ops_bp.get("/finance/overview")
+@require_auth
+@require_ops_permission("finance.view")
+def finance_overview(company_id):
+    return jsonify(
+        db_service.get_ops_finance_overview(company_id,user_id=_uid())
+    ),200
+
+
+@ops_bp.get("/finance/my-work")
+@require_auth
+@require_ops_permission("finance.work.view")
+def finance_my_work(company_id):
+    return jsonify({
+        "rows":db_service.list_ops_finance_work_items(company_id,user_id=_uid())
+    }),200
+
+@ops_bp.get("/finance/payables/summary")
+@require_auth
+@require_ops_permission("finance.view")
+def finance_payables_summary(company_id):
+    return jsonify(db_service.get_ops_ap_summary(company_id)),200
+
+
+@ops_bp.get("/finance/payables/<string:queue>")
+@require_auth
+@require_ops_permission("invoice.view")
+def finance_payables_queue(company_id,queue):
+    try:
+        return jsonify({"rows":db_service.list_ops_ap_queue(company_id,queue=queue)}),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.put("/invoices/<int:invoice_id>/coding")
+@require_auth
+@require_ops_permission("ap.coding.manage")
+def save_invoice_coding(company_id,invoice_id):
+    body=request.get_json(silent=True) or {}
+
+    try:
+        row=db_service.save_ops_invoice_line_coding(
+            company_id,invoice_id,
+            lines=body.get("lines") or [],
+            actor_user_id=_uid(),
+        )
+        return jsonify(row),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+@ops_bp.get("/invoices/<int:invoice_id>/accounting-handoff")
+@require_auth
+@require_ops_permission("ap.handoff")
+def preview_invoice_accounting_handoff(company_id,invoice_id):
+    try:
+        payload=db_service.build_ops_invoice_ap_payload(
+            company_id,
+            invoice_id,
+        )
+
+        invoice=payload.pop("invoice")
+
+        return jsonify({
+            "invoice":{
+                "id":invoice["id"],
+                "invoice_no":invoice.get("invoice_no"),
+                "supplier_invoice_no":invoice.get("supplier_invoice_no"),
+                "vendor_name":invoice.get("vendor_name"),
+                "po_no":invoice.get("po_no"),
+            },
+            **payload,
+        }),200
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+@ops_bp.post("/invoices/<int:invoice_id>/accounting-handoff")
+@require_auth
+@require_ops_permission("ap.handoff")
+def handoff_invoice_to_accounting(company_id,invoice_id):
+    try:
+        row=db_service.handoff_ops_invoice_to_ap(
+            company_id,
+            invoice_id,
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "Nexus → FinSage AP handoff failed"
+        )
+
+        return jsonify({
+            "error":"Could not create FinSage AP bill.",
+            "detail":str(e),
+        }),500
+
+@ops_bp.get("/invoices/<int:invoice_id>/accounting-status")
+@require_auth
+@require_ops_permission("finance.view")
+def invoice_accounting_status(company_id,invoice_id):
+    schema=db_service.company_schema(company_id)
+
+    row=db_service.fetch_one(
+        f"""
+        SELECT
+            accounting_handoff_status,
+            accounting_bill_id,
+            accounting_bill_no,
+            accounting_handed_off_at,
+            accounting_handoff_error
+        FROM {schema}.ops_vendor_invoices
+        WHERE company_id=%s
+          AND id=%s;
+        """,
+        (int(company_id),int(invoice_id)),
+    )
+
+    if not row:
+        return jsonify({"error":"Invoice not found."}),404
+
+    if row.get("accounting_bill_id"):
+        bill=db_service.get_bill_full(
+            company_id,
+            int(row["accounting_bill_id"]),
+        ) or {}
+
+        row["bill_status"]=bill.get("status")
+        row["posted_journal_id"]=bill.get("posted_journal_id")
+
+    return jsonify(row),200
+
+@ops_bp.get("/invoices/<int:invoice_id>/payment-eligibility")
+@require_auth
+@require_ops_permission("payment_voucher.view")
+def invoice_payment_eligibility(company_id,invoice_id):
+    try:
+        return jsonify(
+            db_service.get_ops_payment_eligibility(
+                company_id,
+                invoice_id,
+            )
+        ),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.post("/invoices/<int:invoice_id>/payment-vouchers")
+@require_auth
+@require_ops_permission("payment_voucher.create")
+def create_payment_voucher(company_id,invoice_id):
+    body=request.get_json(silent=True) or {}
+
+    try:
+        row=db_service.create_ops_payment_voucher(
+            company_id,
+            invoice_id,
+            actor_user_id=_uid(),
+            payload=body,
+        )
+
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.get("/payment-vouchers/<int:voucher_id>")
+@require_auth
+@require_ops_permission("payment_voucher.view")
+def payment_voucher(company_id,voucher_id):
+    row=db_service.get_ops_payment_voucher(
+        company_id,
+        voucher_id,
+    )
+
+    if not row:
+        return jsonify({"error":"Payment voucher not found."}),404
+
+    return jsonify(row),200
+
+@ops_bp.get("/finance/payables/payment-vouchers")
+@require_auth
+@require_ops_permission("payment_voucher.view")
+def list_payment_vouchers(company_id):
+    try:
+        rows=db_service.list_ops_payment_vouchers(
+            company_id,
+            status=request.args.get("status"),
+            q=request.args.get("q"),
+        )
+
+        return jsonify({
+            "items":rows,
+            "count":len(rows),
+        }),200
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400

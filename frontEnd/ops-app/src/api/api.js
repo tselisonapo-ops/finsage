@@ -474,4 +474,318 @@ export const opsApi={
     request(
       `${base(companyId)}/procurement/${encodeURIComponent(caseId)}`
     ),
+
+  quoteComparison:(companyId,eventId)=>
+    apiFetch(
+      `/api/companies/${companyId}/sourcing-events/${eventId}/comparison`
+    ),
+
+  startEvaluation:(companyId,eventId)=>
+    apiFetch(
+      `/api/companies/${companyId}/sourcing-events/${eventId}/evaluation/start`,
+      {
+        method:"POST",
+        body:{}
+      }
+    ),
+
+  calculateEvaluation:(companyId,eventId)=>
+    apiFetch(
+      `/api/companies/${companyId}/sourcing-events/${eventId}/evaluation/calculate`,
+      {
+        method:"POST",
+        body:{}
+      }
+    ),
+
+  saveEvaluationScore:(companyId,eventId,payload)=>
+    apiFetch(
+      `/api/companies/${companyId}/sourcing-events/${eventId}/evaluation/scores`,
+      {
+        method:"PUT",
+        body:payload
+      }
+    ),
+
+  declareEvaluationConflict:(companyId,eventId,payload)=>
+    apiFetch(
+      `/api/companies/${companyId}/sourcing-events/${eventId}/evaluation/declaration`,
+      {
+        method:"POST",
+        body:payload
+      }
+    ),
+
+  recommendVendor:(companyId,eventId,payload)=>
+    apiFetch(
+      `/api/companies/${companyId}/sourcing-events/${eventId}/recommend`,
+      {
+        method:"POST",
+        body:payload
+      }
+    ),
+
+  createAward:(companyId,eventId,payload={})=>
+    request(
+      `${base(companyId)}/sourcing-events/${encodeURIComponent(eventId)}/award`,
+      {
+        method:"POST",
+        body:payload
+      }
+    ),
+
+  award:(companyId,awardId)=>
+    request(
+      `${base(companyId)}/awards/${encodeURIComponent(awardId)}`
+    ),
+
+  submitAward:(companyId,awardId,payload={})=>
+    request(
+      `${base(companyId)}/awards/${encodeURIComponent(awardId)}/submit`,
+      {
+        method:"POST",
+        body:payload
+      }
+    ),
+
+  awardApprovals:companyId=>
+    request(
+      `${base(companyId)}/award-approvals`
+    ),
+
+  decideAward:(companyId,taskId,decision,comment="")=>
+    request(
+      `${base(companyId)}/award-approvals/${encodeURIComponent(taskId)}/decision`,
+      {
+        method:"POST",
+        body:{
+          decision,
+          comment
+        }
+      }
+    ),
+
+  createPurchaseOrder:(companyId,awardId)=>
+    request(
+      `${base(companyId)}/awards/${encodeURIComponent(awardId)}/purchase-order`,
+      {
+        method:"POST",
+        body:{}
+      }
+    ),
+
+  purchaseOrder:(companyId,poId)=>
+    request(
+      `${base(companyId)}/purchase-orders/${encodeURIComponent(poId)}`
+    ),
+
+  updatePurchaseOrder:(companyId,poId,payload)=>
+    request(
+      `${base(companyId)}/purchase-orders/${encodeURIComponent(poId)}`,
+      {
+        method:"PATCH",
+        body:payload
+      }
+    ),
+
+  issuePurchaseOrder:(companyId,poId)=>
+    request(
+      `${base(companyId)}/purchase-orders/${encodeURIComponent(poId)}/issue`,
+      {
+        method:"POST",
+        body:{}
+      }
+    ),
+
+  sendPurchaseOrder:(companyId,poId)=>
+    request(
+      `${base(companyId)}/purchase-orders/${encodeURIComponent(poId)}/send`,
+      {
+        method:"POST",
+        body:{}
+      }
+    ),
+
+  cancelPurchaseOrder:(companyId,poId,reason)=>
+    request(
+      `${base(companyId)}/purchase-orders/${encodeURIComponent(poId)}/cancel`,
+      {
+        method:"POST",
+        body:{reason}
+      }
+    ),
+
+  createReceipt:(companyId,poId)=>
+    request(
+      `${base(companyId)}/purchase-orders/${encodeURIComponent(poId)}/receipts`,
+      {
+        method:"POST",
+        body:{}
+      }
+    ),
+
+  receipt:(companyId,receiptId)=>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}`
+    ),
+
+  updateReceipt:(companyId,receiptId,payload)=>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}`,
+      {
+        method:"PATCH",
+        body:payload
+      }
+    ),
+
+  saveServiceConfirmation:(companyId,receiptId,payload)=>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}/service-confirmation`,
+      {
+        method:"PUT",
+        body:payload
+      }
+    ),
+
+  saveAssetReceipt:(companyId,receiptId,poLineId,payload)=>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}/asset-lines/${encodeURIComponent(poLineId)}`,
+      {
+        method:"PUT",
+        body:payload
+      }
+    ),
+
+  saveLeaseReceipt:(companyId,receiptId,payload)=>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}/lease`,
+      {
+        method:"PUT",
+        body:payload
+      }
+    ),
+
+  submitReceipt:(companyId,receiptId)=>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}/submit`,
+      {
+        method:"POST",
+        body:{}
+      }
+    ),
+
+  verifyReceipt:(companyId,receiptId,comment="")=>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}/verify`,
+      {
+        method:"POST",
+        body:{comment}
+      }
+    ),
+
+  rejectReceipt:(companyId,receiptId,reason)=>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}/reject`,
+      {
+        method:"POST",
+        body:{reason}
+      }
+    ),
+
+  apInvoices:(companyId,status="")=>
+    request(`${base(companyId)}/accounts-payable/invoices${status?`?status=${encodeURIComponent(status)}`:""}`),
+
+  createVendorInvoice:(companyId,poId,payload)=>
+    request(`${base(companyId)}/purchase-orders/${encodeURIComponent(poId)}/invoices`,{
+      method:"POST",body:payload
+    }),
+
+  vendorInvoice:(companyId,invoiceId)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}`),
+
+  submitVendorInvoice:(companyId,invoiceId)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/submit`,{
+      method:"POST",body:{}
+    }),
+
+  matchVendorInvoice:(companyId,invoiceId)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/match`,{
+      method:"POST",body:{}
+    }),
+
+  reviewVendorInvoice:(companyId,invoiceId,payload)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/review`,{
+      method:"PATCH",body:payload
+    }),
+
+  resolveInvoiceException:(companyId,exceptionId,comment,waive=false)=>
+    request(`${base(companyId)}/invoice-exceptions/${encodeURIComponent(exceptionId)}/resolve`,{
+      method:"POST",body:{comment,waive}
+    }),
+
+  acceptVendorInvoice:(companyId,invoiceId)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/accept`,{
+      method:"POST",body:{}
+    }),
+
+  rejectVendorInvoice:(companyId,invoiceId,reason)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/reject`,{
+      method:"POST",body:{reason}
+    }),
+
+  financeContext:companyId=>
+    request(`${base(companyId)}/finance/context`),
+
+  financeOverview:companyId=>
+    request(`${base(companyId)}/finance/overview`),
+
+  financeMyWork:companyId=>
+    request(`${base(companyId)}/finance/my-work`),
+
+  payablesSummary:companyId=>
+    request(`${base(companyId)}/finance/payables/summary`),
+
+  payablesQueue:(companyId,queue)=>
+    request(`${base(companyId)}/finance/payables/${encodeURIComponent(queue)}`),
+
+  saveInvoiceCoding:(companyId,invoiceId,lines)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/coding`,{
+      method:"PUT",body:{lines}
+    }),
+
+  accountingHandoffPreview:(companyId,invoiceId)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/accounting-handoff`),
+
+  handoffInvoiceToAccounting:(companyId,invoiceId)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/accounting-handoff`,{
+      method:"POST"
+    }),
+
+  invoiceAccountingStatus:(companyId,invoiceId)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/accounting-status`),
+
+  paymentEligibility:(companyId,invoiceId)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/payment-eligibility`),
+
+  createPaymentVoucher:(companyId,invoiceId,payload)=>
+    request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/payment-vouchers`,{
+      method:"POST",
+      body:payload
+    }),
+
+  paymentVouchers:(companyId,{status="",q=""}={})=>{
+    const params=new URLSearchParams();
+
+    if(status) params.set("status",status);
+    if(q) params.set("q",q);
+
+    const qs=params.toString();
+
+    return request(
+      `${base(companyId)}/finance/payables/payment-vouchers${qs?`?${qs}`:""}`
+    );
+  },
+
+  paymentVoucher:(companyId,voucherId)=>
+    request(`${base(companyId)}/payment-vouchers/${encodeURIComponent(voucherId)}`),
 };

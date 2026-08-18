@@ -3,6 +3,7 @@ import {useState} from "react";
 import {useNavigate} from "react-router-dom";
 import CompanyEmailSettings from "../components/settings/CompanyEmailSettings";
 import "./SettingsPage.css";
+import CompanyProfileSettings from "../components/settings/CompanyProfileSettings";
 
 const sections=[
   {
@@ -28,7 +29,12 @@ const sections=[
     group:"Operations",
     items:[
       {key:"operations",label:"General Operations",icon:"⚙️"},
-      {key:"workflows",label:"Workflows & Approvals",icon:"🔀"},
+      {
+        key:"workflows",
+        label:"Workflows & Approvals",
+        icon:"🔀",
+        route:"/governance",
+      },
       {key:"budget",label:"Budget Controls",icon:"📊"},
       {key:"procurement",label:"Procurement",icon:"🛒"},
     ],
@@ -144,9 +150,15 @@ export default function SettingsPage(){
           </div>
 
 
-          {section==="email" ? (
+          {section==="profile"&&(
+            <CompanyProfileSettings/>
+          )}
+
+          {section==="email"&&(
             <CompanyEmailSettings/>
-          ) : (
+          )}
+
+          {!["profile","email"].includes(section)&&(
             <ComingSoonSection
               title={meta.title}
               description={meta.description}

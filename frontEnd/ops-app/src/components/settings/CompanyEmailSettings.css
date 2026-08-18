@@ -1,0 +1,442 @@
+/* =========================================================
+   COMPANY EMAIL SETTINGS
+   ========================================================= */
+
+.email-settings{
+  width:100%;
+  min-width:0;
+}
+
+
+/* =========================================================
+   STATUS SUMMARY
+   ========================================================= */
+
+.email-status-strip{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:1px;
+  margin-bottom:18px;
+  overflow:hidden;
+
+  background:#e3e8ef;
+  border:1px solid #e3e8ef;
+  border-radius:13px;
+}
+
+.email-status-item{
+  min-width:0;
+  padding:15px 16px;
+  background:#fff;
+}
+
+.email-status-item span{
+  display:block;
+  margin-bottom:5px;
+
+  color:#667085;
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+
+.email-status-item strong{
+  display:block;
+  overflow:hidden;
+
+  color:#344054;
+  font-size:13px;
+  font-weight:700;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.email-status-item .status-good{
+  color:#067647;
+}
+
+.email-status-item .status-warning{
+  color:#b54708;
+}
+
+
+/* =========================================================
+   VERIFICATION / PASSWORD BADGES
+   ========================================================= */
+
+.verification-badge,
+.password-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+
+  padding:6px 10px;
+
+  border-radius:999px;
+
+  font-size:12px;
+  font-weight:700;
+  line-height:1.2;
+  white-space:nowrap;
+}
+
+.verification-badge.verified{
+  color:#067647;
+  background:#ecfdf3;
+  border:1px solid #abefc6;
+}
+
+.verification-badge.pending{
+  color:#b54708;
+  background:#fff7ed;
+  border:1px solid #fedf89;
+}
+
+.password-badge{
+  color:#175cd3;
+  background:#eff8ff;
+  border:1px solid #b2ddff;
+}
+
+
+/* =========================================================
+   SMTP SECURITY
+   ========================================================= */
+
+.smtp-security{
+  margin-top:22px;
+  padding-top:20px;
+
+  border-top:1px solid #edf0f3;
+}
+
+.smtp-security-title{
+  margin-bottom:10px;
+
+  color:#344054;
+  font-size:13px;
+  font-weight:700;
+}
+
+.smtp-security-options{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+
+.smtp-security-options button{
+  min-width:0;
+  padding:13px 14px;
+
+  border:1px solid #d7dce2;
+  border-radius:10px;
+
+  background:#fff;
+  color:#344054;
+
+  text-align:left;
+  cursor:pointer;
+
+  transition:
+    border-color .18s ease,
+    background .18s ease,
+    box-shadow .18s ease,
+    transform .18s ease;
+}
+
+.smtp-security-options button:hover{
+  border-color:#98a2b3;
+  background:#fafafa;
+}
+
+.smtp-security-options button:active{
+  transform:translateY(1px);
+}
+
+.smtp-security-options button.active{
+  border-color:#12a8a8;
+  background:#f0fdfd;
+
+  box-shadow:
+    0 0 0 2px rgba(18,168,168,.07);
+}
+
+.smtp-security-options strong{
+  display:block;
+
+  margin-bottom:4px;
+
+  color:#344054;
+  font-size:13px;
+  font-weight:700;
+}
+
+.smtp-security-options button.active strong{
+  color:#087c7c;
+}
+
+.smtp-security-options span{
+  display:block;
+
+  color:#667085;
+  font-size:12px;
+  line-height:1.4;
+}
+
+
+/* =========================================================
+   EMAIL DELIVERY
+   ========================================================= */
+
+.email-delivery-card{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:30px;
+}
+
+.email-delivery-card > div{
+  min-width:0;
+  flex:1;
+}
+
+.email-delivery-card h3{
+  margin:0 0 5px;
+
+  color:#182230;
+  font-size:17px;
+}
+
+.email-delivery-card p{
+  margin:0;
+
+  color:#667085;
+  font-size:14px;
+  line-height:1.5;
+}
+
+.email-delivery-card small{
+  display:block;
+
+  margin-top:7px;
+
+  color:#98a2b3;
+  font-size:12px;
+  line-height:1.5;
+}
+
+
+/* =========================================================
+   TOGGLE SWITCH
+   ========================================================= */
+
+.settings-switch{
+  position:relative;
+
+  width:50px;
+  height:28px;
+
+  flex:none;
+}
+
+.settings-switch input{
+  position:absolute;
+
+  width:1px;
+  height:1px;
+
+  opacity:0;
+  pointer-events:none;
+}
+
+.settings-switch span{
+  position:absolute;
+  inset:0;
+
+  border-radius:999px;
+
+  background:#d0d5dd;
+
+  cursor:pointer;
+
+  transition:background .2s ease;
+}
+
+.settings-switch span::before{
+  content:"";
+
+  position:absolute;
+
+  width:22px;
+  height:22px;
+
+  top:3px;
+  left:3px;
+
+  border-radius:50%;
+
+  background:#fff;
+
+  box-shadow:
+    0 1px 3px rgba(16,24,40,.20),
+    0 1px 2px rgba(16,24,40,.10);
+
+  transition:transform .2s ease;
+}
+
+.settings-switch input:checked + span{
+  background:#12a8a8;
+}
+
+.settings-switch input:checked + span::before{
+  transform:translateX(22px);
+}
+
+.settings-switch input:focus-visible + span{
+  box-shadow:
+    0 0 0 3px rgba(18,168,168,.15);
+}
+
+
+/* =========================================================
+   LAST TEST RESULT
+   ========================================================= */
+
+.email-test-result{
+  position:relative;
+  overflow:hidden;
+}
+
+.email-test-result::before{
+  content:"";
+
+  position:absolute;
+
+  top:0;
+  bottom:0;
+  left:0;
+
+  width:4px;
+
+  background:#12a8a8;
+}
+
+.email-test-result h4{
+  margin:7px 0 4px;
+
+  color:#182230;
+  font-size:14px;
+}
+
+.email-test-result p{
+  margin:0;
+
+  color:#667085;
+  font-size:13px;
+}
+
+.email-test-error{
+  margin-top:12px;
+  padding:10px 12px;
+
+  border:1px solid #fecdca;
+  border-radius:8px;
+
+  background:#fff1f0;
+  color:#b42318;
+
+  font-size:12px;
+  line-height:1.5;
+
+  overflow-wrap:anywhere;
+}
+
+
+/* =========================================================
+   SMALL LABELS / HELP
+   ========================================================= */
+
+.settings-section-label{
+  color:#98a2b3;
+
+  font-size:12px;
+  font-weight:800;
+
+  letter-spacing:.10em;
+  text-transform:uppercase;
+}
+
+.inline-help{
+  margin-left:6px;
+
+  color:#98a2b3;
+
+  font-size:12px;
+  font-weight:500;
+}
+
+
+/* =========================================================
+   EMAIL FORM DETAILS
+   ========================================================= */
+
+.email-settings input[type="email"],
+.email-settings input[type="text"],
+.email-settings input[type="password"],
+.email-settings input[type="number"]{
+  min-height:42px;
+}
+
+.email-settings input[type="password"]{
+  letter-spacing:.04em;
+}
+
+.email-settings input::placeholder{
+  color:#98a2b3;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media(max-width:1050px){
+
+  .email-status-strip{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+}
+
+
+@media(max-width:800px){
+
+  .smtp-security-options{
+    grid-template-columns:1fr;
+  }
+
+  .email-delivery-card{
+    align-items:flex-start;
+  }
+
+}
+
+
+@media(max-width:560px){
+
+  .email-status-strip{
+    grid-template-columns:1fr;
+  }
+
+  .email-delivery-card{
+    gap:20px;
+  }
+
+  .verification-badge,
+  .password-badge{
+    white-space:normal;
+    text-align:center;
+  }
+
+}

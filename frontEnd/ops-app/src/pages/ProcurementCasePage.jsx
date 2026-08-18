@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useState} from "react";
 import {
   ArrowLeft,Building2,CalendarDays,CheckCircle2,
-  FileText,Mail,Plus,Save,Send,ShieldCheck,
+  FileCheck2,FileText,Mail,Plus,Save,Send,ShieldCheck,
   ShoppingCart,Store,Trash2,Users
 } from "lucide-react";
 import {useNavigate,useParams} from "react-router-dom";
@@ -481,6 +481,25 @@ export default function ProcurementCasePage(){
                 Issue RFQ
               </button>
             </>
+          )}
+
+          {[
+            "closed",
+            "evaluation",
+            "awarded"
+          ].includes(event.status)&&(
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={()=>
+                nav(
+                  `/procurement/${event.procurement_case_id}/evaluation`
+                )
+              }
+            >
+              <FileCheck2 size={16}/>
+              Open evaluation
+            </button>
           )}
         </div>
       </div>

@@ -2005,6 +2005,84 @@ const ENDPOINTS = {
 
     inventoryLocationsPreview:(companyId,projectId,datasetId)=>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/locations/preview`,
+  
+    inventoryOpening:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/inventory/opening`,
+
+    inventoryOpeningSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/opening/settings`,
+
+    inventoryOpeningPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/opening/preview`,
+
+    inventoryOpeningReconcile:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/opening/reconcile`,
+  
+    inventoryMovements:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/inventory/movements`,
+
+    inventoryMovementSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/movements/settings`,
+
+    inventoryMovementTypes:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/movements/types`,
+
+    inventoryMovementPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/movements/preview`,
+
+    inventoryMovementReconcile:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/movements/reconcile`,
+  
+    posConfiguration:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/pos/configuration`,
+
+    posPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/preview`,
+
+    posTerminals:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/terminals`,
+
+    posPaymentMethods:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/payment-methods`,
+
+    posCatalogue:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/catalogue`,
+
+    posReconcile:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/pos/reconcile`,
+  
+    posMenu:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/pos/menu`,
+
+    posMenuSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/settings`,
+
+    posMenuItems:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/items`,
+
+    posMenuComponents:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/components`,
+
+    posMenuAddons:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/addons`,
+
+    posMenuPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/preview`,
+
+    posMenuReconcile:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/reconcile`,
+  
+    posHistory:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/pos/history`,
+
+    posHistorySettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/history/settings`,
+
+    posHistoryPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/history/preview`,
+
+    posHistoryReconcile:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/history/reconcile`,
   },
 
   ifrs9: {
@@ -5439,16 +5517,22 @@ const ENDPOINTS = {
     const params = new URLSearchParams();
     if (from) params.append("from", from);
     if (to) params.append("to", to);
+
     const qs = params.toString();
-    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_summary` + (qs ? `?${qs}` : "");
+
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_summary`
+      + (qs ? `?${qs}` : "");
   },
 
   vatLines: (companyId, from, to) => {
     const params = new URLSearchParams();
     if (from) params.append("from", from);
     if (to) params.append("to", to);
+
     const qs = params.toString();
-    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/lines` + (qs ? `?${qs}` : "");
+
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/lines`
+      + (qs ? `?${qs}` : "");
   },
 
   vatPeriods: (companyId) =>
@@ -5457,29 +5541,48 @@ const ENDPOINTS = {
   vatSettings: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_settings`,
 
+  vatSetupOptions: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/setup-options`,
+
   vatFilings: (companyId, from, to) => {
     const params = new URLSearchParams();
     if (from) params.append("from", from);
     if (to) params.append("to", to);
+
     const qs = params.toString();
-    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings` + (qs ? `?${qs}` : "");
+
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings`
+      + (qs ? `?${qs}` : "");
   },
 
-  vatFilingExport: (cid) => 
-    `${API_BASE}/api/companies/${cid}/vat/filings/export`,
-  
-  vatFilingPackExport: (cid) => 
-    `${API_BASE}/api/companies/${cid}/vat/filings/export-pack`,
-  
-  vatFilingPackEmail:  (cid) => 
-    `${API_BASE}/api/companies/${cid}/vat/filings/email-pack`,
+  vatRates: (companyId, transactionDate) => {
+    const params = new URLSearchParams();
+
+    if (transactionDate) {
+      params.append("date", transactionDate);
+    }
+
+    const qs = params.toString();
+
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/rates`
+      + (qs ? `?${qs}` : "");
+  },
+
+  vatFilingExport: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/export`,
+
+  vatFilingPackExport: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/export-pack`,
+
+  vatFilingPackEmail: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/email-pack`,
 
   vatPrepareFiling: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/prepare`,
-  
-  vatFilingPay: (cid) => 
-    `${API_BASE}/api/companies/${cid}/vat/filings/pay`,
-  
+
+  vatFilingPay: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/pay`,
+
   vatSubmitFiling: (companyId, filingId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/${encodeURIComponent(filingId)}/submit`,
 };
@@ -12123,10 +12226,29 @@ async function switchScreen(
     return;
   }
 
-  if (isAPWorkflow) {
+  if(isAPWorkflow){
     await initPayablesScreen?.();
-    // later: choose pane if you add bill drafts/payments panes
-    console.log("[switchScreen] early return at:", name, "base:", base);
+
+    const handoff=
+      window.getNexusApHandoffFromUrl?.();
+
+    if(handoff?.source==="nexus"&&handoff?.bill_id){
+      if(handoff.action==="payment"){
+        await window.openNexusPaymentHandoff?.(handoff);
+      }else{
+        await window.openFinSageBillFromHandoff?.(
+          handoff.bill_id
+        );
+      }
+    }
+
+    console.log(
+      "[switchScreen] early return at:",
+      name,
+      "base:",
+      base
+    );
+
     return;
   }
 
@@ -13165,6 +13287,411 @@ window.openFixedAssetsDrawer = openFixedAssetsDrawer;
     // ==============================
   // Tax / VAT – company level
   // ==============================
+
+let vatSetupState = {
+  options: null,
+  context: null,
+};
+
+function vatSetupCid() {
+  return (
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID ||
+    window.CURRENT_COMPANY?.id
+  );
+}
+
+function vatAuthorityChannels(authorityCode) {
+  const code = String(authorityCode || "").toUpperCase();
+
+  if (code === "SARS") {
+    return [
+      ["efiling", "SARS eFiling"],
+      ["manual", "Manual / other channel"],
+    ];
+  }
+
+  if (code === "RSL") {
+    return [
+      ["electronic", "RSL electronic filing"],
+    ];
+  }
+
+  if (code === "BURS") {
+    return [
+      ["electronic", "BURS filing"],
+    ];
+  }
+
+  return [
+    ["electronic", "Electronic"],
+  ];
+}
+
+function renderVatFilingChannels(
+  authorityCode,
+  selectedValue
+) {
+  const el = document.getElementById(
+    "vatFilingChannel"
+  );
+
+  if (!el) return;
+
+  const channels =
+    vatAuthorityChannels(authorityCode);
+
+  el.innerHTML = channels
+    .map(([value, label]) => `
+      <option
+        value="${value}"
+        ${value === selectedValue ? "selected" : ""}
+      >
+        ${label}
+      </option>
+    `)
+    .join("");
+}
+
+function renderVatPeriodCategories(
+  rules,
+  authorityCode,
+  filingChannel,
+  selectedCategory
+) {
+  const el =
+    document.getElementById("vatPeriodCategory");
+
+  if (!el) return;
+
+  const available = (rules || [])
+    .filter((rule) => {
+      if (
+        String(rule.filing_channel || "") !==
+        String(filingChannel || "")
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+
+  el.innerHTML = [
+    `<option value="">Select category</option>`,
+    ...available.map((rule) => `
+      <option
+        value="${rule.category_code}"
+        ${
+          String(rule.category_code) ===
+          String(selectedCategory || "")
+            ? "selected"
+            : ""
+        }
+      >
+        ${rule.category_code} — ${rule.name}
+      </option>
+    `),
+  ].join("");
+
+  renderVatResolvedPeriodRule();
+}
+
+function findSelectedVatPeriodRule() {
+  const category =
+    document.getElementById(
+      "vatPeriodCategory"
+    )?.value;
+
+  const channel =
+    document.getElementById(
+      "vatFilingChannel"
+    )?.value;
+
+  return (
+    vatSetupState.options?.period_rules || []
+  ).find((rule) => (
+    String(rule.category_code) ===
+      String(category || "")
+    &&
+    String(rule.filing_channel) ===
+      String(channel || "")
+  )) || null;
+}
+
+function renderVatResolvedPeriodRule() {
+  const rule = findSelectedVatPeriodRule();
+
+  const box =
+    document.getElementById(
+      "vatResolvedRuleBox"
+    );
+
+  const hint =
+    document.getElementById(
+      "vatPeriodCategoryHint"
+    );
+
+  if (!box) return;
+
+  if (!rule) {
+    box.classList.add("hidden");
+
+    if (hint) {
+      hint.textContent =
+        "Choose the category assigned by your revenue authority.";
+    }
+
+    return;
+  }
+
+  box.classList.remove("hidden");
+
+  const frequencyLabels = {
+    monthly: "Monthly",
+    bi_monthly: "Every 2 months",
+    semi_annual: "Every 6 months",
+    annual: "Annual",
+  };
+
+  const dueLabels = {
+    last_business_day_next_month:
+      "Last business day of the following month",
+
+    day_25_next_month_previous_business_day:
+      "25th of the following month, adjusted to the previous business day",
+
+    day_20_next_month:
+      "20th of the following month",
+
+    days_after_period_end_25:
+      "25 days after the tax period ends",
+  };
+
+  box.innerHTML = `
+    <div class="font-semibold text-slate-700 mb-2">
+      Filing rule
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div>
+        <span class="text-slate-400">Frequency</span><br>
+        ${frequencyLabels[rule.frequency] || rule.frequency}
+      </div>
+
+      <div>
+        <span class="text-slate-400">Period length</span><br>
+        ${Number(rule.period_months || 0)} month(s)
+      </div>
+
+      <div>
+        <span class="text-slate-400">Due date</span><br>
+        ${
+          dueLabels[rule.return_due_rule] ||
+          rule.return_due_rule ||
+          "Authority rule"
+        }
+      </div>
+    </div>
+  `;
+
+  if (hint) {
+    hint.textContent =
+      "This determines the VAT periods shown on the VAT dashboard.";
+  }
+}
+
+async function loadVatSettingsForm() {
+  const cid = vatSetupCid();
+  if (!cid) return;
+
+  const res = await apiFetch(
+    ENDPOINTS.vatSetupOptions(cid),
+    {
+      method: "GET",
+    }
+  );
+
+  const context =
+    res?.context || {};
+
+  const settings =
+    context?.settings || {};
+
+  vatSetupState.options = res || {};
+  vatSetupState.context = context;
+
+  const authorityCode =
+    context.authority_code || "";
+
+  const authoritySelect =
+    document.getElementById(
+      "vatAuthority"
+    );
+
+  if (authoritySelect) {
+    authoritySelect.innerHTML = `
+      <option value="${authorityCode}">
+        ${
+          context?.authority?.name ||
+          authorityCode ||
+          "Not configured"
+        }
+      </option>
+    `;
+
+    authoritySelect.value =
+      authorityCode;
+  }
+
+  const vatNo =
+    document.getElementById(
+      "vatRegistrationNumber"
+    );
+
+  if (vatNo) {
+    vatNo.value =
+      context.vat_registration_number ||
+      settings.vat_registration_number ||
+      "";
+  }
+
+  const customs =
+    document.getElementById(
+      "vatCustomsCode"
+    );
+
+  if (customs) {
+    customs.value =
+      settings.customs_code || "";
+  }
+
+  const reminder =
+    document.getElementById(
+      "vatReminderDays"
+    );
+
+  if (reminder) {
+    reminder.value =
+      Number(
+        settings.reminder_days ?? 7
+      );
+  }
+
+  const defaultChannel =
+    settings.filing_channel ||
+    context?.period_rule?.filing_channel ||
+    (
+      authorityCode === "SARS"
+        ? "efiling"
+        : "electronic"
+    );
+
+  renderVatFilingChannels(
+    authorityCode,
+    defaultChannel
+  );
+
+  renderVatPeriodCategories(
+    res?.period_rules || [],
+    authorityCode,
+    defaultChannel,
+    settings.period_category ||
+      context?.period_rule?.category_code
+  );
+
+  renderVatResolvedPeriodRule();
+}
+
+async function saveVatSettingsForm(e) {
+  e?.preventDefault?.();
+
+  const cid = vatSetupCid();
+  if (!cid) {
+    throw new Error(
+      "No active company selected"
+    );
+  }
+
+  const payload = {
+    enabled: true,
+
+    authority_code:
+      vatSetupState.context?.authority_code,
+
+    vat_registration_number:
+      document.getElementById(
+        "vatRegistrationNumber"
+      )?.value?.trim() || null,
+
+    period_category:
+      document.getElementById(
+        "vatPeriodCategory"
+      )?.value || null,
+
+    filing_channel:
+      document.getElementById(
+        "vatFilingChannel"
+      )?.value || null,
+
+    customs_code:
+      document.getElementById(
+        "vatCustomsCode"
+      )?.value?.trim() || null,
+
+    reminder_days: Number(
+      document.getElementById(
+        "vatReminderDays"
+      )?.value || 7
+    ),
+  };
+
+  if (!payload.period_category) {
+    throw new Error(
+      "Select the VAT filing category assigned by the revenue authority."
+    );
+  }
+
+  const res = await apiFetch(
+    ENDPOINTS.vatSettings(cid),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (res?.ok === false) {
+    throw new Error(
+      res.error ||
+      "Failed to save VAT settings"
+    );
+  }
+
+  if (window.CURRENT_COMPANY) {
+    window.CURRENT_COMPANY.vat_settings =
+      res.settings;
+  }
+
+  await loadVatSettingsForm();
+
+  // Important:
+  // rebuild dashboard periods from backend statutory rules.
+  const periodSelect =
+    document.getElementById(
+      "vatPeriodSelect"
+    );
+
+  if (periodSelect) {
+    periodSelect.dataset.bound = "";
+  }
+
+  await bindVatPeriodFilter();
+  await renderVatDashboard();
+
+  return res;
+}
   function hydrateCompanyTaxUI(company) {
     if (!company) return;
 
@@ -13341,24 +13868,79 @@ async function loadVatSettings(companyId) {
 
 
 function bindVatSettingsForm() {
-  const form = document.getElementById("vatSettingsForm");
-  const reload = document.getElementById("vatSettingsReload");
+  const form =
+    document.getElementById(
+      "vatSettingsForm"
+    );
 
-  if (form && form.dataset.bound !== "1") {
-    form.dataset.bound = "1";
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      await saveVatSettings(); // you already have this
-    });
+  if (
+    !form ||
+    form.dataset.bound === "1"
+  ) {
+    return;
   }
 
-  if (reload && reload.dataset.bound !== "1") {
-    reload.dataset.bound = "1";
-    reload.addEventListener("click", async () => {
-      const cid = getActiveCompanyId?.() || companyId?.() || CURRENT_COMPANY_ID;
-      if (cid) await loadVatSettings(cid);
-    });
-  }
+  form.dataset.bound = "1";
+
+  form.addEventListener(
+    "submit",
+    async (e) => {
+      try {
+        await saveVatSettingsForm(e);
+
+        alert(
+          "VAT settings saved."
+        );
+      } catch (err) {
+        console.error(
+          "Save VAT settings failed:",
+          err
+        );
+
+        alert(
+          err?.message ||
+          "Failed to save VAT settings."
+        );
+      }
+    }
+  );
+
+  document.getElementById(
+    "vatSettingsReload"
+  )?.addEventListener(
+    "click",
+    () => {
+      loadVatSettingsForm()
+        .catch(console.error);
+    }
+  );
+
+  document.getElementById(
+    "vatFilingChannel"
+  )?.addEventListener(
+    "change",
+    () => {
+      const context =
+        vatSetupState.context || {};
+
+      renderVatPeriodCategories(
+        vatSetupState.options
+          ?.period_rules || [],
+        context.authority_code,
+        document.getElementById(
+          "vatFilingChannel"
+        )?.value,
+        null
+      );
+    }
+  );
+
+  document.getElementById(
+    "vatPeriodCategory"
+  )?.addEventListener(
+    "change",
+    renderVatResolvedPeriodRule
+  );
 }
 
 function ensureVatAnchorMonths() {
@@ -13415,6 +13997,8 @@ async function ensureCompanyDataLoaded() {
 
   await loadCompanyProfile(cid);
   await loadVatSettings(cid);
+  bindVatSettingsForm();
+  await loadVatSettingsForm();
   await restoreAppRoute();
   return window.CURRENT_COMPANY || null;
 }
@@ -17586,6 +18170,107 @@ function buildPeriodParams(periodKey, extra = {}) {
   return params;
 }
 
+async function renderDashboardKPIs(periodKey = "this_month") {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const elCash = document.getElementById("kpiCash");
+  if (!elCash) return;
+
+  try {
+    const vatCfg = window.CURRENT_COMPANY?.vat_settings || {};
+    const today = new Date();
+
+    const vatPeriod = computeCurrentVatPeriod(today, vatCfg);
+    const vatFrom = vatPeriod?.start ? fmtLocalDate(vatPeriod.start) : null;
+    const vatTo = vatPeriod?.end ? fmtLocalDate(vatPeriod.end) : null;
+
+    const [tbMiniRes, pnlMiniRes, vatSummaryRes] = await Promise.allSettled([
+      apiFetch(ENDPOINTS.trialBalanceMini(cid, { preset: periodKey })),
+      apiFetch(ENDPOINTS.pnlMini(cid, null, null, { preset: periodKey })),
+      (typeof ENDPOINTS.vatSummary === "function" && vatFrom && vatTo)
+        ? apiFetch(ENDPOINTS.vatSummary(cid, vatFrom, vatTo))
+        : Promise.resolve(null),
+    ]);
+
+    if (tbMiniRes.status === "rejected") {
+      console.error("trialBalanceMini failed:", tbMiniRes.reason);
+    }
+    if (pnlMiniRes.status === "rejected") {
+      console.error("pnlMini failed:", pnlMiniRes.reason);
+    }
+    if (vatSummaryRes.status === "rejected") {
+      console.error("vatSummary failed:", vatSummaryRes.reason);
+    }
+
+    const tbMini = tbMiniRes.status === "fulfilled" ? tbMiniRes.value : { rows: [] };
+    const pnlMini = pnlMiniRes.status === "fulfilled" ? pnlMiniRes.value : { rows: [] };
+    const vatSummary = vatSummaryRes.status === "fulfilled" ? vatSummaryRes.value : null;
+
+    const tbRows = Array.isArray(tbMini?.rows) ? tbMini.rows : [];
+    const pnlRows = Array.isArray(pnlMini?.rows) ? pnlMini.rows : [];
+
+    const cash = tbRows
+      .filter(r => /cash|bank|overdraft/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
+      .reduce((sum, r) => {
+        const raw = r.closing_balance_raw ?? r.closing_balance;
+        if (raw != null) return sum + Number(raw || 0);
+        return sum + Number(r.debit ?? 0) - Number(r.credit ?? 0);
+      }, 0);
+
+    const ar = tbRows
+      .filter(r => /receivable|debtor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
+      .reduce((sum, r) => {
+        const raw = r.closing_balance_raw ?? r.closing_balance;
+        if (raw != null) return sum + Number(raw || 0);
+        return sum + Number(r.debit ?? 0) - Number(r.credit ?? 0);
+      }, 0);
+
+    const ap = tbRows
+      .filter(r => {
+        const txt = `${r.name || ""} ${r.category || ""} ${r.section || ""}`.toLowerCase();
+
+        const isTradePayable =
+          /accounts payable|trade payable|supplier payable|vendor payable|creditors/.test(txt);
+
+        const excludeNonBills =
+          /loan payable|vat payable|vat output|vat input|paye|withholding|lease liability|deferred income|tax payable|income tax|provision|accrual|borrowings|bank overdraft/.test(txt);
+
+        return isTradePayable && !excludeNonBills;
+      })
+      .reduce((sum, r) => {
+        const raw = r.closing_balance_raw ?? r.closing_balance;
+        return sum + Math.abs(Number(raw || 0));
+      }, 0);
+
+    const np = pnlRows
+      .filter(r => /net profit|profit for the year|profit for period|net income|net loss|loss for the period/i.test(String(r.label || r.name || "")))
+      .reduce((sum, r) => sum + Number(r.amount ?? r.value ?? 0), 0);
+
+    const vat = Number(
+      vatSummary?.net_vat ??
+      vatSummary?.vat_payable ??
+      vatSummary?.amount ??
+      0
+    );
+
+    document.getElementById("kpiCash").textContent = money(cash);
+    document.getElementById("kpiAR").textContent = money(ar);
+    document.getElementById("kpiAP").textContent = money(ap);
+    document.getElementById("kpiNP").textContent = money(np);
+    document.getElementById("kpiVAT").textContent = money(vat);
+  } catch (e) {
+    console.error("renderDashboardKPIs error:", e);
+
+    document.getElementById("kpiCash").textContent = money(0);
+    document.getElementById("kpiAR").textContent = money(0);
+    document.getElementById("kpiAP").textContent = money(0);
+    document.getElementById("kpiNP").textContent = money(0);
+    document.getElementById("kpiVAT").textContent = money(0);
+  }
+}
+window.renderDashboardKPIs = renderDashboardKPIs;
+
 // ==============================
 // VAT account discovery
 // ==============================
@@ -17611,18 +18296,93 @@ function getVatAccounts() {
   return { input, output };
 }
 
+let CURRENT_VAT_RATES = [];
+let CURRENT_VAT_RATE_CONTEXT = null;
+
+async function loadVatRates(transactionDate = null) {
+  const companyId =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID ||
+    window.CURRENT_COMPANY?.id;
+
+  if (!companyId) {
+    throw new Error("No active company selected.");
+  }
+
+  const dateValue =
+    transactionDate ||
+    new Date().toISOString().slice(0, 10);
+
+  const res = await apiFetch(
+    ENDPOINTS.vatRates(
+      companyId,
+      dateValue
+    ),
+    {
+      method: "GET",
+    }
+  );
+
+  if (!res?.ok) {
+    throw new Error(
+      res?.error ||
+      "Could not load VAT rates."
+    );
+  }
+
+  CURRENT_VAT_RATES =
+    Array.isArray(res.rates)
+      ? res.rates
+      : [];
+
+  CURRENT_VAT_RATE_CONTEXT = res;
+
+  return res;
+}
+
 function buildVatConfigFromCoa() {
-  const companyCfg = CURRENT_COMPANY?.vat_settings || {};
+  const companyCfg =
+    CURRENT_COMPANY?.vat_settings || {};
+
   const vat = getVatAccounts();
 
-  // Prefer company saved settings if present
-  const vatInput  = companyCfg.vat_input_code  || vat.input?.[0]?.code  || "BS_CA_1410";
-  const vatOutput = companyCfg.vat_output_code || vat.output?.[0]?.code || "BS_CL_2310";
+  const vatInput =
+    companyCfg.vat_input_code ||
+    vat.input?.[0]?.code ||
+    "BS_CA_1410";
+
+  const vatOutput =
+    companyCfg.vat_output_code ||
+    vat.output?.[0]?.code ||
+    "BS_CL_2310";
+
+  const standardRate =
+    CURRENT_VAT_RATES.find(
+      r =>
+        r.treatment === "standard" &&
+        (
+          r.rate_code === "STANDARD" ||
+          r.rate_code === "STANDARD_15"
+        )
+    ) ||
+    CURRENT_VAT_RATES.find(
+      r => r.treatment === "standard"
+    );
 
   return {
-    vat_rate: Number(companyCfg.vat_rate || CURRENT_COMPANY?.vat_rate || 15),
+    vat_rate: standardRate
+      ? Number(standardRate.rate_percent)
+      : 0,
+
     vat_input_code: vatInput,
     vat_output_code: vatOutput,
+
+    vat_rates: CURRENT_VAT_RATES,
+
+    authority_code:
+      CURRENT_VAT_RATE_CONTEXT?.authority_code ||
+      companyCfg.authority_code ||
+      null,
   };
 }
 
@@ -17671,7 +18431,7 @@ function getVatSideForAccount(account, line) {
 //   line.vatFlag === "yes" for VATable lines
 //   line.vatCode  (STANDARD / ZERO / EXEMPT etc.)
 //   line.vatBasis ("inclusive" / "exclusive")
-function buildVatLinesForJournalLine(line, vatCfg) {
+async function buildVatLinesForJournalLine(line, vatCfg) {
   if (!line) return null;
 
   // Only act on lines explicitly marked as VATable
@@ -17690,11 +18450,53 @@ function buildVatLinesForJournalLine(line, vatCfg) {
   if (!amount) return null;
 
   const basis   = line.vatBasis || "inclusive";
-  const custom = Number(line.vatRatePct || line.vatRate || 0);   // allow per-line
-  const ratePct = (code === "CUSTOM" && custom > 0 && custom <= 100)
-    ? custom
-    : (vatCfg.vat_rate || 15);
-    const rate    = ratePct / 100;
+  
+  const custom =
+    Number(
+      line.vatRatePct ||
+      line.vatRate ||
+      0
+    );
+
+  let ratePct = 0;
+
+  if (
+    code === "CUSTOM" &&
+    custom > 0 &&
+    custom <= 100
+  ) {
+    ratePct = custom;
+
+  } else {
+
+    const rateCode =
+      String(
+        line.vatCode || "STANDARD"
+      ).toUpperCase();
+
+    const selectedRate =
+      (vatCfg.vat_rates || []).find(
+        r =>
+          String(r.rate_code || "")
+            .toUpperCase() === rateCode
+      );
+
+    if (selectedRate) {
+      ratePct =
+        Number(
+          selectedRate.rate_percent
+        );
+    } else {
+      ratePct =
+        Number(vatCfg.vat_rate || 0);
+    }
+  }
+
+  if (!(ratePct > 0)) {
+    return null;
+  }
+
+  const rate = ratePct / 100;
 
   let base = amount;
   let vat  = 0;
@@ -17729,9 +18531,16 @@ function buildVatLinesForJournalLine(line, vatCfg) {
 /* ==============================
  * VAT & Tax Screen
  * ============================== */
-function parseVatPeriodSelection() {
+async function parseVatPeriodSelection() {
   const sel = document.getElementById("vatPeriodSelect");
-  if (!sel?.value) return null;
+
+  if (sel) {
+    sel.dataset.bound = "";
+    sel.innerHTML = `<option value="">Select VAT period</option>`;
+  }
+
+  await bindVatPeriodFilter();
+  await renderVatDashboard();
 
   try {
     const parsed = JSON.parse(decodeURIComponent(sel.value));
@@ -17833,106 +18642,6 @@ function computeCurrentVatPeriod(today = new Date(), cfg = {}) {
   );
 }
 
-async function renderDashboardKPIs(periodKey = "this_month") {
-  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-  if (!cid) return;
-
-  const elCash = document.getElementById("kpiCash");
-  if (!elCash) return;
-
-  try {
-    const vatCfg = window.CURRENT_COMPANY?.vat_settings || {};
-    const today = new Date();
-
-    const vatPeriod = computeCurrentVatPeriod(today, vatCfg);
-    const vatFrom = vatPeriod?.start ? fmtLocalDate(vatPeriod.start) : null;
-    const vatTo = vatPeriod?.end ? fmtLocalDate(vatPeriod.end) : null;
-
-    const [tbMiniRes, pnlMiniRes, vatSummaryRes] = await Promise.allSettled([
-      apiFetch(ENDPOINTS.trialBalanceMini(cid, { preset: periodKey })),
-      apiFetch(ENDPOINTS.pnlMini(cid, null, null, { preset: periodKey })),
-      (typeof ENDPOINTS.vatSummary === "function" && vatFrom && vatTo)
-        ? apiFetch(ENDPOINTS.vatSummary(cid, vatFrom, vatTo))
-        : Promise.resolve(null),
-    ]);
-
-    if (tbMiniRes.status === "rejected") {
-      console.error("trialBalanceMini failed:", tbMiniRes.reason);
-    }
-    if (pnlMiniRes.status === "rejected") {
-      console.error("pnlMini failed:", pnlMiniRes.reason);
-    }
-    if (vatSummaryRes.status === "rejected") {
-      console.error("vatSummary failed:", vatSummaryRes.reason);
-    }
-
-    const tbMini = tbMiniRes.status === "fulfilled" ? tbMiniRes.value : { rows: [] };
-    const pnlMini = pnlMiniRes.status === "fulfilled" ? pnlMiniRes.value : { rows: [] };
-    const vatSummary = vatSummaryRes.status === "fulfilled" ? vatSummaryRes.value : null;
-
-    const tbRows = Array.isArray(tbMini?.rows) ? tbMini.rows : [];
-    const pnlRows = Array.isArray(pnlMini?.rows) ? pnlMini.rows : [];
-
-    const cash = tbRows
-      .filter(r => /cash|bank|overdraft/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
-      .reduce((sum, r) => {
-        const raw = r.closing_balance_raw ?? r.closing_balance;
-        if (raw != null) return sum + Number(raw || 0);
-        return sum + Number(r.debit ?? 0) - Number(r.credit ?? 0);
-      }, 0);
-
-    const ar = tbRows
-      .filter(r => /receivable|debtor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
-      .reduce((sum, r) => {
-        const raw = r.closing_balance_raw ?? r.closing_balance;
-        if (raw != null) return sum + Number(raw || 0);
-        return sum + Number(r.debit ?? 0) - Number(r.credit ?? 0);
-      }, 0);
-
-    const ap = tbRows
-      .filter(r => {
-        const txt = `${r.name || ""} ${r.category || ""} ${r.section || ""}`.toLowerCase();
-
-        const isTradePayable =
-          /accounts payable|trade payable|supplier payable|vendor payable|creditors/.test(txt);
-
-        const excludeNonBills =
-          /loan payable|vat payable|vat output|vat input|paye|withholding|lease liability|deferred income|tax payable|income tax|provision|accrual|borrowings|bank overdraft/.test(txt);
-
-        return isTradePayable && !excludeNonBills;
-      })
-      .reduce((sum, r) => {
-        const raw = r.closing_balance_raw ?? r.closing_balance;
-        return sum + Math.abs(Number(raw || 0));
-      }, 0);
-
-    const np = pnlRows
-      .filter(r => /net profit|profit for the year|profit for period|net income|net loss|loss for the period/i.test(String(r.label || r.name || "")))
-      .reduce((sum, r) => sum + Number(r.amount ?? r.value ?? 0), 0);
-
-    const vat = Number(
-      vatSummary?.net_vat ??
-      vatSummary?.vat_payable ??
-      vatSummary?.amount ??
-      0
-    );
-
-    document.getElementById("kpiCash").textContent = money(cash);
-    document.getElementById("kpiAR").textContent = money(ar);
-    document.getElementById("kpiAP").textContent = money(ap);
-    document.getElementById("kpiNP").textContent = money(np);
-    document.getElementById("kpiVAT").textContent = money(vat);
-  } catch (e) {
-    console.error("renderDashboardKPIs error:", e);
-
-    document.getElementById("kpiCash").textContent = money(0);
-    document.getElementById("kpiAR").textContent = money(0);
-    document.getElementById("kpiAP").textContent = money(0);
-    document.getElementById("kpiNP").textContent = money(0);
-    document.getElementById("kpiVAT").textContent = money(0);
-  }
-}
-window.renderDashboardKPIs = renderDashboardKPIs;
 
 function showVatPaymentPreviewModal({ cid, period, payload, preview, isRefund }) {
   const old = document.getElementById("vatPaymentPreviewModal");
@@ -18587,21 +19296,58 @@ function showVatSettlementPreviewModal({ cid, period, preview }) {
   });
 }
 
+function formatVatFrequency(value) {
+  const labels = {
+    monthly: "Monthly",
+    bi_monthly: "Every 2 months",
+    quarterly: "Quarterly",
+    semi_annual: "Every 6 months",
+    annual: "Annual",
+  };
+
+  return labels[String(value || "").toLowerCase()]
+    || String(value || "").replaceAll("_", " ");
+}
+
 async function bindVatPeriodFilter() {
   const sel = document.getElementById("vatPeriodSelect");
+
   if (!sel || sel.dataset.bound === "1") return;
+
   sel.dataset.bound = "1";
 
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+
   if (!cid) {
     delete sel.dataset.bound;
     return;
   }
 
   try {
-    const res = await apiFetch(ENDPOINTS.vatPeriods(cid), { method: "GET" });
+    const res = await apiFetch(
+      ENDPOINTS.vatPeriods(cid),
+      { method: "GET" }
+    );
+
+    if (res?.ok === false) {
+      throw new Error(res.error || "Failed to load VAT periods");
+    }
+
     const periods = Array.isArray(res?.periods) ? res.periods : [];
     const current = res?.current || null;
+    const ctx = res?.context || {};
+
+    const ctxEl = document.getElementById("vatAuthorityContextText");
+
+    if (ctxEl) {
+      const parts = [
+        ctx.authority_name || ctx.authority_code,
+        ctx.category_code ? `Category ${ctx.category_code}` : "",
+        formatVatFrequency(ctx.frequency),
+      ].filter(Boolean);
+
+      ctxEl.textContent = parts.join(" • ");
+    }
 
     sel.innerHTML = [
       `<option value="">Select VAT period</option>`,
@@ -18612,8 +19358,9 @@ async function bindVatPeriodFilter() {
           end_date: p.end_date,
           due_date: p.due_date || null,
         }));
+
         return `<option value="${payload}">${p.label}</option>`;
-      })
+      }),
     ].join("");
 
     if (current?.start_date && current?.end_date) {
@@ -18624,11 +19371,13 @@ async function bindVatPeriodFilter() {
         due_date: current.due_date || null,
       }));
     } else if (periods.length) {
+      const first = periods[0];
+
       sel.value = encodeURIComponent(JSON.stringify({
-        label: periods[0].label,
-        start_date: periods[0].start_date,
-        end_date: periods[0].end_date,
-        due_date: periods[0].due_date || null,
+        label: first.label,
+        start_date: first.start_date,
+        end_date: first.end_date,
+        due_date: first.due_date || null,
       }));
     } else {
       sel.value = "";
@@ -18637,9 +19386,23 @@ async function bindVatPeriodFilter() {
     sel.addEventListener("change", async () => {
       await renderVatDashboard();
     });
+
   } catch (err) {
     console.error("bindVatPeriodFilter failed:", err);
+
     delete sel.dataset.bound;
+
+    sel.innerHTML = `
+      <option value="">
+        VAT periods unavailable
+      </option>
+    `;
+
+    const ctxEl = document.getElementById("vatAuthorityContextText");
+
+    if (ctxEl) {
+      ctxEl.textContent = err?.message || "Could not load VAT filing rules.";
+    }
   }
 }
 
@@ -18663,37 +19426,82 @@ async function renderVatDashboard() {
     ? window.money(n, cur)
     : `${cur} ${Number(n || 0).toFixed(2)}`;
 
-  const cfg = window.CURRENT_COMPANY?.vat_settings || {};
-  const today = new Date();
-
   let period = (typeof parseVatPeriodSelection === "function")
     ? parseVatPeriodSelection()
     : null;
 
   if (!period) {
     try {
-      period = computeCurrentVatPeriod(today, cfg);
+      const cid = (typeof companyId === "function")
+        ? companyId()
+        : (window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id);
+
+      if (cid) {
+        const periodRes = await apiFetch(
+          ENDPOINTS.vatPeriods(cid),
+          { method: "GET" }
+        );
+
+        const current = periodRes?.current || null;
+
+        if (current?.start_date && current?.end_date) {
+          period = {
+            label: current.label || "Current VAT period",
+            start: new Date(`${current.start_date}T00:00:00`),
+            end: new Date(`${current.end_date}T00:00:00`),
+            dueDate: current.due_date
+              ? new Date(`${current.due_date}T00:00:00`)
+              : null,
+            start_date: current.start_date,
+            end_date: current.end_date,
+            due_date: current.due_date || null,
+          };
+        }
+      }
     } catch (e) {
-      console.warn("computeCurrentVatPeriod error:", e);
+      console.warn("Could not resolve current VAT period:", e);
     }
   }
 
   if (!period) {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    period = {
-      label: "Current month",
-      start,
-      end,
-      dueDate: end,
-      start_date: fmtLocalDate(start),
-      end_date: fmtLocalDate(end),
-      due_date: fmtLocalDate(end),
-    };
-  } else {
-    if (!period.start_date && period.start) period.start_date = fmtLocalDate(period.start);
-    if (!period.end_date && period.end) period.end_date = fmtLocalDate(period.end);
-    if (!period.due_date && period.dueDate) period.due_date = fmtLocalDate(period.dueDate);
+    const inEl = document.getElementById("vatInputAmount");
+    const outEl = document.getElementById("vatOutputAmount");
+    const netEl = document.getElementById("vatNetAmount");
+    const netLbl = document.getElementById("vatNetLabel");
+    const filingBadge = document.getElementById("vatFilingBadge");
+    const filingText = document.getElementById("vatFilingStatusText");
+
+    if (inEl) inEl.textContent = fmt(0);
+    if (outEl) outEl.textContent = fmt(0);
+    if (netEl) netEl.textContent = fmt(0);
+
+    if (netLbl) {
+      netLbl.textContent = "VAT filing setup required.";
+    }
+
+    if (filingBadge) {
+      filingBadge.className = "px-2 py-1 rounded bg-amber-100 text-amber-700";
+      filingBadge.textContent = "Setup required";
+    }
+
+    if (filingText) {
+      filingText.textContent =
+        "Configure the VAT filing category before preparing returns.";
+    }
+
+    return;
+  }
+
+  if (!period.start_date && period.start) {
+    period.start_date = fmtLocalDate(period.start);
+  }
+
+  if (!period.end_date && period.end) {
+    period.end_date = fmtLocalDate(period.end);
+  }
+
+  if (!period.due_date && period.dueDate) {
+    period.due_date = fmtLocalDate(period.dueDate);
   }
 
   const fromStr = period.start_date || fmtLocalDate(period.start);
@@ -18923,14 +19731,28 @@ async function renderVatDashboard() {
 
 // Generic VAT expansion for *batch lines* (invoice, POS, IFRS wizards)
 function expandVatForBatch(lines, cfg) {
-  const vatCfg = cfg || (typeof buildVatConfigFromCoa === "function"
-    ? buildVatConfigFromCoa()
-    : { vat_rate: 15, vat_input_code: "BS_CA_1410", vat_output_code: "BS_CL_2310" });
 
-  const defaultVatRate = Number(vatCfg.vat_rate || 15);
+  const vatCfg =
+    cfg ||
+    (
+      typeof buildVatConfigFromCoa === "function"
+        ? buildVatConfigFromCoa()
+        : {
+            vat_rate: 0,
+            vat_input_code: null,
+            vat_output_code: null,
+            vat_rates: [],
+          }
+    );
 
-  const vatOutputAccount = vatCfg.vat_output_code || "BS_CL_2310";
-  const vatInputAccount  = vatCfg.vat_input_code  || "BS_CA_1410";
+  const defaultVatRate =
+    Number(vatCfg.vat_rate || 0);
+
+  const vatOutputAccount =
+    vatCfg.vat_output_code || null;
+
+  const vatInputAccount =
+    vatCfg.vat_input_code || null;
 
   const expanded = [];
   let vatTotal = 0;
@@ -18940,7 +19762,28 @@ function expandVatForBatch(lines, cfg) {
 
     const vatEnabled = !!base.vatEnabled;
     const vatMode    = base.vatMode || "none";   // exclusive | inclusive | none
-    const vatRatePct = Number(base.vatRate || defaultVatRate);
+    const lineRate =
+      Number(base.vatRate || 0);
+
+    const lineVatCode =
+      String(
+        base.vatCode ||
+        "STANDARD"
+      ).toUpperCase();
+
+    const configuredRate =
+      (vatCfg.vat_rates || []).find(
+        r =>
+          String(r.rate_code || "")
+            .toUpperCase() === lineVatCode
+      );
+
+    const vatRatePct =
+      lineRate > 0
+        ? lineRate
+        : configuredRate
+          ? Number(configuredRate.rate_percent)
+          : defaultVatRate;
 
     if (!vatEnabled || vatMode === "none" || !vatRatePct) {
       expanded.push(base);
@@ -118092,6 +118935,142 @@ function bindAP() {
   }
   window.writeBillForm = writeBillForm;
 
+  async function openFinSageBillFromHandoff(billId){
+    const cid=window.getActiveCompanyId?.()||window.CURRENT_COMPANY_ID||window.cid;
+
+    billId=Number(billId||0);
+
+    if(!cid||!billId) return false;
+
+    try{
+      const res=await window.apiFetch(
+        window.ENDPOINTS.bill(cid,billId),
+        {method:"GET"}
+      );
+
+      const bill=res?.data||res;
+
+      if(!bill?.id){
+        throw new Error("FinSage bill not found.");
+      }
+
+      window.clearBillForm?.({keepCurrency:true});
+
+      if(
+        !Array.isArray(window.BILL_ACCOUNTS_CACHE)||
+        !window.BILL_ACCOUNTS_CACHE.length
+      ){
+        await window.loadBillAccountsForLines?.();
+      }
+
+      window.refreshBillAccountDropdowns?.();
+
+      window.writeBillForm?.(bill);
+
+      const root=window.getBillRoot?.()||document;
+      const body=root.querySelector("#billLines");
+
+      if(body) body.innerHTML="";
+
+      for(const line of bill.lines||[]){
+        window.addBillLine?.({
+          item_name:line.item_name||"",
+          description:line.description||"",
+          account_code:line.account_code||"",
+          quantity:Number(line.quantity||0),
+          unit_price:Number(line.unit_price||0),
+          discount_amount:Number(line.discount_amount||0),
+          vat_rate:Number(line.vat_rate||0),
+          vat_code:
+            Number(line.vat_rate||0)<=0
+              ?"ZERO"
+              :Number(line.vat_rate||0)===15
+                ?"STANDARD"
+                :"CUSTOM"
+        });
+      }
+
+      const memo=root.querySelector("#billMemo");
+      if(memo) memo.value=bill.notes||"";
+
+      const status=root.querySelector("#billStatus");
+      if(status){
+        status.textContent=
+          String(bill.status||"draft")
+            .replaceAll("_"," ");
+      }
+
+      const vatEnabled=root.querySelector("#apBillVatEnabled");
+
+      if(vatEnabled){
+        vatEnabled.checked=(bill.lines||[])
+          .some(x=>Number(x.vat_rate||0)>0);
+      }
+
+      const vatMode=root.querySelector("#apBillVatMode");
+
+      if(vatMode){
+        vatMode.value=bill.vat_mode||"exclusive";
+      }
+
+      window.recalcBill?.({force:true});
+
+      console.log(
+        "[NEXUS → AP] opened FinSage bill",
+        bill
+      );
+
+      return true;
+
+    }catch(err){
+      console.error(
+        "[NEXUS → AP] could not open bill",
+        err
+      );
+
+      alert(
+        err?.message||
+        "Could not open the FinSage bill."
+      );
+
+      return false;
+    }
+  }
+
+  window.openFinSageBillFromHandoff=
+    openFinSageBillFromHandoff;
+
+  function getNexusApHandoffFromUrl(){
+    try{
+      const p=new URLSearchParams(window.location.search||"");
+
+      const billId=Number(p.get("bill_id")||0);
+      if(!billId) return null;
+
+      return {
+        source:"nexus",
+        screen:p.get("screen")||"ap",
+        action:p.get("action")||"bill",
+        bill_id:billId,
+        voucher_id:Number(p.get("voucher_id")||0)||null,
+        amount:p.get("amount")||"",
+        payment_date:p.get("payment_date")||"",
+        reference:p.get("reference")||"",
+        description:p.get("description")||"",
+        wht:p.get("wht")==="1",
+        wht_rate:p.get("wht_rate")||"",
+        wht_amount:p.get("wht_amount")||"",
+        wht_ledger_code:p.get("wht_ledger_code")||"",
+        wht_reason:p.get("wht_reason")||""
+      };
+    }catch(e){
+      console.warn("[NEXUS → AP] invalid handoff URL",e);
+      return null;
+    }
+  }
+
+  window.getNexusApHandoffFromUrl=getNexusApHandoffFromUrl;
+  
   function getLeaseApPrefillFromUrl() {
     try {
       const hash = window.location.hash || "";
@@ -119415,6 +120394,58 @@ window.loadDraftBillsPane = async function loadDraftBillsPane() {
     }, { passive: false });
   });
 };
+
+async function openNexusPaymentHandoff(handoff){
+  if(!handoff?.bill_id) return false;
+
+  await window.openBillViewer?.(
+    handoff.bill_id
+  );
+
+  const modal=document.getElementById("billViewerModal");
+  if(!modal) return false;
+
+  const openBtn=modal.querySelector("#billViewAllocatePayment");
+
+  openBtn?.click();
+
+  await new Promise(resolve=>setTimeout(resolve,50));
+
+  const set=(id,value)=>{
+    if(value===null||value===undefined||value==="") return;
+    const el=modal.querySelector(`#${id}`);
+    if(el) el.value=String(value);
+  };
+
+  set("billViewPayDate",handoff.payment_date);
+  set("billViewPayAmount",handoff.amount);
+  set("billViewPayRef",handoff.reference);
+  set("billViewPayDesc",handoff.description);
+
+  if(handoff.wht){
+    const enabled=modal.querySelector("#billViewWhtEnabled");
+    if(enabled){
+      enabled.checked=true;
+      enabled.dispatchEvent(
+        new Event("change",{bubbles:true})
+      );
+    }
+
+    set("billViewWhtRate",handoff.wht_rate);
+    set("billViewWhtAmount",handoff.wht_amount);
+    set("billViewWhtLedger",handoff.wht_ledger_code);
+    set("billViewWhtReason",handoff.wht_reason);
+  }
+
+  console.log(
+    "[NEXUS → AP PAYMENT] payment voucher loaded",
+    handoff
+  );
+
+  return true;
+}
+
+window.openNexusPaymentHandoff=openNexusPaymentHandoff;
 
 async function openApVendorPicker({ closeOnPick = true, reason = "" } = {}) {
   if (reason) window.showToast?.(reason, "warning");
@@ -123850,81 +124881,56 @@ const projectLookupState = {
 };
 
 async function loadProjectPeopleAndDepartments() {
-  const cid =
+  const companyId =
     getActiveCompanyId?.() ||
     CURRENT_COMPANY_ID;
 
-  if (!cid) {
+  if (!companyId) {
+    projectLookupState.employees = [];
+    projectLookupState.departments = [];
     return;
   }
 
   try {
-    /*
-     * Reuse payroll state first because payrollLoadAll()
-     * already populates employees and setup.
-     */
-    let employees =
-      window.payrollState?.employees ||
-      [];
+    const response = await apiFetch(
+      ENDPOINTS.payroll.bootstrap(companyId)
+    );
 
-    let departments =
-      window.payrollState?.setup?.departments ||
-      [];
+    const data =
+      response?.data ||
+      response ||
+      {};
 
-    /*
-     * payrollState is scoped inside the payroll IIFE in
-     * the code you shared, so it may not be exposed on
-     * window. If not, load the same sources directly.
-     */
-    if (!employees.length) {
-      const employeeOut = await apiFetch(
-        ENDPOINTS.payroll.employees(
-          cid,
-          { status: "" }
-        )
-      );
+    const employees =
+      Array.isArray(data.employees)
+        ? data.employees
+        : [];
 
-      employees =
-        employeeOut?.items ||
-        employeeOut?.data?.items ||
-        employeeOut?.data ||
-        [];
-    }
-
-    /*
-     * If departments were not exposed globally,
-     * bootstrap gives us the same setup object used
-     * by Payroll.
-     */
-    if (!departments.length) {
-      const bootstrapOut = await apiFetch(
-        ENDPOINTS.payroll.bootstrap(cid)
-      );
-
-      const data =
-        bootstrapOut?.data ||
-        {};
-
-      departments =
-        data.setup?.departments ||
-        [];
-    }
+    const departments =
+      Array.isArray(data.setup?.departments)
+        ? data.setup.departments
+        : [];
 
     projectLookupState.employees =
-      (Array.isArray(employees)
-        ? employees
-        : []
-      );
+      employees;
 
     projectLookupState.departments =
-      (Array.isArray(departments)
-        ? departments
-        : []
-      );
+      departments;
+
+    console.log(
+      "[Projects] employee lookups loaded:",
+      {
+        employees:
+          projectLookupState.employees.length,
+
+        departments:
+          projectLookupState.departments.length,
+      }
+    );
 
   } catch (err) {
     console.error(
-      "[Projects] failed to load employees/departments",
+      "[Projects] failed to load employee lookups:",
       err
     );
 

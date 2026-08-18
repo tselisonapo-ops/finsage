@@ -7,6 +7,7 @@ import SetupPage from "./pages/SetupPage";
 
 import DashboardPage from "./pages/DashboardPage";
 import PeoplePage from "./pages/PeoplePage";
+import GovernancePage from "./pages/GovernancePage";
 import OrganisationPage from "./pages/OrganisationPage";
 import SettingsPage from "./pages/SettingsPage";
 
@@ -14,12 +15,25 @@ import RequestsPage from "./pages/RequestsPage";
 import RequestPage from "./pages/RequestPage";
 import ApprovalsPage from "./pages/ApprovalsPage";
 import BudgetPage from "./pages/BudgetPage";
+import QuoteEvaluationPage from "./pages/QuoteEvaluationPage";
 
 import ProcurementPage from "./pages/ProcurementPage";
 import ProcurementPoliciesPage from "./pages/ProcurementPoliciesPage";
 import ProcurementVendorsPage from "./pages/ProcurementVendorsPage";
 import ProcurementSettingsPage from "./pages/ProcurementSettingsPage";
 import ProcurementCasePage from "./pages/ProcurementCasePage";
+import AwardPage from "./pages/AwardPage";
+import PurchaseOrderPage from "./pages/PurchaseOrderPage";
+import ReceiptPage from "./pages/ReceiptPage";
+
+import VendorInvoicePage from "./pages/VendorInvoicePage";
+import PayablesQueuePage from "./pages/PayablesQueuePage";
+
+import FinanceOverviewPage from "./pages/FinanceOverviewPage";
+import FinanceMyWorkPage from "./pages/FinanceMyWorkPage";
+import PaymentVoucherPage from "./pages/PaymentVoucherPage";
+import PaymentVouchersPage from "./pages/PaymentVouchersPage";
+
 import CompanyEmailSettingsPage from "./pages/CompanyEmailSettingsPage";
 
 function Protected({children}){
@@ -28,7 +42,7 @@ function Protected({children}){
 }
 
 export default function App(){
-  const basename=import.meta.env.PROD?"/ops":"/";
+  const basename=import.meta.env.PROD?"/app/ops":"/";
 
   return(
     <BrowserRouter basename={basename}>
@@ -55,6 +69,22 @@ export default function App(){
         <Route path="/procurement/policies" element={<Protected><ProcurementPoliciesPage/></Protected>}/>
         <Route path="/procurement/vendors" element={<Protected><ProcurementVendorsPage/></Protected>}/>
         <Route path="/procurement/settings" element={<Protected><ProcurementSettingsPage/></Protected>}/>
+        <Route path="/procurement/:caseId/evaluation" element={<Protected><QuoteEvaluationPage/></Protected>}/>
+        <Route path="/procurement/:caseId/award" element={<Protected><AwardPage/></Protected>}/>
+        <Route path="/procurement/:caseId/purchase-order/:poId" element={<Protected><PurchaseOrderPage/></Protected>}/>
+        <Route path="/procurement/:caseId/receipts/:receiptId" element={<Protected><ReceiptPage/></Protected>}/>
+
+        <Route path="/accounts-payable/invoices/:invoiceId" element={<Protected><VendorInvoicePage/></Protected>}/>
+
+        <Route path="/finance" element={<Protected><FinanceOverviewPage/></Protected>}/>
+        <Route path="/finance/my-work" element={<Protected><FinanceMyWorkPage/></Protected>}/>
+        <Route path="/finance/payables/invoices" element={<Protected><PayablesQueuePage queue="inbox"/></Protected>}/>
+        <Route path="/finance/payables/matching" element={<Protected><PayablesQueuePage queue="matching"/></Protected>}/>
+        <Route path="/finance/payables/exceptions" element={<Protected><PayablesQueuePage queue="exceptions"/></Protected>}/>
+        <Route path="/finance/payables/ready" element={<Protected><PayablesQueuePage queue="ready"/></Protected>}/>
+        <Route path="/finance/payables/invoices/:invoiceId" element={<Protected><VendorInvoicePage/></Protected>}/>
+        <Route path="/finance/payables/invoices/:invoiceId/payment-voucher" element={<Protected><PaymentVoucherPage/></Protected>}/>
+        <Route path="/finance/payables/payment-vouchers" element={<Protected><PaymentVouchersPage/></Protected>}/>
 
         <Route path="/settings/company" element={<Protected><SettingsPage section="company"/></Protected>}/>
         <Route path="/settings/email" element={<Protected><SettingsPage section="email"/></Protected>}/>

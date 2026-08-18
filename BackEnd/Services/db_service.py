@@ -51,7 +51,10 @@ from flask import (
 import base64
 import hashlib
 from cryptography.fernet import Fernet,InvalidToken
-from werkzeug.security import generate_password_hash
+from werkzeug.security import (
+    check_password_hash,
+    generate_password_hash,
+)
 import secrets
 from dateutil.relativedelta import relativedelta
 from psycopg2 import errorcodes
@@ -5535,7 +5538,7 @@ class DatabaseService:
                     raise
 
         print("[MASTER-DDL] base master tables committed")
-
+        self.ensure_public_vat_master()
         self.ensure_ops_master()
 
         print("[MASTER-DDL] FinSage Nexus master schema done")
@@ -6269,7 +6272,1137 @@ class DatabaseService:
                 ON DELETE SET NULL;
             END IF;
         END $$;
+
         """)
+
+    def ensure_public_vat_master(self):
+        ddl = """
+        CREATE TABLE IF NOT EXISTS public.vat_authorities (
+            id SERIAL PRIMARY KEY,
+
+            authority_code VARCHAR(20) NOT NULL UNIQUE,
+            country_code VARCHAR(2) NOT NULL,
+
+            name TEXT NOT NULL,
+            tax_name TEXT NOT NULL DEFAULT 'VAT',
+            currency_code VARCHAR(3) NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS public.vat_regimes (
+            id SERIAL PRIMARY KEY,
+
+            authority_id INT NOT NULL
+                REFERENCES public.vat_authorities(id),
+
+            regime_code VARCHAR(50) NOT NULL,
+            regime_name TEXT NOT NULL,
+
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+
+            default_rate NUMERIC(9,6) NULL,
+
+            legislation_reference TEXT NULL,
+            guidance_reference TEXT NULL,
+
+            is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+            verified_at TIMESTAMPTZ NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE (
+                authority_id,
+                regime_code,
+                effective_from
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS public.vat_rates (
+            id SERIAL PRIMARY KEY,
+
+            regime_id INT NOT NULL
+                REFERENCES public.vat_regimes(id),
+
+            rate_code VARCHAR(50) NOT NULL,
+            name TEXT NOT NULL,
+
+            rate NUMERIC(9,6) NOT NULL DEFAULT 0,
+
+            treatment VARCHAR(30) NOT NULL,
+
+            recoverable_default BOOLEAN NOT NULL DEFAULT TRUE,
+            applies_to_sales BOOLEAN NOT NULL DEFAULT TRUE,
+            applies_to_purchases BOOLEAN NOT NULL DEFAULT TRUE,
+
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+
+            legislation_reference TEXT NULL,
+            guidance_reference TEXT NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            UNIQUE (
+                regime_id,
+                rate_code,
+                effective_from
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS public.vat_period_rules (
+            id SERIAL PRIMARY KEY,
+
+            regime_id INT NOT NULL
+                REFERENCES public.vat_regimes(id),
+
+            category_code VARCHAR(30) NOT NULL,
+            name TEXT NOT NULL,
+
+            frequency VARCHAR(30) NOT NULL,
+            period_months INT NOT NULL,
+
+            anchor_month INT NULL,
+
+            return_due_rule VARCHAR(50) NOT NULL,
+            payment_due_rule VARCHAR(50) NOT NULL,
+
+            filing_channel VARCHAR(30) NOT NULL DEFAULT 'electronic',
+
+            eligibility_rule JSONB NULL,
+
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            UNIQUE (
+                regime_id,
+                category_code,
+                filing_channel,
+                effective_from
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS public.vat_return_specs (
+            id SERIAL PRIMARY KEY,
+
+            regime_id INT NOT NULL
+                REFERENCES public.vat_regimes(id),
+
+            return_code VARCHAR(40) NOT NULL,
+            return_name TEXT NOT NULL,
+
+            spec_version VARCHAR(50) NOT NULL,
+
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+
+            filing_method VARCHAR(30) NULL,
+
+            official_form_reference TEXT NULL,
+            guidance_reference TEXT NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            UNIQUE (
+                regime_id,
+                return_code,
+                spec_version
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS public.vat_return_boxes (
+            id SERIAL PRIMARY KEY,
+
+            return_spec_id INT NOT NULL
+                REFERENCES public.vat_return_specs(id),
+
+            box_code VARCHAR(30) NOT NULL,
+            box_name TEXT NOT NULL,
+
+            section VARCHAR(50) NOT NULL,
+
+            side VARCHAR(20) NULL,
+
+            value_type VARCHAR(30) NOT NULL,
+
+            calculated BOOLEAN NOT NULL DEFAULT FALSE,
+            calculation_expression TEXT NULL,
+
+            sort_order INT NOT NULL DEFAULT 0,
+
+            is_required BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            UNIQUE (
+                return_spec_id,
+                box_code
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS public.vat_return_box_rules (
+            id SERIAL PRIMARY KEY,
+
+            return_spec_id INT NOT NULL
+                REFERENCES public.vat_return_specs(id),
+
+            box_id INT NOT NULL
+                REFERENCES public.vat_return_boxes(id),
+
+            vat_side VARCHAR(20) NULL,
+
+            tax_treatment VARCHAR(30) NULL,
+            transaction_type VARCHAR(40) NULL,
+
+            capital BOOLEAN NULL,
+            import_transaction BOOLEAN NULL,
+            export_transaction BOOLEAN NULL,
+
+            adjustment_type VARCHAR(40) NULL,
+
+            source_value VARCHAR(30) NOT NULL,
+
+            multiplier NUMERIC(18,6)
+                NOT NULL DEFAULT 1,
+
+            priority INT NOT NULL DEFAULT 100,
+
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+
+            rule_json JSONB NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE
+        );
+
+        CREATE TABLE IF NOT EXISTS public.vat_validation_rules (
+            id SERIAL PRIMARY KEY,
+
+            return_spec_id INT NOT NULL
+                REFERENCES public.vat_return_specs(id),
+
+            rule_code VARCHAR(60) NOT NULL,
+            name TEXT NOT NULL,
+
+            severity VARCHAR(20) NOT NULL,
+            rule_type VARCHAR(30) NOT NULL,
+
+            rule_json JSONB NULL,
+
+            message TEXT NOT NULL,
+
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            UNIQUE (
+                return_spec_id,
+                rule_code,
+                effective_from
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS public.vat_rule_sources (
+            id SERIAL PRIMARY KEY,
+
+            authority_id INT NOT NULL
+                REFERENCES public.vat_authorities(id),
+
+            regime_id INT NULL
+                REFERENCES public.vat_regimes(id),
+
+            source_type VARCHAR(30) NOT NULL,
+
+            title TEXT NOT NULL,
+            reference TEXT NULL,
+
+            source_url TEXT NULL,
+
+            published_date DATE NULL,
+            effective_from DATE NULL,
+
+            verified_at TIMESTAMPTZ NULL,
+
+            notes TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS vat_regimes_authority_idx
+            ON public.vat_regimes(
+                authority_id,
+                effective_from,
+                effective_to
+            );
+
+        CREATE INDEX IF NOT EXISTS vat_rates_regime_idx
+            ON public.vat_rates(
+                regime_id,
+                effective_from,
+                effective_to
+            );
+
+        CREATE INDEX IF NOT EXISTS vat_period_rules_regime_idx
+            ON public.vat_period_rules(
+                regime_id,
+                category_code
+            );
+
+        CREATE INDEX IF NOT EXISTS vat_return_specs_regime_idx
+            ON public.vat_return_specs(
+                regime_id,
+                effective_from,
+                effective_to
+            );
+
+        CREATE INDEX IF NOT EXISTS vat_return_boxes_spec_idx
+            ON public.vat_return_boxes(
+                return_spec_id,
+                sort_order
+            );
+
+        CREATE INDEX IF NOT EXISTS vat_return_box_rules_spec_idx
+            ON public.vat_return_box_rules(
+                return_spec_id,
+                priority
+            );
+
+        CREATE INDEX IF NOT EXISTS vat_validation_rules_spec_idx
+            ON public.vat_validation_rules(
+                return_spec_id
+            );
+        """
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(ddl)
+            conn.commit()
+
+        self.seed_public_vat_master()
+
+    def seed_public_vat_master(self):
+        authorities = [
+            (
+                "SARS",
+                "ZA",
+                "South African Revenue Service",
+                "Value-Added Tax",
+                "ZAR",
+            ),
+            (
+                "RSL",
+                "LS",
+                "Revenue Services Lesotho",
+                "Value Added Tax",
+                "LSL",
+            ),
+            (
+                "BURS",
+                "BW",
+                "Botswana Unified Revenue Service",
+                "Value Added Tax",
+                "BWP",
+            ),
+        ]
+
+        for row in authorities:
+            self.execute_sql("""
+                INSERT INTO public.vat_authorities (
+                    authority_code,
+                    country_code,
+                    name,
+                    tax_name,
+                    currency_code
+                )
+                VALUES (%s,%s,%s,%s,%s)
+                ON CONFLICT (authority_code)
+                DO UPDATE SET
+                    country_code=EXCLUDED.country_code,
+                    name=EXCLUDED.name,
+                    tax_name=EXCLUDED.tax_name,
+                    currency_code=EXCLUDED.currency_code,
+                    is_active=TRUE,
+                    updated_at=NOW();
+            """, row)
+
+        self._seed_sars_vat_master()
+        self._seed_rsl_vat_master()
+        self._seed_burs_vat_master()
+
+    def _seed_sars_vat_master(self):
+        authority = self.fetch_one("""
+            SELECT id
+            FROM public.vat_authorities
+            WHERE authority_code='SARS'
+            LIMIT 1;
+        """)
+
+        if not authority:
+            return
+
+        regime = self.fetch_one("""
+            INSERT INTO public.vat_regimes (
+                authority_id,
+                regime_code,
+                regime_name,
+                effective_from,
+                legislation_reference,
+                guidance_reference,
+                is_verified,
+                verified_at
+            )
+            VALUES (
+                %s,
+                'ZA_VAT_15',
+                'South Africa VAT - 15 percent regime',
+                DATE '2018-04-01',
+                'Value-Added Tax Act 89 of 1991',
+                'SARS VAT404 / VAT201 guidance',
+                TRUE,
+                NOW()
+            )
+            ON CONFLICT (
+                authority_id,
+                regime_code,
+                effective_from
+            )
+            DO UPDATE SET
+                is_active=TRUE,
+                is_verified=TRUE,
+                verified_at=NOW(),
+                updated_at=NOW()
+            RETURNING id;
+        """, (authority["id"],))
+
+        regime_id = int(regime["id"])
+
+        rates = [
+            (
+                "STANDARD",
+                "Standard-rated supplies",
+                0.15,
+                "standard",
+                True,
+                True,
+            ),
+            (
+                "ZERO",
+                "Zero-rated supplies",
+                0.00,
+                "zero",
+                True,
+                True,
+            ),
+            (
+                "EXEMPT",
+                "Exempt supplies",
+                0.00,
+                "exempt",
+                False,
+                False,
+            ),
+            (
+                "OUT_OF_SCOPE",
+                "Outside scope of VAT",
+                0.00,
+                "out_of_scope",
+                False,
+                False,
+            ),
+        ]
+
+        for (
+            rate_code,
+            name,
+            rate,
+            treatment,
+            sales,
+            purchases,
+        ) in rates:
+            self.execute_sql("""
+                INSERT INTO public.vat_rates (
+                    regime_id,
+                    rate_code,
+                    name,
+                    rate,
+                    treatment,
+                    recoverable_default,
+                    applies_to_sales,
+                    applies_to_purchases,
+                    effective_from,
+                    guidance_reference
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,%s,%s,
+                    DATE '2018-04-01',
+                    'SARS VAT guidance'
+                )
+                ON CONFLICT (
+                    regime_id,
+                    rate_code,
+                    effective_from
+                )
+                DO UPDATE SET
+                    name=EXCLUDED.name,
+                    rate=EXCLUDED.rate,
+                    treatment=EXCLUDED.treatment,
+                    applies_to_sales=EXCLUDED.applies_to_sales,
+                    applies_to_purchases=EXCLUDED.applies_to_purchases,
+                    is_active=TRUE;
+            """, (
+                regime_id,
+                rate_code,
+                name,
+                rate,
+                treatment,
+                purchases,
+                sales,
+                purchases,
+            ))
+
+        period_rules = [
+            (
+                "A",
+                "Category A - Jan/Mar/May/Jul/Sep/Nov",
+                "bi_monthly",
+                2,
+                12,
+            ),
+            (
+                "B",
+                "Category B - Feb/Apr/Jun/Aug/Oct/Dec",
+                "bi_monthly",
+                2,
+                1,
+            ),
+            (
+                "C",
+                "Category C - Monthly",
+                "monthly",
+                1,
+                1,
+            ),
+            (
+                "D",
+                "Category D - Six monthly",
+                "semi_annual",
+                6,
+                9,
+            ),
+            (
+                "E",
+                "Category E - Annual",
+                "annual",
+                12,
+                1,
+            ),
+        ]
+
+        for (
+            category,
+            name,
+            frequency,
+            months,
+            anchor,
+        ) in period_rules:
+            for channel in ("efiling", "manual"):
+                due_rule = (
+                    "last_business_day_next_month"
+                    if channel == "efiling"
+                    else "day_25_next_month_previous_business_day"
+                )
+
+                self.execute_sql("""
+                    INSERT INTO public.vat_period_rules (
+                        regime_id,
+                        category_code,
+                        name,
+                        frequency,
+                        period_months,
+                        anchor_month,
+                        return_due_rule,
+                        payment_due_rule,
+                        filing_channel,
+                        effective_from,
+                        is_default
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,
+                        DATE '2018-04-01',
+                        %s
+                    )
+                    ON CONFLICT (
+                        regime_id,
+                        category_code,
+                        filing_channel,
+                        effective_from
+                    )
+                    DO UPDATE SET
+                        name=EXCLUDED.name,
+                        frequency=EXCLUDED.frequency,
+                        period_months=EXCLUDED.period_months,
+                        anchor_month=EXCLUDED.anchor_month,
+                        return_due_rule=EXCLUDED.return_due_rule,
+                        payment_due_rule=EXCLUDED.payment_due_rule,
+                        is_active=TRUE;
+                """, (
+                    regime_id,
+                    category,
+                    name,
+                    frequency,
+                    months,
+                    anchor,
+                    due_rule,
+                    due_rule,
+                    channel,
+                    category == "B" and channel == "efiling",
+                ))
+
+    def _seed_rsl_vat_master(self):
+        authority = self.fetch_one("""
+            SELECT id
+            FROM public.vat_authorities
+            WHERE authority_code='RSL'
+            LIMIT 1;
+        """)
+
+        if not authority:
+            return
+
+        regime = self.fetch_one("""
+            INSERT INTO public.vat_regimes (
+                authority_id,
+                regime_code,
+                regime_name,
+                effective_from,
+                legislation_reference,
+                guidance_reference,
+                is_verified,
+                verified_at
+            )
+            VALUES (
+                %s,
+                'LS_VAT_CURRENT',
+                'Lesotho VAT Current Regime',
+                DATE '2021-01-01',
+                'Value Added Tax Act 2001, as amended',
+                'Revenue Services Lesotho VAT guidance',
+                TRUE,
+                NOW()
+            )
+            ON CONFLICT (
+                authority_id,
+                regime_code,
+                effective_from
+            )
+            DO UPDATE SET
+                is_active=TRUE,
+                is_verified=TRUE,
+                verified_at=NOW(),
+                updated_at=NOW()
+            RETURNING id;
+        """, (authority["id"],))
+
+        regime_id = int(regime["id"])
+
+        rates = [
+            ("STANDARD_15", "Other goods and services", 0.15, "standard"),
+            ("TELECOM_15", "Telecommunications", 0.15, "standard"),
+            ("ELECTRICITY_10", "Electricity", 0.10, "reduced"),
+            ("ZERO", "Exports and basic commodities", 0.00, "zero"),
+            ("EXEMPT", "Exempt supplies", 0.00, "exempt"),
+            ("OUT_OF_SCOPE", "Outside scope", 0.00, "out_of_scope"),
+        ]
+
+        for code, name, rate, treatment in rates:
+            self.execute_sql("""
+                INSERT INTO public.vat_rates (
+                    regime_id,
+                    rate_code,
+                    name,
+                    rate,
+                    treatment,
+                    recoverable_default,
+                    applies_to_sales,
+                    applies_to_purchases,
+                    effective_from,
+                    guidance_reference
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,
+                    %s,TRUE,TRUE,
+                    DATE '2021-01-01',
+                    'RSL published VAT rates'
+                )
+                ON CONFLICT (
+                    regime_id,
+                    rate_code,
+                    effective_from
+                )
+                DO UPDATE SET
+                    name=EXCLUDED.name,
+                    rate=EXCLUDED.rate,
+                    treatment=EXCLUDED.treatment,
+                    is_active=TRUE;
+            """, (
+                regime_id,
+                code,
+                name,
+                rate,
+                treatment,
+                treatment not in ("exempt", "out_of_scope"),
+            ))
+
+        self.execute_sql("""
+            INSERT INTO public.vat_period_rules (
+                regime_id,
+                category_code,
+                name,
+                frequency,
+                period_months,
+                anchor_month,
+                return_due_rule,
+                payment_due_rule,
+                filing_channel,
+                effective_from,
+                is_default
+            )
+            VALUES (
+                %s,
+                'MONTHLY',
+                'Monthly VAT Return',
+                'monthly',
+                1,
+                1,
+                'day_20_next_month',
+                'day_20_next_month',
+                'electronic',
+                DATE '2021-01-01',
+                TRUE
+            )
+            ON CONFLICT (
+                regime_id,
+                category_code,
+                filing_channel,
+                effective_from
+            )
+            DO UPDATE SET
+                is_active=TRUE;
+        """, (regime_id,))
+
+    def _seed_burs_vat_master(self):
+        authority = self.fetch_one("""
+            SELECT id
+            FROM public.vat_authorities
+            WHERE authority_code='BURS'
+            LIMIT 1;
+        """)
+
+        if not authority:
+            return
+
+        regime = self.fetch_one("""
+            INSERT INTO public.vat_regimes (
+                authority_id,
+                regime_code,
+                regime_name,
+                effective_from,
+                legislation_reference,
+                guidance_reference,
+                is_verified,
+                verified_at
+            )
+            VALUES (
+                %s,
+                'BW_VAT_12',
+                'Botswana VAT 12 percent regime',
+                DATE '2023-04-01',
+                'Value Added Tax Act, Cap 50:03',
+                'BURS Value Added Tax guidance',
+                TRUE,
+                NOW()
+            )
+            ON CONFLICT (
+                authority_id,
+                regime_code,
+                effective_from
+            )
+            DO UPDATE SET
+                is_active=TRUE,
+                is_verified=TRUE,
+                verified_at=NOW(),
+                updated_at=NOW()
+            RETURNING id;
+        """, (authority["id"],))
+
+        regime_id = int(regime["id"])
+
+        rates = [
+            ("STANDARD", "Standard-rated supplies", 0.12, "standard"),
+            ("ZERO", "Zero-rated supplies", 0.00, "zero"),
+            ("EXEMPT", "Exempt supplies", 0.00, "exempt"),
+            ("OUT_OF_SCOPE", "Outside scope", 0.00, "out_of_scope"),
+        ]
+
+        for code, name, rate, treatment in rates:
+            self.execute_sql("""
+                INSERT INTO public.vat_rates (
+                    regime_id,
+                    rate_code,
+                    name,
+                    rate,
+                    treatment,
+                    recoverable_default,
+                    applies_to_sales,
+                    applies_to_purchases,
+                    effective_from,
+                    guidance_reference
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,
+                    %s,TRUE,TRUE,
+                    DATE '2023-04-01',
+                    'BURS VAT guidance'
+                )
+                ON CONFLICT (
+                    regime_id,
+                    rate_code,
+                    effective_from
+                )
+                DO UPDATE SET
+                    rate=EXCLUDED.rate,
+                    name=EXCLUDED.name,
+                    treatment=EXCLUDED.treatment,
+                    is_active=TRUE;
+            """, (
+                regime_id,
+                code,
+                name,
+                rate,
+                treatment,
+                treatment not in ("exempt", "out_of_scope"),
+            ))
+
+        period_rules = [
+            ("A", "Category A - Two monthly", "bi_monthly", 2, 1),
+            ("B", "Category B - Two monthly", "bi_monthly", 2, 2),
+            ("C", "Category C - Monthly", "monthly", 1, 1),
+        ]
+
+        for category, name, frequency, months, anchor in period_rules:
+            self.execute_sql("""
+                INSERT INTO public.vat_period_rules (
+                    regime_id,
+                    category_code,
+                    name,
+                    frequency,
+                    period_months,
+                    anchor_month,
+                    return_due_rule,
+                    payment_due_rule,
+                    filing_channel,
+                    effective_from,
+                    is_default
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,
+                    'days_after_period_end_25',
+                    'days_after_period_end_25',
+                    'electronic',
+                    DATE '2023-04-01',
+                    %s
+                )
+                ON CONFLICT (
+                    regime_id,
+                    category_code,
+                    filing_channel,
+                    effective_from
+                )
+                DO UPDATE SET
+                    is_active=TRUE;
+            """, (
+                regime_id,
+                category,
+                name,
+                frequency,
+                months,
+                anchor,
+                category == "A",
+            ))
+
+    def _resolve_vat_authority(self, country):
+        country = str(country or "").strip().upper()
+
+        aliases = {
+            "ZA": "SARS",
+            "ZAF": "SARS",
+            "SOUTH AFRICA": "SARS",
+
+            "LS": "RSL",
+            "LSO": "RSL",
+            "LESOTHO": "RSL",
+
+            "BW": "BURS",
+            "BWA": "BURS",
+            "BOTSWANA": "BURS",
+        }
+
+        return aliases.get(country)
+
+    def vat_company_context(self, company_id: int, as_of=None) -> dict:
+        company_id = int(company_id)
+
+        if as_of is None:
+            as_of = date.today()
+        elif not isinstance(as_of, date):
+            as_of = date.fromisoformat(str(as_of)[:10])
+
+        company = self.fetch_one("""
+            SELECT
+                id,
+                name,
+                country,
+                currency,
+                vat,
+                tin,
+                vat_settings
+            FROM public.companies
+            WHERE id=%s
+            LIMIT 1;
+        """, (company_id,)) or {}
+
+        settings = company.get("vat_settings") or {}
+
+        authority_code = (
+            settings.get("authority_code")
+            or self._resolve_vat_authority(company.get("country"))
+        )
+
+        if not authority_code:
+            return {
+                "ok": False,
+                "configured": False,
+                "company_id": company_id,
+                "settings": settings,
+                "reason": "No supported VAT authority for company country.",
+            }
+
+        authority = self.fetch_one("""
+            SELECT *
+            FROM public.vat_authorities
+            WHERE authority_code=%s
+            AND is_active=TRUE
+            LIMIT 1;
+        """, (authority_code,))
+
+        if not authority:
+            raise ValueError(
+                f"VAT authority {authority_code} is not configured"
+            )
+
+        regime = self.fetch_one("""
+            SELECT *
+            FROM public.vat_regimes
+            WHERE authority_id=%s
+            AND is_active=TRUE
+            AND effective_from <= %s
+            AND (
+                    effective_to IS NULL
+                    OR effective_to >= %s
+            )
+            ORDER BY effective_from DESC
+            LIMIT 1;
+        """, (
+            authority["id"],
+            as_of,
+            as_of,
+        ))
+
+        if not regime:
+            raise ValueError(
+                f"No active VAT regime for {authority_code} on {as_of}"
+            )
+
+        rates = self.fetch_all("""
+            SELECT *
+            FROM public.vat_rates
+            WHERE regime_id=%s
+            AND is_active=TRUE
+            AND effective_from <= %s
+            AND (
+                    effective_to IS NULL
+                    OR effective_to >= %s
+            )
+            ORDER BY rate DESC, rate_code;
+        """, (
+            regime["id"],
+            as_of,
+            as_of,
+        ))
+
+        requested_category = (
+            settings.get("period_category")
+            or settings.get("category_code")
+        )
+
+        filing_channel = (
+            settings.get("filing_channel")
+            or (
+                "efiling"
+                if authority_code == "SARS"
+                else "electronic"
+            )
+        )
+
+        period_rule = None
+
+        if requested_category:
+            period_rule = self.fetch_one("""
+                SELECT *
+                FROM public.vat_period_rules
+                WHERE regime_id=%s
+                AND category_code=%s
+                AND filing_channel=%s
+                AND is_active=TRUE
+                AND effective_from <= %s
+                AND (
+                        effective_to IS NULL
+                        OR effective_to >= %s
+                )
+                ORDER BY effective_from DESC
+                LIMIT 1;
+            """, (
+                regime["id"],
+                requested_category,
+                filing_channel,
+                as_of,
+                as_of,
+            ))
+
+        if not period_rule:
+            period_rule = self.fetch_one("""
+                SELECT *
+                FROM public.vat_period_rules
+                WHERE regime_id=%s
+                AND filing_channel=%s
+                AND is_active=TRUE
+                AND effective_from <= %s
+                AND (
+                        effective_to IS NULL
+                        OR effective_to >= %s
+                )
+                ORDER BY is_default DESC, effective_from DESC, id
+                LIMIT 1;
+            """, (
+                regime["id"],
+                filing_channel,
+                as_of,
+                as_of,
+            ))
+
+        return {
+            "ok": True,
+            "configured": True,
+
+            "company_id": company_id,
+
+            "authority_code": authority_code,
+            "authority": authority,
+            "regime": regime,
+            "rates": rates,
+            "period_rule": period_rule,
+
+            "settings": settings,
+
+            "vat_registration_number": (
+                settings.get("vat_registration_number")
+                or company.get("vat")
+            ),
+
+            "tin": company.get("tin"),
+        }
+
+    def get_vat_settings(self, company_id: int) -> dict:
+        row = self.fetch_one("""
+            SELECT
+                country,
+                vat,
+                tin,
+                vat_settings
+            FROM public.companies
+            WHERE id=%s
+            LIMIT 1;
+        """, (int(company_id),)) or {}
+
+        settings = row.get("vat_settings") or {}
+
+        return {
+            **settings,
+            "authority_code": (
+                settings.get("authority_code")
+                or self._resolve_vat_authority(row.get("country"))
+            ),
+            "vat_registration_number": (
+                settings.get("vat_registration_number")
+                or row.get("vat")
+            ),
+        }
+
+    def update_vat_settings(
+        self,
+        company_id: int,
+        data: dict,
+    ) -> dict:
+        company_id = int(company_id)
+
+        existing = self.get_vat_settings(company_id) or {}
+
+        allowed = {
+            "enabled",
+            "authority_code",
+            "vat_registration_number",
+            "period_category",
+            "filing_channel",
+            "customs_code",
+            "reminder_days",
+            "vat_input_code",
+            "vat_output_code",
+            "default_tax_code",
+        }
+
+        updated = {
+            **existing,
+        }
+
+        for key in allowed:
+            if key in data:
+                updated[key] = data.get(key)
+
+        # Remove derived/legacy settings going forward.
+        updated.pop("frequency", None)
+        updated.pop("filing_lag_days", None)
+        updated.pop("anchor_month", None)
+
+        row = self.fetch_one("""
+            UPDATE public.companies
+            SET
+                vat_settings=%s::jsonb
+            WHERE id=%s
+            RETURNING vat_settings;
+        """, (
+            json.dumps(updated),
+            company_id,
+        ))
+
+        return (row or {}).get("vat_settings") or updated
 
     def insert_policy_acceptance(
         self,
@@ -8508,6 +9641,229 @@ class DatabaseService:
 
         return settings
 
+    def _vat_last_day_of_month(
+        self,
+        year: int,
+        month: int,
+    ) -> date:
+        if month == 12:
+            return date(year, 12, 31)
+
+        return (
+            date(year, month + 1, 1)
+            - timedelta(days=1)
+        )
+
+
+    def _vat_previous_business_day(
+        self,
+        value: date,
+    ) -> date:
+        out = value
+
+        while out.weekday() >= 5:
+            out -= timedelta(days=1)
+
+        return out
+
+
+    def vat_due_date(
+        self,
+        period_end: date,
+        due_rule: str,
+    ) -> date:
+        if not isinstance(period_end, date):
+            period_end = date.fromisoformat(
+                str(period_end)[:10]
+            )
+
+        due_rule = str(
+            due_rule or ""
+        ).strip().lower()
+
+        next_year = period_end.year
+        next_month = period_end.month + 1
+
+        if next_month > 12:
+            next_month = 1
+            next_year += 1
+
+        if due_rule == "last_business_day_next_month":
+            month_end = self._vat_last_day_of_month(
+                next_year,
+                next_month,
+            )
+
+            return self._vat_previous_business_day(
+                month_end
+            )
+
+        if (
+            due_rule
+            == "day_25_next_month_previous_business_day"
+        ):
+            return self._vat_previous_business_day(
+                date(
+                    next_year,
+                    next_month,
+                    25,
+                )
+            )
+
+        if due_rule == "day_20_next_month":
+            return date(
+                next_year,
+                next_month,
+                20,
+            )
+
+        if due_rule == "days_after_period_end_25":
+            return period_end + timedelta(days=25)
+
+        raise ValueError(
+            f"Unsupported VAT due-date rule: {due_rule}"
+        )
+
+    def vat_build_periods(
+        self,
+        company_id: int,
+        year: int,
+    ) -> list:
+        company_id = int(company_id)
+        year = int(year)
+
+        ctx = self.vat_company_context(
+            company_id,
+            date(year, 6, 30),
+        )
+
+        rule = ctx.get("period_rule")
+
+        if not rule:
+            return []
+
+        months = int(
+            rule.get("period_months") or 1
+        )
+
+        anchor_month = int(
+            rule.get("anchor_month") or 1
+        )
+
+        anchor_month = max(
+            1,
+            min(12, anchor_month),
+        )
+
+        due_rule = rule.get(
+            "return_due_rule"
+        )
+
+        periods = []
+
+        start_index = anchor_month - 1
+
+        # Enough loops to cover the requested year
+        for k in range(0, 24):
+            month_index = (
+                start_index + k * months
+            )
+
+            start_year = (
+                year + month_index // 12
+            )
+
+            start_month = (
+                month_index % 12
+            ) + 1
+
+            start_date = date(
+                start_year,
+                start_month,
+                1,
+            )
+
+            end_index = (
+                month_index + months - 1
+            )
+
+            end_year = (
+                year + end_index // 12
+            )
+
+            end_month = (
+                end_index % 12
+            ) + 1
+
+            end_date = self._vat_last_day_of_month(
+                end_year,
+                end_month,
+            )
+
+            # Stop once we're well beyond target year
+            if start_date.year > year + 1:
+                break
+
+            # Keep periods touching requested year
+            if (
+                start_date.year != year
+                and end_date.year != year
+            ):
+                continue
+
+            if months == 1:
+                label = start_date.strftime(
+                    "%b %Y"
+                )
+
+            elif (
+                start_date.year
+                == end_date.year
+            ):
+                label = (
+                    f"{start_date.strftime('%b')}"
+                    f"–{end_date.strftime('%b')} "
+                    f"{end_date.year}"
+                )
+
+            else:
+                label = (
+                    f"{start_date.strftime('%b')} "
+                    f"{start_date.year}"
+                    f"–"
+                    f"{end_date.strftime('%b')} "
+                    f"{end_date.year}"
+                )
+
+            due_date = self.vat_due_date(
+                end_date,
+                due_rule,
+            )
+
+            periods.append({
+                "label": label,
+
+                "start_date": start_date,
+                "end_date": end_date,
+                "due_date": due_date,
+
+                "authority_code":
+                    ctx.get("authority_code"),
+
+                "category_code":
+                    rule.get("category_code"),
+
+                "frequency":
+                    rule.get("frequency"),
+
+                "filing_channel":
+                    rule.get("filing_channel"),
+
+                "return_due_rule":
+                    due_rule,
+            })
+
+        return periods
 
     def save_vat_settings(self, company_id: int, settings: dict) -> bool:
         sql = "UPDATE public.companies SET vat_settings=%s WHERE id=%s;"
@@ -19811,7 +21167,7 @@ class DatabaseService:
             migration_version=self.IAS41_MIGRATION_VERSION,
         )
 
-    MIGRATION_WORKSPACE_MIGRATION_VERSION = 15
+    MIGRATION_WORKSPACE_MIGRATION_VERSION = 16
     def ensure_schema_migration(
         self,
         company_id: int,
@@ -20804,6 +22160,42 @@ class DatabaseService:
                 'create_only',
                 FALSE,
                 840
+            ),
+
+            (
+                'pos_configuration',
+                'pos',
+                'Point of Sale',
+                'POS Configuration',
+                'POS terminals, saleable catalogue and payment method configuration.',
+                'opening',
+                'create_or_update',
+                FALSE,
+                610
+            ),
+
+            (
+                'pos_menu',
+                'pos',
+                'Point of Sale',
+                'POS Menu & Recipes',
+                'POS menu items, recipe components, add-ons and inventory consumption mappings.',
+                'opening',
+                'create_or_update',
+                FALSE,
+                620
+            ),
+
+            (
+                'pos_history',
+                'pos',
+                'Point of Sale',
+                'POS Sales History',
+                'Historical POS sales, sale lines, payments, refunds and voids.',
+                'full_history',
+                'create_only',
+                FALSE,
+                630
             )
         ON CONFLICT (code)
         DO UPDATE SET
@@ -21176,6 +22568,55 @@ class DatabaseService:
                 'required',
                 'Accrual and deferral opening positions require a currency.',
                 20
+            ),
+            (
+                'pos_configuration',
+                'products',
+                'required',
+                'POS catalogue requires migrated or existing products and services.',
+                10
+            ),
+            (
+                'pos_configuration',
+                'warehouses',
+                'recommended',
+                'POS terminals may be linked to inventory locations.',
+                20
+            ),
+            (
+                'pos_menu',
+                'products',
+                'required',
+                'POS menu items require migrated or existing products and inventory items.',
+                10
+            ),
+            (
+                'pos_menu',
+                'pos_configuration',
+                'required',
+                'POS menu migration requires POS configuration.',
+                20
+            ),
+            (
+                'pos_history',
+                'pos_configuration',
+                'required',
+                'POS sales history requires POS terminal and payment configuration.',
+                10
+            ),
+            (
+                'pos_history',
+                'products',
+                'required',
+                'POS sales history requires product and service resolution.',
+                20
+            ),
+            (
+                'pos_history',
+                'pos_menu',
+                'recommended',
+                'Menu-based POS sales require menu item and recipe resolution.',
+                30
             )
         ON CONFLICT (
             entity_code,
@@ -23726,6 +25167,1003 @@ class DatabaseService:
             company_id,
             target_location_id
         );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_inventory_opening_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            opening_date DATE NULL,
+
+            quantity_basis TEXT NOT NULL DEFAULT 'quantity_on_hand',
+            cost_basis TEXT NOT NULL DEFAULT 'unit_cost',
+
+            default_location_id BIGINT NULL,
+
+            allow_zero_quantity BOOLEAN NOT NULL DEFAULT TRUE,
+            allow_zero_cost BOOLEAN NOT NULL DEFAULT FALSE,
+            allow_negative_quantity BOOLEAN NOT NULL DEFAULT FALSE,
+
+            require_location BOOLEAN NOT NULL DEFAULT TRUE,
+            require_cost BOOLEAN NOT NULL DEFAULT TRUE,
+
+            validate_source_value BOOLEAN NOT NULL DEFAULT TRUE,
+            value_tolerance NUMERIC(18,4) NOT NULL DEFAULT 0.05,
+
+            batch_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            expiry_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            serial_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_inventory_opening_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_inventory_opening_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT uq_migration_inventory_opening_settings
+                UNIQUE(company_id,project_id,dataset_id),
+
+            CONSTRAINT ck_migration_inventory_opening_quantity_basis
+                CHECK(quantity_basis IN(
+                    'quantity_on_hand',
+                    'available_quantity'
+                )),
+
+            CONSTRAINT ck_migration_inventory_opening_cost_basis
+                CHECK(cost_basis IN(
+                    'unit_cost',
+                    'average_cost',
+                    'total_value'
+                )),
+
+            CONSTRAINT ck_migration_inventory_opening_tolerance
+                CHECK(value_tolerance>=0)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_inventory_opening_reconciliations (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            reconciliation_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            record_count INT NOT NULL DEFAULT 0,
+            valid_count INT NOT NULL DEFAULT 0,
+            error_count INT NOT NULL DEFAULT 0,
+            warning_count INT NOT NULL DEFAULT 0,
+
+            item_count INT NOT NULL DEFAULT 0,
+            location_count INT NOT NULL DEFAULT 0,
+
+            total_quantity NUMERIC(24,6) NOT NULL DEFAULT 0,
+            calculated_inventory_value NUMERIC(24,6) NOT NULL DEFAULT 0,
+            source_inventory_value NUMERIC(24,6) NOT NULL DEFAULT 0,
+            reconciliation_difference NUMERIC(24,6) NOT NULL DEFAULT 0,
+
+            is_reconciled BOOLEAN NOT NULL DEFAULT FALSE,
+            is_ready BOOLEAN NOT NULL DEFAULT FALSE,
+
+            summary_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            issues_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_inventory_opening_recon_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_inventory_opening_recon_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_inventory_opening_recon
+        ON {schema}.migration_inventory_opening_reconciliations(
+            company_id,
+            project_id,
+            dataset_id,
+            id DESC
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_inventory_movement_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            history_from DATE NULL,
+            history_to DATE NULL,
+
+            default_currency TEXT NULL,
+            default_location_id BIGINT NULL,
+
+            source_layout TEXT NOT NULL DEFAULT 'movement_rows',
+            movement_reference_scope TEXT NOT NULL DEFAULT 'transaction',
+
+            require_item_resolution BOOLEAN NOT NULL DEFAULT TRUE,
+            require_location_resolution BOOLEAN NOT NULL DEFAULT TRUE,
+            require_destination_for_transfer BOOLEAN NOT NULL DEFAULT TRUE,
+
+            preserve_source_cost BOOLEAN NOT NULL DEFAULT TRUE,
+            preserve_source_value BOOLEAN NOT NULL DEFAULT TRUE,
+
+            allow_negative_quantity BOOLEAN NOT NULL DEFAULT FALSE,
+            allow_zero_quantity BOOLEAN NOT NULL DEFAULT FALSE,
+
+            validate_movement_value BOOLEAN NOT NULL DEFAULT TRUE,
+            value_tolerance NUMERIC(18,4) NOT NULL DEFAULT 0.05,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_inventory_movement_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_inventory_movement_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT uq_migration_inventory_movement_settings
+                UNIQUE(company_id,project_id,dataset_id),
+
+            CONSTRAINT ck_migration_inventory_movement_layout
+                CHECK(source_layout IN(
+                    'movement_rows',
+                    'transaction_lines'
+                )),
+
+            CONSTRAINT ck_migration_inventory_movement_ref_scope
+                CHECK(movement_reference_scope IN(
+                    'transaction',
+                    'line'
+                )),
+
+            CONSTRAINT ck_migration_inventory_movement_tolerance
+                CHECK(value_tolerance>=0)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_inventory_movement_type_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_value TEXT NOT NULL,
+            source_label TEXT NULL,
+
+            target_movement_type TEXT NOT NULL,
+
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_inventory_movement_type_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_inventory_movement_type_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_inventory_movement_type
+                CHECK(target_movement_type IN(
+                    'opening',
+                    'purchase',
+                    'sale',
+                    'issue',
+                    'adjustment_in',
+                    'adjustment_out',
+                    'transfer',
+                    'stocktake',
+                    'purchase_return',
+                    'sales_return'
+                )),
+
+            CONSTRAINT ck_migration_inventory_movement_mapping_method
+                CHECK(mapping_method IN(
+                    'auto',
+                    'manual'
+                )),
+
+            CONSTRAINT uq_migration_inventory_movement_type_mapping
+                UNIQUE(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    source_value
+                )
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_inventory_movement_reconciliations (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            reconciliation_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            transaction_count INT NOT NULL DEFAULT 0,
+            line_count INT NOT NULL DEFAULT 0,
+            valid_count INT NOT NULL DEFAULT 0,
+            error_count INT NOT NULL DEFAULT 0,
+            warning_count INT NOT NULL DEFAULT 0,
+
+            quantity_in NUMERIC(24,6) NOT NULL DEFAULT 0,
+            quantity_out NUMERIC(24,6) NOT NULL DEFAULT 0,
+            net_quantity NUMERIC(24,6) NOT NULL DEFAULT 0,
+
+            movement_value_in NUMERIC(24,6) NOT NULL DEFAULT 0,
+            movement_value_out NUMERIC(24,6) NOT NULL DEFAULT 0,
+            net_movement_value NUMERIC(24,6) NOT NULL DEFAULT 0,
+
+            is_reconciled BOOLEAN NOT NULL DEFAULT FALSE,
+            is_ready BOOLEAN NOT NULL DEFAULT FALSE,
+
+            summary_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            issues_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_inventory_movement_recon_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_inventory_movement_recon_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_inventory_movement_recon
+        ON {schema}.migration_inventory_movement_reconciliations(
+            company_id,
+            project_id,
+            dataset_id,
+            id DESC
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+
+            default_location_id BIGINT NULL,
+            default_currency TEXT NULL,
+
+            migrate_terminals BOOLEAN NOT NULL DEFAULT TRUE,
+            migrate_payment_methods BOOLEAN NOT NULL DEFAULT TRUE,
+            migrate_catalogue BOOLEAN NOT NULL DEFAULT TRUE,
+
+            require_location BOOLEAN NOT NULL DEFAULT TRUE,
+            require_product_resolution BOOLEAN NOT NULL DEFAULT TRUE,
+
+            allow_services BOOLEAN NOT NULL DEFAULT TRUE,
+            allow_non_stock BOOLEAN NOT NULL DEFAULT TRUE,
+            allow_menu_items BOOLEAN NOT NULL DEFAULT TRUE,
+
+            preserve_source_prices BOOLEAN NOT NULL DEFAULT TRUE,
+            preserve_source_barcodes BOOLEAN NOT NULL DEFAULT TRUE,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT uq_migration_pos_settings
+                UNIQUE(company_id,project_id)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_terminal_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_code TEXT NULL,
+            source_name TEXT NOT NULL,
+
+            source_location_code TEXT NULL,
+            source_location_name TEXT NULL,
+
+            target_terminal_id BIGINT NULL,
+            target_terminal_code TEXT NULL,
+            target_terminal_name TEXT NULL,
+
+            target_location_id BIGINT NULL,
+
+            mapping_action TEXT NOT NULL DEFAULT 'create',
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_terminal_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_terminal_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_pos_terminal_action
+                CHECK(mapping_action IN(
+                    'map',
+                    'create',
+                    'ignore'
+                )),
+
+            CONSTRAINT ck_migration_pos_terminal_method
+                CHECK(mapping_method IN(
+                    'auto',
+                    'manual'
+                ))
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_payment_method_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_value TEXT NOT NULL,
+            source_label TEXT NULL,
+
+            target_payment_method TEXT NOT NULL,
+
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_payment_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_payment_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_pos_payment_method
+                CHECK(target_payment_method IN(
+                    'cash',
+                    'card',
+                    'eft',
+                    'mobile_money',
+                    'voucher',
+                    'credit',
+                    'other'
+                )),
+
+            CONSTRAINT uq_migration_pos_payment_mapping
+                UNIQUE(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    source_value
+                )
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_catalogue_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_code TEXT NULL,
+            source_name TEXT NOT NULL,
+            source_barcode TEXT NULL,
+            source_item_type TEXT NULL,
+
+            target_kind TEXT NOT NULL,
+
+            target_item_id BIGINT NULL,
+            target_item_code TEXT NULL,
+            target_item_name TEXT NULL,
+
+            sale_price NUMERIC(18,4) NULL,
+
+            available_for_sale BOOLEAN NOT NULL DEFAULT TRUE,
+            show_on_cashier BOOLEAN NOT NULL DEFAULT TRUE,
+            show_on_display BOOLEAN NOT NULL DEFAULT TRUE,
+
+            mapping_action TEXT NOT NULL DEFAULT 'map',
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_catalogue_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_catalogue_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_pos_catalogue_kind
+                CHECK(target_kind IN(
+                    'inventory',
+                    'service',
+                    'non_stock',
+                    'menu_item'
+                )),
+
+            CONSTRAINT ck_migration_pos_catalogue_action
+                CHECK(mapping_action IN(
+                    'map',
+                    'create',
+                    'ignore'
+                ))
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_reconciliations (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+
+            reconciliation_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            terminal_count INT NOT NULL DEFAULT 0,
+            terminal_ready_count INT NOT NULL DEFAULT 0,
+
+            payment_method_count INT NOT NULL DEFAULT 0,
+            payment_method_ready_count INT NOT NULL DEFAULT 0,
+
+            catalogue_count INT NOT NULL DEFAULT 0,
+            catalogue_ready_count INT NOT NULL DEFAULT 0,
+
+            blocking_error_count INT NOT NULL DEFAULT 0,
+            warning_count INT NOT NULL DEFAULT 0,
+
+            is_ready BOOLEAN NOT NULL DEFAULT FALSE,
+
+            summary_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            issues_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_recon_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_pos_terminal_mapping
+        ON {schema}.migration_pos_terminal_mappings(
+            company_id,project_id,dataset_id
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_migration_pos_catalogue_mapping
+        ON {schema}.migration_pos_catalogue_mappings(
+            company_id,project_id,dataset_id
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_migration_pos_reconciliation
+        ON {schema}.migration_pos_reconciliations(
+            company_id,project_id,id DESC
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_menu_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            default_currency TEXT NULL,
+
+            require_menu_code BOOLEAN NOT NULL DEFAULT TRUE,
+            require_component_resolution BOOLEAN NOT NULL DEFAULT TRUE,
+            require_positive_component_qty BOOLEAN NOT NULL DEFAULT TRUE,
+
+            preserve_source_price BOOLEAN NOT NULL DEFAULT TRUE,
+            preserve_source_cost BOOLEAN NOT NULL DEFAULT TRUE,
+
+            auto_create_menu_items BOOLEAN NOT NULL DEFAULT TRUE,
+            allow_service_components BOOLEAN NOT NULL DEFAULT FALSE,
+            allow_non_stock_components BOOLEAN NOT NULL DEFAULT FALSE,
+
+            validate_recipe_cost BOOLEAN NOT NULL DEFAULT TRUE,
+            cost_tolerance NUMERIC(18,4) NOT NULL DEFAULT 0.05,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_menu_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_menu_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT uq_migration_pos_menu_settings
+                UNIQUE(company_id,project_id,dataset_id),
+
+            CONSTRAINT ck_migration_pos_menu_cost_tolerance
+                CHECK(cost_tolerance>=0)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_menu_item_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_menu_code TEXT NULL,
+            source_menu_name TEXT NOT NULL,
+            source_category TEXT NULL,
+
+            target_menu_item_id BIGINT NULL,
+            target_menu_code TEXT NULL,
+            target_menu_name TEXT NULL,
+
+            mapping_action TEXT NOT NULL DEFAULT 'create',
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+
+            sale_price NUMERIC(18,4) NULL,
+            source_recipe_cost NUMERIC(18,6) NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            show_on_cashier BOOLEAN NOT NULL DEFAULT TRUE,
+            show_on_display BOOLEAN NOT NULL DEFAULT TRUE,
+
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_menu_item_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_menu_item_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_pos_menu_item_action
+                CHECK(mapping_action IN(
+                    'map',
+                    'create',
+                    'ignore'
+                ))
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_menu_component_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_menu_code TEXT NULL,
+            source_menu_name TEXT NOT NULL,
+
+            source_component_code TEXT NULL,
+            source_component_name TEXT NOT NULL,
+
+            component_kind TEXT NOT NULL DEFAULT 'inventory',
+
+            target_item_id BIGINT NULL,
+            target_item_code TEXT NULL,
+            target_item_name TEXT NULL,
+
+            quantity NUMERIC(18,6) NOT NULL DEFAULT 0,
+            uom TEXT NULL,
+
+            source_unit_cost NUMERIC(18,6) NULL,
+            calculated_component_cost NUMERIC(18,6) NULL,
+
+            mapping_action TEXT NOT NULL DEFAULT 'map',
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+
+            is_optional BOOLEAN NOT NULL DEFAULT FALSE,
+            is_default BOOLEAN NOT NULL DEFAULT TRUE,
+
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_menu_component_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_menu_component_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_pos_menu_component_kind
+                CHECK(component_kind IN(
+                    'inventory',
+                    'service',
+                    'non_stock'
+                )),
+
+            CONSTRAINT ck_migration_pos_menu_component_action
+                CHECK(mapping_action IN(
+                    'map',
+                    'create',
+                    'ignore'
+                ))
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_menu_addon_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_menu_code TEXT NULL,
+            source_menu_name TEXT NOT NULL,
+
+            addon_code TEXT NULL,
+            addon_name TEXT NOT NULL,
+
+            target_item_id BIGINT NULL,
+            target_item_code TEXT NULL,
+            target_item_name TEXT NULL,
+
+            additional_price NUMERIC(18,4) NOT NULL DEFAULT 0,
+            additional_cost NUMERIC(18,6) NOT NULL DEFAULT 0,
+
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            mapping_action TEXT NOT NULL DEFAULT 'map',
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_menu_addon_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_menu_addon_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_pos_menu_addon_action
+                CHECK(mapping_action IN(
+                    'map',
+                    'create',
+                    'ignore'
+                ))
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_menu_reconciliations (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            reconciliation_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            menu_item_count INT NOT NULL DEFAULT 0,
+            menu_ready_count INT NOT NULL DEFAULT 0,
+
+            component_count INT NOT NULL DEFAULT 0,
+            component_ready_count INT NOT NULL DEFAULT 0,
+
+            addon_count INT NOT NULL DEFAULT 0,
+            addon_ready_count INT NOT NULL DEFAULT 0,
+
+            total_menu_price NUMERIC(24,6) NOT NULL DEFAULT 0,
+            total_recipe_cost NUMERIC(24,6) NOT NULL DEFAULT 0,
+
+            blocking_error_count INT NOT NULL DEFAULT 0,
+            warning_count INT NOT NULL DEFAULT 0,
+
+            is_ready BOOLEAN NOT NULL DEFAULT FALSE,
+
+            summary_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            issues_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_menu_recon_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_menu_recon_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_pos_menu_item_mapping
+        ON {schema}.migration_pos_menu_item_mappings(
+            company_id,project_id,dataset_id
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_migration_pos_menu_component_mapping
+        ON {schema}.migration_pos_menu_component_mappings(
+            company_id,project_id,dataset_id
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_migration_pos_menu_reconciliation
+        ON {schema}.migration_pos_menu_reconciliations(
+            company_id,project_id,dataset_id,id DESC
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_history_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            history_from DATE NULL,
+            history_to DATE NULL,
+
+            default_currency TEXT NULL,
+            default_location_id BIGINT NULL,
+
+            source_layout TEXT NOT NULL DEFAULT 'combined',
+            require_terminal BOOLEAN NOT NULL DEFAULT TRUE,
+            require_customer BOOLEAN NOT NULL DEFAULT FALSE,
+            require_product_resolution BOOLEAN NOT NULL DEFAULT TRUE,
+            require_payment_resolution BOOLEAN NOT NULL DEFAULT TRUE,
+
+            preserve_source_prices BOOLEAN NOT NULL DEFAULT TRUE,
+            preserve_source_tax BOOLEAN NOT NULL DEFAULT TRUE,
+            preserve_source_discounts BOOLEAN NOT NULL DEFAULT TRUE,
+
+            allow_unpaid_sales BOOLEAN NOT NULL DEFAULT FALSE,
+            allow_negative_lines BOOLEAN NOT NULL DEFAULT FALSE,
+            allow_zero_value_sales BOOLEAN NOT NULL DEFAULT FALSE,
+
+            validate_sale_totals BOOLEAN NOT NULL DEFAULT TRUE,
+            validate_payment_totals BOOLEAN NOT NULL DEFAULT TRUE,
+
+            amount_tolerance NUMERIC(18,4) NOT NULL DEFAULT 0.05,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_history_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_history_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT uq_migration_pos_history_settings
+                UNIQUE(company_id,project_id,dataset_id),
+
+            CONSTRAINT ck_migration_pos_history_layout
+                CHECK(source_layout IN(
+                    'combined',
+                    'sales_only',
+                    'lines_only',
+                    'payments_only'
+                )),
+
+            CONSTRAINT ck_migration_pos_history_tolerance
+                CHECK(amount_tolerance>=0)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_sale_status_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_value TEXT NOT NULL,
+            target_status TEXT NOT NULL,
+
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_sale_status_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_sale_status_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_pos_sale_status
+                CHECK(target_status IN(
+                    'completed',
+                    'held',
+                    'cancelled',
+                    'voided',
+                    'refunded'
+                )),
+
+            CONSTRAINT uq_migration_pos_sale_status
+                UNIQUE(company_id,project_id,dataset_id,source_value)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_pos_history_reconciliations (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            reconciliation_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            sale_count INT NOT NULL DEFAULT 0,
+            sale_line_count INT NOT NULL DEFAULT 0,
+            payment_count INT NOT NULL DEFAULT 0,
+            refund_count INT NOT NULL DEFAULT 0,
+            void_count INT NOT NULL DEFAULT 0,
+
+            gross_sales NUMERIC(24,6) NOT NULL DEFAULT 0,
+            discount_total NUMERIC(24,6) NOT NULL DEFAULT 0,
+            tax_total NUMERIC(24,6) NOT NULL DEFAULT 0,
+            net_sales NUMERIC(24,6) NOT NULL DEFAULT 0,
+
+            payment_total NUMERIC(24,6) NOT NULL DEFAULT 0,
+            refund_total NUMERIC(24,6) NOT NULL DEFAULT 0,
+
+            payment_difference NUMERIC(24,6) NOT NULL DEFAULT 0,
+
+            blocking_error_count INT NOT NULL DEFAULT 0,
+            warning_count INT NOT NULL DEFAULT 0,
+
+            is_reconciled BOOLEAN NOT NULL DEFAULT FALSE,
+            is_ready BOOLEAN NOT NULL DEFAULT FALSE,
+
+            summary_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            issues_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_pos_history_recon_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_pos_history_recon_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_pos_history_recon
+        ON {schema}.migration_pos_history_reconciliations(
+            company_id,project_id,dataset_id,id DESC
+        );
         """
 
         self.execute_ddl(
@@ -23734,6 +26172,483 @@ class DatabaseService:
             migration_key=f"{schema}:migration_workspace",
             migration_version=self.MIGRATION_WORKSPACE_MIGRATION_VERSION,
         )
+
+        pos_history_fields=[
+            ("record_type","POS Record Type","text",True,True,
+            ["record type","type","row type"],10),
+
+            ("sale_reference","Sale Reference","text",True,False,
+            ["sale reference","receipt number","receipt no","transaction number","invoice number"],20),
+
+            ("sale_date","Sale Date","date",True,False,
+            ["sale date","transaction date","date"],30),
+
+            ("sale_time","Sale Time","text",False,False,
+            ["sale time","transaction time","time"],40),
+
+            ("status","Sale Status","text",False,False,
+            ["status","transaction status","sale status"],50),
+
+            ("terminal_code","Terminal Code","text",False,False,
+            ["terminal code","till code","register code"],60),
+
+            ("terminal_name","Terminal Name","text",False,False,
+            ["terminal name","till name","register name"],70),
+
+            ("location_code","Location Code","text",False,False,
+            ["location code","store code","branch code"],80),
+
+            ("customer_code","Customer Code","text",False,False,
+            ["customer code","account code","customer id"],90),
+
+            ("customer_name","Customer Name","text",False,False,
+            ["customer name","client name"],100),
+
+            ("item_code","Item Code","text",False,False,
+            ["item code","sku","product code","service code","plu"],110),
+
+            ("item_name","Item Name","text",False,False,
+            ["item name","product name","service name"],120),
+
+            ("item_type","Item Type","text",False,False,
+            ["item type","product type"],130),
+
+            ("quantity","Quantity","number",False,False,
+            ["quantity","qty"],140),
+
+            ("unit_price","Unit Price","number",False,False,
+            ["unit price","price","selling price"],150),
+
+            ("line_discount","Line Discount","number",False,False,
+            ["line discount","discount"],160),
+
+            ("line_tax","Line Tax","number",False,False,
+            ["line tax","vat amount","tax amount"],170),
+
+            ("line_total","Line Total","number",False,False,
+            ["line total","total","amount"],180),
+
+            ("sale_subtotal","Sale Subtotal","number",False,False,
+            ["subtotal","sale subtotal"],190),
+
+            ("sale_discount","Sale Discount","number",False,False,
+            ["sale discount","transaction discount","discount total"],200),
+
+            ("sale_tax","Sale Tax","number",False,False,
+            ["sale tax","vat total","tax total"],210),
+
+            ("sale_total","Sale Total","number",False,False,
+            ["sale total","grand total","transaction total"],220),
+
+            ("payment_method","Payment Method","text",False,False,
+            ["payment method","tender","payment type"],230),
+
+            ("payment_amount","Payment Amount","number",False,False,
+            ["payment amount","amount paid","tender amount"],240),
+
+            ("payment_reference","Payment Reference","text",False,False,
+            ["payment reference","card reference","bank reference"],250),
+
+            ("refund_amount","Refund Amount","number",False,False,
+            ["refund amount","amount refunded"],260),
+
+            ("void_reason","Void Reason","text",False,False,
+            ["void reason","cancellation reason"],270),
+
+            ("currency","Currency","currency",False,False,
+            ["currency","currency code"],280),
+
+            ("cashier","Cashier","text",False,False,
+            ["cashier","user","operator"],290),
+
+            ("line_no","Line Number","number",False,False,
+            ["line no","line number"],300),
+
+            ("notes","Notes","text",False,False,
+            ["notes","comments","remarks"],900),
+        ]
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in pos_history_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'pos_history',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
+
+        pos_menu_fields=[
+            ("record_type","Menu Record Type","text",True,True,
+            ["record type","type","menu record type"],10),
+
+            ("menu_code","Menu Code","text",False,False,
+            ["menu code","product code","plu","item code"],20),
+
+            ("menu_name","Menu Name","text",True,False,
+            ["menu name","item name","product name","dish name"],30),
+
+            ("category","Category","text",False,False,
+            ["category","menu category","group"],40),
+
+            ("description","Description","text",False,False,
+            ["description","menu description"],50),
+
+            ("sale_price","Sale Price","number",False,False,
+            ["sale price","selling price","price"],60),
+
+            ("recipe_cost","Recipe Cost","number",False,False,
+            ["recipe cost","food cost","cost"],70),
+
+            ("component_code","Component Code","text",False,False,
+            ["component code","ingredient code","inventory code","sku"],80),
+
+            ("component_name","Component Name","text",False,False,
+            ["component name","ingredient","ingredient name"],90),
+
+            ("component_type","Component Type","text",False,False,
+            ["component type","ingredient type"],100),
+
+            ("component_qty","Component Quantity","number",False,False,
+            ["component quantity","ingredient quantity","qty","quantity"],110),
+
+            ("component_uom","Component UOM","text",False,False,
+            ["component uom","ingredient unit","uom","unit"],120),
+
+            ("component_unit_cost","Component Unit Cost","number",False,False,
+            ["component unit cost","ingredient cost","unit cost"],130),
+
+            ("addon_code","Add-on Code","text",False,False,
+            ["addon code","extra code","modifier code"],140),
+
+            ("addon_name","Add-on Name","text",False,False,
+            ["addon name","extra","modifier"],150),
+
+            ("addon_price","Add-on Price","number",False,False,
+            ["addon price","extra price","modifier price"],160),
+
+            ("addon_cost","Add-on Cost","number",False,False,
+            ["addon cost","extra cost","modifier cost"],170),
+
+            ("is_optional","Optional Component","boolean",False,False,
+            ["optional","is optional"],180),
+
+            ("is_default","Default Component","boolean",False,False,
+            ["default","is default"],190),
+
+            ("show_on_cashier","Show On Cashier","boolean",False,False,
+            ["show on cashier","cashier visible"],200),
+
+            ("show_on_display","Show On Display","boolean",False,False,
+            ["show on display","display visible"],210),
+
+            ("is_active","Active","boolean",False,False,
+            ["active","enabled","is active"],220),
+
+            ("notes","Notes","text",False,False,
+            ["notes","comments","remarks"],900),
+        ]
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in pos_menu_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'pos_menu',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
+
+        pos_configuration_fields=[
+            ("record_type","POS Record Type","text",True,True,
+            ["record type","type","pos type"],10),
+
+            ("terminal_code","Terminal Code","text",False,False,
+            ["terminal code","register code","till code","pos code"],20),
+
+            ("terminal_name","Terminal Name","text",False,False,
+            ["terminal name","register name","till name","pos name"],30),
+
+            ("location_code","Location Code","text",False,False,
+            ["location code","store code","warehouse code","branch code"],40),
+
+            ("location_name","Location Name","text",False,False,
+            ["location","store","warehouse","branch"],50),
+
+            ("payment_method","Payment Method","text",False,False,
+            ["payment method","tender type","payment type","tender"],60),
+
+            ("item_code","Item Code","text",False,False,
+            ["item code","sku","product code","service code"],70),
+
+            ("item_name","Item Name","text",False,False,
+            ["item name","product name","service name"],80),
+
+            ("item_type","Item Type","text",False,False,
+            ["item type","product type","sale type"],90),
+
+            ("barcode","Barcode","text",False,False,
+            ["barcode","ean","upc","gtin"],100),
+
+            ("sale_price","Sale Price","number",False,False,
+            ["sale price","selling price","price","retail price"],110),
+
+            ("available_for_sale","Available For Sale","boolean",False,False,
+            ["available for sale","sellable","saleable","active"],120),
+
+            ("show_on_cashier","Show On Cashier","boolean",False,False,
+            ["show on cashier","cashier visible","show at pos"],130),
+
+            ("show_on_display","Show On Display","boolean",False,False,
+            ["show on display","display visible"],140),
+
+            ("notes","Notes","text",False,False,
+            ["notes","comments","remarks"],900),
+        ]
+
+        pos_configuration_fields=[
+            ("record_type","POS Record Type","text",True,True,
+            ["record type","type","pos type"],10),
+
+            ("terminal_code","Terminal Code","text",False,False,
+            ["terminal code","register code","till code","pos code"],20),
+
+            ("terminal_name","Terminal Name","text",False,False,
+            ["terminal name","register name","till name","pos name"],30),
+
+            ("location_code","Location Code","text",False,False,
+            ["location code","store code","warehouse code","branch code"],40),
+
+            ("location_name","Location Name","text",False,False,
+            ["location","store","warehouse","branch"],50),
+
+            ("payment_method","Payment Method","text",False,False,
+            ["payment method","tender type","payment type","tender"],60),
+
+            ("item_code","Item Code","text",False,False,
+            ["item code","sku","product code","service code"],70),
+
+            ("item_name","Item Name","text",False,False,
+            ["item name","product name","service name"],80),
+
+            ("item_type","Item Type","text",False,False,
+            ["item type","product type","sale type"],90),
+
+            ("barcode","Barcode","text",False,False,
+            ["barcode","ean","upc","gtin"],100),
+
+            ("sale_price","Sale Price","number",False,False,
+            ["sale price","selling price","price","retail price"],110),
+
+            ("available_for_sale","Available For Sale","boolean",False,False,
+            ["available for sale","sellable","saleable","active"],120),
+
+            ("show_on_cashier","Show On Cashier","boolean",False,False,
+            ["show on cashier","cashier visible","show at pos"],130),
+
+            ("show_on_display","Show On Display","boolean",False,False,
+            ["show on display","display visible"],140),
+
+            ("notes","Notes","text",False,False,
+            ["notes","comments","remarks"],900),
+        ]
+
+        inventory_movement_fields=[
+            ("movement_reference","Movement Reference","text",True,True,
+            ["movement reference","transaction reference","reference","document number","transaction number"],10),
+
+            ("movement_date","Movement Date","date",True,False,
+            ["movement date","transaction date","date","posting date"],20),
+
+            ("movement_type","Movement Type","text",True,False,
+            ["movement type","transaction type","type","stock movement"],30),
+
+            ("item_code","Item Code","text",True,False,
+            ["item code","sku","product code","stock code"],40),
+
+            ("item_name","Item Name","text",False,False,
+            ["item name","product name","description"],50),
+
+            ("location_code","Source Location Code","text",False,False,
+            ["location code","warehouse code","source warehouse code","store code"],60),
+
+            ("location_name","Source Location","text",False,False,
+            ["location","warehouse","source warehouse","store"],70),
+
+            ("destination_location_code","Destination Location Code","text",False,False,
+            ["destination location code","destination warehouse code","to warehouse code"],80),
+
+            ("destination_location_name","Destination Location","text",False,False,
+            ["destination location","destination warehouse","to warehouse"],90),
+
+            ("quantity","Quantity","number",True,False,
+            ["quantity","qty","movement qty","units"],100),
+
+            ("unit_cost","Unit Cost","number",False,False,
+            ["unit cost","cost","movement cost"],110),
+
+            ("total_value","Movement Value","number",False,False,
+            ["movement value","total value","transaction value","stock value"],120),
+
+            ("batch_no","Batch Number","text",False,False,
+            ["batch","batch number","lot","lot number"],130),
+
+            ("expiry_date","Expiry Date","date",False,False,
+            ["expiry date","expiration date"],140),
+
+            ("serial_number","Serial Number","text",False,False,
+            ["serial","serial number","serial no"],150),
+
+            ("supplier_reference","Supplier Reference","text",False,False,
+            ["supplier reference","vendor reference","po number","purchase order"],160),
+
+            ("customer_reference","Customer Reference","text",False,False,
+            ["customer reference","invoice number","sales invoice"],170),
+
+            ("source_document_type","Source Document Type","text",False,False,
+            ["source type","document type","source document type"],180),
+
+            ("source_document_id","Source Document ID","text",False,False,
+            ["source id","document id","transaction id"],190),
+
+            ("uom","Unit of Measure","text",False,False,
+            ["uom","unit","unit of measure"],200),
+
+            ("currency","Currency","currency",False,False,
+            ["currency","currency code"],210),
+
+            ("description","Description","text",False,False,
+            ["description","memo","narration","notes"],220),
+
+            ("line_no","Line Number","number",False,False,
+            ["line no","line number","line"],230),
+        ]
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in inventory_movement_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'inventory_movements',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
+
+        inventory_opening_fields=[
+            ("item_code","Item Code","text",True,True,
+            ["item code","sku","stock code","product code","item number"],10),
+
+            ("item_name","Item Name","text",False,False,
+            ["item name","product name","stock item","description"],20),
+
+            ("location_code","Location Code","text",False,False,
+            ["location code","warehouse code","store code"],30),
+
+            ("location_name","Location Name","text",False,False,
+            ["location","warehouse","warehouse name","store","stock location"],40),
+
+            ("quantity","Quantity On Hand","number",True,False,
+            ["quantity","qty","qty on hand","quantity on hand","stock on hand"],50),
+
+            ("available_quantity","Available Quantity","number",False,False,
+            ["available quantity","qty available","available stock"],60),
+
+            ("unit_cost","Unit Cost","number",False,False,
+            ["unit cost","cost","average cost","avg cost","stock cost"],70),
+
+            ("average_cost","Average Cost","number",False,False,
+            ["average cost","avg cost","weighted average cost"],80),
+
+            ("total_value","Inventory Value","number",False,False,
+            ["inventory value","stock value","total value","value on hand"],90),
+
+            ("batch_no","Batch Number","text",False,False,
+            ["batch","batch number","batch no","lot","lot number"],100),
+
+            ("expiry_date","Expiry Date","date",False,False,
+            ["expiry date","expiration date","best before"],110),
+
+            ("serial_number","Serial Number","text",False,False,
+            ["serial number","serial no","serial"],120),
+
+            ("uom","Unit of Measure","text",False,False,
+            ["uom","unit","unit of measure"],130),
+
+            ("currency","Currency","currency",False,False,
+            ["currency","currency code"],140),
+
+            ("source_reference","Source Reference","text",False,False,
+            ["reference","source reference","stock reference"],150),
+
+            ("notes","Notes","text",False,False,
+            ["notes","comments","remarks"],900),
+        ]
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in inventory_opening_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'inventory_opening',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
 
         warehouse_fields=[
             ("location_code","Location Code","text",False,True,
@@ -25394,6 +28309,7 @@ class DatabaseService:
         ALTER TABLE public.company_users
             ADD COLUMN IF NOT EXISTS product_access JSONB NOT NULL DEFAULT '{}'::jsonb,
             ADD COLUMN IF NOT EXISTS ops_is_active BOOLEAN NOT NULL DEFAULT FALSE;
+            ADD COLUMN IF NOT EXISTS ops_role_code TEXT NULL;
 
         -- Existing company owners automatically receive FinSage Nexus.
         UPDATE public.company_users cu
@@ -25442,182 +28358,7 @@ class DatabaseService:
         -- FinSage Nexus PHASE 2G — DOCUMENT FINALISATION
         -- ============================================================
 
-        ALTER TABLE {schema}.ops_documents
-            ADD COLUMN IF NOT EXISTS document_status TEXT NOT NULL DEFAULT 'draft',
-            ADD COLUMN IF NOT EXISTS storage_path TEXT NULL,
-            ADD COLUMN IF NOT EXISTS mime_type TEXT NULL,
-            ADD COLUMN IF NOT EXISTS file_size BIGINT NULL,
-            ADD COLUMN IF NOT EXISTS checksum_sha256 TEXT NULL,
-            ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL,
-            ADD COLUMN IF NOT EXISTS approved_by_user_id INT NULL;
 
-        ALTER TABLE {schema}.ops_documents
-            DROP CONSTRAINT IF EXISTS chk_ops_document_status;
-
-        ALTER TABLE {schema}.ops_documents
-            ADD CONSTRAINT chk_ops_document_status
-            CHECK(document_status IN(
-                'draft',
-                'submitted',
-                'approved',
-                'superseded'
-            ));
-
-        CREATE INDEX IF NOT EXISTS ops_documents_current_idx
-        ON {schema}.ops_documents(
-            company_id,
-            entity_type,
-            entity_id,
-            document_type,
-            request_revision_no,
-            is_current
-        );
-
-        INSERT INTO {schema}.ops_permissions(code,name,module,description)
-        VALUES
-            ('documents.export','Export documents','documents','Generate PDF and XLSX operational documents'),
-            ('documents.download','Download documents','documents','Download generated operational documents'),
-
-            ('procurement.view','View procurement workspace','procurement','View procurement cases and workspace'),
-            ('procurement.manage','Manage procurement cases','procurement','Manage procurement cases'),
-            ('procurement.assign','Assign procurement work','procurement','Assign procurement cases to users'),
-
-            ('procurement.policy.view','View procurement policies','procurement','View procurement policies and rules'),
-            ('procurement.policy.manage','Configure procurement policies','procurement','Create and maintain procurement policies and rules'),
-
-            ('procurement.vendor.view','View procurement vendors','procurement','View procurement vendor profiles'),
-            ('procurement.vendor.manage','Manage procurement vendors','procurement','Maintain procurement vendor profiles and contacts'),
-
-            ('procurement.exception.request','Request procurement exceptions','procurement','Request exceptions to procurement policy'),
-            ('procurement.exception.approve','Approve procurement exceptions','procurement','Approve or reject procurement exceptions'),
-
-            ('procurement.settings.view','View procurement settings','procurement','View procurement configuration'),
-            ('procurement.settings.manage','Manage procurement settings','procurement','Maintain procurement configuration'),
-            ('procurement.email.test','Test procurement email','procurement','Send procurement email configuration tests')
-
-        ON CONFLICT(code)
-        DO UPDATE SET
-            name=EXCLUDED.name,
-            module=EXCLUDED.module,
-            description=EXCLUDED.description;
-
-        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
-        SELECT r.id,p.id
-        FROM {schema}.ops_roles r
-        CROSS JOIN {schema}.ops_permissions p
-        WHERE r.code IN(
-            'OWNER','ADMIN','EXECUTIVE','CFO',
-            'DEPARTMENT_HEAD','FINANCE_MANAGER',
-            'PROCUREMENT_MANAGER','OPERATIONS_MANAGER',
-            'MANAGER','ACCOUNTANT','FINANCE_REVIEWER',
-            'APPROVER','PROCUREMENT_OFFICER',
-            'PAYMENT_PREPARER','RECEIVING_OFFICER',
-            'REQUESTER'
-        )
-        AND p.code IN(
-            'documents.download',
-            'documents.view'
-        )
-        ON CONFLICT(role_id,permission_id) DO NOTHING;
-
-        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
-        SELECT r.id,p.id
-        FROM {schema}.ops_roles r
-        CROSS JOIN {schema}.ops_permissions p
-        WHERE r.code IN(
-            'OWNER','ADMIN','EXECUTIVE','CFO',
-            'FINANCE_MANAGER','ACCOUNTANT',
-            'FINANCE_REVIEWER','PROCUREMENT_OFFICER'
-        )
-        AND p.code='documents.export'
-        ON CONFLICT(role_id,permission_id) DO NOTHING;
-
-        -- ============================================================
-        -- PROCUREMENT PERMISSION ASSIGNMENTS
-        -- ============================================================
-
-        -- Full procurement administration
-        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
-        SELECT r.id,p.id
-        FROM {schema}.ops_roles r
-        CROSS JOIN {schema}.ops_permissions p
-        WHERE r.code IN(
-            'OWNER',
-            'ADMIN',
-            'PROCUREMENT_MANAGER'
-        )
-        AND p.code IN(
-            'procurement.view',
-            'procurement.manage',
-            'procurement.assign',
-            'procurement.policy.view',
-            'procurement.policy.manage',
-            'procurement.vendor.view',
-            'procurement.vendor.manage',
-            'procurement.exception.request',
-            'procurement.exception.approve',
-            'procurement.settings.view',
-            'procurement.settings.manage',
-            'procurement.email.test'
-        )
-        ON CONFLICT(role_id,permission_id) DO NOTHING;
-
-        -- Executive / finance oversight
-        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
-        SELECT r.id,p.id
-        FROM {schema}.ops_roles r
-        CROSS JOIN {schema}.ops_permissions p
-        WHERE r.code IN(
-            'EXECUTIVE',
-            'CFO',
-            'FINANCE_MANAGER'
-        )
-        AND p.code IN(
-            'procurement.view',
-            'procurement.policy.view',
-            'procurement.vendor.view',
-            'procurement.settings.view',
-            'procurement.exception.approve'
-        )
-        ON CONFLICT(role_id,permission_id) DO NOTHING;
-
-        -- Operational procurement users
-        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
-        SELECT r.id,p.id
-        FROM {schema}.ops_roles r
-        CROSS JOIN {schema}.ops_permissions p
-        WHERE r.code IN(
-            'PROCUREMENT_OFFICER',
-            'OPERATIONS_MANAGER'
-        )
-        AND p.code IN(
-            'procurement.view',
-            'procurement.manage',
-            'procurement.assign',
-            'procurement.policy.view',
-            'procurement.vendor.view',
-            'procurement.vendor.manage',
-            'procurement.exception.request',
-            'procurement.settings.view'
-        )
-        ON CONFLICT(role_id,permission_id) DO NOTHING;
-
-        -- General management / approval visibility
-        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
-        SELECT r.id,p.id
-        FROM {schema}.ops_roles r
-        CROSS JOIN {schema}.ops_permissions p
-        WHERE r.code IN(
-            'DEPARTMENT_HEAD',
-            'MANAGER',
-            'APPROVER'
-        )
-        AND p.code IN(
-            'procurement.view',
-            'procurement.policy.view',
-            'procurement.vendor.view'
-        )
-        ON CONFLICT(role_id,permission_id) DO NOTHING;
         """
         self.execute_ddl(
                 ddl,
@@ -25627,7 +28368,7 @@ class DatabaseService:
         )
 
     
-    OPS_MIGRATION_VERSION = 15
+    OPS_MIGRATION_VERSION = 19
     def ensure_company_ops(
         self,
         company_id:int,
@@ -25744,6 +28485,7 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS ops_user_roles_role_idx
             ON {schema}.ops_user_roles(role_id,is_active);
 
+
         -- =========================================================
         -- IMMUTABLE OPS EVENT / AUDIT LEDGER
         -- =========================================================
@@ -25856,8 +28598,83 @@ class DatabaseService:
             ('roles.view','View roles','security','View roles and permissions'),
             ('roles.manage','Manage roles','security','Manage FinSage Nexus access'),
 
-            ('audit.view','View audit trail','audit','View FinSage Nexus audit trail')
+            ('audit.view','View audit trail','audit','View FinSage Nexus audit trail'),
+            ('award.view','View procurement awards','procurement','View vendor-selection and award records'),
+            ('award.create','Create award request','procurement','Create award request from completed evaluation'),
+            ('award.submit','Submit award request','procurement','Submit vendor recommendation for award approval'),
+            ('award.approve','Approve procurement award','procurement','Approve procurement award decisions'),
+            ('award.reject','Reject procurement award','procurement','Reject procurement award decisions')
+        
         ON CONFLICT(code) DO UPDATE SET
+            name=EXCLUDED.name,
+            module=EXCLUDED.module,
+            description=EXCLUDED.description;
+
+
+        -- =========================================================
+        -- DOCUMENT / PROCUREMENT PERMISSIONS
+        -- =========================================================
+
+        -- These are tenant-scoped permissions and therefore belong in
+        -- ensure_company_ops(), after the tenant security tables exist.
+        INSERT INTO {schema}.ops_permissions(code,name,module,description)
+        VALUES
+            ('documents.export','Export documents','documents','Generate PDF and XLSX operational documents'),
+            ('documents.download','Download documents','documents','Download generated operational documents'),
+
+            ('procurement.view','View procurement workspace','procurement','View procurement cases and workspace'),
+            ('procurement.manage','Manage procurement cases','procurement','Manage procurement cases'),
+            ('procurement.assign','Assign procurement work','procurement','Assign procurement cases to users'),
+
+            ('po.view','View purchase orders','procurement','View purchase-order records'),
+            ('po.create','Create purchase order','procurement','Create purchase orders from approved awards'),
+            ('po.edit','Edit purchase order draft','procurement','Edit purchase-order terms before issue'),
+            ('po.issue','Issue purchase order','procurement','Issue approved purchase orders to vendors'),
+            ('po.cancel','Cancel purchase order','procurement','Cancel issued purchase orders with reason'),
+
+            ('receipt.view','View receipts','procurement','View goods, service and asset receipt records'),
+            ('receipt.create','Create receipt','procurement','Record fulfilment against purchase orders'),
+            ('receipt.verify','Verify receipt','procurement','Verify goods or service fulfilment'),
+            ('receipt.reject','Reject receipt','procurement','Reject received goods or incomplete services'),
+            ('receipt.document','Upload receipt documents','procurement','Attach delivery and fulfilment evidence'),
+
+            ('invoice.view','View vendor invoices','accounts_payable','View supplier invoices and matching'),
+            ('invoice.create','Capture vendor invoice','accounts_payable','Capture supplier invoices'),
+            ('invoice.review','Review vendor invoice','accounts_payable','Perform accounting and tax review'),
+            ('invoice.match','Match vendor invoice','accounts_payable','Perform PO and receipt matching'),
+            ('invoice.accept','Accept vendor invoice','accounts_payable','Accept invoice for payment processing'),
+            ('invoice.reject','Reject vendor invoice','accounts_payable','Reject invalid supplier invoice'),
+
+            ('finance.view','View Finance','finance','Access Finance workspace'),
+            ('finance.work.view','View finance work','finance','View assigned finance work'),
+            ('finance.work.manage','Manage finance work','finance','Manage assigned finance work'),
+            ('finance.setup.manage','Manage finance setup','finance','Configure Finance roles and feature access'),
+
+            ('ap.inbox.view','View AP invoice inbox','accounts_payable','View invoices awaiting AP processing'),
+            ('ap.matching.view','View AP matching','accounts_payable','View invoices awaiting matching'),
+            ('ap.exceptions.view','View AP exceptions','accounts_payable','View invoice matching and review exceptions'),
+            ('ap.ready.view','View ready for accounting','accounts_payable','View invoices ready for accounting handoff'),
+            ('ap.coding.manage','Manage invoice coding','accounts_payable','Assign GL and tax coding to invoice lines'),
+            ('ap.handoff','Send invoice to FinSage AP','accounts_payable','Create FinSage AP draft from approved Nexus invoice'),
+
+            ('payment_voucher.view','View payment vouchers','finance','View payment-voucher records'),
+            ('payment_voucher.create','Prepare payment voucher','finance','Prepare vendor payment vouchers'),
+            ('payment_voucher.handoff','Send payment to FinSage','finance','Continue approved payment preparation in FinSage'),
+
+            ('procurement.policy.view','View procurement policies','procurement','View procurement policies and rules'),
+            ('procurement.policy.manage','Configure procurement policies','procurement','Create and maintain procurement policies and rules'),
+
+            ('procurement.vendor.view','View procurement vendors','procurement','View procurement vendor profiles'),
+            ('procurement.vendor.manage','Manage procurement vendors','procurement','Maintain procurement vendor profiles and contacts'),
+
+            ('procurement.exception.request','Request procurement exceptions','procurement','Request exceptions to procurement policy'),
+            ('procurement.exception.approve','Approve procurement exceptions','procurement','Approve or reject procurement exceptions'),
+
+            ('procurement.settings.view','View procurement settings','procurement','View procurement configuration'),
+            ('procurement.settings.manage','Manage procurement settings','procurement','Maintain procurement configuration'),
+            ('procurement.email.test','Test procurement email','procurement','Send procurement email configuration tests')
+        ON CONFLICT(code)
+        DO UPDATE SET
             name=EXCLUDED.name,
             module=EXCLUDED.module,
             description=EXCLUDED.description;
@@ -25914,6 +28731,129 @@ class DatabaseService:
             'departments.view','positions.view','team.view'
         )
         ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+
+        -- =========================================================
+        -- DOCUMENT PERMISSION ASSIGNMENTS
+        -- =========================================================
+
+        -- documents.view / documents.generate are seeded later in Phase 2.
+        -- Only assign permissions that exist at this point.
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'OWNER','ADMIN','EXECUTIVE','CFO',
+            'DEPARTMENT_HEAD','FINANCE_MANAGER',
+            'PROCUREMENT_MANAGER','OPERATIONS_MANAGER',
+            'MANAGER','ACCOUNTANT','FINANCE_REVIEWER',
+            'APPROVER','PROCUREMENT_OFFICER',
+            'PAYMENT_PREPARER','RECEIVING_OFFICER',
+            'REQUESTER'
+        )
+        AND p.code='documents.download'
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'OWNER','ADMIN','EXECUTIVE','CFO',
+            'FINANCE_MANAGER','ACCOUNTANT',
+            'FINANCE_REVIEWER','PROCUREMENT_OFFICER'
+        )
+        AND p.code='documents.export'
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        -- =========================================================
+        -- PROCUREMENT PERMISSION ASSIGNMENTS
+        -- =========================================================
+
+        -- Full procurement administration.
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'OWNER',
+            'ADMIN',
+            'PROCUREMENT_MANAGER'
+        )
+        AND p.code IN(
+            'procurement.view',
+            'procurement.manage',
+            'procurement.assign',
+            'procurement.policy.view',
+            'procurement.policy.manage',
+            'procurement.vendor.view',
+            'procurement.vendor.manage',
+            'procurement.exception.request',
+            'procurement.exception.approve',
+            'procurement.settings.view',
+            'procurement.settings.manage',
+            'procurement.email.test'
+        )
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        -- Executive / finance oversight.
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'EXECUTIVE',
+            'CFO',
+            'FINANCE_MANAGER'
+        )
+        AND p.code IN(
+            'procurement.view',
+            'procurement.policy.view',
+            'procurement.vendor.view',
+            'procurement.settings.view',
+            'procurement.exception.approve'
+        )
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        -- Operational procurement users.
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'PROCUREMENT_OFFICER',
+            'OPERATIONS_MANAGER'
+        )
+        AND p.code IN(
+            'procurement.view',
+            'procurement.manage',
+            'procurement.assign',
+            'procurement.policy.view',
+            'procurement.vendor.view',
+            'procurement.vendor.manage',
+            'procurement.exception.request',
+            'procurement.settings.view'
+        )
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        -- General management / approval visibility.
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'DEPARTMENT_HEAD',
+            'MANAGER',
+            'APPROVER'
+        )
+        AND p.code IN(
+            'procurement.view',
+            'procurement.policy.view',
+            'procurement.vendor.view'
+        )
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
 
         -- =========================================================
         -- OWNER ROLE ASSIGNMENT
@@ -26707,6 +29647,39 @@ class DatabaseService:
             CONSTRAINT chk_ops_document_format
                 CHECK(format IN('snapshot','pdf','xlsx'))
         );
+
+        ALTER TABLE {schema}.ops_documents
+            ADD COLUMN IF NOT EXISTS document_status TEXT NOT NULL DEFAULT 'draft',
+            ADD COLUMN IF NOT EXISTS storage_path TEXT NULL,
+            ADD COLUMN IF NOT EXISTS mime_type TEXT NULL,
+            ADD COLUMN IF NOT EXISTS file_size BIGINT NULL,
+            ADD COLUMN IF NOT EXISTS checksum_sha256 TEXT NULL,
+            ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS approved_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.ops_documents
+            DROP CONSTRAINT IF EXISTS chk_ops_document_status;
+
+        ALTER TABLE {schema}.ops_documents
+            ADD CONSTRAINT chk_ops_document_status
+            CHECK(document_status IN(
+                'draft',
+                'submitted',
+                'approved',
+                'superseded'
+            ));
+
+        CREATE INDEX IF NOT EXISTS ops_documents_current_idx
+        ON {schema}.ops_documents(
+            company_id,
+            entity_type,
+            entity_id,
+            document_type,
+            request_revision_no,
+            is_current
+        );
+
+
 
         CREATE INDEX IF NOT EXISTS ops_documents_entity_idx
         ON {schema}.ops_documents(entity_type,entity_id,is_current);
@@ -28657,6 +31630,9 @@ class DatabaseService:
             )
         );
 
+        ALTER TABLE {schema}.ops_sourcing_events
+        ADD COLUMN IF NOT EXISTS award_status TEXT NOT NULL DEFAULT 'not_started';
+
         CREATE INDEX IF NOT EXISTS ops_sourcing_events_case_idx
         ON {schema}.ops_sourcing_events(
             procurement_case_id,
@@ -29176,6 +32152,1901 @@ class DatabaseService:
 
             UNIQUE(quote_id,revision_no)
         );
+
+        -- ============================================================
+        -- FINFLOW PHASE 3D — QUOTE COMPARISON + EVALUATION
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_sourcing_events
+        ADD COLUMN IF NOT EXISTS evaluation_method TEXT
+        NOT NULL DEFAULT 'weighted';
+
+        ALTER TABLE {schema}.ops_sourcing_events
+        ADD COLUMN IF NOT EXISTS evaluation_status TEXT
+        NOT NULL DEFAULT 'not_started';
+
+        ALTER TABLE {schema}.ops_sourcing_events
+        ADD COLUMN IF NOT EXISTS evaluation_started_at TIMESTAMPTZ NULL;
+
+        ALTER TABLE {schema}.ops_sourcing_events
+        ADD COLUMN IF NOT EXISTS evaluation_completed_at TIMESTAMPTZ NULL;
+
+        ALTER TABLE {schema}.ops_sourcing_events
+        ADD COLUMN IF NOT EXISTS evaluation_completed_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.ops_sourcing_events
+        ADD COLUMN IF NOT EXISTS recommended_vendor_id INT NULL
+        REFERENCES {schema}.vendors(id)
+        ON DELETE SET NULL;
+
+        ALTER TABLE {schema}.ops_sourcing_events
+        ADD COLUMN IF NOT EXISTS recommended_quote_id BIGINT NULL
+        REFERENCES {schema}.ops_vendor_quotes(id)
+        ON DELETE SET NULL;
+
+        ALTER TABLE {schema}.ops_sourcing_events
+        ADD COLUMN IF NOT EXISTS recommendation_reason TEXT NULL;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS(
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname='ops_sourcing_events_evaluation_method_chk'
+            ) THEN
+                ALTER TABLE {schema}.ops_sourcing_events
+                ADD CONSTRAINT ops_sourcing_events_evaluation_method_chk
+                CHECK(
+                    evaluation_method IN(
+                        'lowest_compliant',
+                        'weighted',
+                        'manual'
+                    )
+                );
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS(
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname='ops_sourcing_events_evaluation_status_chk'
+            ) THEN
+                ALTER TABLE {schema}.ops_sourcing_events
+                ADD CONSTRAINT ops_sourcing_events_evaluation_status_chk
+                CHECK(
+                    evaluation_status IN(
+                        'not_started',
+                        'in_progress',
+                        'completed',
+                        'cancelled'
+                    )
+                );
+            END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_sourcing_evaluation_criteria(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            criterion_code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT NULL,
+
+            criterion_type TEXT NOT NULL DEFAULT 'scored',
+
+            weight_percent NUMERIC(9,4)
+                NOT NULL DEFAULT 0,
+
+            maximum_score NUMERIC(9,4)
+                NOT NULL DEFAULT 5,
+
+            is_mandatory BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            is_system_calculated BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            calculation_method TEXT NULL,
+
+            display_order INT
+                NOT NULL DEFAULT 0,
+
+            is_active BOOLEAN
+                NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                sourcing_event_id,
+                criterion_code
+            ),
+
+            CHECK(
+                criterion_type IN(
+                    'pass_fail',
+                    'scored'
+                )
+            ),
+
+            CHECK(
+                weight_percent>=0
+                AND weight_percent<=100
+            ),
+
+            CHECK(
+                maximum_score>0
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_sourcing_evaluation_criteria_event_idx
+        ON {schema}.ops_sourcing_evaluation_criteria(
+            sourcing_event_id,
+            display_order
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_sourcing_evaluators(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            user_id INT NOT NULL,
+
+            evaluator_role TEXT
+                NOT NULL DEFAULT 'evaluator',
+
+            status TEXT
+                NOT NULL DEFAULT 'pending',
+
+            assigned_by_user_id INT NULL,
+
+            assigned_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            completed_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                sourcing_event_id,
+                user_id
+            ),
+
+            CHECK(
+                evaluator_role IN(
+                    'evaluator',
+                    'technical',
+                    'commercial',
+                    'observer',
+                    'chair'
+                )
+            ),
+
+            CHECK(
+                status IN(
+                    'pending',
+                    'in_progress',
+                    'completed'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_sourcing_evaluators_event_idx
+        ON {schema}.ops_sourcing_evaluators(
+            sourcing_event_id,
+            status
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_sourcing_evaluation_scores(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            quote_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_quotes(id)
+                ON DELETE CASCADE,
+
+            vendor_id INT NOT NULL
+                REFERENCES {schema}.vendors(id)
+                ON DELETE CASCADE,
+
+            criterion_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_evaluation_criteria(id)
+                ON DELETE CASCADE,
+
+            evaluator_user_id INT NOT NULL,
+
+            pass_result BOOLEAN NULL,
+
+            raw_score NUMERIC(9,4) NULL,
+
+            weighted_score NUMERIC(12,6) NULL,
+
+            comment TEXT NULL,
+
+            scored_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                quote_id,
+                criterion_id,
+                evaluator_user_id
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_sourcing_evaluation_scores_event_idx
+        ON {schema}.ops_sourcing_evaluation_scores(
+            sourcing_event_id,
+            quote_id
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_sourcing_evaluation_results(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            quote_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_quotes(id)
+                ON DELETE CASCADE,
+
+            vendor_id INT NOT NULL
+                REFERENCES {schema}.vendors(id)
+                ON DELETE CASCADE,
+
+            mandatory_pass BOOLEAN
+                NOT NULL DEFAULT TRUE,
+
+            commercial_score NUMERIC(12,6)
+                NOT NULL DEFAULT 0,
+
+            technical_score NUMERIC(12,6)
+                NOT NULL DEFAULT 0,
+
+            total_score NUMERIC(12,6)
+                NOT NULL DEFAULT 0,
+
+            rank_no INT NULL,
+
+            quoted_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            variance_from_lowest NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            variance_percent NUMERIC(9,4)
+                NOT NULL DEFAULT 0,
+
+            is_lowest_quote BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            is_recommended BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            calculated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                sourcing_event_id,
+                quote_id
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_sourcing_evaluation_results_event_idx
+        ON {schema}.ops_sourcing_evaluation_results(
+            sourcing_event_id,
+            rank_no
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_sourcing_evaluator_declarations(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            evaluator_user_id INT NOT NULL,
+
+            has_conflict BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            declaration_text TEXT NULL,
+
+            declared_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                sourcing_event_id,
+                evaluator_user_id
+            )
+        );
+
+        -- ============================================================
+        -- FINFLOW PHASE 3E — VENDOR SELECTION + AWARD GOVERNANCE
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_awards(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE RESTRICT,
+
+            procurement_case_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_procurement_cases(id)
+                ON DELETE RESTRICT,
+
+            request_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_requests(id)
+                ON DELETE RESTRICT,
+
+            recommended_quote_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_quotes(id)
+                ON DELETE RESTRICT,
+
+            vendor_id INT NOT NULL
+                REFERENCES {schema}.vendors(id)
+                ON DELETE RESTRICT,
+
+            award_no TEXT NOT NULL,
+
+            quoted_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            currency_code TEXT NULL,
+
+            evaluation_rank INT NULL,
+
+            evaluation_score NUMERIC(12,6)
+                NOT NULL DEFAULT 0,
+
+            is_rank_one BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            is_deviation BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            deviation_reason TEXT NULL,
+
+            recommendation_reason TEXT NOT NULL,
+
+            award_reason TEXT NULL,
+
+            governance_mode TEXT
+                NOT NULL DEFAULT 'structured',
+
+            approval_required BOOLEAN
+                NOT NULL DEFAULT TRUE,
+
+            extra_approval_required BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            status TEXT
+                NOT NULL DEFAULT 'draft',
+
+            submitted_at TIMESTAMPTZ NULL,
+            submitted_by_user_id INT NULL,
+
+            approved_at TIMESTAMPTZ NULL,
+            approved_by_user_id INT NULL,
+
+            rejected_at TIMESTAMPTZ NULL,
+            rejected_by_user_id INT NULL,
+            rejection_reason TEXT NULL,
+
+            locked_at TIMESTAMPTZ NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id,award_no),
+
+            UNIQUE(sourcing_event_id),
+
+            CHECK(
+                governance_mode IN(
+                    'flexible',
+                    'structured',
+                    'controlled'
+                )
+            ),
+
+            CHECK(
+                status IN(
+                    'draft',
+                    'pending_approval',
+                    'approved',
+                    'rejected',
+                    'cancelled'
+                )
+            )
+        );
+
+        ALTER TABLE {schema}.ops_vendor_awards
+        ADD COLUMN IF NOT EXISTS po_created_at TIMESTAMPTZ NULL;
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_awards_status_idx
+        ON {schema}.ops_vendor_awards(
+            company_id,
+            status,
+            created_at DESC
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_awards_event_idx
+        ON {schema}.ops_vendor_awards(
+            sourcing_event_id
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_awards_vendor_idx
+        ON {schema}.ops_vendor_awards(
+            vendor_id,
+            status
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_award_approval_tasks(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            award_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_awards(id)
+                ON DELETE CASCADE,
+
+            step_no INT NOT NULL,
+
+            step_name TEXT NOT NULL,
+
+            approver_role_code TEXT NULL,
+
+            assigned_to_user_id INT NULL,
+
+            assigned_by_user_id INT NULL,
+
+            status TEXT
+                NOT NULL DEFAULT 'pending',
+
+            decision_comment TEXT NULL,
+
+            acted_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                award_id,
+                step_no
+            ),
+
+            CHECK(
+                status IN(
+                    'pending',
+                    'approved',
+                    'rejected',
+                    'skipped',
+                    'cancelled'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_award_approval_tasks_assignee_idx
+        ON {schema}.ops_award_approval_tasks(
+            assigned_to_user_id,
+            status,
+            created_at
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_award_approval_tasks_award_idx
+        ON {schema}.ops_award_approval_tasks(
+            award_id,
+            step_no
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_award_snapshots(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            award_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_awards(id)
+                ON DELETE CASCADE,
+
+            award_no TEXT NOT NULL,
+
+            version_no INT
+                NOT NULL DEFAULT 1,
+
+            status TEXT
+                NOT NULL DEFAULT 'approved',
+
+            snapshot_json JSONB
+                NOT NULL DEFAULT '{{}}'::jsonb,
+
+            generated_by_user_id INT NULL,
+
+            generated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                award_id,
+                version_no
+            ),
+
+            CHECK(
+                status IN(
+                    'draft',
+                    'approved',
+                    'superseded',
+                    'cancelled'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_award_snapshots_award_idx
+        ON {schema}.ops_award_snapshots(
+            award_id,
+            version_no DESC
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_award_snapshots(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            award_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_awards(id)
+                ON DELETE CASCADE,
+
+            award_no TEXT NOT NULL,
+
+            version_no INT
+                NOT NULL DEFAULT 1,
+
+            status TEXT
+                NOT NULL DEFAULT 'approved',
+
+            snapshot_json JSONB
+                NOT NULL DEFAULT '{{}}'::jsonb,
+
+            generated_by_user_id INT NULL,
+
+            generated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                award_id,
+                version_no
+            ),
+
+            CHECK(
+                status IN(
+                    'draft',
+                    'approved',
+                    'superseded',
+                    'cancelled'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_award_snapshots_award_idx
+        ON {schema}.ops_award_snapshots(
+            award_id,
+            version_no DESC
+        );
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS(
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname='ops_sourcing_events_award_status_chk'
+            ) THEN
+                ALTER TABLE {schema}.ops_sourcing_events
+                ADD CONSTRAINT ops_sourcing_events_award_status_chk
+                CHECK(
+                    award_status IN(
+                        'not_started',
+                        'draft',
+                        'pending_approval',
+                        'approved',
+                        'rejected',
+                        'cancelled'
+                    )
+                );
+            END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_purchase_orders(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            award_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_awards(id)
+                ON DELETE RESTRICT,
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE RESTRICT,
+
+            procurement_case_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_procurement_cases(id)
+                ON DELETE RESTRICT,
+
+            request_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_requests(id)
+                ON DELETE RESTRICT,
+
+            vendor_id INT NOT NULL
+                REFERENCES {schema}.vendors(id)
+                ON DELETE RESTRICT,
+
+            awarded_quote_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_quotes(id)
+                ON DELETE RESTRICT,
+
+            po_no TEXT NOT NULL,
+
+            revision_no INT NOT NULL DEFAULT 1,
+
+            po_date DATE NOT NULL DEFAULT CURRENT_DATE,
+
+            expected_delivery_date DATE NULL,
+
+            currency_code TEXT NULL,
+
+            subtotal NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            discount_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            tax_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            delivery_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            total_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            delivery_address TEXT NULL,
+
+            billing_address TEXT NULL,
+
+            payment_terms TEXT NULL,
+
+            delivery_terms TEXT NULL,
+
+            warranty_terms TEXT NULL,
+
+            supplier_reference TEXT NULL,
+
+            buyer_notes TEXT NULL,
+
+            terms_text TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            issued_at TIMESTAMPTZ NULL,
+            issued_by_user_id INT NULL,
+
+            acknowledged_at TIMESTAMPTZ NULL,
+            acknowledged_by_portal_user_id BIGINT NULL
+                REFERENCES {schema}.ops_vendor_portal_users(id)
+                ON DELETE SET NULL,
+
+            vendor_acknowledgement_status TEXT
+                NOT NULL DEFAULT 'not_sent',
+
+            vendor_acknowledgement_comment TEXT NULL,
+
+            cancelled_at TIMESTAMPTZ NULL,
+            cancelled_by_user_id INT NULL,
+            cancellation_reason TEXT NULL,
+
+            locked_at TIMESTAMPTZ NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id,po_no),
+
+            UNIQUE(award_id),
+
+            CHECK(
+                status IN(
+                    'draft',
+                    'issued',
+                    'acknowledged',
+                    'partially_received',
+                    'received',
+                    'closed',
+                    'cancelled'
+                )
+            ),
+
+            CHECK(
+                vendor_acknowledgement_status IN(
+                    'not_sent',
+                    'pending',
+                    'accepted',
+                    'rejected'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_purchase_orders_status_idx
+        ON {schema}.ops_purchase_orders(
+            company_id,
+            status,
+            po_date DESC
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_purchase_orders_vendor_idx
+        ON {schema}.ops_purchase_orders(
+            vendor_id,
+            status
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_purchase_orders_award_idx
+        ON {schema}.ops_purchase_orders(
+            award_id
+        );
+
+        -- ============================================================
+        -- FINFLOW PHASE 3G — RECEIPT + FULFILMENT
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_purchase_orders
+        ADD COLUMN IF NOT EXISTS fulfilment_type TEXT NULL;
+
+        ALTER TABLE {schema}.ops_purchase_orders
+        ADD COLUMN IF NOT EXISTS receipt_status TEXT
+        NOT NULL DEFAULT 'not_started';
+
+        ALTER TABLE {schema}.ops_purchase_orders
+        ADD COLUMN IF NOT EXISTS first_received_at TIMESTAMPTZ NULL;
+
+        ALTER TABLE {schema}.ops_purchase_orders
+        ADD COLUMN IF NOT EXISTS fully_received_at TIMESTAMPTZ NULL;
+
+        ALTER TABLE {schema}.ops_purchase_orders
+        ADD COLUMN IF NOT EXISTS ready_for_invoice BOOLEAN
+        NOT NULL DEFAULT FALSE;
+
+        ALTER TABLE {schema}.ops_vendor_awards
+        ADD COLUMN IF NOT EXISTS purchase_order_id BIGINT NULL
+        REFERENCES {schema}.ops_purchase_orders(id)
+        ON DELETE SET NULL;
+        
+        DO $$
+        BEGIN
+            IF NOT EXISTS(
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname='ops_purchase_orders_fulfilment_type_chk'
+            ) THEN
+                ALTER TABLE {schema}.ops_purchase_orders
+                ADD CONSTRAINT ops_purchase_orders_fulfilment_type_chk
+                CHECK(
+                    fulfilment_type IS NULL
+                    OR fulfilment_type IN(
+                        'goods',
+                        'service',
+                        'asset',
+                        'lease'
+                    )
+                );
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS(
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname='ops_purchase_orders_receipt_status_chk'
+            ) THEN
+                ALTER TABLE {schema}.ops_purchase_orders
+                ADD CONSTRAINT ops_purchase_orders_receipt_status_chk
+                CHECK(
+                    receipt_status IN(
+                        'not_started',
+                        'partial',
+                        'completed',
+                        'rejected',
+                        'cancelled'
+                    )
+                );
+            END IF;
+        END $$;
+        
+        CREATE TABLE IF NOT EXISTS {schema}.ops_purchase_order_lines(
+            id BIGSERIAL PRIMARY KEY,
+
+            purchase_order_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_purchase_orders(id)
+                ON DELETE CASCADE,
+
+            quote_line_id BIGINT NULL
+                REFERENCES {schema}.ops_vendor_quote_lines(id)
+                ON DELETE SET NULL,
+
+            sourcing_event_item_id BIGINT NULL
+                REFERENCES {schema}.ops_sourcing_event_items(id)
+                ON DELETE SET NULL,
+
+            line_no INT NOT NULL,
+
+            description TEXT NOT NULL,
+
+            specification TEXT NULL,
+
+            quantity NUMERIC(18,4)
+                NOT NULL DEFAULT 0,
+
+            unit_of_measure TEXT NULL,
+
+            unit_price NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            line_discount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            tax_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            line_total NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            received_quantity NUMERIC(18,4)
+                NOT NULL DEFAULT 0,
+
+            cancelled_quantity NUMERIC(18,4)
+                NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                purchase_order_id,
+                line_no
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_purchase_order_lines_po_idx
+        ON {schema}.ops_purchase_order_lines(
+            purchase_order_id,
+            line_no
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_purchase_order_snapshots(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            purchase_order_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_purchase_orders(id)
+                ON DELETE CASCADE,
+
+            po_no TEXT NOT NULL,
+
+            revision_no INT NOT NULL,
+
+            status TEXT NOT NULL DEFAULT 'issued',
+
+            snapshot_json JSONB
+                NOT NULL DEFAULT '{{}}'::jsonb,
+
+            generated_by_user_id INT NULL,
+
+            generated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                purchase_order_id,
+                revision_no
+            ),
+
+            CHECK(
+                status IN(
+                    'draft',
+                    'issued',
+                    'superseded',
+                    'cancelled'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_purchase_order_snapshots_po_idx
+        ON {schema}.ops_purchase_order_snapshots(
+            purchase_order_id,
+            revision_no DESC
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_purchase_order_amendments(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            purchase_order_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_purchase_orders(id)
+                ON DELETE CASCADE,
+
+            from_revision_no INT NOT NULL,
+            to_revision_no INT NOT NULL,
+
+            reason TEXT NOT NULL,
+
+            before_json JSONB
+                NOT NULL DEFAULT '{{}}'::jsonb,
+
+            after_json JSONB
+                NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                purchase_order_id,
+                to_revision_no
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_receipts(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            purchase_order_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_purchase_orders(id)
+                ON DELETE RESTRICT,
+
+            procurement_case_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_procurement_cases(id)
+                ON DELETE RESTRICT,
+
+            request_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_requests(id)
+                ON DELETE RESTRICT,
+
+            vendor_id INT NOT NULL
+                REFERENCES {schema}.vendors(id)
+                ON DELETE RESTRICT,
+
+            receipt_no TEXT NOT NULL,
+
+            receipt_type TEXT NOT NULL,
+
+            receipt_date DATE NOT NULL
+                DEFAULT CURRENT_DATE,
+
+            delivery_note_no TEXT NULL,
+
+            supplier_reference TEXT NULL,
+
+            received_location TEXT NULL,
+
+            notes TEXT NULL,
+
+            status TEXT NOT NULL
+                DEFAULT 'draft',
+
+            received_by_user_id INT NOT NULL,
+
+            verified_by_user_id INT NULL,
+
+            verified_at TIMESTAMPTZ NULL,
+
+            rejected_by_user_id INT NULL,
+
+            rejected_at TIMESTAMPTZ NULL,
+
+            rejection_reason TEXT NULL,
+
+            created_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id,receipt_no),
+
+            CHECK(
+                receipt_type IN(
+                    'goods',
+                    'service',
+                    'asset',
+                    'lease'
+                )
+            ),
+
+            CHECK(
+                status IN(
+                    'draft',
+                    'submitted',
+                    'verified',
+                    'rejected',
+                    'cancelled'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_receipts_po_idx
+        ON {schema}.ops_receipts(
+            purchase_order_id,
+            receipt_date DESC
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_receipts_status_idx
+        ON {schema}.ops_receipts(
+            company_id,
+            status,
+            created_at DESC
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_receipt_lines(
+            id BIGSERIAL PRIMARY KEY,
+
+            receipt_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_receipts(id)
+                ON DELETE CASCADE,
+
+            purchase_order_line_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_purchase_order_lines(id)
+                ON DELETE RESTRICT,
+
+            line_no INT NOT NULL,
+
+            ordered_quantity NUMERIC(18,4)
+                NOT NULL DEFAULT 0,
+
+            previously_received_quantity NUMERIC(18,4)
+                NOT NULL DEFAULT 0,
+
+            received_quantity NUMERIC(18,4)
+                NOT NULL DEFAULT 0,
+
+            accepted_quantity NUMERIC(18,4)
+                NOT NULL DEFAULT 0,
+
+            rejected_quantity NUMERIC(18,4)
+                NOT NULL DEFAULT 0,
+
+            condition_status TEXT
+                NOT NULL DEFAULT 'acceptable',
+
+            rejection_reason TEXT NULL,
+
+            batch_no TEXT NULL,
+
+            serial_numbers JSONB
+                NOT NULL DEFAULT '[]'::jsonb,
+
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                receipt_id,
+                purchase_order_line_id
+            ),
+
+            CHECK(
+                condition_status IN(
+                    'acceptable',
+                    'damaged',
+                    'short_delivered',
+                    'incorrect',
+                    'not_applicable'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_receipt_lines_receipt_idx
+        ON {schema}.ops_receipt_lines(
+            receipt_id,
+            line_no
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_service_confirmations(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            receipt_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_receipts(id)
+                ON DELETE CASCADE,
+
+            purchase_order_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_purchase_orders(id)
+                ON DELETE RESTRICT,
+
+            service_from DATE NULL,
+            service_to DATE NULL,
+
+            completion_percent NUMERIC(9,4)
+                NOT NULL DEFAULT 100,
+
+            deliverables_completed TEXT NULL,
+
+            quality_assessment TEXT NULL,
+
+            completion_certificate_no TEXT NULL,
+
+            confirmed_by_user_id INT NOT NULL,
+
+            confirmed_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            CHECK(
+                completion_percent>=0
+                AND completion_percent<=100
+            ),
+
+            UNIQUE(receipt_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_asset_receipts(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            receipt_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_receipts(id)
+                ON DELETE CASCADE,
+
+            purchase_order_line_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_purchase_order_lines(id)
+                ON DELETE RESTRICT,
+
+            asset_name TEXT NOT NULL,
+
+            asset_category TEXT NULL,
+
+            serial_no TEXT NULL,
+
+            manufacturer TEXT NULL,
+
+            model_no TEXT NULL,
+
+            acquisition_date DATE NULL,
+
+            placed_in_service_date DATE NULL,
+
+            location_text TEXT NULL,
+
+            responsible_user_id INT NULL,
+
+            expected_useful_life_months INT NULL,
+
+            residual_value NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            asset_register_id BIGINT NULL,
+
+            handoff_status TEXT
+                NOT NULL DEFAULT 'pending',
+
+            handed_off_at TIMESTAMPTZ NULL,
+
+            CHECK(
+                handoff_status IN(
+                    'pending',
+                    'ready',
+                    'created',
+                    'failed'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_asset_receipts_receipt_idx
+        ON {schema}.ops_asset_receipts(
+            receipt_id
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_lease_receipts(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            receipt_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_receipts(id)
+                ON DELETE CASCADE,
+
+            purchase_order_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_purchase_orders(id)
+                ON DELETE RESTRICT,
+
+            commencement_date DATE NOT NULL,
+
+            underlying_asset TEXT NULL,
+
+            location_text TEXT NULL,
+
+            contract_reference TEXT NULL,
+
+            lease_module_id BIGINT NULL,
+
+            handoff_status TEXT
+                NOT NULL DEFAULT 'pending',
+
+            handed_off_at TIMESTAMPTZ NULL,
+
+            CHECK(
+                handoff_status IN(
+                    'pending',
+                    'ready',
+                    'created',
+                    'failed'
+                )
+            ),
+
+            UNIQUE(receipt_id)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_receipt_documents(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            receipt_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_receipts(id)
+                ON DELETE CASCADE,
+
+            document_type TEXT NOT NULL,
+
+            file_name TEXT NOT NULL,
+            storage_path TEXT NOT NULL,
+            mime_type TEXT NULL,
+            file_size BIGINT NULL,
+            checksum_sha256 TEXT NULL,
+
+            uploaded_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            CHECK(
+                document_type IN(
+                    'delivery_note',
+                    'receipt',
+                    'inspection',
+                    'service_certificate',
+                    'photo',
+                    'serial_list',
+                    'lease_document',
+                    'other'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_receipt_documents_receipt_idx
+        ON {schema}.ops_receipt_documents(
+            receipt_id,
+            document_type
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_receipt_snapshots(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            receipt_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_receipts(id)
+                ON DELETE CASCADE,
+
+            receipt_no TEXT NOT NULL,
+
+            version_no INT
+                NOT NULL DEFAULT 1,
+
+            snapshot_json JSONB
+                NOT NULL DEFAULT '{{}}'::jsonb,
+
+            generated_by_user_id INT NULL,
+
+            generated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            UNIQUE(
+                receipt_id,
+                version_no
+            )
+        );
+
+        -- ============================================================
+        -- FINFLOW PHASE 3H — VENDOR INVOICE + AP MATCHING
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_invoices(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            vendor_id INT NOT NULL REFERENCES {schema}.vendors(id) ON DELETE RESTRICT,
+            purchase_order_id BIGINT NULL REFERENCES {schema}.ops_purchase_orders(id) ON DELETE RESTRICT,
+            procurement_case_id BIGINT NULL REFERENCES {schema}.ops_procurement_cases(id) ON DELETE RESTRICT,
+            request_id BIGINT NULL REFERENCES {schema}.ops_requests(id) ON DELETE RESTRICT,
+
+            invoice_no TEXT NOT NULL,
+            supplier_invoice_no TEXT NOT NULL,
+            invoice_date DATE NOT NULL,
+            due_date DATE NULL,
+            currency_code TEXT NULL,
+
+            subtotal NUMERIC(18,2) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            tax_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            supplier_reference TEXT NULL,
+            description TEXT NULL,
+
+            source TEXT NOT NULL DEFAULT 'internal',
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            match_status TEXT NOT NULL DEFAULT 'not_checked',
+            match_variance_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            match_variance_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+
+            tax_review_status TEXT NOT NULL DEFAULT 'pending',
+            accounting_review_status TEXT NOT NULL DEFAULT 'pending',
+
+            gl_account_code TEXT NULL,
+            tax_code TEXT NULL,
+            cost_center_id INT NULL,
+            department_id INT NULL REFERENCES public.company_departments(id) ON DELETE SET NULL,
+            branch_id INT NULL REFERENCES public.company_branches(id) ON DELETE SET NULL,
+
+            ready_for_payment BOOLEAN NOT NULL DEFAULT FALSE,
+
+            submitted_at TIMESTAMPTZ NULL,
+            submitted_by_user_id INT NULL,
+            submitted_by_portal_user_id BIGINT NULL REFERENCES {schema}.ops_vendor_portal_users(id) ON DELETE SET NULL,
+
+            reviewed_at TIMESTAMPTZ NULL,
+            reviewed_by_user_id INT NULL,
+
+            accepted_at TIMESTAMPTZ NULL,
+            accepted_by_user_id INT NULL,
+
+            rejected_at TIMESTAMPTZ NULL,
+            rejected_by_user_id INT NULL,
+            rejection_reason TEXT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id,vendor_id,supplier_invoice_no),
+
+            CHECK(source IN('internal','vendor_portal','email','import')),
+            CHECK(status IN('draft','submitted','under_review','accepted','rejected','cancelled')),
+            CHECK(match_status IN('not_checked','matched','partial_match','exception','not_required')),
+            CHECK(tax_review_status IN('pending','passed','exception','not_required')),
+            CHECK(accounting_review_status IN('pending','reviewed','exception'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_invoices_status_idx
+        ON {schema}.ops_vendor_invoices(company_id,status,invoice_date DESC);
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_invoices_vendor_idx
+        ON {schema}.ops_vendor_invoices(vendor_id,status);
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_invoices_po_idx
+        ON {schema}.ops_vendor_invoices(purchase_order_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_invoice_lines(
+            id BIGSERIAL PRIMARY KEY,
+            invoice_id BIGINT NOT NULL REFERENCES {schema}.ops_vendor_invoices(id) ON DELETE CASCADE,
+            purchase_order_line_id BIGINT NULL REFERENCES {schema}.ops_purchase_order_lines(id) ON DELETE SET NULL,
+
+            line_no INT NOT NULL,
+            description TEXT NOT NULL,
+            quantity NUMERIC(18,4) NOT NULL DEFAULT 0,
+            unit_price NUMERIC(18,2) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            tax_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            line_total NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            gl_account_code TEXT NULL,
+            tax_code TEXT NULL,
+
+            matched_quantity NUMERIC(18,4) NOT NULL DEFAULT 0,
+            quantity_variance NUMERIC(18,4) NOT NULL DEFAULT 0,
+            price_variance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            match_status TEXT NOT NULL DEFAULT 'not_checked',
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(invoice_id,line_no),
+            CHECK(match_status IN('not_checked','matched','exception'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_invoice_lines_invoice_idx
+        ON {schema}.ops_vendor_invoice_lines(invoice_id,line_no);
+
+        -- ============================================================
+        -- FINFLOW PHASE 3K — FINSAGE AP HANDOFF
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_vendor_invoice_lines
+        ADD COLUMN IF NOT EXISTS vat_rate NUMERIC(9,4) NOT NULL DEFAULT 0;
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_invoice_documents(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            invoice_id BIGINT NOT NULL REFERENCES {schema}.ops_vendor_invoices(id) ON DELETE CASCADE,
+
+            document_type TEXT NOT NULL DEFAULT 'invoice',
+            file_name TEXT NOT NULL,
+            storage_path TEXT NOT NULL,
+            mime_type TEXT NULL,
+            file_size BIGINT NULL,
+            checksum_sha256 TEXT NULL,
+
+            uploaded_by_user_id INT NULL,
+            uploaded_by_portal_user_id BIGINT NULL REFERENCES {schema}.ops_vendor_portal_users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK(document_type IN('invoice','credit_note','supporting','tax_document','other'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_invoice_documents_invoice_idx
+        ON {schema}.ops_vendor_invoice_documents(invoice_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_invoice_matches(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            invoice_id BIGINT NOT NULL REFERENCES {schema}.ops_vendor_invoices(id) ON DELETE CASCADE,
+            purchase_order_id BIGINT NULL REFERENCES {schema}.ops_purchase_orders(id) ON DELETE SET NULL,
+
+            match_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+
+            po_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            received_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            invoiced_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            variance_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            variance_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+
+            details_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            checked_by_user_id INT NULL,
+            checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK(match_type IN('two_way','three_way','service','lease')),
+            CHECK(status IN('matched','partial_match','exception'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_invoice_matches_invoice_idx
+        ON {schema}.ops_invoice_matches(invoice_id,checked_at DESC);
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_invoice_exceptions(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            invoice_id BIGINT NOT NULL REFERENCES {schema}.ops_vendor_invoices(id) ON DELETE CASCADE,
+
+            exception_type TEXT NOT NULL,
+            severity TEXT NOT NULL DEFAULT 'warning',
+            description TEXT NOT NULL,
+
+            expected_value TEXT NULL,
+            actual_value TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'open',
+            resolution_comment TEXT NULL,
+
+            resolved_by_user_id INT NULL,
+            resolved_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK(
+                exception_type IN(
+                    'quantity_variance',
+                    'price_variance',
+                    'amount_variance',
+                    'missing_receipt',
+                    'duplicate_invoice',
+                    'tax_exception',
+                    'po_closed',
+                    'vendor_mismatch',
+                    'other'
+                )
+            ),
+            CHECK(severity IN('info','warning','block')),
+            CHECK(status IN('open','resolved','waived'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_invoice_exceptions_invoice_idx
+        ON {schema}.ops_invoice_exceptions(invoice_id,status);
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_invoice_snapshots(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            invoice_id BIGINT NOT NULL REFERENCES {schema}.ops_vendor_invoices(id) ON DELETE CASCADE,
+            invoice_no TEXT NOT NULL,
+            version_no INT NOT NULL DEFAULT 1,
+            snapshot_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            generated_by_user_id INT NULL,
+            generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(invoice_id,version_no)
+        );
+
+        -- ============================================================
+        -- FINFLOW PHASE 3I — FINANCE FOUNDATION
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_finance_roles(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT NULL,
+            authority_level INT NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(company_id,code)
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_finance_user_roles(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            company_user_id INT NOT NULL REFERENCES public.company_users(id) ON DELETE CASCADE,
+            finance_role_id BIGINT NOT NULL REFERENCES {schema}.ops_finance_roles(id) ON DELETE CASCADE,
+            is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            assigned_by_user_id INT NULL,
+            assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(company_user_id,finance_role_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_finance_user_roles_company_idx
+        ON {schema}.ops_finance_user_roles(company_id,company_user_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_finance_work_items(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            work_type TEXT NOT NULL,
+            module TEXT NOT NULL DEFAULT 'finance',
+
+            entity_type TEXT NOT NULL,
+            entity_id BIGINT NOT NULL,
+            entity_ref TEXT NULL,
+
+            title TEXT NOT NULL,
+            description TEXT NULL,
+
+            assigned_to_user_id INT NULL,
+            assigned_role_code TEXT NULL,
+            department_id INT NULL REFERENCES public.company_departments(id) ON DELETE SET NULL,
+
+            priority TEXT NOT NULL DEFAULT 'normal',
+            status TEXT NOT NULL DEFAULT 'open',
+            stage TEXT NULL,
+
+            due_at TIMESTAMPTZ NULL,
+
+            source_module TEXT NULL,
+            source_type TEXT NULL,
+            source_id BIGINT NULL,
+
+            completed_at TIMESTAMPTZ NULL,
+            completed_by_user_id INT NULL,
+
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK(priority IN('low','normal','high','urgent')),
+            CHECK(status IN('open','in_progress','blocked','completed','cancelled'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_finance_work_items_assignee_idx
+        ON {schema}.ops_finance_work_items(company_id,assigned_to_user_id,status);
+
+        CREATE INDEX IF NOT EXISTS ops_finance_work_items_role_idx
+        ON {schema}.ops_finance_work_items(company_id,assigned_role_code,status);
+
+        CREATE INDEX IF NOT EXISTS ops_finance_work_items_entity_idx
+        ON {schema}.ops_finance_work_items(entity_type,entity_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_finance_feature_access(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            finance_role_code TEXT NOT NULL,
+            feature_code TEXT NOT NULL,
+            can_view BOOLEAN NOT NULL DEFAULT FALSE,
+            can_manage BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(company_id,finance_role_code,feature_code)
+        );
+
+        INSERT INTO {schema}.ops_finance_roles(
+            company_id,code,name,description,authority_level
+        )
+        VALUES
+        ({company_id},'AP_CLERK','Accounts Payable Clerk','Invoice intake and validation',20),
+        ({company_id},'FINANCE_OFFICER','Finance Officer','Invoice review and accounting coding',40),
+        ({company_id},'FINANCE_MANAGER','Finance Manager','Finance approvals and exception review',70),
+        ({company_id},'CFO','Chief Financial Officer','Executive finance oversight',100)
+        ON CONFLICT(company_id,code) DO NOTHING;
+
+        INSERT INTO {schema}.ops_finance_feature_access(
+            company_id,finance_role_code,feature_code,can_view,can_manage
+        )
+        VALUES
+        ({company_id},'AP_CLERK','finance.overview',TRUE,FALSE),
+        ({company_id},'AP_CLERK','finance.my_work',TRUE,TRUE),
+        ({company_id},'AP_CLERK','payables.invoices',TRUE,TRUE),
+        ({company_id},'AP_CLERK','payables.matching',TRUE,TRUE),
+        ({company_id},'AP_CLERK','payables.exceptions',TRUE,FALSE),
+
+        ({company_id},'FINANCE_OFFICER','finance.overview',TRUE,FALSE),
+        ({company_id},'FINANCE_OFFICER','finance.my_work',TRUE,TRUE),
+        ({company_id},'FINANCE_OFFICER','payables.invoices',TRUE,TRUE),
+        ({company_id},'FINANCE_OFFICER','payables.matching',TRUE,TRUE),
+        ({company_id},'FINANCE_OFFICER','payables.exceptions',TRUE,TRUE),
+        ({company_id},'FINANCE_OFFICER','payables.ready_for_accounting',TRUE,TRUE),
+
+        ({company_id},'FINANCE_MANAGER','finance.overview',TRUE,TRUE),
+        ({company_id},'FINANCE_MANAGER','finance.my_work',TRUE,TRUE),
+        ({company_id},'FINANCE_MANAGER','payables.invoices',TRUE,TRUE),
+        ({company_id},'FINANCE_MANAGER','payables.matching',TRUE,TRUE),
+        ({company_id},'FINANCE_MANAGER','payables.exceptions',TRUE,TRUE),
+        ({company_id},'FINANCE_MANAGER','payables.ready_for_accounting',TRUE,TRUE),
+
+        ({company_id},'CFO','finance.overview',TRUE,TRUE),
+        ({company_id},'CFO','finance.my_work',TRUE,TRUE),
+        ({company_id},'CFO','payables.invoices',TRUE,TRUE),
+        ({company_id},'CFO','payables.matching',TRUE,TRUE),
+        ({company_id},'CFO','payables.exceptions',TRUE,TRUE),
+        ({company_id},'CFO','payables.ready_for_accounting',TRUE,TRUE),
+
+        ({company_id},'AP_CLERK','payables.payment_vouchers',TRUE,TRUE),
+        ({company_id},'FINANCE_OFFICER','payables.payment_vouchers',TRUE,TRUE),
+        ({company_id},'FINANCE_MANAGER','payables.payment_vouchers',TRUE,TRUE),
+        ({company_id},'CFO','payables.payment_vouchers',TRUE,TRUE)
+        ON CONFLICT(company_id,finance_role_code,feature_code)
+        DO UPDATE SET
+            can_view=EXCLUDED.can_view,
+            can_manage=EXCLUDED.can_manage;
+
+        -- ============================================================
+        -- FINFLOW PHASE 3J — ACCOUNTS PAYABLE WORKFLOW
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_vendor_invoices
+        ADD COLUMN IF NOT EXISTS ready_for_accounting BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS coding_status TEXT NOT NULL DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS finance_review_status TEXT NOT NULL DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS finance_reviewed_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS finance_reviewed_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.ops_vendor_invoices
+        ADD COLUMN IF NOT EXISTS accounting_handoff_status TEXT NOT NULL DEFAULT 'not_sent',
+        ADD COLUMN IF NOT EXISTS accounting_bill_id BIGINT NULL,
+        ADD COLUMN IF NOT EXISTS accounting_bill_no TEXT NULL,
+        ADD COLUMN IF NOT EXISTS accounting_handed_off_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS accounting_handed_off_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS accounting_handoff_error TEXT NULL;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS(
+                SELECT 1 FROM pg_constraint
+                WHERE conname='ops_vendor_invoices_coding_status_chk'
+            ) THEN
+                ALTER TABLE {schema}.ops_vendor_invoices
+                ADD CONSTRAINT ops_vendor_invoices_coding_status_chk
+                CHECK(coding_status IN('pending','partial','complete','exception'));
+            END IF;
+
+            IF NOT EXISTS(
+                SELECT 1 FROM pg_constraint
+                WHERE conname='ops_vendor_invoices_finance_review_status_chk'
+            ) THEN
+                ALTER TABLE {schema}.ops_vendor_invoices
+                ADD CONSTRAINT ops_vendor_invoices_finance_review_status_chk
+                CHECK(finance_review_status IN('pending','reviewed','exception'));
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS(
+                SELECT 1 FROM pg_constraint
+                WHERE conname='ops_vendor_invoices_accounting_handoff_status_chk'
+            ) THEN
+                ALTER TABLE {schema}.ops_vendor_invoices
+                ADD CONSTRAINT ops_vendor_invoices_accounting_handoff_status_chk
+                CHECK(accounting_handoff_status IN(
+                    'not_sent',
+                    'processing',
+                    'completed',
+                    'failed',
+                    'cancelled'
+                ));
+            END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS ops_vendor_invoices_ready_accounting_idx
+        ON {schema}.ops_vendor_invoices(company_id,ready_for_accounting,status);
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_accounting_handoffs(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            source_module TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_id BIGINT NOT NULL,
+            source_reference TEXT NULL,
+
+            target_module TEXT NOT NULL DEFAULT 'ap',
+            target_type TEXT NOT NULL DEFAULT 'bill',
+            target_id BIGINT NULL,
+            target_reference TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'pending',
+
+            request_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            response_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            error_message TEXT NULL,
+            attempt_count INT NOT NULL DEFAULT 0,
+
+            created_by_user_id INT NULL,
+            completed_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            completed_at TIMESTAMPTZ NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id,source_module,source_type,source_id,target_module,target_type),
+
+            CHECK(status IN(
+                'pending',
+                'processing',
+                'completed',
+                'failed',
+                'cancelled'
+            ))
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_accounting_handoffs_source_idx
+        ON {schema}.ops_accounting_handoffs(company_id,source_type,source_id);
+
+        CREATE INDEX IF NOT EXISTS ops_accounting_handoffs_target_idx
+        ON {schema}.ops_accounting_handoffs(company_id,target_type,target_id);
+
+        -- ============================================================
+        -- FINFLOW PHASE 3L — PAYMENT VOUCHER
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_payment_vouchers(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            voucher_no TEXT NOT NULL,
+            vendor_invoice_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_vendor_invoices(id) ON DELETE RESTRICT,
+
+            accounting_bill_id BIGINT NOT NULL,
+            accounting_bill_no TEXT NULL,
+
+            vendor_id BIGINT NOT NULL,
+            currency_code TEXT NULL,
+
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            payment_date DATE NULL,
+
+            reference TEXT NULL,
+            description TEXT NULL,
+
+            wht_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            wht_rate NUMERIC(9,6) NOT NULL DEFAULT 0,
+            wht_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            wht_ledger_code TEXT NULL,
+            wht_reason TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            finsage_payment_id BIGINT NULL,
+            finsage_payment_status TEXT NULL,
+            handed_off_at TIMESTAMPTZ NULL,
+            handed_off_by_user_id INT NULL,
+
+            prepared_by_user_id INT NULL,
+            prepared_at TIMESTAMPTZ NULL,
+
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id,voucher_no),
+
+            CHECK(amount>0),
+
+            CHECK(status IN(
+                'draft',
+                'prepared',
+                'handed_off',
+                'approved',
+                'released',
+                'cancelled'
+            ))
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_payment_vouchers_invoice_idx
+        ON {schema}.ops_payment_vouchers(company_id,vendor_invoice_id);
+
+        CREATE INDEX IF NOT EXISTS ops_payment_vouchers_bill_idx
+        ON {schema}.ops_payment_vouchers(company_id,accounting_bill_id);
+
+        CREATE INDEX IF NOT EXISTS ops_payment_vouchers_status_idx
+        ON {schema}.ops_payment_vouchers(company_id,status);
         """
 
         self.execute_ddl(
@@ -29184,6 +34055,7 @@ class DatabaseService:
             migration_key=f"{schema}:ops",
             migration_version=self.OPS_MIGRATION_VERSION,
         )
+
 
     PAYROLL_MIGRATION_VERSION=5
     def ensure_company_payroll(
@@ -60990,7 +65862,62 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
         ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
         ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
-        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS authority_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS return_form_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS return_spec_version TEXT NULL,
+        ADD COLUMN IF NOT EXISTS authority_payload JSONB NULL,
+        ADD COLUMN IF NOT EXISTS validation_status TEXT NULL,
+        ADD COLUMN IF NOT EXISTS validation_errors JSONB NULL,
+        ADD COLUMN IF NOT EXISTS classification_complete BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS filing_channel TEXT NULL;
+
+        CREATE TABLE IF NOT EXISTS {schema}.vat_line_classifications (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            ledger_line_id BIGINT NOT NULL,
+            journal_id BIGINT NULL,
+            authority_code TEXT NOT NULL,
+            vat_class TEXT NOT NULL,
+            taxable_value NUMERIC(18,2) NULL,
+            vat_rate NUMERIC(9,6) NULL,
+            gross_value NUMERIC(18,2) NULL,
+            classification_source TEXT NOT NULL DEFAULT 'user',
+            is_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+            confirmed_by_user_id INT NULL,
+            confirmed_at TIMESTAMPTZ NULL,
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(company_id, ledger_line_id, authority_code)
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.vat_return_manual_lines (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            authority_code TEXT NOT NULL,
+            vat_side TEXT NOT NULL CHECK (vat_side IN ('input','output')),
+            vat_class TEXT NOT NULL,
+            reference TEXT NULL,
+            description TEXT NULL,
+            taxable_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_rate NUMERIC(9,6) NULL,
+            gross_value NUMERIC(18,2) NULL,
+            is_confirmed BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT NULL,
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_vat_line_classifications_lookup_idx
+        ON {schema}.vat_line_classifications(company_id, authority_code, ledger_line_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_vat_return_manual_lines_period_idx
+        ON {schema}.vat_return_manual_lines(company_id, authority_code, period_start, period_end);
 
         DO $$
         BEGIN
@@ -61034,6 +65961,47 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_vat_filings_period_idx
         ON {schema}.vat_filings(company_id, period_start, period_end);
+
+        CREATE TABLE IF NOT EXISTS {schema}.vat_tax_codes (
+            id SERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+
+            code VARCHAR(40) NOT NULL,
+            name TEXT NOT NULL,
+
+            vat_side VARCHAR(20) NULL,
+
+            tax_treatment VARCHAR(30) NOT NULL,
+
+            rate NUMERIC(9,6) NOT NULL DEFAULT 0,
+
+            is_capital BOOLEAN NOT NULL DEFAULT FALSE,
+            is_import BOOLEAN NOT NULL DEFAULT FALSE,
+            is_export BOOLEAN NOT NULL DEFAULT FALSE,
+
+            recoverable_percentage NUMERIC(9,6)
+                NOT NULL DEFAULT 100,
+
+            authority_rate_id INT NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            UNIQUE(company_id, code)
+        );
+
+        ALTER TABLE {schema}.vat_tax_codes
+        ADD COLUMN IF NOT EXISTS authority_code VARCHAR(20),
+
+        ADD COLUMN IF NOT EXISTS rate_code VARCHAR(50),
+
+        ADD COLUMN IF NOT EXISTS transaction_class VARCHAR(40),
+
+        ADD COLUMN IF NOT EXISTS adjustment_type VARCHAR(40),
+
+        ADD COLUMN IF NOT EXISTS is_exempt BOOLEAN NOT NULL DEFAULT FALSE,
+
+        ADD COLUMN IF NOT EXISTS is_out_of_scope BOOLEAN NOT NULL DEFAULT FALSE;
         """
 
         with self._conn_cursor() as (conn, cur):
@@ -61213,6 +66181,14 @@ class DatabaseService:
             engagement_id,
             created_by_user_id,
             updated_by_user_id,
+            authority_code,
+            return_form_code,
+            return_spec_version,
+            authority_payload,
+            validation_status,
+            validation_errors,
+            classification_complete,
+            filing_channel,
             created_at,
             updated_at
         FROM {schema}.vat_filings
@@ -61372,6 +66348,200 @@ class DatabaseService:
             row = cur.fetchone()
             conn.commit()
             return bool(row)
+
+
+    def ensure_company_vat_authority_compliance(self, company_id: int):
+        # ensure_company_vat_filings now includes all authority tables/columns.
+        self.ensure_company_vat_filings(company_id)
+
+    def vat_line_classifications_get(
+        self,
+        company_id: int,
+        authority_code: str,
+        ledger_line_ids: list[int],
+    ):
+        if not ledger_line_ids:
+            return {}
+
+        schema = self.company_schema(company_id)
+        placeholders = ",".join(["%s"] * len(ledger_line_ids))
+
+        rows = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.vat_line_classifications
+            WHERE company_id=%s
+              AND authority_code=%s
+              AND ledger_line_id IN ({placeholders});
+        """, (
+            int(company_id),
+            str(authority_code or "").upper(),
+            *[int(x) for x in ledger_line_ids],
+        ))
+
+        return {
+            int(r["ledger_line_id"]): r
+            for r in rows
+        }
+
+    def vat_line_classification_upsert(
+        self,
+        company_id: int,
+        ledger_line_id: int,
+        authority_code: str,
+        data: dict,
+        *,
+        user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.vat_line_classifications (
+                company_id,ledger_line_id,journal_id,authority_code,
+                vat_class,taxable_value,vat_rate,gross_value,
+                classification_source,is_confirmed,
+                confirmed_by_user_id,confirmed_at,notes
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                CASE WHEN %s THEN NOW() ELSE NULL END,
+                %s
+            )
+            ON CONFLICT (company_id,ledger_line_id,authority_code)
+            DO UPDATE SET
+                journal_id=EXCLUDED.journal_id,
+                vat_class=EXCLUDED.vat_class,
+                taxable_value=EXCLUDED.taxable_value,
+                vat_rate=EXCLUDED.vat_rate,
+                gross_value=EXCLUDED.gross_value,
+                classification_source=EXCLUDED.classification_source,
+                is_confirmed=EXCLUDED.is_confirmed,
+                confirmed_by_user_id=EXCLUDED.confirmed_by_user_id,
+                confirmed_at=CASE WHEN EXCLUDED.is_confirmed THEN NOW() ELSE NULL END,
+                notes=EXCLUDED.notes,
+                updated_at=NOW()
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(ledger_line_id),
+            data.get("journal_id"),
+            str(authority_code or "").upper(),
+            str(data.get("vat_class") or "").strip(),
+            data.get("taxable_value"),
+            data.get("vat_rate"),
+            data.get("gross_value"),
+            data.get("classification_source") or "user",
+            bool(data.get("is_confirmed", True)),
+            int(user_id) if user_id else None,
+            bool(data.get("is_confirmed", True)),
+            (data.get("notes") or "").strip() or None,
+        ))
+
+    def vat_return_manual_lines_get(
+        self,
+        company_id: int,
+        authority_code: str,
+        period_start,
+        period_end,
+    ):
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.vat_return_manual_lines
+            WHERE company_id=%s
+              AND authority_code=%s
+              AND period_start=%s
+              AND period_end=%s
+            ORDER BY id;
+        """, (
+            int(company_id),
+            str(authority_code or "").upper(),
+            period_start,
+            period_end,
+        ))
+
+    def vat_return_manual_line_create(
+        self,
+        company_id: int,
+        authority_code: str,
+        period_start,
+        period_end,
+        data: dict,
+        *,
+        user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+        side = str(data.get("vat_side") or "").lower()
+        if side not in {"input", "output"}:
+            raise ValueError("vat_side must be input or output")
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.vat_return_manual_lines (
+                company_id,period_start,period_end,authority_code,
+                vat_side,vat_class,reference,description,
+                taxable_value,vat_amount,vat_rate,gross_value,
+                is_confirmed,notes,created_by_user_id
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *;
+        """, (
+            int(company_id),period_start,period_end,
+            str(authority_code or "").upper(),
+            side,
+            str(data.get("vat_class") or "").strip(),
+            (data.get("reference") or "").strip() or None,
+            (data.get("description") or "").strip() or None,
+            data.get("taxable_value") or 0,
+            data.get("vat_amount") or 0,
+            data.get("vat_rate"),
+            data.get("gross_value"),
+            bool(data.get("is_confirmed", True)),
+            (data.get("notes") or "").strip() or None,
+            int(user_id) if user_id else None,
+        ))
+
+    def update_vat_filing_authority_payload(
+        self,
+        company_id: int,
+        filing_id: int,
+        *,
+        authority_code: str,
+        return_form_code: str,
+        return_spec_version: str,
+        authority_payload: dict,
+        validation_status: str,
+        validation_errors: list,
+        classification_complete: bool,
+        filing_channel: str = "electronic",
+    ):
+        import json
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.vat_filings
+            SET authority_code=%s,
+                return_form_code=%s,
+                return_spec_version=%s,
+                authority_payload=%s::jsonb,
+                validation_status=%s,
+                validation_errors=%s::jsonb,
+                classification_complete=%s,
+                filing_channel=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+              AND id=%s
+            RETURNING *;
+        """, (
+            str(authority_code or "").upper(),
+            return_form_code,
+            return_spec_version,
+            json.dumps(authority_payload or {}, default=str),
+            validation_status,
+            json.dumps(validation_errors or [], default=str),
+            bool(classification_complete),
+            filing_channel,
+            int(company_id),
+            int(filing_id),
+        ))
 
     def list_vat_filings(self, company_id: int, *, limit: int = 100):
         schema = self.company_schema(company_id)
@@ -145599,7 +150769,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         }
 
 
-    def _payroll_setup_lines(self,setup:dict,basic)->dict:
+    def _payroll_setup_lines(
+        self,
+        setup: dict,
+        basic,
+        tax_context: dict = None,
+    )->dict:
         earnings=[]
         deductions=[]
         benefits=[]
@@ -145633,7 +150808,27 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if item.get("calculation_method")=="manual":
                 continue
 
-            amount=self.payroll_setup_item_amount(item,basic)
+            code=str(item.get("code") or "").strip().upper()
+
+            if code=="UIF_EMP":
+                amount=self.payroll_calculate_uif(
+                    tax_context=tax_context,
+                    remuneration=basic,
+                    side="employee",
+                )
+
+            elif code=="UIF_ER":
+                amount=self.payroll_calculate_uif(
+                    tax_context=tax_context,
+                    remuneration=basic,
+                    side="employer",
+                )
+
+            else:
+                amount=self.payroll_setup_item_amount(
+                    item,
+                    basic,
+                )
 
             if amount<=0:
                 continue
@@ -145703,6 +150898,69 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "benefits":benefits,
             "contributions":contributions,
         }
+
+    def payroll_calculate_uif(
+        self,
+        *,
+        tax_context: dict,
+        remuneration,
+        side: str,
+    ):
+        """
+        Calculate UIF for the payroll period using the active
+        SARS tax-year parameters.
+
+        side:
+            employee -> UIF_EMP
+            employer -> UIF_ER
+        """
+        if not tax_context:
+            return Decimal("0.00")
+
+        if str(tax_context.get("authority_code") or "").upper() != "SARS":
+            return Decimal("0.00")
+
+        tax_year_id = tax_context.get("tax_year_id")
+
+        if not tax_year_id:
+            return Decimal("0.00")
+
+        parameters = self.payroll_tax_parameters(
+            int(tax_year_id)
+        )
+
+        if side == "employee":
+            rate = _payroll_decimal(
+                parameters.get("uif_rate_employee")
+            )
+        elif side == "employer":
+            rate = _payroll_decimal(
+                parameters.get("uif_rate_employer")
+            )
+        else:
+            raise ValueError(
+                f"Unsupported UIF side: {side}"
+            )
+
+        cap = _payroll_decimal(
+            parameters.get("uif_cap")
+        )
+
+        remuneration = _payroll_money(remuneration)
+
+        if remuneration <= 0 or rate <= 0:
+            return Decimal("0.00")
+
+        amount = _payroll_money(
+            remuneration * rate
+        )
+
+        # uif_cap represents the maximum contribution
+        # for one side for the payroll period.
+        if cap > 0:
+            amount = min(amount, cap)
+
+        return _payroll_money(amount)
 
     def _payroll_period_input_lines(
         self,
@@ -146078,6 +151336,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         setup_lines=self._payroll_setup_lines(
             setup,
             basic,
+            tax_context,
         )
         period_lines=self._payroll_period_input_lines(
             company_id,
@@ -153211,6 +158470,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "medical_credit_taxpayer": 376,
             "medical_credit_first_dependant": 376,
             "medical_credit_additional_dependant": 254,
+
+            # UIF
+            "uif_rate_employee": 0.01,
+            "uif_rate_employer": 0.01,
+
+            # Maximum UIF remuneration base per month
+            "uif_monthly_remuneration_ceiling": 17712.00,
+
+            # Maximum contribution per side per month
+            "uif_employee_contribution_cap": 177.12,
+            "uif_employer_contribution_cap": 177.12,
+
+            # No minimum remuneration threshold.
+            # Employees below this HOURS threshold are not UIF liable.
+            "uif_min_hours_per_month": 24,
 
             "tax_periods_monthly": 12,
             "tax_periods_fortnightly": 26,
@@ -181031,6 +186305,5202 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "targets":targets,
         }
 
+    def migration_inventory_opening_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='inventory_opening'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def migration_inventory_opening_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT cutover_date
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_inventory_opening_settings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(row.get("settings_json"),{})
+            row["metadata_json"]=self._migration_json(row.get("metadata_json"),{})
+            return row
+
+        inventory_settings=self.migration_inventory_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+
+            "opening_date":project.get("cutover_date"),
+
+            "quantity_basis":"quantity_on_hand",
+            "cost_basis":"unit_cost",
+
+            "default_location_id":
+                inventory_settings.get("default_location_id"),
+
+            "allow_zero_quantity":True,
+            "allow_zero_cost":False,
+            "allow_negative_quantity":
+                inventory_settings.get("allow_negative_stock",False),
+
+            "require_location":
+                inventory_settings.get("require_location",True),
+
+            "require_cost":True,
+            "validate_source_value":True,
+            "value_tolerance":0.05,
+
+            "batch_tracking_enabled":
+                inventory_settings.get("batch_tracking_enabled",False),
+
+            "expiry_tracking_enabled":
+                inventory_settings.get("expiry_tracking_enabled",False),
+
+            "serial_tracking_enabled":
+                inventory_settings.get("serial_tracking_enabled",False),
+
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_inventory_opening_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_inventory_opening_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        quantity_basis=str(
+            data.get("quantity_basis")
+            or current.get("quantity_basis")
+            or "quantity_on_hand"
+        ).strip()
+
+        cost_basis=str(
+            data.get("cost_basis")
+            or current.get("cost_basis")
+            or "unit_cost"
+        ).strip()
+
+        if quantity_basis not in {"quantity_on_hand","available_quantity"}:
+            raise ValueError("Invalid opening inventory quantity basis.")
+
+        if cost_basis not in {"unit_cost","average_cost","total_value"}:
+            raise ValueError("Invalid opening inventory cost basis.")
+
+        tolerance=self._migration_number(
+            data.get("value_tolerance",current.get("value_tolerance",0.05)),
+            0.05,
+        )
+
+        if tolerance<0:
+            raise ValueError("Inventory reconciliation tolerance cannot be negative.")
+
+        default_location_id=data.get(
+            "default_location_id",
+            current.get("default_location_id"),
+        )
+
+        if default_location_id not in (None,""):
+            default_location_id=int(default_location_id)
+        else:
+            default_location_id=None
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_inventory_opening_settings(
+                company_id,project_id,dataset_id,
+                opening_date,
+                quantity_basis,
+                cost_basis,
+                default_location_id,
+                allow_zero_quantity,
+                allow_zero_cost,
+                allow_negative_quantity,
+                require_location,
+                require_cost,
+                validate_source_value,
+                value_tolerance,
+                batch_tracking_enabled,
+                expiry_tracking_enabled,
+                serial_tracking_enabled,
+                settings_json,
+                metadata_json,
+                created_by_user_id,
+                updated_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES(
+                %s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                opening_date=EXCLUDED.opening_date,
+                quantity_basis=EXCLUDED.quantity_basis,
+                cost_basis=EXCLUDED.cost_basis,
+                default_location_id=EXCLUDED.default_location_id,
+                allow_zero_quantity=EXCLUDED.allow_zero_quantity,
+                allow_zero_cost=EXCLUDED.allow_zero_cost,
+                allow_negative_quantity=EXCLUDED.allow_negative_quantity,
+                require_location=EXCLUDED.require_location,
+                require_cost=EXCLUDED.require_cost,
+                validate_source_value=EXCLUDED.validate_source_value,
+                value_tolerance=EXCLUDED.value_tolerance,
+                batch_tracking_enabled=EXCLUDED.batch_tracking_enabled,
+                expiry_tracking_enabled=EXCLUDED.expiry_tracking_enabled,
+                serial_tracking_enabled=EXCLUDED.serial_tracking_enabled,
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,dataset_id,
+
+            data.get("opening_date")
+            or current.get("opening_date"),
+
+            quantity_basis,
+            cost_basis,
+            default_location_id,
+
+            bool(data.get("allow_zero_quantity",current.get("allow_zero_quantity",True))),
+            bool(data.get("allow_zero_cost",current.get("allow_zero_cost",False))),
+            bool(data.get("allow_negative_quantity",current.get("allow_negative_quantity",False))),
+            bool(data.get("require_location",current.get("require_location",True))),
+            bool(data.get("require_cost",current.get("require_cost",True))),
+            bool(data.get("validate_source_value",current.get("validate_source_value",True))),
+
+            tolerance,
+
+            bool(data.get("batch_tracking_enabled",current.get("batch_tracking_enabled",False))),
+            bool(data.get("expiry_tracking_enabled",current.get("expiry_tracking_enabled",False))),
+            bool(data.get("serial_tracking_enabled",current.get("serial_tracking_enabled",False))),
+
+            self._migration_json_dump(data.get("settings_json") or current.get("settings_json"),{}),
+            self._migration_json_dump(data.get("metadata_json") or current.get("metadata_json"),{}),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_inventory_opening_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_inventory_opening_product_resolve(
+        self,company_id:int,project_id:int,item_code,*,cur=None
+    )->dict|None:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+        code=str(item_code or "").strip()
+
+        if not code:return None
+
+        live=self.fetch_one(f"""
+            SELECT id,sku,name,'live'::text AS source
+            FROM {schema}.inventory_items
+            WHERE company_id=%s
+            AND LOWER(TRIM(sku))=LOWER(TRIM(%s))
+            LIMIT 1
+        """,(company_id,code),cur=cur)
+
+        if live:return live
+
+        datasets=self.migration_product_datasets(
+            company_id,project_id,cur=cur
+        )
+
+        for dataset in datasets:
+            dataset_id=int(dataset["dataset_id"])
+
+            settings=self.migration_product_settings_get(
+                company_id,project_id,dataset_id,cur=cur
+            )
+
+            rows=self.migration_payroll_normalized_rows(
+                company_id,project_id,dataset_id,limit=10000,cur=cur
+            )
+
+            for index,item in enumerate(rows,start=1):
+                row=item.get("normalized") or {}
+
+                preview=self.migration_product_preview_row(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    row,
+                    settings,
+                    row_number=index,
+                    cur=cur,
+                )
+
+                if (
+                    preview.get("classification",{}).get("item_kind")=="inventory"
+                    and str(preview.get("item",{}).get("code") or "").strip().lower()==code.lower()
+                ):
+                    return {
+                        "id":None,
+                        "sku":preview["item"]["code"],
+                        "name":preview["item"]["name"],
+                        "source":"migration",
+                        "dataset_id":dataset_id,
+                        "row_number":index,
+                    }
+
+        return None
+
+    def migration_inventory_opening_location_resolve(
+        self,company_id:int,project_id:int,
+        location_code=None,location_name=None,
+        default_location_id=None,*,cur=None
+    )->dict|None:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        code=str(location_code or "").strip()
+        name=str(location_name or "").strip()
+
+        if code:
+            live=self.fetch_one(f"""
+                SELECT id,code,name,'live'::text AS source
+                FROM {schema}.inventory_locations
+                WHERE company_id=%s
+                AND LOWER(code)=LOWER(%s)
+                AND is_active=TRUE
+                LIMIT 1
+            """,(company_id,code),cur=cur)
+
+            if live:return live
+
+        if name:
+            live=self.fetch_one(f"""
+                SELECT id,code,name,'live'::text AS source
+                FROM {schema}.inventory_locations
+                WHERE company_id=%s
+                AND LOWER(name)=LOWER(%s)
+                AND is_active=TRUE
+                LIMIT 1
+            """,(company_id,name),cur=cur)
+
+            if live:return live
+
+        if code or name:
+            mapping=self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.migration_inventory_location_mappings
+                WHERE company_id=%s
+                AND project_id=%s
+                AND is_approved=TRUE
+                AND (
+                    (%s<>'' AND LOWER(COALESCE(source_code,''))=LOWER(%s))
+                    OR
+                    (%s<>'' AND LOWER(source_name)=LOWER(%s))
+                )
+                ORDER BY id DESC
+                LIMIT 1
+            """,(
+                company_id,project_id,
+                code,code,
+                name,name,
+            ),cur=cur)
+
+            if mapping:
+                if mapping.get("mapping_action")=="ignore":
+                    return None
+
+                if mapping.get("mapping_action")=="map":
+                    return {
+                        "id":mapping.get("target_location_id"),
+                        "code":mapping.get("target_code"),
+                        "name":mapping.get("target_name"),
+                        "source":"mapped",
+                    }
+
+                if mapping.get("mapping_action")=="create":
+                    return {
+                        "id":None,
+                        "code":mapping.get("source_code"),
+                        "name":mapping.get("source_name"),
+                        "source":"migration",
+                        "mapping_id":mapping.get("id"),
+                    }
+
+        if default_location_id:
+            row=self.fetch_one(f"""
+                SELECT id,code,name,'default'::text AS source
+                FROM {schema}.inventory_locations
+                WHERE company_id=%s
+                AND id=%s
+                AND is_active=TRUE
+            """,(company_id,int(default_location_id)),cur=cur)
+
+            if row:return row
+
+        return None
+
+    def _migration_date(self,value):
+        if value in (None,""):return None
+        if isinstance(value,date):return value
+        if isinstance(value,datetime):return value.date()
+
+        value=str(value).strip()
+
+        for fmt in ("%Y-%m-%d","%d/%m/%Y","%m/%d/%Y","%d-%m-%Y"):
+            try:
+                return datetime.strptime(value,fmt).date()
+            except ValueError:
+                pass
+
+        return None
+
+    def migration_inventory_opening_preview_row(
+        self,company_id:int,project_id:int,dataset_id:int,
+        row:dict,settings:dict,*,row_number:int,cur=None
+    )->dict:
+        issues=[]
+        warnings=[]
+
+        item_code=str(row.get("item_code") or "").strip()
+
+        if not item_code:
+            issues.append("Item code is required.")
+
+        product=self.migration_inventory_opening_product_resolve(
+            company_id,project_id,item_code,cur=cur
+        ) if item_code else None
+
+        if item_code and not product:
+            issues.append(
+                f'Inventory item "{item_code}" was not found in FinSage or the product migration.'
+            )
+
+        quantity_field=(
+            "available_quantity"
+            if settings.get("quantity_basis")=="available_quantity"
+            else "quantity"
+        )
+
+        quantity=self._migration_number(
+            row.get(quantity_field),
+            0,
+        )
+
+        if quantity<0 and not settings.get("allow_negative_quantity"):
+            issues.append("Opening inventory quantity cannot be negative.")
+
+        if quantity==0 and not settings.get("allow_zero_quantity"):
+            issues.append("Opening inventory quantity cannot be zero.")
+
+        unit_cost=self._migration_number(
+            row.get("unit_cost"),
+            0,
+        )
+
+        average_cost=self._migration_number(
+            row.get("average_cost"),
+            0,
+        )
+
+        source_value=self._migration_number(
+            row.get("total_value"),
+            0,
+        )
+
+        cost_basis=settings.get("cost_basis") or "unit_cost"
+
+        if cost_basis=="average_cost":
+            resolved_cost=average_cost
+
+        elif cost_basis=="total_value":
+            resolved_cost=(
+                source_value/quantity
+                if quantity else 0
+            )
+
+        else:
+            resolved_cost=unit_cost
+
+        if resolved_cost<0:
+            issues.append("Opening inventory cost cannot be negative.")
+
+        if (
+            settings.get("require_cost")
+            and quantity!=0
+            and resolved_cost==0
+            and not settings.get("allow_zero_cost")
+        ):
+            issues.append("Opening inventory unit cost is required.")
+
+        calculated_value=round(
+            quantity*resolved_cost,
+            6,
+        )
+
+        if (
+            settings.get("validate_source_value")
+            and source_value
+        ):
+            difference=round(
+                calculated_value-source_value,
+                6,
+            )
+
+            tolerance=float(
+                settings.get("value_tolerance") or 0
+            )
+
+            if abs(difference)>tolerance:
+                issues.append(
+                    f"Inventory value differs from source by {difference:.2f}."
+                )
+        else:
+            difference=0.0
+
+        location=self.migration_inventory_opening_location_resolve(
+            company_id,
+            project_id,
+            location_code=row.get("location_code"),
+            location_name=row.get("location_name"),
+            default_location_id=settings.get("default_location_id"),
+            cur=cur,
+        )
+
+        if settings.get("require_location") and not location:
+            issues.append("Inventory location could not be resolved.")
+
+        batch_no=str(row.get("batch_no") or "").strip() or None
+        expiry_date=self._migration_date(row.get("expiry_date"))
+        serial_number=str(row.get("serial_number") or "").strip() or None
+
+        if settings.get("batch_tracking_enabled") and quantity!=0 and not batch_no:
+            issues.append("Batch number is required.")
+
+        if settings.get("expiry_tracking_enabled") and quantity!=0 and not expiry_date:
+            issues.append("Expiry date is required.")
+
+        if settings.get("serial_tracking_enabled"):
+            if quantity not in {0,1,-1}:
+                warnings.append(
+                    "Serial-tracked rows should normally contain one serial number per unit."
+                )
+
+            if quantity!=0 and not serial_number:
+                issues.append("Serial number is required.")
+
+        if expiry_date and settings.get("opening_date"):
+            opening_date=self._migration_date(settings.get("opening_date"))
+
+            if opening_date and expiry_date<opening_date:
+                warnings.append("Opening stock is already expired at cutover.")
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "warnings":warnings,
+
+            "item":{
+                "code":item_code,
+                "name":product.get("name") if product else row.get("item_name"),
+                "resolved_source":product.get("source") if product else None,
+                "live_item_id":product.get("id") if product else None,
+                "migration_dataset_id":product.get("dataset_id") if product else None,
+            },
+
+            "location":location,
+
+            "quantity":round(quantity,6),
+            "unit_cost":round(resolved_cost,6),
+            "calculated_value":calculated_value,
+            "source_value":round(source_value,6),
+            "value_difference":difference,
+
+            "batch_no":batch_no,
+            "expiry_date":expiry_date,
+            "serial_number":serial_number,
+
+            "uom":str(row.get("uom") or "").strip() or None,
+            "currency":str(row.get("currency") or "").strip().upper() or None,
+
+            "source_reference":
+                str(row.get("source_reference") or "").strip()
+                or None,
+        }
+
+    def migration_inventory_opening_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_inventory_opening_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,
+            project_id,
+            dataset_id,
+            limit=20000,
+            cur=cur,
+        )
+
+        items=[]
+
+        for index,item in enumerate(rows,start=1):
+            try:
+                preview=self.migration_inventory_opening_preview_row(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    item.get("normalized") or {},
+                    settings,
+                    row_number=index,
+                    cur=cur,
+                )
+            except Exception as error:
+                preview={
+                    "valid":False,
+                    "issues":[str(error)],
+                    "warnings":[],
+                    "item":{},
+                    "location":None,
+                    "quantity":0,
+                    "unit_cost":0,
+                    "calculated_value":0,
+                    "source_value":0,
+                    "value_difference":0,
+                    "batch_no":None,
+                    "expiry_date":None,
+                    "serial_number":None,
+                }
+
+            items.append({
+                "row_number":index,
+                **preview,
+            })
+
+        serials={}
+
+        for item in items:
+            serial=str(item.get("serial_number") or "").strip().lower()
+
+            if serial:
+                serials.setdefault(serial,[]).append(item)
+
+        for serial,duplicates in serials.items():
+            if len(duplicates)<=1:continue
+
+            for item in duplicates:
+                item["valid"]=False
+                item["issues"].append(
+                    f'Duplicate serial number "{item["serial_number"]}".'
+                )
+
+        valid_items=[
+            row for row in items
+            if row.get("valid")
+        ]
+
+        unique_items={
+            str(row.get("item",{}).get("code") or "").strip().lower()
+            for row in valid_items
+            if row.get("item",{}).get("code")
+        }
+
+        unique_locations={
+            (
+                row.get("location",{}).get("id")
+                or row.get("location",{}).get("mapping_id")
+                or row.get("location",{}).get("code")
+            )
+            for row in valid_items
+            if row.get("location")
+        }
+
+        calculated_total=round(sum(
+            self._migration_number(row.get("calculated_value"))
+            for row in items
+        ),6)
+
+        source_total=round(sum(
+            self._migration_number(row.get("source_value"))
+            for row in items
+        ),6)
+
+        difference=round(
+            calculated_total-source_total,
+            6,
+        )
+
+        tolerance=float(
+            settings.get("value_tolerance") or 0
+        )
+
+        source_value_available=any(
+            abs(self._migration_number(row.get("source_value")))>0
+            for row in items
+        )
+
+        is_reconciled=(
+            abs(difference)<=tolerance
+            if source_value_available and settings.get("validate_source_value")
+            else True
+        )
+
+        return {
+            "dataset_id":int(dataset_id),
+            "settings":settings,
+            "items":items,
+
+            "record_count":len(items),
+            "valid_count":sum(1 for row in items if row.get("valid")),
+            "error_count":sum(1 for row in items if not row.get("valid")),
+            "warning_count":sum(len(row.get("warnings") or []) for row in items),
+
+            "item_count":len(unique_items),
+            "location_count":len(unique_locations),
+
+            "total_quantity":round(sum(
+                self._migration_number(row.get("quantity"))
+                for row in items
+            ),6),
+
+            "calculated_inventory_value":calculated_total,
+            "source_inventory_value":source_total,
+            "reconciliation_difference":difference,
+
+            "source_value_available":source_value_available,
+            "is_reconciled":is_reconciled,
+
+            "is_ready":bool(
+                items
+                and not any(not row.get("valid") for row in items)
+                and is_reconciled
+            ),
+        }
+
+    def migration_inventory_opening_reconcile(
+        self,company_id:int,project_id:int,dataset_id:int,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        preview=self.migration_inventory_opening_preview(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        issues=[]
+
+        for row in preview.get("items") or []:
+            for issue in row.get("issues") or []:
+                issues.append({
+                    "row_number":row.get("row_number"),
+                    "item_code":row.get("item",{}).get("code"),
+                    "message":issue,
+                })
+
+        summary={
+            "item_count":preview["item_count"],
+            "location_count":preview["location_count"],
+            "total_quantity":preview["total_quantity"],
+            "calculated_inventory_value":preview["calculated_inventory_value"],
+            "source_inventory_value":preview["source_inventory_value"],
+            "reconciliation_difference":preview["reconciliation_difference"],
+            "source_value_available":preview["source_value_available"],
+        }
+
+        row=self.fetch_one(f"""
+            INSERT INTO {schema}.migration_inventory_opening_reconciliations(
+                company_id,
+                project_id,
+                dataset_id,
+
+                record_count,
+                valid_count,
+                error_count,
+                warning_count,
+
+                item_count,
+                location_count,
+
+                total_quantity,
+                calculated_inventory_value,
+                source_inventory_value,
+                reconciliation_difference,
+
+                is_reconciled,
+                is_ready,
+
+                summary_json,
+                issues_json,
+
+                created_by_user_id,
+                created_at
+            )
+            VALUES(
+                %s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,
+                %s,%s,%s,%s,
+                %s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,NOW()
+            )
+            RETURNING *
+        """,(
+            company_id,project_id,dataset_id,
+
+            preview["record_count"],
+            preview["valid_count"],
+            preview["error_count"],
+            preview["warning_count"],
+
+            preview["item_count"],
+            preview["location_count"],
+
+            preview["total_quantity"],
+            preview["calculated_inventory_value"],
+            preview["source_inventory_value"],
+            preview["reconciliation_difference"],
+
+            preview["is_reconciled"],
+            preview["is_ready"],
+
+            self._migration_json_dump(summary,{}),
+            self._migration_json_dump(issues,[]),
+
+            user_id,
+        ),cur=cur)
+
+        row["summary_json"]=summary
+        row["issues_json"]=issues
+        row["preview"]=preview
+
+        return row
+
+    def migration_inventory_opening_reconciliation_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict|None:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_inventory_opening_reconciliations
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY id DESC
+            LIMIT 1
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if not row:return None
+
+        row["summary_json"]=self._migration_json(row.get("summary_json"),{})
+        row["issues_json"]=self._migration_json(row.get("issues_json"),[])
+
+        return row
+
+    def migration_inventory_opening_get(
+        self,company_id:int,project_id:int,*,cur=None
+    )->dict:
+        datasets=self.migration_inventory_opening_datasets(
+            company_id,project_id,cur=cur
+        )
+
+        return {
+            "datasets":datasets,
+        }
+
+    def migration_inventory_movement_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='inventory_movements'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def _migration_inventory_movement_type(self,value)->str|None:
+        value=str(value or "").strip().lower()
+        if not value:return None
+
+        aliases={
+            "opening":"opening",
+            "opening stock":"opening",
+            "opening balance":"opening",
+
+            "purchase":"purchase",
+            "purchase receipt":"purchase",
+            "receipt":"purchase",
+            "goods receipt":"purchase",
+            "grn":"purchase",
+            "stock receipt":"purchase",
+
+            "sale":"sale",
+            "sales":"sale",
+            "sales issue":"sale",
+
+            "issue":"issue",
+            "stock issue":"issue",
+            "consumption":"issue",
+            "usage":"issue",
+
+            "adjustment in":"adjustment_in",
+            "positive adjustment":"adjustment_in",
+            "stock gain":"adjustment_in",
+
+            "adjustment out":"adjustment_out",
+            "negative adjustment":"adjustment_out",
+            "stock loss":"adjustment_out",
+
+            "transfer":"transfer",
+            "stock transfer":"transfer",
+            "warehouse transfer":"transfer",
+
+            "stocktake":"stocktake",
+            "stock count":"stocktake",
+            "stocktake adjustment":"stocktake",
+
+            "purchase return":"purchase_return",
+            "vendor return":"purchase_return",
+            "return to supplier":"purchase_return",
+
+            "sales return":"sales_return",
+            "customer return":"sales_return",
+            "return from customer":"sales_return",
+        }
+
+        return aliases.get(value)
+
+    def migration_inventory_movement_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT cutover_date,default_currency
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_inventory_movement_settings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(row.get("settings_json"),{})
+            row["metadata_json"]=self._migration_json(row.get("metadata_json"),{})
+            return row
+
+        inventory_settings=self.migration_inventory_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+
+            "history_from":None,
+            "history_to":project.get("cutover_date"),
+
+            "default_currency":project.get("default_currency"),
+            "default_location_id":inventory_settings.get("default_location_id"),
+
+            "source_layout":"movement_rows",
+            "movement_reference_scope":"transaction",
+
+            "require_item_resolution":True,
+            "require_location_resolution":inventory_settings.get("require_location",True),
+            "require_destination_for_transfer":True,
+
+            "preserve_source_cost":True,
+            "preserve_source_value":True,
+
+            "allow_negative_quantity":False,
+            "allow_zero_quantity":False,
+
+            "validate_movement_value":True,
+            "value_tolerance":0.05,
+
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_inventory_movement_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_inventory_movement_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        layout=str(data.get("source_layout") or current.get("source_layout") or "movement_rows").strip()
+        ref_scope=str(
+            data.get("movement_reference_scope")
+            or current.get("movement_reference_scope")
+            or "transaction"
+        ).strip()
+
+        if layout not in {"movement_rows","transaction_lines"}:
+            raise ValueError("Invalid inventory movement source layout.")
+
+        if ref_scope not in {"transaction","line"}:
+            raise ValueError("Invalid inventory movement reference scope.")
+
+        tolerance=self._migration_number(
+            data.get("value_tolerance",current.get("value_tolerance",0.05)),
+            0.05,
+        )
+
+        if tolerance<0:
+            raise ValueError("Inventory movement tolerance cannot be negative.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_inventory_movement_settings(
+                company_id,project_id,dataset_id,
+                history_from,history_to,
+                default_currency,default_location_id,
+                source_layout,movement_reference_scope,
+                require_item_resolution,
+                require_location_resolution,
+                require_destination_for_transfer,
+                preserve_source_cost,
+                preserve_source_value,
+                allow_negative_quantity,
+                allow_zero_quantity,
+                validate_movement_value,
+                value_tolerance,
+                settings_json,
+                metadata_json,
+                created_by_user_id,
+                updated_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES(
+                %s,%s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                history_from=EXCLUDED.history_from,
+                history_to=EXCLUDED.history_to,
+                default_currency=EXCLUDED.default_currency,
+                default_location_id=EXCLUDED.default_location_id,
+                source_layout=EXCLUDED.source_layout,
+                movement_reference_scope=EXCLUDED.movement_reference_scope,
+                require_item_resolution=EXCLUDED.require_item_resolution,
+                require_location_resolution=EXCLUDED.require_location_resolution,
+                require_destination_for_transfer=EXCLUDED.require_destination_for_transfer,
+                preserve_source_cost=EXCLUDED.preserve_source_cost,
+                preserve_source_value=EXCLUDED.preserve_source_value,
+                allow_negative_quantity=EXCLUDED.allow_negative_quantity,
+                allow_zero_quantity=EXCLUDED.allow_zero_quantity,
+                validate_movement_value=EXCLUDED.validate_movement_value,
+                value_tolerance=EXCLUDED.value_tolerance,
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,dataset_id,
+
+            data.get("history_from") if "history_from" in data else current.get("history_from"),
+            data.get("history_to") if "history_to" in data else current.get("history_to"),
+
+            data.get("default_currency") or current.get("default_currency"),
+
+            int(data.get("default_location_id")) if data.get("default_location_id") not in (None,"")
+            else current.get("default_location_id"),
+
+            layout,
+            ref_scope,
+
+            bool(data.get("require_item_resolution",current.get("require_item_resolution",True))),
+            bool(data.get("require_location_resolution",current.get("require_location_resolution",True))),
+            bool(data.get("require_destination_for_transfer",current.get("require_destination_for_transfer",True))),
+
+            bool(data.get("preserve_source_cost",current.get("preserve_source_cost",True))),
+            bool(data.get("preserve_source_value",current.get("preserve_source_value",True))),
+
+            bool(data.get("allow_negative_quantity",current.get("allow_negative_quantity",False))),
+            bool(data.get("allow_zero_quantity",current.get("allow_zero_quantity",False))),
+
+            bool(data.get("validate_movement_value",current.get("validate_movement_value",True))),
+            tolerance,
+
+            self._migration_json_dump(data.get("settings_json") or current.get("settings_json"),{}),
+            self._migration_json_dump(data.get("metadata_json") or current.get("metadata_json"),{}),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_inventory_movement_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_inventory_movement_types_detect(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,project_id,dataset_id,limit=20000,cur=cur
+        )
+
+        detected={}
+
+        for item in rows:
+            row=item.get("normalized") or {}
+            source=str(row.get("movement_type") or "").strip()
+            if not source:continue
+
+            key=source.lower()
+
+            if key not in detected:
+                detected[key]={
+                    "source_value":source,
+                    "source_label":source,
+                    "sample_count":0,
+                }
+
+            detected[key]["sample_count"]+=1
+
+        saved=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.migration_inventory_movement_type_mappings
+            WHERE company_id=%s AND project_id=%s AND dataset_id=%s
+            ORDER BY source_value
+        """,(company_id,project_id,dataset_id),cur=cur) or []
+
+        saved_map={
+            str(row.get("source_value") or "").lower():row
+            for row in saved
+        }
+
+        items=[]
+
+        for key,item in detected.items():
+            existing=saved_map.get(key)
+
+            if existing:
+                items.append({**item,**existing})
+                continue
+
+            movement_type=self._migration_inventory_movement_type(
+                item["source_value"]
+            )
+
+            items.append({
+                **item,
+                "target_movement_type":movement_type,
+                "mapping_method":"auto" if movement_type else "manual",
+                "confidence":100 if movement_type else 0,
+                "is_approved":False,
+            })
+
+        return {
+            "items":items,
+            "detected_count":len(items),
+            "mapped_count":sum(1 for row in items if row.get("target_movement_type")),
+            "approved_count":sum(1 for row in items if row.get("is_approved")),
+        }
+
+    def migration_inventory_movement_type_mappings_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        allowed={
+            "opening","purchase","sale","issue",
+            "adjustment_in","adjustment_out",
+            "transfer","stocktake",
+            "purchase_return","sales_return",
+        }
+
+        for item in mappings or []:
+            source=str(item.get("source_value") or "").strip()
+            target=str(item.get("target_movement_type") or "").strip()
+
+            if not source:
+                raise ValueError("Source movement type is required.")
+
+            if target not in allowed:
+                raise ValueError(f'Select a movement type for "{source}".')
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_inventory_movement_type_mappings(
+                    company_id,project_id,dataset_id,
+                    source_value,source_label,
+                    target_movement_type,
+                    mapping_method,confidence,is_approved,
+                    metadata_json,
+                    created_by_user_id,updated_by_user_id,
+                    created_at,updated_at
+                )
+                VALUES(
+                    %s,%s,%s,
+                    %s,%s,
+                    %s,
+                    'manual',100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+                ON CONFLICT(company_id,project_id,dataset_id,source_value)
+                DO UPDATE SET
+                    source_label=EXCLUDED.source_label,
+                    target_movement_type=EXCLUDED.target_movement_type,
+                    mapping_method='manual',
+                    confidence=100,
+                    is_approved=TRUE,
+                    updated_by_user_id=EXCLUDED.updated_by_user_id,
+                    updated_at=NOW()
+            """,(
+                company_id,project_id,dataset_id,
+                source,item.get("source_label") or source,
+                target,
+                user_id,user_id,
+            ),cur=cur)
+
+        return self.migration_inventory_movement_types_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_inventory_movement_type_resolve(
+        self,company_id:int,project_id:int,dataset_id:int,source_value,*,cur=None
+    )->str|None:
+        source=str(source_value or "").strip()
+        if not source:return None
+
+        schema=self.company_schema(int(company_id))
+
+        row=self.fetch_one(f"""
+            SELECT target_movement_type
+            FROM {schema}.migration_inventory_movement_type_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            AND LOWER(source_value)=LOWER(%s)
+            AND is_approved=TRUE
+            LIMIT 1
+        """,(
+            int(company_id),int(project_id),int(dataset_id),source
+        ),cur=cur)
+
+        if row:return row.get("target_movement_type")
+
+        return self._migration_inventory_movement_type(source)
+
+    def _migration_inventory_movement_direction(self,movement_type:str)->str:
+        movement_type=str(movement_type or "").strip()
+
+        if movement_type in {
+            "opening",
+            "purchase",
+            "adjustment_in",
+            "stocktake",
+            "sales_return",
+        }:
+            return "in"
+
+        if movement_type in {
+            "sale",
+            "issue",
+            "adjustment_out",
+            "purchase_return",
+        }:
+            return "out"
+
+        if movement_type=="transfer":
+            return "transfer"
+
+        return "unknown"
+
+    def migration_inventory_movement_preview_row(
+        self,company_id:int,project_id:int,dataset_id:int,
+        row:dict,settings:dict,*,row_number:int,cur=None
+    )->dict:
+        issues=[]
+        warnings=[]
+
+        reference=str(row.get("movement_reference") or "").strip()
+        item_code=str(row.get("item_code") or "").strip()
+
+        if not reference:
+            issues.append("Movement reference is required.")
+
+        movement_date=self._migration_date(row.get("movement_date"))
+        if not movement_date:
+            issues.append("Movement date is required.")
+
+        history_from=self._migration_date(settings.get("history_from"))
+        history_to=self._migration_date(settings.get("history_to"))
+
+        if movement_date and history_from and movement_date<history_from:
+            issues.append("Movement date is before the selected history period.")
+
+        if movement_date and history_to and movement_date>history_to:
+            issues.append("Movement date is after the selected history period.")
+
+        movement_type=self.migration_inventory_movement_type_resolve(
+            company_id,project_id,dataset_id,row.get("movement_type"),cur=cur
+        )
+
+        if not movement_type:
+            issues.append(
+                f'Movement type "{row.get("movement_type") or ""}" is not mapped.'
+            )
+
+        direction=self._migration_inventory_movement_direction(
+            movement_type
+        )
+
+        product=self.migration_inventory_opening_product_resolve(
+            company_id,project_id,item_code,cur=cur
+        ) if item_code else None
+
+        if not item_code:
+            issues.append("Item code is required.")
+        elif settings.get("require_item_resolution") and not product:
+            issues.append(
+                f'Inventory item "{item_code}" could not be resolved.'
+            )
+
+        location=self.migration_inventory_opening_location_resolve(
+            company_id,
+            project_id,
+            location_code=row.get("location_code"),
+            location_name=row.get("location_name"),
+            default_location_id=settings.get("default_location_id"),
+            cur=cur,
+        )
+
+        if (
+            settings.get("require_location_resolution")
+            and movement_type!="transfer"
+            and not location
+        ):
+            issues.append("Source inventory location could not be resolved.")
+
+        destination=None
+
+        if movement_type=="transfer":
+            if not location:
+                issues.append("Transfer source location could not be resolved.")
+
+            destination=self.migration_inventory_opening_location_resolve(
+                company_id,
+                project_id,
+                location_code=row.get("destination_location_code"),
+                location_name=row.get("destination_location_name"),
+                cur=cur,
+            )
+
+            if (
+                settings.get("require_destination_for_transfer")
+                and not destination
+            ):
+                issues.append("Transfer destination location could not be resolved.")
+
+            source_key=(
+                location.get("id")
+                or location.get("mapping_id")
+                or location.get("code")
+            ) if location else None
+
+            destination_key=(
+                destination.get("id")
+                or destination.get("mapping_id")
+                or destination.get("code")
+            ) if destination else None
+
+            if source_key and destination_key and source_key==destination_key:
+                issues.append("Transfer source and destination cannot be the same.")
+
+        quantity=self._migration_number(row.get("quantity"),0)
+
+        if quantity==0 and not settings.get("allow_zero_quantity"):
+            issues.append("Movement quantity cannot be zero.")
+
+        if quantity<0:
+            if settings.get("allow_negative_quantity"):
+                quantity=abs(quantity)
+                warnings.append(
+                    "Negative source quantity was converted to an absolute movement quantity."
+                )
+            else:
+                issues.append("Movement quantity cannot be negative.")
+
+        unit_cost=self._migration_number(row.get("unit_cost"),0)
+        source_value=self._migration_number(row.get("total_value"),0)
+
+        calculated_value=round(
+            quantity*unit_cost,
+            6,
+        )
+
+        if (
+            settings.get("validate_movement_value")
+            and source_value
+            and unit_cost
+        ):
+            difference=round(
+                calculated_value-source_value,
+                6,
+            )
+
+            tolerance=float(
+                settings.get("value_tolerance") or 0
+            )
+
+            if abs(difference)>tolerance:
+                issues.append(
+                    f"Movement value differs from source by {difference:.2f}."
+                )
+        else:
+            difference=0.0
+
+        effective_value=(
+            source_value
+            if settings.get("preserve_source_value") and source_value
+            else calculated_value
+        )
+
+        effective_cost=(
+            unit_cost
+            if settings.get("preserve_source_cost")
+            else (
+                effective_value/quantity
+                if quantity else 0
+            )
+        )
+
+        batch_no=str(row.get("batch_no") or "").strip() or None
+        serial_number=str(row.get("serial_number") or "").strip() or None
+        expiry_date=self._migration_date(row.get("expiry_date"))
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "warnings":warnings,
+
+            "reference":reference,
+            "line_no":int(self._migration_number(row.get("line_no"),row_number)),
+
+            "movement_date":movement_date,
+            "movement_type":movement_type,
+            "direction":direction,
+
+            "item":{
+                "code":item_code,
+                "name":product.get("name") if product else row.get("item_name"),
+                "live_item_id":product.get("id") if product else None,
+                "resolved_source":product.get("source") if product else None,
+            },
+
+            "location":location,
+            "destination_location":destination,
+
+            "quantity":round(quantity,6),
+            "unit_cost":round(effective_cost,6),
+            "movement_value":round(effective_value,6),
+            "source_value":round(source_value,6),
+            "value_difference":difference,
+
+            "batch_no":batch_no,
+            "expiry_date":expiry_date,
+            "serial_number":serial_number,
+
+            "supplier_reference":
+                str(row.get("supplier_reference") or "").strip() or None,
+
+            "customer_reference":
+                str(row.get("customer_reference") or "").strip() or None,
+
+            "source_document_type":
+                str(row.get("source_document_type") or "").strip() or None,
+
+            "source_document_id":
+                str(row.get("source_document_id") or "").strip() or None,
+
+            "uom":
+                str(row.get("uom") or "").strip() or None,
+
+            "currency":
+                str(
+                    row.get("currency")
+                    or settings.get("default_currency")
+                    or ""
+                ).strip().upper() or None,
+
+            "description":
+                str(row.get("description") or "").strip() or None,
+        }
+
+    def migration_inventory_movement_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_inventory_movement_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,project_id,dataset_id,limit=50000,cur=cur
+        )
+
+        items=[]
+
+        for index,item in enumerate(rows,start=1):
+            try:
+                preview=self.migration_inventory_movement_preview_row(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    item.get("normalized") or {},
+                    settings,
+                    row_number=index,
+                    cur=cur,
+                )
+            except Exception as error:
+                preview={
+                    "valid":False,
+                    "issues":[str(error)],
+                    "warnings":[],
+                    "reference":None,
+                    "movement_date":None,
+                    "movement_type":None,
+                    "direction":"unknown",
+                    "item":{},
+                    "location":None,
+                    "destination_location":None,
+                    "quantity":0,
+                    "unit_cost":0,
+                    "movement_value":0,
+                }
+
+            items.append({
+                "row_number":index,
+                **preview,
+            })
+
+        transaction_refs={
+            str(row.get("reference") or "").strip()
+            for row in items
+            if row.get("reference")
+        }
+
+        qty_in=round(sum(
+            self._migration_number(row.get("quantity"))
+            for row in items
+            if row.get("direction")=="in"
+        ),6)
+
+        qty_out=round(sum(
+            self._migration_number(row.get("quantity"))
+            for row in items
+            if row.get("direction")=="out"
+        ),6)
+
+        transfer_qty=round(sum(
+            self._migration_number(row.get("quantity"))
+            for row in items
+            if row.get("direction")=="transfer"
+        ),6)
+
+        value_in=round(sum(
+            self._migration_number(row.get("movement_value"))
+            for row in items
+            if row.get("direction")=="in"
+        ),6)
+
+        value_out=round(sum(
+            self._migration_number(row.get("movement_value"))
+            for row in items
+            if row.get("direction")=="out"
+        ),6)
+
+        counts={}
+
+        for row in items:
+            movement_type=row.get("movement_type") or "unmapped"
+            counts[movement_type]=counts.get(movement_type,0)+1
+
+        return {
+            "dataset_id":int(dataset_id),
+            "settings":settings,
+            "items":items,
+
+            "transaction_count":len(transaction_refs),
+            "line_count":len(items),
+
+            "valid_count":sum(1 for row in items if row.get("valid")),
+            "error_count":sum(1 for row in items if not row.get("valid")),
+            "warning_count":sum(len(row.get("warnings") or []) for row in items),
+
+            "quantity_in":qty_in,
+            "quantity_out":qty_out,
+            "transfer_quantity":transfer_qty,
+            "net_quantity":round(qty_in-qty_out,6),
+
+            "movement_value_in":value_in,
+            "movement_value_out":value_out,
+            "net_movement_value":round(value_in-value_out,6),
+
+            "counts":counts,
+
+            "is_ready":bool(
+                items and
+                not any(not row.get("valid") for row in items)
+            ),
+        }
+
+    def migration_inventory_movement_reconcile(
+        self,company_id:int,project_id:int,dataset_id:int,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        preview=self.migration_inventory_movement_preview(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        opening_datasets=self.migration_inventory_opening_datasets(
+            company_id,project_id,cur=cur
+        )
+
+        opening_ready=True
+        opening_value=0.0
+        opening_quantity=0.0
+
+        if opening_datasets:
+            opening_ready=False
+
+            for dataset in opening_datasets:
+                recon=self.migration_inventory_opening_reconciliation_get(
+                    company_id,
+                    project_id,
+                    int(dataset["dataset_id"]),
+                    cur=cur,
+                )
+
+                if recon and recon.get("is_ready"):
+                    opening_ready=True
+                    opening_value+=self._migration_number(
+                        recon.get("calculated_inventory_value")
+                    )
+                    opening_quantity+=self._migration_number(
+                        recon.get("total_quantity")
+                    )
+
+        issues=[]
+
+        for item in preview.get("items") or []:
+            for issue in item.get("issues") or []:
+                issues.append({
+                    "row_number":item.get("row_number"),
+                    "reference":item.get("reference"),
+                    "item_code":item.get("item",{}).get("code"),
+                    "message":issue,
+                })
+
+        if opening_datasets and not opening_ready:
+            issues.append({
+                "row_number":None,
+                "reference":None,
+                "item_code":None,
+                "message":"Opening inventory must be reconciled before inventory history can be considered ready.",
+            })
+
+        is_ready=bool(
+            preview.get("is_ready")
+            and opening_ready
+        )
+
+        summary={
+            "opening_inventory_present":bool(opening_datasets),
+            "opening_inventory_ready":opening_ready,
+            "opening_quantity":round(opening_quantity,6),
+            "opening_value":round(opening_value,6),
+
+            "movement_quantity_in":preview["quantity_in"],
+            "movement_quantity_out":preview["quantity_out"],
+            "transfer_quantity":preview["transfer_quantity"],
+            "net_movement_quantity":preview["net_quantity"],
+
+            "movement_value_in":preview["movement_value_in"],
+            "movement_value_out":preview["movement_value_out"],
+            "net_movement_value":preview["net_movement_value"],
+
+            "derived_quantity_after_movements":round(
+                opening_quantity+preview["net_quantity"],
+                6,
+            ),
+
+            "derived_value_after_movements":round(
+                opening_value+preview["net_movement_value"],
+                6,
+            ),
+        }
+
+        row=self.fetch_one(f"""
+            INSERT INTO {schema}.migration_inventory_movement_reconciliations(
+                company_id,
+                project_id,
+                dataset_id,
+
+                transaction_count,
+                line_count,
+                valid_count,
+                error_count,
+                warning_count,
+
+                quantity_in,
+                quantity_out,
+                net_quantity,
+
+                movement_value_in,
+                movement_value_out,
+                net_movement_value,
+
+                is_reconciled,
+                is_ready,
+
+                summary_json,
+                issues_json,
+
+                created_by_user_id,
+                created_at
+            )
+            VALUES(
+                %s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,
+                %s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,NOW()
+            )
+            RETURNING *
+        """,(
+            company_id,
+            project_id,
+            dataset_id,
+
+            preview["transaction_count"],
+            preview["line_count"],
+            preview["valid_count"],
+            preview["error_count"],
+            preview["warning_count"],
+
+            preview["quantity_in"],
+            preview["quantity_out"],
+            preview["net_quantity"],
+
+            preview["movement_value_in"],
+            preview["movement_value_out"],
+            preview["net_movement_value"],
+
+            is_ready,
+            is_ready,
+
+            self._migration_json_dump(summary,{}),
+            self._migration_json_dump(issues,[]),
+
+            user_id,
+        ),cur=cur)
+
+        row["summary_json"]=summary
+        row["issues_json"]=issues
+        row["preview"]=preview
+
+        return row
+
+    def migration_inventory_movement_reconciliation_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict|None:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_inventory_movement_reconciliations
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY id DESC
+            LIMIT 1
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if not row:return None
+
+        row["summary_json"]=self._migration_json(row.get("summary_json"),{})
+        row["issues_json"]=self._migration_json(row.get("issues_json"),[])
+
+        return row
+
+    def migration_inventory_movements_get(
+        self,company_id:int,project_id:int,*,cur=None
+    )->dict:
+        return {
+            "datasets":self.migration_inventory_movement_datasets(
+                company_id,project_id,cur=cur
+            )
+        }
+
+    def migration_pos_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='pos_configuration'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def _migration_pos_record_type(self,value)->str|None:
+        value=str(value or "").strip().lower()
+
+        aliases={
+            "terminal":"terminal",
+            "register":"terminal",
+            "till":"terminal",
+            "pos terminal":"terminal",
+
+            "payment":"payment_method",
+            "payment method":"payment_method",
+            "tender":"payment_method",
+            "tender type":"payment_method",
+
+            "catalogue":"catalogue",
+            "catalog":"catalogue",
+            "product":"catalogue",
+            "item":"catalogue",
+            "service":"catalogue",
+            "menu item":"catalogue",
+        }
+
+        return aliases.get(value)
+
+    def _migration_pos_payment_method(self,value)->str|None:
+        value=str(value or "").strip().lower()
+
+        aliases={
+            "cash":"cash",
+            "card":"card",
+            "credit card":"card",
+            "debit card":"card",
+            "visa":"card",
+            "mastercard":"card",
+
+            "eft":"eft",
+            "bank transfer":"eft",
+            "transfer":"eft",
+
+            "mobile money":"mobile_money",
+            "mpesa":"mobile_money",
+            "m-pesa":"mobile_money",
+            "ecocash":"mobile_money",
+
+            "voucher":"voucher",
+            "gift voucher":"voucher",
+            "gift card":"voucher",
+
+            "credit":"credit",
+            "account":"credit",
+            "customer account":"credit",
+        }
+
+        return aliases.get(value,"other" if value else None)
+
+    def migration_pos_settings_get(
+        self,company_id:int,project_id:int,*,cur=None
+    )->dict:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT default_currency
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_pos_settings
+            WHERE company_id=%s AND project_id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(row.get("settings_json"),{})
+            row["metadata_json"]=self._migration_json(row.get("metadata_json"),{})
+            return row
+
+        inventory_settings=self.migration_inventory_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "default_location_id":inventory_settings.get("default_location_id"),
+            "default_currency":project.get("default_currency"),
+
+            "migrate_terminals":True,
+            "migrate_payment_methods":True,
+            "migrate_catalogue":True,
+
+            "require_location":True,
+            "require_product_resolution":True,
+
+            "allow_services":True,
+            "allow_non_stock":True,
+            "allow_menu_items":True,
+
+            "preserve_source_prices":True,
+            "preserve_source_barcodes":True,
+
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_pos_settings_save(
+        self,company_id:int,project_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_pos_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+        default_location_id=data.get(
+            "default_location_id",
+            current.get("default_location_id"),
+        )
+
+        if default_location_id not in (None,""):
+            default_location_id=int(default_location_id)
+        else:
+            default_location_id=None
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_pos_settings(
+                company_id,project_id,
+                default_location_id,default_currency,
+
+                migrate_terminals,
+                migrate_payment_methods,
+                migrate_catalogue,
+
+                require_location,
+                require_product_resolution,
+
+                allow_services,
+                allow_non_stock,
+                allow_menu_items,
+
+                preserve_source_prices,
+                preserve_source_barcodes,
+
+                settings_json,
+                metadata_json,
+
+                created_by_user_id,
+                updated_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES(
+                %s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,
+                %s,%s,%s,
+                %s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id)
+            DO UPDATE SET
+                default_location_id=EXCLUDED.default_location_id,
+                default_currency=EXCLUDED.default_currency,
+
+                migrate_terminals=EXCLUDED.migrate_terminals,
+                migrate_payment_methods=EXCLUDED.migrate_payment_methods,
+                migrate_catalogue=EXCLUDED.migrate_catalogue,
+
+                require_location=EXCLUDED.require_location,
+                require_product_resolution=EXCLUDED.require_product_resolution,
+
+                allow_services=EXCLUDED.allow_services,
+                allow_non_stock=EXCLUDED.allow_non_stock,
+                allow_menu_items=EXCLUDED.allow_menu_items,
+
+                preserve_source_prices=EXCLUDED.preserve_source_prices,
+                preserve_source_barcodes=EXCLUDED.preserve_source_barcodes,
+
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,
+            default_location_id,
+            data.get("default_currency") or current.get("default_currency"),
+
+            bool(data.get("migrate_terminals",current.get("migrate_terminals",True))),
+            bool(data.get("migrate_payment_methods",current.get("migrate_payment_methods",True))),
+            bool(data.get("migrate_catalogue",current.get("migrate_catalogue",True))),
+
+            bool(data.get("require_location",current.get("require_location",True))),
+            bool(data.get("require_product_resolution",current.get("require_product_resolution",True))),
+
+            bool(data.get("allow_services",current.get("allow_services",True))),
+            bool(data.get("allow_non_stock",current.get("allow_non_stock",True))),
+            bool(data.get("allow_menu_items",current.get("allow_menu_items",True))),
+
+            bool(data.get("preserve_source_prices",current.get("preserve_source_prices",True))),
+            bool(data.get("preserve_source_barcodes",current.get("preserve_source_barcodes",True))),
+
+            self._migration_json_dump(data.get("settings_json") or current.get("settings_json"),{}),
+            self._migration_json_dump(data.get("metadata_json") or current.get("metadata_json"),{}),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_pos_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+    def migration_pos_terminal_targets(
+        self,company_id:int,*,cur=None
+    )->list[dict]:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        try:
+            return self.fetch_all(f"""
+                SELECT
+                    id,
+                    code,
+                    name,
+                    location_id,
+                    is_active
+                FROM {schema}.pos_terminals
+                WHERE company_id=%s
+                ORDER BY name,code
+            """,(company_id,),cur=cur) or []
+        except Exception:
+            return []
+
+    def migration_pos_terminals_detect(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,project_id,dataset_id,limit=20000,cur=cur
+        )
+
+        targets=self.migration_pos_terminal_targets(company_id,cur=cur)
+
+        saved=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.migration_pos_terminal_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY source_name
+        """,(company_id,project_id,dataset_id),cur=cur) or []
+
+        saved_map={
+            str(row.get("source_name") or "").strip().lower():row
+            for row in saved
+        }
+
+        detected={}
+
+        for item in rows:
+            row=item.get("normalized") or {}
+
+            if self._migration_pos_record_type(row.get("record_type"))!="terminal":
+                continue
+
+            name=str(row.get("terminal_name") or "").strip()
+            code=str(row.get("terminal_code") or "").strip()
+
+            if not name and not code:
+                continue
+
+            key=(code or name).lower()
+
+            if key not in detected:
+                detected[key]={
+                    "source_code":code or None,
+                    "source_name":name or code,
+                    "source_location_code":str(row.get("location_code") or "").strip() or None,
+                    "source_location_name":str(row.get("location_name") or "").strip() or None,
+                    "sample_count":0,
+                }
+
+            detected[key]["sample_count"]+=1
+
+        items=[]
+
+        for key,item in detected.items():
+            existing=saved_map.get(
+                str(item["source_name"]).lower()
+            )
+
+            if existing:
+                items.append({**item,**existing})
+                continue
+
+            target=next(
+                (
+                    row for row in targets
+                    if item.get("source_code")
+                    and str(row.get("code") or "").lower()==str(item["source_code"]).lower()
+                ),
+                None,
+            )
+
+            if not target:
+                target=next(
+                    (
+                        row for row in targets
+                        if str(row.get("name") or "").lower()==str(item["source_name"]).lower()
+                    ),
+                    None,
+                )
+
+            items.append({
+                **item,
+                "target_terminal_id":target.get("id") if target else None,
+                "target_terminal_code":target.get("code") if target else None,
+                "target_terminal_name":target.get("name") if target else None,
+                "target_location_id":target.get("location_id") if target else None,
+
+                "mapping_action":"map" if target else "create",
+                "mapping_method":"auto" if target else "manual",
+                "confidence":100 if target else 0,
+                "is_approved":False,
+            })
+
+        return {
+            "items":items,
+            "targets":targets,
+            "detected_count":len(items),
+            "mapped_count":sum(1 for row in items if row.get("mapping_action")=="map"),
+            "create_count":sum(1 for row in items if row.get("mapping_action")=="create"),
+            "approved_count":sum(1 for row in items if row.get("is_approved")),
+        }
+
+    def migration_pos_terminal_mappings_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        targets=self.migration_pos_terminal_targets(
+            company_id,cur=cur
+        )
+
+        for item in mappings or []:
+            name=str(item.get("source_name") or "").strip()
+            code=str(item.get("source_code") or "").strip() or None
+            action=str(item.get("mapping_action") or "create").strip().lower()
+
+            if not name:
+                raise ValueError("POS terminal name is required.")
+
+            if action not in {"map","create","ignore"}:
+                raise ValueError(f'Invalid POS terminal action for "{name}".')
+
+            target=None
+
+            if action=="map":
+                target_id=int(item.get("target_terminal_id") or 0)
+                target=next((row for row in targets if int(row["id"])==target_id),None)
+
+                if not target:
+                    raise ValueError(f'Select a FinSage terminal for "{name}".')
+
+            location=self.migration_inventory_opening_location_resolve(
+                company_id,
+                project_id,
+                location_code=item.get("source_location_code"),
+                location_name=item.get("source_location_name"),
+                cur=cur,
+            )
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_pos_terminal_mappings(
+                    company_id,project_id,dataset_id,
+                    source_code,source_name,
+                    source_location_code,source_location_name,
+
+                    target_terminal_id,
+                    target_terminal_code,
+                    target_terminal_name,
+                    target_location_id,
+
+                    mapping_action,
+                    mapping_method,
+                    confidence,
+                    is_approved,
+
+                    metadata_json,
+
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES(
+                    %s,%s,%s,
+                    %s,%s,
+                    %s,%s,
+
+                    %s,%s,%s,%s,
+
+                    %s,'manual',100,TRUE,
+
+                    '{{}}'::jsonb,
+
+                    %s,%s,NOW(),NOW()
+                )
+                ON CONFLICT DO NOTHING
+            """,(
+                company_id,project_id,dataset_id,
+
+                code,name,
+                item.get("source_location_code"),
+                item.get("source_location_name"),
+
+                target.get("id") if target else None,
+                target.get("code") if target else None,
+                target.get("name") if target else None,
+                (
+                    target.get("location_id")
+                    if target
+                    else location.get("id") if location else None
+                ),
+
+                action,
+
+                user_id,user_id,
+            ),cur=cur)
+
+            self.execute_sql(f"""
+                UPDATE {schema}.migration_pos_terminal_mappings
+                SET
+                    source_code=%s,
+                    source_location_code=%s,
+                    source_location_name=%s,
+
+                    target_terminal_id=%s,
+                    target_terminal_code=%s,
+                    target_terminal_name=%s,
+                    target_location_id=%s,
+
+                    mapping_action=%s,
+                    mapping_method='manual',
+                    confidence=100,
+                    is_approved=TRUE,
+
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+
+                WHERE company_id=%s
+                AND project_id=%s
+                AND dataset_id=%s
+                AND LOWER(source_name)=LOWER(%s)
+            """,(
+                code,
+                item.get("source_location_code"),
+                item.get("source_location_name"),
+
+                target.get("id") if target else None,
+                target.get("code") if target else None,
+                target.get("name") if target else None,
+
+                target.get("location_id")
+                if target
+                else location.get("id") if location else None,
+
+                action,
+                user_id,
+
+                company_id,project_id,dataset_id,name,
+            ),cur=cur)
+
+        return self.migration_pos_terminals_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_pos_payment_methods_detect(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,project_id,dataset_id,limit=20000,cur=cur
+        )
+
+        detected={}
+
+        for item in rows:
+            row=item.get("normalized") or {}
+
+            if self._migration_pos_record_type(row.get("record_type"))!="payment_method":
+                continue
+
+            source=str(row.get("payment_method") or "").strip()
+            if not source:continue
+
+            key=source.lower()
+
+            if key not in detected:
+                detected[key]={
+                    "source_value":source,
+                    "source_label":source,
+                    "sample_count":0,
+                }
+
+            detected[key]["sample_count"]+=1
+
+        saved=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.migration_pos_payment_method_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY source_value
+        """,(company_id,project_id,dataset_id),cur=cur) or []
+
+        saved_map={
+            str(row.get("source_value") or "").lower():row
+            for row in saved
+        }
+
+        items=[]
+
+        for key,item in detected.items():
+            existing=saved_map.get(key)
+
+            if existing:
+                items.append({**item,**existing})
+                continue
+
+            method=self._migration_pos_payment_method(
+                item["source_value"]
+            )
+
+            items.append({
+                **item,
+                "target_payment_method":method,
+                "mapping_method":"auto" if method else "manual",
+                "confidence":100 if method else 0,
+                "is_approved":False,
+            })
+
+        return {
+            "items":items,
+            "detected_count":len(items),
+            "mapped_count":sum(1 for row in items if row.get("target_payment_method")),
+            "approved_count":sum(1 for row in items if row.get("is_approved")),
+        }
+
+    def migration_pos_payment_method_mappings_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        allowed={
+            "cash","card","eft","mobile_money",
+            "voucher","credit","other",
+        }
+
+        for item in mappings or []:
+            source=str(item.get("source_value") or "").strip()
+            target=str(item.get("target_payment_method") or "").strip()
+
+            if not source:
+                raise ValueError("Source POS payment method is required.")
+
+            if target not in allowed:
+                raise ValueError(f'Select a payment method for "{source}".')
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_pos_payment_method_mappings(
+                    company_id,project_id,dataset_id,
+                    source_value,source_label,
+                    target_payment_method,
+                    mapping_method,confidence,is_approved,
+                    metadata_json,
+                    created_by_user_id,updated_by_user_id,
+                    created_at,updated_at
+                )
+                VALUES(
+                    %s,%s,%s,
+                    %s,%s,
+                    %s,
+                    'manual',100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+                ON CONFLICT(company_id,project_id,dataset_id,source_value)
+                DO UPDATE SET
+                    source_label=EXCLUDED.source_label,
+                    target_payment_method=EXCLUDED.target_payment_method,
+                    mapping_method='manual',
+                    confidence=100,
+                    is_approved=TRUE,
+                    updated_by_user_id=EXCLUDED.updated_by_user_id,
+                    updated_at=NOW()
+            """,(
+                company_id,project_id,dataset_id,
+                source,item.get("source_label") or source,
+                target,
+                user_id,user_id,
+            ),cur=cur)
+
+        return self.migration_pos_payment_methods_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_pos_product_resolve(
+        self,company_id:int,project_id:int,code=None,name=None,barcode=None,*,cur=None
+    )->dict|None:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        code=str(code or "").strip()
+        name=str(name or "").strip()
+        barcode=str(barcode or "").strip()
+
+        if code:
+            inventory=self.fetch_one(f"""
+                SELECT
+                    id,
+                    sku AS code,
+                    name,
+                    barcode,
+                    sales_price,
+                    'inventory'::text AS item_kind
+                FROM {schema}.inventory_items
+                WHERE company_id=%s
+                AND LOWER(sku)=LOWER(%s)
+                LIMIT 1
+            """,(company_id,code),cur=cur)
+
+            if inventory:return inventory
+
+            service=self.fetch_one(f"""
+                SELECT
+                    id,
+                    code,
+                    name,
+                    NULL::text AS barcode,
+                    price AS sales_price,
+                    'service'::text AS item_kind
+                FROM {schema}.service_items
+                WHERE company_id=%s
+                AND LOWER(code)=LOWER(%s)
+                LIMIT 1
+            """,(company_id,code),cur=cur)
+
+            if service:return service
+
+        if barcode:
+            inventory=self.fetch_one(f"""
+                SELECT
+                    id,
+                    sku AS code,
+                    name,
+                    barcode,
+                    sales_price,
+                    'inventory'::text AS item_kind
+                FROM {schema}.inventory_items
+                WHERE company_id=%s
+                AND LOWER(COALESCE(barcode,''))=LOWER(%s)
+                LIMIT 1
+            """,(company_id,barcode),cur=cur)
+
+            if inventory:return inventory
+
+        datasets=self.migration_product_datasets(
+            company_id,project_id,cur=cur
+        )
+
+        for dataset in datasets:
+            dataset_id=int(dataset["dataset_id"])
+
+            settings=self.migration_product_settings_get(
+                company_id,project_id,dataset_id,cur=cur
+            )
+
+            rows=self.migration_payroll_normalized_rows(
+                company_id,project_id,dataset_id,limit=10000,cur=cur
+            )
+
+            for index,item in enumerate(rows,start=1):
+                preview=self.migration_product_preview_row(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    item.get("normalized") or {},
+                    settings,
+                    row_number=index,
+                    cur=cur,
+                )
+
+                p=preview.get("item") or {}
+                kind=preview.get("classification",{}).get("item_kind")
+
+                match=(
+                    code and str(p.get("code") or "").lower()==code.lower()
+                ) or (
+                    barcode and str(p.get("barcode") or "").lower()==barcode.lower()
+                ) or (
+                    name and str(p.get("name") or "").lower()==name.lower()
+                )
+
+                if match:
+                    return {
+                        "id":None,
+                        "code":p.get("code"),
+                        "name":p.get("name"),
+                        "barcode":p.get("barcode"),
+                        "sales_price":p.get("sales_price"),
+                        "item_kind":kind,
+                        "source":"migration",
+                        "dataset_id":dataset_id,
+                        "row_number":index,
+                    }
+
+        return None
+
+    def migration_pos_catalogue_detect(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        settings=self.migration_pos_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,project_id,dataset_id,limit=20000,cur=cur
+        )
+
+        saved=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.migration_pos_catalogue_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY source_name
+        """,(company_id,project_id,dataset_id),cur=cur) or []
+
+        saved_map={
+            (
+                str(row.get("source_code") or "").lower(),
+                str(row.get("source_name") or "").lower(),
+            ):row
+            for row in saved
+        }
+
+        items=[]
+
+        for source in rows:
+            row=source.get("normalized") or {}
+
+            if self._migration_pos_record_type(row.get("record_type"))!="catalogue":
+                continue
+
+            code=str(row.get("item_code") or "").strip()
+            name=str(row.get("item_name") or "").strip()
+            barcode=str(row.get("barcode") or "").strip()
+
+            if not code and not name:
+                continue
+
+            existing=saved_map.get(
+                (code.lower(),name.lower())
+            )
+
+            if existing:
+                items.append(existing)
+                continue
+
+            product=self.migration_pos_product_resolve(
+                company_id,
+                project_id,
+                code=code,
+                name=name,
+                barcode=barcode,
+                cur=cur,
+            )
+
+            kind=(
+                product.get("item_kind")
+                if product
+                else self._migration_product_kind(row.get("item_type"))
+            )
+
+            valid_kind=bool(
+                kind=="inventory"
+                or (kind=="service" and settings.get("allow_services"))
+                or (kind=="non_stock" and settings.get("allow_non_stock"))
+                or (kind=="menu_item" and settings.get("allow_menu_items"))
+            )
+
+            items.append({
+                "source_code":code or None,
+                "source_name":name or code,
+                "source_barcode":barcode or None,
+                "source_item_type":row.get("item_type"),
+
+                "target_kind":kind,
+                "target_item_id":product.get("id") if product else None,
+                "target_item_code":product.get("code") if product else None,
+                "target_item_name":product.get("name") if product else None,
+
+                "sale_price":(
+                    self._migration_number(row.get("sale_price"))
+                    if settings.get("preserve_source_prices")
+                    else product.get("sales_price") if product else 0
+                ),
+
+                "available_for_sale":
+                    self._migration_bool(row.get("available_for_sale"),True),
+
+                "show_on_cashier":
+                    self._migration_bool(row.get("show_on_cashier"),True),
+
+                "show_on_display":
+                    self._migration_bool(row.get("show_on_display"),True),
+
+                "mapping_action":"map" if product else "create",
+                "mapping_method":"auto" if product else "manual",
+                "confidence":100 if product else 0,
+                "is_approved":False,
+
+                "valid_kind":valid_kind,
+            })
+
+        return {
+            "items":items,
+            "detected_count":len(items),
+            "resolved_count":sum(1 for row in items if row.get("target_kind")),
+            "approved_count":sum(1 for row in items if row.get("is_approved")),
+        }
+
+    def migration_pos_catalogue_mappings_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        allowed={"inventory","service","non_stock","menu_item"}
+
+        for item in mappings or []:
+            name=str(item.get("source_name") or "").strip()
+            kind=str(item.get("target_kind") or "").strip()
+            action=str(item.get("mapping_action") or "map").strip()
+
+            if not name:
+                raise ValueError("POS catalogue item name is required.")
+
+            if kind not in allowed:
+                raise ValueError(f'Select a product type for "{name}".')
+
+            if action not in {"map","create","ignore"}:
+                raise ValueError(f'Invalid POS catalogue action for "{name}".')
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_pos_catalogue_mappings(
+                    company_id,project_id,dataset_id,
+
+                    source_code,
+                    source_name,
+                    source_barcode,
+                    source_item_type,
+
+                    target_kind,
+                    target_item_id,
+                    target_item_code,
+                    target_item_name,
+
+                    sale_price,
+
+                    available_for_sale,
+                    show_on_cashier,
+                    show_on_display,
+
+                    mapping_action,
+                    mapping_method,
+                    confidence,
+                    is_approved,
+
+                    metadata_json,
+
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES(
+                    %s,%s,%s,
+
+                    %s,%s,%s,%s,
+
+                    %s,%s,%s,%s,
+
+                    %s,
+
+                    %s,%s,%s,
+
+                    %s,'manual',100,TRUE,
+
+                    '{{}}'::jsonb,
+
+                    %s,%s,NOW(),NOW()
+                )
+            """,(
+                company_id,project_id,dataset_id,
+
+                item.get("source_code"),
+                name,
+                item.get("source_barcode"),
+                item.get("source_item_type"),
+
+                kind,
+                item.get("target_item_id"),
+                item.get("target_item_code"),
+                item.get("target_item_name"),
+
+                self._migration_number(item.get("sale_price")),
+
+                bool(item.get("available_for_sale",True)),
+                bool(item.get("show_on_cashier",True)),
+                bool(item.get("show_on_display",True)),
+
+                action,
+
+                user_id,user_id,
+            ),cur=cur)
+
+        return self.migration_pos_catalogue_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_pos_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_pos_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+        terminals=self.migration_pos_terminals_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        payments=self.migration_pos_payment_methods_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        catalogue=self.migration_pos_catalogue_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        issues=[]
+        warnings=[]
+
+        if settings.get("migrate_terminals"):
+            for row in terminals.get("items") or []:
+                if row.get("mapping_action")=="map" and not row.get("target_terminal_id"):
+                    issues.append(
+                        f'POS terminal "{row.get("source_name")}" is not mapped.'
+                    )
+
+                if settings.get("require_location") and not row.get("target_location_id"):
+                    warnings.append(
+                        f'POS terminal "{row.get("source_name")}" has no resolved inventory location.'
+                    )
+
+        if settings.get("migrate_payment_methods"):
+            for row in payments.get("items") or []:
+                if not row.get("target_payment_method"):
+                    issues.append(
+                        f'Payment method "{row.get("source_value")}" is not mapped.'
+                    )
+
+        if settings.get("migrate_catalogue"):
+            for row in catalogue.get("items") or []:
+                if not row.get("target_kind"):
+                    issues.append(
+                        f'POS item "{row.get("source_name")}" has no product type.'
+                    )
+
+                if settings.get("require_product_resolution") and row.get("mapping_action")=="map":
+                    if not row.get("target_item_id") and not row.get("target_item_code"):
+                        issues.append(
+                            f'POS item "{row.get("source_name")}" could not be resolved.'
+                        )
+
+                if not row.get("valid_kind",True):
+                    issues.append(
+                        f'POS item "{row.get("source_name")}" uses a disabled product type.'
+                    )
+
+        return {
+            "dataset_id":int(dataset_id),
+
+            "terminals":terminals,
+            "payment_methods":payments,
+            "catalogue":catalogue,
+
+            "terminal_count":terminals.get("detected_count",0),
+            "payment_method_count":payments.get("detected_count",0),
+            "catalogue_count":catalogue.get("detected_count",0),
+
+            "issues":issues,
+            "warnings":warnings,
+
+            "error_count":len(issues),
+            "warning_count":len(warnings),
+
+            "is_ready":not issues,
+        }
+
+    def migration_pos_reconcile(
+        self,company_id:int,project_id:int,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        datasets=self.migration_pos_datasets(
+            company_id,project_id,cur=cur
+        )
+
+        terminal_count=0
+        terminal_ready=0
+
+        payment_count=0
+        payment_ready=0
+
+        catalogue_count=0
+        catalogue_ready=0
+
+        issues=[]
+        warnings=[]
+        previews=[]
+
+        for dataset in datasets:
+            dataset_id=int(dataset["dataset_id"])
+
+            preview=self.migration_pos_preview(
+                company_id,project_id,dataset_id,cur=cur
+            )
+
+            previews.append(preview)
+
+            terminals=preview.get("terminals",{}).get("items") or []
+            payments=preview.get("payment_methods",{}).get("items") or []
+            catalogue=preview.get("catalogue",{}).get("items") or []
+
+            terminal_count+=len(terminals)
+            terminal_ready+=sum(
+                1 for row in terminals
+                if row.get("is_approved")
+            )
+
+            payment_count+=len(payments)
+            payment_ready+=sum(
+                1 for row in payments
+                if row.get("is_approved")
+            )
+
+            catalogue_count+=len(catalogue)
+            catalogue_ready+=sum(
+                1 for row in catalogue
+                if row.get("is_approved")
+            )
+
+            issues.extend(preview.get("issues") or [])
+            warnings.extend(preview.get("warnings") or [])
+
+        is_ready=not issues
+
+        summary={
+            "dataset_count":len(datasets),
+
+            "terminal_count":terminal_count,
+            "terminal_ready_count":terminal_ready,
+
+            "payment_method_count":payment_count,
+            "payment_method_ready_count":payment_ready,
+
+            "catalogue_count":catalogue_count,
+            "catalogue_ready_count":catalogue_ready,
+
+            "previews":previews,
+        }
+
+        row=self.fetch_one(f"""
+            INSERT INTO {schema}.migration_pos_reconciliations(
+                company_id,
+                project_id,
+
+                terminal_count,
+                terminal_ready_count,
+
+                payment_method_count,
+                payment_method_ready_count,
+
+                catalogue_count,
+                catalogue_ready_count,
+
+                blocking_error_count,
+                warning_count,
+
+                is_ready,
+
+                summary_json,
+                issues_json,
+
+                created_by_user_id,
+                created_at
+            )
+            VALUES(
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                %s,
+                %s::jsonb,
+                %s::jsonb,
+                %s,NOW()
+            )
+            RETURNING *
+        """,(
+            company_id,project_id,
+
+            terminal_count,terminal_ready,
+            payment_count,payment_ready,
+            catalogue_count,catalogue_ready,
+
+            len(issues),
+            len(warnings),
+
+            is_ready,
+
+            self._migration_json_dump(summary,{}),
+            self._migration_json_dump(issues,[]),
+
+            user_id,
+        ),cur=cur)
+
+        row["summary_json"]=summary
+        row["issues_json"]=issues
+
+        return row
+
+    def migration_pos_reconciliation_get(
+        self,company_id:int,project_id:int,*,cur=None
+    )->dict|None:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_pos_reconciliations
+            WHERE company_id=%s
+            AND project_id=%s
+            ORDER BY id DESC
+            LIMIT 1
+        """,(company_id,project_id),cur=cur)
+
+        if not row:return None
+
+        row["summary_json"]=self._migration_json(row.get("summary_json"),{})
+        row["issues_json"]=self._migration_json(row.get("issues_json"),[])
+
+        return row
+
+    def migration_pos_get(
+        self,company_id:int,project_id:int,*,cur=None
+    )->dict:
+        return {
+            "datasets":self.migration_pos_datasets(
+                company_id,project_id,cur=cur
+            ),
+
+            "settings":self.migration_pos_settings_get(
+                company_id,project_id,cur=cur
+            ),
+
+            "reconciliation":self.migration_pos_reconciliation_get(
+                company_id,project_id,cur=cur
+            ),
+        }
+
+    def migration_pos_menu_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='pos_menu'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def _migration_pos_menu_record_type(self,value)->str|None:
+        value=str(value or "").strip().lower()
+
+        aliases={
+            "menu":"menu_item",
+            "menu item":"menu_item",
+            "item":"menu_item",
+            "dish":"menu_item",
+            "product":"menu_item",
+
+            "component":"component",
+            "ingredient":"component",
+            "recipe":"component",
+            "recipe component":"component",
+
+            "addon":"addon",
+            "add-on":"addon",
+            "extra":"addon",
+            "modifier":"addon",
+        }
+
+        return aliases.get(value)
+
+    def migration_pos_menu_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT default_currency
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_pos_menu_settings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(row.get("settings_json"),{})
+            row["metadata_json"]=self._migration_json(row.get("metadata_json"),{})
+            return row
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+
+            "default_currency":project.get("default_currency"),
+
+            "require_menu_code":True,
+            "require_component_resolution":True,
+            "require_positive_component_qty":True,
+
+            "preserve_source_price":True,
+            "preserve_source_cost":True,
+
+            "auto_create_menu_items":True,
+            "allow_service_components":False,
+            "allow_non_stock_components":False,
+
+            "validate_recipe_cost":True,
+            "cost_tolerance":0.05,
+
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_pos_menu_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_pos_menu_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        tolerance=self._migration_number(
+            data.get("cost_tolerance",current.get("cost_tolerance",0.05)),
+            0.05,
+        )
+
+        if tolerance<0:
+            raise ValueError("Recipe cost tolerance cannot be negative.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_pos_menu_settings(
+                company_id,project_id,dataset_id,
+                default_currency,
+
+                require_menu_code,
+                require_component_resolution,
+                require_positive_component_qty,
+
+                preserve_source_price,
+                preserve_source_cost,
+
+                auto_create_menu_items,
+                allow_service_components,
+                allow_non_stock_components,
+
+                validate_recipe_cost,
+                cost_tolerance,
+
+                settings_json,
+                metadata_json,
+
+                created_by_user_id,
+                updated_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES(
+                %s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,
+                %s,%s,%s,
+                %s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                default_currency=EXCLUDED.default_currency,
+
+                require_menu_code=EXCLUDED.require_menu_code,
+                require_component_resolution=EXCLUDED.require_component_resolution,
+                require_positive_component_qty=EXCLUDED.require_positive_component_qty,
+
+                preserve_source_price=EXCLUDED.preserve_source_price,
+                preserve_source_cost=EXCLUDED.preserve_source_cost,
+
+                auto_create_menu_items=EXCLUDED.auto_create_menu_items,
+                allow_service_components=EXCLUDED.allow_service_components,
+                allow_non_stock_components=EXCLUDED.allow_non_stock_components,
+
+                validate_recipe_cost=EXCLUDED.validate_recipe_cost,
+                cost_tolerance=EXCLUDED.cost_tolerance,
+
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,dataset_id,
+            data.get("default_currency") or current.get("default_currency"),
+
+            bool(data.get("require_menu_code",current.get("require_menu_code",True))),
+            bool(data.get("require_component_resolution",current.get("require_component_resolution",True))),
+            bool(data.get("require_positive_component_qty",current.get("require_positive_component_qty",True))),
+
+            bool(data.get("preserve_source_price",current.get("preserve_source_price",True))),
+            bool(data.get("preserve_source_cost",current.get("preserve_source_cost",True))),
+
+            bool(data.get("auto_create_menu_items",current.get("auto_create_menu_items",True))),
+            bool(data.get("allow_service_components",current.get("allow_service_components",False))),
+            bool(data.get("allow_non_stock_components",current.get("allow_non_stock_components",False))),
+
+            bool(data.get("validate_recipe_cost",current.get("validate_recipe_cost",True))),
+            tolerance,
+
+            self._migration_json_dump(data.get("settings_json") or current.get("settings_json"),{}),
+            self._migration_json_dump(data.get("metadata_json") or current.get("metadata_json"),{}),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_pos_menu_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_pos_menu_items_detect(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        settings=self.migration_pos_menu_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,project_id,dataset_id,limit=30000,cur=cur
+        )
+
+        targets=self.migration_pos_menu_targets(
+            company_id,cur=cur
+        )
+
+        saved=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.migration_pos_menu_item_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY source_menu_name
+        """,(company_id,project_id,dataset_id),cur=cur) or []
+
+        saved_map={
+            (
+                str(row.get("source_menu_code") or "").lower(),
+                str(row.get("source_menu_name") or "").lower(),
+            ):row
+            for row in saved
+        }
+
+        detected={}
+
+        for item in rows:
+            row=item.get("normalized") or {}
+
+            if self._migration_pos_menu_record_type(row.get("record_type"))!="menu_item":
+                continue
+
+            code=str(row.get("menu_code") or "").strip()
+            name=str(row.get("menu_name") or "").strip()
+
+            if not name:
+                continue
+
+            key=(code.lower(),name.lower())
+
+            if key not in detected:
+                detected[key]={
+                    "source_menu_code":code or None,
+                    "source_menu_name":name,
+                    "source_category":str(row.get("category") or "").strip() or None,
+
+                    "sale_price":self._migration_number(row.get("sale_price")),
+                    "source_recipe_cost":self._migration_number(row.get("recipe_cost")),
+
+                    "is_active":self._migration_bool(row.get("is_active"),True),
+                    "show_on_cashier":self._migration_bool(row.get("show_on_cashier"),True),
+                    "show_on_display":self._migration_bool(row.get("show_on_display"),True),
+
+                    "sample_count":0,
+                }
+
+            detected[key]["sample_count"]+=1
+
+        items=[]
+
+        for key,item in detected.items():
+            existing=saved_map.get(key)
+
+            if existing:
+                items.append({**item,**existing})
+                continue
+
+            target=next(
+                (
+                    row for row in targets
+                    if item.get("source_menu_code")
+                    and str(row.get("code") or "").lower()==str(item["source_menu_code"]).lower()
+                ),
+                None,
+            )
+
+            if not target:
+                target=next(
+                    (
+                        row for row in targets
+                        if str(row.get("name") or "").lower()==item["source_menu_name"].lower()
+                    ),
+                    None,
+                )
+
+            action="map" if target else (
+                "create"
+                if settings.get("auto_create_menu_items")
+                else "ignore"
+            )
+
+            items.append({
+                **item,
+
+                "target_menu_item_id":target.get("id") if target else None,
+                "target_menu_code":target.get("code") if target else None,
+                "target_menu_name":target.get("name") if target else None,
+
+                "mapping_action":action,
+                "mapping_method":"auto" if target else "manual",
+                "confidence":100 if target else 0,
+                "is_approved":False,
+            })
+
+        return {
+            "items":items,
+            "targets":targets,
+            "detected_count":len(items),
+            "mapped_count":sum(1 for row in items if row.get("mapping_action")=="map"),
+            "create_count":sum(1 for row in items if row.get("mapping_action")=="create"),
+            "approved_count":sum(1 for row in items if row.get("is_approved")),
+        }
+
+    def migration_pos_menu_components_detect(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        settings=self.migration_pos_menu_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,project_id,dataset_id,limit=50000,cur=cur
+        )
+
+        saved=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.migration_pos_menu_component_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY source_menu_name,source_component_name
+        """,(company_id,project_id,dataset_id),cur=cur) or []
+
+        saved_map={
+            (
+                str(row.get("source_menu_code") or "").lower(),
+                str(row.get("source_menu_name") or "").lower(),
+                str(row.get("source_component_code") or "").lower(),
+                str(row.get("source_component_name") or "").lower(),
+            ):row
+            for row in saved
+        }
+
+        items=[]
+
+        for source in rows:
+            row=source.get("normalized") or {}
+
+            if self._migration_pos_menu_record_type(row.get("record_type"))!="component":
+                continue
+
+            menu_code=str(row.get("menu_code") or "").strip()
+            menu_name=str(row.get("menu_name") or "").strip()
+
+            component_code=str(row.get("component_code") or "").strip()
+            component_name=str(row.get("component_name") or "").strip()
+
+            if not menu_name or not component_name:
+                continue
+
+            key=(
+                menu_code.lower(),
+                menu_name.lower(),
+                component_code.lower(),
+                component_name.lower(),
+            )
+
+            existing=saved_map.get(key)
+
+            if existing:
+                items.append(existing)
+                continue
+
+            component=self.migration_pos_menu_component_resolve(
+                company_id,
+                project_id,
+                code=component_code,
+                name=component_name,
+                cur=cur,
+            )
+
+            kind=(
+                component.get("item_kind")
+                if component
+                else self._migration_product_kind(row.get("component_type"))
+            ) or "inventory"
+
+            valid_kind=bool(
+                kind=="inventory"
+                or (kind=="service" and settings.get("allow_service_components"))
+                or (kind=="non_stock" and settings.get("allow_non_stock_components"))
+            )
+
+            quantity=self._migration_number(
+                row.get("component_qty"),
+                0,
+            )
+
+            source_cost=self._migration_number(
+                row.get("component_unit_cost"),
+                0,
+            )
+
+            resolved_cost=(
+                source_cost
+                if settings.get("preserve_source_cost") and source_cost
+                else self._migration_number(
+                    component.get("unit_cost") if component else 0
+                )
+            )
+
+            component_cost=round(
+                quantity*resolved_cost,
+                6,
+            )
+
+            items.append({
+                "source_menu_code":menu_code or None,
+                "source_menu_name":menu_name,
+
+                "source_component_code":component_code or None,
+                "source_component_name":component_name,
+
+                "component_kind":kind,
+
+                "target_item_id":component.get("id") if component else None,
+                "target_item_code":component.get("code") if component else None,
+                "target_item_name":component.get("name") if component else None,
+
+                "quantity":round(quantity,6),
+                "uom":str(row.get("component_uom") or "").strip() or None,
+
+                "source_unit_cost":round(source_cost,6),
+                "calculated_component_cost":component_cost,
+
+                "mapping_action":"map" if component else "create",
+                "mapping_method":"auto" if component else "manual",
+
+                "is_optional":self._migration_bool(row.get("is_optional"),False),
+                "is_default":self._migration_bool(row.get("is_default"),True),
+
+                "confidence":100 if component else 0,
+                "is_approved":False,
+
+                "valid_kind":valid_kind,
+            })
+
+        return {
+            "items":items,
+            "detected_count":len(items),
+            "resolved_count":sum(1 for row in items if row.get("target_item_code")),
+            "approved_count":sum(1 for row in items if row.get("is_approved")),
+        }
+
+
+    def migration_pos_menu_components_detect(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        settings=self.migration_pos_menu_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,project_id,dataset_id,limit=50000,cur=cur
+        )
+
+        saved=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.migration_pos_menu_component_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY source_menu_name,source_component_name
+        """,(company_id,project_id,dataset_id),cur=cur) or []
+
+        saved_map={
+            (
+                str(row.get("source_menu_code") or "").lower(),
+                str(row.get("source_menu_name") or "").lower(),
+                str(row.get("source_component_code") or "").lower(),
+                str(row.get("source_component_name") or "").lower(),
+            ):row
+            for row in saved
+        }
+
+        items=[]
+
+        for source in rows:
+            row=source.get("normalized") or {}
+
+            if self._migration_pos_menu_record_type(row.get("record_type"))!="component":
+                continue
+
+            menu_code=str(row.get("menu_code") or "").strip()
+            menu_name=str(row.get("menu_name") or "").strip()
+
+            component_code=str(row.get("component_code") or "").strip()
+            component_name=str(row.get("component_name") or "").strip()
+
+            if not menu_name or not component_name:
+                continue
+
+            key=(
+                menu_code.lower(),
+                menu_name.lower(),
+                component_code.lower(),
+                component_name.lower(),
+            )
+
+            existing=saved_map.get(key)
+
+            if existing:
+                items.append(existing)
+                continue
+
+            component=self.migration_pos_menu_component_resolve(
+                company_id,
+                project_id,
+                code=component_code,
+                name=component_name,
+                cur=cur,
+            )
+
+            kind=(
+                component.get("item_kind")
+                if component
+                else self._migration_product_kind(row.get("component_type"))
+            ) or "inventory"
+
+            valid_kind=bool(
+                kind=="inventory"
+                or (kind=="service" and settings.get("allow_service_components"))
+                or (kind=="non_stock" and settings.get("allow_non_stock_components"))
+            )
+
+            quantity=self._migration_number(
+                row.get("component_qty"),
+                0,
+            )
+
+            source_cost=self._migration_number(
+                row.get("component_unit_cost"),
+                0,
+            )
+
+            resolved_cost=(
+                source_cost
+                if settings.get("preserve_source_cost") and source_cost
+                else self._migration_number(
+                    component.get("unit_cost") if component else 0
+                )
+            )
+
+            component_cost=round(
+                quantity*resolved_cost,
+                6,
+            )
+
+            items.append({
+                "source_menu_code":menu_code or None,
+                "source_menu_name":menu_name,
+
+                "source_component_code":component_code or None,
+                "source_component_name":component_name,
+
+                "component_kind":kind,
+
+                "target_item_id":component.get("id") if component else None,
+                "target_item_code":component.get("code") if component else None,
+                "target_item_name":component.get("name") if component else None,
+
+                "quantity":round(quantity,6),
+                "uom":str(row.get("component_uom") or "").strip() or None,
+
+                "source_unit_cost":round(source_cost,6),
+                "calculated_component_cost":component_cost,
+
+                "mapping_action":"map" if component else "create",
+                "mapping_method":"auto" if component else "manual",
+
+                "is_optional":self._migration_bool(row.get("is_optional"),False),
+                "is_default":self._migration_bool(row.get("is_default"),True),
+
+                "confidence":100 if component else 0,
+                "is_approved":False,
+
+                "valid_kind":valid_kind,
+            })
+
+        return {
+            "items":items,
+            "detected_count":len(items),
+            "resolved_count":sum(1 for row in items if row.get("target_item_code")),
+            "approved_count":sum(1 for row in items if row.get("is_approved")),
+        }
+
+    def migration_pos_menu_items_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        for item in mappings or []:
+            name=str(item.get("source_menu_name") or "").strip()
+            action=str(item.get("mapping_action") or "create").strip()
+
+            if not name:
+                raise ValueError("Menu item name is required.")
+
+            if action not in {"map","create","ignore"}:
+                raise ValueError(f'Invalid menu action for "{name}".')
+
+            if action=="map" and not item.get("target_menu_item_id"):
+                raise ValueError(f'Select a FinSage menu item for "{name}".')
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_pos_menu_item_mappings(
+                    company_id,project_id,dataset_id,
+
+                    source_menu_code,
+                    source_menu_name,
+                    source_category,
+
+                    target_menu_item_id,
+                    target_menu_code,
+                    target_menu_name,
+
+                    mapping_action,
+                    mapping_method,
+
+                    sale_price,
+                    source_recipe_cost,
+
+                    is_active,
+                    show_on_cashier,
+                    show_on_display,
+
+                    confidence,
+                    is_approved,
+
+                    metadata_json,
+
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES(
+                    %s,%s,%s,
+                    %s,%s,%s,
+                    %s,%s,%s,
+                    %s,'manual',
+                    %s,%s,
+                    %s,%s,%s,
+                    100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+            """,(
+                company_id,project_id,dataset_id,
+
+                item.get("source_menu_code"),
+                name,
+                item.get("source_category"),
+
+                item.get("target_menu_item_id"),
+                item.get("target_menu_code"),
+                item.get("target_menu_name"),
+
+                action,
+
+                self._migration_number(item.get("sale_price")),
+                self._migration_number(item.get("source_recipe_cost")),
+
+                bool(item.get("is_active",True)),
+                bool(item.get("show_on_cashier",True)),
+                bool(item.get("show_on_display",True)),
+
+                user_id,user_id,
+            ),cur=cur)
+
+        return self.migration_pos_menu_items_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_pos_menu_components_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        for item in mappings or []:
+            menu_name=str(item.get("source_menu_name") or "").strip()
+            component_name=str(item.get("source_component_name") or "").strip()
+            action=str(item.get("mapping_action") or "map").strip()
+
+            if not menu_name or not component_name:
+                raise ValueError("Menu and component names are required.")
+
+            if action not in {"map","create","ignore"}:
+                raise ValueError(f'Invalid component action for "{component_name}".')
+
+            if action=="map" and not item.get("target_item_code") and not item.get("target_item_id"):
+                raise ValueError(f'Resolve component "{component_name}".')
+
+            quantity=self._migration_number(item.get("quantity"))
+
+            if quantity<=0:
+                raise ValueError(f'Component quantity for "{component_name}" must be greater than zero.')
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_pos_menu_component_mappings(
+                    company_id,project_id,dataset_id,
+
+                    source_menu_code,
+                    source_menu_name,
+
+                    source_component_code,
+                    source_component_name,
+
+                    component_kind,
+
+                    target_item_id,
+                    target_item_code,
+                    target_item_name,
+
+                    quantity,
+                    uom,
+
+                    source_unit_cost,
+                    calculated_component_cost,
+
+                    mapping_action,
+                    mapping_method,
+
+                    is_optional,
+                    is_default,
+
+                    confidence,
+                    is_approved,
+
+                    metadata_json,
+
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES(
+                    %s,%s,%s,
+                    %s,%s,
+                    %s,%s,
+                    %s,
+                    %s,%s,%s,
+                    %s,%s,
+                    %s,%s,
+                    %s,'manual',
+                    %s,%s,
+                    100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+            """,(
+                company_id,project_id,dataset_id,
+
+                item.get("source_menu_code"),
+                menu_name,
+
+                item.get("source_component_code"),
+                component_name,
+
+                item.get("component_kind") or "inventory",
+
+                item.get("target_item_id"),
+                item.get("target_item_code"),
+                item.get("target_item_name"),
+
+                quantity,
+                item.get("uom"),
+
+                self._migration_number(item.get("source_unit_cost")),
+                self._migration_number(item.get("calculated_component_cost")),
+
+                action,
+
+                bool(item.get("is_optional",False)),
+                bool(item.get("is_default",True)),
+
+                user_id,user_id,
+            ),cur=cur)
+
+        return self.migration_pos_menu_components_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_pos_menu_addons_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        for item in mappings or []:
+            menu_name=str(item.get("source_menu_name") or "").strip()
+            addon_name=str(item.get("addon_name") or "").strip()
+
+            if not menu_name or not addon_name:
+                raise ValueError("Menu and add-on names are required.")
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_pos_menu_addon_mappings(
+                    company_id,project_id,dataset_id,
+
+                    source_menu_code,
+                    source_menu_name,
+
+                    addon_code,
+                    addon_name,
+
+                    target_item_id,
+                    target_item_code,
+                    target_item_name,
+
+                    additional_price,
+                    additional_cost,
+
+                    is_default,
+                    is_active,
+
+                    mapping_action,
+                    mapping_method,
+
+                    confidence,
+                    is_approved,
+
+                    metadata_json,
+
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES(
+                    %s,%s,%s,
+                    %s,%s,
+                    %s,%s,
+                    %s,%s,%s,
+                    %s,%s,
+                    %s,%s,
+                    %s,'manual',
+                    100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+            """,(
+                company_id,project_id,dataset_id,
+
+                item.get("source_menu_code"),
+                menu_name,
+
+                item.get("addon_code"),
+                addon_name,
+
+                item.get("target_item_id"),
+                item.get("target_item_code"),
+                item.get("target_item_name"),
+
+                self._migration_number(item.get("additional_price")),
+                self._migration_number(item.get("additional_cost")),
+
+                bool(item.get("is_default",False)),
+                bool(item.get("is_active",True)),
+
+                item.get("mapping_action") or "map",
+
+                user_id,user_id,
+            ),cur=cur)
+
+        return self.migration_pos_menu_addons_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_pos_menu_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_pos_menu_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        menu=self.migration_pos_menu_items_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        components=self.migration_pos_menu_components_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        addons=self.migration_pos_menu_addons_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        issues=[]
+        warnings=[]
+
+        component_groups={}
+
+        for row in components.get("items") or []:
+            key=(
+                str(row.get("source_menu_code") or "").lower(),
+                str(row.get("source_menu_name") or "").lower(),
+            )
+
+            component_groups.setdefault(key,[]).append(row)
+
+            if settings.get("require_component_resolution"):
+                if row.get("mapping_action")=="map" and not row.get("target_item_code") and not row.get("target_item_id"):
+                    issues.append(
+                        f'Component "{row.get("source_component_name")}" for "{row.get("source_menu_name")}" is unresolved.'
+                    )
+
+            if settings.get("require_positive_component_qty") and self._migration_number(row.get("quantity"))<=0:
+                issues.append(
+                    f'Component "{row.get("source_component_name")}" has an invalid quantity.'
+                )
+
+            if not row.get("valid_kind",True):
+                issues.append(
+                    f'Component "{row.get("source_component_name")}" uses a component type that is not allowed.'
+                )
+
+        menu_rows=[]
+
+        for item in menu.get("items") or []:
+            key=(
+                str(item.get("source_menu_code") or "").lower(),
+                str(item.get("source_menu_name") or "").lower(),
+            )
+
+            recipe_components=component_groups.get(key,[])
+
+            calculated_cost=round(sum(
+                self._migration_number(row.get("calculated_component_cost"))
+                for row in recipe_components
+                if row.get("mapping_action")!="ignore"
+            ),6)
+
+            source_cost=self._migration_number(
+                item.get("source_recipe_cost")
+            )
+
+            difference=round(
+                calculated_cost-source_cost,
+                6,
+            )
+
+            if (
+                settings.get("validate_recipe_cost")
+                and source_cost
+                and abs(difference)>float(settings.get("cost_tolerance") or 0)
+            ):
+                issues.append(
+                    f'Recipe cost for "{item.get("source_menu_name")}" differs from source by {difference:.2f}.'
+                )
+
+            if not recipe_components:
+                warnings.append(
+                    f'Menu item "{item.get("source_menu_name")}" has no recipe components.'
+                )
+
+            if settings.get("require_menu_code") and not item.get("source_menu_code"):
+                issues.append(
+                    f'Menu item "{item.get("source_menu_name")}" requires a menu code.'
+                )
+
+            menu_rows.append({
+                **item,
+                "component_count":len(recipe_components),
+                "calculated_recipe_cost":calculated_cost,
+                "recipe_cost_difference":difference,
+            })
+
+        return {
+            "dataset_id":int(dataset_id),
+
+            "menu_items":menu_rows,
+            "components":components.get("items") or [],
+            "addons":addons.get("items") or [],
+
+            "menu_item_count":len(menu_rows),
+            "component_count":len(components.get("items") or []),
+            "addon_count":len(addons.get("items") or []),
+
+            "total_menu_price":round(sum(
+                self._migration_number(row.get("sale_price"))
+                for row in menu_rows
+            ),6),
+
+            "total_recipe_cost":round(sum(
+                self._migration_number(row.get("calculated_recipe_cost"))
+                for row in menu_rows
+            ),6),
+
+            "issues":issues,
+            "warnings":warnings,
+
+            "error_count":len(issues),
+            "warning_count":len(warnings),
+
+            "is_ready":not issues,
+        }
+
+    def migration_pos_menu_reconcile(
+        self,company_id:int,project_id:int,dataset_id:int,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        preview=self.migration_pos_menu_preview(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        menu_ready=sum(
+            1 for row in preview["menu_items"]
+            if row.get("is_approved")
+        )
+
+        component_ready=sum(
+            1 for row in preview["components"]
+            if row.get("is_approved")
+        )
+
+        addon_ready=sum(
+            1 for row in preview["addons"]
+            if row.get("is_approved")
+        )
+
+        summary={
+            "menu_item_count":preview["menu_item_count"],
+            "component_count":preview["component_count"],
+            "addon_count":preview["addon_count"],
+            "total_menu_price":preview["total_menu_price"],
+            "total_recipe_cost":preview["total_recipe_cost"],
+        }
+
+        row=self.fetch_one(f"""
+            INSERT INTO {schema}.migration_pos_menu_reconciliations(
+                company_id,
+                project_id,
+                dataset_id,
+
+                menu_item_count,
+                menu_ready_count,
+
+                component_count,
+                component_ready_count,
+
+                addon_count,
+                addon_ready_count,
+
+                total_menu_price,
+                total_recipe_cost,
+
+                blocking_error_count,
+                warning_count,
+
+                is_ready,
+
+                summary_json,
+                issues_json,
+
+                created_by_user_id,
+                created_at
+            )
+            VALUES(
+                %s,%s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                %s,
+                %s::jsonb,%s::jsonb,
+                %s,NOW()
+            )
+            RETURNING *
+        """,(
+            company_id,project_id,dataset_id,
+
+            preview["menu_item_count"],
+            menu_ready,
+
+            preview["component_count"],
+            component_ready,
+
+            preview["addon_count"],
+            addon_ready,
+
+            preview["total_menu_price"],
+            preview["total_recipe_cost"],
+
+            preview["error_count"],
+            preview["warning_count"],
+
+            preview["is_ready"],
+
+            self._migration_json_dump(summary,{}),
+            self._migration_json_dump(preview["issues"],[]),
+
+            user_id,
+        ),cur=cur)
+
+        row["summary_json"]=summary
+        row["issues_json"]=preview["issues"]
+        row["preview"]=preview
+
+        return row
+
+    def migration_pos_menu_reconciliation_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict|None:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_pos_menu_reconciliations
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY id DESC
+            LIMIT 1
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if not row:return None
+
+        row["summary_json"]=self._migration_json(row.get("summary_json"),{})
+        row["issues_json"]=self._migration_json(row.get("issues_json"),[])
+
+        return row
+
+    def migration_pos_menu_get(
+        self,company_id:int,project_id:int,*,cur=None
+    )->dict:
+        return {
+            "datasets":self.migration_pos_menu_datasets(
+                company_id,project_id,cur=cur
+            )
+        }
+
+    def migration_pos_history_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='pos_history'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def _migration_pos_history_record_type(self,value)->str|None:
+        value=str(value or "").strip().lower()
+
+        aliases={
+            "sale":"sale",
+            "header":"sale",
+            "transaction":"sale",
+
+            "line":"line",
+            "sale line":"line",
+            "item":"line",
+
+            "payment":"payment",
+            "tender":"payment",
+
+            "refund":"refund",
+            "return":"refund",
+
+            "void":"void",
+            "cancel":"void",
+            "cancellation":"void",
+        }
+
+        return aliases.get(value)
+
+    def _migration_pos_sale_status(self,value)->str:
+        value=str(value or "").strip().lower()
+
+        aliases={
+            "complete":"completed",
+            "completed":"completed",
+            "paid":"completed",
+            "closed":"completed",
+
+            "hold":"held",
+            "held":"held",
+            "open":"held",
+
+            "cancelled":"cancelled",
+            "canceled":"cancelled",
+
+            "void":"voided",
+            "voided":"voided",
+
+            "refund":"refunded",
+            "refunded":"refunded",
+        }
+
+        return aliases.get(value,"completed")
+
+    def migration_pos_history_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT cutover_date,default_currency
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_pos_history_settings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(row.get("settings_json"),{})
+            row["metadata_json"]=self._migration_json(row.get("metadata_json"),{})
+            return row
+
+        pos_settings=self.migration_pos_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+
+            "history_from":None,
+            "history_to":project.get("cutover_date"),
+
+            "default_currency":project.get("default_currency"),
+            "default_location_id":pos_settings.get("default_location_id"),
+
+            "source_layout":"combined",
+
+            "require_terminal":True,
+            "require_customer":False,
+            "require_product_resolution":True,
+            "require_payment_resolution":True,
+
+            "preserve_source_prices":True,
+            "preserve_source_tax":True,
+            "preserve_source_discounts":True,
+
+            "allow_unpaid_sales":False,
+            "allow_negative_lines":False,
+            "allow_zero_value_sales":False,
+
+            "validate_sale_totals":True,
+            "validate_payment_totals":True,
+
+            "amount_tolerance":0.05,
+
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_pos_history_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_pos_history_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        layout=str(
+            data.get("source_layout")
+            or current.get("source_layout")
+            or "combined"
+        ).strip()
+
+        if layout not in {"combined","sales_only","lines_only","payments_only"}:
+            raise ValueError("Invalid POS history source layout.")
+
+        tolerance=self._migration_number(
+            data.get("amount_tolerance",current.get("amount_tolerance",0.05)),
+            0.05,
+        )
+
+        if tolerance<0:
+            raise ValueError("POS history tolerance cannot be negative.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_pos_history_settings(
+                company_id,project_id,dataset_id,
+
+                history_from,history_to,
+                default_currency,default_location_id,
+
+                source_layout,
+
+                require_terminal,
+                require_customer,
+                require_product_resolution,
+                require_payment_resolution,
+
+                preserve_source_prices,
+                preserve_source_tax,
+                preserve_source_discounts,
+
+                allow_unpaid_sales,
+                allow_negative_lines,
+                allow_zero_value_sales,
+
+                validate_sale_totals,
+                validate_payment_totals,
+
+                amount_tolerance,
+
+                settings_json,
+                metadata_json,
+
+                created_by_user_id,
+                updated_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES(
+                %s,%s,%s,
+                %s,%s,%s,%s,
+                %s,
+                %s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,
+                %s,%s,
+                %s,
+                %s::jsonb,%s::jsonb,
+                %s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                history_from=EXCLUDED.history_from,
+                history_to=EXCLUDED.history_to,
+                default_currency=EXCLUDED.default_currency,
+                default_location_id=EXCLUDED.default_location_id,
+
+                source_layout=EXCLUDED.source_layout,
+
+                require_terminal=EXCLUDED.require_terminal,
+                require_customer=EXCLUDED.require_customer,
+                require_product_resolution=EXCLUDED.require_product_resolution,
+                require_payment_resolution=EXCLUDED.require_payment_resolution,
+
+                preserve_source_prices=EXCLUDED.preserve_source_prices,
+                preserve_source_tax=EXCLUDED.preserve_source_tax,
+                preserve_source_discounts=EXCLUDED.preserve_source_discounts,
+
+                allow_unpaid_sales=EXCLUDED.allow_unpaid_sales,
+                allow_negative_lines=EXCLUDED.allow_negative_lines,
+                allow_zero_value_sales=EXCLUDED.allow_zero_value_sales,
+
+                validate_sale_totals=EXCLUDED.validate_sale_totals,
+                validate_payment_totals=EXCLUDED.validate_payment_totals,
+
+                amount_tolerance=EXCLUDED.amount_tolerance,
+
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,dataset_id,
+
+            data.get("history_from") if "history_from" in data else current.get("history_from"),
+            data.get("history_to") if "history_to" in data else current.get("history_to"),
+            data.get("default_currency") or current.get("default_currency"),
+            int(data.get("default_location_id")) if data.get("default_location_id") not in (None,"")
+            else current.get("default_location_id"),
+
+            layout,
+
+            bool(data.get("require_terminal",current.get("require_terminal",True))),
+            bool(data.get("require_customer",current.get("require_customer",False))),
+            bool(data.get("require_product_resolution",current.get("require_product_resolution",True))),
+            bool(data.get("require_payment_resolution",current.get("require_payment_resolution",True))),
+
+            bool(data.get("preserve_source_prices",current.get("preserve_source_prices",True))),
+            bool(data.get("preserve_source_tax",current.get("preserve_source_tax",True))),
+            bool(data.get("preserve_source_discounts",current.get("preserve_source_discounts",True))),
+
+            bool(data.get("allow_unpaid_sales",current.get("allow_unpaid_sales",False))),
+            bool(data.get("allow_negative_lines",current.get("allow_negative_lines",False))),
+            bool(data.get("allow_zero_value_sales",current.get("allow_zero_value_sales",False))),
+
+            bool(data.get("validate_sale_totals",current.get("validate_sale_totals",True))),
+            bool(data.get("validate_payment_totals",current.get("validate_payment_totals",True))),
+
+            tolerance,
+
+            self._migration_json_dump(data.get("settings_json") or current.get("settings_json"),{}),
+            self._migration_json_dump(data.get("metadata_json") or current.get("metadata_json"),{}),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_pos_history_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_pos_terminal_resolve(
+        self,company_id:int,project_id:int,code=None,name=None,*,cur=None
+    )->dict|None:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        code=str(code or "").strip()
+        name=str(name or "").strip()
+
+        if code:
+            try:
+                live=self.fetch_one(f"""
+                    SELECT id,code,name,location_id,'live'::text AS source
+                    FROM {schema}.pos_terminals
+                    WHERE company_id=%s
+                    AND LOWER(code)=LOWER(%s)
+                    LIMIT 1
+                """,(company_id,code),cur=cur)
+
+                if live:return live
+            except Exception:
+                pass
+
+        mapping=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_pos_terminal_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND is_approved=TRUE
+            AND (
+                (%s<>'' AND LOWER(COALESCE(source_code,''))=LOWER(%s))
+                OR
+                (%s<>'' AND LOWER(source_name)=LOWER(%s))
+            )
+            ORDER BY id DESC
+            LIMIT 1
+        """,(company_id,project_id,code,code,name,name),cur=cur)
+
+        if not mapping:return None
+
+        if mapping.get("mapping_action")=="ignore":
+            return None
+
+        return {
+            "id":mapping.get("target_terminal_id"),
+            "code":mapping.get("target_terminal_code") or mapping.get("source_code"),
+            "name":mapping.get("target_terminal_name") or mapping.get("source_name"),
+            "location_id":mapping.get("target_location_id"),
+            "source":"mapped" if mapping.get("mapping_action")=="map" else "migration",
+            "mapping_id":mapping.get("id"),
+        }
+
+    def migration_pos_payment_method_resolve(
+        self,company_id:int,project_id:int,source_value,*,cur=None
+    )->str|None:
+        source=str(source_value or "").strip()
+        if not source:return None
+
+        schema=self.company_schema(int(company_id))
+
+        row=self.fetch_one(f"""
+            SELECT target_payment_method
+            FROM {schema}.migration_pos_payment_method_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND LOWER(source_value)=LOWER(%s)
+            AND is_approved=TRUE
+            ORDER BY id DESC
+            LIMIT 1
+        """,(int(company_id),int(project_id),source),cur=cur)
+
+        if row:return row.get("target_payment_method")
+
+        return self._migration_pos_payment_method(source)
+
+    def migration_pos_customer_resolve(
+        self,company_id:int,code=None,name=None,*,cur=None
+    )->dict|None:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        code=str(code or "").strip()
+        name=str(name or "").strip()
+
+        if code:
+            row=self.fetch_one(f"""
+                SELECT id,customer_code,name
+                FROM {schema}.customers
+                WHERE company_id=%s
+                AND LOWER(COALESCE(customer_code,''))=LOWER(%s)
+                LIMIT 1
+            """,(company_id,code),cur=cur)
+
+            if row:return row
+
+        if name:
+            row=self.fetch_one(f"""
+                SELECT id,customer_code,name
+                FROM {schema}.customers
+                WHERE company_id=%s
+                AND LOWER(name)=LOWER(%s)
+                LIMIT 1
+            """,(company_id,name),cur=cur)
+
+            if row:return row
+
+        return None
+
+    def migration_pos_history_build(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_pos_history_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,project_id,dataset_id,limit=100000,cur=cur
+        )
+
+        sales={}
+
+        def sale_for(reference):
+            reference=str(reference or "").strip()
+
+            if reference not in sales:
+                sales[reference]={
+                    "reference":reference,
+                    "sale_date":None,
+                    "sale_time":None,
+                    "status":"completed",
+                    "terminal":None,
+                    "location":None,
+                    "customer":None,
+                    "currency":settings.get("default_currency"),
+                    "cashier":None,
+
+                    "source_subtotal":None,
+                    "source_discount":None,
+                    "source_tax":None,
+                    "source_total":None,
+
+                    "lines":[],
+                    "payments":[],
+                    "refunds":[],
+                    "voids":[],
+                }
+
+            return sales[reference]
+
+        for index,item in enumerate(rows,start=1):
+            row=item.get("normalized") or {}
+            record_type=self._migration_pos_history_record_type(row.get("record_type"))
+            reference=str(row.get("sale_reference") or "").strip()
+
+            if not reference:
+                continue
+
+            sale=sale_for(reference)
+
+            sale_date=self._migration_date(row.get("sale_date"))
+            if sale_date:sale["sale_date"]=sale_date
+
+            if row.get("sale_time"):
+                sale["sale_time"]=str(row.get("sale_time")).strip()
+
+            if row.get("status"):
+                sale["status"]=self._migration_pos_sale_status(row.get("status"))
+
+            if not sale.get("terminal") and (
+                row.get("terminal_code") or row.get("terminal_name")
+            ):
+                sale["terminal"]=self.migration_pos_terminal_resolve(
+                    company_id,
+                    project_id,
+                    code=row.get("terminal_code"),
+                    name=row.get("terminal_name"),
+                    cur=cur,
+                )
+
+            if not sale.get("location") and (
+                row.get("location_code") or settings.get("default_location_id")
+            ):
+                sale["location"]=self.migration_inventory_opening_location_resolve(
+                    company_id,
+                    project_id,
+                    location_code=row.get("location_code"),
+                    default_location_id=settings.get("default_location_id"),
+                    cur=cur,
+                )
+
+            if not sale.get("customer") and (
+                row.get("customer_code") or row.get("customer_name")
+            ):
+                sale["customer"]=self.migration_pos_customer_resolve(
+                    company_id,
+                    code=row.get("customer_code"),
+                    name=row.get("customer_name"),
+                    cur=cur,
+                )
+
+            if row.get("currency"):
+                sale["currency"]=str(row.get("currency")).strip().upper()
+
+            if row.get("cashier"):
+                sale["cashier"]=str(row.get("cashier")).strip()
+
+            if row.get("sale_subtotal") not in (None,""):
+                sale["source_subtotal"]=self._migration_number(row.get("sale_subtotal"))
+
+            if row.get("sale_discount") not in (None,""):
+                sale["source_discount"]=self._migration_number(row.get("sale_discount"))
+
+            if row.get("sale_tax") not in (None,""):
+                sale["source_tax"]=self._migration_number(row.get("sale_tax"))
+
+            if row.get("sale_total") not in (None,""):
+                sale["source_total"]=self._migration_number(row.get("sale_total"))
+
+            if record_type=="line":
+                product=self.migration_pos_product_resolve(
+                    company_id,
+                    project_id,
+                    code=row.get("item_code"),
+                    name=row.get("item_name"),
+                    cur=cur,
+                )
+
+                quantity=self._migration_number(row.get("quantity"),0)
+                unit_price=self._migration_number(row.get("unit_price"),0)
+                discount=self._migration_number(row.get("line_discount"),0)
+                tax=self._migration_number(row.get("line_tax"),0)
+
+                gross=round(quantity*unit_price,6)
+
+                source_total=(
+                    self._migration_number(row.get("line_total"))
+                    if row.get("line_total") not in (None,"")
+                    else None
+                )
+
+                calculated_total=round(
+                    gross-discount+tax,
+                    6,
+                )
+
+                sale["lines"].append({
+                    "row_number":index,
+                    "line_no":int(self._migration_number(row.get("line_no"),index)),
+                    "item_code":str(row.get("item_code") or "").strip(),
+                    "item_name":str(row.get("item_name") or "").strip(),
+                    "item_type":row.get("item_type"),
+                    "product":product,
+                    "quantity":quantity,
+                    "unit_price":unit_price,
+                    "gross":gross,
+                    "discount":discount,
+                    "tax":tax,
+                    "source_total":source_total,
+                    "calculated_total":calculated_total,
+                })
+
+            elif record_type=="payment":
+                method=self.migration_pos_payment_method_resolve(
+                    company_id,
+                    project_id,
+                    row.get("payment_method"),
+                    cur=cur,
+                )
+
+                sale["payments"].append({
+                    "row_number":index,
+                    "source_method":row.get("payment_method"),
+                    "payment_method":method,
+                    "amount":self._migration_number(row.get("payment_amount")),
+                    "reference":str(row.get("payment_reference") or "").strip() or None,
+                })
+
+            elif record_type=="refund":
+                sale["refunds"].append({
+                    "row_number":index,
+                    "amount":self._migration_number(
+                        row.get("refund_amount")
+                        or row.get("payment_amount")
+                    ),
+                    "payment_method":self.migration_pos_payment_method_resolve(
+                        company_id,
+                        project_id,
+                        row.get("payment_method"),
+                        cur=cur,
+                    ),
+                    "reference":str(row.get("payment_reference") or "").strip() or None,
+                })
+
+            elif record_type=="void":
+                sale["voids"].append({
+                    "row_number":index,
+                    "reason":str(row.get("void_reason") or "").strip() or None,
+                })
+
+        return {
+            "settings":settings,
+            "sales":list(sales.values()),
+        }
+
+    def migration_pos_history_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        built=self.migration_pos_history_build(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        settings=built["settings"]
+        sales=built["sales"]
+
+        issues=[]
+        warnings=[]
+
+        gross_sales=0.0
+        discount_total=0.0
+        tax_total=0.0
+        net_sales=0.0
+        payment_total=0.0
+        refund_total=0.0
+
+        line_count=0
+        payment_count=0
+        refund_count=0
+        void_count=0
+
+        for sale in sales:
+            sale_issues=[]
+            sale_warnings=[]
+
+            if not sale.get("reference"):
+                sale_issues.append("Sale reference is required.")
+
+            if not sale.get("sale_date"):
+                sale_issues.append("Sale date is required.")
+
+            history_from=self._migration_date(settings.get("history_from"))
+            history_to=self._migration_date(settings.get("history_to"))
+
+            if sale.get("sale_date") and history_from and sale["sale_date"]<history_from:
+                sale_issues.append("Sale date is before the selected history period.")
+
+            if sale.get("sale_date") and history_to and sale["sale_date"]>history_to:
+                sale_issues.append("Sale date is after the selected history period.")
+
+            if settings.get("require_terminal") and not sale.get("terminal"):
+                sale_issues.append("POS terminal could not be resolved.")
+
+            if settings.get("require_customer") and not sale.get("customer"):
+                sale_issues.append("Customer could not be resolved.")
+
+            calculated_subtotal=0.0
+            calculated_discount=0.0
+            calculated_tax=0.0
+            calculated_total=0.0
+
+            for line in sale.get("lines") or []:
+                line_count+=1
+
+                if settings.get("require_product_resolution") and not line.get("product"):
+                    sale_issues.append(
+                        f'Item "{line.get("item_code") or line.get("item_name")}" could not be resolved.'
+                    )
+
+                if line["quantity"]<0 and not settings.get("allow_negative_lines"):
+                    sale_issues.append(
+                        f'Negative quantity found for "{line.get("item_code") or line.get("item_name")}".'
+                    )
+
+                calculated_subtotal+=line["gross"]
+                calculated_discount+=line["discount"]
+                calculated_tax+=line["tax"]
+                calculated_total+=line["calculated_total"]
+
+                if (
+                    line.get("source_total") is not None
+                    and abs(
+                        line["calculated_total"]-line["source_total"]
+                    )>float(settings.get("amount_tolerance") or 0)
+                ):
+                    sale_issues.append(
+                        f'Line total differs for "{line.get("item_code") or line.get("item_name")}".'
+                    )
+
+            calculated_subtotal=round(calculated_subtotal,6)
+            calculated_discount=round(calculated_discount,6)
+            calculated_tax=round(calculated_tax,6)
+            calculated_total=round(calculated_total,6)
+
+            if settings.get("validate_sale_totals"):
+                tolerance=float(settings.get("amount_tolerance") or 0)
+
+                if sale.get("source_subtotal") is not None:
+                    if abs(calculated_subtotal-sale["source_subtotal"])>tolerance:
+                        sale_issues.append("Sale subtotal does not reconcile.")
+
+                if sale.get("source_discount") is not None:
+                    if abs(calculated_discount-sale["source_discount"])>tolerance:
+                        sale_issues.append("Sale discount does not reconcile.")
+
+                if sale.get("source_tax") is not None:
+                    if abs(calculated_tax-sale["source_tax"])>tolerance:
+                        sale_issues.append("Sale tax does not reconcile.")
+
+                if sale.get("source_total") is not None:
+                    if abs(calculated_total-sale["source_total"])>tolerance:
+                        sale_issues.append("Sale total does not reconcile.")
+
+            payments=sum(
+                self._migration_number(row.get("amount"))
+                for row in sale.get("payments") or []
+            )
+
+            refunds=sum(
+                self._migration_number(row.get("amount"))
+                for row in sale.get("refunds") or []
+            )
+
+            payment_count+=len(sale.get("payments") or [])
+            refund_count+=len(sale.get("refunds") or [])
+            void_count+=len(sale.get("voids") or [])
+
+            for payment in sale.get("payments") or []:
+                if settings.get("require_payment_resolution") and not payment.get("payment_method"):
+                    sale_issues.append(
+                        f'Payment method "{payment.get("source_method")}" could not be resolved.'
+                    )
+
+            expected_payment=round(
+                calculated_total-refunds,
+                6,
+            )
+
+            if (
+                settings.get("validate_payment_totals")
+                and sale.get("status")=="completed"
+                and not settings.get("allow_unpaid_sales")
+            ):
+                if abs(payments-expected_payment)>float(settings.get("amount_tolerance") or 0):
+                    sale_issues.append("Payments do not reconcile to the sale total.")
+
+            if calculated_total==0 and not settings.get("allow_zero_value_sales"):
+                if sale.get("status") not in {"voided","cancelled"}:
+                    sale_warnings.append("Sale has zero value.")
+
+            sale["calculated_subtotal"]=calculated_subtotal
+            sale["calculated_discount"]=calculated_discount
+            sale["calculated_tax"]=calculated_tax
+            sale["calculated_total"]=calculated_total
+            sale["payment_total"]=round(payments,6)
+            sale["refund_total"]=round(refunds,6)
+            sale["payment_difference"]=round(
+                payments-expected_payment,
+                6,
+            )
+
+            sale["issues"]=sale_issues
+            sale["warnings"]=sale_warnings
+            sale["valid"]=not sale_issues
+
+            gross_sales+=calculated_subtotal
+            discount_total+=calculated_discount
+            tax_total+=calculated_tax
+            net_sales+=calculated_total
+            payment_total+=payments
+            refund_total+=refunds
+
+            for issue in sale_issues:
+                issues.append({
+                    "sale_reference":sale.get("reference"),
+                    "message":issue,
+                })
+
+            for warning in sale_warnings:
+                warnings.append({
+                    "sale_reference":sale.get("reference"),
+                    "message":warning,
+                })
+
+        gross_sales=round(gross_sales,6)
+        discount_total=round(discount_total,6)
+        tax_total=round(tax_total,6)
+        net_sales=round(net_sales,6)
+        payment_total=round(payment_total,6)
+        refund_total=round(refund_total,6)
+
+        return {
+            "dataset_id":int(dataset_id),
+            "sales":sales,
+
+            "sale_count":len(sales),
+            "sale_line_count":line_count,
+            "payment_count":payment_count,
+            "refund_count":refund_count,
+            "void_count":void_count,
+
+            "gross_sales":gross_sales,
+            "discount_total":discount_total,
+            "tax_total":tax_total,
+            "net_sales":net_sales,
+
+            "payment_total":payment_total,
+            "refund_total":refund_total,
+
+            "payment_difference":round(
+                payment_total-(net_sales-refund_total),
+                6,
+            ),
+
+            "error_count":len(issues),
+            "warning_count":len(warnings),
+
+            "issues":issues,
+            "warnings":warnings,
+
+            "is_ready":bool(
+                sales and not issues
+            ),
+        }
+
+    def migration_pos_history_reconcile(
+        self,company_id:int,project_id:int,dataset_id:int,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        preview=self.migration_pos_history_preview(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        tolerance=float(
+            self.migration_pos_history_settings_get(
+                company_id,project_id,dataset_id,cur=cur
+            ).get("amount_tolerance") or 0
+        )
+
+        is_reconciled=abs(
+            preview["payment_difference"]
+        )<=tolerance
+
+        is_ready=bool(
+            preview["is_ready"] and is_reconciled
+        )
+
+        summary={
+            "sale_count":preview["sale_count"],
+            "sale_line_count":preview["sale_line_count"],
+            "payment_count":preview["payment_count"],
+            "refund_count":preview["refund_count"],
+            "void_count":preview["void_count"],
+
+            "gross_sales":preview["gross_sales"],
+            "discount_total":preview["discount_total"],
+            "tax_total":preview["tax_total"],
+            "net_sales":preview["net_sales"],
+
+            "payment_total":preview["payment_total"],
+            "refund_total":preview["refund_total"],
+            "payment_difference":preview["payment_difference"],
+        }
+
+        row=self.fetch_one(f"""
+            INSERT INTO {schema}.migration_pos_history_reconciliations(
+                company_id,
+                project_id,
+                dataset_id,
+
+                sale_count,
+                sale_line_count,
+                payment_count,
+                refund_count,
+                void_count,
+
+                gross_sales,
+                discount_total,
+                tax_total,
+                net_sales,
+
+                payment_total,
+                refund_total,
+                payment_difference,
+
+                blocking_error_count,
+                warning_count,
+
+                is_reconciled,
+                is_ready,
+
+                summary_json,
+                issues_json,
+
+                created_by_user_id,
+                created_at
+            )
+            VALUES(
+                %s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,
+                %s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,NOW()
+            )
+            RETURNING *
+        """,(
+            company_id,project_id,dataset_id,
+
+            preview["sale_count"],
+            preview["sale_line_count"],
+            preview["payment_count"],
+            preview["refund_count"],
+            preview["void_count"],
+
+            preview["gross_sales"],
+            preview["discount_total"],
+            preview["tax_total"],
+            preview["net_sales"],
+
+            preview["payment_total"],
+            preview["refund_total"],
+            preview["payment_difference"],
+
+            preview["error_count"],
+            preview["warning_count"],
+
+            is_reconciled,
+            is_ready,
+
+            self._migration_json_dump(summary,{}),
+            self._migration_json_dump(preview["issues"],[]),
+
+            user_id,
+        ),cur=cur)
+
+        row["summary_json"]=summary
+        row["issues_json"]=preview["issues"]
+        row["preview"]=preview
+
+        return row
+
+    def migration_pos_history_reconciliation_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict|None:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_pos_history_reconciliations
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY id DESC
+            LIMIT 1
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if not row:return None
+
+        row["summary_json"]=self._migration_json(row.get("summary_json"),{})
+        row["issues_json"]=self._migration_json(row.get("issues_json"),[])
+
+        return row
+
+    def migration_pos_history_get(
+        self,company_id:int,project_id:int,*,cur=None
+    )->dict:
+        return {
+            "datasets":self.migration_pos_history_datasets(
+                company_id,project_id,cur=cur
+            )
+        }
     # ============================================================
     # IAS 41 AGRICULTURE
     # Phase 1: Settings, mappings and master data
@@ -190728,6 +201198,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     # ============================================================
     # FinSage Nexus — SETTINGS
     # ============================================================
+    def _ops_portal_token_hash(self,token:str):
+        return hashlib.sha256(
+            token.encode("utf-8")
+        ).hexdigest()
 
     def get_ops_settings(self, company_id:int):
         company_id=int(company_id)
@@ -200202,6 +210676,19 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if not recipient:
                 continue
 
+            invite=self.create_ops_vendor_portal_invite(
+                company_id,
+                sourcing_event_vendor_id=vendor["id"],
+                actor_user_id=actor_user_id,
+            )
+
+            portal_link=(
+                "https://finspheresolutions.com"
+                f"/vendor/invite"
+                f"?company={company_id}"
+                f"&token={invite['token']}"
+            )
+
             subject=(
                 settings.get(
                     "rfq_subject_template"
@@ -200257,8 +210744,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     )
                     or "",
 
-                "{{portal_link}}":
-                    "Vendor portal invitation will be available in Phase 3C.",
+               "{{portal_link}}":
+                        portal_link,
             }
 
             for token,value in values.items():
@@ -200454,6 +210941,8339 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "sourcing_event":event,
         }
 
+    def create_ops_vendor_portal_invite(
+        self,
+        company_id:int,
+        *,
+        sourcing_event_vendor_id:int,
+        actor_user_id:int,
+        expires_hours:int=168,
+    ):
+        company_id=int(company_id)
+        sourcing_event_vendor_id=int(
+            sourcing_event_vendor_id
+        )
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(
+            f"""
+            SELECT
+                sev.*,
+                se.rfq_no,
+                se.sourcing_no,
+                v.name AS vendor_name
+            FROM {schema}.ops_sourcing_event_vendors sev
+            JOIN {schema}.ops_sourcing_events se
+            ON se.id=sev.sourcing_event_id
+            JOIN {schema}.vendors v
+            ON v.id=sev.vendor_id
+            WHERE sev.id=%s
+            LIMIT 1;
+            """,
+            (sourcing_event_vendor_id,),
+        )
+
+        if not row:
+            raise ValueError(
+                "Sourcing vendor invitation not found."
+            )
+
+        email=(row.get("recipient_email") or "").strip()
+
+        if not email:
+            raise ValueError(
+                "Vendor recipient email is required."
+            )
+
+        token=secrets.token_urlsafe(48)
+        token_hash=self._ops_portal_token_hash(
+            token
+        )
+
+        invite=self.fetch_one(
+            f"""
+            INSERT INTO {schema}.ops_vendor_portal_invites(
+                company_id,
+                vendor_id,
+                sourcing_event_id,
+                sourcing_event_vendor_id,
+                email,
+                token_hash,
+                expires_at,
+                created_by_user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,
+                NOW()+(%s || ' hours')::interval,
+                %s
+            )
+            RETURNING *;
+            """,
+            (
+                company_id,
+                row["vendor_id"],
+                row["sourcing_event_id"],
+                sourcing_event_vendor_id,
+                email,
+                token_hash,
+                int(expires_hours),
+                actor_user_id,
+            ),
+        )
+
+        return {
+            "invite":invite,
+            "token":token,
+        }
+
+    def get_ops_vendor_portal_invite(
+        self,
+        company_id:int,
+        token:str,
+    ):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+
+        token_hash=self._ops_portal_token_hash(
+            token
+        )
+
+        row=self.fetch_one(
+            f"""
+            SELECT
+                i.*,
+                v.name AS vendor_name,
+                se.rfq_no,
+                se.sourcing_no,
+                se.title AS rfq_title,
+                se.closing_date,
+                c.name AS company_name,
+                c.logo_url
+            FROM {schema}.ops_vendor_portal_invites i
+            JOIN {schema}.vendors v
+            ON v.id=i.vendor_id
+            LEFT JOIN {schema}.ops_sourcing_events se
+            ON se.id=i.sourcing_event_id
+            JOIN public.companies c
+            ON c.id=i.company_id
+            WHERE i.company_id=%s
+            AND i.token_hash=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                token_hash,
+            ),
+        )
+
+
+        if not row:
+            raise ValueError(
+                "Vendor invitation is invalid."
+            )
+
+
+        if row["status"]!="pending":
+            raise ValueError(
+                "Vendor invitation is no longer available."
+            )
+
+
+        if row["expires_at"]<=datetime.now(
+            timezone.utc
+        ):
+            self.execute_sql(
+                f"""
+                UPDATE {schema}.ops_vendor_portal_invites
+                SET status='expired'
+                WHERE id=%s;
+                """,
+                (row["id"],),
+            )
+
+
+            raise ValueError(
+                "Vendor invitation has expired."
+            )
+
+
+        return row
+
+    def accept_ops_vendor_portal_invite(
+        self,
+        company_id:int,
+        *,
+        token:str,
+        payload:dict,
+    ):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        invite=self.get_ops_vendor_portal_invite(
+            company_id,
+            token,
+        )
+
+        first_name=(
+            payload.get("first_name")
+            or ""
+        ).strip()
+
+        last_name=(
+            payload.get("last_name")
+            or ""
+        ).strip()
+
+        password=payload.get("password") or ""
+
+        if not first_name:
+            raise ValueError(
+                "First name is required."
+            )
+
+        if len(password)<8:
+            raise ValueError(
+                "Password must contain at least 8 characters."
+            )
+
+        email=invite["email"].strip().lower()
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_vendor_portal_users
+                WHERE company_id=%s
+                AND lower(email)=lower(%s)
+                LIMIT 1;
+                """,
+                (
+                    company_id,
+                    email,
+                ),
+            )
+
+            existing=cur.fetchone()
+
+            if existing:
+                portal_user=dict(existing)
+
+                if int(
+                    portal_user["vendor_id"]
+                )!=int(invite["vendor_id"]):
+                    raise ValueError(
+                        "This email is already linked to another vendor."
+                    )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_vendor_portal_users
+                    SET first_name=%s,
+                        last_name=%s,
+                        phone=%s,
+                        password_hash=%s,
+                        status='active',
+                        email_verified=TRUE,
+                        updated_at=NOW()
+                    WHERE id=%s
+                    RETURNING *;
+                    """,
+                    (
+                        first_name,
+                        last_name or None,
+                        (
+                            payload.get("phone")
+                            or ""
+                        ).strip() or None,
+                        generate_password_hash(
+                            password
+                        ),
+                        portal_user["id"],
+                    ),
+                )
+
+                portal_user=dict(
+                    cur.fetchone()
+                )
+
+            else:
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.ops_vendor_portal_users(
+                        company_id,
+                        vendor_id,
+                        email,
+                        first_name,
+                        last_name,
+                        phone,
+                        password_hash,
+                        status,
+                        email_verified
+                    )
+                    VALUES(
+                        %s,%s,%s,%s,%s,
+                        %s,%s,
+                        'active',
+                        TRUE
+                    )
+                    RETURNING *;
+                    """,
+                    (
+                        company_id,
+                        invite["vendor_id"],
+                        email,
+                        first_name,
+                        last_name or None,
+                        (
+                            payload.get("phone")
+                            or ""
+                        ).strip() or None,
+                        generate_password_hash(
+                            password
+                        ),
+                    ),
+                )
+
+                portal_user=dict(
+                    cur.fetchone()
+                )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_vendor_portal_invites
+                SET status='accepted',
+                    accepted_at=NOW()
+                WHERE id=%s;
+                """,
+                (invite["id"],),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_vendor_profiles
+                SET portal_status='active',
+                    portal_enabled=TRUE,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND vendor_id=%s;
+                """,
+                (
+                    company_id,
+                    invite["vendor_id"],
+                ),
+            )
+
+        return self.create_ops_vendor_portal_session(
+            company_id,
+            portal_user["id"],
+        )
+
+    def create_ops_vendor_portal_session(
+        self,
+        company_id:int,
+        portal_user_id:int,
+    ):
+        company_id=int(company_id)
+        portal_user_id=int(portal_user_id)
+        schema=self.company_schema(company_id)
+
+
+        token=secrets.token_urlsafe(48)
+        token_hash=self._ops_portal_token_hash(
+            token
+        )
+
+
+        self.execute_sql(
+            f"""
+            INSERT INTO {schema}.ops_vendor_portal_sessions(
+                portal_user_id,
+                token_hash,
+                expires_at
+            )
+            VALUES(
+                %s,%s,
+                NOW()+INTERVAL '12 hours'
+            );
+            """,
+            (
+                portal_user_id,
+                token_hash,
+            ),
+        )
+
+
+        return {
+            "token":token,
+            "expires_in":43200,
+        }
+
+    def signin_ops_vendor_portal(
+        self,
+        company_id:int,
+        *,
+        email:str,
+        password:str,
+    ):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+
+        email=(email or "").strip().lower()
+
+
+        row=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_vendor_portal_users
+            WHERE company_id=%s
+            AND lower(email)=lower(%s)
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                email,
+            ),
+        )
+
+
+        if not row:
+            raise ValueError(
+                "Invalid email or password."
+            )
+
+
+        if row["status"]!="active":
+            raise ValueError(
+                "Vendor portal account is not active."
+            )
+
+
+        if not row.get("password_hash"):
+            raise ValueError(
+                "Vendor portal account has not been activated."
+            )
+
+
+        if not check_password_hash(
+            row["password_hash"],
+            password or "",
+        ):
+            raise ValueError(
+                "Invalid email or password."
+            )
+
+
+        self.execute_sql(
+            f"""
+            UPDATE {schema}.ops_vendor_portal_users
+            SET last_login_at=NOW(),
+                updated_at=NOW()
+            WHERE id=%s;
+            """,
+            (row["id"],),
+        )
+
+
+        return self.create_ops_vendor_portal_session(
+            company_id,
+            row["id"],
+        )
+
+    def list_ops_vendor_portal_rfqs(
+        self,
+        company_id:int,
+        *,
+        vendor_id:int,
+    ):
+        company_id=int(company_id)
+        vendor_id=int(vendor_id)
+        schema=self.company_schema(company_id)
+
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                se.id,
+                se.rfq_no,
+                se.sourcing_no,
+                se.title,
+                se.description,
+                se.issue_date,
+                se.closing_date,
+                se.required_delivery_date,
+                se.currency_code,
+                se.status,
+
+
+                sev.response_status,
+                sev.invitation_status,
+
+
+                q.id AS quote_id,
+                q.status AS quote_status,
+                q.revision_no AS quote_revision_no,
+                q.total_amount
+
+
+            FROM {schema}.ops_sourcing_event_vendors sev
+
+
+            JOIN {schema}.ops_sourcing_events se
+            ON se.id=sev.sourcing_event_id
+
+
+            LEFT JOIN {schema}.ops_vendor_quotes q
+            ON q.sourcing_event_vendor_id=sev.id
+            AND q.status IN(
+                'draft',
+                'submitted'
+            )
+
+
+            WHERE sev.vendor_id=%s
+            AND se.status IN(
+                'issued',
+                'open',
+                'closed',
+                'evaluation',
+                'awarded'
+            )
+
+
+            ORDER BY
+                CASE
+                    WHEN se.status IN(
+                        'issued','open'
+                    )
+                    THEN 0
+                    ELSE 1
+                END,
+                se.closing_date,
+                se.id DESC;
+            """,
+            (vendor_id,),
+        ) or []
+
+    def get_ops_vendor_portal_rfq(
+        self,
+        company_id:int,
+        event_id:int,
+        *,
+        vendor_id:int,
+    ):
+        company_id=int(company_id)
+        event_id=int(event_id)
+        vendor_id=int(vendor_id)
+        schema=self.company_schema(company_id)
+
+
+        row=self.fetch_one(
+            f"""
+            SELECT
+                se.*,
+                sev.id AS sourcing_event_vendor_id,
+                sev.response_status,
+                sev.invitation_status,
+
+
+                c.name AS company_name,
+                c.logo_url,
+                c.company_email,
+                c.company_phone
+
+
+            FROM {schema}.ops_sourcing_event_vendors sev
+
+
+            JOIN {schema}.ops_sourcing_events se
+            ON se.id=sev.sourcing_event_id
+
+
+            JOIN public.companies c
+            ON c.id=se.company_id
+
+
+            WHERE se.company_id=%s
+            AND se.id=%s
+            AND sev.vendor_id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                event_id,
+                vendor_id,
+            ),
+        )
+
+
+        if not row:
+            raise ValueError(
+                "RFQ not found."
+            )
+
+
+        items=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_sourcing_event_items
+            WHERE sourcing_event_id=%s
+            ORDER BY line_no,id;
+            """,
+            (event_id,),
+        ) or []
+
+
+        quote=self.get_or_create_ops_vendor_quote(
+            company_id,
+            sourcing_event_vendor_id=
+                row[
+                    "sourcing_event_vendor_id"
+                ],
+            vendor_id=vendor_id,
+        )
+
+
+        return {
+            "rfq":row,
+            "items":items,
+            "quote":quote,
+        }
+
+    def get_or_create_ops_vendor_quote(
+        self,
+        company_id:int,
+        *,
+        sourcing_event_vendor_id:int,
+        vendor_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_vendor_id=int(
+            sourcing_event_vendor_id
+        )
+        vendor_id=int(vendor_id)
+        schema=self.company_schema(company_id)
+
+        quote=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_vendor_quotes
+            WHERE sourcing_event_vendor_id=%s
+            AND vendor_id=%s
+            AND status='draft'
+            ORDER BY revision_no DESC
+            LIMIT 1;
+            """,
+            (
+                sourcing_event_vendor_id,
+                vendor_id,
+            ),
+        )
+
+        if quote:
+            quote=dict(quote)
+
+        else:
+            event_vendor=self.fetch_one(
+                f"""
+                SELECT
+                    sev.sourcing_event_id,
+                    se.currency_code
+                FROM {schema}.ops_sourcing_event_vendors sev
+                JOIN {schema}.ops_sourcing_events se
+                ON se.id=sev.sourcing_event_id
+                WHERE sev.id=%s
+                AND sev.vendor_id=%s;
+                """,
+                (
+                    sourcing_event_vendor_id,
+                    vendor_id,
+                ),
+            )
+
+            if not event_vendor:
+                raise ValueError(
+                    "Vendor RFQ assignment not found."
+                )
+
+            quote=self.fetch_one(
+                f"""
+                INSERT INTO {schema}.ops_vendor_quotes(
+                    company_id,
+                    sourcing_event_id,
+                    sourcing_event_vendor_id,
+                    vendor_id,
+                    currency_code,
+                    status
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,'draft'
+                )
+                RETURNING *;
+                """,
+                (
+                    company_id,
+                    event_vendor[
+                        "sourcing_event_id"
+                    ],
+                    sourcing_event_vendor_id,
+                    vendor_id,
+                    event_vendor.get(
+                        "currency_code"
+                    ),
+                ),
+            )
+
+            quote=dict(quote)
+
+            items=self.fetch_all(
+                f"""
+                SELECT *
+                FROM {schema}.ops_sourcing_event_items
+                WHERE sourcing_event_id=%s
+                ORDER BY line_no;
+                """,
+                (
+                    quote["sourcing_event_id"],
+                ),
+            ) or []
+
+            for item in items:
+                self.execute_sql(
+                    f"""
+                    INSERT INTO {schema}.ops_vendor_quote_lines(
+                        quote_id,
+                        sourcing_event_item_id,
+                        line_no,
+                        description,
+                        quantity
+                    )
+                    VALUES(
+                        %s,%s,%s,%s,%s
+                    );
+                    """,
+                    (
+                        quote["id"],
+                        item["id"],
+                        item["line_no"],
+                        item["description"],
+                        item["quantity"],
+                    ),
+                )
+
+        quote["lines"]=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_vendor_quote_lines
+            WHERE quote_id=%s
+            ORDER BY line_no;
+            """,
+            (quote["id"],),
+        ) or []
+
+        quote["documents"]=self.fetch_all(
+            f"""
+            SELECT
+                id,
+                document_type,
+                file_name,
+                mime_type,
+                file_size,
+                created_at
+            FROM {schema}.ops_vendor_quote_documents
+            WHERE quote_id=%s
+            ORDER BY created_at,id;
+            """,
+            (quote["id"],),
+        ) or []
+
+        return quote
+
+    def save_ops_vendor_quote(
+        self,
+        company_id:int,
+        quote_id:int,
+        *,
+        vendor_id:int,
+        portal_user_id:int,
+        payload:dict,
+    ):
+        company_id=int(company_id)
+        quote_id=int(quote_id)
+        vendor_id=int(vendor_id)
+        portal_user_id=int(portal_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_vendor_quotes
+                WHERE company_id=%s
+                AND id=%s
+                AND vendor_id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    quote_id,
+                    vendor_id,
+                ),
+            )
+
+            quote=dict(
+                cur.fetchone() or {}
+            )
+
+            if not quote:
+                raise ValueError(
+                    "Quotation not found."
+                )
+
+            if quote["status"]!="draft":
+                raise ValueError(
+                    "Submitted quotations cannot be edited."
+                )
+
+            lines=payload.get("lines") or []
+
+            subtotal=0.0
+            tax_amount=0.0
+
+            for line in lines:
+                line_id=int(line["id"])
+
+                quantity=float(
+                    line.get("quantity")
+                    or 0
+                )
+
+                unit_price=float(
+                    line.get("unit_price")
+                    or 0
+                )
+
+                discount=float(
+                    line.get("line_discount")
+                    or 0
+                )
+
+                tax=float(
+                    line.get("tax_amount")
+                    or 0
+                )
+
+                total=max(
+                    quantity*unit_price
+                    -discount
+                    +tax,
+                    0,
+                )
+
+                subtotal+=max(
+                    quantity*unit_price
+                    -discount,
+                    0,
+                )
+
+                tax_amount+=tax
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_vendor_quote_lines
+                    SET quantity=%s,
+                        unit_price=%s,
+                        line_discount=%s,
+                        tax_amount=%s,
+                        line_total=%s,
+                        offered_specification=%s,
+                        manufacturer=%s,
+                        model_no=%s,
+                        lead_time_days=%s,
+                        warranty_text=%s,
+                        notes=%s,
+                        updated_at=NOW()
+                    WHERE id=%s
+                    AND quote_id=%s;
+                    """,
+                    (
+                        quantity,
+                        unit_price,
+                        discount,
+                        tax,
+                        total,
+                        line.get(
+                            "offered_specification"
+                        ),
+                        line.get(
+                            "manufacturer"
+                        ),
+                        line.get(
+                            "model_no"
+                        ),
+                        line.get(
+                            "lead_time_days"
+                        ),
+                        line.get(
+                            "warranty_text"
+                        ),
+                        line.get("notes"),
+                        line_id,
+                        quote_id,
+                    ),
+                )
+
+            delivery_amount=float(
+                payload.get(
+                    "delivery_amount"
+                )
+                or 0
+            )
+
+            total_amount=(
+                subtotal
+                +tax_amount
+                +delivery_amount
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_vendor_quotes
+                SET vendor_quote_reference=%s,
+                    quote_date=%s,
+                    valid_until=%s,
+                    delivery_amount=%s,
+                    subtotal=%s,
+                    tax_amount=%s,
+                    total_amount=%s,
+                    lead_time_days=%s,
+                    warranty_text=%s,
+                    payment_terms=%s,
+                    delivery_terms=%s,
+                    notes=%s,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    (
+                        payload.get(
+                            "vendor_quote_reference"
+                        )
+                        or ""
+                    ).strip() or None,
+
+                    payload.get("quote_date"),
+                    payload.get("valid_until"),
+
+                    delivery_amount,
+                    subtotal,
+                    tax_amount,
+                    total_amount,
+
+                    payload.get(
+                        "lead_time_days"
+                    ),
+
+                    payload.get(
+                        "warranty_text"
+                    ),
+
+                    payload.get(
+                        "payment_terms"
+                    ),
+
+                    payload.get(
+                        "delivery_terms"
+                    ),
+
+                    payload.get("notes"),
+
+                    quote_id,
+                ),
+            )
+
+        return self.get_or_create_ops_vendor_quote(
+            company_id,
+            sourcing_event_vendor_id=
+                quote[
+                    "sourcing_event_vendor_id"
+                ],
+            vendor_id=vendor_id,
+        )
+
+    def submit_ops_vendor_quote(
+        self,
+        company_id:int,
+        quote_id:int,
+        *,
+        vendor_id:int,
+        portal_user_id:int,
+    ):
+        company_id=int(company_id)
+        quote_id=int(quote_id)
+        vendor_id=int(vendor_id)
+        portal_user_id=int(portal_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT
+                    q.*,
+                    se.closing_date,
+                    se.status AS sourcing_status
+                FROM {schema}.ops_vendor_quotes q
+                JOIN {schema}.ops_sourcing_events se
+                ON se.id=q.sourcing_event_id
+                WHERE q.company_id=%s
+                AND q.id=%s
+                AND q.vendor_id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    quote_id,
+                    vendor_id,
+                ),
+            )
+
+            quote=dict(
+                cur.fetchone() or {}
+            )
+
+            if not quote:
+                raise ValueError(
+                    "Quotation not found."
+                )
+
+            if quote["status"]!="draft":
+                raise ValueError(
+                    "Quotation has already been submitted."
+                )
+
+            if quote["sourcing_status"] not in {
+                "issued",
+                "open",
+            }:
+                raise ValueError(
+                    "This RFQ is no longer accepting quotations."
+                )
+
+            if (
+                quote.get("closing_date")
+                and quote["closing_date"]<
+                    date.today()
+            ):
+                raise ValueError(
+                    "The RFQ closing date has passed."
+                )
+
+            cur.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM {schema}.ops_vendor_quote_lines
+                WHERE quote_id=%s
+                AND unit_price>0;
+                """,
+                (quote_id,),
+            )
+
+            priced=int(
+                (cur.fetchone() or {}).get(
+                    "count"
+                )
+                or 0
+            )
+
+            if priced==0:
+                raise ValueError(
+                    "Enter quotation prices before submitting."
+                )
+
+            payload=self.build_ops_vendor_quote_snapshot(
+                company_id,
+                quote_id,
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_vendor_quotes
+                SET status='submitted',
+                    submitted_at=NOW(),
+                    submitted_by_portal_user_id=%s,
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    portal_user_id,
+                    quote_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_vendor_quote_snapshots(
+                    company_id,
+                    quote_id,
+                    revision_no,
+                    snapshot_json
+                )
+                VALUES(
+                    %s,%s,%s,%s
+                );
+                """,
+                (
+                    company_id,
+                    quote_id,
+                    int(
+                        quote.get(
+                            "revision_no"
+                        )
+                        or 1
+                    ),
+                    psycopg2.extras.Json(
+                        payload
+                    ),
+                ),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_sourcing_event_vendors
+                SET response_status='submitted',
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    quote[
+                        "sourcing_event_vendor_id"
+                    ],
+                ),
+            )
+
+        return {
+            "ok":True,
+            "quote_id":quote_id,
+            "status":"submitted",
+        }
+
+    def update_ops_vendor_portal_profile(
+        self,
+        company_id:int,
+        portal_user_id:int,
+        *,
+        payload:dict,
+    ):
+        company_id=int(company_id)
+        portal_user_id=int(portal_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        current=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_vendor_portal_users
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                portal_user_id,
+            ),
+        )
+
+        if not current:
+            raise ValueError(
+                "Vendor portal user not found."
+            )
+
+        first_name=(
+            payload.get(
+                "first_name",
+                current.get("first_name"),
+            )
+            or ""
+        ).strip()
+
+        last_name=(
+            payload.get(
+                "last_name",
+                current.get("last_name"),
+            )
+            or ""
+        ).strip() or None
+
+        phone=(
+            payload.get(
+                "phone",
+                current.get("phone"),
+            )
+            or ""
+        ).strip() or None
+
+        if not first_name:
+            raise ValueError(
+                "First name is required."
+            )
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.ops_vendor_portal_users
+            SET first_name=%s,
+                last_name=%s,
+                phone=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING
+                id,
+                vendor_id,
+                email,
+                first_name,
+                last_name,
+                phone,
+                status,
+                updated_at;
+            """,
+            (
+                first_name,
+                last_name,
+                phone,
+                company_id,
+                portal_user_id,
+            ),
+        )
+
+    def build_ops_vendor_quote_snapshot(
+        self,
+        company_id:int,
+        quote_id:int,
+    ):
+        company_id=int(company_id)
+        quote_id=int(quote_id)
+        schema=self.company_schema(company_id)
+
+
+        quote=self.fetch_one(
+            f"""
+            SELECT
+                q.*,
+                v.name AS vendor_name,
+                v.tax_number,
+                v.vat_number,
+                v.registration_no,
+                se.rfq_no,
+                se.sourcing_no,
+                se.title AS rfq_title,
+                se.closing_date
+            FROM {schema}.ops_vendor_quotes q
+            JOIN {schema}.vendors v
+            ON v.id=q.vendor_id
+            JOIN {schema}.ops_sourcing_events se
+            ON se.id=q.sourcing_event_id
+            WHERE q.id=%s;
+            """,
+            (quote_id,),
+        )
+
+
+        if not quote:
+            raise ValueError(
+                "Quotation not found."
+            )
+
+
+        lines=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_vendor_quote_lines
+            WHERE quote_id=%s
+            ORDER BY line_no;
+            """,
+            (quote_id,),
+        ) or []
+
+
+        documents=self.fetch_all(
+            f"""
+            SELECT
+                id,
+                document_type,
+                file_name,
+                mime_type,
+                file_size,
+                checksum_sha256,
+                created_at
+            FROM {schema}.ops_vendor_quote_documents
+            WHERE quote_id=%s
+            ORDER BY id;
+            """,
+            (quote_id,),
+        ) or []
+
+
+        return {
+            "quote":quote,
+            "lines":lines,
+            "documents":documents,
+        }
+
+    def ensure_ops_sourcing_evaluation_criteria(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        *,
+        cur=None,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(sourcing_event_id)
+        schema=self.company_schema(company_id)
+
+        owns_cursor=cur is None
+
+        if owns_cursor:
+            context=self.transaction()
+            _conn,cur=context.__enter__()
+
+        try:
+            cur.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM {schema}.ops_sourcing_evaluation_criteria
+                WHERE sourcing_event_id=%s;
+                """,
+                (sourcing_event_id,),
+            )
+
+            existing=int(
+                (cur.fetchone() or {}).get("count")
+                or 0
+            )
+
+            if existing:
+                if owns_cursor:
+                    context.__exit__(None,None,None)
+
+                return existing
+
+            defaults=[
+                {
+                    "code":"specification",
+                    "name":"Specification compliance",
+                    "description":"Whether the quotation satisfies the required specification.",
+                    "type":"pass_fail",
+                    "weight":0,
+                    "maximum":1,
+                    "mandatory":True,
+                    "system":False,
+                    "method":None,
+                    "order":10,
+                },
+                {
+                    "code":"price",
+                    "name":"Price",
+                    "description":"Commercial competitiveness of the submitted quotation.",
+                    "type":"scored",
+                    "weight":50,
+                    "maximum":5,
+                    "mandatory":False,
+                    "system":True,
+                    "method":"relative_lowest_price",
+                    "order":20,
+                },
+                {
+                    "code":"delivery",
+                    "name":"Delivery",
+                    "description":"Ability to meet the required delivery timeframe.",
+                    "type":"scored",
+                    "weight":20,
+                    "maximum":5,
+                    "mandatory":False,
+                    "system":True,
+                    "method":"lead_time",
+                    "order":30,
+                },
+                {
+                    "code":"technical",
+                    "name":"Technical suitability",
+                    "description":"Suitability and quality of the offered goods or services.",
+                    "type":"scored",
+                    "weight":20,
+                    "maximum":5,
+                    "mandatory":False,
+                    "system":False,
+                    "method":None,
+                    "order":40,
+                },
+                {
+                    "code":"commercial_terms",
+                    "name":"Commercial terms",
+                    "description":"Warranty, payment terms and other commercial conditions.",
+                    "type":"scored",
+                    "weight":10,
+                    "maximum":5,
+                    "mandatory":False,
+                    "system":False,
+                    "method":None,
+                    "order":50,
+                },
+            ]
+
+            for row in defaults:
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.ops_sourcing_evaluation_criteria(
+                        company_id,
+                        sourcing_event_id,
+                        criterion_code,
+                        name,
+                        description,
+                        criterion_type,
+                        weight_percent,
+                        maximum_score,
+                        is_mandatory,
+                        is_system_calculated,
+                        calculation_method,
+                        display_order
+                    )
+                    VALUES(
+                        %s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,
+                        %s,%s
+                    );
+                    """,
+                    (
+                        company_id,
+                        sourcing_event_id,
+                        row["code"],
+                        row["name"],
+                        row["description"],
+                        row["type"],
+                        row["weight"],
+                        row["maximum"],
+                        row["mandatory"],
+                        row["system"],
+                        row["method"],
+                        row["order"],
+                    ),
+                )
+
+            if owns_cursor:
+                context.__exit__(None,None,None)
+
+            return len(defaults)
+
+        except Exception as exc:
+            if owns_cursor:
+                context.__exit__(
+                    type(exc),
+                    exc,
+                    exc.__traceback__,
+                )
+
+            raise
+
+    def start_ops_sourcing_evaluation(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(sourcing_event_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_sourcing_events
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    sourcing_event_id,
+                ),
+            )
+
+            event=dict(
+                cur.fetchone() or {}
+            )
+
+            if not event:
+                raise ValueError(
+                    "Sourcing event not found."
+                )
+
+            cur.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM {schema}.ops_vendor_quotes
+                WHERE sourcing_event_id=%s
+                AND status='submitted';
+                """,
+                (sourcing_event_id,),
+            )
+
+            quote_count=int(
+                (cur.fetchone() or {}).get("count")
+                or 0
+            )
+
+            if quote_count==0:
+                raise ValueError(
+                    "Evaluation cannot start because no quotations have been submitted."
+                )
+
+            self.ensure_ops_sourcing_evaluation_criteria(
+                company_id,
+                sourcing_event_id,
+                cur=cur,
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_sourcing_events
+                SET evaluation_status='in_progress',
+                    evaluation_started_at=COALESCE(
+                        evaluation_started_at,
+                        NOW()
+                    ),
+                    status=CASE
+                        WHEN status IN(
+                            'issued',
+                            'open',
+                            'closed'
+                        )
+                        THEN 'evaluation'
+                        ELSE status
+                    END,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (sourcing_event_id,),
+            )
+
+            event=dict(cur.fetchone())
+
+        return event
+
+    def get_ops_quote_comparison(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(sourcing_event_id)
+        schema=self.company_schema(company_id)
+
+        event=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_sourcing_events
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                sourcing_event_id,
+            ),
+        )
+
+        if not event:
+            raise ValueError(
+                "Sourcing event not found."
+            )
+
+        criteria=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_sourcing_evaluation_criteria
+            WHERE sourcing_event_id=%s
+            AND is_active=TRUE
+            ORDER BY display_order,id;
+            """,
+            (sourcing_event_id,),
+        ) or []
+
+        quotes=self.fetch_all(
+            f"""
+            SELECT
+                q.*,
+
+                v.name AS vendor_name,
+                v.registration_no,
+                v.tax_number,
+                v.vat_number,
+
+                sev.response_status,
+
+                COALESCE(
+                    (
+                        SELECT COUNT(*)
+                        FROM {schema}.ops_vendor_quote_documents d
+                        WHERE d.quote_id=q.id
+                    ),
+                    0
+                ) AS document_count
+
+            FROM {schema}.ops_vendor_quotes q
+
+            JOIN {schema}.vendors v
+            ON v.id=q.vendor_id
+
+            JOIN {schema}.ops_sourcing_event_vendors sev
+            ON sev.id=q.sourcing_event_vendor_id
+
+            WHERE q.sourcing_event_id=%s
+            AND q.status='submitted'
+
+            ORDER BY
+                q.total_amount,
+                q.id;
+            """,
+            (sourcing_event_id,),
+        ) or []
+
+        items=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_sourcing_event_items
+            WHERE sourcing_event_id=%s
+            ORDER BY line_no,id;
+            """,
+            (sourcing_event_id,),
+        ) or []
+
+        quote_lines=self.fetch_all(
+            f"""
+            SELECT
+                ql.*,
+                q.vendor_id,
+                q.total_amount AS quote_total
+            FROM {schema}.ops_vendor_quote_lines ql
+            JOIN {schema}.ops_vendor_quotes q
+            ON q.id=ql.quote_id
+            WHERE q.sourcing_event_id=%s
+            AND q.status='submitted'
+            ORDER BY
+                ql.line_no,
+                q.total_amount;
+            """,
+            (sourcing_event_id,),
+        ) or []
+
+        evaluators=self.fetch_all(
+            f"""
+            SELECT
+                e.*,
+                CONCAT_WS(
+                    ' ',
+                    u.first_name,
+                    u.last_name
+                ) AS evaluator_name
+            FROM {schema}.ops_sourcing_evaluators e
+            LEFT JOIN public.users u
+            ON u.id=e.user_id
+            WHERE e.sourcing_event_id=%s
+            ORDER BY e.id;
+            """,
+            (sourcing_event_id,),
+        ) or []
+
+        results=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_sourcing_evaluation_results
+            WHERE sourcing_event_id=%s
+            ORDER BY rank_no,id;
+            """,
+            (sourcing_event_id,),
+        ) or []
+
+        return {
+            "event":event,
+            "criteria":criteria,
+            "quotes":quotes,
+            "items":items,
+            "quote_lines":quote_lines,
+            "evaluators":evaluators,
+            "results":results,
+        }
+
+    def calculate_ops_commercial_scores(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        *,
+        cur=None,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(sourcing_event_id)
+        schema=self.company_schema(company_id)
+
+        owns_cursor=cur is None
+
+        if owns_cursor:
+            context=self.transaction()
+            _conn,cur=context.__enter__()
+
+        try:
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_sourcing_evaluation_criteria
+                WHERE sourcing_event_id=%s
+                AND criterion_code='price'
+                AND is_active=TRUE
+                LIMIT 1;
+                """,
+                (sourcing_event_id,),
+            )
+
+            criterion=cur.fetchone()
+
+            if not criterion:
+                if owns_cursor:
+                    context.__exit__(None,None,None)
+
+                return []
+
+            criterion=dict(criterion)
+
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_vendor_quotes
+                WHERE sourcing_event_id=%s
+                AND status='submitted'
+                AND total_amount>0
+                ORDER BY total_amount;
+                """,
+                (sourcing_event_id,),
+            )
+
+            quotes=[
+                dict(row)
+                for row in cur.fetchall()
+            ]
+
+            if not quotes:
+                if owns_cursor:
+                    context.__exit__(None,None,None)
+
+                return []
+
+            lowest=min(
+                float(row["total_amount"])
+                for row in quotes
+            )
+
+            weight=float(
+                criterion["weight_percent"]
+                or 0
+            )
+
+            maximum=float(
+                criterion["maximum_score"]
+                or 5
+            )
+
+            output=[]
+
+            for quote in quotes:
+                amount=float(
+                    quote["total_amount"]
+                    or 0
+                )
+
+                raw_score=(
+                    lowest/amount*maximum
+                    if amount>0
+                    else 0
+                )
+
+                weighted_score=(
+                    raw_score/maximum*weight
+                    if maximum>0
+                    else 0
+                )
+
+                output.append({
+                    "quote_id":quote["id"],
+                    "vendor_id":quote["vendor_id"],
+                    "raw_score":round(
+                        raw_score,
+                        4,
+                    ),
+                    "weighted_score":round(
+                        weighted_score,
+                        4,
+                    ),
+                })
+
+            if owns_cursor:
+                context.__exit__(None,None,None)
+
+            return output
+
+        except Exception as exc:
+            if owns_cursor:
+                context.__exit__(
+                    type(exc),
+                    exc,
+                    exc.__traceback__,
+                )
+
+            raise
+
+    def save_ops_evaluation_score(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        *,
+        quote_id:int,
+        criterion_id:int,
+        evaluator_user_id:int,
+        payload:dict,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(sourcing_event_id)
+        quote_id=int(quote_id)
+        criterion_id=int(criterion_id)
+        evaluator_user_id=int(evaluator_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        criterion=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_sourcing_evaluation_criteria
+            WHERE id=%s
+            AND sourcing_event_id=%s
+            LIMIT 1;
+            """,
+            (
+                criterion_id,
+                sourcing_event_id,
+            ),
+        )
+
+        if not criterion:
+            raise ValueError(
+                "Evaluation criterion not found."
+            )
+
+        if criterion["is_system_calculated"]:
+            raise ValueError(
+                "This criterion is calculated automatically."
+            )
+
+        quote=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_vendor_quotes
+            WHERE id=%s
+            AND sourcing_event_id=%s
+            AND status='submitted'
+            LIMIT 1;
+            """,
+            (
+                quote_id,
+                sourcing_event_id,
+            ),
+        )
+
+        if not quote:
+            raise ValueError(
+                "Submitted quotation not found."
+            )
+
+        pass_result=None
+        raw_score=None
+        weighted_score=None
+
+        if criterion["criterion_type"]=="pass_fail":
+            pass_result=bool(
+                payload.get("pass_result")
+            )
+
+        else:
+            raw_score=float(
+                payload.get("raw_score")
+                or 0
+            )
+
+            maximum=float(
+                criterion["maximum_score"]
+                or 5
+            )
+
+            if raw_score<0 or raw_score>maximum:
+                raise ValueError(
+                    f"Score must be between 0 and {maximum:g}."
+                )
+
+            weight=float(
+                criterion["weight_percent"]
+                or 0
+            )
+
+            weighted_score=(
+                raw_score/maximum*weight
+                if maximum>0
+                else 0
+            )
+
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.ops_sourcing_evaluation_scores(
+                company_id,
+                sourcing_event_id,
+                quote_id,
+                vendor_id,
+                criterion_id,
+                evaluator_user_id,
+                pass_result,
+                raw_score,
+                weighted_score,
+                comment
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s
+            )
+
+            ON CONFLICT(
+                quote_id,
+                criterion_id,
+                evaluator_user_id
+            )
+            DO UPDATE SET
+                pass_result=EXCLUDED.pass_result,
+                raw_score=EXCLUDED.raw_score,
+                weighted_score=EXCLUDED.weighted_score,
+                comment=EXCLUDED.comment,
+                scored_at=NOW(),
+                updated_at=NOW()
+
+            RETURNING *;
+            """,
+            (
+                company_id,
+                sourcing_event_id,
+                quote_id,
+                quote["vendor_id"],
+                criterion_id,
+                evaluator_user_id,
+                pass_result,
+                raw_score,
+                weighted_score,
+                (
+                    payload.get("comment")
+                    or ""
+                ).strip() or None,
+            ),
+        )
+
+    def declare_ops_sourcing_conflict(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        *,
+        evaluator_user_id:int,
+        has_conflict:bool,
+        declaration_text:str|None=None,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(sourcing_event_id)
+        evaluator_user_id=int(evaluator_user_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.ops_sourcing_evaluator_declarations(
+                company_id,
+                sourcing_event_id,
+                evaluator_user_id,
+                has_conflict,
+                declaration_text
+            )
+            VALUES(
+                %s,%s,%s,%s,%s
+            )
+
+            ON CONFLICT(
+                sourcing_event_id,
+                evaluator_user_id
+            )
+            DO UPDATE SET
+                has_conflict=EXCLUDED.has_conflict,
+                declaration_text=EXCLUDED.declaration_text,
+                declared_at=NOW()
+
+            RETURNING *;
+            """,
+            (
+                company_id,
+                sourcing_event_id,
+                evaluator_user_id,
+                bool(has_conflict),
+                (
+                    declaration_text
+                    or ""
+                ).strip() or None,
+            ),
+        )
+
+    def calculate_ops_evaluation_results(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(sourcing_event_id)
+        schema=self.company_schema(company_id)
+
+        comparison=self.get_ops_quote_comparison(
+            company_id,
+            sourcing_event_id,
+        )
+
+        quotes=comparison["quotes"]
+        criteria=comparison["criteria"]
+
+        if not quotes:
+            raise ValueError(
+                "There are no submitted quotations to evaluate."
+            )
+
+        price_scores={
+            int(row["quote_id"]):row
+            for row in self.calculate_ops_commercial_scores(
+                company_id,
+                sourcing_event_id,
+            )
+        }
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                DELETE FROM {schema}.ops_sourcing_evaluation_results
+                WHERE sourcing_event_id=%s;
+                """,
+                (sourcing_event_id,),
+            )
+
+            amounts=[
+                float(q["total_amount"] or 0)
+                for q in quotes
+                if float(q["total_amount"] or 0)>0
+            ]
+
+            lowest=min(amounts) if amounts else 0
+
+            results=[]
+
+            for quote in quotes:
+                quote_id=int(quote["id"])
+                vendor_id=int(quote["vendor_id"])
+                amount=float(
+                    quote["total_amount"]
+                    or 0
+                )
+
+                mandatory_pass=True
+                total_score=0.0
+                commercial_score=0.0
+                technical_score=0.0
+
+                for criterion in criteria:
+                    criterion_id=int(
+                        criterion["id"]
+                    )
+
+                    if (
+                        criterion["criterion_code"]
+                        =="price"
+                        and criterion[
+                            "is_system_calculated"
+                        ]
+                    ):
+                        price=price_scores.get(
+                            quote_id
+                        )
+
+                        score=float(
+                            (
+                                price
+                                or {}
+                            ).get(
+                                "weighted_score"
+                            )
+                            or 0
+                        )
+
+                        commercial_score+=score
+                        total_score+=score
+
+                        continue
+
+                    cur.execute(
+                        f"""
+                        SELECT
+                            AVG(weighted_score)
+                                AS weighted_score,
+                            BOOL_AND(
+                                COALESCE(
+                                    pass_result,
+                                    TRUE
+                                )
+                            ) AS pass_result
+                        FROM {schema}.ops_sourcing_evaluation_scores
+                        WHERE sourcing_event_id=%s
+                        AND quote_id=%s
+                        AND criterion_id=%s;
+                        """,
+                        (
+                            sourcing_event_id,
+                            quote_id,
+                            criterion_id,
+                        ),
+                    )
+
+                    score_row=dict(
+                        cur.fetchone() or {}
+                    )
+
+                    if (
+                        criterion["criterion_type"]
+                        =="pass_fail"
+                    ):
+                        passed=score_row.get(
+                            "pass_result"
+                        )
+
+                        if (
+                            criterion["is_mandatory"]
+                            and passed is not True
+                        ):
+                            mandatory_pass=False
+
+                        continue
+
+                    score=float(
+                        score_row.get(
+                            "weighted_score"
+                        )
+                        or 0
+                    )
+
+                    technical_score+=score
+                    total_score+=score
+
+                variance=(
+                    amount-lowest
+                    if lowest>0
+                    else 0
+                )
+
+                variance_percent=(
+                    variance/lowest*100
+                    if lowest>0
+                    else 0
+                )
+
+                results.append({
+                    "quote_id":quote_id,
+                    "vendor_id":vendor_id,
+                    "mandatory_pass":
+                        mandatory_pass,
+                    "commercial_score":
+                        commercial_score,
+                    "technical_score":
+                        technical_score,
+                    "total_score":
+                        total_score,
+                    "quoted_amount":
+                        amount,
+                    "variance_from_lowest":
+                        variance,
+                    "variance_percent":
+                        variance_percent,
+                    "is_lowest_quote":
+                        amount==lowest,
+                })
+
+            eligible=[
+                row
+                for row in results
+                if row["mandatory_pass"]
+            ]
+
+            eligible.sort(
+                key=lambda row:
+                    (
+                        -row["total_score"],
+                        row["quoted_amount"],
+                    )
+            )
+
+            rank_by_quote={
+                row["quote_id"]:index+1
+                for index,row
+                in enumerate(eligible)
+            }
+
+            for row in results:
+                row["rank_no"]=rank_by_quote.get(
+                    row["quote_id"]
+                )
+
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.ops_sourcing_evaluation_results(
+                        company_id,
+                        sourcing_event_id,
+                        quote_id,
+                        vendor_id,
+                        mandatory_pass,
+                        commercial_score,
+                        technical_score,
+                        total_score,
+                        rank_no,
+                        quoted_amount,
+                        variance_from_lowest,
+                        variance_percent,
+                        is_lowest_quote
+                    )
+                    VALUES(
+                        %s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,
+                        %s,%s,%s
+                    );
+                    """,
+                    (
+                        company_id,
+                        sourcing_event_id,
+                        row["quote_id"],
+                        row["vendor_id"],
+                        row["mandatory_pass"],
+                        row["commercial_score"],
+                        row["technical_score"],
+                        row["total_score"],
+                        row["rank_no"],
+                        row["quoted_amount"],
+                        row["variance_from_lowest"],
+                        row["variance_percent"],
+                        row["is_lowest_quote"],
+                    ),
+                )
+
+        return self.get_ops_quote_comparison(
+            company_id,
+            sourcing_event_id,
+        )
+
+    def recommend_ops_vendor(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        *,
+        quote_id:int,
+        actor_user_id:int,
+        reason:str,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(sourcing_event_id)
+        quote_id=int(quote_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        reason=(reason or "").strip()
+
+        if not reason:
+            raise ValueError(
+                "Recommendation reason is required."
+            )
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT
+                    r.*,
+                    q.vendor_id
+                FROM {schema}.ops_sourcing_evaluation_results r
+                JOIN {schema}.ops_vendor_quotes q
+                ON q.id=r.quote_id
+                WHERE r.sourcing_event_id=%s
+                AND r.quote_id=%s
+                LIMIT 1
+                FOR UPDATE;
+                """,
+                (
+                    sourcing_event_id,
+                    quote_id,
+                ),
+            )
+
+            result=dict(
+                cur.fetchone() or {}
+            )
+
+            if not result:
+                raise ValueError(
+                    "Evaluation result not found."
+                )
+
+            if not result["mandatory_pass"]:
+                raise ValueError(
+                    "A quotation that failed mandatory requirements cannot be recommended."
+                )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_sourcing_evaluation_results
+                SET is_recommended=FALSE
+                WHERE sourcing_event_id=%s;
+                """,
+                (sourcing_event_id,),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_sourcing_evaluation_results
+                SET is_recommended=TRUE
+                WHERE sourcing_event_id=%s
+                AND quote_id=%s;
+                """,
+                (
+                    sourcing_event_id,
+                    quote_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_sourcing_events
+                SET recommended_vendor_id=%s,
+                    recommended_quote_id=%s,
+                    recommendation_reason=%s,
+                    evaluation_status='completed',
+                    evaluation_completed_at=NOW(),
+                    evaluation_completed_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    result["vendor_id"],
+                    quote_id,
+                    reason,
+                    actor_user_id,
+                    sourcing_event_id,
+                ),
+            )
+
+            event=dict(cur.fetchone())
+
+        return event
+
+    def create_ops_award_request(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        *,
+        actor_user_id:int,
+        deviation_reason=None,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(sourcing_event_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT
+                    se.*,
+                    pc.id AS procurement_case_id,
+                    pc.case_no,
+
+                    r.id AS request_id,
+                    r.request_no,
+
+                    q.id AS quote_id,
+                    q.vendor_id,
+                    q.total_amount,
+                    q.currency_code,
+
+                    er.rank_no,
+                    er.total_score,
+
+                    v.name AS vendor_name
+
+                FROM {schema}.ops_sourcing_events se
+
+                JOIN {schema}.ops_procurement_cases pc
+                ON pc.id=se.procurement_case_id
+
+                JOIN {schema}.ops_requests r
+                ON r.id=se.request_id
+
+                JOIN {schema}.ops_vendor_quotes q
+                ON q.id=se.recommended_quote_id
+
+                JOIN {schema}.ops_sourcing_evaluation_results er
+                ON er.sourcing_event_id=se.id
+                AND er.quote_id=q.id
+
+                JOIN {schema}.vendors v
+                ON v.id=q.vendor_id
+
+                WHERE se.company_id=%s
+                AND se.id=%s
+
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    sourcing_event_id,
+                ),
+            )
+
+            row=dict(
+                cur.fetchone() or {}
+            )
+
+            if not row:
+                raise ValueError(
+                    "Completed sourcing evaluation not found."
+                )
+
+            if row.get(
+                "evaluation_status"
+            )!="completed":
+                raise ValueError(
+                    "Evaluation must be completed before an award can be created."
+                )
+
+            if not row.get(
+                "recommended_quote_id"
+            ):
+                raise ValueError(
+                    "A vendor recommendation is required before award."
+                )
+
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_vendor_awards
+                WHERE sourcing_event_id=%s
+                LIMIT 1;
+                """,
+                (sourcing_event_id,),
+            )
+
+            existing=cur.fetchone()
+
+            if existing:
+                return dict(existing)
+
+            rank_no=int(
+                row.get("rank_no")
+                or 0
+            )
+
+            is_rank_one=rank_no==1
+
+            deviation_reason=(
+                deviation_reason or ""
+            ).strip() or None
+
+            if not is_rank_one and not deviation_reason:
+                raise ValueError(
+                    "A deviation reason is required when the recommended vendor is not ranked first."
+                )
+
+            governance=self.get_ops_governance_rules(
+                company_id
+            )
+
+            governance_mode=(
+                governance.get("mode")
+                or "structured"
+            )
+
+            extra_approval_required=(
+                not is_rank_one
+                and governance_mode in {
+                    "structured",
+                    "controlled",
+                }
+            )
+
+            cur.execute(
+                f"""
+                SELECT COALESCE(MAX(id),0)+1 AS seq
+                FROM {schema}.ops_vendor_awards;
+                """
+            )
+
+            seq=int(
+                (cur.fetchone() or {}).get(
+                    "seq"
+                )
+                or 1
+            )
+
+            award_no=(
+                f"AWD-{company_id}-{seq:06d}"
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_vendor_awards(
+                    company_id,
+                    sourcing_event_id,
+                    procurement_case_id,
+                    request_id,
+
+                    recommended_quote_id,
+                    vendor_id,
+
+                    award_no,
+
+                    quoted_amount,
+                    currency_code,
+
+                    evaluation_rank,
+                    evaluation_score,
+
+                    is_rank_one,
+                    is_deviation,
+                    deviation_reason,
+
+                    recommendation_reason,
+
+                    governance_mode,
+                    approval_required,
+                    extra_approval_required,
+
+                    status,
+
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES(
+                    %s,%s,%s,%s,
+                    %s,%s,
+                    %s,
+                    %s,%s,
+                    %s,%s,
+                    %s,%s,%s,
+                    %s,
+                    %s,%s,%s,
+                    'draft',
+                    %s,%s
+                )
+                RETURNING *;
+                """,
+                (
+                    company_id,
+                    sourcing_event_id,
+                    row["procurement_case_id"],
+                    row["request_id"],
+
+                    row["quote_id"],
+                    row["vendor_id"],
+
+                    award_no,
+
+                    row["total_amount"],
+                    row.get("currency_code"),
+
+                    rank_no,
+                    row.get("total_score") or 0,
+
+                    is_rank_one,
+                    not is_rank_one,
+                    deviation_reason,
+
+                    row.get(
+                        "recommendation_reason"
+                    )
+                    or "Vendor recommended following evaluation.",
+
+                    governance_mode,
+                    True,
+                    extra_approval_required,
+
+                    actor_user_id,
+                    actor_user_id,
+                ),
+            )
+
+            award=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_sourcing_events
+                SET award_status='draft',
+                    award_id=%s,
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    award["id"],
+                    sourcing_event_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_events(
+                    event_uuid,
+                    event_type,
+                    module,
+                    entity_type,
+                    entity_id,
+                    entity_ref,
+                    actor_user_id,
+                    action,
+                    after_json
+                )
+                VALUES(
+                    %s,
+                    'procurement.award.created',
+                    'procurement',
+                    'vendor_award',
+                    %s,
+                    %s,
+                    %s,
+                    'create',
+                    %s
+                );
+                """,
+                (
+                    str(uuid.uuid4()),
+                    str(award["id"]),
+                    award["award_no"],
+                    actor_user_id,
+                    psycopg2.extras.Json(
+                        award
+                    ),
+                ),
+            )
+
+        return award
+
+    def resolve_ops_award_approver(
+        self,
+        company_id:int,
+        *,
+        award:dict,
+        step_no:int,
+    ):
+        company_id=int(company_id)
+
+        governance_mode=(
+            award.get("governance_mode")
+            or "structured"
+        )
+
+        role_codes=[]
+
+        if governance_mode=="flexible":
+            role_codes=[
+                "PROCUREMENT_MANAGER",
+                "BUSINESS_OWNER",
+                "OWNER",
+            ]
+
+        elif governance_mode=="structured":
+            if (
+                award.get(
+                    "extra_approval_required"
+                )
+                and int(step_no)==1
+            ):
+                role_codes=[
+                    "PROCUREMENT_MANAGER",
+                    "FINANCE_MANAGER",
+                ]
+            else:
+                role_codes=[
+                    "FINANCE_MANAGER",
+                    "CFO",
+                    "BUSINESS_OWNER",
+                ]
+
+        else:
+            if (
+                award.get(
+                    "extra_approval_required"
+                )
+                and int(step_no)==1
+            ):
+                role_codes=[
+                    "PROCUREMENT_MANAGER",
+                ]
+
+            elif (
+                award.get(
+                    "extra_approval_required"
+                )
+                and int(step_no)==2
+            ):
+                role_codes=[
+                    "CFO",
+                    "FINANCE_MANAGER",
+                ]
+
+            else:
+                role_codes=[
+                    "CEO",
+                    "EXECUTIVE_DIRECTOR",
+                    "SECRETARY",
+                    "BUSINESS_OWNER",
+                ]
+
+        for role_code in role_codes:
+            user_id=self.fetch_val(
+                """
+                SELECT cu.user_id
+                FROM public.company_users cu
+                WHERE cu.company_id=%s
+                AND cu.ops_is_active=TRUE
+                AND (
+                    UPPER(
+                        COALESCE(
+                            cu.ops_role_code,
+                            ''
+                        )
+                    )=%s
+                    OR UPPER(
+                        COALESCE(
+                            cu.role,
+                            ''
+                        )
+                    )=%s
+                )
+                ORDER BY
+                    CASE
+                        WHEN UPPER(
+                            COALESCE(
+                                cu.ops_role_code,
+                                ''
+                            )
+                        )=%s
+                        THEN 0
+                        ELSE 1
+                    END,
+                    cu.id
+                LIMIT 1;
+                """,
+                (
+                    company_id,
+                    role_code,
+                    role_code,
+                    role_code,
+                ),
+            )
+
+            if user_id:
+                return {
+                    "user_id":int(user_id),
+                    "role_code":role_code,
+                }
+
+        owner_user_id=self.fetch_val(
+            """
+            SELECT owner_user_id
+            FROM public.companies
+            WHERE id=%s;
+            """,
+            (company_id,),
+        )
+
+        if (
+            governance_mode=="flexible"
+            and owner_user_id
+        ):
+            return {
+                "user_id":int(owner_user_id),
+                "role_code":"OWNER",
+            }
+
+        return None
+
+    def create_ops_award_approval_tasks(
+        self,
+        company_id:int,
+        award_id:int,
+        *,
+        actor_user_id:int,
+        cur,
+    ):
+        company_id=int(company_id)
+        award_id=int(award_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            SELECT *
+            FROM {schema}.ops_vendor_awards
+            WHERE company_id=%s
+            AND id=%s
+            FOR UPDATE;
+            """,
+            (
+                company_id,
+                award_id,
+            ),
+        )
+
+        award=dict(
+            cur.fetchone() or {}
+        )
+
+        if not award:
+            raise ValueError(
+                "Award request not found."
+            )
+
+        cur.execute(
+            f"""
+            DELETE FROM {schema}.ops_award_approval_tasks
+            WHERE award_id=%s
+            AND status='pending';
+            """,
+            (award_id,),
+        )
+
+        mode=award["governance_mode"]
+        steps=[]
+
+        if mode=="flexible":
+            steps=[
+                {
+                    "step_no":1,
+                    "name":"Award approval",
+                }
+            ]
+
+        elif mode=="structured":
+            if award["extra_approval_required"]:
+                steps=[
+                    {
+                        "step_no":1,
+                        "name":"Procurement deviation review",
+                    },
+                    {
+                        "step_no":2,
+                        "name":"Final award approval",
+                    },
+                ]
+            else:
+                steps=[
+                    {
+                        "step_no":1,
+                        "name":"Final award approval",
+                    }
+                ]
+
+        else:
+            if award["extra_approval_required"]:
+                steps=[
+                    {
+                        "step_no":1,
+                        "name":"Procurement deviation review",
+                    },
+                    {
+                        "step_no":2,
+                        "name":"Financial award review",
+                    },
+                    {
+                        "step_no":3,
+                        "name":"Executive award approval",
+                    },
+                ]
+            else:
+                steps=[
+                    {
+                        "step_no":1,
+                        "name":"Financial award review",
+                    },
+                    {
+                        "step_no":2,
+                        "name":"Executive award approval",
+                    },
+                ]
+
+        created=[]
+
+        for step in steps:
+            resolved=self.resolve_ops_award_approver(
+                company_id,
+                award=award,
+                step_no=step["step_no"],
+            )
+
+            if not resolved:
+                raise ValueError(
+                    f"No approver could be resolved for '{step['name']}'. Configure the required organisation roles before submitting the award."
+                )
+
+            if int(
+                resolved["user_id"]
+            )==int(
+                award.get(
+                    "created_by_user_id"
+                )
+                or 0
+            ) and mode=="controlled":
+                raise ValueError(
+                    f"Controlled governance prevents the award preparer from approving '{step['name']}'."
+                )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_award_approval_tasks(
+                    company_id,
+                    award_id,
+                    step_no,
+                    step_name,
+                    approver_role_code,
+                    assigned_to_user_id,
+                    assigned_by_user_id,
+                    status
+                )
+                VALUES(
+                    %s,%s,%s,%s,
+                    %s,%s,%s,
+                    CASE
+                        WHEN %s=1
+                        THEN 'pending'
+                        ELSE 'skipped'
+                    END
+                )
+                RETURNING *;
+                """,
+                (
+                    company_id,
+                    award_id,
+                    step["step_no"],
+                    step["name"],
+                    resolved["role_code"],
+                    resolved["user_id"],
+                    actor_user_id,
+                    step["step_no"],
+                ),
+            )
+
+            created.append(
+                dict(cur.fetchone())
+            )
+
+        return created
+
+    def _start_next_ops_award_approval(
+        self,
+        company_id:int,
+        *,
+        award_id:int,
+        after_step_no:int,
+        actor_user_id:int,
+        cur,
+    ):
+        company_id=int(company_id)
+        award_id=int(award_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            SELECT *
+            FROM {schema}.ops_award_approval_tasks
+            WHERE award_id=%s
+            AND step_no>%s
+            ORDER BY step_no
+            LIMIT 1;
+            """,
+            (
+                award_id,
+                after_step_no,
+            ),
+        )
+
+        next_task=cur.fetchone()
+
+        if not next_task:
+            return self.complete_ops_award(
+                company_id,
+                award_id,
+                actor_user_id=actor_user_id,
+                cur=cur,
+            )
+
+        next_task=dict(next_task)
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.ops_award_approval_tasks
+            SET status='pending',
+                updated_at=NOW()
+            WHERE id=%s
+            RETURNING *;
+            """,
+            (next_task["id"],),
+        )
+
+        return {
+            "completed":False,
+            "task":dict(
+                cur.fetchone()
+            ),
+        }
+
+    def submit_ops_award(
+        self,
+        company_id:int,
+        award_id:int,
+        *,
+        actor_user_id:int,
+        award_reason=None,
+    ):
+        company_id=int(company_id)
+        award_id=int(award_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_vendor_awards
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    award_id,
+                ),
+            )
+
+            award=dict(
+                cur.fetchone() or {}
+            )
+
+            if not award:
+                raise ValueError(
+                    "Award request not found."
+                )
+
+            if award["status"]!="draft":
+                raise ValueError(
+                    "Only draft awards can be submitted."
+                )
+
+            if (
+                award["is_deviation"]
+                and not (
+                    award.get(
+                        "deviation_reason"
+                    )
+                    or ""
+                ).strip()
+            ):
+                raise ValueError(
+                    "Deviation reason is required."
+                )
+
+            award_reason=(
+                award_reason
+                or award.get("award_reason")
+                or award.get(
+                    "recommendation_reason"
+                )
+                or ""
+            ).strip()
+
+            if not award_reason:
+                raise ValueError(
+                    "Award reason is required."
+                )
+
+            tasks=self.create_ops_award_approval_tasks(
+                company_id,
+                award_id,
+                actor_user_id=actor_user_id,
+                cur=cur,
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_vendor_awards
+                SET status='pending_approval',
+                    award_reason=%s,
+                    submitted_at=NOW(),
+                    submitted_by_user_id=%s,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    award_reason,
+                    actor_user_id,
+                    actor_user_id,
+                    award_id,
+                ),
+            )
+
+            award=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_sourcing_events
+                SET award_status='pending_approval',
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    award["sourcing_event_id"],
+                ),
+            )
+
+        return {
+            "award":award,
+            "tasks":tasks,
+        }
+
+    def list_ops_award_approvals(
+        self,
+        company_id:int,
+        *,
+        user_id:int,
+    ):
+        company_id=int(company_id)
+        user_id=int(user_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                t.*,
+
+                a.award_no,
+                a.vendor_id,
+                a.quoted_amount,
+                a.currency_code,
+                a.evaluation_rank,
+                a.evaluation_score,
+                a.is_rank_one,
+                a.is_deviation,
+                a.deviation_reason,
+                a.recommendation_reason,
+                a.award_reason,
+                a.governance_mode,
+
+                v.name AS vendor_name,
+
+                se.rfq_no,
+                se.sourcing_no,
+                se.title,
+
+                r.request_no,
+
+                trim(concat_ws(
+                    ' ',
+                    u.first_name,
+                    u.last_name
+                )) AS submitted_by_name
+
+            FROM {schema}.ops_award_approval_tasks t
+
+            JOIN {schema}.ops_vendor_awards a
+            ON a.id=t.award_id
+
+            JOIN {schema}.vendors v
+            ON v.id=a.vendor_id
+
+            JOIN {schema}.ops_sourcing_events se
+            ON se.id=a.sourcing_event_id
+
+            JOIN {schema}.ops_requests r
+            ON r.id=a.request_id
+
+            LEFT JOIN public.users u
+            ON u.id=a.submitted_by_user_id
+
+            WHERE t.company_id=%s
+            AND t.assigned_to_user_id=%s
+            AND t.status='pending'
+            AND a.status='pending_approval'
+
+            ORDER BY
+                t.created_at,
+                t.id;
+            """,
+            (
+                company_id,
+                user_id,
+            ),
+        ) or []
+
+    def decide_ops_award_approval(
+        self,
+        company_id:int,
+        task_id:int,
+        *,
+        actor_user_id:int,
+        decision:str,
+        comment=None,
+    ):
+        company_id=int(company_id)
+        task_id=int(task_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        decision=(
+            decision or ""
+        ).strip().lower()
+
+        if decision not in {
+            "approve",
+            "reject",
+        }:
+            raise ValueError(
+                "Decision must be approve or reject."
+            )
+
+        comment=(
+            comment or ""
+        ).strip() or None
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT
+                    t.*,
+                    a.governance_mode,
+                    a.created_by_user_id,
+                    a.submitted_by_user_id
+                FROM {schema}.ops_award_approval_tasks t
+                JOIN {schema}.ops_vendor_awards a
+                ON a.id=t.award_id
+                WHERE t.company_id=%s
+                AND t.id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    task_id,
+                ),
+            )
+
+            task=dict(
+                cur.fetchone() or {}
+            )
+
+            if not task:
+                raise ValueError(
+                    "Award approval task not found."
+                )
+
+            if task["status"]!="pending":
+                raise ValueError(
+                    "This award approval has already been actioned."
+                )
+
+            if int(
+                task["assigned_to_user_id"]
+                or 0
+            )!=actor_user_id:
+                raise ValueError(
+                    "This award approval is assigned to another user."
+                )
+
+            if (
+                task["governance_mode"]
+                =="controlled"
+                and actor_user_id==int(
+                    task.get(
+                        "submitted_by_user_id"
+                    )
+                    or 0
+                )
+            ):
+                raise ValueError(
+                    "Controlled governance prevents the award submitter from approving the award."
+                )
+
+            if decision=="reject":
+                if not comment:
+                    raise ValueError(
+                        "A rejection reason is required."
+                    )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_award_approval_tasks
+                    SET status='rejected',
+                        decision_comment=%s,
+                        acted_at=NOW(),
+                        updated_at=NOW()
+                    WHERE id=%s;
+                    """,
+                    (
+                        comment,
+                        task_id,
+                    ),
+                )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_vendor_awards
+                    SET status='rejected',
+                        rejected_at=NOW(),
+                        rejected_by_user_id=%s,
+                        rejection_reason=%s,
+                        updated_by_user_id=%s,
+                        updated_at=NOW()
+                    WHERE id=%s;
+                    """,
+                    (
+                        actor_user_id,
+                        comment,
+                        actor_user_id,
+                        task["award_id"],
+                    ),
+                )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_sourcing_events se
+                    SET award_status='rejected',
+                        updated_at=NOW()
+                    FROM {schema}.ops_vendor_awards a
+                    WHERE a.id=%s
+                    AND se.id=a.sourcing_event_id;
+                    """,
+                    (task["award_id"],),
+                )
+
+                return {
+                    "status":"rejected",
+                    "completed":True,
+                }
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_award_approval_tasks
+                SET status='approved',
+                    decision_comment=%s,
+                    acted_at=NOW(),
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    comment,
+                    task_id,
+                ),
+            )
+
+            return self._start_next_ops_award_approval(
+                company_id,
+                award_id=task["award_id"],
+                after_step_no=task["step_no"],
+                actor_user_id=actor_user_id,
+                cur=cur,
+            )
+
+    def build_ops_award_snapshot(
+        self,
+        company_id:int,
+        award_id:int,
+    ):
+        company_id=int(company_id)
+        award_id=int(award_id)
+        schema=self.company_schema(company_id)
+
+        award=self.fetch_one(
+            f"""
+            SELECT
+                a.*,
+
+                v.name AS vendor_name,
+                v.registration_no,
+                v.tax_number,
+                v.vat_number,
+
+                q.vendor_quote_reference,
+                q.quote_date,
+                q.valid_until,
+                q.total_amount,
+
+                se.rfq_no,
+                se.sourcing_no,
+                se.title AS sourcing_title,
+
+                pc.case_no,
+
+                r.request_no,
+                r.title AS request_title,
+
+                c.name AS company_name,
+                c.logo_url,
+                c.company_reg_no,
+                c.tin,
+                c.vat,
+                c.company_email,
+                c.company_phone
+
+            FROM {schema}.ops_vendor_awards a
+
+            JOIN {schema}.vendors v
+            ON v.id=a.vendor_id
+
+            JOIN {schema}.ops_vendor_quotes q
+            ON q.id=a.recommended_quote_id
+
+            JOIN {schema}.ops_sourcing_events se
+            ON se.id=a.sourcing_event_id
+
+            JOIN {schema}.ops_procurement_cases pc
+            ON pc.id=a.procurement_case_id
+
+            JOIN {schema}.ops_requests r
+            ON r.id=a.request_id
+
+            JOIN public.companies c
+            ON c.id=a.company_id
+
+            WHERE a.company_id=%s
+            AND a.id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                award_id,
+            ),
+        )
+
+        if not award:
+            raise ValueError(
+                "Award not found."
+            )
+
+        approvals=self.fetch_all(
+            f"""
+            SELECT
+                t.*,
+
+                trim(concat_ws(
+                    ' ',
+                    u.first_name,
+                    u.last_name
+                )) AS approver_name
+
+            FROM {schema}.ops_award_approval_tasks t
+
+            LEFT JOIN public.users u
+            ON u.id=t.assigned_to_user_id
+
+            WHERE t.award_id=%s
+
+            ORDER BY t.step_no;
+            """,
+            (award_id,),
+        ) or []
+
+        evaluation=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_sourcing_evaluation_results
+            WHERE sourcing_event_id=%s
+            AND quote_id=%s
+            LIMIT 1;
+            """,
+            (
+                award["sourcing_event_id"],
+                award["recommended_quote_id"],
+            ),
+        )
+
+        return {
+            "award":award,
+            "evaluation":evaluation,
+            "approvals":approvals,
+        }
+
+    def snapshot_ops_award(
+        self,
+        company_id:int,
+        award_id:int,
+        *,
+        actor_user_id:int,
+        cur=None,
+    ):
+        company_id=int(company_id)
+        award_id=int(award_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        if cur is None:
+            with self.transaction() as (_conn,tx):
+                return self.snapshot_ops_award(
+                    company_id,
+                    award_id,
+                    actor_user_id=actor_user_id,
+                    cur=tx,
+                )
+
+        payload=self.build_ops_award_snapshot(
+            company_id,
+            award_id,
+        )
+
+        award=payload["award"]
+
+        cur.execute(
+            f"""
+            SELECT COALESCE(
+                MAX(version_no),
+                0
+            )+1 AS version_no
+            FROM {schema}.ops_award_snapshots
+            WHERE award_id=%s;
+            """,
+            (award_id,),
+        )
+
+        version_no=int(
+            (cur.fetchone() or {}).get(
+                "version_no"
+            )
+            or 1
+        )
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.ops_award_snapshots
+            SET status='superseded'
+            WHERE award_id=%s
+            AND status='approved';
+            """,
+            (award_id,),
+        )
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.ops_award_snapshots(
+                company_id,
+                award_id,
+                award_no,
+                version_no,
+                status,
+                snapshot_json,
+                generated_by_user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,
+                'approved',
+                %s,%s
+            )
+            RETURNING *;
+            """,
+            (
+                company_id,
+                award_id,
+                award["award_no"],
+                version_no,
+                psycopg2.extras.Json(
+                    payload
+                ),
+                actor_user_id,
+            ),
+        )
+
+        return dict(cur.fetchone())
+
+    def complete_ops_award(
+        self,
+        company_id:int,
+        award_id:int,
+        *,
+        actor_user_id:int,
+        cur,
+    ):
+        company_id=int(company_id)
+        award_id=int(award_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            SELECT *
+            FROM {schema}.ops_vendor_awards
+            WHERE company_id=%s
+            AND id=%s
+            FOR UPDATE;
+            """,
+            (
+                company_id,
+                award_id,
+            ),
+        )
+
+        award=dict(
+            cur.fetchone() or {}
+        )
+
+        if not award:
+            raise ValueError(
+                "Award request not found."
+            )
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.ops_vendor_awards
+            SET status='approved',
+                approved_at=NOW(),
+                approved_by_user_id=%s,
+                locked_at=NOW(),
+                updated_by_user_id=%s,
+                updated_at=NOW()
+            WHERE id=%s
+            RETURNING *;
+            """,
+            (
+                actor_user_id,
+                actor_user_id,
+                award_id,
+            ),
+        )
+
+        award=dict(cur.fetchone())
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.ops_sourcing_events
+            SET award_status='approved',
+                status='awarded',
+                awarded_vendor_id=%s,
+                awarded_quote_id=%s,
+                awarded_at=NOW(),
+                award_id=%s,
+                updated_at=NOW()
+            WHERE id=%s;
+            """,
+            (
+                award["vendor_id"],
+                award["recommended_quote_id"],
+                award_id,
+                award["sourcing_event_id"],
+            ),
+        )
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.ops_vendor_quotes
+            SET status=CASE
+                WHEN id=%s
+                THEN 'accepted'
+                WHEN sourcing_event_id=%s
+                AND status='submitted'
+                THEN 'rejected'
+                ELSE status
+            END,
+            updated_at=NOW()
+            WHERE sourcing_event_id=%s;
+            """,
+            (
+                award["recommended_quote_id"],
+                award["sourcing_event_id"],
+                award["sourcing_event_id"],
+            ),
+        )
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.ops_vendor_profiles
+            SET last_awarded_at=NOW(),
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND vendor_id=%s;
+            """,
+            (
+                company_id,
+                award["vendor_id"],
+            ),
+        )
+
+        snapshot=self.snapshot_ops_award(
+            company_id,
+            award_id,
+            actor_user_id=actor_user_id,
+            cur=cur,
+        )
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.ops_events(
+                event_uuid,
+                event_type,
+                module,
+                entity_type,
+                entity_id,
+                entity_ref,
+                actor_user_id,
+                action,
+                after_json
+            )
+            VALUES(
+                %s,
+                'procurement.award.approved',
+                'procurement',
+                'vendor_award',
+                %s,
+                %s,
+                %s,
+                'approve',
+                %s
+            );
+            """,
+            (
+                str(uuid.uuid4()),
+                str(award_id),
+                award["award_no"],
+                actor_user_id,
+                psycopg2.extras.Json(
+                    award
+                ),
+            ),
+        )
+
+        return {
+            "completed":True,
+            "award":award,
+            "snapshot":snapshot,
+        }
+
+    def get_ops_award(
+        self,
+        company_id:int,
+        award_id:int,
+    ):
+        company_id=int(company_id)
+        award_id=int(award_id)
+        schema=self.company_schema(company_id)
+
+        award=self.fetch_one(
+            f"""
+            SELECT
+                a.*,
+
+                v.name AS vendor_name,
+                v.email AS vendor_email,
+                v.phone AS vendor_phone,
+
+                q.vendor_quote_reference,
+
+                se.rfq_no,
+                se.sourcing_no,
+                se.title AS sourcing_title,
+
+                r.request_no,
+                r.title AS request_title
+
+            FROM {schema}.ops_vendor_awards a
+
+            JOIN {schema}.vendors v
+            ON v.id=a.vendor_id
+
+            JOIN {schema}.ops_vendor_quotes q
+            ON q.id=a.recommended_quote_id
+
+            JOIN {schema}.ops_sourcing_events se
+            ON se.id=a.sourcing_event_id
+
+            JOIN {schema}.ops_requests r
+            ON r.id=a.request_id
+
+            WHERE a.company_id=%s
+            AND a.id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                award_id,
+            ),
+        )
+
+        if not award:
+            raise ValueError(
+                "Award not found."
+            )
+
+        tasks=self.fetch_all(
+            f"""
+            SELECT
+                t.*,
+
+                trim(concat_ws(
+                    ' ',
+                    u.first_name,
+                    u.last_name
+                )) AS approver_name
+
+            FROM {schema}.ops_award_approval_tasks t
+
+            LEFT JOIN public.users u
+            ON u.id=t.assigned_to_user_id
+
+            WHERE t.award_id=%s
+
+            ORDER BY t.step_no;
+            """,
+            (award_id,),
+        ) or []
+
+        snapshot=self.fetch_one(
+            f"""
+            SELECT
+                id,
+                award_no,
+                version_no,
+                status,
+                generated_at
+            FROM {schema}.ops_award_snapshots
+            WHERE award_id=%s
+            ORDER BY version_no DESC
+            LIMIT 1;
+            """,
+            (award_id,),
+        )
+
+        return {
+            "award":award,
+            "tasks":tasks,
+            "snapshot":snapshot,
+        }
+
+    def create_ops_purchase_order(
+        self,
+        company_id:int,
+        award_id:int,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        award_id=int(award_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT
+                    a.*,
+
+                    q.payment_terms,
+                    q.delivery_terms,
+                    q.warranty_text,
+                    q.delivery_amount,
+
+                    se.required_delivery_date,
+                    se.delivery_address,
+
+                    v.name AS vendor_name
+
+                FROM {schema}.ops_vendor_awards a
+
+                JOIN {schema}.ops_vendor_quotes q
+                ON q.id=a.recommended_quote_id
+
+                JOIN {schema}.ops_sourcing_events se
+                ON se.id=a.sourcing_event_id
+
+                JOIN {schema}.vendors v
+                ON v.id=a.vendor_id
+
+                WHERE a.company_id=%s
+                AND a.id=%s
+
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    award_id,
+                ),
+            )
+
+            award=dict(
+                cur.fetchone() or {}
+            )
+
+            if not award:
+                raise ValueError(
+                    "Approved award not found."
+                )
+
+            if award["status"]!="approved":
+                raise ValueError(
+                    "Purchase order can only be created from an approved award."
+                )
+
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_purchase_orders
+                WHERE award_id=%s
+                LIMIT 1;
+                """,
+                (award_id,),
+            )
+
+            existing=cur.fetchone()
+
+            if existing:
+                return dict(existing)
+
+            cur.execute(
+                f"""
+                SELECT COALESCE(MAX(id),0)+1 AS seq
+                FROM {schema}.ops_purchase_orders;
+                """
+            )
+
+            seq=int(
+                (cur.fetchone() or {}).get(
+                    "seq"
+                )
+                or 1
+            )
+
+            po_no=(
+                f"PO-{company_id}-{seq:06d}"
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_purchase_orders(
+                    company_id,
+
+                    award_id,
+                    sourcing_event_id,
+                    procurement_case_id,
+                    request_id,
+
+                    vendor_id,
+                    awarded_quote_id,
+
+                    po_no,
+
+                    expected_delivery_date,
+                    currency_code,
+
+                    delivery_amount,
+
+                    delivery_address,
+
+                    payment_terms,
+                    delivery_terms,
+                    warranty_terms,
+
+                    status,
+
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES(
+                    %s,
+                    %s,%s,%s,%s,
+                    %s,%s,
+                    %s,
+                    %s,%s,
+                    %s,
+                    %s,
+                    %s,%s,%s,
+                    'draft',
+                    %s,%s
+                )
+                RETURNING *;
+                """,
+                (
+                    company_id,
+
+                    award_id,
+                    award["sourcing_event_id"],
+                    award["procurement_case_id"],
+                    award["request_id"],
+
+                    award["vendor_id"],
+                    award["recommended_quote_id"],
+
+                    po_no,
+
+                    award.get(
+                        "required_delivery_date"
+                    ),
+
+                    award.get(
+                        "currency_code"
+                    ),
+
+                    award.get(
+                        "delivery_amount"
+                    ) or 0,
+
+                    award.get(
+                        "delivery_address"
+                    ),
+
+                    award.get(
+                        "payment_terms"
+                    ),
+
+                    award.get(
+                        "delivery_terms"
+                    ),
+
+                    award.get(
+                        "warranty_text"
+                    ),
+
+                    actor_user_id,
+                    actor_user_id,
+                ),
+            )
+
+            po=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                SELECT
+                    ql.*,
+                    sei.unit_of_measure,
+                    sei.specification
+
+                FROM {schema}.ops_vendor_quote_lines ql
+
+                LEFT JOIN {schema}.ops_sourcing_event_items sei
+                ON sei.id=ql.sourcing_event_item_id
+
+                WHERE ql.quote_id=%s
+
+                ORDER BY ql.line_no;
+                """,
+                (
+                    award["recommended_quote_id"],
+                ),
+            )
+
+            quote_lines=[
+                dict(row)
+                for row in cur.fetchall()
+            ]
+
+            subtotal=0.0
+            discount_amount=0.0
+            tax_amount=0.0
+            total_amount=0.0
+
+            for line in quote_lines:
+                quantity=float(
+                    line.get("quantity")
+                    or 0
+                )
+
+                unit_price=float(
+                    line.get("unit_price")
+                    or 0
+                )
+
+                discount=float(
+                    line.get("line_discount")
+                    or 0
+                )
+
+                tax=float(
+                    line.get("tax_amount")
+                    or 0
+                )
+
+                line_total=float(
+                    line.get("line_total")
+                    or 0
+                )
+
+                subtotal+=quantity*unit_price
+                discount_amount+=discount
+                tax_amount+=tax
+                total_amount+=line_total
+
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.ops_purchase_order_lines(
+                        purchase_order_id,
+                        quote_line_id,
+                        sourcing_event_item_id,
+
+                        line_no,
+                        description,
+                        specification,
+
+                        quantity,
+                        unit_of_measure,
+
+                        unit_price,
+                        line_discount,
+                        tax_amount,
+                        line_total
+                    )
+                    VALUES(
+                        %s,%s,%s,
+                        %s,%s,%s,
+                        %s,%s,
+                        %s,%s,%s,%s
+                    );
+                    """,
+                    (
+                        po["id"],
+                        line["id"],
+                        line.get(
+                            "sourcing_event_item_id"
+                        ),
+
+                        line["line_no"],
+                        line["description"],
+                        line.get(
+                            "offered_specification"
+                        )
+                        or line.get(
+                            "specification"
+                        ),
+
+                        quantity,
+                        line.get(
+                            "unit_of_measure"
+                        ),
+
+                        unit_price,
+                        discount,
+                        tax,
+                        line_total,
+                    ),
+                )
+
+            delivery_amount=float(
+                award.get(
+                    "delivery_amount"
+                )
+                or 0
+            )
+
+            total_amount+=delivery_amount
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_purchase_orders
+                SET subtotal=%s,
+                    discount_amount=%s,
+                    tax_amount=%s,
+                    delivery_amount=%s,
+                    total_amount=%s,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    subtotal,
+                    discount_amount,
+                    tax_amount,
+                    delivery_amount,
+                    total_amount,
+                    po["id"],
+                ),
+            )
+
+            po=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_vendor_awards
+                SET purchase_order_id=%s,
+                    po_created_at=NOW(),
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    po["id"],
+                    award_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_procurement_cases
+                SET status='po_pending',
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    award["procurement_case_id"],
+                ),
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_events(
+                    event_uuid,
+                    event_type,
+                    module,
+                    entity_type,
+                    entity_id,
+                    entity_ref,
+                    actor_user_id,
+                    action,
+                    after_json
+                )
+                VALUES(
+                    %s,
+                    'procurement.po.created',
+                    'procurement',
+                    'purchase_order',
+                    %s,
+                    %s,
+                    %s,
+                    'create',
+                    %s
+                );
+                """,
+                (
+                    str(uuid.uuid4()),
+                    str(po["id"]),
+                    po["po_no"],
+                    actor_user_id,
+                    psycopg2.extras.Json(
+                        po
+                    ),
+                ),
+            )
+
+        return po
+
+    def get_ops_purchase_order(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+        schema=self.company_schema(company_id)
+
+        po=self.fetch_one(
+            f"""
+            SELECT
+                po.*,
+
+                v.name AS vendor_name,
+                v.email AS vendor_email,
+                v.phone AS vendor_phone,
+                v.registration_no,
+                v.tax_number,
+                v.vat_number,
+
+                a.award_no,
+
+                se.rfq_no,
+                se.sourcing_no,
+
+                pc.case_no,
+
+                r.request_no,
+                r.title AS request_title
+
+            FROM {schema}.ops_purchase_orders po
+
+            JOIN {schema}.vendors v
+            ON v.id=po.vendor_id
+
+            JOIN {schema}.ops_vendor_awards a
+            ON a.id=po.award_id
+
+            JOIN {schema}.ops_sourcing_events se
+            ON se.id=po.sourcing_event_id
+
+            JOIN {schema}.ops_procurement_cases pc
+            ON pc.id=po.procurement_case_id
+
+            JOIN {schema}.ops_requests r
+            ON r.id=po.request_id
+
+            WHERE po.company_id=%s
+            AND po.id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                purchase_order_id,
+            ),
+        )
+
+        if not po:
+            raise ValueError(
+                "Purchase order not found."
+            )
+
+        lines=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_purchase_order_lines
+            WHERE purchase_order_id=%s
+            ORDER BY line_no,id;
+            """,
+            (purchase_order_id,),
+        ) or []
+
+        snapshot=self.fetch_one(
+            f"""
+            SELECT
+                id,
+                po_no,
+                revision_no,
+                status,
+                generated_at
+            FROM {schema}.ops_purchase_order_snapshots
+            WHERE purchase_order_id=%s
+            ORDER BY revision_no DESC
+            LIMIT 1;
+            """,
+            (purchase_order_id,),
+        )
+
+        return {
+            "purchase_order":po,
+            "lines":lines,
+            "snapshot":snapshot,
+        }
+
+    def update_ops_purchase_order(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+        *,
+        payload:dict,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        current=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_purchase_orders
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                purchase_order_id,
+            ),
+        )
+
+        if not current:
+            raise ValueError(
+                "Purchase order not found."
+            )
+
+        if current["status"]!="draft":
+            raise ValueError(
+                "Only draft purchase orders can be edited."
+            )
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.ops_purchase_orders
+            SET po_date=%s,
+
+                expected_delivery_date=%s,
+
+                delivery_address=%s,
+                billing_address=%s,
+
+                payment_terms=%s,
+                delivery_terms=%s,
+                warranty_terms=%s,
+
+                supplier_reference=%s,
+
+                buyer_notes=%s,
+                terms_text=%s,
+
+                updated_by_user_id=%s,
+                updated_at=NOW()
+
+            WHERE company_id=%s
+            AND id=%s
+
+            RETURNING *;
+            """,
+            (
+                payload.get(
+                    "po_date",
+                    current.get("po_date"),
+                ),
+
+                payload.get(
+                    "expected_delivery_date",
+                    current.get(
+                        "expected_delivery_date"
+                    ),
+                ),
+
+                payload.get(
+                    "delivery_address",
+                    current.get(
+                        "delivery_address"
+                    ),
+                ),
+
+                payload.get(
+                    "billing_address",
+                    current.get(
+                        "billing_address"
+                    ),
+                ),
+
+                payload.get(
+                    "payment_terms",
+                    current.get(
+                        "payment_terms"
+                    ),
+                ),
+
+                payload.get(
+                    "delivery_terms",
+                    current.get(
+                        "delivery_terms"
+                    ),
+                ),
+
+                payload.get(
+                    "warranty_terms",
+                    current.get(
+                        "warranty_terms"
+                    ),
+                ),
+
+                payload.get(
+                    "supplier_reference",
+                    current.get(
+                        "supplier_reference"
+                    ),
+                ),
+
+                payload.get(
+                    "buyer_notes",
+                    current.get(
+                        "buyer_notes"
+                    ),
+                ),
+
+                payload.get(
+                    "terms_text",
+                    current.get(
+                        "terms_text"
+                    ),
+                ),
+
+                actor_user_id,
+                company_id,
+                purchase_order_id,
+            ),
+        )
+
+    def build_ops_purchase_order_snapshot(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+        schema=self.company_schema(company_id)
+
+        data=self.get_ops_purchase_order(
+            company_id,
+            purchase_order_id,
+        )
+
+        company=self.fetch_one(
+            """
+            SELECT
+                id,
+                name,
+                system_company_code,
+                company_reg_no,
+                tin,
+                vat,
+                company_email,
+                company_phone,
+                physical_address,
+                postal_address,
+                currency,
+                logo_url
+            FROM public.companies
+            WHERE id=%s;
+            """,
+            (company_id,),
+        ) or {}
+
+        return {
+            "company":company,
+            "purchase_order":
+                data["purchase_order"],
+            "lines":
+                data["lines"],
+        }
+
+    def snapshot_ops_purchase_order(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+        *,
+        actor_user_id:int,
+        status="issued",
+        cur=None,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        if cur is None:
+            with self.transaction() as (_conn,tx):
+                return self.snapshot_ops_purchase_order(
+                    company_id,
+                    purchase_order_id,
+                    actor_user_id=actor_user_id,
+                    status=status,
+                    cur=tx,
+                )
+
+        payload=self.build_ops_purchase_order_snapshot(
+            company_id,
+            purchase_order_id,
+        )
+
+        po=payload["purchase_order"]
+
+        revision_no=int(
+            po.get("revision_no")
+            or 1
+        )
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.ops_purchase_order_snapshots
+            SET status='superseded'
+            WHERE purchase_order_id=%s
+            AND status='issued';
+            """,
+            (purchase_order_id,),
+        )
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.ops_purchase_order_snapshots(
+                company_id,
+                purchase_order_id,
+                po_no,
+                revision_no,
+                status,
+                snapshot_json,
+                generated_by_user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s
+            )
+            ON CONFLICT(
+                purchase_order_id,
+                revision_no
+            )
+            DO UPDATE SET
+                status=EXCLUDED.status,
+                snapshot_json=EXCLUDED.snapshot_json,
+                generated_by_user_id=
+                    EXCLUDED.generated_by_user_id,
+                generated_at=NOW()
+            RETURNING *;
+            """,
+            (
+                company_id,
+                purchase_order_id,
+                po["po_no"],
+                revision_no,
+                status,
+                psycopg2.extras.Json(
+                    payload
+                ),
+                actor_user_id,
+            ),
+        )
+
+        return dict(cur.fetchone())
+
+    def issue_ops_purchase_order(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_purchase_orders
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    purchase_order_id,
+                ),
+            )
+
+            po=dict(
+                cur.fetchone() or {}
+            )
+
+            if not po:
+                raise ValueError(
+                    "Purchase order not found."
+                )
+
+            if po["status"]!="draft":
+                raise ValueError(
+                    "Only draft purchase orders can be issued."
+                )
+
+            if float(
+                po.get("total_amount")
+                or 0
+            )<=0:
+                raise ValueError(
+                    "Purchase order total must be greater than zero."
+                )
+
+            if not (
+                po.get(
+                    "delivery_address"
+                )
+                or ""
+            ).strip():
+                raise ValueError(
+                    "Delivery address is required before issuing the PO."
+                )
+
+            snapshot=self.snapshot_ops_purchase_order(
+                company_id,
+                purchase_order_id,
+                actor_user_id=actor_user_id,
+                status="issued",
+                cur=cur,
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_purchase_orders
+                SET status='issued',
+                    issued_at=NOW(),
+                    issued_by_user_id=%s,
+                    vendor_acknowledgement_status='pending',
+                    locked_at=NOW(),
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    actor_user_id,
+                    actor_user_id,
+                    purchase_order_id,
+                ),
+            )
+
+            po=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_procurement_cases
+                SET status='po_pending',
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    po["procurement_case_id"],
+                ),
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_events(
+                    event_uuid,
+                    event_type,
+                    module,
+                    entity_type,
+                    entity_id,
+                    entity_ref,
+                    actor_user_id,
+                    action,
+                    after_json
+                )
+                VALUES(
+                    %s,
+                    'procurement.po.issued',
+                    'procurement',
+                    'purchase_order',
+                    %s,
+                    %s,
+                    %s,
+                    'issue',
+                    %s
+                );
+                """,
+                (
+                    str(uuid.uuid4()),
+                    str(po["id"]),
+                    po["po_no"],
+                    actor_user_id,
+                    psycopg2.extras.Json(
+                        po
+                    ),
+                ),
+            )
+
+        return {
+            "purchase_order":po,
+            "snapshot":snapshot,
+        }
+
+    def send_ops_purchase_order(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+
+        data=self.get_ops_purchase_order(
+            company_id,
+            purchase_order_id,
+        )
+
+        po=data["purchase_order"]
+
+        if po["status"] not in {
+            "issued",
+            "acknowledged",
+        }:
+            raise ValueError(
+                "Purchase order must be issued before it can be sent."
+            )
+
+        recipient=(
+            po.get("vendor_email")
+            or ""
+        ).strip()
+
+        if not recipient:
+            raise ValueError(
+                "Vendor email address is not configured."
+            )
+
+        portal_link=(
+            "https://finspheresolutions.com"
+            f"/vendor/signin"
+            f"?company={company_id}"
+        )
+
+        subject=(
+            f"Purchase Order {po['po_no']} — "
+            f"{po.get('request_title') or ''}"
+        )
+
+        body=f"""Dear {po.get('vendor_name') or 'Vendor'},
+
+    A purchase order has been issued to your organisation.
+
+    Purchase Order: {po['po_no']}
+    Amount: {po.get('currency_code') or ''} {po.get('total_amount') or 0}
+    Expected Delivery: {po.get('expected_delivery_date') or 'To be confirmed'}
+
+    Please use the vendor portal to review and acknowledge the purchase order.
+
+    {portal_link}
+
+    Regards,
+    Procurement
+    """
+
+        return self.send_ops_procurement_email(
+            company_id,
+            recipient_email=recipient,
+            recipient_name=po.get(
+                "vendor_name"
+            ),
+            subject=subject,
+            body=body,
+            actor_user_id=actor_user_id,
+            message_type="purchase_order",
+            entity_type="purchase_order",
+            entity_id=purchase_order_id,
+            vendor_id=po["vendor_id"],
+            metadata={
+                "po_no":po["po_no"],
+            },
+        )
+
+    def cancel_ops_purchase_order(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+        *,
+        actor_user_id:int,
+        reason:str,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        reason=(reason or "").strip()
+
+        if not reason:
+            raise ValueError(
+                "Cancellation reason is required."
+            )
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_purchase_orders
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    purchase_order_id,
+                ),
+            )
+
+            po=dict(
+                cur.fetchone() or {}
+            )
+
+            if not po:
+                raise ValueError(
+                    "Purchase order not found."
+                )
+
+            if po["status"] in {
+                "received",
+                "closed",
+                "cancelled",
+            }:
+                raise ValueError(
+                    "This purchase order can no longer be cancelled."
+                )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_purchase_orders
+                SET status='cancelled',
+                    cancelled_at=NOW(),
+                    cancelled_by_user_id=%s,
+                    cancellation_reason=%s,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    actor_user_id,
+                    reason,
+                    actor_user_id,
+                    purchase_order_id,
+                ),
+            )
+
+            return dict(cur.fetchone())
+
+    def list_ops_vendor_portal_purchase_orders(
+        self,
+        company_id:int,
+        *,
+        vendor_id:int,
+    ):
+        company_id=int(company_id)
+        vendor_id=int(vendor_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                po.id,
+                po.po_no,
+                po.po_date,
+                po.expected_delivery_date,
+                po.currency_code,
+                po.total_amount,
+                po.status,
+                po.vendor_acknowledgement_status,
+                po.issued_at,
+
+                r.request_no,
+                r.title AS request_title
+
+            FROM {schema}.ops_purchase_orders po
+
+            JOIN {schema}.ops_requests r
+            ON r.id=po.request_id
+
+            WHERE po.company_id=%s
+            AND po.vendor_id=%s
+            AND po.status IN(
+                'issued',
+                'acknowledged',
+                'partially_received',
+                'received',
+                'closed'
+            )
+
+            ORDER BY
+                po.po_date DESC,
+                po.id DESC;
+            """,
+            (
+                company_id,
+                vendor_id,
+            ),
+        ) or []   
+
+    def get_ops_vendor_portal_purchase_order(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+        *,
+        vendor_id:int,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+        vendor_id=int(vendor_id)
+        schema=self.company_schema(company_id)
+
+        po=self.fetch_one(
+            f"""
+            SELECT
+                po.*,
+
+                c.name AS company_name,
+                c.logo_url,
+                c.company_email,
+                c.company_phone,
+                c.physical_address
+
+            FROM {schema}.ops_purchase_orders po
+
+            JOIN public.companies c
+            ON c.id=po.company_id
+
+            WHERE po.company_id=%s
+            AND po.id=%s
+            AND po.vendor_id=%s
+            AND po.status<>'draft'
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                purchase_order_id,
+                vendor_id,
+            ),
+        )
+
+        if not po:
+            raise ValueError(
+                "Purchase order not found."
+            )
+
+        lines=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_purchase_order_lines
+            WHERE purchase_order_id=%s
+            ORDER BY line_no,id;
+            """,
+            (purchase_order_id,),
+        ) or []
+
+        return {
+            "purchase_order":po,
+            "lines":lines,
+        } 
+
+    def acknowledge_ops_purchase_order(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+        *,
+        vendor_id:int,
+        portal_user_id:int,
+        decision:str,
+        comment=None,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+        vendor_id=int(vendor_id)
+        portal_user_id=int(
+            portal_user_id
+        )
+        schema=self.company_schema(company_id)
+
+        decision=(
+            decision or ""
+        ).strip().lower()
+
+        if decision not in {
+            "accept",
+            "reject",
+        }:
+            raise ValueError(
+                "Decision must be accept or reject."
+            )
+
+        comment=(
+            comment or ""
+        ).strip() or None
+
+        if (
+            decision=="reject"
+            and not comment
+        ):
+            raise ValueError(
+                "Reason is required when rejecting a purchase order."
+            )
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_purchase_orders
+                WHERE company_id=%s
+                AND id=%s
+                AND vendor_id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    purchase_order_id,
+                    vendor_id,
+                ),
+            )
+
+            po=dict(
+                cur.fetchone() or {}
+            )
+
+            if not po:
+                raise ValueError(
+                    "Purchase order not found."
+                )
+
+            if po["status"] not in {
+                "issued",
+                "acknowledged",
+            }:
+                raise ValueError(
+                    "This purchase order cannot be acknowledged."
+                )
+
+            acknowledgement_status=(
+                "accepted"
+                if decision=="accept"
+                else "rejected"
+            )
+
+            new_status=(
+                "acknowledged"
+                if decision=="accept"
+                else "issued"
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_purchase_orders
+                SET vendor_acknowledgement_status=%s,
+                    vendor_acknowledgement_comment=%s,
+                    acknowledged_at=NOW(),
+                    acknowledged_by_portal_user_id=%s,
+                    status=%s,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    acknowledgement_status,
+                    comment,
+                    portal_user_id,
+                    new_status,
+                    purchase_order_id,
+                ),
+            )
+
+            po=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_events(
+                    event_uuid,
+                    event_type,
+                    module,
+                    entity_type,
+                    entity_id,
+                    entity_ref,
+                    actor_user_id,
+                    action,
+                    after_json
+                )
+                VALUES(
+                    %s,
+                    %s,
+                    'procurement',
+                    'purchase_order',
+                    %s,
+                    %s,
+                    NULL,
+                    %s,
+                    %s
+                );
+                """,
+                (
+                    str(uuid.uuid4()),
+
+                    (
+                        'procurement.po.accepted'
+                        if decision=="accept"
+                        else 'procurement.po.rejected_by_vendor'
+                    ),
+
+                    str(purchase_order_id),
+                    po["po_no"],
+                    decision,
+
+                    psycopg2.extras.Json({
+                        "portal_user_id":
+                            portal_user_id,
+
+                        "vendor_id":
+                            vendor_id,
+
+                        "comment":
+                            comment,
+                    }),
+                ),
+            )
+
+        return po
+
+    def resolve_ops_po_fulfilment_type(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(
+            f"""
+            SELECT
+                po.fulfilment_type,
+
+                rt.code AS request_type_code,
+                rt.name AS request_type_name
+
+            FROM {schema}.ops_purchase_orders po
+
+            JOIN {schema}.ops_requests r
+            ON r.id=po.request_id
+
+            LEFT JOIN {schema}.ops_request_types rt
+            ON rt.id=r.request_type_id
+
+            WHERE po.company_id=%s
+            AND po.id=%s
+
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                purchase_order_id,
+            ),
+        )
+
+        if not row:
+            raise ValueError(
+                "Purchase order not found."
+            )
+
+        if row.get("fulfilment_type"):
+            return row["fulfilment_type"]
+
+        value=(
+            row.get("request_type_code")
+            or row.get("request_type_name")
+            or ""
+        ).strip().lower()
+
+        if "lease" in value:
+            return "lease"
+
+        if "asset" in value or "capex" in value:
+            return "asset"
+
+        if "service" in value:
+            return "service"
+
+        return "goods"
+
+    def create_ops_receipt(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(
+            purchase_order_id
+        )
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_purchase_orders
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    purchase_order_id,
+                ),
+            )
+
+            po=dict(
+                cur.fetchone() or {}
+            )
+
+            if not po:
+                raise ValueError(
+                    "Purchase order not found."
+                )
+
+            if po["status"] not in {
+                "issued",
+                "acknowledged",
+                "partially_received",
+            }:
+                raise ValueError(
+                    "Receipt can only be recorded against an active issued purchase order."
+                )
+
+            fulfilment_type=(
+                po.get("fulfilment_type")
+                or self.resolve_ops_po_fulfilment_type(
+                    company_id,
+                    purchase_order_id,
+                )
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_purchase_orders
+                SET fulfilment_type=%s,
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    fulfilment_type,
+                    purchase_order_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                SELECT COALESCE(MAX(id),0)+1 AS seq
+                FROM {schema}.ops_receipts;
+                """
+            )
+
+            seq=int(
+                (cur.fetchone() or {}).get(
+                    "seq"
+                )
+                or 1
+            )
+
+            prefix={
+                "goods":"GRN",
+                "service":"SRV",
+                "asset":"AR",
+                "lease":"LRC",
+            }.get(
+                fulfilment_type,
+                "RCV",
+            )
+
+            receipt_no=(
+                f"{prefix}-{company_id}-{seq:06d}"
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_receipts(
+                    company_id,
+                    purchase_order_id,
+                    procurement_case_id,
+                    request_id,
+                    vendor_id,
+                    receipt_no,
+                    receipt_type,
+                    received_by_user_id,
+                    created_by_user_id
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s
+                )
+                RETURNING *;
+                """,
+                (
+                    company_id,
+                    purchase_order_id,
+                    po["procurement_case_id"],
+                    po["request_id"],
+                    po["vendor_id"],
+                    receipt_no,
+                    fulfilment_type,
+                    actor_user_id,
+                    actor_user_id,
+                ),
+            )
+
+            receipt=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_purchase_order_lines
+                WHERE purchase_order_id=%s
+                ORDER BY line_no,id;
+                """,
+                (purchase_order_id,),
+            )
+
+            po_lines=[
+                dict(row)
+                for row in cur.fetchall()
+            ]
+
+            for line in po_lines:
+                ordered=float(
+                    line.get("quantity")
+                    or 0
+                )
+
+                previously_received=float(
+                    line.get("received_quantity")
+                    or 0
+                )
+
+                outstanding=max(
+                    ordered
+                    -previously_received
+                    -float(
+                        line.get(
+                            "cancelled_quantity"
+                        )
+                        or 0
+                    ),
+                    0,
+                )
+
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.ops_receipt_lines(
+                        receipt_id,
+                        purchase_order_line_id,
+                        line_no,
+                        ordered_quantity,
+                        previously_received_quantity,
+                        received_quantity,
+                        accepted_quantity
+                    )
+                    VALUES(
+                        %s,%s,%s,%s,%s,%s,%s
+                    );
+                    """,
+                    (
+                        receipt["id"],
+                        line["id"],
+                        line["line_no"],
+                        ordered,
+                        previously_received,
+                        outstanding,
+                        outstanding,
+                    ),
+                )
+
+            return receipt
+
+    def get_ops_receipt(
+        self,
+        company_id:int,
+        receipt_id:int,
+    ):
+        company_id=int(company_id)
+        receipt_id=int(receipt_id)
+        schema=self.company_schema(company_id)
+
+        receipt=self.fetch_one(
+            f"""
+            SELECT
+                rc.*,
+
+                po.po_no,
+                po.currency_code,
+                po.total_amount,
+                po.status AS po_status,
+
+                v.name AS vendor_name,
+
+                r.request_no,
+                r.title AS request_title,
+
+                pc.case_no,
+
+                trim(concat_ws(
+                    ' ',
+                    ru.first_name,
+                    ru.last_name
+                )) AS received_by_name,
+
+                trim(concat_ws(
+                    ' ',
+                    vu.first_name,
+                    vu.last_name
+                )) AS verified_by_name
+
+            FROM {schema}.ops_receipts rc
+
+            JOIN {schema}.ops_purchase_orders po
+            ON po.id=rc.purchase_order_id
+
+            JOIN {schema}.vendors v
+            ON v.id=rc.vendor_id
+
+            JOIN {schema}.ops_requests r
+            ON r.id=rc.request_id
+
+            JOIN {schema}.ops_procurement_cases pc
+            ON pc.id=rc.procurement_case_id
+
+            LEFT JOIN public.users ru
+            ON ru.id=rc.received_by_user_id
+
+            LEFT JOIN public.users vu
+            ON vu.id=rc.verified_by_user_id
+
+            WHERE rc.company_id=%s
+            AND rc.id=%s
+
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                receipt_id,
+            ),
+        )
+
+        if not receipt:
+            raise ValueError(
+                "Receipt not found."
+            )
+
+        lines=self.fetch_all(
+            f"""
+            SELECT
+                rl.*,
+
+                pol.description,
+                pol.specification,
+                pol.unit_of_measure,
+                pol.unit_price,
+                pol.line_total
+
+            FROM {schema}.ops_receipt_lines rl
+
+            JOIN {schema}.ops_purchase_order_lines pol
+            ON pol.id=rl.purchase_order_line_id
+
+            WHERE rl.receipt_id=%s
+
+            ORDER BY rl.line_no,id;
+            """,
+            (receipt_id,),
+        ) or []
+
+        documents=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_receipt_documents
+            WHERE receipt_id=%s
+            ORDER BY created_at,id;
+            """,
+            (receipt_id,),
+        ) or []
+
+        service_confirmation=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_service_confirmations
+            WHERE receipt_id=%s;
+            """,
+            (receipt_id,),
+        )
+
+        asset_receipts=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_asset_receipts
+            WHERE receipt_id=%s
+            ORDER BY id;
+            """,
+            (receipt_id,),
+        ) or []
+
+        lease_receipt=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_lease_receipts
+            WHERE receipt_id=%s;
+            """,
+            (receipt_id,),
+        )
+
+        return {
+            "receipt":receipt,
+            "lines":lines,
+            "documents":documents,
+            "service_confirmation":
+                service_confirmation,
+            "asset_receipts":
+                asset_receipts,
+            "lease_receipt":
+                lease_receipt,
+        }
+
+    def update_ops_receipt(
+        self,
+        company_id:int,
+        receipt_id:int,
+        *,
+        payload:dict,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        receipt_id=int(receipt_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_receipts
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    receipt_id,
+                ),
+            )
+
+            receipt=dict(
+                cur.fetchone() or {}
+            )
+
+            if not receipt:
+                raise ValueError(
+                    "Receipt not found."
+                )
+
+            if receipt["status"]!="draft":
+                raise ValueError(
+                    "Only draft receipts can be edited."
+                )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_receipts
+                SET receipt_date=%s,
+                    delivery_note_no=%s,
+                    supplier_reference=%s,
+                    received_location=%s,
+                    notes=%s,
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    payload.get(
+                        "receipt_date",
+                        receipt.get(
+                            "receipt_date"
+                        ),
+                    ),
+                    (
+                        payload.get(
+                            "delivery_note_no"
+                        )
+                        or ""
+                    ).strip() or None,
+                    (
+                        payload.get(
+                            "supplier_reference"
+                        )
+                        or ""
+                    ).strip() or None,
+                    (
+                        payload.get(
+                            "received_location"
+                        )
+                        or ""
+                    ).strip() or None,
+                    (
+                        payload.get("notes")
+                        or ""
+                    ).strip() or None,
+                    receipt_id,
+                ),
+            )
+
+            lines=payload.get("lines") or []
+
+            for line in lines:
+                line_id=int(line["id"])
+
+                received=float(
+                    line.get(
+                        "received_quantity"
+                    )
+                    or 0
+                )
+
+                accepted=float(
+                    line.get(
+                        "accepted_quantity"
+                    )
+                    or 0
+                )
+
+                rejected=float(
+                    line.get(
+                        "rejected_quantity"
+                    )
+                    or 0
+                )
+
+                if accepted<0 or rejected<0:
+                    raise ValueError(
+                        "Receipt quantities cannot be negative."
+                    )
+
+                if accepted+rejected>received:
+                    raise ValueError(
+                        "Accepted and rejected quantities cannot exceed received quantity."
+                    )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_receipt_lines
+                    SET received_quantity=%s,
+                        accepted_quantity=%s,
+                        rejected_quantity=%s,
+                        condition_status=%s,
+                        rejection_reason=%s,
+                        batch_no=%s,
+                        serial_numbers=%s,
+                        notes=%s,
+                        updated_at=NOW()
+                    WHERE id=%s
+                    AND receipt_id=%s;
+                    """,
+                    (
+                        received,
+                        accepted,
+                        rejected,
+                        line.get(
+                            "condition_status"
+                        )
+                        or "acceptable",
+                        (
+                            line.get(
+                                "rejection_reason"
+                            )
+                            or ""
+                        ).strip() or None,
+                        (
+                            line.get(
+                                "batch_no"
+                            )
+                            or ""
+                        ).strip() or None,
+                        psycopg2.extras.Json(
+                            line.get(
+                                "serial_numbers"
+                            )
+                            or []
+                        ),
+                        (
+                            line.get("notes")
+                            or ""
+                        ).strip() or None,
+                        line_id,
+                        receipt_id,
+                    ),
+                )
+
+        return self.get_ops_receipt(
+            company_id,
+            receipt_id,
+        )
+
+    def save_ops_service_confirmation(
+        self,
+        company_id:int,
+        receipt_id:int,
+        *,
+        actor_user_id:int,
+        payload:dict,
+    ):
+        company_id=int(company_id)
+        receipt_id=int(receipt_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        receipt=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_receipts
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                receipt_id,
+            ),
+        )
+
+        if not receipt:
+            raise ValueError(
+                "Receipt not found."
+            )
+
+        if receipt["receipt_type"]!="service":
+            raise ValueError(
+                "Service confirmation can only be used for service receipts."
+            )
+
+        if receipt["status"]!="draft":
+            raise ValueError(
+                "Service confirmation can only be updated while receipt is draft."
+            )
+
+        completion_percent=float(
+            payload.get(
+                "completion_percent"
+            )
+            or 0
+        )
+
+        if (
+            completion_percent<0
+            or completion_percent>100
+        ):
+            raise ValueError(
+                "Completion percentage must be between 0 and 100."
+            )
+
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.ops_service_confirmations(
+                company_id,
+                receipt_id,
+                purchase_order_id,
+                service_from,
+                service_to,
+                completion_percent,
+                deliverables_completed,
+                quality_assessment,
+                completion_certificate_no,
+                confirmed_by_user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s
+            )
+
+            ON CONFLICT(receipt_id)
+            DO UPDATE SET
+                service_from=EXCLUDED.service_from,
+                service_to=EXCLUDED.service_to,
+                completion_percent=
+                    EXCLUDED.completion_percent,
+                deliverables_completed=
+                    EXCLUDED.deliverables_completed,
+                quality_assessment=
+                    EXCLUDED.quality_assessment,
+                completion_certificate_no=
+                    EXCLUDED.completion_certificate_no,
+                confirmed_by_user_id=
+                    EXCLUDED.confirmed_by_user_id,
+                confirmed_at=NOW()
+
+            RETURNING *;
+            """,
+            (
+                company_id,
+                receipt_id,
+                receipt["purchase_order_id"],
+                payload.get("service_from"),
+                payload.get("service_to"),
+                completion_percent,
+                (
+                    payload.get(
+                        "deliverables_completed"
+                    )
+                    or ""
+                ).strip() or None,
+                (
+                    payload.get(
+                        "quality_assessment"
+                    )
+                    or ""
+                ).strip() or None,
+                (
+                    payload.get(
+                        "completion_certificate_no"
+                    )
+                    or ""
+                ).strip() or None,
+                actor_user_id,
+            ),
+        )
+
+    def save_ops_asset_receipt(
+        self,
+        company_id:int,
+        receipt_id:int,
+        *,
+        purchase_order_line_id:int,
+        payload:dict,
+    ):
+        company_id=int(company_id)
+        receipt_id=int(receipt_id)
+        purchase_order_line_id=int(
+            purchase_order_line_id
+        )
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        receipt=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_receipts
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                receipt_id,
+            ),
+        )
+
+        if not receipt:
+            raise ValueError(
+                "Receipt not found."
+            )
+
+        if receipt["receipt_type"]!="asset":
+            raise ValueError(
+                "Asset details can only be recorded for asset receipts."
+            )
+
+        asset_name=(
+            payload.get("asset_name")
+            or ""
+        ).strip()
+
+        if not asset_name:
+            raise ValueError(
+                "Asset name is required."
+            )
+
+        existing=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_asset_receipts
+            WHERE receipt_id=%s
+            AND purchase_order_line_id=%s
+            LIMIT 1;
+            """,
+            (
+                receipt_id,
+                purchase_order_line_id,
+            ),
+        )
+
+        if existing:
+            return self.fetch_one(
+                f"""
+                UPDATE {schema}.ops_asset_receipts
+                SET asset_name=%s,
+                    asset_category=%s,
+                    serial_no=%s,
+                    manufacturer=%s,
+                    model_no=%s,
+                    acquisition_date=%s,
+                    placed_in_service_date=%s,
+                    location_text=%s,
+                    responsible_user_id=%s,
+                    expected_useful_life_months=%s,
+                    residual_value=%s,
+                    handoff_status='ready'
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    asset_name,
+                    payload.get(
+                        "asset_category"
+                    ),
+                    payload.get("serial_no"),
+                    payload.get(
+                        "manufacturer"
+                    ),
+                    payload.get("model_no"),
+                    payload.get(
+                        "acquisition_date"
+                    ),
+                    payload.get(
+                        "placed_in_service_date"
+                    ),
+                    payload.get(
+                        "location_text"
+                    ),
+                    payload.get(
+                        "responsible_user_id"
+                    ),
+                    payload.get(
+                        "expected_useful_life_months"
+                    ),
+                    float(
+                        payload.get(
+                            "residual_value"
+                        )
+                        or 0
+                    ),
+                    existing["id"],
+                ),
+            )
+
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.ops_asset_receipts(
+                company_id,
+                receipt_id,
+                purchase_order_line_id,
+                asset_name,
+                asset_category,
+                serial_no,
+                manufacturer,
+                model_no,
+                acquisition_date,
+                placed_in_service_date,
+                location_text,
+                responsible_user_id,
+                expected_useful_life_months,
+                residual_value,
+                handoff_status
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,
+                'ready'
+            )
+            RETURNING *;
+            """,
+            (
+                company_id,
+                receipt_id,
+                purchase_order_line_id,
+                asset_name,
+                payload.get(
+                    "asset_category"
+                ),
+                payload.get("serial_no"),
+                payload.get(
+                    "manufacturer"
+                ),
+                payload.get("model_no"),
+                payload.get(
+                    "acquisition_date"
+                ),
+                payload.get(
+                    "placed_in_service_date"
+                ),
+                payload.get(
+                    "location_text"
+                ),
+                payload.get(
+                    "responsible_user_id"
+                ),
+                payload.get(
+                    "expected_useful_life_months"
+                ),
+                float(
+                    payload.get(
+                        "residual_value"
+                    )
+                    or 0
+                ),
+            ),
+        )
+
+    def save_ops_lease_receipt(
+        self,
+        company_id:int,
+        receipt_id:int,
+        *,
+        payload:dict,
+    ):
+        company_id=int(company_id)
+        receipt_id=int(receipt_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        receipt=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_receipts
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                receipt_id,
+            ),
+        )
+
+        if not receipt:
+            raise ValueError(
+                "Receipt not found."
+            )
+
+        if receipt["receipt_type"]!="lease":
+            raise ValueError(
+                "Lease commencement can only be recorded for lease receipts."
+            )
+
+        commencement_date=payload.get(
+            "commencement_date"
+        )
+
+        if not commencement_date:
+            raise ValueError(
+                "Lease commencement date is required."
+            )
+
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.ops_lease_receipts(
+                company_id,
+                receipt_id,
+                purchase_order_id,
+                commencement_date,
+                underlying_asset,
+                location_text,
+                contract_reference,
+                handoff_status
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s,
+                'ready'
+            )
+
+            ON CONFLICT(receipt_id)
+            DO UPDATE SET
+                commencement_date=
+                    EXCLUDED.commencement_date,
+                underlying_asset=
+                    EXCLUDED.underlying_asset,
+                location_text=
+                    EXCLUDED.location_text,
+                contract_reference=
+                    EXCLUDED.contract_reference,
+                handoff_status='ready'
+
+            RETURNING *;
+            """,
+            (
+                company_id,
+                receipt_id,
+                receipt["purchase_order_id"],
+                commencement_date,
+                (
+                    payload.get(
+                        "underlying_asset"
+                    )
+                    or ""
+                ).strip() or None,
+                (
+                    payload.get(
+                        "location_text"
+                    )
+                    or ""
+                ).strip() or None,
+                (
+                    payload.get(
+                        "contract_reference"
+                    )
+                    or ""
+                ).strip() or None,
+            ),
+        )
+
+    def submit_ops_receipt(
+        self,
+        company_id:int,
+        receipt_id:int,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        receipt_id=int(receipt_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_receipts
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    receipt_id,
+                ),
+            )
+
+            receipt=dict(
+                cur.fetchone() or {}
+            )
+
+            if not receipt:
+                raise ValueError(
+                    "Receipt not found."
+                )
+
+            if receipt["status"]!="draft":
+                raise ValueError(
+                    "Only draft receipts can be submitted."
+                )
+
+            if receipt["receipt_type"]=="service":
+                cur.execute(
+                    f"""
+                    SELECT *
+                    FROM {schema}.ops_service_confirmations
+                    WHERE receipt_id=%s;
+                    """,
+                    (receipt_id,),
+                )
+
+                service=cur.fetchone()
+
+                if not service:
+                    raise ValueError(
+                        "Service completion details are required before submission."
+                    )
+
+            if receipt["receipt_type"]=="lease":
+                cur.execute(
+                    f"""
+                    SELECT *
+                    FROM {schema}.ops_lease_receipts
+                    WHERE receipt_id=%s;
+                    """,
+                    (receipt_id,),
+                )
+
+                if not cur.fetchone():
+                    raise ValueError(
+                        "Lease commencement details are required before submission."
+                    )
+
+            cur.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS line_count,
+                    COALESCE(
+                        SUM(received_quantity),
+                        0
+                    ) AS received_quantity
+                FROM {schema}.ops_receipt_lines
+                WHERE receipt_id=%s;
+                """,
+                (receipt_id,),
+            )
+
+            summary=dict(
+                cur.fetchone() or {}
+            )
+
+            if (
+                receipt["receipt_type"]
+                in {"goods","asset"}
+                and float(
+                    summary.get(
+                        "received_quantity"
+                    )
+                    or 0
+                )<=0
+            ):
+                raise ValueError(
+                    "Enter quantities received before submitting."
+                )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_receipts
+                SET status='submitted',
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (receipt_id,),
+            )
+
+            return dict(cur.fetchone())
+
+    def verify_ops_receipt(
+        self,
+        company_id:int,
+        receipt_id:int,
+        *,
+        actor_user_id:int,
+        comment=None,
+    ):
+        company_id=int(company_id)
+        receipt_id=int(receipt_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_receipts
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    receipt_id,
+                ),
+            )
+
+            receipt=dict(
+                cur.fetchone() or {}
+            )
+
+            if not receipt:
+                raise ValueError(
+                    "Receipt not found."
+                )
+
+            if receipt["status"]!="submitted":
+                raise ValueError(
+                    "Only submitted receipts can be verified."
+                )
+
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_receipt_lines
+                WHERE receipt_id=%s
+                ORDER BY line_no;
+                """,
+                (receipt_id,),
+            )
+
+            lines=[
+                dict(row)
+                for row in cur.fetchall()
+            ]
+
+            for line in lines:
+                accepted=float(
+                    line.get(
+                        "accepted_quantity"
+                    )
+                    or 0
+                )
+
+                if accepted<=0:
+                    continue
+
+                cur.execute(
+                    f"""
+                    SELECT
+                        quantity,
+                        received_quantity,
+                        cancelled_quantity
+                    FROM {schema}.ops_purchase_order_lines
+                    WHERE id=%s
+                    FOR UPDATE;
+                    """,
+                    (
+                        line[
+                            "purchase_order_line_id"
+                        ],
+                    ),
+                )
+
+                po_line=dict(
+                    cur.fetchone() or {}
+                )
+
+                if not po_line:
+                    raise ValueError(
+                        "Purchase order line not found."
+                    )
+
+                remaining=max(
+                    float(
+                        po_line.get("quantity")
+                        or 0
+                    )
+                    -float(
+                        po_line.get(
+                            "received_quantity"
+                        )
+                        or 0
+                    )
+                    -float(
+                        po_line.get(
+                            "cancelled_quantity"
+                        )
+                        or 0
+                    ),
+                    0,
+                )
+
+                if accepted>remaining:
+                    raise ValueError(
+                        f"Accepted quantity for line {line['line_no']} exceeds the outstanding purchase-order quantity."
+                    )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_purchase_order_lines
+                    SET received_quantity=
+                        received_quantity+%s,
+                        updated_at=NOW()
+                    WHERE id=%s;
+                    """,
+                    (
+                        accepted,
+                        line[
+                            "purchase_order_line_id"
+                        ],
+                    ),
+                )
+
+            cur.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS total_lines,
+
+                    COUNT(*) FILTER(
+                        WHERE
+                            quantity
+                            -received_quantity
+                            -cancelled_quantity
+                            <=0
+                    ) AS completed_lines
+
+                FROM {schema}.ops_purchase_order_lines
+
+                WHERE purchase_order_id=%s;
+                """,
+                (
+                    receipt["purchase_order_id"],
+                ),
+            )
+
+            po_progress=dict(
+                cur.fetchone() or {}
+            )
+
+            total_lines=int(
+                po_progress.get(
+                    "total_lines"
+                )
+                or 0
+            )
+
+            completed_lines=int(
+                po_progress.get(
+                    "completed_lines"
+                )
+                or 0
+            )
+
+            fully_received=(
+                total_lines>0
+                and total_lines==completed_lines
+            )
+
+            po_status=(
+                "received"
+                if fully_received
+                else "partially_received"
+            )
+
+            receipt_status=(
+                "completed"
+                if fully_received
+                else "partial"
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_receipts
+                SET status='verified',
+                    verified_by_user_id=%s,
+                    verified_at=NOW(),
+                    notes=CASE
+                        WHEN %s IS NOT NULL
+                        THEN CONCAT_WS(
+                            E'\\n',
+                            notes,
+                            %s
+                        )
+                        ELSE notes
+                    END,
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    actor_user_id,
+                    comment,
+                    comment,
+                    receipt_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_purchase_orders
+                SET status=%s,
+                    receipt_status=%s,
+
+                    first_received_at=
+                        COALESCE(
+                            first_received_at,
+                            NOW()
+                        ),
+
+                    fully_received_at=
+                        CASE
+                            WHEN %s
+                            THEN NOW()
+                            ELSE fully_received_at
+                        END,
+
+                    ready_for_invoice=TRUE,
+
+                    updated_at=NOW()
+
+                WHERE id=%s;
+                """,
+                (
+                    po_status,
+                    receipt_status,
+                    fully_received,
+                    receipt[
+                        "purchase_order_id"
+                    ],
+                ),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_procurement_cases
+                SET status=CASE
+                    WHEN %s
+                    THEN 'received'
+                    ELSE 'partially_received'
+                END,
+                updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    fully_received,
+                    receipt[
+                        "procurement_case_id"
+                    ],
+                ),
+            )
+
+            snapshot=self.snapshot_ops_receipt(
+                company_id,
+                receipt_id,
+                actor_user_id=
+                    actor_user_id,
+                cur=cur,
+            )
+
+            return {
+                "receipt_id":receipt_id,
+                "verified":True,
+                "fully_received":
+                    fully_received,
+                "purchase_order_status":
+                    po_status,
+                "snapshot":snapshot,
+            }
+
+    def build_ops_receipt_snapshot(
+        self,
+        company_id:int,
+        receipt_id:int,
+    ):
+        company_id=int(company_id)
+        receipt_id=int(receipt_id)
+
+        company=self.fetch_one(
+            """
+            SELECT
+                id,
+                name,
+                system_company_code,
+                company_reg_no,
+                tin,
+                vat,
+                company_email,
+                company_phone,
+                physical_address,
+                logo_url
+            FROM public.companies
+            WHERE id=%s;
+            """,
+            (company_id,),
+        ) or {}
+
+        receipt=self.get_ops_receipt(
+            company_id,
+            receipt_id,
+        )
+
+        return {
+            "company":company,
+            **receipt,
+        }
+
+    def snapshot_ops_receipt(
+        self,
+        company_id:int,
+        receipt_id:int,
+        *,
+        actor_user_id:int,
+        cur=None,
+    ):
+        company_id=int(company_id)
+        receipt_id=int(receipt_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        if cur is None:
+            with self.transaction() as (_conn,tx):
+                return self.snapshot_ops_receipt(
+                    company_id,
+                    receipt_id,
+                    actor_user_id=
+                        actor_user_id,
+                    cur=tx,
+                )
+
+        payload=self.build_ops_receipt_snapshot(
+            company_id,
+            receipt_id,
+        )
+
+        receipt=payload["receipt"]
+
+        cur.execute(
+            f"""
+            SELECT COALESCE(
+                MAX(version_no),
+                0
+            )+1 AS version_no
+            FROM {schema}.ops_receipt_snapshots
+            WHERE receipt_id=%s;
+            """,
+            (receipt_id,),
+        )
+
+        version_no=int(
+            (cur.fetchone() or {}).get(
+                "version_no"
+            )
+            or 1
+        )
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.ops_receipt_snapshots(
+                company_id,
+                receipt_id,
+                receipt_no,
+                version_no,
+                snapshot_json,
+                generated_by_user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s
+            )
+            RETURNING *;
+            """,
+            (
+                company_id,
+                receipt_id,
+                receipt["receipt_no"],
+                version_no,
+                psycopg2.extras.Json(
+                    payload
+                ),
+                actor_user_id,
+            ),
+        )
+
+        return dict(cur.fetchone())
+
+    def reject_ops_receipt(
+        self,
+        company_id:int,
+        receipt_id:int,
+        *,
+        actor_user_id:int,
+        reason:str,
+    ):
+        company_id=int(company_id)
+        receipt_id=int(receipt_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        reason=(reason or "").strip()
+
+        if not reason:
+            raise ValueError(
+                "Rejection reason is required."
+            )
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.ops_receipts
+            SET status='rejected',
+                rejected_by_user_id=%s,
+                rejected_at=NOW(),
+                rejection_reason=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            AND status='submitted'
+            RETURNING *;
+            """,
+            (
+                actor_user_id,
+                reason,
+                company_id,
+                receipt_id,
+            ),
+        )
+
+    def create_ops_vendor_invoice(
+        self,
+        company_id:int,
+        purchase_order_id:int,
+        *,
+        actor_user_id:int|None=None,
+        portal_user_id:int|None=None,
+        vendor_id:int|None=None,
+        payload:dict|None=None,
+    ):
+        company_id=int(company_id)
+        purchase_order_id=int(purchase_order_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""SELECT po.*,v.name AS vendor_name
+                    FROM {schema}.ops_purchase_orders po
+                    JOIN {schema}.vendors v ON v.id=po.vendor_id
+                    WHERE po.company_id=%s AND po.id=%s FOR UPDATE;""",
+                (company_id,purchase_order_id),
+            )
+            po=dict(cur.fetchone() or {})
+            if not po:
+                raise ValueError("Purchase order not found.")
+            if vendor_id and int(po["vendor_id"])!=int(vendor_id):
+                raise ValueError("This purchase order does not belong to the vendor.")
+            if not po.get("ready_for_invoice"):
+                raise ValueError("Purchase order is not ready for invoice processing.")
+
+            supplier_invoice_no=(payload.get("supplier_invoice_no") or "").strip()
+            if not supplier_invoice_no:
+                raise ValueError("Supplier invoice number is required.")
+
+            duplicate=self.fetch_val(
+                f"""SELECT 1 FROM {schema}.ops_vendor_invoices
+                    WHERE company_id=%s AND vendor_id=%s AND supplier_invoice_no=%s LIMIT 1;""",
+                (company_id,po["vendor_id"],supplier_invoice_no),
+            )
+            if duplicate:
+                raise ValueError("This supplier invoice number already exists for the vendor.")
+
+            cur.execute(f"SELECT COALESCE(MAX(id),0)+1 AS seq FROM {schema}.ops_vendor_invoices;")
+            seq=int((cur.fetchone() or {}).get("seq") or 1)
+            invoice_no=f"VIN-{company_id}-{seq:06d}"
+
+            cur.execute(
+                f"""INSERT INTO {schema}.ops_vendor_invoices(
+                        company_id,vendor_id,purchase_order_id,procurement_case_id,request_id,
+                        invoice_no,supplier_invoice_no,invoice_date,due_date,currency_code,
+                        subtotal,discount_amount,tax_amount,total_amount,supplier_reference,
+                        description,source,status,submitted_by_user_id,submitted_by_portal_user_id,
+                        created_by_user_id,updated_by_user_id
+                    )
+                    VALUES(
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,%s,%s,'draft',%s,%s,%s,%s
+                    )
+                    RETURNING *;""",
+                (
+                    company_id,po["vendor_id"],po["id"],po["procurement_case_id"],po["request_id"],
+                    invoice_no,supplier_invoice_no,payload.get("invoice_date"),payload.get("due_date"),
+                    po.get("currency_code"),float(payload.get("subtotal") or 0),
+                    float(payload.get("discount_amount") or 0),float(payload.get("tax_amount") or 0),
+                    float(payload.get("total_amount") or 0),(payload.get("supplier_reference") or "").strip() or None,
+                    (payload.get("description") or "").strip() or None,
+                    "vendor_portal" if portal_user_id else "internal",
+                    actor_user_id,portal_user_id,actor_user_id,actor_user_id,
+                ),
+            )
+            invoice=dict(cur.fetchone())
+
+            for i,line in enumerate(payload.get("lines") or [],1):
+                cur.execute(
+                    f"""INSERT INTO {schema}.ops_vendor_invoice_lines(
+                            invoice_id,purchase_order_line_id,line_no,description,quantity,
+                            unit_price,discount_amount,tax_amount,line_total
+                        )
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s);""",
+                    (
+                        invoice["id"],line.get("purchase_order_line_id"),i,
+                        (line.get("description") or "").strip(),
+                        float(line.get("quantity") or 0),float(line.get("unit_price") or 0),
+                        float(line.get("discount_amount") or 0),float(line.get("tax_amount") or 0),
+                        float(line.get("line_total") or 0),
+                    ),
+                )
+
+        return invoice
+
+    def get_ops_vendor_invoice(self,company_id:int,invoice_id:int):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        schema=self.company_schema(company_id)
+
+        invoice=self.fetch_one(
+            f"""SELECT i.*,v.name AS vendor_name,v.email AS vendor_email,
+                    po.po_no,r.request_no,r.title AS request_title,pc.case_no
+                FROM {schema}.ops_vendor_invoices i
+                JOIN {schema}.vendors v ON v.id=i.vendor_id
+                LEFT JOIN {schema}.ops_purchase_orders po ON po.id=i.purchase_order_id
+                LEFT JOIN {schema}.ops_requests r ON r.id=i.request_id
+                LEFT JOIN {schema}.ops_procurement_cases pc ON pc.id=i.procurement_case_id
+                WHERE i.company_id=%s AND i.id=%s LIMIT 1;""",
+            (company_id,invoice_id),
+        )
+        if not invoice:
+            raise ValueError("Vendor invoice not found.")
+
+        return {
+            "invoice":invoice,
+            "lines":self.fetch_all(
+                f"""SELECT il.*,pol.description AS po_description,pol.quantity AS po_quantity,
+                        pol.unit_price AS po_unit_price,pol.received_quantity
+                    FROM {schema}.ops_vendor_invoice_lines il
+                    LEFT JOIN {schema}.ops_purchase_order_lines pol ON pol.id=il.purchase_order_line_id
+                    WHERE il.invoice_id=%s ORDER BY il.line_no;""",
+                (invoice_id,),
+            ) or [],
+            "exceptions":self.fetch_all(
+                f"SELECT * FROM {schema}.ops_invoice_exceptions WHERE invoice_id=%s ORDER BY status,severity,id;",
+                (invoice_id,),
+            ) or [],
+            "match":self.fetch_one(
+                f"SELECT * FROM {schema}.ops_invoice_matches WHERE invoice_id=%s ORDER BY checked_at DESC,id DESC LIMIT 1;",
+                (invoice_id,),
+            ),
+            "documents":self.fetch_all(
+                f"SELECT * FROM {schema}.ops_vendor_invoice_documents WHERE invoice_id=%s ORDER BY created_at;",
+                (invoice_id,),
+            ) or [],
+        }
+
+    def submit_ops_vendor_invoice(self,company_id:int,invoice_id:int,*,actor_user_id=None,portal_user_id=None):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"SELECT * FROM {schema}.ops_vendor_invoices WHERE company_id=%s AND id=%s FOR UPDATE;",
+                (company_id,invoice_id),
+            )
+            invoice=dict(cur.fetchone() or {})
+            if not invoice:
+                raise ValueError("Vendor invoice not found.")
+            if invoice["status"]!="draft":
+                raise ValueError("Only draft invoices can be submitted.")
+            if float(invoice.get("total_amount") or 0)<=0:
+                raise ValueError("Invoice total must be greater than zero.")
+
+            cur.execute(
+                f"""UPDATE {schema}.ops_vendor_invoices
+                    SET status='submitted',submitted_at=NOW(),updated_at=NOW()
+                    WHERE id=%s RETURNING *;""",
+                (invoice_id,),
+            )
+            invoice=dict(cur.fetchone())
+
+            self.create_ops_finance_work_item(
+                company_id,
+                work_type="invoice_validation",
+                entity_type="vendor_invoice",
+                entity_id=invoice["id"],
+                entity_ref=invoice["invoice_no"],
+                title=f"Validate supplier invoice {invoice['supplier_invoice_no']}",
+                assigned_role_code="AP_CLERK",
+                priority="normal",
+                stage="validation",
+                source_module="procurement",
+                source_type="vendor_invoice",
+                source_id=invoice["id"],
+                created_by_user_id=actor_user_id,
+                cur=cur,
+            )
+
+            return invoice
+
+    def match_ops_vendor_invoice(self,company_id:int,invoice_id:int,*,actor_user_id:int):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""SELECT i.*,po.fulfilment_type,po.total_amount AS po_total,po.ready_for_invoice
+                    FROM {schema}.ops_vendor_invoices i
+                    JOIN {schema}.ops_purchase_orders po ON po.id=i.purchase_order_id
+                    WHERE i.company_id=%s AND i.id=%s FOR UPDATE;""",
+                (company_id,invoice_id),
+            )
+            invoice=dict(cur.fetchone() or {})
+            if not invoice:
+                raise ValueError("Invoice not found.")
+            if invoice["status"] not in {"submitted","under_review"}:
+                raise ValueError("Invoice must be submitted before matching.")
+
+            cur.execute(f"DELETE FROM {schema}.ops_invoice_exceptions WHERE invoice_id=%s AND status='open';",(invoice_id,))
+
+            cur.execute(
+                f"""SELECT il.*,pol.quantity AS po_quantity,pol.unit_price AS po_unit_price,
+                        pol.received_quantity,pol.cancelled_quantity
+                    FROM {schema}.ops_vendor_invoice_lines il
+                    LEFT JOIN {schema}.ops_purchase_order_lines pol ON pol.id=il.purchase_order_line_id
+                    WHERE il.invoice_id=%s ORDER BY il.line_no;""",
+                (invoice_id,),
+            )
+            lines=[dict(x) for x in cur.fetchall()]
+
+            exceptions=[]
+            for line in lines:
+                qty=float(line.get("quantity") or 0)
+                unit_price=float(line.get("unit_price") or 0)
+                po_qty=float(line.get("po_quantity") or 0)
+                po_price=float(line.get("po_unit_price") or 0)
+                received=float(line.get("received_quantity") or 0)
+
+                qty_variance=qty-received
+                price_variance=unit_price-po_price
+                status="matched"
+
+                if qty>received:
+                    status="exception"
+                    exceptions.append(("quantity_variance","block",f"Invoice line {line['line_no']} exceeds verified quantity.",str(received),str(qty)))
+
+                if abs(price_variance)>0.01:
+                    status="exception"
+                    exceptions.append(("price_variance","warning",f"Invoice line {line['line_no']} price differs from PO.",str(po_price),str(unit_price)))
+
+                cur.execute(
+                    f"""UPDATE {schema}.ops_vendor_invoice_lines
+                        SET matched_quantity=%s,quantity_variance=%s,price_variance=%s,
+                            match_status=%s,updated_at=NOW()
+                        WHERE id=%s;""",
+                    (min(qty,received),qty_variance,price_variance,status,line["id"]),
+                )
+
+            for ex_type,severity,description,expected,actual in exceptions:
+                cur.execute(
+                    f"""INSERT INTO {schema}.ops_invoice_exceptions(
+                            company_id,invoice_id,exception_type,severity,description,expected_value,actual_value
+                        )
+                        VALUES(%s,%s,%s,%s,%s,%s,%s);""",
+                    (company_id,invoice_id,ex_type,severity,description,expected,actual),
+                )
+
+            po_total=float(invoice.get("po_total") or 0)
+            invoice_total=float(invoice.get("total_amount") or 0)
+            variance=invoice_total-po_total
+            variance_pct=(variance/po_total*100) if po_total else 0
+
+            match_status="exception" if exceptions else "matched"
+            match_type={
+                "service":"service",
+                "lease":"lease",
+            }.get(invoice.get("fulfilment_type"),"three_way")
+
+            cur.execute(
+                f"""INSERT INTO {schema}.ops_invoice_matches(
+                        company_id,invoice_id,purchase_order_id,match_type,status,
+                        po_amount,received_amount,invoiced_amount,variance_amount,variance_percent,
+                        details_json,checked_by_user_id
+                    )
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    RETURNING *;""",
+                (
+                    company_id,invoice_id,invoice["purchase_order_id"],match_type,match_status,
+                    po_total,po_total,invoice_total,variance,variance_pct,
+                    psycopg2.extras.Json({"exception_count":len(exceptions)}),actor_user_id,
+                ),
+            )
+            match=dict(cur.fetchone())
+
+            cur.execute(
+                f"""UPDATE {schema}.ops_vendor_invoices
+                    SET status='under_review',match_status=%s,match_variance_amount=%s,
+                        match_variance_percent=%s,updated_at=NOW()
+                    WHERE id=%s;""",
+                (match_status,variance,variance_pct,invoice_id),
+            )
+
+        if exceptions:
+            self.create_ops_finance_work_item(
+                company_id,
+                work_type="invoice_exception",
+                entity_type="vendor_invoice",
+                entity_id=invoice_id,
+                entity_ref=invoice["invoice_no"],
+                title=f"Resolve invoice exceptions — {invoice['supplier_invoice_no']}",
+                assigned_role_code="FINANCE_OFFICER",
+                priority="high" if any(x[1]=="block" for x in exceptions) else "normal",
+                stage="exception_review",
+                source_module="accounts_payable",
+                source_type="vendor_invoice",
+                source_id=invoice_id,
+                created_by_user_id=actor_user_id,
+                cur=cur,
+            )
+        return {"match":match,"exceptions":exceptions}
+
+    def resolve_ops_invoice_exception(
+        self,
+        company_id:int,
+        exception_id:int,
+        *,
+        actor_user_id:int,
+        resolution_comment:str,
+        waive:bool=False,
+    ):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+        comment=(resolution_comment or "").strip()
+
+        if not comment:
+            raise ValueError("Resolution comment is required.")
+
+        row=self.fetch_one(
+            f"""UPDATE {schema}.ops_invoice_exceptions
+                SET status=%s,resolution_comment=%s,resolved_by_user_id=%s,resolved_at=NOW()
+                WHERE company_id=%s AND id=%s AND status='open'
+                RETURNING *;""",
+            ("waived" if waive else "resolved",comment,int(actor_user_id),company_id,int(exception_id)),
+        )
+        if not row:
+            raise ValueError("Open exception not found.")
+        return row
+
+    def review_ops_vendor_invoice(self,company_id:int,invoice_id:int,*,actor_user_id:int,payload:dict):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        gl_account_code=(payload.get("gl_account_code") or "").strip()
+        if not gl_account_code:
+            raise ValueError("GL account is required for accounting review.")
+
+        return self.fetch_one(
+            f"""UPDATE {schema}.ops_vendor_invoices
+                SET gl_account_code=%s,tax_code=%s,cost_center_id=%s,department_id=%s,branch_id=%s,
+                    tax_review_status=%s,accounting_review_status='reviewed',
+                    reviewed_at=NOW(),reviewed_by_user_id=%s,updated_by_user_id=%s,updated_at=NOW()
+                WHERE company_id=%s AND id=%s AND status='under_review'
+                RETURNING *;""",
+            (
+                gl_account_code,(payload.get("tax_code") or "").strip() or None,
+                payload.get("cost_center_id"),payload.get("department_id"),payload.get("branch_id"),
+                payload.get("tax_review_status") or "passed",
+                actor_user_id,actor_user_id,company_id,invoice_id,
+            ),
+        )
+
+    def accept_ops_vendor_invoice(self,company_id:int,invoice_id:int,*,actor_user_id:int):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"SELECT * FROM {schema}.ops_vendor_invoices WHERE company_id=%s AND id=%s FOR UPDATE;",
+                (company_id,invoice_id),
+            )
+            invoice=dict(cur.fetchone() or {})
+            if not invoice:
+                raise ValueError("Invoice not found.")
+            if invoice["status"]!="under_review":
+                raise ValueError("Invoice must be under review before acceptance.")
+            if invoice["accounting_review_status"]!="reviewed":
+                raise ValueError("Accounting review must be completed first.")
+            if invoice["tax_review_status"] not in {"passed","not_required"}:
+                raise ValueError("Tax review has not passed.")
+
+            open_blocks=self.fetch_val(
+                f"""SELECT COUNT(*) FROM {schema}.ops_invoice_exceptions
+                    WHERE invoice_id=%s AND status='open' AND severity='block';""",
+                (invoice_id,),
+            )
+            if int(open_blocks or 0)>0:
+                raise ValueError("Blocking invoice exceptions must be resolved before acceptance.")
+
+            cur.execute(
+                f"""UPDATE {schema}.ops_vendor_invoices
+                    SET status='accepted',ready_for_payment=TRUE,
+                        accepted_at=NOW(),accepted_by_user_id=%s,
+                        updated_by_user_id=%s,updated_at=NOW()
+                    WHERE id=%s RETURNING *;""",
+                (actor_user_id,actor_user_id,invoice_id),
+            )
+            return dict(cur.fetchone())
+
+    def reject_ops_vendor_invoice(self,company_id:int,invoice_id:int,*,actor_user_id:int,reason:str):
+        reason=(reason or "").strip()
+        if not reason:
+            raise ValueError("Rejection reason is required.")
+
+        schema=self.company_schema(int(company_id))
+        return self.fetch_one(
+            f"""UPDATE {schema}.ops_vendor_invoices
+                SET status='rejected',ready_for_payment=FALSE,rejected_at=NOW(),
+                    rejected_by_user_id=%s,rejection_reason=%s,updated_at=NOW()
+                WHERE company_id=%s AND id=%s
+                AND status IN('submitted','under_review')
+                RETURNING *;""",
+            (int(actor_user_id),reason,int(company_id),int(invoice_id)),
+        )
+
+    def list_ops_ap_invoices(self,company_id:int,*,status=None):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        sql=f"""
+            SELECT i.*,v.name AS vendor_name,po.po_no,r.request_no
+            FROM {schema}.ops_vendor_invoices i
+            JOIN {schema}.vendors v ON v.id=i.vendor_id
+            LEFT JOIN {schema}.ops_purchase_orders po ON po.id=i.purchase_order_id
+            LEFT JOIN {schema}.ops_requests r ON r.id=i.request_id
+            WHERE i.company_id=%s
+        """
+        params=[company_id]
+
+        if status:
+            sql+=" AND i.status=%s"
+            params.append(status)
+
+        sql+=" ORDER BY i.invoice_date DESC,i.id DESC;"
+        return self.fetch_all(sql,tuple(params)) or []
+
+    def get_ops_finance_context(self,company_id:int,*,user_id:int):
+        company_id=int(company_id)
+        user_id=int(user_id)
+        schema=self.company_schema(company_id)
+
+        company_user=self.fetch_one(
+            """SELECT id,user_id,company_id,role,ops_role_code
+            FROM public.company_users
+            WHERE company_id=%s AND user_id=%s AND is_active=TRUE
+            LIMIT 1;""",
+            (company_id,user_id),
+        )
+        if not company_user:
+            raise ValueError("Company user not found.")
+
+        roles=self.fetch_all(
+            f"""SELECT fr.code,fr.name,fr.authority_level,fur.is_primary
+                FROM {schema}.ops_finance_user_roles fur
+                JOIN {schema}.ops_finance_roles fr ON fr.id=fur.finance_role_id
+                WHERE fur.company_id=%s AND fur.company_user_id=%s
+                AND fur.is_active=TRUE AND fr.is_active=TRUE
+                ORDER BY fur.is_primary DESC,fr.authority_level DESC;""",
+            (company_id,company_user["id"]),
+        ) or []
+
+        owner=self.fetch_val(
+            "SELECT owner_user_id FROM public.companies WHERE id=%s;",
+            (company_id,),
+        )
+
+        if int(owner or 0)==user_id and not roles:
+            roles=[{
+                "code":"CFO",
+                "name":"Business Owner",
+                "authority_level":100,
+                "is_primary":True,
+            }]
+
+        role_codes=[r["code"] for r in roles]
+
+        features=[]
+        if role_codes:
+            placeholders=",".join(["%s"]*len(role_codes))
+            features=self.fetch_all(
+                f"""SELECT feature_code,
+                        BOOL_OR(can_view) AS can_view,
+                        BOOL_OR(can_manage) AS can_manage
+                    FROM {schema}.ops_finance_feature_access
+                    WHERE company_id=%s AND finance_role_code IN ({placeholders})
+                    GROUP BY feature_code
+                    ORDER BY feature_code;""",
+                tuple([company_id]+role_codes),
+            ) or []
+
+        return {
+            "roles":roles,
+            "primary_role":roles[0] if roles else None,
+            "features":features,
+        }
+
+    def get_ops_finance_navigation(self,company_id:int,*,user_id:int):
+        ctx=self.get_ops_finance_context(company_id,user_id=user_id)
+        access={x["feature_code"]:x for x in ctx["features"]}
+        nav=[]
+
+        if access.get("finance.overview",{}).get("can_view"):
+            nav.append({"key":"finance-overview","label":"Overview","path":"/finance"})
+
+        if access.get("finance.my_work",{}).get("can_view"):
+            nav.append({"key":"finance-my-work","label":"My Work","path":"/finance/my-work"})
+
+        payables=[]
+        links=[
+            ("payables.invoices","payables-invoices","Invoice Inbox","/finance/payables/invoices"),
+            ("payables.matching","payables-matching","Matching","/finance/payables/matching"),
+            ("payables.exceptions","payables-exceptions","Exceptions","/finance/payables/exceptions"),
+            ("payables.ready_for_accounting","payables-ready","Ready for Accounting","/finance/payables/ready"),
+            ("payables.payment_vouchers","payment-vouchers","Payment Vouchers","/finance/payables/payment-vouchers"),
+        ]
+
+        for feature,key,label,path in links:
+            if access.get(feature,{}).get("can_view"):
+                payables.append({"key":key,"label":label,"path":path})
+
+        if payables:
+            nav.append({"key":"payables","label":"Payables","children":payables})
+
+        return {"context":ctx,"navigation":nav}
+
+    def create_ops_finance_work_item(
+        self,
+        company_id:int,
+        *,
+        work_type:str,
+        entity_type:str,
+        entity_id:int,
+        title:str,
+        entity_ref=None,
+        description=None,
+        assigned_to_user_id=None,
+        assigned_role_code=None,
+        department_id=None,
+        priority="normal",
+        stage=None,
+        source_module=None,
+        source_type=None,
+        source_id=None,
+        created_by_user_id=None,
+        cur=None,
+    ):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        sql=f"""INSERT INTO {schema}.ops_finance_work_items(
+                    company_id,work_type,entity_type,entity_id,entity_ref,title,description,
+                    assigned_to_user_id,assigned_role_code,department_id,priority,stage,
+                    source_module,source_type,source_id,created_by_user_id
+                )
+                VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING *;"""
+
+        params=(
+            company_id,work_type,entity_type,int(entity_id),entity_ref,title,description,
+            assigned_to_user_id,assigned_role_code,department_id,priority,stage,
+            source_module,source_type,source_id,created_by_user_id,
+        )
+
+        if cur:
+            cur.execute(sql,params)
+            return dict(cur.fetchone())
+
+        return self.fetch_one(sql,params)
+
+    def list_ops_finance_work_items(self,company_id:int,*,user_id:int):
+        company_id=int(company_id)
+        user_id=int(user_id)
+        schema=self.company_schema(company_id)
+        ctx=self.get_ops_finance_context(company_id,user_id=user_id)
+        role_codes=[x["code"] for x in ctx["roles"]]
+
+        if role_codes:
+            placeholders=",".join(["%s"]*len(role_codes))
+            return self.fetch_all(
+                f"""SELECT *
+                    FROM {schema}.ops_finance_work_items
+                    WHERE company_id=%s
+                    AND status IN('open','in_progress','blocked')
+                    AND (
+                        assigned_to_user_id=%s
+                        OR assigned_role_code IN ({placeholders})
+                    )
+                    ORDER BY
+                        CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
+                        due_at NULLS LAST,created_at;""",
+                tuple([company_id,user_id]+role_codes),
+            ) or []
+
+        return self.fetch_all(
+            f"""SELECT * FROM {schema}.ops_finance_work_items
+                WHERE company_id=%s AND assigned_to_user_id=%s
+                AND status IN('open','in_progress','blocked')
+                ORDER BY created_at;""",
+            (company_id,user_id),
+        ) or []
+
+    def get_ops_finance_overview(self,company_id:int,*,user_id:int):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        return {
+            "my_work":len(self.list_ops_finance_work_items(company_id,user_id=user_id)),
+            "invoice_inbox":int(self.fetch_val(
+                f"""SELECT COUNT(*) FROM {schema}.ops_vendor_invoices
+                    WHERE company_id=%s AND status IN('submitted','under_review');""",
+                (company_id,),
+            ) or 0),
+            "exceptions":int(self.fetch_val(
+                f"""SELECT COUNT(*) FROM {schema}.ops_invoice_exceptions e
+                    JOIN {schema}.ops_vendor_invoices i ON i.id=e.invoice_id
+                    WHERE i.company_id=%s AND e.status='open';""",
+                (company_id,),
+            ) or 0),
+            "ready_for_accounting":int(self.fetch_val(
+                f"""SELECT COUNT(*) FROM {schema}.ops_vendor_invoices
+                    WHERE company_id=%s AND status='accepted' AND ready_for_payment=TRUE;""",
+                (company_id,),
+            ) or 0),
+        }
+
+    def list_ops_ap_queue(self,company_id:int,*,queue="inbox"):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        where={
+            "inbox":"i.status IN('submitted','under_review')",
+            "matching":"i.status IN('submitted','under_review') AND i.match_status='not_checked'",
+            "exceptions":"""i.status='under_review' AND EXISTS(
+                SELECT 1 FROM {schema}.ops_invoice_exceptions e
+                WHERE e.invoice_id=i.id AND e.status='open'
+            )""".format(schema=schema),
+            "ready":"""i.status='accepted' AND i.ready_for_accounting=TRUE""",
+        }.get(queue)
+
+        if not where:
+            raise ValueError("Unknown AP queue.")
+
+        return self.fetch_all(
+            f"""SELECT i.*,v.name AS vendor_name,po.po_no,r.request_no,r.title AS request_title,
+                    (SELECT COUNT(*) FROM {schema}.ops_invoice_exceptions e
+                        WHERE e.invoice_id=i.id AND e.status='open') AS open_exception_count
+                FROM {schema}.ops_vendor_invoices i
+                JOIN {schema}.vendors v ON v.id=i.vendor_id
+                LEFT JOIN {schema}.ops_purchase_orders po ON po.id=i.purchase_order_id
+                LEFT JOIN {schema}.ops_requests r ON r.id=i.request_id
+                WHERE i.company_id=%s AND {where}
+                ORDER BY i.invoice_date DESC,i.id DESC;""",
+            (company_id,),
+        ) or []
+
+    def get_ops_ap_summary(self,company_id:int):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(
+            f"""SELECT
+                    COUNT(*) FILTER(WHERE status IN('submitted','under_review')) AS inbox,
+                    COUNT(*) FILTER(WHERE status IN('submitted','under_review') AND match_status='not_checked') AS matching,
+                    COUNT(*) FILTER(WHERE status='accepted' AND ready_for_accounting=TRUE) AS ready
+                FROM {schema}.ops_vendor_invoices
+                WHERE company_id=%s;""",
+            (company_id,),
+        ) or {}
+
+        row["exceptions"]=int(self.fetch_val(
+            f"""SELECT COUNT(DISTINCT e.invoice_id)
+                FROM {schema}.ops_invoice_exceptions e
+                JOIN {schema}.ops_vendor_invoices i ON i.id=e.invoice_id
+                WHERE i.company_id=%s AND e.status='open';""",
+            (company_id,),
+        ) or 0)
+
+        return row
+
+    def save_ops_invoice_line_coding(
+        self,
+        company_id:int,
+        invoice_id:int,
+        *,
+        lines:list,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""SELECT * FROM {schema}.ops_vendor_invoices
+                    WHERE company_id=%s AND id=%s FOR UPDATE;""",
+                (company_id,invoice_id),
+            )
+            invoice=dict(cur.fetchone() or {})
+            if not invoice:
+                raise ValueError("Invoice not found.")
+            if invoice["status"] not in {"submitted","under_review"}:
+                raise ValueError("Invoice can no longer be coded.")
+
+            for line in lines or []:
+                line_id=int(line.get("id") or 0)
+                gl=(line.get("gl_account_code") or "").strip()
+                tax=(line.get("tax_code") or "").strip() or None
+
+                if not line_id:
+                    continue
+
+                cur.execute(
+                    f"""UPDATE {schema}.ops_vendor_invoice_lines
+                        SET gl_account_code=%s,tax_code=%s,updated_at=NOW()
+                        WHERE id=%s AND invoice_id=%s;""",
+                    (gl or None,tax,line_id,invoice_id),
+                )
+
+            cur.execute(
+                f"""SELECT
+                        COUNT(*) AS total,
+                        COUNT(*) FILTER(WHERE NULLIF(TRIM(gl_account_code),'') IS NOT NULL) AS coded
+                    FROM {schema}.ops_vendor_invoice_lines
+                    WHERE invoice_id=%s;""",
+                (invoice_id,),
+            )
+            status=dict(cur.fetchone() or {})
+            total=int(status.get("total") or 0)
+            coded=int(status.get("coded") or 0)
+            coding_status="complete" if total>0 and total==coded else ("partial" if coded else "pending")
+
+            cur.execute(
+                f"""UPDATE {schema}.ops_vendor_invoices
+                    SET coding_status=%s,updated_by_user_id=%s,updated_at=NOW()
+                    WHERE id=%s;""",
+                (coding_status,actor_user_id,invoice_id),
+            )
+
+        return self.get_ops_vendor_invoice(company_id,invoice_id)
+
+    def review_ops_vendor_invoice(self,company_id:int,invoice_id:int,*,actor_user_id:int,payload:dict):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""SELECT * FROM {schema}.ops_vendor_invoices
+                    WHERE company_id=%s AND id=%s FOR UPDATE;""",
+                (company_id,invoice_id),
+            )
+            invoice=dict(cur.fetchone() or {})
+            if not invoice:
+                raise ValueError("Invoice not found.")
+            if invoice["status"]!="under_review":
+                raise ValueError("Invoice must be under review.")
+
+            if invoice.get("match_status") not in {"matched","partial_match","not_required"}:
+                raise ValueError("Invoice matching must be completed first.")
+
+            if invoice.get("coding_status")!="complete":
+                raise ValueError("All invoice lines must be financially coded.")
+
+            open_blocks=int(self.fetch_val(
+                f"""SELECT COUNT(*) FROM {schema}.ops_invoice_exceptions
+                    WHERE invoice_id=%s AND status='open' AND severity='block';""",
+                (invoice_id,),
+            ) or 0)
+
+            if open_blocks:
+                raise ValueError("Blocking exceptions must be resolved first.")
+
+            tax_status=(payload.get("tax_review_status") or "passed").strip()
+            if tax_status not in {"passed","exception","not_required"}:
+                raise ValueError("Invalid tax review status.")
+
+            cur.execute(
+                f"""UPDATE {schema}.ops_vendor_invoices
+                    SET tax_review_status=%s,
+                        accounting_review_status='reviewed',
+                        finance_review_status=%s,
+                        finance_reviewed_at=NOW(),
+                        finance_reviewed_by_user_id=%s,
+                        reviewed_at=NOW(),
+                        reviewed_by_user_id=%s,
+                        updated_by_user_id=%s,
+                        updated_at=NOW()
+                    WHERE id=%s
+                    RETURNING *;""",
+                (
+                    tax_status,
+                    "reviewed" if tax_status in {"passed","not_required"} else "exception",
+                    actor_user_id,actor_user_id,actor_user_id,invoice_id,
+                ),
+            )
+            return dict(cur.fetchone())
+
+    def accept_ops_vendor_invoice(self,company_id:int,invoice_id:int,*,actor_user_id:int):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""SELECT * FROM {schema}.ops_vendor_invoices
+                    WHERE company_id=%s AND id=%s FOR UPDATE;""",
+                (company_id,invoice_id),
+            )
+            invoice=dict(cur.fetchone() or {})
+            if not invoice:
+                raise ValueError("Invoice not found.")
+            if invoice["status"]!="under_review":
+                raise ValueError("Invoice must be under review before acceptance.")
+            if invoice.get("finance_review_status")!="reviewed":
+                raise ValueError("Finance review must be completed first.")
+            if invoice.get("coding_status")!="complete":
+                raise ValueError("Accounting coding is incomplete.")
+            if invoice.get("tax_review_status") not in {"passed","not_required"}:
+                raise ValueError("Tax review has not passed.")
+
+            open_exceptions=int(self.fetch_val(
+                f"""SELECT COUNT(*) FROM {schema}.ops_invoice_exceptions
+                    WHERE invoice_id=%s AND status='open';""",
+                (invoice_id,),
+            ) or 0)
+
+            if open_exceptions:
+                raise ValueError("Open invoice exceptions must be resolved or waived.")
+
+            cur.execute(
+                f"""UPDATE {schema}.ops_vendor_invoices
+                    SET status='accepted',
+                        ready_for_accounting=TRUE,
+                        ready_for_payment=FALSE,
+                        accepted_at=NOW(),
+                        accepted_by_user_id=%s,
+                        updated_by_user_id=%s,
+                        updated_at=NOW()
+                    WHERE id=%s
+                    RETURNING *;""",
+                (actor_user_id,actor_user_id,invoice_id),
+            )
+            accepted=dict(cur.fetchone())
+
+            cur.execute(
+                f"""UPDATE {schema}.ops_finance_work_items
+                    SET status='completed',completed_at=NOW(),completed_by_user_id=%s,updated_at=NOW()
+                    WHERE entity_type='vendor_invoice' AND entity_id=%s
+                    AND status IN('open','in_progress','blocked');""",
+                (actor_user_id,invoice_id),
+            )
+
+            return accepted
+
+    def resolve_ops_invoice_exception(
+        self,
+        company_id:int,
+        exception_id:int,
+        *,
+        actor_user_id:int,
+        resolution_comment:str,
+        waive:bool=False,
+    ):
+        company_id=int(company_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+        comment=(resolution_comment or "").strip()
+
+        if not comment:
+            raise ValueError("Resolution comment is required.")
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""UPDATE {schema}.ops_invoice_exceptions
+                    SET status=%s,resolution_comment=%s,resolved_by_user_id=%s,resolved_at=NOW()
+                    WHERE company_id=%s AND id=%s AND status='open'
+                    RETURNING *;""",
+                ("waived" if waive else "resolved",comment,actor_user_id,company_id,int(exception_id)),
+            )
+            row=dict(cur.fetchone() or {})
+            if not row:
+                raise ValueError("Open exception not found.")
+
+            cur.execute(
+                f"""SELECT COUNT(*) AS open_count
+                    FROM {schema}.ops_invoice_exceptions
+                    WHERE invoice_id=%s AND status='open';""",
+                (row["invoice_id"],),
+            )
+
+            if int((cur.fetchone() or {}).get("open_count") or 0)==0:
+                cur.execute(
+                    f"""UPDATE {schema}.ops_finance_work_items
+                        SET status='completed',completed_at=NOW(),completed_by_user_id=%s,updated_at=NOW()
+                        WHERE work_type='invoice_exception'
+                        AND entity_type='vendor_invoice'
+                        AND entity_id=%s
+                        AND status IN('open','in_progress','blocked');""",
+                    (actor_user_id,row["invoice_id"]),
+                )
+
+            return row
+
+    def build_ops_invoice_ap_payload(self,company_id:int,invoice_id:int):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        schema=self.company_schema(company_id)
+
+        invoice=self.fetch_one(
+            f"""
+            SELECT
+                i.*,
+                v.name AS vendor_name,
+                po.po_no,
+                r.request_no,
+                r.title AS request_title
+            FROM {schema}.ops_vendor_invoices i
+            JOIN {schema}.vendors v
+            ON v.id=i.vendor_id
+            LEFT JOIN {schema}.ops_purchase_orders po
+            ON po.id=i.purchase_order_id
+            LEFT JOIN {schema}.ops_requests r
+            ON r.id=i.request_id
+            WHERE i.company_id=%s
+            AND i.id=%s
+            LIMIT 1;
+            """,
+            (company_id,invoice_id),
+        )
+
+        if not invoice:
+            raise ValueError("Vendor invoice not found.")
+
+        if invoice["status"]!="accepted":
+            raise ValueError("Only accepted invoices can be sent to FinSage AP.")
+
+        if not invoice.get("ready_for_accounting"):
+            raise ValueError("Invoice is not ready for accounting.")
+
+        if invoice.get("coding_status")!="complete":
+            raise ValueError("Financial coding is incomplete.")
+
+        if invoice.get("finance_review_status")!="reviewed":
+            raise ValueError("Finance review is incomplete.")
+
+        if not invoice.get("vendor_id"):
+            raise ValueError("Vendor is missing.")
+
+        if not (invoice.get("supplier_invoice_no") or "").strip():
+            raise ValueError("Supplier invoice number is missing.")
+
+        if not invoice.get("invoice_date"):
+            raise ValueError("Invoice date is missing.")
+
+        open_blocks=int(self.fetch_val(
+            f"""
+            SELECT COUNT(*)
+            FROM {schema}.ops_invoice_exceptions
+            WHERE invoice_id=%s
+            AND status='open'
+            AND severity='block';
+            """,
+            (invoice_id,),
+        ) or 0)
+
+        if open_blocks:
+            raise ValueError("Blocking invoice exceptions must be resolved first.")
+
+        lines=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_vendor_invoice_lines
+            WHERE invoice_id=%s
+            ORDER BY line_no,id;
+            """,
+            (invoice_id,),
+        ) or []
+
+        if not lines:
+            raise ValueError("Invoice has no lines.")
+
+        bill_lines=[]
+
+        for line in lines:
+            account_code=(line.get("gl_account_code") or "").strip()
+
+            if not account_code:
+                raise ValueError(
+                    f"GL account is missing on invoice line {line.get('line_no')}."
+                )
+
+            bill_lines.append({
+                "item_name":line.get("item_name") or line.get("description"),
+                "description":line.get("description") or "",
+                "account_code":account_code,
+                "quantity":float(line.get("quantity") or 0),
+                "unit_price":float(line.get("unit_price") or 0),
+                "discount_amount":float(line.get("discount_amount") or 0),
+                "vat_rate":float(line.get("vat_rate") or 0),
+            })
+
+        header={
+            "vendor_id":int(invoice["vendor_id"]),
+            "source":"nexus_ops",
+            "source_id":invoice_id,
+
+            "number":(invoice.get("supplier_invoice_no") or "").strip(),
+            "bill_date":invoice["invoice_date"],
+            "due_date":invoice.get("due_date"),
+            "currency":invoice.get("currency_code"),
+
+            "status":"draft",
+            "discount_amount":float(invoice.get("discount_amount") or 0),
+            "other_amount":0,
+            "vat_mode":invoice.get("vat_mode") or "exclusive",
+
+            "notes":" | ".join(filter(None,[
+                f"Nexus invoice {invoice.get('invoice_no')}",
+                f"Request {invoice.get('request_no')}" if invoice.get("request_no") else None,
+                f"PO {invoice.get('po_no')}" if invoice.get("po_no") else None,
+            ])),
+        }
+
+        return {
+            "invoice":dict(invoice),
+            "header":header,
+            "lines":bill_lines,
+            "grni_links":[],
+        }
+
+    def handoff_ops_invoice_to_ap(
+        self,
+        company_id:int,
+        invoice_id:int,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        payload=self.build_ops_invoice_ap_payload(
+            company_id,
+            invoice_id,
+        )
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_vendor_invoices
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (company_id,invoice_id),
+            )
+
+            invoice=dict(cur.fetchone() or {})
+
+            if not invoice:
+                raise ValueError("Vendor invoice not found.")
+
+            # ----------------------------------------------------
+            # 1. Already successfully handed off
+            # ----------------------------------------------------
+            if (
+                invoice.get("accounting_handoff_status")=="completed"
+                and invoice.get("accounting_bill_id")
+            ):
+                bill=self.get_bill_full(
+                    company_id,
+                    int(invoice["accounting_bill_id"]),
+                )
+
+                if bill:
+                    return {
+                        "already_exists":True,
+                        "handoff_status":"completed",
+                        "bill_id":bill["id"],
+                        "bill_no":bill.get("number"),
+                        "bill_status":bill.get("status"),
+                        "bill":bill,
+                    }
+
+            # ----------------------------------------------------
+            # 2. Native FinSage source/source_id protection
+            # ----------------------------------------------------
+            cur.execute(
+                f"""
+                SELECT id,number,status
+                FROM {schema}.bills
+                WHERE company_id=%s
+                AND source='nexus_ops'
+                AND source_id=%s
+                ORDER BY id DESC
+                LIMIT 1;
+                """,
+                (company_id,invoice_id),
+            )
+
+            existing=cur.fetchone()
+
+            if existing:
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_vendor_invoices
+                    SET accounting_handoff_status='completed',
+                        accounting_bill_id=%s,
+                        accounting_bill_no=%s,
+                        accounting_handed_off_at=COALESCE(accounting_handed_off_at,NOW()),
+                        accounting_handed_off_by_user_id=%s,
+                        accounting_handoff_error=NULL,
+                        updated_at=NOW()
+                    WHERE id=%s;
+                    """,
+                    (
+                        existing["id"],
+                        existing["number"],
+                        actor_user_id,
+                        invoice_id,
+                    ),
+                )
+
+                return {
+                    "already_exists":True,
+                    "handoff_status":"completed",
+                    "bill_id":existing["id"],
+                    "bill_no":existing["number"],
+                    "bill_status":existing["status"],
+                }
+
+            # ----------------------------------------------------
+            # 3. Register handoff attempt
+            # ----------------------------------------------------
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_accounting_handoffs(
+                    company_id,
+                    source_module,
+                    source_type,
+                    source_id,
+                    source_reference,
+                    target_module,
+                    target_type,
+                    status,
+                    request_json,
+                    attempt_count,
+                    created_by_user_id
+                )
+                VALUES(
+                    %s,'finance','vendor_invoice',%s,%s,
+                    'ap','bill','processing',%s::jsonb,1,%s
+                )
+                ON CONFLICT(
+                    company_id,
+                    source_module,
+                    source_type,
+                    source_id,
+                    target_module,
+                    target_type
+                )
+                DO UPDATE SET
+                    status='processing',
+                    request_json=EXCLUDED.request_json,
+                    attempt_count={schema}.ops_accounting_handoffs.attempt_count+1,
+                    error_message=NULL,
+                    updated_at=NOW()
+                RETURNING *;
+                """,
+                (
+                    company_id,
+                    invoice_id,
+                    payload["invoice"].get("invoice_no"),
+                    json.dumps({
+                        "header":payload["header"],
+                        "lines":payload["lines"],
+                        "grni_links":payload["grni_links"],
+                    },default=str),
+                    actor_user_id,
+                ),
+            )
+
+            handoff=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_vendor_invoices
+                SET accounting_handoff_status='processing',
+                    accounting_handoff_error=NULL,
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (invoice_id,),
+            )
+
+            # ----------------------------------------------------
+            # 4. Create FinSage AP bill INSIDE SAME TRANSACTION
+            # ----------------------------------------------------
+            bill_id=self._insert_bill_with_lines_cur(
+                company_id,
+                payload["header"],
+                payload["lines"],
+                cur,
+            )
+
+            cur.execute(
+                f"""
+                SELECT id,number,status
+                FROM {schema}.bills
+                WHERE company_id=%s
+                AND id=%s;
+                """,
+                (company_id,bill_id),
+            )
+
+            bill=dict(cur.fetchone() or {})
+
+            if not bill:
+                raise ValueError("FinSage bill was created but could not be reloaded.")
+
+            # ----------------------------------------------------
+            # 5. Complete handoff
+            # ----------------------------------------------------
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_accounting_handoffs
+                SET status='completed',
+                    target_id=%s,
+                    target_reference=%s,
+                    response_json=%s::jsonb,
+                    completed_by_user_id=%s,
+                    completed_at=NOW(),
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    bill["id"],
+                    bill.get("number"),
+                    json.dumps({
+                        "bill_id":bill["id"],
+                        "bill_no":bill.get("number"),
+                        "status":bill.get("status"),
+                    },default=str),
+                    actor_user_id,
+                    handoff["id"],
+                ),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_vendor_invoices
+                SET accounting_handoff_status='completed',
+                    accounting_bill_id=%s,
+                    accounting_bill_no=%s,
+                    accounting_handed_off_at=NOW(),
+                    accounting_handed_off_by_user_id=%s,
+                    accounting_handoff_error=NULL,
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    bill["id"],
+                    bill.get("number"),
+                    actor_user_id,
+                    invoice_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_finance_work_items
+                SET status='completed',
+                    completed_at=NOW(),
+                    completed_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE entity_type='vendor_invoice'
+                AND entity_id=%s
+                AND status IN('open','in_progress','blocked');
+                """,
+                (actor_user_id,invoice_id),
+            )
+
+            return {
+                "already_exists":False,
+                "handoff_status":"completed",
+                "bill_id":bill["id"],
+                "bill_no":bill.get("number"),
+                "bill_status":bill.get("status"),
+            }
+
+    def next_ops_payment_voucher_no(self,company_id:int,*,cur):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            SELECT COALESCE(MAX(id),0)+1 AS next_no
+            FROM {schema}.ops_payment_vouchers
+            WHERE company_id=%s;
+            """,
+            (company_id,),
+        )
+
+        n=int((cur.fetchone() or {}).get("next_no") or 1)
+
+        return f"PV-{company_id}-{n:06d}"
+
+    def get_ops_payment_eligibility(self,company_id:int,invoice_id:int):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        schema=self.company_schema(company_id)
+
+        invoice=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_vendor_invoices
+            WHERE company_id=%s AND id=%s;
+            """,
+            (company_id,invoice_id),
+        )
+
+        if not invoice:
+            raise ValueError("Vendor invoice not found.")
+
+        bill_id=int(invoice.get("accounting_bill_id") or 0)
+
+        if not bill_id:
+            return {
+                "eligible":False,
+                "reason":"The invoice has not been handed off to FinSage AP.",
+            }
+
+        bill=self.get_bill_full(company_id,bill_id)
+
+        if not bill:
+            return {
+                "eligible":False,
+                "reason":"The linked FinSage bill could not be found.",
+            }
+
+        status=str(bill.get("status") or "").strip().lower()
+
+        if status not in {"posted","partial"}:
+            return {
+                "eligible":False,
+                "reason":f"FinSage bill must be posted before payment preparation. Current status: {status or 'unknown'}.",
+                "bill":bill,
+            }
+
+        allocated=float(
+            self.get_bill_allocated_total(
+                company_id,
+                bill_id,
+            ) or 0
+        )
+
+        total=float(bill.get("total_amount") or 0)
+        outstanding=max(total-allocated,0)
+
+        if outstanding<=0:
+            return {
+                "eligible":False,
+                "reason":"The FinSage bill has no outstanding balance.",
+                "bill":bill,
+                "outstanding_amount":0,
+            }
+
+        return {
+            "eligible":True,
+            "reason":None,
+            "bill":bill,
+            "outstanding_amount":outstanding,
+        }
+
+    def create_ops_payment_voucher(
+        self,
+        company_id:int,
+        invoice_id:int,
+        *,
+        actor_user_id:int,
+        payload:dict,
+    ):
+        company_id=int(company_id)
+        invoice_id=int(invoice_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        eligibility=self.get_ops_payment_eligibility(
+            company_id,
+            invoice_id,
+        )
+
+        if not eligibility["eligible"]:
+            raise ValueError(eligibility["reason"])
+
+        bill=eligibility["bill"]
+        outstanding=float(eligibility["outstanding_amount"] or 0)
+        amount=float(payload.get("amount") or outstanding)
+
+        if amount<=0:
+            raise ValueError("Payment amount must be greater than zero.")
+
+        if amount>outstanding:
+            raise ValueError(
+                f"Payment amount exceeds bill outstanding balance ({outstanding:.2f})."
+            )
+
+        with self.transaction() as (_conn,cur):
+            voucher_no=self.next_ops_payment_voucher_no(
+                company_id,
+                cur=cur,
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_payment_vouchers(
+                    company_id,
+                    voucher_no,
+                    vendor_invoice_id,
+                    accounting_bill_id,
+                    accounting_bill_no,
+                    vendor_id,
+                    currency_code,
+                    amount,
+                    payment_date,
+                    reference,
+                    description,
+                    wht_enabled,
+                    wht_rate,
+                    wht_amount,
+                    wht_ledger_code,
+                    wht_reason,
+                    status,
+                    prepared_by_user_id,
+                    prepared_at,
+                    created_by_user_id
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    'prepared',%s,NOW(),%s
+                )
+                RETURNING *;
+                """,
+                (
+                    company_id,
+                    voucher_no,
+                    invoice_id,
+                    bill["id"],
+                    bill.get("number"),
+                    bill["vendor_id"],
+                    bill.get("currency"),
+                    amount,
+                    payload.get("payment_date"),
+                    (payload.get("reference") or "").strip() or voucher_no,
+                    (payload.get("description") or "").strip() or
+                        f"Payment for bill {bill.get('number') or bill['id']}",
+                    bool(payload.get("wht_enabled")),
+                    float(payload.get("wht_rate") or 0),
+                    float(payload.get("wht_amount") or 0),
+                    (payload.get("wht_ledger_code") or "").strip() or None,
+                    (payload.get("wht_reason") or "").strip() or None,
+                    actor_user_id,
+                    actor_user_id,
+                ),
+            )
+
+            return dict(cur.fetchone())
+
+    def list_ops_payment_vouchers(
+        self,
+        company_id:int,
+        *,
+        status:str|None=None,
+        q:str|None=None,
+    ):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        where=["pv.company_id=%s"]
+        params=[company_id]
+
+        if status:
+            where.append("LOWER(pv.status)=LOWER(%s)")
+            params.append(str(status).strip())
+
+        if q:
+            term=f"%{str(q).strip()}%"
+
+            where.append(
+                """(
+                    pv.voucher_no ILIKE %s
+                    OR COALESCE(pv.reference,'') ILIKE %s
+                    OR COALESCE(pv.accounting_bill_no,'') ILIKE %s
+                    OR COALESCE(vi.invoice_no,'') ILIKE %s
+                    OR COALESCE(vi.supplier_invoice_no,'') ILIKE %s
+                    OR COALESCE(v.name,'') ILIKE %s
+                )"""
+            )
+
+            params.extend([
+                term,
+                term,
+                term,
+                term,
+                term,
+                term,
+            ])
+
+        rows=self.fetch_all(
+            f"""
+            SELECT
+                pv.id,
+                pv.company_id,
+                pv.voucher_no,
+                pv.vendor_invoice_id,
+                pv.accounting_bill_id,
+                pv.accounting_bill_no,
+                pv.vendor_id,
+                pv.currency_code,
+                pv.amount,
+                pv.payment_date,
+                pv.reference,
+                pv.description,
+
+                pv.wht_enabled,
+                pv.wht_rate,
+                pv.wht_amount,
+                pv.wht_ledger_code,
+                pv.wht_reason,
+
+                pv.status,
+                pv.created_at,
+                pv.updated_at,
+
+                vi.invoice_no,
+                vi.supplier_invoice_no,
+
+                v.name AS vendor_name
+
+            FROM {schema}.ops_payment_vouchers pv
+
+            JOIN {schema}.ops_vendor_invoices vi
+            ON vi.id=pv.vendor_invoice_id
+
+            JOIN {schema}.vendors v
+            ON v.id=pv.vendor_id
+
+            WHERE {" AND ".join(where)}
+
+            ORDER BY
+                pv.created_at DESC,
+                pv.id DESC;
+            """,
+            tuple(params),
+        ) or []
+
+        return rows
+
+    def get_ops_payment_voucher(self,company_id:int,voucher_id:int):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(
+            f"""
+            SELECT
+                pv.*,
+                vi.invoice_no,
+                vi.supplier_invoice_no,
+                v.name AS vendor_name
+            FROM {schema}.ops_payment_vouchers pv
+            JOIN {schema}.ops_vendor_invoices vi
+            ON vi.id=pv.vendor_invoice_id
+            JOIN {schema}.vendors v
+            ON v.id=pv.vendor_id
+            WHERE pv.company_id=%s
+            AND pv.id=%s
+            LIMIT 1;
+            """,
+            (company_id,int(voucher_id)),
+        )
+        
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)
