@@ -41,9 +41,9 @@ function Protected({children}){
   return children;
 }
 
-export default function App(){
-  const basename=import.meta.env.PROD?"/app/ops":"/";
-
+export default function App() {
+  const basename = import.meta.env.PROD ? "/ops" : "/";
+  
   return(
     <BrowserRouter basename={basename}>
       <Routes>
