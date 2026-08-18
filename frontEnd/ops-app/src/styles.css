@@ -8964,3 +8964,82 @@ input:focus,select:focus,textarea:focus{
     grid-template-columns:1fr;
   }
 }
+
+/* ============================================
+   GLOBAL FONT SIZE FIXES - OPS APP
+   ============================================ */
+
+/* ---- 1. AUTH / LOGIN PAGE ---- */
+.eyebrow { font-size: 12px !important; }
+
+/* ---- 2. SIDEBAR ---- */
+.nav-label { font-size: 11px !important; }
+.user-copy small { font-size: 12px !important; }
+.company-switch small { font-size: 11px !important; }
+
+/* ---- 3. TOPBAR ---- */
+.setup-progress span { font-size: 12px !important; }
+.step > span { font-size: 12px !important; }
+
+/* ---- 4. SETUP WIZARD ---- */
+.approval-inbox-head p,
+.approval-review-head p { font-size: 13px !important; }
+.setup-side-card > p { font-size: 13px !important; }
+
+/* ---- 5. APPROVALS PAGE ---- */
+.priority-dot { font-size: 10px !important; }
+.approval-list-copy strong { font-size: 13px !important; }
+.approval-list-copy span,
+.approval-list-copy small { font-size: 11px !important; }
+.approval-list-stage span { font-size: 11px !important; }
+.approval-list-stage strong { font-size: 12px !important; }
+.approval-list-amount strong { font-size: 13px !important; }
+.approval-list-amount small { font-size: 11px !important; }
+.approval-stage-banner span { font-size: 11px !important; }
+.approval-stage-banner strong { font-size: 13px !important; }
+.approval-detail-grid span { font-size: 11px !important; }
+.approval-detail-grid strong { font-size: 13px !important; }
+.approval-detail-grid small { font-size: 11px !important; }
+.approval-review-section > p { font-size: 13px !important; }
+.approval-section-heading p { font-size: 11px !important; }
+.budget-state { font-size: 10px !important; }
+.approval-info-note { font-size: 11px !important; line-height: 1.6 !important; }
+.approval-budget-summary span { font-size: 11px !important; }
+.approval-budget-summary strong { font-size: 13px !important; }
+.approval-budget-summary p { font-size: 11px !important; }
+.decision-option strong { font-size: 13px !important; }
+.decision-option span { font-size: 11px !important; }
+.approval-governance-note { font-size: 11px !important; line-height: 1.6 !important; }
+
+/* ---- 6. DEPARTMENTS / POSITIONS / TEAMS ---- */
+.department-card small { font-size: 12px !important; }
+.position-row small { font-size: 12px !important; }
+.level-pill { font-size: 12px !important; }
+.position-edit-btn { font-size: 12px !important; }
+.team-person small,
+.team-meta small { font-size: 12px !important; }
+.role-pills span { font-size: 11px !important; }
+.section-heading p { font-size: 13px !important; }
+.empty-state p,
+.beautiful-empty p { font-size: 14px !important; }
+
+/* ---- 7. GOVERNANCE / DASHBOARD ---- */
+.governance-badge { font-size: 11px !important; }
+.metric-card > span { font-size: 13px !important; }
+.metric-card > small { font-size: 11px !important; }
+.access-row small { font-size: 11px !important; }
+.access-row > span { font-size: 12px !important; }
+
+/* ---- 8. ORGANISATION OVERVIEW ---- */
+.setup-summary-grid span { font-size: 12px !important; }
+.organisation-summary-card span { font-size: 12px !important; }
+.organisation-department-info small { font-size: 11px !important; }
+.organisation-department-counts span { font-size: 11px !important; }
+.organisation-wide-row small { font-size: 11px !important; }
+
+/* ---- 9. USER ACCESS EDITOR ---- */
+.user-access-head p { font-size: 13px !important; }
+.user-access-field label { font-size: 13px !important; font-weight: 700 !important; }
+
+/* ---- 10. MISCELLANEOUS ---- */
+.approval-inbox-total { font-size: 13px !important; }
