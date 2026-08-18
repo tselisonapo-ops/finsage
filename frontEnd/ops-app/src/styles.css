@@ -9043,3 +9043,745 @@ input:focus,select:focus,textarea:focus{
 
 /* ---- 10. MISCELLANEOUS ---- */
 .approval-inbox-total { font-size: 13px !important; }
+
+/* ============================================
+   PROCUREMENT VENDOR VIEW - FONT SIZE FIXES
+   ============================================ */
+
+/* --- Vendor Directory List (Left Sidebar) --- */
+.vendor-directory-copy strong {
+  font-size: 14px !important;  /* was 9px - vendor name */
+}
+.vendor-directory-copy small {
+  font-size: 12px !important;  /* was 8px - vendor subtitle */
+}
+.vendor-mini-status {
+  font-size: 11px !important;  /* was 7px - status badges */
+}
+.vendor-directory-avatar {
+  font-size: 14px !important;  /* was 12px - avatar initial */
+}
+
+/* --- Vendor Profile Header --- */
+.vendor-profile-identity p {
+  font-size: 13px !important;  /* was 8px - profile description */
+}
+.vendor-preferred-badge {
+  font-size: 11px !important;  /* was 7px - preferred badge */
+}
+.vendor-profile-name h2 {
+  font-size: 20px !important;  /* was 17px - vendor name heading */
+}
+
+/* --- Vendor Form Fields --- */
+.input-suffix span {
+  font-size: 12px !important;  /* was 8px - input suffix (days, etc.) */
+}
+.vendor-switch-row strong {
+  font-size: 13px !important;  /* was 9px - switch labels */
+}
+.vendor-switch-row span {
+  font-size: 11px !important;  /* was 8px - switch descriptions */
+}
+
+/* --- Vendor Tags/Categories --- */
+.vendor-category-tag {
+  font-size: 11px !important;  /* was 8px - category tags */
+}
+.vendor-no-tags {
+  font-size: 12px !important;  /* was 8px - empty tags message */
+}
+
+/* --- Vendor Contacts Section --- */
+.vendor-contact-empty {
+  font-size: 12px !important;  /* was 8px - empty state message */
+}
+.vendor-contact-avatar {
+  font-size: 13px !important;  /* was 10px - contact avatar */
+}
+.vendor-contact-name strong {
+  font-size: 14px !important;  /* was 9px - contact person name */
+}
+.vendor-contact-name span {
+  font-size: 10px !important;  /* was 6px - primary badge (CRITICAL!) */
+}
+.vendor-contact-card small {
+  font-size: 11px !important;  /* was 7px - contact role */
+}
+.vendor-contact-meta span {
+  font-size: 11px !important;  /* was 7px - email/phone info */
+}
+.vendor-contact-form-head strong {
+  font-size: 14px !important;  /* was 9px - form heading */
+}
+
+/* --- Vendor Side Panel (Right Sidebar) --- */
+.vendor-side-heading strong {
+  font-size: 13px !important;  /* was 9px - card titles */
+}
+.vendor-side-heading span {
+  font-size: 11px !important;  /* was 7px - card subtitles */
+}
+.vendor-info-list span,
+.vendor-compliance-state span {
+  font-size: 11px !important;  /* was 7px - info labels */
+}
+.vendor-info-list strong,
+.vendor-compliance-state strong {
+  font-size: 12px !important;  /* was 8px - info values */
+}
+.vendor-side-card textarea {
+  font-size: 13px !important;  /* was 8px - textarea text */
+}
+
+/* --- Vendor Section Headings --- */
+.vendor-section-heading h3 {
+  font-size: 16px !important;  /* was 14px - section titles */
+}
+
+/* --- Procurement Page Header --- */
+.page-back-link {
+  font-size: 12px !important;  /* was 9px - back link */
+}
+
+/* --- Procurement Policy/Threshold Sections --- */
+.procurement-section-heading p {
+  font-size: 12px !important;  /* was 9px - section description */
+}
+.procurement-policy-check span {
+  font-size: 11px !important;  /* was 9px - checkbox label */
+}
+.procurement-policy-check strong {
+  font-size: 12px !important;  /* was 8px - checkbox title */
+}
+.procurement-threshold-card small {
+  font-size: 11px !important;  /* was 9px - threshold subtitle */
+}
+.procurement-threshold-card > div {
+  font-size: 11px !important;  /* was 9px - threshold value */
+}
+.procurement-add-threshold-head span {
+  font-size: 11px !important;  /* was 7px - add threshold label */
+}
+.procurement-add-threshold-head strong {
+  font-size: 13px !important;  /* was 9px - add threshold title */
+}
+.procurement-add-threshold-head > div > div {
+  font-size: 11px !important;  /* was 7px - threshold hint */
+}
+
+/* ============================================
+   OPS-APP COMPLETE FONT SIZE FIXES
+   All pages - Every tiny font fixed!
+   ============================================ */
+
+/* ===== SIDEBAR & NAVIGATION ===== */
+.nav-label {
+  font-size: 11px !important;  /* was 9px */
+}
+.user-copy small {
+  font-size: 12px !important;  /* was 10px */
+}
+.company-switch small {
+  font-size: 11px !important;  /* was 9px */
+}
+
+/* ===== SETUP & ONBOARDING ===== */
+.setup-progress span {
+  font-size: 12px !important;  /* was 10px */
+}
+.step > span {
+  font-size: 12px !important;  /* was 10px */
+}
+.setup-side-card > p {
+  font-size: 13px !important;  /* was 12px */
+}
+
+/* ===== APPROVALS PAGE ===== */
+.approval-inbox-head p,
+.approval-review-head p {
+  font-size: 12px !important;  /* was 10px */
+}
+.approval-list-copy strong {
+  font-size: 13px !important;  /* was 11px */
+}
+.approval-list-copy span,
+.approval-list-copy small {
+  font-size: 11px !important;  /* was 9px */
+}
+.priority-dot {
+  font-size: 10px !important;  /* was 7px */
+}
+.approval-list-stage span {
+  font-size: 11px !important;  /* was 8px */
+}
+.approval-list-stage strong {
+  font-size: 12px !important;  /* was 9px */
+}
+.approval-list-amount strong {
+  font-size: 12px !important;  /* was 10px */
+}
+.approval-list-amount small {
+  font-size: 11px !important;  /* was 8px */
+}
+.approval-stage-banner span {
+  font-size: 10px !important;  /* was 7px */
+}
+.approval-stage-banner strong {
+  font-size: 13px !important;  /* was 11px */
+}
+.approval-detail-grid span {
+  font-size: 11px !important;  /* was 8px */
+}
+.approval-detail-grid strong {
+  font-size: 12px !important;  /* was 10px */
+}
+.approval-detail-grid small {
+  font-size: 11px !important;  /* was 8px */
+}
+.approval-review-section > p {
+  font-size: 12px !important;  /* was 10px */
+}
+.approval-section-heading p {
+  font-size: 11px !important;  /* was 9px */
+}
+.budget-state {
+  font-size: 10px !important;  /* was 8px */
+}
+.approval-info-note {
+  font-size: 11px !important;  /* was 9px */
+}
+.approval-budget-summary span {
+  font-size: 11px !important;  /* was 8px */
+}
+.approval-budget-summary p {
+  font-size: 11px !important;  /* was 9px */
+}
+
+/* ===== ORGANIZATION / TEAM ===== */
+.department-card small {
+  font-size: 12px !important;  /* was 10px */
+}
+.empty-state p,
+.beautiful-empty p {
+  font-size: 14px !important;  /* was 12px */
+}
+.position-row small {
+  font-size: 12px !important;  /* was 10px */
+}
+.level-pill {
+  font-size: 12px !important;  /* was 10px */
+}
+.position-edit-btn {
+  font-size: 12px !important;  /* was 10px */
+}
+.team-person small,
+.team-meta small {
+  font-size: 12px !important;  /* was 10px */
+}
+.team-meta strong {
+  font-size: 13px !important;  /* was 12px */
+}
+.role-pills span {
+  font-size: 11px !important;  /* was 9px */
+}
+.organisation-department-info small {
+  font-size: 11px !important;  /* was 9px */
+}
+.organisation-department-counts span {
+  font-size: 11px !important;  /* was 9px */
+}
+.organisation-wide-row small {
+  font-size: 11px !important;  /* was 9px */
+}
+.user-access-head p {
+  font-size: 12px !important;  /* was 10px */
+}
+.user-access-field label {
+  font-size: 12px !important;  /* was 10px */
+}
+.user-role-head small {
+  font-size: 11px !important;  /* was 9px */
+}
+.user-role-head > span {
+  font-size: 11px !important;  /* was 9px */
+}
+.user-role-option strong {
+  font-size: 12px !important;  /* was 10px */
+}
+.user-role-option span {
+  font-size: 11px !important;  /* was 9px */
+}
+/* ===== GOVERNANCE ===== */
+.governance-badge {
+  font-size: 11px !important;  /* was 9px */
+}
+.metric-card > small {
+  font-size: 11px !important;  /* was 9px */
+}
+.access-row small {
+  font-size: 11px !important;  /* was 9px */
+}
+.access-row > span {
+  font-size: 12px !important;  /* was 10px */
+}
+.governance-config-head p {
+  font-size: 13px !important;  /* was 12px */
+}
+.governance-rules-head p {
+  font-size: 12px !important;  /* was 11px */
+}
+.governance-rule strong {
+  font-size: 13px !important;  /* was 12px */
+}
+.governance-save-bar strong {
+  font-size: 12px !important;  /* was 11px */
+}
+.governance-save-bar span {
+  font-size: 11px !important;  /* was 9px */
+}
+.governance-step-order span {
+  font-size: 12px !important;  /* was 10px */
+}
+
+/* ===== REQUISITIONS / REQUESTS ===== */
+.request-returned-banner span {
+  font-size: 11px !important;  /* was 9px */
+}
+.request-revision-note {
+  font-size: 10px !important;  /* was 8px */
+}
+.req-section-heading p {
+  font-size: 12px !important;  /* was 11px */
+}
+.req-readonly-field span {
+  font-size: 11px !important;  /* was 9px */
+}
+.req-readonly-field strong {
+  font-size: 13px !important;  /* was 12px */
+}
+.req-line-number {
+  font-size: 12px !important;  /* was 10px */
+}
+.req-line-total span {
+  font-size: 11px !important;  /* was 10px */
+}
+.req-line-total strong {
+  font-size: 13px !important;  /* was 12px */
+}
+.req-budget-result-head span {
+  font-size: 11px !important;  /* was 10px */
+}
+.req-budget-values {
+  font-size: 12px !important;  /* was 11px */
+}
+.document-preview-toolbar span {
+  font-size: 11px !important;  /* was 9px */
+}
+.request-document-row strong {
+  font-size: 12px !important;  /* was 9px */
+}
+.request-document-row span {
+  font-size: 11px !important;  /* was 8px */
+}
+.request-audit-row strong {
+  font-size: 11px !important;  /* was 9px */
+}
+.request-audit-row span {
+  font-size: 11px !important;  /* was 8px */
+}
+.document-preview-status > span:first-child:not(.status-pill) {
+  font-size: 10px !important;  /* was 8px */
+}
+
+/* ===== DOCUMENT PREVIEW (Requisition PDF) ===== */
+.doc-company-block {
+  font-size: 12px !important;  /* was 10px */
+}
+.doc-info-grid span {
+  font-size: 10px !important;  /* was 8px */
+}
+.doc-info-grid strong {
+  font-size: 12px !important;  /* was 11px */
+}
+.doc-section-title {
+  font-size: 12px !important;  /* was 10px */
+}
+.doc-section p {
+  font-size: 12px !important;  /* was 11px */
+}
+.doc-table-row {
+  font-size: 11px !important;  /* was 10px */
+}
+.doc-table-head {
+  font-size: 10px !important;  /* was 9px */
+}
+.doc-table-empty {
+  font-size: 12px !important;  /* was 10px */
+}
+.doc-budget-grid {
+  font-size: 11px !important;  /* was 10px */
+}
+.doc-approval-list > div {
+  font-size: 11px !important;  /* was 10px */
+}
+.doc-highlight span,
+.doc-lease-focus span,
+.travel-banner span,
+.doc-capex-banner span {
+  font-size: 10px !important;  /* was 8px */
+}
+.doc-highlight p,
+.doc-lease-focus p {
+  font-size: 11px !important;  /* was 10px */
+}
+.payment-summary span {
+  font-size: 10px !important;  /* was 8px (first), 7px (second) */
+}
+.payment-summary strong {
+  font-size: 16px !important;  /* keep as is */
+}
+.doc-muted {
+  font-size: 11px !important;  /* was 10px, 8px */
+}
+.doc-footer {
+  font-size: 10px !important;  /* was 9px, 7px */
+}
+.doc-finance-grid {
+  font-size: 10px !important;  /* was 8px */
+}
+
+/* ===== SOURCING / RFQ ===== */
+.sourcing-start-grid span {
+  font-size: 10px !important;  /* was 7px */
+}
+.sourcing-start-grid strong {
+  font-size: 12px !important;  /* was 9px */
+}
+.sourcing-start-card > p {
+  font-size: 11px !important;  /* was 8px */
+}
+.rfq-section-heading strong {
+  font-size: 12px !important;  /* was 10px */
+}
+.rfq-section-heading span {
+  font-size: 10px !important;  /* was 8px */
+}
+.rfq-item-line {
+  font-size: 10px !important;  /* was 8px */
+}
+.rfq-item strong {
+  font-size: 12px !important;  /* was 9px */
+}
+.rfq-item span,
+.rfq-item p {
+  font-size: 11px !important;  /* was 8px */
+}
+.rfq-vendor-avatar {
+  font-size: 12px !important;  /* was 10px */
+}
+.rfq-selected-vendor strong,
+.rfq-vendor-option strong {
+  font-size: 12px !important;  /* was 9px */
+}
+.rfq-selected-vendor span,
+.rfq-vendor-option span {
+  font-size: 10px !important;  /* was 7px */
+}
+.rfq-preview-toolbar span {
+  font-size: 10px !important;  /* was 7px */
+}
+.rfq-preview-toolbar strong {
+  font-size: 11px !important;  /* was 9px */
+}
+.rfq-doc-brand span {
+  font-size: 10px !important;  /* was 8px */
+}
+.rfq-doc-number span {
+  font-size: 10px !important;  /* was 7px */
+}
+.rfq-doc-meta span {
+  font-size: 9px !important;  /* was 6px - CRITICAL! */
+}
+.rfq-doc-meta strong {
+  font-size: 10px !important;  /* was 8px */
+}
+.rfq-doc-section-title {
+  font-size: 10px !important;  /* was 7px */
+}
+.rfq-doc-section p {
+  font-size: 10px !important;  /* was 8px */
+}
+.rfq-doc-table-head span,
+.rfq-doc-table-row span {
+  font-size: 10px !important;  /* was 7px */
+}
+.rfq-doc-footer {
+  font-size: 10px !important;  /* was 7px */
+}
+
+/* ===== EVALUATION / QUOTE COMPARISON ===== */
+.evaluation-summary-card span {
+  font-size: 10px !important;  /* was 7px */
+}
+.evaluation-summary-card small {
+  font-size: 10px !important;  /* was 7px */
+}
+.evaluation-declaration-copy strong {
+  font-size: 12px !important;  /* was 9px */
+}
+.evaluation-declaration-copy span {
+  font-size: 10px !important;  /* was 8px */
+}
+.evaluation-declaration-controls label {
+  font-size: 10px !important;  /* was 8px */
+}
+.evaluation-section-heading p {
+  font-size: 10px !important;  /* was 8px */
+}
+.quote-comparison-table th,
+.quote-comparison-table td {
+  font-size: 10px !important;  /* was 8px */
+}
+.quote-comparison-table thead th:first-child {
+  font-size: 10px !important;  /* was 7px */
+}
+.quote-comparison-table tbody th {
+  font-size: 10px !important;  /* was 7px */
+}
+.quote-comparison-table td > strong {
+  font-size: 11px !important;  /* was 9px */
+}
+.quote-comparison-table td > small {
+  font-size: 10px !important;  /* was 7px */
+}
+.quote-column-avatar {
+  font-size: 10px !important;  /* was 8px */
+}
+.quote-column-vendor > strong {
+  font-size: 11px !important;  /* was 8px */
+}
+.lowest-badge {
+  font-size: 9px !important;  /* was 6px - CRITICAL! */
+}
+.evaluation-criterion-header strong {
+  font-size: 11px !important;  /* was 9px */
+}
+.evaluation-criterion-header span {
+  font-size: 10px !important;  /* was 7px */
+}
+.criterion-meta > span {
+  font-size: 9px !important;  /* was 6px - CRITICAL! */
+}
+.criterion-vendor-heading strong {
+  font-size: 10px !important;  /* was 8px */
+}
+.criterion-vendor-heading span {
+  font-size: 9px !important;  /* was 6px - CRITICAL! */
+}
+.criterion-vendor-card label {
+  font-size: 10px !important;  /* was 7px */
+}
+.pass-fail-choice button {
+  font-size: 10px !important;  /* was 8px */
+}
+.automatic-score span {
+  font-size: 10px !important;  /* was 7px */
+}
+.ghost-btn.compact {
+  font-size: 10px !important;  /* was 7px */
+}
+.evaluation-results-empty {
+  font-size: 11px !important;  /* was 8px */
+}
+.evaluation-result-vendor strong {
+  font-size: 11px !important;  /* was 9px */
+}
+.evaluation-result-vendor span,
+.evaluation-result-row > div:not(.evaluation-rank):not(.evaluation-result-vendor) > span {
+  font-size: 10px !important;  /* was 7px, 8px */
+}
+.evaluation-result-row > div:not(.evaluation-rank):not(.evaluation-result-vendor) > strong {
+  font-size: 11px !important;  /* was 8px, 9px */
+}
+
+/* ===== AWARD SECTION ===== */
+.award-vendor-copy strong {
+  font-size: 13px !important;  /* was 10px */
+}
+.award-vendor-copy span {
+  font-size: 10px !important;  /* was 7px */
+}
+.award-result-stat span {
+  font-size: 10px !important;  /* was 7px */
+}
+.award-result-stat strong {
+  font-size: 11px !important;  /* was 9px */
+}
+.award-rank-check strong {
+  font-size: 11px !important;  /* was 9px */
+}
+.award-rank-check p {
+  font-size: 10px !important;  /* was 8px */
+}
+.award-deviation-box strong {
+  font-size: 11px !important;  /* was 9px */
+}
+.award-deviation-box p {
+  font-size: 10px !important;  /* was 8px */
+}
+.award-section > label,
+.award-deviation-box label {
+  font-size: 10px !important;  /* was 8px */
+}
+.award-readonly-reason {
+  font-size: 10px !important;  /* was 8px */
+}
+.award-task-row strong {
+  font-size: 10px !important;  /* was 8px */
+}
+.award-task-row span {
+  font-size: 10px !important;  /* was 7px */
+}
+.award-control-list span {
+  font-size: 10px !important;  /* was 7px */
+}
+.award-control-list strong {
+  font-size: 10px !important;  /* was 8px */
+}
+.award-pending-card strong,
+.award-approved-card strong,
+.award-rejected-card strong {
+  font-size: 11px !important;  /* was 9px */
+}
+.award-pending-card span,
+.award-approved-card span {
+  font-size: 10px !important;  /* was 8px */
+}
+.award-pending-card p,
+.award-approved-card p,
+.award-rejected-card p {
+  font-size: 10px !important;  /* was 7px */
+}
+
+/* ===== PO (Purchase Order) ===== */
+.po-section-heading strong {
+  font-size: 12px !important;  /* was 10px */
+}
+.po-section-heading span {
+  font-size: 10px !important;  /* was 8px */
+}
+
+/* ===== PROCUREMENT VENDOR VIEW (from before - included for completeness) ===== */
+.vendor-directory-copy strong {
+  font-size: 14px !important;
+}
+.vendor-directory-copy small {
+  font-size: 12px !important;
+}
+.vendor-mini-status {
+  font-size: 11px !important;
+}
+.vendor-directory-avatar {
+  font-size: 14px !important;
+}
+.vendor-profile-identity p {
+  font-size: 13px !important;
+}
+.vendor-preferred-badge {
+  font-size: 11px !important;
+}
+.vendor-profile-name h2 {
+  font-size: 20px !important;
+}
+.input-suffix span {
+  font-size: 12px !important;
+}
+.vendor-switch-row strong {
+  font-size: 13px !important;
+}
+.vendor-switch-row span {
+  font-size: 11px !important;
+}
+.vendor-category-tag {
+  font-size: 11px !important;
+}
+.vendor-no-tags {
+  font-size: 12px !important;
+}
+.vendor-contact-empty {
+  font-size: 12px !important;
+}
+.vendor-contact-avatar {
+  font-size: 13px !important;
+}
+.vendor-contact-name strong {
+  font-size: 14px !important;
+}
+.vendor-contact-name span {
+  font-size: 10px !important;  /* was 6px - CRITICAL! */
+}
+.vendor-contact-card small {
+  font-size: 11px !important;
+}
+.vendor-contact-meta span {
+  font-size: 11px !important;
+}
+.vendor-contact-form-head strong {
+  font-size: 14px !important;
+}
+.vendor-side-heading strong {
+  font-size: 13px !important;
+}
+.vendor-side-heading span {
+  font-size: 11px !important;
+}
+.vendor-info-list span,
+.vendor-compliance-state span {
+  font-size: 11px !important;
+}
+.vendor-info-list strong,
+.vendor-compliance-state strong {
+  font-size: 12px !important;
+}
+.vendor-side-card textarea {
+  font-size: 13px !important;
+}
+.vendor-section-heading h3 {
+  font-size: 16px !important;
+}
+.page-back-link {
+  font-size: 12px !important;
+}
+.procurement-section-heading p {
+  font-size: 12px !important;
+}
+.procurement-policy-check span {
+  font-size: 11px !important;
+}
+.procurement-policy-check strong {
+  font-size: 12px !important;
+}
+.procurement-threshold-card small {
+  font-size: 11px !important;
+}
+.procurement-threshold-card > div {
+  font-size: 11px !important;
+}
+.procurement-add-threshold-head span {
+  font-size: 11px !important;
+}
+.procurement-add-threshold-head strong {
+  font-size: 13px !important;
+}
+.procurement-add-threshold-head > div > div {
+  font-size: 11px !important;
+}
+
+/* ===== SETUP SUMMARY ===== */
+.setup-summary-grid span {
+  font-size: 12px !important;  /* was 10px */
+}
+.organisation-summary-card span {
+  font-size: 12px !important;  /* was 11px */
+}
