@@ -25,6 +25,9 @@ import ProcurementCasePage from "./pages/ProcurementCasePage";
 import AwardPage from "./pages/AwardPage";
 import PurchaseOrderPage from "./pages/PurchaseOrderPage";
 import ReceiptPage from "./pages/ReceiptPage";
+import ReturnsPage from "./pages/ReturnsPage";
+import ContractsPage from "./pages/ContractsPage";
+import ProcurementDashboardPage from "./pages/ProcurementDashboardPage";
 
 import VendorInvoicePage from "./pages/VendorInvoicePage";
 import PayablesQueuePage from "./pages/PayablesQueuePage";
@@ -41,15 +44,15 @@ function Protected({children}){
   return children;
 }
 
-export default function App() {
-  const basename = import.meta.env.PROD ? "/ops" : "/";
-  
+export default function App(){
+  const basename=import.meta.env.PROD?"/app/ops":"/";
+
   return(
     <BrowserRouter basename={basename}>
       <Routes>
         <Route path="/signin" element={<SignInPage/>}/>
         <Route path="/accept-invite" element={<AcceptInvitePage/>}/>
-
+        <Route path="/ops/accept-invite" element={<AcceptInvitePage/>}/>
         <Route path="/" element={<Protected><DashboardPage/></Protected>}/>
 
         <Route path="/setup" element={<Protected><SetupPage/></Protected>}/>
@@ -73,6 +76,13 @@ export default function App() {
         <Route path="/procurement/:caseId/award" element={<Protected><AwardPage/></Protected>}/>
         <Route path="/procurement/:caseId/purchase-order/:poId" element={<Protected><PurchaseOrderPage/></Protected>}/>
         <Route path="/procurement/:caseId/receipts/:receiptId" element={<Protected><ReceiptPage/></Protected>}/>
+        
+        {/* Phase 5 - Returns, Contracts, Dashboard */}
+        <Route path="/procurement/receipts/:receiptId/returns" element={<Protected><ReturnsPage/></Protected>}/>
+        <Route path="/procurement/receipts/:receiptId/returns/:returnId" element={<Protected><ReturnsPage/></Protected>}/>
+        <Route path="/procurement/contracts" element={<Protected><ContractsPage/></Protected>}/>
+        <Route path="/procurement/contracts/:contractId" element={<Protected><ContractsPage/></Protected>}/>
+        <Route path="/procurement/dashboard" element={<Protected><ProcurementDashboardPage/></Protected>}/>
 
         <Route path="/accounts-payable/invoices/:invoiceId" element={<Protected><VendorInvoicePage/></Protected>}/>
 

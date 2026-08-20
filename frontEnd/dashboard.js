@@ -2345,6 +2345,20 @@ const ENDPOINTS = {
     update:(cid, qid) => `${API_BASE}/api/companies/${cid}/quotes/${qid}`, 
   },
 
+  taxFiling: {
+      authorities: (cid) =>
+          `${API_BASE}/api/companies/${encodeURIComponent(cid)}/payroll/tax-filing/authorities`,
+
+      validate: (cid) =>
+          `${API_BASE}/api/companies/${encodeURIComponent(cid)}/payroll/tax-filing/validate`,
+
+      export: (cid) =>
+          `${API_BASE}/api/companies/${encodeURIComponent(cid)}/payroll/tax-filing/export`,
+
+      preview: (cid, authority, period) =>
+          `${API_BASE}/api/companies/${encodeURIComponent(cid)}/payroll/tax-filing/preview?authority=${encodeURIComponent(authority)}&period=${encodeURIComponent(period)}`,
+  },
+
   payroll: {
     // GET/POST/PATCH /api/companies/<cid>/payroll/settings
     settings: (companyId) =>
@@ -18534,15 +18548,13 @@ async function buildVatLinesForJournalLine(line, vatCfg) {
 async function parseVatPeriodSelection() {
   const sel = document.getElementById("vatPeriodSelect");
 
-  if (sel) {
-    sel.dataset.bound = "";
-    sel.innerHTML = `<option value="">Select VAT period</option>`;
+  // ✅ Only bind once - don't re-render here!
+  if (!sel || sel.dataset.bound !== "1") {
+    await bindVatPeriodFilter();
   }
 
-  await bindVatPeriodFilter();
-  await renderVatDashboard();
-
   try {
+    // ✅ Just return the parsed data, don't trigger rendering
     const parsed = JSON.parse(decodeURIComponent(sel.value));
     if (!parsed?.start_date || !parsed?.end_date) return null;
 
@@ -18624,9 +18636,17 @@ function setVatFilingBadgeState({ filing, period }) {
 }
 
 function fmtLocalDate(d) {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 10);
+  if (!d) return '';  // Handle null/undefined/empty
+  try {
+    const dt = d instanceof Date ? d : new Date(d);
+    if (isNaN(dt.getTime())) return '';  // Handle invalid dates
+    return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 10);
+  } catch (e) {
+    console.warn('fmtLocalDate: Invalid date input', d, e);
+    return '';
+  }
 }
 
 function computeCurrentVatPeriod(today = new Date(), cfg = {}) {
@@ -19383,8 +19403,12 @@ async function bindVatPeriodFilter() {
       sel.value = "";
     }
 
-    sel.addEventListener("change", async () => {
-      await renderVatDashboard();
+    sel.addEventListener("change", async (e) => {
+      // ✅ Only respond to user-initiated changes, not programmatic ones
+      if (e.isTrusted) {  // isTrusted = true only for real user interactions
+        console.log('User selected VAT period, refreshing dashboard...');
+        await renderVatDashboard();
+      }
     });
 
   } catch (err) {
@@ -19406,6 +19430,7 @@ async function bindVatPeriodFilter() {
   }
 }
 
+let _isRendering = false;
 async function renderVatDashboard() {
   const cur = (typeof window.resolveCurrency === "function")
     ? window.resolveCurrency()
@@ -19427,7 +19452,7 @@ async function renderVatDashboard() {
     : `${cur} ${Number(n || 0).toFixed(2)}`;
 
   let period = (typeof parseVatPeriodSelection === "function")
-    ? parseVatPeriodSelection()
+    ? await parseVatPeriodSelection()  // ✅ ADD AWAIT HERE!
     : null;
 
   if (!period) {
@@ -19507,6 +19532,22 @@ async function renderVatDashboard() {
   const fromStr = period.start_date || fmtLocalDate(period.start);
   const toStr = period.end_date || fmtLocalDate(period.end);
 
+  // ✅ ADD THIS BLOCK RIGHT AFTER:
+  if (!fromStr || !toStr) {
+    console.warn('renderVatDashboard: Missing period dates', { 
+      period, fromStr, toStr,
+      start_date: period?.start_date, 
+      end_date: period?.end_date,
+      start: period?.start,
+      end: period?.end
+    });
+    
+    // Show user-friendly message instead of crashing
+    const rangeEl = document.getElementById("vatPeriodRange");
+    if (rangeEl) rangeEl.textContent = 'Please select a VAT period';
+    
+    return;  // ✅ Exit gracefully - don't make API calls
+  }
   const lblEl = document.getElementById("vatPeriodLabel");
   const rangeEl = document.getElementById("vatPeriodRange");
   const inEl = document.getElementById("vatInputAmount");
@@ -19554,11 +19595,18 @@ async function renderVatDashboard() {
 
     if (!cid) throw new Error("No company selected");
 
-    const [linesRes, summary, filingRes] = await Promise.all([
-      apiFetch(ENDPOINTS.vatLines(cid, fromStr, toStr), { method: "GET" }),
-      apiFetch(ENDPOINTS.vatSummary(cid, fromStr, toStr), { method: "GET" }),
-      apiFetch(ENDPOINTS.vatFilings(cid, fromStr, toStr), { method: "GET" }),
-    ]);
+    let linesRes = [], summary = {}, filingRes = [];
+
+    try {
+      [linesRes, summary, filingRes] = await Promise.all([
+        apiFetch(ENDPOINTS.vatLines(cid, fromStr, toStr), { method: "GET" }),
+        apiFetch(ENDPOINTS.vatSummary(cid, fromStr, toStr), { method: "GET" }),
+        apiFetch(ENDPOINTS.vatFilings(cid, fromStr, toStr), { method: "GET" }),
+      ]);
+    } catch (apiErr) {
+      console.error('VAT API error:', apiErr);
+      // Don't rethrow - show empty state instead of crashing
+    }
 
     const rows = Array.isArray(linesRes) ? linesRes : (linesRes?.lines || []);
 
@@ -19941,6 +19989,19 @@ async function postJournalEntry(entryPayload, opts = {}) {
 
     const jid = data?.journal_id ?? data?.id ?? null;
 
+    if (!jid) {
+      return {
+        ok: false,
+        ambiguous: true,
+        error: new Error("Journal posted but server did not return a journal ID."),
+      };
+    }
+
+    return {
+      ok: true,
+      journal_id: jid,
+    };
+
     const jobs = [];
     if (typeof renderLedgerTable === "function") jobs.push(Promise.resolve().then(renderLedgerTable));
     if (typeof renderTB === "function") jobs.push(Promise.resolve().then(renderTB));
@@ -19952,18 +20013,58 @@ async function postJournalEntry(entryPayload, opts = {}) {
 
     return jid;
   } catch (e) {
-    if (e?.status === 409 || String(e?.message || "").toLowerCase().includes("period is locked")) {
-      if (showAlerts) alert(`This period is locked for GL on ${txDate}.`);
-      return null;
+    const status = e?.status;
+    const message = String(e?.message || "").toLowerCase();
+
+    // Definite period-lock rejection
+    if (
+      status === 409 ||
+      message.includes("period is locked") ||
+      message.includes("period_locked")
+    ) {
+      if (showAlerts) {
+        alert(`This period is locked for GL on ${txDate}.`);
+      }
+
+      return {
+        ok: false,
+        ambiguous: false,
+        error: e,
+      };
     }
 
     console.error("postJournalEntry failed", e);
 
-    if (showAlerts) {
-      alert(`Journal post failed: ${e?.message || "Unknown error"}`);
+    // Definite HTTP rejection from the backend.
+    // The backend explicitly responded, so the transaction did not
+    // silently disappear after a successful commit.
+    if (status >= 400 && status < 500) {
+      if (showAlerts) {
+        alert(`Journal post failed: ${e?.message || "Unknown error"}`);
+      }
+
+      return {
+        ok: false,
+        ambiguous: false,
+        error: e,
+      };
     }
 
-    return null;
+    // Network error / connection dropped / response could not be
+    // received or interpreted. The backend MAY have committed.
+    if (showAlerts) {
+      alert(
+        `The journal submission could not be confirmed.\n\n` +
+        `The server may have posted it already. ` +
+        `Your journal lines have been kept.`
+      );
+    }
+
+    return {
+      ok: false,
+      ambiguous: true,
+      error: e,
+    };
   }
 }
 
@@ -20772,12 +20873,57 @@ async function postJournalBatch() {
   }
 
   // Basic validation
+  // Validate and clean journal lines before posting
+  const cleanedLines = [];
+
   for (const [idx, ln] of JRNL_LINES.entries()) {
-    const hasAmount = (+ln.debit || 0) || (+ln.credit || 0);
-    if (hasAmount && !ln.account) {
-      alert(`Line ${idx + 1} has a debit/credit but no account.`);
+    const account = String(ln?.account ?? "").trim();
+    const debit = Number(ln?.debit || 0);
+    const credit = Number(ln?.credit || 0);
+
+    // Completely empty/stale line: ignore it
+    if (!account && debit === 0 && credit === 0) {
+      console.warn("[JRNL] Ignoring empty/stale line", idx + 1, ln);
+      continue;
+    }
+
+    // Invalid account with an amount
+    if (
+      !account ||
+      account === "undefined" ||
+      account === "null"
+    ) {
+      alert(`Line ${idx + 1} has an amount but no valid account.`);
+      console.error("[JRNL] Invalid journal line", {
+        index: idx,
+        line: ln,
+      });
       return;
     }
+
+    // No amount
+    if (debit === 0 && credit === 0) {
+      console.warn("[JRNL] Ignoring zero-value line", idx + 1, ln);
+      continue;
+    }
+
+    // Never allow both
+    if (debit > 0 && credit > 0) {
+      alert(`Line ${idx + 1} cannot have both debit and credit.`);
+      return;
+    }
+
+    cleanedLines.push({
+      ...ln,
+      account,
+      debit,
+      credit,
+    });
+  }
+
+  if (!cleanedLines.length) {
+    alert("No valid journal lines to post.");
+    return;
   }
 
   // Header fields (need date early for lock check)
@@ -20801,58 +20947,38 @@ async function postJournalBatch() {
     return;
   }
 
-  // VAT config
-  const vatCfg =
-    typeof buildVatConfigFromCoa === "function"
-      ? buildVatConfigFromCoa()
-      : { vat_rate: 15, vat_input_code: "BS_CA_1410", vat_output_code: "BS_CL_2310" };
-
   let totalDr = 0;
   let totalCr = 0;
   let vatTotal = 0;
 
-  // Manual lines
-  const manualLines = JRNL_LINES.map((ln) => {
-    const dr = +ln.debit || 0;
-    const cr = +ln.credit || 0;
+  const journalLines = [];
+
+  for (const [idx, ln] of JRNL_LINES.entries()) {
+    const accountCode = String(ln.account || "").trim();
+    const dr = Number(ln.debit) || 0;
+    const cr = Number(ln.credit) || 0;
+
+    // Never allow an empty/undefined account into the payload
+    if ((dr > 0 || cr > 0) && !accountCode) {
+      alert(`Line ${idx + 1} has an amount but no account.`);
+      return;
+    }
+
+    // Skip completely empty lines
+    if (dr === 0 && cr === 0) {
+      continue;
+    }
+
     totalDr += dr;
     totalCr += cr;
 
-    return {
-      account_code: String(ln.account),
+    journalLines.push({
+      account_code: accountCode,
       debit: dr,
       credit: cr,
       description: ln.memo || ln.narr || "",
-    };
-  });
-
-  // Auto VAT lines
-  const vatLines = [];
-  JRNL_LINES.forEach((ln) => {
-    if (typeof buildVatLinesForJournalLine !== "function") return;
-
-    const v = buildVatLinesForJournalLine(ln, vatCfg);
-    if (!v) return;
-
-    const debit = v.isDebit ? v.vatAmount : 0;
-    const credit = v.isDebit ? 0 : v.vatAmount;
-
-    vatLines.push({
-      account_code: String(v.account_code),
-      debit,
-      credit,
-      description:
-        ln.memo ||
-        ln.narr ||
-        (v.isDebit
-          ? `VAT Input ${v.ratePct || vatCfg.vat_rate || 15}%`
-          : `VAT Output ${v.ratePct || vatCfg.vat_rate || 15}%`),
     });
-
-    totalDr += debit;
-    totalCr += credit;
-    vatTotal += v.vatAmount;
-  });
+  }
 
   // Balanced?
   if (Math.abs(totalDr - totalCr) > 0.01) {
@@ -20860,7 +20986,6 @@ async function postJournalBatch() {
     return;
   }
 
-  // Payload
   const payload = {
     date: uiDate,
     ref,
@@ -20870,16 +20995,28 @@ async function postJournalBatch() {
     vat_amount: +vatTotal.toFixed(2),
     source: window.__JRNL_SOURCE || undefined,
     source_id: window.__JRNL_SOURCE_ID || undefined,
-    lines: manualLines.concat(vatLines),
+    lines: journalLines,
   };
-
   // ✅ Post
-const jid = await postJournalEntry(payload);
-if (!jid) return; // postJournalEntry already alerted error
+  const result = await postJournalEntry(payload);
 
-// ✅ refresh the Posted Journals list so the Reverse buttons appear
-if (typeof renderRecentJournals === "function") {
-  try { await renderRecentJournals(); }
+  if (!result?.ok) {
+    if (result?.ambiguous) {
+      alert(
+        `The journal submission could not be confirmed.\n\n` +
+        `Reference: ${ref}\n\n` +
+        `Your journal lines have NOT been cleared. ` +
+        `Please check Posted Journals before retrying.`
+      );
+    }
+
+    return;
+  }
+
+  const jid = result.journal_id;
+  // ✅ refresh the Posted Journals list so the Reverse buttons appear
+  if (typeof renderRecentJournals === "function") {
+    try { await renderRecentJournals(); }
   catch (e) { console.warn("renderRecentJournals failed", e); }
 }
 
@@ -24457,7 +24594,11 @@ function renderLedgerTable(rows, meta) {
     return;
   }
 
-  const currency = (window.CURRENT_CURRENCY || "USD").toUpperCase();
+  const currency = resolveCurrency(
+    window.CURRENT_CURRENCY ||
+    window.CURRENT_COMPANY?.currency ||
+    ""
+);
   const fmtMoney = (val) => {
     const num = Number(val || 0).toFixed(2);
     const [intPart, dec] = num.split(".");
@@ -78663,74 +78804,192 @@ async function saveEditModal() {
       returns?.items||[];
 
     renderPayrollStatutoryReturns();
+
+    if (window.__taxFiling && typeof window.__taxFiling.init === 'function') {
+        // This ensures the PAYE Export panel is ready
+        window.__taxFiling.init();
+    }
+
+    // ✅ ADD THIS: Initialize your PAYE Tax Filing module
+    if (typeof initPayeTaxFiling === 'function') {
+      initPayeTaxFiling({
+        companyId: cid(),
+        containerId: 'payeTaxFilingContainer',  // New div ID
+        endpointBase: '/api/companies/' + cid() + '/tax-filing'
+      });
+    }
   }
 
-  function renderPayrollStatutoryReturns(){
-    const el=$("payrollStatutoryReturnsList");
-    const items=payrollState.statutory.returns||[];
-    if(!el)return;
+  /**
+   * Render Statutory Returns Tab with Integrated PAYE Tax Filing
+   * ==============================================================
+   * This function renders BOTH:
+   * 1. The existing statutory returns table (other returns like UIF, SDL, etc.)
+   * 2. The NEW PAYE Tax Filing export section (SARS/RSL/BURS)
+   */
+  function renderPayrollStatutoryReturns() {
+    // ─── EXISTING: Original Statutory Returns Table ───
+    const el = $("payrollStatutoryReturnsList");
+    const items = payrollState.statutory.returns || [];
 
-    el.innerHTML=items.length?`
-      <div class="payroll-table-wrap">
-        <table class="payroll-preview-table">
-          <thead>
-            <tr>
-              <th>Return</th>
-              <th>Authority</th>
-              <th>Type</th>
-              <th>Period</th>
-              <th>Employees</th>
-              <th>Employee Amount</th>
-              <th>Employer Amount</th>
-              <th>Total Payable</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${items.map(item=>`
+    if (!el) return;
+
+    el.innerHTML = items.length ? `
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
               <tr>
-                <td><strong>${esc(item.return_no)}</strong></td>
-                <td>${esc(item.authority_code)}</td>
-                <td>
-                  ${esc(cap(
-                    String(item.return_type||"")
-                      .replaceAll("_"," ")
-                  ))}
-                </td>
-                <td>
-                  ${esc(String(item.period_start||"").slice(0,10))}
-                  –
-                  ${esc(String(item.period_end||"").slice(0,10))}
-                </td>
-                <td>${Number(item.employee_count||0)}</td>
-                <td class="num">${money(item.employee_amount)}</td>
-                <td class="num">${money(item.employer_amount)}</td>
-                <td class="num"><strong>${money(item.total_payable)}</strong></td>
-                <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
-                <td>
-                  <button class="payroll-link"
-                    data-open-statutory-return="${item.id}">
-                    Open
-                  </button>
-                </td>
+                <th>Return</th>
+                <th>Authority</th>
+                <th>Type</th>
+                <th>Period</th>
+                <th>Employees</th>
+                <th>Employee Amount</th>
+                <th>Employer Amount</th>
+                <th>Total Payable</th>
+                <th>Status</th>
+                <th></th>
               </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    `:`<p class="payroll-muted">No statutory returns found.</p>`;
+            </thead>
+            <tbody>
+              ${items.map(item => `
+                <tr>
+                  <td><strong>${esc(item.return_no)}</strong></td>
+                  <td>${esc(item.authority_code)}</td>
+                  <td>${esc(cap(String(item.return_type || "").replaceAll("_", " ")))}</td>
+                  <td>
+                    ${esc(String(item.period_start || "").slice(0, 10))}
+                    –
+                    ${esc(String(item.period_end || "").slice(0, 10))}
+                  </td>
+                  <td>${Number(item.employee_count || 0)}</td>
+                  <td class="num">${money(item.employee_amount)}</td>
+                  <td class="num">${money(item.employer_amount)}</td>
+                  <td class="num"><strong>${money(item.total_payable)}</strong></td>
+                  <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
+                  <td>
+                    <button class="payroll-link" data-open-statutory-return="${item.id}">Open</button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : `<p class="payroll-muted">No statutory returns found.</p>`;
 
-    el.querySelectorAll(
-      "[data-open-statutory-return]"
-    ).forEach(btn=>{
-      btn.addEventListener("click",()=>{
-        openPayrollStatutoryReturn(
-          Number(btn.dataset.openStatutoryReturn)
-        );
+    el.querySelectorAll("[data-open-statutory-return]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        openPayrollStatutoryReturn(Number(btn.dataset.openStatutoryReturn));
       });
     });
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🆕 UPDATED: PAYE TAX FILING SECTION
+    // ═══════════════════════════════════════════════════════════════
+
+    let payeContainer = document.getElementById('payeTaxFilingSection');
+    if (!payeContainer) {
+      payeContainer = document.createElement('div');
+      payeContainer.id = 'payeTaxFilingSection';
+      payeContainer.className = 'paye-tax-filing-section';
+      el.parentNode.appendChild(payeContainer);
+    }
+
+    // 1. Dynamic Authority Selection (Auto-detect company setting)
+    const companyAuthority = payrollState.settings?.tax_authority_code || 'SARS';
+    
+    // 2. Dynamic Year Generation (Last 3 years)
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+    // Tax years in Southern Africa usually span two calendar years (e.g., 2024/2025)
+    // If we are before March (for SARS), we are still in the previous tax year cycle
+    const baseYear = currentMonth < 3 ? currentYear - 1 : currentYear;
+    
+    let yearOptions = '';
+    for (let i = 0; i < 3; i++) {
+      const yr = baseYear - i;
+      const label = `${yr}/${yr + 1}`;
+      yearOptions += `<option value="${label}">${label}</option>`;
+    }
+
+    payeContainer.innerHTML = `
+        <div style="margin: 28px 0 20px 0; padding: 16px 20px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #3b82f6;">
+          <h3 style="margin: 0 0 6px 0; font-size: 15px; font-weight: 600; color: #334155; display: flex; align-items: center; gap: 8px;">
+            📋 PAYE Tax Filing Export
+          </h3>
+          <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
+            Generate compliant export files including **Employee Benefits** for SARS (South Africa), RSL (Lesotho), or BURS (Botswana).
+          </p>
+        </div>
+
+        <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; padding: 18px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+          
+          <!-- Authority Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Tax Authority</label>
+            <select id="payeAuthoritySelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 200px; color: #334155;">
+              <option value="SARS" ${companyAuthority === 'SARS' ? 'selected' : ''}>🇿🇦 SARS — South Africa</option>
+              <option value="RSL" ${companyAuthority === 'RSL' ? 'selected' : ''}>🇱🇸 RSL — Lesotho</option>
+              <option value="BURS" ${companyAuthority === 'BURS' ? 'selected' : ''}>🇧🇼 BURS — Botswana</option>
+            </select>
+          </div>
+
+          <!-- Period Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Tax Year</label>
+            <select id="payePeriodSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 140px; color: #334155;">
+              ${yearOptions}
+            </select>
+          </div>
+
+          <!-- Format Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Export Format</label>
+            <select id="payeFormatSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 130px; color: #334155;">
+              <option value="csv">📄 CSV (Standard)</option>
+              <option value="xlsx">📊 Excel (.xlsx)</option>
+              <option value="xml">🔧 SARS XML (e-Filing)</option>
+            </select>
+          </div>
+
+          <!-- Action Buttons -->
+          <div style="display: flex; gap: 10px; align-items: flex-end; margin-left: auto;">
+            <button id="payePreviewBtn" style="padding: 9px 18px; background: #ffffff; color: #475569; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
+              👁️ Preview Data
+            </button>
+            
+            <button id="payeExportBtn" style="padding: 9px 18px; background: #1e293b; color: #ffffff; border: 1px solid #0f172a; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
+              📥 Export Filing
+            </button>
+          </div>
+        </div>
+
+        <div id="payePreviewArea" style="margin-top: 16px; min-height: 120px; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <div style="text-align: center; color: #94a3b8; padding: 30px;">
+            <p style="margin: 0 0 8px 0; font-size: 32px;">📊</p>
+            <p style="margin: 0; font-size: 14px;">Select parameters and click Preview to verify tax data</p>
+          </div>
+        </div>
+      `;
+
+    // Attach event listeners using the proper "FinSage" pattern
+    $("payePreviewBtn")?.addEventListener("click", () => {
+      if (typeof window.previewPayeData === 'function') {
+        window.previewPayeData();
+      } else {
+        showPayrollStatus("Tax Filing module not fully loaded.", "error");
+      }
+    });
+
+    $("payeExportBtn")?.addEventListener("click", (e) => {
+      if (typeof window.exportPayeFiling === 'function') {
+        window.exportPayeFiling(e);
+      } else {
+        showPayrollStatus("Tax Filing module not fully loaded.", "error");
+      }
+    });
   }
+
   async function editPayrollStatutoryReturn(item={}){
     const values=await payrollForm(
       item.id?"Edit Statutory Return":"New Statutory Return",

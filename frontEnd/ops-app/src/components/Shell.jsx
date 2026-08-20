@@ -39,6 +39,7 @@ export default function Shell({session,active="dashboard",children}){
     active==="finance" ||
     active==="finance-overview" ||
     active==="finance-my-work" ||
+    active==="payment-vouchers" ||
     payablesActive;
 
   const items=[
@@ -159,6 +160,16 @@ export default function Shell({session,active="dashboard",children}){
                   <span>My Work</span>
                 </button>
 
+                {/* PAYMENT VOUCHERS - MOVED HERE (direct child of Finance) */}
+                <button
+                  type="button"
+                  className={`nav-sub-item ${active==="payment-vouchers"?"active":""}`}
+                  onClick={()=>nav("/finance/payables/payment-vouchers")}
+                >
+                  <ClipboardCheck size={15}/>
+                  <span>Payment Vouchers</span>
+                </button>
+
                 <div className={`nav-sub-group ${payablesOpen?"open":""}`}>
 
                   <button
@@ -212,15 +223,6 @@ export default function Shell({session,active="dashboard",children}){
                       >
                         <FileCheck2 size={14}/>
                         <span>Ready for Accounting</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        className={`nav-sub-item nested ${active==="payment-vouchers"?"active":""}`}
-                        onClick={()=>nav("/finance/payables/payment-vouchers")}
-                      >
-                        <ClipboardCheck size={14}/>
-                        <span>Payment Vouchers</span>
                       </button>
 
                     </div>

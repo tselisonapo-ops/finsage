@@ -24455,6 +24455,128 @@ tbody tr:hover {
             </div>
           </div>
 
+          <!-- ═══════════════════════════════════════════════════════════════
+              STATUTORY RETURNS TAB PANEL - ADD THIS!
+              ═══════════════════════════════════════════════════════════════ -->
+          <div id="payrollTabStatutory" class="payroll-panel hidden">
+            
+            <!-- Filters Section -->
+            <div style="
+              display: flex;
+              gap: 16px;
+              margin-bottom: 20px;
+              padding: 18px;
+              background: #f8fafc;
+              border-radius: 10px;
+              border: 1px solid #e2e8f0;
+              flex-wrap: wrap;
+              align-items: flex-end;
+            ">
+              <div style="display: flex; flex-direction: column; gap: 6px; min-width: 180px;">
+                <label for="payrollStatutoryAuthorityFilter" style="
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #64748b;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                ">Authority</label>
+                <select id="payrollStatutoryAuthorityFilter" style="
+                  padding: 9px 12px;
+                  border: 1px solid #cbd5e1;
+                  border-radius: 6px;
+                  font-size: 13px;
+                  background: white;
+                ">
+                  <option value="">All Authorities</option>
+                  <option value="SARS">SARS</option>
+                  <option value="RSL">RSL</option>
+                  <option value="BURS">BURS</option>
+                  <option value="UIF">UIF</option>
+                  <option value="SDL">SDL</option>
+                </select>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 6px; min-width: 180px;">
+                <label for="payrollStatutoryTypeFilter" style="
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #64748b;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                ">Return Type</label>
+                <select id="payrollStatutoryTypeFilter" style="
+                  padding: 9px 12px;
+                  border: 1px solid #cbd5e1;
+                  border-radius: 6px;
+                  font-size: 13px;
+                  background: white;
+                ">
+                  <option value="">All Types</option>
+                  <option value="PAYE">PAYE</option>
+                  <option value="UIF">UIF</option>
+                  <option value="SDL">SDL</option>
+                  <option value="WCF">WCF</option>
+                </select>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 6px; min-width: 160px;">
+                <label for="payrollStatutoryStatusFilter" style="
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #64748b;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                ">Status</label>
+                <select id="payrollStatutoryStatusFilter" style="
+                  padding: 9px 12px;
+                  border: 1px solid #cbd5e1;
+                  border-radius: 6px;
+                  font-size: 13px;
+                  background: white;
+                ">
+                  <option value="">All Statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="accepted">Accepted</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+
+              <button 
+                onclick="loadPayrollStatutoryWorkspace()" 
+                style="
+                  padding: 9px 20px;
+                  background: #3b82f6;
+                  color: white;
+                  border: none;
+                  border-radius: 6px;
+                  font-size: 13px;
+                  font-weight: 500;
+                  cursor: pointer;
+                  height: fit-content;
+                "
+              >
+                🔍 Refresh Returns
+              </button>
+            </div>
+
+            <!-- Existing Statutory Returns List Container -->
+            <div id="payrollStatutoryReturnsList">
+              <p class="payroll-muted" style="text-align:center; padding:40px; color:#94a3b8;">
+                Loading statutory returns...
+              </p>
+            </div>
+
+            <!-- 
+              ══════════════════════════════════════════════════════════
+              PAYE TAX FILING SECTION - Will be populated by JavaScript
+              ══════════════════════════════════════════════════════════
+            -->
+            <div id="payeTaxFilingSection"></div>
+
+          </div>
+
           <div id="payrollTabSettings" class="payroll-panel hidden">
             <div class="payroll-section-navigation">
               <button
@@ -29082,9 +29204,7 @@ tbody tr:hover {
 
     function loadScript(src, options = {}) {
         const script = document.createElement("script");
-
         script.src = `${FS_APP_BASE}${src}`;
-
         if (options.module) {
             script.type = "module";
         } else {
@@ -29092,9 +29212,7 @@ tbody tr:hover {
             // preserve insertion/execution order.
             script.async = false;
         }
-
         document.head.appendChild(script);
-
         return script;
     }
 
@@ -29107,29 +29225,23 @@ tbody tr:hover {
 
     loadScript("/config.js");
 
-    loadStylesheet(
-        "/dist/assets/hostMount.css?v=20260811b"
-    );
+    loadStylesheet("/dist/assets/hostMount.css?v=20260811b");
 
-    loadScript(
-        "/dist/assets/hostMount.js?v=20260811b",
-        { module: true }
-    );
+    loadScript("/dist/assets/hostMount.js?v=20260811b", { module: true });
 
-    loadScript(
-        "/dashboard.js?v=20260812a"
-    );
+    loadScript("/dashboard.js?v=20260812a");
 
-    loadScript(
-        "/js/corporate-structure.js?v=20260807a"
-    );
+    /* ==================================================================
+     * 🎯 PAYE TAX FILING MODULE - Add AFTER dashboard.js
+     * ================================================================== */
+    loadScript("/tax-filing-dashboard-integration.js?v=20260818a");
 
-    loadScript(
-        "/js/consolidation.js?v=20260807a"
-    );
-
+    loadScript("/js/corporate-structure.js?v=20260807a");
+    
+    loadScript("/js/consolidation.js?v=20260807a");
+    
     loadScript("/ias41.js");
-
+    
     loadScript("/js/data-migration.js");
 </script>
 

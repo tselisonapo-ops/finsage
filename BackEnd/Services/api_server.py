@@ -235,7 +235,7 @@ from BackEnd.Services.routes.ias41_disclosure_routes import (
     bp_ias41_disclosure,
 )
 from BackEnd.Services.routes.consolidation_routes import consolidation_bp
-
+from BackEnd.Services.routes.payroll_tax_filing_routes import payroll_tax_filing_bp
 
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
@@ -433,6 +433,7 @@ app.register_blueprint(bp_ias41_disclosure)
 app.register_blueprint(corporate_structure_bp)
 app.register_blueprint(ops_bp)
 app.register_blueprint(consolidation_bp)
+app.register_blueprint(payroll_tax_filing_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 
