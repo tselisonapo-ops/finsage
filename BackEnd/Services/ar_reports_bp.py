@@ -163,7 +163,7 @@ def list_period_locks(cid: int):
         return jsonify({"error": "Not authorised for this company"}), 403
 
     schema = db_service.company_schema(company_id)
-    db_service.ensure_company_schema(company_id)
+    
 
     rows = db_service.fetch_all(
         f"""
@@ -227,7 +227,7 @@ def create_period_lock(cid: int):
             return jsonify({"error": "lock_to must be >= lock_from"}), 400
 
         schema = db_service.company_schema(company_id)
-        db_service.ensure_company_schema(company_id)
+        
 
         overlap = db_service.fetch_one(
             f"""
@@ -303,7 +303,7 @@ def disable_period_lock(cid: int, lock_id: int):
     user_id = int(user_id) if user_id is not None else None
 
     schema = db_service.company_schema(company_id)
-    db_service.ensure_company_schema(company_id)
+    
 
     # optional before (for audit)
     before = db_service.fetch_one(

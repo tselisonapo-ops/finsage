@@ -78,7 +78,7 @@ def deferred_tax_runs(cid: int):
         if deny:
             return deny
 
-        db_service.ensure_company_schema(company_id)
+        
 
         if request.method == "GET":
             rows = db_service.deferred_tax_list_runs(
@@ -126,7 +126,7 @@ def deferred_tax_get_run(cid: int, run_id: int):
         if deny:
             return deny
 
-        db_service.ensure_company_schema(company_id)
+        
         row = db_service.deferred_tax_get_run(company_id=company_id, run_id=run_id)
         return jsonify({"ok": True, "data": row}), 200
 
@@ -1075,7 +1075,7 @@ def asset_tax_calculate_run(cid: int, run_id: int):
         if deny:
             return deny
 
-        db_service.ensure_company_schema(company_id)
+        
 
         result = db_service.asset_tax_calculate_run(
             company_id=company_id,
@@ -1124,7 +1124,7 @@ def asset_tax_runs(cid: int):
         if deny:
             return deny
 
-        db_service.ensure_company_schema(company_id)
+        
 
         if request.method == "GET":
             rows = db_service.asset_tax_list_runs(
@@ -1220,7 +1220,7 @@ def asset_tax_get_run(cid: int, run_id: int):
         if deny:
             return deny
 
-        db_service.ensure_company_schema(company_id)
+        
 
         row = db_service.asset_tax_get_run(
             company_id=company_id,
@@ -1270,7 +1270,7 @@ def deferred_tax_allowance_rules(cid):
         if deny:
             return deny
 
-        db_service.ensure_company_schema(company_id)
+        
 
         authority_id = request.args.get(
             "tax_authority_id",
@@ -1598,7 +1598,7 @@ def deferred_tax_lease_tax_treatment(
         if deny:
             return deny
 
-        db_service.ensure_company_schema(company_id)
+        
 
         if request.method == "GET":
             row = db_service.deferred_tax_get_lease_tax_treatment(

@@ -64142,7 +64142,6 @@ class DatabaseService:
         is_non_cash_addback: bool = False,
     ) -> dict:
         schema = f"company_{company_id}"
-        self.ensure_company_schema(company_id)
 
         # -------------------------
         # Normalize + validate inputs
@@ -64311,7 +64310,6 @@ class DatabaseService:
 
     def update_coa_account(self, company_id: int, coa_id: int, data: dict) -> dict | None:
         schema = f"company_{company_id}"
-        self.ensure_company_schema(company_id)
 
         allowed = {
             "name", "category", "section", "description", "standard",
@@ -64497,7 +64495,6 @@ class DatabaseService:
         Returns number of COA rows updated.
         """
         schema = f"company_{company_id}"
-        self.ensure_company_schema(company_id)
 
         rows = self.fetch_all(
             f"""
@@ -64624,7 +64621,6 @@ class DatabaseService:
         Returns counts of updated rows.
         """
         schema = self.company_schema(company_id)
-        self.ensure_company_schema(company_id)
 
         # 1) Generate new COA codes (your earlier function)
         coa_updated = self.migrate_company_coa_to_bucket_codes(company_id)
