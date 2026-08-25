@@ -33296,8 +33296,7 @@ class DatabaseService:
         DROP TRIGGER IF EXISTS trg_return_lines_update ON {schema}.ops_return_lines;
         CREATE TRIGGER trg_return_lines_update
             AFTER INSERT OR UPDATE OR DELETE ON {schema}.ops_return_lines
-            FOR EACH ROW EXECUTE FUNCTION {schema}.fn_update_return_totals();
-
+            FOR EACH ROW EXECUTE PROCEDURE {schema}.fn_update_return_totals();
 
         -- =========================================================
         -- 3. PROCUREMENT CONTRACTS
@@ -35169,10 +35168,10 @@ class DatabaseService:
         END; 
         $$ LANGUAGE plpgsql; 
 
-        CREATE TRIGGER trg_gen_txn_number 
-            BEFORE INSERT ON {schema}.inventory_transactions 
+        CREATE TRIGGER trg_gen_stocktake_number 
+            BEFORE INSERT ON {schema}.ops_stocktake_sessions 
             FOR EACH ROW 
-            EXECUTE FUNCTION {schema}.gen_inventory_txn_number(); 
+            EXECUTE PROCEDURE {schema}.gen_stocktake_number();
 
         CREATE OR REPLACE FUNCTION {schema}.gen_stocktake_number() 
         RETURNS TRIGGER AS $$ 
@@ -35189,10 +35188,10 @@ class DatabaseService:
         END; 
         $$ LANGUAGE plpgsql; 
 
-        CREATE TRIGGER trg_gen_stocktake_number 
-            BEFORE INSERT ON {schema}.ops_stocktake_sessions 
+        CREATE TRIGGER trg_gen_transfer_number 
+            BEFORE INSERT ON {schema}.ops_transfer_requests 
             FOR EACH ROW 
-            EXECUTE FUNCTION {schema}.gen_stocktake_number(); 
+            EXECUTE PROCEDURE {schema}.gen_transfer_number();
 
         CREATE OR REPLACE FUNCTION {schema}.gen_transfer_number() 
         RETURNS TRIGGER AS $$ 
@@ -35210,7 +35209,7 @@ class DatabaseService:
         CREATE TRIGGER trg_gen_transfer_number 
             BEFORE INSERT ON {schema}.ops_transfer_requests 
             FOR EACH ROW 
-            EXECUTE FUNCTION {schema}.gen_transfer_number(); 
+            EXECUTE PROCEDURE {schema}.gen_transfer_number();
 
         CREATE OR REPLACE FUNCTION {schema}.update_updated_at_column() 
         RETURNS TRIGGER AS $$ 
@@ -35222,19 +35221,19 @@ class DatabaseService:
 
         CREATE TRIGGER trg_warehouses_updated_at 
             BEFORE UPDATE ON {schema}.ops_warehouses 
-            FOR EACH ROW EXECUTE FUNCTION {schema}.update_updated_at_column(); 
+            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column(); 
 
         CREATE TRIGGER trg_locations_updated_at 
             BEFORE UPDATE ON {schema}.ops_locations 
-            FOR EACH ROW EXECUTE FUNCTION {schema}.update_updated_at_column(); 
+            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column(); 
 
         CREATE TRIGGER txn_updated_at 
             BEFORE UPDATE ON {schema}.inventory_transactions 
-            FOR EACH ROW EXECUTE FUNCTION {schema}.update_updated_at_column(); 
+            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column(); 
 
         CREATE TRIGGER stk_sessions_updated_at 
             BEFORE UPDATE ON {schema}.ops_stocktake_sessions 
-            FOR EACH ROW EXECUTE FUNCTION {schema}.update_updated_at_column(); 
+            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column();
 
         INSERT INTO {schema}.ops_variance_reasons 
             (code, name, description, requires_approval, affect_gl) 
