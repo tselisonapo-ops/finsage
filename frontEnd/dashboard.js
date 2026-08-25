@@ -12575,6 +12575,95 @@ async function switchScreen(
 
 window.switchScreen = switchScreen;
 
+// ============================================================
+// 🔒 DEFERRED TAX SCREEN GUARD - Prevents modal hijacking
+// ============================================================
+(function() {
+    const SCREEN_ID = 'screen-deferred-tax';
+    const CORRECT_PARENT_ID = 'screensHost';
+    
+    function ensureScreenInCorrectPlace() {
+        const screen = document.getElementById(SCREEN_ID);
+        const correctParent = document.getElementById(CORRECT_PARENT_ID);
+        
+        if (!screen || !correctParent) return;
+        
+        const currentParent = screen.parentElement;
+        const currentParentId = currentParent?.id || currentParent?.className?.split(' ')[0] || 'unknown';
+        
+        // Check if screen is in wrong place
+        if (currentParent !== correctParent) {
+            console.warn(`🚨 [ScreenGuard] ${SCREEN_ID} is in WRONG parent: #${currentParentId}`);
+            console.warn('🚨 [ScreenGuard] Moving it back to #' + CORRECT_PARENT_ID);
+            
+            // Move to correct location
+            correctParent.appendChild(screen);
+            
+            // Ensure classes are correct
+            screen.classList.remove('hidden');
+            screen.classList.add('active');
+            
+            console.log(`✅ [ScreenGuard] ${SCREEN_ID} restored to #${CORRECT_PARENT_ID}`);
+        }
+    }
+    
+    // Run immediately
+    ensureScreenInCorrectPlace();
+    
+    // Set up MutationObserver to catch any future moves
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            // Check if our screen was moved
+            if (mutation.type === 'childList') {
+                mutation.addedNodes.forEach((node) => {
+                    if (node.nodeType === 1 && node.id === SCREEN_ID) {
+                        const parentId = node.parentElement?.id || node.parentElement?.className;
+                        if (parentId !== CORRECT_PARENT_ID) {
+                            console.warn(`🔍 [ScreenGuard] Detected ${SCREEN_ID} was moved to:`, parentId);
+                            // Schedule fix after current operation completes
+                            setTimeout(ensureScreenInCorrectPlace, 0);
+                        }
+                    }
+                });
+                
+                // Also check if screen was removed from screensHost
+                mutation.removedNodes.forEach((node) => {
+                    if (node.nodeType === 1 && node.id === SCREEN_ID) {
+                        console.warn(`🔍 [ScreenGuard] ${SCREEN_ID} removed from DOM`);
+                    }
+                });
+            }
+        }
+    });
+    
+    // Observe the entire document for changes
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+    
+    // Also run on every switchScreen call
+    const originalSwitchScreen = window.switchScreen;
+    if (originalSwitchScreen) {
+        window.switchScreen = async function(...args) {
+            const result = await originalSwitchScreen.apply(this, args);
+            
+            // If navigating to deferred-tax, ensure it's in right place
+            if (args[0] === 'deferred-tax' || args[0] === 'ias41' || args[0] === 'ifrs9') {
+                setTimeout(ensureScreenInCorrectPlace, 100);
+                setTimeout(ensureScreenInCorrectPlace, 500); // Double-check
+            }
+            
+            return result;
+        };
+    }
+    
+    // Expose for manual use
+    window.ensureDeferredTaxScreenInPlace = ensureScreenInCorrectPlace;
+    
+    console.log('✅ [ScreenGuard] Deferred Tax Screen Guard active');
+})();
+
 function isInventoryRoute(name) {
   return [
     "inventory-items",
