@@ -96741,37 +96741,32 @@ async function renderContractPreview(c = {}) {
   }
 
   async function loadRuns() {
-    const mount = $id("dtRunList");
+    const mount = $id("dtRunList"); // Uses your helper
     if (!mount) return;
 
-    mount.innerHTML = `
-      <div class="dt-loading">
-        Loading deferred tax runs...
-      </div>
-    `;
+    // 1. Show loading state so the user knows something is happening
+    mount.innerHTML = `<div class="dt-loading">Loading deferred tax runs...</div>`;
 
     try {
-      const res = await apiFetch(
-        ENDPOINTS.deferredTax.runs(cid())
-      );
+      const res = await apiFetch(ENDPOINTS.deferredTax.runs(cid()));
 
-      const rows =
-        res?.data?.runs ||
-        res?.data ||
-        res?.items ||
-        res?.runs ||
-        [];
+      // 2. Robust data extraction 
+      // (Matches the pattern res.data which your backend typically uses)
+      const rows = Array.isArray(res?.data) ? res.data : (res?.items || []);
 
+      // 3. Render the list
       renderDeferredTaxRunList(rows);
+
     } catch (error) {
+      // 4. ✅ Error handling: Prevent the blank page by showing the error in the UI
       mount.innerHTML = `
-        <div class="dt-error">
-          ${dtEscape(
-            error.message ||
-            "Deferred-tax runs could not be loaded."
-          )}
+        <div class="dt-error" style="color: #dc2626; padding: 20px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">
+          <strong>⚠️ Failed to load runs</strong>
+          <p>${dtEscape(error.message)}</p>
+          <small>Check the console for technical details.</small>
         </div>
       `;
+      console.error("[DeferredTax] loadRuns failed:", error);
     }
   }
 
