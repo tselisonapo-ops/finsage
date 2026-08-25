@@ -84772,6 +84772,7 @@ async function saveEditModal() {
         readiness,
         writeoffs,
         generalModels,
+        generalEclRuns,
       ]=await Promise.all([
         apiFetch(ENDPOINTS.ifrs9.instruments(companyId)),
         apiFetch(ENDPOINTS.ifrs9.eclRuns(companyId)),
