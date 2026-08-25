@@ -7312,7 +7312,7 @@ async function downloadVatFiling() {
     const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
     if (!cid) throw new Error("No company selected");
 
-    const period = parseVatPeriodSelection?.();
+    const period = await parseVatPeriodSelection?.();
     if (!period?.start_date || !period?.end_date) {
       alert("Please select a VAT period first.");
       return;
@@ -7340,7 +7340,7 @@ async function downloadVatPack() {
     const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
     if (!cid) throw new Error("No company selected");
 
-    const period = parseVatPeriodSelection?.();
+    const period = await parseVatPeriodSelection?.();
     if (!period?.start_date || !period?.end_date) {
       alert("Please select a VAT period first.");
       return;
@@ -7365,7 +7365,9 @@ async function emailVatPack() {
     const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
     if (!cid) throw new Error("No company selected");
 
-    const period = parseVatPeriodSelection?.();
+    // IMPORTANT: parseVatPeriodSelection() is async
+    const period = await parseVatPeriodSelection?.();
+
     if (!period?.start_date || !period?.end_date) {
       alert("Please select a VAT period first.");
       return;
@@ -7373,7 +7375,9 @@ async function emailVatPack() {
 
     const res = await apiFetch(ENDPOINTS.vatFilingPackEmail(cid), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         from: period.start_date,
         to: period.end_date,
@@ -7385,12 +7389,12 @@ async function emailVatPack() {
     }
 
     alert(res?.message || "VAT Pack email sent.");
+
   } catch (err) {
     console.error("emailVatPack failed:", err);
     alert(err?.message || "Failed to email VAT Pack.");
   }
 }
-
   // ==========================================================
   // 8) UTILITIES (safe anywhere after here)
   // ==========================================================
@@ -18546,29 +18550,70 @@ async function buildVatLinesForJournalLine(line, vatCfg) {
  * VAT & Tax Screen
  * ============================== */
 async function parseVatPeriodSelection() {
-  const sel = document.getElementById("vatPeriodSelect");
+  let sel = document.getElementById("vatPeriodSelect");
 
-  // ✅ Only bind once - don't re-render here!
+  // Make sure the VAT period filter exists and is populated.
   if (!sel || sel.dataset.bound !== "1") {
     await bindVatPeriodFilter();
+
+    // Re-fetch it after binding.
+    sel = document.getElementById("vatPeriodSelect");
+  }
+
+  if (!sel) {
+    console.warn("parseVatPeriodSelection: #vatPeriodSelect not found");
+    return null;
+  }
+
+  const value = String(sel.value || "").trim();
+
+  if (!value) {
+    console.warn("parseVatPeriodSelection: no VAT period selected");
+    return null;
   }
 
   try {
-    // ✅ Just return the parsed data, don't trigger rendering
-    const parsed = JSON.parse(decodeURIComponent(sel.value));
-    if (!parsed?.start_date || !parsed?.end_date) return null;
+    const parsed = JSON.parse(decodeURIComponent(value));
+
+    if (!parsed?.start_date || !parsed?.end_date) {
+      console.warn(
+        "parseVatPeriodSelection: invalid period data",
+        parsed
+      );
+      return null;
+    }
 
     return {
-      label: parsed.label || sel.options[sel.selectedIndex]?.text || "Selected period",
-      start: new Date(parsed.start_date + "T00:00:00"),
-      end: new Date(parsed.end_date + "T00:00:00"),
-      dueDate: parsed.due_date ? new Date(parsed.due_date + "T00:00:00") : null,
+      label:
+        parsed.label ||
+        sel.options[sel.selectedIndex]?.text ||
+        "Selected period",
+
+      start: new Date(
+        parsed.start_date + "T00:00:00"
+      ),
+
+      end: new Date(
+        parsed.end_date + "T00:00:00"
+      ),
+
+      dueDate: parsed.due_date
+        ? new Date(parsed.due_date + "T00:00:00")
+        : null,
+
       start_date: parsed.start_date,
       end_date: parsed.end_date,
       due_date: parsed.due_date || null,
     };
+
   } catch (e) {
-    console.warn("parseVatPeriodSelection failed:", e);
+    console.warn(
+      "parseVatPeriodSelection failed:",
+      e,
+      "value:",
+      value
+    );
+
     return null;
   }
 }
@@ -18769,7 +18814,7 @@ async function showVatPaymentModal() {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   if (!cid) return alert("No company selected");
 
-  const period = parseVatPeriodSelection?.();
+  const period = await parseVatPeriodSelection?.();
   if (!period?.start_date || !period?.end_date) {
     return alert("Please select a VAT period first.");
   }
@@ -19144,7 +19189,7 @@ function ensureVatScreen() {
       const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
       if (!cid) throw new Error("No company selected");
 
-      const period = parseVatPeriodSelection?.();
+      const period = await parseVatPeriodSelection?.();
       if (!period?.start_date || !period?.end_date) {
         alert("Please select a VAT period first.");
         return;
@@ -19192,15 +19237,37 @@ function ensureVatScreen() {
       const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
       if (!cid) throw new Error("No company selected");
 
-      const period = parseVatPeriodSelection();
-      if (!period?.start_date || !period?.end_date) {
+      const select = document.getElementById("vatPeriodSelect");
+
+      // Make sure we actually have a selected VAT period
+      if (!select || !select.value) {
         alert("Please select a VAT period first.");
         return;
       }
 
+      const period = await parseVatPeriodSelection?.();
+
+      if (!period?.start_date || !period?.end_date) {
+        console.error("Invalid VAT period selection:", {
+          value: select.value,
+          period,
+        });
+
+        alert("Please select a valid VAT period first.");
+        return;
+      }
+
+      console.log("[VAT] Preparing return for:", {
+        company_id: cid,
+        period,
+        select_value: select.value,
+      });
+
       const preview = await apiFetch(ENDPOINTS.vatPrepareFiling(cid), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           from: period.start_date,
           to: period.end_date,
@@ -19211,12 +19278,16 @@ function ensureVatScreen() {
       showVatSettlementPreviewModal({
         cid,
         period,
-        preview: preview.preview,
+        preview: preview?.preview,
       });
 
     } catch (err) {
       console.error("Prepare VAT preview failed:", err);
-      alert(err?.message || "Failed to preview VAT return.");
+
+      alert(
+        err?.message ||
+        "Failed to preview VAT return."
+      );
     }
   });
 
@@ -20872,18 +20943,58 @@ async function postJournalBatch() {
     return;
   }
 
-  // Basic validation
-  // Validate and clean journal lines before posting
+  // ------------------------------------------------------------
+  // Posting UI helpers
+  // ------------------------------------------------------------
+  const postBtn = document.getElementById("postBatch");
+  const postStatus = document.getElementById("jrnlPostStatus");
+
+  const setPostingState = (posting, message = "") => {
+    if (postBtn) {
+      postBtn.disabled = posting;
+
+      if (posting) {
+        postBtn.dataset.originalText =
+          postBtn.dataset.originalText || postBtn.textContent;
+
+        postBtn.textContent = "Posting journal...";
+        postBtn.classList.add("opacity-60", "cursor-wait");
+      } else {
+        postBtn.textContent =
+          postBtn.dataset.originalText || "Post Batch (Ctrl+Enter)";
+
+        postBtn.classList.remove("opacity-60", "cursor-wait");
+      }
+    }
+
+    if (postStatus) {
+      if (message) {
+        postStatus.textContent = message;
+        postStatus.classList.remove("hidden");
+      } else {
+        postStatus.textContent = "";
+        postStatus.classList.add("hidden");
+      }
+    }
+  };
+
+  // ------------------------------------------------------------
+  // Basic validation / clean journal lines
+  // ------------------------------------------------------------
   const cleanedLines = [];
 
-  for (const [idx, ln] of JRNL_LINES.entries()) {
+  for (const [idx, ln] of cleanedLines.entries()) {
     const account = String(ln?.account ?? "").trim();
     const debit = Number(ln?.debit || 0);
     const credit = Number(ln?.credit || 0);
 
     // Completely empty/stale line: ignore it
     if (!account && debit === 0 && credit === 0) {
-      console.warn("[JRNL] Ignoring empty/stale line", idx + 1, ln);
+      console.warn(
+        "[JRNL] Ignoring empty/stale line",
+        idx + 1,
+        ln
+      );
       continue;
     }
 
@@ -20893,23 +21004,33 @@ async function postJournalBatch() {
       account === "undefined" ||
       account === "null"
     ) {
-      alert(`Line ${idx + 1} has an amount but no valid account.`);
+      alert(
+        `Line ${idx + 1} has an amount but no valid account.`
+      );
+
       console.error("[JRNL] Invalid journal line", {
         index: idx,
         line: ln,
       });
+
       return;
     }
 
     // No amount
     if (debit === 0 && credit === 0) {
-      console.warn("[JRNL] Ignoring zero-value line", idx + 1, ln);
+      console.warn(
+        "[JRNL] Ignoring zero-value line",
+        idx + 1,
+        ln
+      );
       continue;
     }
 
-    // Never allow both
+    // Never allow both debit and credit
     if (debit > 0 && credit > 0) {
-      alert(`Line ${idx + 1} cannot have both debit and credit.`);
+      alert(
+        `Line ${idx + 1} cannot have both debit and credit.`
+      );
       return;
     }
 
@@ -20926,20 +21047,33 @@ async function postJournalBatch() {
     return;
   }
 
-  // Header fields (need date early for lock check)
+  // ------------------------------------------------------------
+  // Header fields
+  // ------------------------------------------------------------
   const dateEl =
     document.getElementById("jrnlDate") ||
     document.querySelector("#jrnl-date");
+
   const refEl = document.getElementById("jrnlRef");
   const narrEl = document.getElementById("jrnlNarr");
 
   const uiDate = safeIsoDate(
-    (dateEl && dateEl.value) || new Date().toISOString().slice(0, 10)
+    (dateEl && dateEl.value) ||
+      new Date().toISOString().slice(0, 10)
   );
-  const ref = refEl ? refEl.value.trim() : "";
-  const narr = narrEl ? narrEl.value.trim() : "Journal batch";
 
-  // ✅ PERIOD LOCK CHECK (manual journals = GL)
+  const ref = refEl
+    ? refEl.value.trim()
+    : "";
+
+  const narr = narrEl
+    ? narrEl.value.trim()
+    : "Journal batch";
+
+  // ------------------------------------------------------------
+  // PERIOD LOCK CHECK
+  // Manual journals = GL
+  // ------------------------------------------------------------
   try {
     await assertNotLocked(uiDate, "gl");
   } catch (e) {
@@ -20947,24 +21081,35 @@ async function postJournalBatch() {
     return;
   }
 
+  // ------------------------------------------------------------
+  // Build journal payload
+  // ------------------------------------------------------------
   let totalDr = 0;
   let totalCr = 0;
   let vatTotal = 0;
 
   const journalLines = [];
 
-  for (const [idx, ln] of JRNL_LINES.entries()) {
-    const accountCode = String(ln.account || "").trim();
+  // IMPORTANT:
+  // Use cleanedLines here rather than JRNL_LINES again.
+  for (const [idx, ln] of cleanedLines.entries()) {
+    const accountCode = String(
+      ln.account || ""
+    ).trim();
+
     const dr = Number(ln.debit) || 0;
     const cr = Number(ln.credit) || 0;
 
-    // Never allow an empty/undefined account into the payload
+    // Never allow an empty/undefined account
+    // into the payload
     if ((dr > 0 || cr > 0) && !accountCode) {
-      alert(`Line ${idx + 1} has an amount but no account.`);
+      alert(
+        `Line ${idx + 1} has an amount but no account.`
+      );
       return;
     }
 
-    // Skip completely empty lines
+    // Skip zero-value lines
     if (dr === 0 && cr === 0) {
       continue;
     }
@@ -20976,56 +21121,201 @@ async function postJournalBatch() {
       account_code: accountCode,
       debit: dr,
       credit: cr,
-      description: ln.memo || ln.narr || "",
+      description:
+        ln.memo ||
+        ln.narr ||
+        ln.description ||
+        "",
     });
   }
 
+  // ------------------------------------------------------------
   // Balanced?
+  // ------------------------------------------------------------
   if (Math.abs(totalDr - totalCr) > 0.01) {
-    alert(`Batch not balanced.\nDr: ${fmt(totalDr)} Cr: ${fmt(totalCr)}`);
+    alert(
+      `Batch not balanced.\nDr: ${fmt(totalDr)} Cr: ${fmt(totalCr)}`
+    );
     return;
   }
 
+  if (!journalLines.length) {
+    alert("No valid journal lines to post.");
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // Payload
+  // ------------------------------------------------------------
   const payload = {
     date: uiDate,
     ref,
     description: narr || "Journal batch",
+
     gross_amount: totalDr,
-    net_amount: +(totalDr - vatTotal).toFixed(2),
-    vat_amount: +vatTotal.toFixed(2),
-    source: window.__JRNL_SOURCE || undefined,
-    source_id: window.__JRNL_SOURCE_ID || undefined,
+
+    net_amount: +(
+      totalDr - vatTotal
+    ).toFixed(2),
+
+    vat_amount: +(
+      vatTotal
+    ).toFixed(2),
+
+    source:
+      window.__JRNL_SOURCE ||
+      undefined,
+
+    source_id:
+      window.__JRNL_SOURCE_ID ||
+      undefined,
+
     lines: journalLines,
   };
-  // ✅ Post
-  const result = await postJournalEntry(payload);
 
-  if (!result?.ok) {
-    if (result?.ambiguous) {
-      alert(
-        `The journal submission could not be confirmed.\n\n` +
-        `Reference: ${ref}\n\n` +
-        `Your journal lines have NOT been cleared. ` +
-        `Please check Posted Journals before retrying.`
-      );
+  // ------------------------------------------------------------
+  // START POSTING
+  // ------------------------------------------------------------
+  setPostingState(
+    true,
+    "Posting journal to the server..."
+  );
+
+  try {
+    console.log("[JRNL] Posting journal...", {
+      ref,
+      date: uiDate,
+      lines: journalLines.length,
+      debit: totalDr,
+      credit: totalCr,
+    });
+
+    // ----------------------------------------------------------
+    // REAL POST
+    // ----------------------------------------------------------
+    const result = await postJournalEntry(payload);
+
+    console.log("[JRNL] Post result:", result);
+
+    // ----------------------------------------------------------
+    // Backend rejected / ambiguous result
+    // ----------------------------------------------------------
+    if (!result?.ok) {
+      setPostingState(false);
+
+      if (result?.ambiguous) {
+        setPostingState(
+          false,
+          "Posting could not be confirmed."
+        );
+
+        alert(
+          `The journal submission could not be confirmed.\n\n` +
+          `Reference: ${ref || "(none)"}\n\n` +
+          `Your journal lines have NOT been cleared.\n\n` +
+          `Please check Posted Journals before retrying.`
+        );
+      } else {
+        setPostingState(
+          false,
+          "Journal was not posted."
+        );
+      }
+
+      return;
     }
 
-    return;
+    // ----------------------------------------------------------
+    // SUCCESS
+    // ----------------------------------------------------------
+    const jid = result.journal_id;
+
+    setPostingState(
+      true,
+      "Journal posted. Refreshing journals..."
+    );
+
+    // ----------------------------------------------------------
+    // Refresh Posted Journals
+    // ----------------------------------------------------------
+    if (typeof renderRecentJournals === "function") {
+      try {
+        await renderRecentJournals();
+      } catch (e) {
+        console.warn(
+          "renderRecentJournals failed",
+          e
+        );
+      }
+    }
+
+    // ----------------------------------------------------------
+    // NOW it is safe to clear the batch
+    // ----------------------------------------------------------
+    JRNL_LINES.length = 0;
+
+    renderJournalTable();
+    recalcJournalSummary();
+    clearJournalForm();
+
+    // ----------------------------------------------------------
+    // Restore button
+    // ----------------------------------------------------------
+    setPostingState(
+      false,
+      `Journal posted successfully${jid ? ` (ID: ${jid})` : ""}.`
+    );
+
+    // ----------------------------------------------------------
+    // Final confirmation
+    // ----------------------------------------------------------
+    alert(
+      `Journal batch posted successfully.` +
+      (jid ? `\n\nJournal ID: ${jid}` : "")
+    );
+
+  } catch (e) {
+    console.error(
+      "[JRNL] postJournalBatch failed:",
+      e
+    );
+
+    setPostingState(
+      false,
+      "Journal posting failed."
+    );
+
+    // IMPORTANT:
+    // Do NOT clear JRNL_LINES here.
+    // If the request was ambiguous, the user can
+    // check Posted Journals before retrying.
+
+    if (e?.status === 409) {
+      alert(
+        e?.message ||
+        "This journal could not be posted because the reference already exists."
+      );
+      return;
+    }
+
+    if (
+      String(e?.message || "")
+        .toLowerCase()
+        .includes("period is locked")
+    ) {
+      alert(
+        e?.message ||
+        `This period is locked for GL on ${uiDate}.`
+      );
+      return;
+    }
+
+    alert(
+      `Journal posting failed.\n\n` +
+      `${e?.message || "Unknown error"}\n\n` +
+      `Your journal lines have NOT been cleared.`
+    );
   }
-
-  const jid = result.journal_id;
-  // ✅ refresh the Posted Journals list so the Reverse buttons appear
-  if (typeof renderRecentJournals === "function") {
-    try { await renderRecentJournals(); }
-  catch (e) { console.warn("renderRecentJournals failed", e); }
-}
-
-JRNL_LINES.length = 0;
-//clearJournalBatch();
-renderJournalTable();
-recalcJournalSummary();
-clearJournalForm();
-alert(`Journal batch posted. (ID: ${jid})`);
 }
 
 function isARAccountBtn(btn) {
@@ -134652,6 +134942,7 @@ function startDashboardApp() {
     }
   }
 }
+window.restoreAppRoute = restoreAppRoute; 
 
 if (document.readyState === "loading") {
   document.addEventListener(
