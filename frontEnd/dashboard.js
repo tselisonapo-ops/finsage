@@ -12578,90 +12578,104 @@ window.switchScreen = switchScreen;
 // ============================================================
 // 🔒 DEFERRED TAX SCREEN GUARD - Prevents modal hijacking
 // ============================================================
+// ============================================================
+// 🔒 SCREEN GUARD SYSTEM - Prevents Modal Hijacking (LIVE FIX)
+// ============================================================
 (function() {
-    const SCREEN_ID = 'screen-deferred-tax';
+    'use strict';
+    
+    const SCREENS_TO_PROTECT = [
+        'screen-deferred-tax',
+        'screen-ias41', 
+        'screen-ifrs9',
+        'screen-budgeting',
+        'screen-data-migration',
+        'screen-group-reporting'
+    ];
+    
     const CORRECT_PARENT_ID = 'screensHost';
     
-    function ensureScreenInCorrectPlace() {
-        const screen = document.getElementById(SCREEN_ID);
+    function validateScreenPlacement(screenId) {
+        const screen = document.getElementById(screenId);
         const correctParent = document.getElementById(CORRECT_PARENT_ID);
         
-        if (!screen || !correctParent) return;
+        if (!screen || !correctParent) return false;
         
         const currentParent = screen.parentElement;
-        const currentParentId = currentParent?.id || currentParent?.className?.split(' ')[0] || 'unknown';
+        const isInModal = !!screen.closest('.modal');
+        const isInWrongPlace = currentParent !== correctParent || isInModal;
         
-        // Check if screen is in wrong place
-        if (currentParent !== correctParent) {
-            console.warn(`🚨 [ScreenGuard] ${SCREEN_ID} is in WRONG parent: #${currentParentId}`);
-            console.warn('🚨 [ScreenGuard] Moving it back to #' + CORRECT_PARENT_ID);
-            
-            // Move to correct location
+        if (isInWrongPlace) {
+            console.warn(`🚨 [ScreenGuard] ${screenId} in wrong place - fixing...`);
             correctParent.appendChild(screen);
-            
-            // Ensure classes are correct
             screen.classList.remove('hidden');
             screen.classList.add('active');
-            
-            console.log(`✅ [ScreenGuard] ${SCREEN_ID} restored to #${CORRECT_PARENT_ID}`);
+            screen.style.display = '';
+            return true;
         }
+        return false;
     }
     
-    // Run immediately
-    ensureScreenInCorrectPlace();
+    function validateAllScreens() {
+        let fixed = 0;
+        SCREENS_TO_PROTECT.forEach(id => {
+            if (validateScreenPlacement(id)) fixed++;
+        });
+        if (fixed > 0) console.log(`✅ [ScreenGuard] Fixed ${fixed} screen(s)`);
+        return fixed;
+    }
     
-    // Set up MutationObserver to catch any future moves
-    const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            // Check if our screen was moved
-            if (mutation.type === 'childList') {
-                mutation.addedNodes.forEach((node) => {
-                    if (node.nodeType === 1 && node.id === SCREEN_ID) {
-                        const parentId = node.parentElement?.id || node.parentElement?.className;
-                        if (parentId !== CORRECT_PARENT_ID) {
-                            console.warn(`🔍 [ScreenGuard] Detected ${SCREEN_ID} was moved to:`, parentId);
-                            // Schedule fix after current operation completes
-                            setTimeout(ensureScreenInCorrectPlace, 0);
-                        }
-                    }
-                });
-                
-                // Also check if screen was removed from screensHost
-                mutation.removedNodes.forEach((node) => {
-                    if (node.nodeType === 1 && node.id === SCREEN_ID) {
-                        console.warn(`🔍 [ScreenGuard] ${SCREEN_ID} removed from DOM`);
-                    }
-                });
-            }
-        }
-    });
+    // Run validation at multiple stages
+    function scheduleValidation() {
+        validateAllScreens();
+        [100, 500, 1000, 2000].forEach(delay => setTimeout(validateAllScreens, delay));
+    }
     
-    // Observe the entire document for changes
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+    // Initialize
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => setTimeout(scheduleValidation, 0));
+    } else {
+        setTimeout(scheduleValidation, 0);
+    }
+    window.addEventListener('load', scheduleValidation);
     
-    // Also run on every switchScreen call
-    const originalSwitchScreen = window.switchScreen;
-    if (originalSwitchScreen) {
+    // Hook into switchScreen
+    if (window.switchScreen) {
+        const _orig = window.switchScreen;
         window.switchScreen = async function(...args) {
-            const result = await originalSwitchScreen.apply(this, args);
-            
-            // If navigating to deferred-tax, ensure it's in right place
-            if (args[0] === 'deferred-tax' || args[0] === 'ias41' || args[0] === 'ifrs9') {
-                setTimeout(ensureScreenInCorrectPlace, 100);
-                setTimeout(ensureScreenInCorrectPlace, 500); // Double-check
+            try {
+                const result = await _orig.apply(this, args);
+                const target = String(args[0] || '');
+                if (SCREENS_TO_PROTECT.some(s => target.includes(s.replace('screen-', '')))) {
+                    setTimeout(validateAllScreens, 50);
+                    setTimeout(validateAllScreens, 300);
+                }
+                return result;
+            } catch (err) {
+                console.error('[switchScreen]:', err);
+                throw err;
             }
-            
-            return result;
         };
     }
     
-    // Expose for manual use
-    window.ensureDeferredTaxScreenInPlace = ensureScreenInCorrectPlace;
+    // MutationObserver safety net
+    new MutationObserver(() => {
+        requestAnimationFrame(() => {
+            if (SCREENS_TO_PROTECT.some(id => {
+                const el = document.getElementById(id);
+                return el && el.closest('.modal');
+            })) validateAllScreens();
+        });
+    }).observe(document.body, { childList: true, subtree: true });
     
-    console.log('✅ [ScreenGuard] Deferred Tax Screen Guard active');
+    // Expose for debugging
+    window.ScreenGuard = {
+        validate: validateScreenPlacement,
+        validateAll: validateAllScreens,
+        protected: SCREENS_TO_PROTECT
+    };
+    
+    console.log('✅ [ScreenGuard] Active');
 })();
 
 function isInventoryRoute(name) {
@@ -91868,6 +91882,12 @@ async function saveEditModal() {
       });
 
       document.addEventListener("click", async event => {
+        // 🛡️ Safety guard - prevent crash if event is undefined
+        if (!event || typeof event.target === 'undefined') {
+          console.warn('[IFRS9] Click event missing - skipping');
+          return;
+        }
+        
         const tab = event.target.closest("[data-ifrs9-tab]");
         if (tab) return showTab(tab.dataset.ifrs9Tab);
 
