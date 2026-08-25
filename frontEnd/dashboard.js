@@ -12205,9 +12205,41 @@ async function switchScreen(
       }
 
       if (base === "deferred-tax") {
-        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[DeferredTax] company load failed:", e); }
-        await window.bindDeferredTaxScreen?.();
-        return;
+          try { 
+              await ensureCompanyDataLoaded?.(); 
+          } catch (e) { 
+              console.warn("[DeferredTax] company load failed:", e); 
+          }
+          
+          try {
+              // Add timeout protection (10 seconds max)
+              await Promise.race([
+                  window.bindDeferredTaxScreen?.(),
+                  new Promise((_, reject) => 
+                      setTimeout(() => reject(new Error('Deferred tax screen load timeout')), 10000)
+                  )
+              ]);
+          } catch (screenErr) {
+              console.error("[DeferredTax] Screen bind failed:", screenErr);
+              
+              // Show fallback UI instead of blank screen
+              const screenEl = document.getElementById("screen-deferred-tax");
+              if (screenEl) {
+                  const dtPage = screenEl.querySelector(".dt-page");
+                  if (dtPage) {
+                      dtPage.innerHTML = `
+                          <div style="padding: 40px; text-align: center; color: #dc2626;">
+                              <h3>⚠️ Unable to Load Deferred Tax</h3>
+                              <p>${screenErr.message || 'Unknown error occurred'}</p>
+                              <button onclick="location.reload()" class="btn btn-primary mt-4">
+                                  Reload Page
+                              </button>
+                          </div>
+                      `;
+                  }
+              }
+          }
+          return;
       }
 
       // Lessors binder
@@ -51160,25 +51192,40 @@ async function saveEditModal() {
 
   async function loadRuns() {
     const mount = document.getElementById("dtRunList");
-    if (!mount) return;
+    if (!mount) {
+        console.error("[DeferredTax] dtRunList element NOT FOUND!");
+        return;
+    }
+
+    const companyId = cid();
+    console.log("[DeferredTax] loadRuns() called, companyId:", companyId);
+    
+    if (!companyId) {
+        console.error("[DeferredTax] No company ID available!");
+        mount.innerHTML = `
+            <div class="dt-error" style="color: #dc2626; padding: 20px;">
+                ⚠️ Error: No company selected. Please select a company first.
+            </div>
+        `;
+        return;
+    }
 
     mount.innerHTML = `
-      <div class="dt-loading">
-        Loading deferred tax runs...
-      </div>
+        <div class="dt-loading">Loading deferred tax runs...</div>
     `;
 
     try {
-      const res = await apiFetch(
-        ENDPOINTS.deferredTax.runs(cid())
-      );
+        const url = ENDPOINTS.deferredTax.runs(companyId);
+        console.log("[DeferredTax] Fetching:", url);
+        
+        const res = await apiFetch(url);
+        console.log("[DeferredTax] API Response:", res);
 
-      const rows = Array.isArray(res?.data)
-        ? res.data
-        : [];
-
-      renderDeferredTaxRunList(rows);
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        renderDeferredTaxRunList(rows);
+        
     } catch (error) {
+        console.error("[DeferredTax] loadRuns() error:", error);
       // If the backend says settings are missing or not enabled
       const isUnconfigured = error.status === 400 || (error.message && error.message.toLowerCase().includes("setting"));
 
