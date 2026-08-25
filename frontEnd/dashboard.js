@@ -50659,6 +50659,123 @@ async function saveEditModal() {
     `);
   }
 
+  async function showDeferredTaxSettings() {
+    const companyId = cid();
+
+    const [settingsRes, authoritiesRes] = await Promise.all([
+      apiFetch(ENDPOINTS.deferredTax.settings(companyId)),
+      apiFetch(ENDPOINTS.deferredTax.authorities(companyId))
+    ]);
+
+    const settings = settingsRes.data || {};
+    const config = settings.deferred_tax_settings || {};
+    const authorities = authoritiesRes.data || [];
+
+    openModal("Deferred Tax Settings", `
+      <form id="dtSettingsForm">
+        <div class="dt-form-grid">
+          <div class="dt-field">
+            <label>Tax authority</label>
+            <select name="tax_authority_id" required>
+              <option value="">Select authority</option>
+              ${authorities.map(row => `
+                <option
+                  value="${row.id}"
+                  ${Number(settings.tax_authority_id) === Number(row.id) ? "selected" : ""}
+                >
+                  ${row.code} — ${row.name}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="dt-field">
+            <label>Corporate income tax rate (%)</label>
+            <input
+              type="number"
+              name="income_tax_rate"
+              min="0"
+              max="100"
+              step="0.0001"
+              value="${settings.income_tax_rate || 0}"
+              required
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Default recovery method</label>
+            <select name="default_recovery_method">
+              <option value="use"
+                ${config.default_recovery_method === "use" ? "selected" : ""}>
+                Through use
+              </option>
+              <option value="sale"
+                ${config.default_recovery_method === "sale" ? "selected" : ""}>
+                Through sale
+              </option>
+            </select>
+          </div>
+
+          <div class="dt-field">
+            <label>Reconciliation tolerance</label>
+            <input
+              type="number"
+              name="reconciliation_tolerance"
+              step="0.01"
+              value="${config.reconciliation_tolerance ?? 0.05}"
+            >
+          </div>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="deferred_tax_enabled"
+              ${settings.deferred_tax_enabled ? "checked" : ""}
+            >
+            Enable deferred tax
+          </label>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="auto_scan_assets"
+              ${config.auto_scan_assets !== false ? "checked" : ""}
+            >
+            Automatically scan assets
+          </label>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="auto_scan_accrual_deferrals"
+              ${config.auto_scan_accrual_deferrals !== false ? "checked" : ""}
+            >
+            Automatically scan accruals and deferrals
+          </label>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="require_dta_recoverability_review"
+              ${config.require_dta_recoverability_review !== false ? "checked" : ""}
+            >
+            Require DTA recoverability assessment
+          </label>
+        </div>
+
+        <div class="dt-form-actions">
+          <button type="button" class="btn btn-secondary" data-dt-close>
+            Cancel
+          </button>
+
+          <button type="submit" class="btn btn-primary">
+            Save Settings
+          </button>
+        </div>
+      </form>
+    `);
+  }
+  
   async function saveAssetTaxProfile(form) {
     const data = Object.fromEntries(new FormData(form).entries());
     const [source, ruleId] = String(data.selected_rule || "").split(":");
@@ -111844,123 +111961,6 @@ async function renderARStatements() {
       if (status && p.config_status !== status) return false;
       return true;
     });
-  }
-
-  async function showDeferredTaxSettings() {
-    const companyId = cid();
-
-    const [settingsRes, authoritiesRes] = await Promise.all([
-      apiFetch(ENDPOINTS.deferredTax.settings(companyId)),
-      apiFetch(ENDPOINTS.deferredTax.authorities(companyId))
-    ]);
-
-    const settings = settingsRes.data || {};
-    const config = settings.deferred_tax_settings || {};
-    const authorities = authoritiesRes.data || [];
-
-    openModal("Deferred Tax Settings", `
-      <form id="dtSettingsForm">
-        <div class="dt-form-grid">
-          <div class="dt-field">
-            <label>Tax authority</label>
-            <select name="tax_authority_id" required>
-              <option value="">Select authority</option>
-              ${authorities.map(row => `
-                <option
-                  value="${row.id}"
-                  ${Number(settings.tax_authority_id) === Number(row.id) ? "selected" : ""}
-                >
-                  ${row.code} — ${row.name}
-                </option>
-              `).join("")}
-            </select>
-          </div>
-
-          <div class="dt-field">
-            <label>Corporate income tax rate (%)</label>
-            <input
-              type="number"
-              name="income_tax_rate"
-              min="0"
-              max="100"
-              step="0.0001"
-              value="${settings.income_tax_rate || 0}"
-              required
-            >
-          </div>
-
-          <div class="dt-field">
-            <label>Default recovery method</label>
-            <select name="default_recovery_method">
-              <option value="use"
-                ${config.default_recovery_method === "use" ? "selected" : ""}>
-                Through use
-              </option>
-              <option value="sale"
-                ${config.default_recovery_method === "sale" ? "selected" : ""}>
-                Through sale
-              </option>
-            </select>
-          </div>
-
-          <div class="dt-field">
-            <label>Reconciliation tolerance</label>
-            <input
-              type="number"
-              name="reconciliation_tolerance"
-              step="0.01"
-              value="${config.reconciliation_tolerance ?? 0.05}"
-            >
-          </div>
-
-          <label class="dt-check">
-            <input
-              type="checkbox"
-              name="deferred_tax_enabled"
-              ${settings.deferred_tax_enabled ? "checked" : ""}
-            >
-            Enable deferred tax
-          </label>
-
-          <label class="dt-check">
-            <input
-              type="checkbox"
-              name="auto_scan_assets"
-              ${config.auto_scan_assets !== false ? "checked" : ""}
-            >
-            Automatically scan assets
-          </label>
-
-          <label class="dt-check">
-            <input
-              type="checkbox"
-              name="auto_scan_accrual_deferrals"
-              ${config.auto_scan_accrual_deferrals !== false ? "checked" : ""}
-            >
-            Automatically scan accruals and deferrals
-          </label>
-
-          <label class="dt-check">
-            <input
-              type="checkbox"
-              name="require_dta_recoverability_review"
-              ${config.require_dta_recoverability_review !== false ? "checked" : ""}
-            >
-            Require DTA recoverability assessment
-          </label>
-        </div>
-
-        <div class="dt-form-actions">
-          <button type="button" class="btn btn-secondary" data-dt-close>
-            Cancel
-          </button>
-
-          <button type="submit" class="btn btn-primary">
-            Save Settings
-          </button>
-        </div>
-      </form>
-    `);
   }
 
   function renderProfiles() {
