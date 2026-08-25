@@ -12015,15 +12015,36 @@ async function switchScreen(
       if (!activeLink && isCustApprovals) activeLink = $(`[data-nav="cust"]`);
       if (activeLink) activeLink.classList.add("active");
 
-      // Show screen container
+      // Show screen container (ROBUST VERSION)
       $$(".screen").forEach((s) => {
         s.classList.remove("active");
         s.classList.add("hidden");
       });
 
       const screenEl = document.getElementById(`screen-${base}`);
-      screenEl?.classList.add("active");
-      screenEl?.classList.remove("hidden");
+      if (screenEl) {
+        // Force remove hidden - do it twice to be safe!
+        screenEl.classList.remove("hidden");
+        screenEl.classList.add("active");
+        
+        // Defensive: Ensure inline style doesn't override
+        if (screenEl.style.display === 'none') {
+          screenEl.style.display = '';
+        }
+        
+        // Fallback: Force visibility after a tick (catches race conditions)
+        requestAnimationFrame(() => {
+          if (screenEl.classList.contains('hidden')) {
+            console.warn('[switchScreen] Race detected - forcing screen visible:', base);
+            screenEl.classList.remove('hidden');
+            screenEl.classList.add('active');
+          }
+        });
+        
+        console.log('[switchScreen] Screen shown:', base, screenEl.className);
+      } else {
+        console.error('[switchScreen] Screen element NOT found:', `screen-${base}`);
+      }
 
       // ─────────────────────────────
       // Titles & Header Setup
