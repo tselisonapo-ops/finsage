@@ -14017,7 +14017,11 @@ async function ensureCompanyDataLoaded() {
   await loadVatSettings(cid);
   bindVatSettingsForm();
   await loadVatSettingsForm();
-  await restoreAppRoute();
+  if (typeof window.restoreAppRoute === "function") {
+    await window.restoreAppRoute();
+  } else {
+    console.warn("[Router] restoreAppRoute not ready yet.");
+  }
   return window.CURRENT_COMPANY || null;
 }
 window.ensureCompanyDataLoaded = ensureCompanyDataLoaded;
@@ -134941,8 +134945,9 @@ function startDashboardApp() {
       APP_RESTORING_ROUTE=false;
     }
   }
+  window.restoreAppRoute = restoreAppRoute; 
 }
-window.restoreAppRoute = restoreAppRoute; 
+
 
 if (document.readyState === "loading") {
   document.addEventListener(
