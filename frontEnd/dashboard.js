@@ -11834,800 +11834,695 @@ async function switchScreen(
     force = false,
   } = {}
 ) {
-  // 1. Normalise aliases first
-  let target = name;
-  if (target === "cust" || target === "cust-approvals") target = "cust-approvals";
-  if (target === "invoices") target = "ar-invoices";
-  if (target === "quotes") target = "ar-quotes";
-  if (target === "receipts") target = "ar-receipts";
-  if (target === "journal-desk") target = "journal";
-  target = typeof resolveScreenName === "function" ? resolveScreenName(target) : target;
-
-  // 2. Debounce rapid double-clicks (within 250ms) to the exact same screen
-  const now = Date.now();
-  if (!force && _currentScreen === target && (now - _lastSwitchTime < 250)) {
-    return;
+  // Prevent re-entrant calls while a switch is in-flight
+  if (_switchingPromise && !force) {
+    console.warn(`[switchScreen] Navigation to "${name}" ignored — transition in progress.`);
+    return _switchingPromise;
   }
-  _lastSwitchTime = now;
 
-  console.log("[switchScreen] ->", target);
+  _switchingPromise = (async () => {
+    // 1. Normalise aliases first
+    let target = name;
+    if (target === "cust" || target === "cust-approvals") target = "cust-approvals";
+    if (target === "invoices") target = "ar-invoices";
+    if (target === "quotes") target = "ar-quotes";
+    if (target === "receipts") target = "ar-receipts";
+    if (target === "journal-desk") target = "journal";
+    if (target === "fixed-assets") target = "fixedassets";
+    target = typeof resolveScreenName === "function" ? resolveScreenName(target) : target;
 
-  try {
-    // 3. Auth & Access Guards
-    if (!isLoggedIn() && isAuthRequired(target)) {
-      showSignupPrompt(target);
+    // 2. Debounce rapid double-clicks (within 250ms) to the exact same screen
+    const now = Date.now();
+    if (!force && _currentScreen === target && (now - _lastSwitchTime < 250)) {
       return;
     }
+    _lastSwitchTime = now;
 
-    if (!canOpenScreen(target)) {
-      console.warn("[NAV] blocked by allowlist:", target);
-      alert("This screen is not enabled yet.");
-      return;
-    }
+    console.log("[switchScreen] ->", target);
 
-    const access = guardScreenAccess(target);
-    if (!access.ok) {
-      if (access.reason === "auth") showSignupPrompt(target);
-      else alert(`No access (${access.reason})`);
-      return;
-    }
-
-    _currentScreen = target;
-
-    // normalize names like you already do
-    if (name === "pnl") setActiveStmtType("pnl");
-    if (name === "bs") setActiveStmtType("bs");
-    if (name === "cf") setActiveStmtType("cf");
-    if (name === "tb") setActiveStmtType("tb");
-
-    if (name === "reports") {
-      bindReportsScreen?.();
-    }
-
-    if (name === "pos-launch") {
-      launchPos();
-      return;
-    }
-
-    // ─────────────────────────────
-    // Route grouping
-    // ─────────────────────────────
-    const isARWorkflow =
-      name === "ar" ||
-      name === "ar-invoices" ||
-      name === "ar-quotes" ||
-      name === "ar-receipts";
-
-    const isControlRoom =
-      name === "ar-recon" ||
-      name === "ar-aging" ||
-      name === "ar-statements" ||
-      name === "ap-recon" ||
-      name === "ap-aging" ||
-      name === "ap-statements" ||
-      name === "period-locks" ||
-      name === "audit-trail" ||
-      name === "approvals" ||
-      name.startsWith("ctrl-");
-
-    const isAPWorkflow =
-      name === "ap" ||
-      name === "ap-bills" ||
-      name === "ap-payments";
-
-    const isRevenueWorkflow =
-      name === "revenue" ||
-      name === "revenue-contracts" ||
-      name === "revenue-runs";
-      
-    const isRevenueSetup =
-      name === "revenue-setup" ||
-      name === "revenue-setup-contract" ||
-      name === "revenue-setup-allocation";
-
-    const isProjectWorkflow =
-      name === "projects" ||
-      name === "project-detail" ||
-      name === "project-budgets" ||
-      name === "project-material-issues" ||
-      name === "project-profitability";
-
-    const isCatalogSubscreen = [
-      "inventory-items",
-      "inventory-movements",
-      "stocktake",
-      "reorder",
-      "inventory-valuation",
-      "service-items",
-      "purchase-orders",
-      "goods-receipts",
-      "pos",
-      "pos-launch",
-    ].includes(name);
-
-    const isTaxRecon =
-      name === "tax-recon";
-
-    const isAccrualDeferralWorkflow =
-      name === "accrual-deferrals";
-
-    const isIFRS9Workflow =
-      name === "ifrs9";
-
-    const isPayrollWorkflow =
-      name === "payroll";
-
-    const isBudgetingWorkflow = 
-      name === "budgeting";
-
-    const isDeferredTaxWorkflow = 
-      name === "deferred-tax";
-
-    const isDataMigrationWorkflow =
-      name === "data-migration";    
-
-    const isIAS41Workflow =
-      name === "ias41";
-
-    const isGroupReportingWorkflow =
-      name === "group-reporting";
-
-    let base = "dashboard";
-
-    if (isCustApprovals) base = "cust";
-    else if (isControlRoom) base = "controls";
-    else if (name === "customers") base = "customers";
-    else if (name === "vendors") base = "vendors";
-    else if (name === "lessors") base = "lessors";
-    else if (name === "banking") base = "banking";
-    else if (name === "bank-setup") base = "bank-setup";
-    else if (name === "bank-recon") base = "bank-recon";
-    else if (name === "loans") base = "loans";
-    else if (name.startsWith("lease-")) base = "leases";
-    else if (name === "lessor-subsequent") base = "lessor-subsequent";
-    else if (name === "lease-register" || name.startsWith("lease-")) base = "leases";
-    else if (name === "account-settings") base = "account-settings";
-    else if (name === "users") base = "users";
-    else if (name.startsWith("company")) base = "company";
-    else if (isAPWorkflow) base = "ap";
-    else if (isCatalogSubscreen) base = "inventory";
-    else if (isRevenueWorkflow) base = "revenue";
-    else if (isRevenueSetup) base = "revenue-setup";
-    else if (name === "projects" || name === "project-detail") base = "projects";
-    else if (name === "project-budgets") base = "project-budgets";
-    else if (name === "project-material-issues") base = "project-material-issues";
-    else if (name === "project-profitability") base = "project-profitability";
-    else if (isTaxRecon) base = "tax-recon";
-    else if (isAccrualDeferralWorkflow) base = "accrual-deferrals";
-    else if (isIFRS9Workflow) base = "ifrs9";
-    else if (isPayrollWorkflow) base = "payroll";
-    else if (isBudgetingWorkflow) base = "budgeting";
-    else if (name === "fixed-assets") base = "fixedassets";
-    else if (name === "help") base = "help";
-    else if (isDeferredTaxWorkflow) base = "deferred-tax";
-    else if (isIAS41Workflow) base = "ias41";
-    else if (isDataMigrationWorkflow) base = "data-migration";
-    else if (isGroupReportingWorkflow) base = "group-reporting";
-    else base = name.split("-")[0];
-
-    // Remember current screen
-    store.set(K.CURRENT_SCREEN, name);
-
-    if (updateUrl) {
-      updateAppUrl(
-        name,
-        { replace: replaceUrl }
-      );
-    }
-
-    // Highlight nav
-    $$(".nav-item-link").forEach((a) => a.classList.remove("active"));
-    let activeLink = $(`[data-nav="${name}"]`);
-    if (!activeLink && isCustApprovals) activeLink = $(`[data-nav="cust"]`);
-    if (activeLink) activeLink.classList.add("active");
-
-    // Show screen container
-    $$(".screen").forEach((s) => {
-      s.classList.remove("active");
-      s.classList.add("hidden");
-    });
-
-    const screenEl = document.getElementById(`screen-${base}`);
-    screenEl?.classList.add("active");
-    screenEl?.classList.remove("hidden");
-
-    // ─────────────────────────────
-    // Titles & Header Setup
-    // ─────────────────────────────
-    const titles = {
-      dashboard: "Command Center",
-      coa: "Chart of Accounts",
-      journal: "General Journal",
-      ledger: "General Ledger",
-      trial: "Trial Balance",
-      reports: "Financial Statements",
-      "group-reporting": "Group Reporting & Consolidation",
-      vat: "VAT & Tax",
-      "tax-recon": "Income Tax Workspace",
-      company: "Company & Setup",
-      "company-my": "Company & Setup",
-      "company-update": "Company & Setup",
-      "company-vat": "Company & Setup",
-      "company-income-tax": "Company & Setup",
-      "company-structure": "Company & Setup",
-      "company-reporting": "Company & Setup",
-      "company-mgmt-packs": "Company & Setup - Management Packs",
-      users: "Users & Roles",
-      banking: "Banking - Cashbook",
-      "bank-setup": "Bank Setup",
-      "bank-recon": "Bank Reconciliation",
-      loans: "Loans & Financing",
-      revenue: "Revenue Desk",
-      "accrual-deferrals": "Accruals & Deferrals",
-      "revenue-setup": "Revenue Setup",
-      ifrs9: "IFRS 9 Financial Instruments",
-      payroll: "Payroll",
-      budgeting: "Planning & Performance",
-      "deferred-tax": "IAS 12 Deferred Tax",
-      ias41: "IAS 41 Agriculture",
-      inventory: "Inventory & Services",
-      customers: "Customers",
-      vendors: "Vendors",
-      ar: "Accounts Receivable",
-      "ar-invoices": "Accounts Receivable - Invoices",
-      "ar-quotes": "Accounts Receivable - Quotes",
-      ap: "Accounts Payable",
-      "sign-in": "Sign In",
-      "change-password": "Change Password",
-      "cust-approvals": "Credit Control - Customer Approvals",
-      "ar-recon": "AR Control Reconciliation",
-      "ar-aging": "AR Aging (30/60/90)",
-      "ar-statements": "Customer Statements",
-      "period-locks": "Period Locking",
-      "ap-recon": "AP Control Reconciliation",
-      "ap-aging": "AP Aging (30/60/90)",
-      "ap-statements": "Vendor Statements",
-      "inventory-items":     "Catalog Studio - Inventory Items",
-      "inventory-movements": "Catalog Studio - Stock Movements",
-      "stocktake":           "Catalog Studio - Stocktake",
-      "reorder":             "Catalog Studio - Reorder Alerts",
-      "inventory-valuation": "Catalog Studio - Inventory Valuation",
-      "service-items":       "Catalog Studio - Service Items",
-      "lease-payments": "IFRS 16 - Lease Payments",
-      "lease-monthly":  "IFRS 16 - Monthly Posting",
-      "lease-mods":    "IFRS 16 - Modifications",
-      "lease-terms":   "IFRS 16 - Terminations",
-      "lease-register": "IFRS 16 - Lease Register",
-      "lessor-subsequent": "IFRS 16 - Lessor Subsequent Measurement",
-      projects: "Project Desk",
-      "project-detail": "Project Desk",
-      "data-migration": "Data Migration Workspace",
-      "project-budgets": "Project Desk - Budgets / BOQ",
-      "project-material-issues": "Project Desk - Material Issues",
-      "project-profitability": "Project Desk - Profitability",
-      help: "Help & Support",
-    };
-
-    const screenTitleEl = document.getElementById("screenTitle");
-    if (screenTitleEl) {
-      screenTitleEl.textContent = titles[name] || titles[base] || "FinSage";
-    }
-
-    // ✅ IMPORTANT: when entering Control Room, reset controls mount
-    if (isControlRoom) {
-      getControlsMount(); // clears mount safely
-    }
-
-    if (base === "data-migration") {
-      try {
-        await ensureCompanyDataLoaded?.();
-      } catch (e) {
-        console.warn("[DataMigration] company load failed:", e);
-      }
-
-      window.bindDataMigrationScreen?.();
-      return;
-    }
-
-    if (base === "ias41") {
-      try {
-        await ensureCompanyDataLoaded?.();
-      } catch (e) {
-        console.warn("[IAS41] company load failed:", e);
-      }
-
-      await window.bindIAS41Screen?.();
-      return;
-    }
-
-    if (base === "group-reporting") {
-      try {
-        await ensureCompanyDataLoaded?.();
-      } catch (e) {
-        console.warn("[GroupReporting] company load failed:", e);
-      }
-
-      window.bindConsolidationScreen?.();
-      await window.loadConsolidationRuns?.();
-      return;
-    }
-
-    // Customers + Customer Approvals binder
-    if (base === "customers" || base === "cust-approvals" || base === "cust") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        } else {
-          const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-          if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
-        }
-
-        if (window.FS?.control?.syncFromCompany) {
-          FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
-        }
-      } catch (e) {
-        console.warn("[Customers] ensureCompanyDataLoaded failed:", e);
-      }
-
-      bindCustomers?.();
-      bindCustomersKyc?.();
-      bindCustomerCreditWatcher?.();
-      updateCustomerSubmitState?.();
-
-      if (base === "cust-approvals" || base === "cust") {
-        renderCustApprovalsScreen?.({ from: "approvals_inbox" });
-      }
-    }
-
-    if (name === "fixedassets") {
-      try {
-        await ensureCompanyDataLoaded?.();
-      } catch (e) {
-        console.warn("[PPE] company load failed", e);
-      }
-
-      await window.bindFixedAssetsScreen?.();
-      return;
-    }
-
-    if (base === "tax-recon") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        }
-      } catch (e) {
-        console.warn("[TaxRecon] ensureCompanyDataLoaded failed:", e);
-      }
-
-      await window.bindTaxReconScreen?.();
-      return;
-    }
-
-    if (base === "accrual-deferrals") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        }
-      } catch (e) {
-        console.warn("[AccrualDeferrals] ensureCompanyDataLoaded failed:", e);
-      }
-
-      await window.bindAccrualDeferralsScreen?.();
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    if (base === "lessor-subsequent") {
-      try { await ensureCompanyDataLoaded?.(); }
-      catch (e) { console.warn("[Lessor Subsequent] company load failed", e); }
-
-      await window.bindLessorSubsequentScreen?.();
-      return;
-    }
-
-    if (base === "ifrs9") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        }
-      } catch (e) {
-        console.warn("[IFRS9] ensureCompanyDataLoaded failed:", e);
-      }
-
-      await window.bindIFRS9Screen?.();
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    if (base === "payroll") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        }
-      } catch (e) {
-        console.warn("[Payroll] ensureCompanyDataLoaded failed:", e);
-      }
-
-      await window.bindPayrollScreen?.();
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    if (base === "budgeting") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        }
-      } catch (e) {
-        console.warn("[Budgeting] ensureCompanyDataLoaded failed:", e);
-      }
-
-      await window.bindBudgetingScreen?.();
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    // UI Updates & Titles run immediatel
-    if (base === "deferred-tax") {
-      try {
-        await ensureCompanyDataLoaded?.();
-      } catch (e) {
-        console.warn("[DeferredTax] company load failed:", e);
-      }
-
-      await window.bindDeferredTaxScreen?.();
-      return;
-    }
-
-    // Lessors binder
-    if (base === "lessors") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        } else {
-          const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-          if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
-        }
-      } catch (e) {
-        console.warn("[Lessors] ensureCompanyDataLoaded failed:", e);
-      }
-
-      window.bindLessorsScreen?.();
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    if (base === "leases") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") await ensureCompanyDataLoaded();
-      } catch (e) {}
-
-      window.bindLeaseTabs?.();
-      window.bindLeasesScreen?.(name);
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    if (isAPWorkflow) {
-      await initPayablesScreen?.();
-
-      const handoff = window.getNexusApHandoffFromUrl?.();
-      if (handoff?.source === "nexus" && handoff?.bill_id) {
-        if (handoff.action === "payment") {
-          await window.openNexusPaymentHandoff?.(handoff);
-        } else {
-          await window.openFinSageBillFromHandoff?.(handoff.bill_id);
-        }
-      }
-
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    // Account settings hydrate
-    if (name === "account-settings") {
-      try {
-        if (!window.currentUser) await window.loadCurrentUser?.();
-        window.hydrateAccountSettings?.();
-      } catch (e) {
-        console.warn("Account settings hydrate failed:", e);
-      }
-    }
-
-    // Screen-specific actions
-    if (name === "users") initUsersScreen?.();
-    if (isCustApprovals) bindCustomerApprovals?.();
-    if (name === "dashboard") loadDashboard?.();
-    if (name === "journal") {
-      initJournalUI?.();
-      setTimeout(() => wireJournalVatRateUI?.(), 0);
-    }
-
-    if (name === "ledger") bindLedger?.();
-    if (name === "trial") bindTrialBalance?.();
-    if (name === "coa") {
-      renderCOATable?.(COA);
-      populateAccountSelects?.();
-      bindCoaScreen?.();
-    }
-
-    if (base === "loans") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        }
-      } catch (e) {
-        console.warn("[Loans] ensureCompanyDataLoaded failed:", e);
-      }
-
-      await window.bindLoansScreen?.();
-      await window.renderLoanRegister?.();
-    }
-
-    if (isARWorkflow) {
-      await initReceivablesScreen?.();
-
-      try { await fetchCustomersFromBackend?.(false); } catch (e) {}
-
-      const isQuotesRoute = (name === "ar-quotes");
-      window.showArPane?.(isQuotesRoute ? "quotes" : "invoices");
-
-      if (!isQuotesRoute && window._PENDING_REVENUE_INVOICE_PREFILL) {
-        const payload = window._PENDING_REVENUE_INVOICE_PREFILL;
-        window._PENDING_REVENUE_INVOICE_PREFILL = null;
-
-        if (
-          payload?.handoff_type === "lessor_lease_invoice" ||
-          payload?.source === "lessor_lease_billing" ||
-          payload?.module_name === "ifrs16_lessor"
-        ) {
-          window._CURRENT_INVOICE_SOURCE = payload;
-        }
-
-        console.log("🧾 [switchScreen AR] consuming pending invoice prefill", payload);
-        const ready = await window.waitForInvoiceReady?.(4000);
-
-        console.log("🔎 [switchScreen AR] invoice ready?", !!ready);
-        console.log("🔎 [switchScreen AR] invCustomerId ready?", !!document.getElementById("invCustomerId"));
-        console.log("🔎 [switchScreen AR] invRevenueContractId ready?", !!document.getElementById("invRevenueContractId"));
-        console.log("🔎 [switchScreen AR] invLines ready?", !!document.getElementById("invLines"));
-
-        if (!ready) {
-          console.warn("❌ [switchScreen AR] invoice UI not ready; skipping revenue prefill");
-        } else {
-          await window.prefillInvoiceFromRevenuePayload?.(payload);
-        }
-      }
-
-      if (isQuotesRoute) {
-        try { await enterQuotesScreen?.(); }
-        catch (e) { console.warn("[Quotes] enter failed", e); }
-      } else {
-        try { wireInvoiceCustomerPicker?.(); } catch (e) {}
-
-        try { await openInvoiceFromApprovalHandoff?.(); }
-        catch (e) { console.warn("[AR] approval handoff failed:", e); }
-
-        if (typeof updateInvoiceActionButtons === "function") {
-          updateInvoiceActionButtons();
-        }
-      }
-
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    if (base === "revenue") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        } else {
-          const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-          if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
-        }
-
-        if (window.FS?.control?.syncFromCompany) {
-          FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
-        }
-      } catch (e) {
-        console.warn("[Revenue] ensureCompanyDataLoaded failed:", e);
-      }
-
-      await window.bindRevenueScreen?.(name);
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    if (base === "revenue-setup") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        } else {
-          const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-          if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
-        }
-
-        if (window.FS?.control?.syncFromCompany) {
-          FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
-        }
-      } catch (e) {
-        console.warn("[RevenueSetup] ensureCompanyDataLoaded failed:", e);
-      }
-
-      await window.bindRevenueSetupScreen?.(name);
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    if (base === "ap") {
-      try {
-        if (typeof ensureCompanyDataLoaded === "function") {
-          await ensureCompanyDataLoaded();
-        } else {
-          const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-          if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
-        }
-      } catch (e) {
-        console.warn("[AP] ensureCompanyDataLoaded failed:", e);
-      }
-
-      await initPayablesScreen?.();
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    // Control Room screens
-    if (isControlRoom) {
-      if (name === "ar-recon") return renderARRecon?.();
-      if (name === "ar-aging") return renderARAging?.();
-      if (name === "ar-statements") return renderARStatements?.();
-      if (name === "ap-recon") return renderAPRecon?.();
-      if (name === "ap-aging") return renderAPAging?.();
-      if (name === "ap-statements") return renderAPStatements?.();
-      if (name === "period-locks") return renderPeriodLocks?.();
-      if (name === "approvals") return renderApprovalsScreen?.();
-      if (name === "audit-trail") return renderAuditTrailScreen?.();
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    if (name === "help") {
-      const companyId = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-      await renderHelpScreen(companyId);
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
-    }
-
-    if (base === "inventory") {
-      const sub =
-        (name === "inventory")
-          ? (store?.get?.("fs_catalog_subscreen", "") || "inventory-items")
-          : name;
-
-      store?.set?.("fs_catalog_subscreen", sub);
-      renderCatalogScreen?.(sub);
-    }
-
-    if (
-      base === "projects" ||
-      base === "project-budgets" ||
-      base === "project-material-issues" ||
-      base === "project-profitability"
-    ) {
-      if (name === "project-budgets") {
-        await window.bindProjectBudgetsScreen?.();
+    try {
+      // 3. Auth & Access Guards
+      if (!isLoggedIn() && isAuthRequired(target)) {
+        showSignupPrompt(target);
         return;
       }
 
-      if (name === "project-material-issues") {
-        await window.bindProjectMaterialIssuesScreen?.();
+      if (!canOpenScreen(target)) {
+        console.warn("[NAV] blocked by allowlist:", target);
+        alert("This screen is not enabled yet.");
         return;
       }
 
-      if (name === "project-profitability") {
-        await window.bindProjectProfitabilityScreen?.();
+      const access = guardScreenAccess(target);
+      if (!access.ok) {
+        if (access.reason === "auth") showSignupPrompt(target);
+        else alert(`No access (${access.reason})`);
         return;
       }
 
-      await window.bindProjectsScreen?.(name);
-      return;
-    }
+      _currentScreen = target;
 
-    // Banking hooks
-    if (name === "banking") bindBankScreen?.();
-    if (name === "bank-setup") bindBankSetupScreen?.();
-    if (name === "bank-recon") {
-      bindReconScreenControls?.();
-      bindReconActions?.();
-      renderReconItems?.();
-    }
+      // Normalize statement types
+      if (target === "pnl") setActiveStmtType?.("pnl");
+      if (target === "bs") setActiveStmtType?.("bs");
+      if (target === "cf") setActiveStmtType?.("cf");
+      if (target === "tb") setActiveStmtType?.("tb");
 
-    // Company setup
-    if (name.startsWith("company")) {
-      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-      if (!cid) return;
-
-      initCompanyProfileUI?.(cid);
-      if (typeof bindVatSettingsForm === "function") bindVatSettingsForm();
-
-      const company = await loadCompanyProfile(cid);
-      hydrateMyCompanyView?.(company);
-      await loadVatSettings(cid);
-
-      const view =
-        name === "company-my" ? "my" :
-        name === "company-update" ? "update" :
-        name === "company-vat" ? "vat" :
-        name === "company-income-tax" ? "income-tax" :
-        name === "company-structure" ? "structure" :
-        name === "company-reporting" ? "reporting" :
-        name === "company-mgmt-packs" ? "mgmt-packs" :
-        "my";
-
-      showCompanyView?.(view);
-
-      if (view === "reporting") {
-        bindReportingPeriodsForm?.(cid);
-        bindYearEndClose(cid);
+      if (target === "reports") {
+        bindReportsScreen?.();
       }
 
-      if (view === "structure") {
+      if (target === "pos-launch") {
+        launchPos?.();
+        return;
+      }
+
+      // ─────────────────────────────
+      // Route grouping
+      // ─────────────────────────────
+      const isCustApprovals =
+        target === "cust" ||
+        target === "cust-approvals";
+
+      const isARWorkflow =
+        target === "ar" ||
+        target === "ar-invoices" ||
+        target === "ar-quotes" ||
+        target === "ar-receipts";
+
+      const isControlRoom =
+        target === "ar-recon" ||
+        target === "ar-aging" ||
+        target === "ar-statements" ||
+        target === "ap-recon" ||
+        target === "ap-aging" ||
+        target === "ap-statements" ||
+        target === "period-locks" ||
+        target === "audit-trail" ||
+        target === "approvals" ||
+        target.startsWith("ctrl-");
+
+      const isAPWorkflow =
+        target === "ap" ||
+        target === "ap-bills" ||
+        target === "ap-payments";
+
+      const isRevenueWorkflow =
+        target === "revenue" ||
+        target === "revenue-contracts" ||
+        target === "revenue-runs";
+        
+      const isRevenueSetup =
+        target === "revenue-setup" ||
+        target === "revenue-setup-contract" ||
+        target === "revenue-setup-allocation";
+
+      const isProjectWorkflow =
+        target === "projects" ||
+        target === "project-detail" ||
+        target === "project-budgets" ||
+        target === "project-material-issues" ||
+        target === "project-profitability";
+
+      const isCatalogSubscreen = [
+        "inventory",
+        "inventory-items",
+        "inventory-movements",
+        "stocktake",
+        "reorder",
+        "inventory-valuation",
+        "service-items",
+        "purchase-orders",
+        "goods-receipts",
+        "pos",
+        "pos-launch",
+      ].includes(target);
+
+      const isTaxRecon = target === "tax-recon";
+      const isAccrualDeferralWorkflow = target === "accrual-deferrals";
+      const isIFRS9Workflow = target === "ifrs9";
+      const isPayrollWorkflow = target === "payroll";
+      const isBudgetingWorkflow = target === "budgeting";
+      const isDeferredTaxWorkflow = target === "deferred-tax";
+      const isDataMigrationWorkflow = target === "data-migration";    
+      const isIAS41Workflow = target === "ias41";
+      const isGroupReportingWorkflow = target === "group-reporting";
+
+      let base = "dashboard";
+
+      if (isCustApprovals) base = "cust";
+      else if (isControlRoom) base = "controls";
+      else if (target === "customers") base = "customers";
+      else if (target === "vendors") base = "vendors";
+      else if (target === "lessors") base = "lessors";
+      else if (target === "banking") base = "banking";
+      else if (target === "bank-setup") base = "bank-setup";
+      else if (target === "bank-recon") base = "bank-recon";
+      else if (target === "loans") base = "loans";
+      else if (target === "lessor-subsequent") base = "lessor-subsequent";
+      else if (target === "lease-register" || target.startsWith("lease-")) base = "leases";
+      else if (target === "account-settings") base = "account-settings";
+      else if (target === "users") base = "users";
+      else if (target.startsWith("company")) base = "company";
+      else if (isAPWorkflow) base = "ap";
+      else if (isCatalogSubscreen) base = "inventory";
+      else if (isRevenueWorkflow) base = "revenue";
+      else if (isRevenueSetup) base = "revenue-setup";
+      else if (isProjectWorkflow) {
+        if (target === "project-budgets") base = "project-budgets";
+        else if (target === "project-material-issues") base = "project-material-issues";
+        else if (target === "project-profitability") base = "project-profitability";
+        else base = "projects";
+      }
+      else if (isTaxRecon) base = "tax-recon";
+      else if (isAccrualDeferralWorkflow) base = "accrual-deferrals";
+      else if (isIFRS9Workflow) base = "ifrs9";
+      else if (isPayrollWorkflow) base = "payroll";
+      else if (isBudgetingWorkflow) base = "budgeting";
+      else if (target === "fixedassets") base = "fixedassets";
+      else if (target === "help") base = "help";
+      else if (isDeferredTaxWorkflow) base = "deferred-tax";
+      else if (isIAS41Workflow) base = "ias41";
+      else if (isDataMigrationWorkflow) base = "data-migration";
+      else if (isGroupReportingWorkflow) base = "group-reporting";
+      else base = target.split("-")[0];
+
+      // Remember current screen
+      store?.set?.(K.CURRENT_SCREEN, target);
+
+      if (updateUrl) {
+        updateAppUrl?.(target, { replace: replaceUrl });
+      }
+
+      // Highlight nav
+      $$(".nav-item-link").forEach((a) => a.classList.remove("active"));
+      let activeLink = $(`[data-nav="${target}"]`) || $(`[data-nav="${name}"]`);
+      if (!activeLink && isCustApprovals) activeLink = $(`[data-nav="cust"]`);
+      if (activeLink) activeLink.classList.add("active");
+
+      // Show screen container
+      $$(".screen").forEach((s) => {
+        s.classList.remove("active");
+        s.classList.add("hidden");
+      });
+
+      const screenEl = document.getElementById(`screen-${base}`);
+      screenEl?.classList.add("active");
+      screenEl?.classList.remove("hidden");
+
+      // ─────────────────────────────
+      // Titles & Header Setup
+      // ─────────────────────────────
+      const titles = {
+        dashboard: "Command Center",
+        coa: "Chart of Accounts",
+        journal: "General Journal",
+        ledger: "General Ledger",
+        trial: "Trial Balance",
+        reports: "Financial Statements",
+        "group-reporting": "Group Reporting & Consolidation",
+        vat: "VAT & Tax",
+        "tax-recon": "Income Tax Workspace",
+        company: "Company & Setup",
+        "company-my": "Company & Setup",
+        "company-update": "Company & Setup",
+        "company-vat": "Company & Setup",
+        "company-income-tax": "Company & Setup",
+        "company-structure": "Company & Setup",
+        "company-reporting": "Company & Setup",
+        "company-mgmt-packs": "Company & Setup - Management Packs",
+        users: "Users & Roles",
+        banking: "Banking - Cashbook",
+        "bank-setup": "Bank Setup",
+        "bank-recon": "Bank Reconciliation",
+        loans: "Loans & Financing",
+        revenue: "Revenue Desk",
+        "accrual-deferrals": "Accruals & Deferrals",
+        "revenue-setup": "Revenue Setup",
+        ifrs9: "IFRS 9 Financial Instruments",
+        payroll: "Payroll",
+        budgeting: "Planning & Performance",
+        "deferred-tax": "IAS 12 Deferred Tax",
+        ias41: "IAS 41 Agriculture",
+        inventory: "Inventory & Services",
+        customers: "Customers",
+        vendors: "Vendors",
+        ar: "Accounts Receivable",
+        "ar-invoices": "Accounts Receivable - Invoices",
+        "ar-quotes": "Accounts Receivable - Quotes",
+        ap: "Accounts Payable",
+        "sign-in": "Sign In",
+        "change-password": "Change Password",
+        "cust-approvals": "Credit Control - Customer Approvals",
+        "ar-recon": "AR Control Reconciliation",
+        "ar-aging": "AR Aging (30/60/90)",
+        "ar-statements": "Customer Statements",
+        "period-locks": "Period Locking",
+        "ap-recon": "AP Control Reconciliation",
+        "ap-aging": "AP Aging (30/60/90)",
+        "ap-statements": "Vendor Statements",
+        "inventory-items": "Catalog Studio - Inventory Items",
+        "inventory-movements": "Catalog Studio - Stock Movements",
+        stocktake: "Catalog Studio - Stocktake",
+        reorder: "Catalog Studio - Reorder Alerts",
+        "inventory-valuation": "Catalog Studio - Inventory Valuation",
+        "service-items": "Catalog Studio - Service Items",
+        "lease-payments": "IFRS 16 - Lease Payments",
+        "lease-monthly": "IFRS 16 - Monthly Posting",
+        "lease-mods": "IFRS 16 - Modifications",
+        "lease-terms": "IFRS 16 - Terminations",
+        "lease-register": "IFRS 16 - Lease Register",
+        "lessor-subsequent": "IFRS 16 - Lessor Subsequent Measurement",
+        projects: "Project Desk",
+        "project-detail": "Project Desk",
+        "data-migration": "Data Migration Workspace",
+        "project-budgets": "Project Desk - Budgets / BOQ",
+        "project-material-issues": "Project Desk - Material Issues",
+        "project-profitability": "Project Desk - Profitability",
+        fixedassets: "Property, Plant & Equipment (IAS 16)",
+        help: "Help & Support",
+      };
+
+      const screenTitleEl = document.getElementById("screenTitle");
+      if (screenTitleEl) {
+        screenTitleEl.textContent = titles[target] || titles[base] || "FinSage";
+      }
+
+      if (isControlRoom) {
+        getControlsMount?.();
+      }
+
+      if (base === "data-migration") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[DataMigration] company load failed:", e); }
+        window.bindDataMigrationScreen?.();
+        return;
+      }
+
+      if (base === "ias41") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[IAS41] company load failed:", e); }
+        await window.bindIAS41Screen?.();
+        return;
+      }
+
+      if (base === "group-reporting") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[GroupReporting] company load failed:", e); }
+        window.bindConsolidationScreen?.();
+        await window.loadConsolidationRuns?.();
+        return;
+      }
+
+      // Customers + Customer Approvals binder
+      if (base === "customers" || base === "cust-approvals" || base === "cust") {
         try {
-          bindCorporateStructureScreen?.();
-          await loadCorporateStructure?.(cid);
-        } catch (e) {
-          console.warn("[CorporateStructure] load failed:", e);
-        }
-      }
+          if (typeof ensureCompanyDataLoaded === "function") {
+            await ensureCompanyDataLoaded();
+          } else {
+            const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+            if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+          }
 
-      if (view === "mgmt-packs") {
-        try {
-          await loadManagementPacks?.(cid);
-
-          const btn = document.getElementById("btnRefreshMgmtPacks");
-          if (btn && btn.dataset.bound !== "1") {
-            btn.dataset.bound = "1";
-            btn.addEventListener("click", async () => {
-              const cid2 = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-              await loadManagementPacks?.(cid2);
-            });
+          if (window.FS?.control?.syncFromCompany) {
+            FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
           }
         } catch (e) {
-          console.warn("[MgmtPacks] load failed:", e);
+          console.warn("[Customers] ensureCompanyDataLoaded failed:", e);
+        }
+
+        bindCustomers?.();
+        bindCustomersKyc?.();
+        bindCustomerCreditWatcher?.();
+        updateCustomerSubmitState?.();
+
+        if (base === "cust-approvals" || base === "cust") {
+          renderCustApprovalsScreen?.({ from: "approvals_inbox" });
         }
       }
 
-      bindMgmtPacksUI?.();
+      if (base === "fixedassets" || target === "fixedassets") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[PPE] company load failed", e); }
+        await window.bindFixedAssetsScreen?.();
+        return;
+      }
 
-      console.log("[switchScreen] early return at:", name, "base:", base);
-      return;
+      if (base === "tax-recon") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[TaxRecon] ensureCompanyDataLoaded failed:", e); }
+        await window.bindTaxReconScreen?.();
+        return;
+      }
+
+      if (base === "accrual-deferrals") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[AccrualDeferrals] ensureCompanyDataLoaded failed:", e); }
+        await window.bindAccrualDeferralsScreen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "lessor-subsequent") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[Lessor Subsequent] company load failed", e); }
+        await window.bindLessorSubsequentScreen?.();
+        return;
+      }
+
+      if (base === "ifrs9") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[IFRS9] ensureCompanyDataLoaded failed:", e); }
+        await window.bindIFRS9Screen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "payroll") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[Payroll] ensureCompanyDataLoaded failed:", e); }
+        await window.bindPayrollScreen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "budgeting") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[Budgeting] ensureCompanyDataLoaded failed:", e); }
+        await window.bindBudgetingScreen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "deferred-tax") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[DeferredTax] company load failed:", e); }
+        await window.bindDeferredTaxScreen?.();
+        return;
+      }
+
+      // Lessors binder
+      if (base === "lessors") {
+        try {
+          if (typeof ensureCompanyDataLoaded === "function") {
+            await ensureCompanyDataLoaded();
+          } else {
+            const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+            if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+          }
+        } catch (e) {
+          console.warn("[Lessors] ensureCompanyDataLoaded failed:", e);
+        }
+
+        window.bindLessorsScreen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "leases") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) {}
+        window.bindLeaseTabs?.();
+        window.bindLeasesScreen?.(target);
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      // Accounts Payable base block
+      if (base === "ap" || isAPWorkflow) {
+        try {
+          if (typeof ensureCompanyDataLoaded === "function") {
+            await ensureCompanyDataLoaded();
+          } else {
+            const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+            if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+          }
+        } catch (e) {
+          console.warn("[AP] ensureCompanyDataLoaded failed:", e);
+        }
+
+        await initPayablesScreen?.();
+
+        const handoff = window.getNexusApHandoffFromUrl?.();
+        if (handoff?.source === "nexus" && handoff?.bill_id) {
+          if (handoff.action === "payment") {
+            await window.openNexusPaymentHandoff?.(handoff);
+          } else {
+            await window.openFinSageBillFromHandoff?.(handoff.bill_id);
+          }
+        }
+
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      // Account settings hydrate
+      if (target === "account-settings") {
+        try {
+          if (!window.currentUser) await window.loadCurrentUser?.();
+          window.hydrateAccountSettings?.();
+        } catch (e) {
+          console.warn("Account settings hydrate failed:", e);
+        }
+      }
+
+      // Screen-specific actions
+      if (target === "users") initUsersScreen?.();
+      if (isCustApprovals) bindCustomerApprovals?.();
+      if (target === "dashboard") loadDashboard?.();
+      if (target === "journal") {
+        initJournalUI?.();
+        setTimeout(() => wireJournalVatRateUI?.(), 0);
+      }
+
+      if (target === "ledger") bindLedger?.();
+      if (target === "trial") bindTrialBalance?.();
+      if (target === "coa") {
+        renderCOATable?.(COA);
+        populateAccountSelects?.();
+        bindCoaScreen?.();
+      }
+
+      if (base === "loans") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[Loans] ensureCompanyDataLoaded failed:", e); }
+        await window.bindLoansScreen?.();
+        await window.renderLoanRegister?.();
+      }
+
+      if (isARWorkflow) {
+        await initReceivablesScreen?.();
+        try { await fetchCustomersFromBackend?.(false); } catch (e) {}
+
+        const isQuotesRoute = (target === "ar-quotes");
+        window.showArPane?.(isQuotesRoute ? "quotes" : "invoices");
+
+        if (!isQuotesRoute && window._PENDING_REVENUE_INVOICE_PREFILL) {
+          const payload = window._PENDING_REVENUE_INVOICE_PREFILL;
+          window._PENDING_REVENUE_INVOICE_PREFILL = null;
+
+          if (
+            payload?.handoff_type === "lessor_lease_invoice" ||
+            payload?.source === "lessor_lease_billing" ||
+            payload?.module_name === "ifrs16_lessor"
+          ) {
+            window._CURRENT_INVOICE_SOURCE = payload;
+          }
+
+          console.log("🧾 [switchScreen AR] consuming pending invoice prefill", payload);
+          const ready = await window.waitForInvoiceReady?.(4000);
+
+          if (!ready) {
+            console.warn("❌ [switchScreen AR] invoice UI not ready; skipping revenue prefill");
+          } else {
+            await window.prefillInvoiceFromRevenuePayload?.(payload);
+          }
+        }
+
+        if (isQuotesRoute) {
+          try { await enterQuotesScreen?.(); } catch (e) { console.warn("[Quotes] enter failed", e); }
+        } else {
+          try { wireInvoiceCustomerPicker?.(); } catch (e) {}
+          try { await openInvoiceFromApprovalHandoff?.(); } catch (e) { console.warn("[AR] approval handoff failed:", e); }
+          if (typeof updateInvoiceActionButtons === "function") {
+            updateInvoiceActionButtons();
+          }
+        }
+
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "revenue") {
+        try {
+          if (typeof ensureCompanyDataLoaded === "function") {
+            await ensureCompanyDataLoaded();
+          } else {
+            const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+            if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+          }
+
+          if (window.FS?.control?.syncFromCompany) {
+            FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
+          }
+        } catch (e) {
+          console.warn("[Revenue] ensureCompanyDataLoaded failed:", e);
+        }
+
+        await window.bindRevenueScreen?.(target);
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "revenue-setup") {
+        try {
+          if (typeof ensureCompanyDataLoaded === "function") {
+            await ensureCompanyDataLoaded();
+          } else {
+            const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+            if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+          }
+
+          if (window.FS?.control?.syncFromCompany) {
+            FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
+          }
+        } catch (e) {
+          console.warn("[RevenueSetup] ensureCompanyDataLoaded failed:", e);
+        }
+
+        await window.bindRevenueSetupScreen?.(target);
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      // Control Room screens
+      if (isControlRoom) {
+        if (target === "ar-recon") return renderARRecon?.();
+        if (target === "ar-aging") return renderARAging?.();
+        if (target === "ar-statements") return renderARStatements?.();
+        if (target === "ap-recon") return renderAPRecon?.();
+        if (target === "ap-aging") return renderAPAging?.();
+        if (target === "ap-statements") return renderAPStatements?.();
+        if (target === "period-locks") return renderPeriodLocks?.();
+        if (target === "approvals") return renderApprovalsScreen?.();
+        if (target === "audit-trail") return renderAuditTrailScreen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (target === "help") {
+        const companyId = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+        await renderHelpScreen?.(companyId);
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "inventory") {
+        const sub = (target === "inventory")
+          ? (store?.get?.("fs_catalog_subscreen", "") || "inventory-items")
+          : target;
+
+        store?.set?.("fs_catalog_subscreen", sub);
+        renderCatalogScreen?.(sub);
+      }
+
+      if (
+        base === "projects" ||
+        base === "project-budgets" ||
+        base === "project-material-issues" ||
+        base === "project-profitability"
+      ) {
+        if (target === "project-budgets") return await window.bindProjectBudgetsScreen?.();
+        if (target === "project-material-issues") return await window.bindProjectMaterialIssuesScreen?.();
+        if (target === "project-profitability") return await window.bindProjectProfitabilityScreen?.();
+        await window.bindProjectsScreen?.(target);
+        return;
+      }
+
+      // Banking hooks
+      if (target === "banking") bindBankScreen?.();
+      if (target === "bank-setup") bindBankSetupScreen?.();
+      if (target === "bank-recon") {
+        bindReconScreenControls?.();
+        bindReconActions?.();
+        renderReconItems?.();
+      }
+
+      // Company setup
+      if (target.startsWith("company")) {
+        const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+        if (!cid) return;
+
+        initCompanyProfileUI?.(cid);
+        if (typeof bindVatSettingsForm === "function") bindVatSettingsForm();
+
+        const company = await loadCompanyProfile?.(cid);
+        hydrateMyCompanyView?.(company);
+        await loadVatSettings?.(cid);
+
+        const view =
+          target === "company-my" ? "my" :
+          target === "company-update" ? "update" :
+          target === "company-vat" ? "vat" :
+          target === "company-income-tax" ? "income-tax" :
+          target === "company-structure" ? "structure" :
+          target === "company-reporting" ? "reporting" :
+          target === "company-mgmt-packs" ? "mgmt-packs" :
+          "my";
+
+        showCompanyView?.(view);
+
+        if (view === "reporting") {
+          bindReportingPeriodsForm?.(cid);
+          bindYearEndClose?.(cid);
+        }
+
+        if (view === "structure") {
+          try {
+            bindCorporateStructureScreen?.();
+            await loadCorporateStructure?.(cid);
+          } catch (e) {
+            console.warn("[CorporateStructure] load failed:", e);
+          }
+        }
+
+        if (view === "mgmt-packs") {
+          try {
+            await loadManagementPacks?.(cid);
+            const btn = document.getElementById("btnRefreshMgmtPacks");
+            if (btn && btn.dataset.bound !== "1") {
+              btn.dataset.bound = "1";
+              btn.addEventListener("click", async () => {
+                const cid2 = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+                await loadManagementPacks?.(cid2);
+              });
+            }
+          } catch (e) {
+            console.warn("[MgmtPacks] load failed:", e);
+          }
+        }
+
+        bindMgmtPacksUI?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      // Reports
+      if (target === "reports") {
+        renderPnLSummary?.(CURRENT_PERIOD_KEY);
+        renderBSSummary?.(CURRENT_PERIOD_KEY);
+        renderCFSummary?.(CURRENT_PERIOD_KEY);
+        bindReportsScreen?.();
+      }
+
+      // VAT
+      if (target === "vat") {
+        ensureVatScreen?.();
+        bindVatPeriodFilter?.();
+        await renderVatDashboard?.();
+      }
+
+      wireJournalVatRateUI?.();
+
+      setTimeout(() => {
+        if (target === "dashboard" && window.cashChart?.resize) window.cashChart.resize();
+      }, 0);
+
+    } catch (err) {
+      console.error("[switchScreen] Error:", err);
+    } finally {
+      _switchingPromise = null;
     }
+  })();
 
-    // Reports
-    if (name === "reports") {
-      renderPnLSummary?.(CURRENT_PERIOD_KEY);
-      renderBSSummary?.(CURRENT_PERIOD_KEY);
-      renderCFSummary?.(CURRENT_PERIOD_KEY);
-      bindReportsScreen?.();
-    }
-
-    // VAT
-    if (name === "vat") {
-      ensureVatScreen();
-      bindVatPeriodFilter();
-      await renderVatDashboard();
-    }
-
-    wireJournalVatRateUI?.();
-
-    // Resize dashboard charts
-    setTimeout(() => {
-      if (name === "dashboard" && window.cashChart?.resize) window.cashChart.resize();
-    }, 0);
-
-  } catch (err) {
-    console.error("[switchScreen] Error:", err);
-  }
+  return _switchingPromise;
 }
 
 window.switchScreen = switchScreen;
