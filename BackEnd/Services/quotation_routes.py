@@ -841,7 +841,6 @@ def quotes_root(company_id: int):
     user_id = payload.get("user_id") or payload.get("sub") or user.get("id")
     user_id = int(user_id) if user_id is not None else None
 
-    db_service.ensure_company_schema(company_id)
     schema = db_service.company_schema(company_id)
 
     # --------------------------

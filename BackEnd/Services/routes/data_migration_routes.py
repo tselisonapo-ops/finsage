@@ -151,10 +151,6 @@ def migration_projects(company_id: int):
     if deny:
         return deny
 
-    db_service.ensure_company_schema(
-        company_id,
-    )
-
     if request.method == "GET":
         status = (
             request.args.get("status")
@@ -247,10 +243,6 @@ def migration_project(
     deny = _guard(company_id)
     if deny:
         return deny
-
-    db_service.ensure_company_schema(
-        company_id,
-    )
 
     if request.method == "GET":
         try:
@@ -566,9 +558,6 @@ def migration_project_scope(
     if deny:
         return deny
 
-    db_service.ensure_company_schema(
-        company_id,
-    )
 
     if request.method == "GET":
         try:
@@ -656,10 +645,6 @@ def migration_project_files(
     deny = _guard(company_id)
     if deny:
         return deny
-
-    db_service.ensure_company_schema(
-        company_id,
-    )
 
     if request.method == "GET":
         try:

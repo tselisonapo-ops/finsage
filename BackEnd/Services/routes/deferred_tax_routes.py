@@ -695,10 +695,6 @@ def deferred_tax_revenue_profiles(cid: int):
         if deny:
             return deny
 
-        db_service.ensure_company_schema(
-            company_id
-        )
-
         contract_id = request.args.get(
             "contract_id",
             type=int,
@@ -809,10 +805,6 @@ def deferred_tax_revenue_profile_ensure(
 
         if deny:
             return deny
-
-        db_service.ensure_company_schema(
-            company_id
-        )
 
         body = request.get_json(
             silent=True
