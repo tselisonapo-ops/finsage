@@ -33025,9 +33025,7 @@ class DatabaseService:
             quantity_rejected NUMERIC(15,4) NOT NULL DEFAULT 0,
             
             unit_cost NUMERIC(15,2) NOT NULL DEFAULT 0,
-            total_cost NUMERIC(15,2) GENERATED ALWAYS AS (
-                (quantity_received * unit_cost)
-            ) STORED,
+            total_cost NUMERIC(15,2) NOT NULL DEFAULT 0,
             
             batch_number TEXT NULL,
             serial_numbers TEXT[] NULL,
@@ -33254,9 +33252,7 @@ class DatabaseService:
             quantity_ordered NUMERIC(15,4) NOT NULL DEFAULT 0,
             quantity_returning NUMERIC(15,4) NOT NULL DEFAULT 0,
             unit_cost NUMERIC(15,2) NOT NULL DEFAULT 0,
-            line_total NUMERIC(15,2) GENERATED ALWAYS AS (
-                (quantity_returning * unit_cost)
-            ) STORED,
+            line_total NUMERIC(15,2) NOT NULL DEFAULT 0,
             
             -- Condition and reason
             item_condition TEXT NOT NULL DEFAULT 'damaged'
@@ -33495,11 +33491,7 @@ class DatabaseService:
             total_items_received INT NOT NULL DEFAULT 0,
             items_accepted INT NOT NULL DEFAULT 0,
             items_rejected INT NOT NULL DEFAULT 0,
-            return_rate NUMERIC(5,4) GENERATED ALWAYS AS (
-                CASE WHEN total_items_received > 0 
-                    THEN ROUND(items_rejected::NUMERIC / total_items_received, 4)
-                    ELSE 0 END
-            ) STORED,
+            return_rate NUMERIC(5,4) NOT NULL DEFAULT 0,
             
             -- Pricing metrics
             total_spend NUMERIC(15,2) NOT NULL DEFAULT 0,
@@ -34780,20 +34772,10 @@ class DatabaseService:
             quantity_on_hand    DECIMAL(18,4) NOT NULL DEFAULT 0,
             quantity_reserved   DECIMAL(18,4) NOT NULL DEFAULT 0,
 
-            quantity_available  DECIMAL(18,4)
-                GENERATED ALWAYS AS (
-                    quantity_on_hand - quantity_reserved
-                ) STORED,
-
+            quantity_available  DECIMAL(18,4) NOT NULL DEFAULT 0,
             quantity_on_order   DECIMAL(18,4) NOT NULL DEFAULT 0,
-
             unit_cost           DECIMAL(18,6),
-
-            total_value         DECIMAL(20,6)
-                GENERATED ALWAYS AS (
-                    quantity_on_hand * COALESCE(unit_cost, 0)
-                ) STORED,
-
+            total_value         DECIMAL(20,6) NOT NULL DEFAULT 0,
             last_received_at    TIMESTAMPTZ,
             last_counted_at     TIMESTAMPTZ,
             last_movement_at    TIMESTAMPTZ,
@@ -34841,9 +34823,7 @@ class DatabaseService:
 
             total_lines         INTEGER DEFAULT 0,
             lines_counted       INTEGER DEFAULT 0,
-            lines_pending       INTEGER GENERATED ALWAYS AS (
-                total_lines - lines_counted
-            ) STORED,
+            lines_pending       INTEGER NOT NULL DEFAULT 0,
             variances_found     INTEGER DEFAULT 0,
             total_variance_qty  DECIMAL(18,4) DEFAULT 0,
             total_variance_val  DECIMAL(20,6) DEFAULT 0,
@@ -34874,15 +34854,9 @@ class DatabaseService:
             recount_qty         DECIMAL(18,4), 
             recount_by          INTEGER, 
             recount_at          TIMESTAMPTZ, 
-            variance_qty        DECIMAL(18,4) GENERATED ALWAYS AS (COALESCE(counted_qty, 0) - system_qty) STORED, 
-            variance_value      DECIMAL(20,6) GENERATED ALWAYS AS ((COALESCE(counted_qty, 0) - system_qty) * COALESCE(system_cost, 0)) STORED, 
-            variance_pct        DECIMAL(8,4) GENERATED ALWAYS AS ( 
-                CASE  
-                    WHEN system_qty != 0 AND system_qty IS NOT NULL  
-                    THEN ABS((COALESCE(counted_qty, 0) - system_qty) / system_qty) * 100  
-                    ELSE NULL  
-                END 
-            ) STORED, 
+            variance_qty        DECIMAL(18,4) NOT NULL DEFAULT 0, 
+            variance_value      DECIMAL(20,6) NOT NULL DEFAULT 0, 
+            variance_pct        DECIMAL(8,4) NULL,
             line_status         VARCHAR(20) NOT NULL DEFAULT 'pending', 
             reason_code         VARCHAR(50), 
             notes               TEXT, 
