@@ -11834,11 +11834,6 @@ async function switchScreen(
     force = false,
   } = {}
 ) {
-  // Prevent re-entrant calls while a switch is in-flight
-  if (_switchingPromise && !force) {
-    console.warn(`[switchScreen] Navigation to "${name}" ignored — transition in progress.`);
-    return _switchingPromise;
-  }
 
   _switchingPromise = (async () => {
     // 1. Normalise aliases first
