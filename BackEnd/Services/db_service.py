@@ -35168,11 +35168,6 @@ class DatabaseService:
         END; 
         $$ LANGUAGE plpgsql; 
 
-        CREATE TRIGGER trg_gen_stocktake_number 
-            BEFORE INSERT ON {schema}.ops_stocktake_sessions 
-            FOR EACH ROW 
-            EXECUTE PROCEDURE {schema}.gen_stocktake_number();
-
         CREATE OR REPLACE FUNCTION {schema}.gen_stocktake_number() 
         RETURNS TRIGGER AS $$ 
         DECLARE 
@@ -35187,6 +35182,13 @@ class DatabaseService:
             RETURN NEW; 
         END; 
         $$ LANGUAGE plpgsql; 
+
+        DROP TRIGGER IF EXISTS trg_gen_stocktake_number ON {schema}.ops_stocktake_sessions;
+
+        CREATE TRIGGER trg_gen_stocktake_number 
+            BEFORE INSERT ON {schema}.ops_stocktake_sessions 
+            FOR EACH ROW 
+            EXECUTE PROCEDURE {schema}.gen_stocktake_number();
 
         CREATE TRIGGER trg_gen_transfer_number 
             BEFORE INSERT ON {schema}.ops_transfer_requests 
