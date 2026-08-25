@@ -35168,6 +35168,9 @@ class DatabaseService:
         END; 
         $$ LANGUAGE plpgsql; 
 
+        -- =========================================================
+        -- STOCKTAKE SEQUENCE
+        -- =========================================================
         CREATE OR REPLACE FUNCTION {schema}.gen_stocktake_number() 
         RETURNS TRIGGER AS $$ 
         DECLARE 
@@ -35190,11 +35193,10 @@ class DatabaseService:
             FOR EACH ROW 
             EXECUTE PROCEDURE {schema}.gen_stocktake_number();
 
-        CREATE TRIGGER trg_gen_transfer_number 
-            BEFORE INSERT ON {schema}.ops_transfer_requests 
-            FOR EACH ROW 
-            EXECUTE PROCEDURE {schema}.gen_transfer_number();
 
+        -- =========================================================
+        -- TRANSFER REQUEST SEQUENCE
+        -- =========================================================
         CREATE OR REPLACE FUNCTION {schema}.gen_transfer_number() 
         RETURNS TRIGGER AS $$ 
         DECLARE 
@@ -35208,10 +35210,44 @@ class DatabaseService:
         END; 
         $$ LANGUAGE plpgsql; 
 
+        DROP TRIGGER IF EXISTS trg_gen_transfer_number ON {schema}.ops_transfer_requests;
+
         CREATE TRIGGER trg_gen_transfer_number 
             BEFORE INSERT ON {schema}.ops_transfer_requests 
             FOR EACH ROW 
             EXECUTE PROCEDURE {schema}.gen_transfer_number();
+
+
+        -- =========================================================
+        -- UPDATED_AT HELPER
+        -- =========================================================
+        CREATE OR REPLACE FUNCTION {schema}.update_updated_at_column() 
+        RETURNS TRIGGER AS $$ 
+        BEGIN 
+            NEW.updated_at = NOW(); 
+            RETURN NEW; 
+        END; 
+        $$ LANGUAGE plpgsql; 
+
+        DROP TRIGGER IF EXISTS trg_warehouses_updated_at ON {schema}.ops_warehouses;
+        CREATE TRIGGER trg_warehouses_updated_at 
+            BEFORE UPDATE ON {schema}.ops_warehouses 
+            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column(); 
+
+        DROP TRIGGER IF EXISTS trg_locations_updated_at ON {schema}.ops_locations;
+        CREATE TRIGGER trg_locations_updated_at 
+            BEFORE UPDATE ON {schema}.ops_locations 
+            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column(); 
+
+        DROP TRIGGER IF EXISTS txn_updated_at ON {schema}.inventory_transactions;
+        CREATE TRIGGER txn_updated_at 
+            BEFORE UPDATE ON {schema}.inventory_transactions 
+            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column(); 
+
+        DROP TRIGGER IF EXISTS stk_sessions_updated_at ON {schema}.ops_stocktake_sessions;
+        CREATE TRIGGER stk_sessions_updated_at 
+            BEFORE UPDATE ON {schema}.ops_stocktake_sessions 
+            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column();
 
         CREATE OR REPLACE FUNCTION {schema}.update_updated_at_column() 
         RETURNS TRIGGER AS $$ 
