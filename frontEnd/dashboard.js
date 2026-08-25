@@ -12586,6 +12586,7 @@ window.switchScreen = switchScreen;
     
     const SCREENS_TO_PROTECT = [
         'screen-deferred-tax',
+        'screen-fixedassets',
         'screen-ias41', 
         'screen-ifrs9',
         'screen-budgeting',
