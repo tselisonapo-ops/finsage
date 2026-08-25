@@ -84780,6 +84780,7 @@ async function saveEditModal() {
         apiFetch(ENDPOINTS.ifrs9.coaReadiness(companyId)),
         apiFetch(ENDPOINTS.ifrs9.writeoffs(companyId)),
         apiFetch(ENDPOINTS.ifrs9.generalEclModels(companyId)),
+        apiFetch(ENDPOINTS.ifrs9.generalEclRuns(companyId)), 
       ]);
 
       IFRS9.instruments=inst.items||[];
@@ -84807,6 +84808,7 @@ async function saveEditModal() {
 
       setMsg("");
     } catch(error) {
+      console.error('[IFRS9] loadAll error:', error);  // ✅ ADDED: Better error logging
       setMsg(error.message||"Failed to load IFRS 9 data.");
     }
   }
