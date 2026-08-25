@@ -13995,8 +13995,35 @@ function ensureVatAnchorMonths() {
 }
 
 function showCompanyView(key) {
+  // ✅ IMPROVED: Get all company-view elements
   const views = Array.from(document.querySelectorAll("#screen-company .company-view"));
-  views.forEach(v => v.classList.toggle("hidden", v.dataset.view !== key));
+  
+  // Step 1: Hide all views that DON'T match the target key
+  views.forEach(v => {
+    const isTarget = v.dataset.view === key;
+    
+    if (isTarget) {
+      // ✅ Show this view AND unhide all parent .company-view containers
+      v.classList.remove("hidden");
+      
+      // Walk up and unhide any parent .company-view elements
+      let parent = v.parentElement;
+      while (parent && parent !== document.getElementById("screen-company")) {
+        if (parent.classList.contains("company-view")) {
+          parent.classList.remove("hidden");
+        }
+        parent = parent.parentElement;
+      }
+    } else {
+      // Hide non-target views (but NOT if they're parents of the target)
+      const targetElement = views.find(v => v.dataset.view === key);
+      const isParentOfTarget = targetElement && targetElement.contains(v);
+      
+      if (!isParentOfTarget) {
+        v.classList.add("hidden");
+      }
+    }
+  });
 
   const titles = {
     my: "My company",
@@ -14015,6 +14042,30 @@ function showCompanyView(key) {
 
   const sub = document.getElementById("companySubTitle");
   if (sub) sub.textContent = titles[key] || "Company & Setup";
+  
+  console.log(`[showCompanyView] Showing view: ${key}`);
+  
+  // ✅ SAFETY NET: Force the target view to be visible (fixes nesting issues)
+  setTimeout(() => {
+    const targetView = document.querySelector(`#screen-company .company-view[data-view="${key}"]`);
+    if (!targetView) return;
+    
+    // Unhide the target and all its .company-view parents
+    let el = targetView;
+    while (el && el.id !== "screen-company") {
+      if (el.classList.contains("company-view")) {
+        el.classList.remove("hidden");
+        // Force display if still hidden by CSS
+        const computed = getComputedStyle(el);
+        if (computed.display === "none") {
+          el.style.setProperty("display", "block", "important");
+        }
+      }
+      el = el.parentElement;
+    }
+    
+    console.log(`[showCompanyView] Safety net applied for: ${key}`);
+  }, 0);
 }
 window.showCompanyView = showCompanyView;
 
