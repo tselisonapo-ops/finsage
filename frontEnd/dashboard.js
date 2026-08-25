@@ -84792,7 +84792,7 @@ async function saveEditModal() {
       IFRS9.writeoffs=writeoffs.items||[];
       IFRS9.generalEclModels=generalModels.items||[];
       IFRS9.generalEclModels=generalModels.items||[];
-      IFRS9.generalEclRuns=generalRuns.items||[];
+      IFRS9.generalEclRuns = generalEclRuns.items||[]; 
 
       renderInstruments();
       renderRuns();
