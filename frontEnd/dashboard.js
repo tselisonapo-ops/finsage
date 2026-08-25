@@ -51280,7 +51280,6 @@ async function saveEditModal() {
 
   async function loadRuns() {
     const mount = document.getElementById("dtRunList");
-
     if (!mount) return;
 
     mount.innerHTML = `
@@ -51300,6 +51299,23 @@ async function saveEditModal() {
 
       renderDeferredTaxRunList(rows);
     } catch (error) {
+      // If the backend says settings are missing or not enabled
+      const isUnconfigured = error.status === 400 || (error.message && error.message.toLowerCase().includes("setting"));
+
+      if (isUnconfigured) {
+        mount.innerHTML = `
+          <div class="dt-empty-state">
+            <div class="dt-empty-state-icon">⚙️</div>
+            <h3>Deferred Tax Setup Required</h3>
+            <p>Configure statutory income tax rates and tax authority rules for Company #${cid()} to begin.</p>
+            <button type="button" class="btn btn-primary" id="dtSettingsBtn">
+              Configure Deferred Tax Settings
+            </button>
+          </div>
+        `;
+        return;
+      }
+
       mount.innerHTML = `
         <div class="dt-error">
           ${dtEscape(
