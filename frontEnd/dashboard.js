@@ -11822,8 +11822,9 @@ window.esc = window.esc || function esc(s) {
 // =======================================================
 // NAV: switchScreen (FULL SAFE VERSION)
 // =======================================================
-let _isSwitching = false;
+let _switchingPromise = null;
 let _currentScreen = null;
+let _lastSwitchTime = 0;
 
 async function switchScreen(
   name,
@@ -11833,62 +11834,45 @@ async function switchScreen(
     force = false,
   } = {}
 ) {
-  // Prevent duplicate concurrent execution or redundant reloads
-  if (_isSwitching && !force) {
-    console.warn(`[switchScreen] Navigation to "${name}" ignored — transition in progress.`);
-    return;
-  }
-  if (_currentScreen === name && !force) {
-    return;
-  }
+  // 1. Normalise aliases first
+  let target = name;
+  if (target === "cust" || target === "cust-approvals") target = "cust-approvals";
+  if (target === "invoices") target = "ar-invoices";
+  if (target === "quotes") target = "ar-quotes";
+  if (target === "receipts") target = "ar-receipts";
+  if (target === "journal-desk") target = "journal";
+  target = typeof resolveScreenName === "function" ? resolveScreenName(target) : target;
 
-  _isSwitching = true;
+  // 2. Debounce rapid double-clicks (within 250ms) to the exact same screen
+  const now = Date.now();
+  if (!force && _currentScreen === target && (now - _lastSwitchTime < 250)) {
+    return;
+  }
+  _lastSwitchTime = now;
+
+  console.log("[switchScreen] ->", target);
 
   try {
-    console.log("[switchScreen] ->", name);
-
-    // ─────────────────────────────
-    // Normalise aliases
-    // ─────────────────────────────
-    const isCustApprovals = name === "cust-approvals" || name === "cust";
-    if (isCustApprovals) name = "cust-approvals";
-
-    if (name === "invoices") name = "ar-invoices";
-    if (name === "quotes") name = "ar-quotes";
-    if (name === "receipts") name = "ar-receipts";
-    if (name === "journal-desk") name = "journal";
-
-    console.log("[switchScreen] before resolve:", name);
-    name = resolveScreenName(name);
-    console.log("[switchScreen] after resolve:", name);
-
-    console.log("[switchScreen] canOpenScreen?", canOpenScreen(name));
-    console.log("[switchScreen] access?", guardScreenAccess(name));
-    console.log("[switchScreen] screen-help exists?", !!document.getElementById("screen-help"));
-
-    // 🔐 Auth guard
-    if (!isLoggedIn() && isAuthRequired(name)) {
-      showSignupPrompt(name);
-      console.log("[switchScreen] early return at:", name, "base: dashboard");
+    // 3. Auth & Access Guards
+    if (!isLoggedIn() && isAuthRequired(target)) {
+      showSignupPrompt(target);
       return;
     }
 
-    if (!canOpenScreen(name)) {
-      console.warn("[NAV] blocked by allowlist:", name);
+    if (!canOpenScreen(target)) {
+      console.warn("[NAV] blocked by allowlist:", target);
       alert("This screen is not enabled yet.");
-      console.log("[switchScreen] early return at:", name, "base: dashboard");
       return;
     }
 
-    const access = guardScreenAccess(name);
+    const access = guardScreenAccess(target);
     if (!access.ok) {
-      if (access.reason === "auth") showSignupPrompt(name);
+      if (access.reason === "auth") showSignupPrompt(target);
       else alert(`No access (${access.reason})`);
-      console.log("[switchScreen] early return at:", name, "base: dashboard");
       return;
     }
 
-    _currentScreen = name;
+    _currentScreen = target;
 
     // normalize names like you already do
     if (name === "pnl") setActiveStmtType("pnl");
@@ -12283,6 +12267,7 @@ async function switchScreen(
       return;
     }
 
+    // UI Updates & Titles run immediatel
     if (base === "deferred-tax") {
       try {
         await ensureCompanyDataLoaded?.();
@@ -12640,8 +12625,8 @@ async function switchScreen(
       if (name === "dashboard" && window.cashChart?.resize) window.cashChart.resize();
     }, 0);
 
-  } finally {
-    _isSwitching = false;
+  } catch (err) {
+    console.error("[switchScreen] Error:", err);
   }
 }
 
