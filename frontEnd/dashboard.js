@@ -21170,7 +21170,8 @@ async function postJournalBatch() {
   // ------------------------------------------------------------
   const cleanedLines = [];
 
-  for (const [idx, ln] of cleanedLines.entries()) {
+  // 2. FIX: Iterate over JRNL_LINES instead of cleanedLines
+  for (const [idx, ln] of JRNL_LINES.entries()) { 
     const account = String(ln?.account ?? "").trim();
     const debit = Number(ln?.debit || 0);
     const credit = Number(ln?.credit || 0);
