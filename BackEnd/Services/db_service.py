@@ -33128,7 +33128,7 @@ class DatabaseService:
                 REFERENCES {schema}.ops_receipts(id) ON DELETE CASCADE,
             
             po_line_id BIGINT NOT NULL
-                REFERENCES {schema}.ops_purchase_order_lines(id) ON DELETE CASCADE,
+                REFERENCES {schema}.purchase_order_lines(id) ON DELETE CASCADE,
             
             quantity_ordered NUMERIC(15,4) NOT NULL DEFAULT 0,
             quantity_received NUMERIC(15,4) NOT NULL DEFAULT 0,
@@ -33357,7 +33357,7 @@ class DatabaseService:
                 REFERENCES {schema}.ops_receipt_lines(id) ON DELETE CASCADE,
             
             po_line_id BIGINT NOT NULL
-                REFERENCES {schema}.ops_purchase_order_lines(id) ON DELETE CASCADE,
+                REFERENCES {schema}.purchase_order_lines(id) ON DELETE CASCADE,
             
             -- Return quantities
             quantity_ordered NUMERIC(15,4) NOT NULL DEFAULT 0,
@@ -33694,8 +33694,8 @@ class DatabaseService:
                 AVG(pol.unit_price) AS avg_unit_price,
                 COUNT(DISTINCT CASE WHEN po.status = 'completed' THEN po.id END) AS completed_pos,
                 COUNT(DISTINCT CASE WHEN po.status = 'cancelled' THEN po.id END) AS cancelled_pos
-            FROM {schema}.ops_purchase_orders po
-            JOIN {schema}.ops_purchase_order_lines pol ON pol.purchase_order_id = po.id
+            FROM {schema}.purchase_orders po
+            JOIN {schema}.purchase_order_lines pol ON pol.purchase_order_id = po.id
             LEFT JOIN {schema}.vendors v ON v.id = po.vendor_id
             WHERE po.company_id = {company_id}
             GROUP BY po.company_id, DATE_TRUNC('month', po.created_at), po.vendor_id, v.name, po.currency_code
@@ -34007,7 +34007,7 @@ class DatabaseService:
                 ON DELETE CASCADE,
 
             purchase_order_line_id BIGINT NOT NULL
-                REFERENCES {schema}.ops_purchase_order_lines(id)
+                REFERENCES {schema}.purchase_order_lines(id)
                 ON DELETE RESTRICT,
 
             asset_name TEXT NOT NULL,
@@ -34253,7 +34253,7 @@ class DatabaseService:
         CREATE TABLE IF NOT EXISTS {schema}.ops_vendor_invoice_lines(
             id BIGSERIAL PRIMARY KEY,
             invoice_id BIGINT NOT NULL REFERENCES {schema}.ops_vendor_invoices(id) ON DELETE CASCADE,
-            purchase_order_line_id BIGINT NULL REFERENCES {schema}.ops_purchase_order_lines(id) ON DELETE SET NULL,
+            purchase_order_line_id BIGINT NULL REFERENCES {schema}.purchase_order_lines(id) ON DELETE SET NULL,
 
             line_no INT NOT NULL,
             description TEXT NOT NULL,
@@ -216902,7 +216902,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                 cur.execute(
                     f"""
-                    INSERT INTO {schema}.ops_purchase_order_lines(
+                    INSERT INTO {schema}.purchase_order_lines(
                         purchase_order_id,
                         quote_line_id,
                         sourcing_event_item_id,
@@ -217124,7 +217124,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         lines = self.fetch_all(
             f"""
             SELECT *
-            FROM {schema}.ops_purchase_order_lines
+            FROM {schema}.purchase_order_lines
             WHERE purchase_order_id = %s
             ORDER BY line_no, id;
             """,
@@ -217814,7 +217814,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         lines=self.fetch_all(
             f"""
             SELECT *
-            FROM {schema}.ops_purchase_order_lines
+            FROM {schema}.purchase_order_lines
             WHERE purchase_order_id=%s
             ORDER BY line_no,id;
             """,
@@ -218186,7 +218186,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             cur.execute(
                 f"""
                 SELECT *
-                FROM {schema}.ops_purchase_order_lines
+                FROM {schema}.purchase_order_lines
                 WHERE purchase_order_id = %s
                 ORDER BY line_no, id;
                 """,
@@ -218361,7 +218361,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             FROM {schema}.ops_receipt_lines rl
 
-            JOIN {schema}.ops_purchase_order_lines pol
+            JOIN {schema}.purchase_order_lines pol
                 ON pol.id = rl.po_line_id
 
             WHERE rl.receipt_id = %s
@@ -219156,7 +219156,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         quantity,
                         received_quantity,
                         cancelled_quantity
-                    FROM {schema}.ops_purchase_order_lines
+                    FROM {schema}.purchase_order_lines
                     WHERE id = %s
                     FOR UPDATE;
                     """,
@@ -219193,7 +219193,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                 cur.execute(
                     f"""
-                    UPDATE {schema}.ops_purchase_order_lines
+                    UPDATE {schema}.purchase_order_lines
                     SET received_quantity =
                             received_quantity + %s,
                         updated_at = NOW()
@@ -219221,7 +219221,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                             <= 0
                     ) AS completed_lines
 
-                FROM {schema}.ops_purchase_order_lines
+                FROM {schema}.purchase_order_lines
 
                 WHERE purchase_order_id = %s;
                 """,
@@ -219852,7 +219852,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                 FROM {schema}.ops_vendor_invoice_lines il
 
-                LEFT JOIN {schema}.ops_purchase_order_lines pol
+                LEFT JOIN {schema}.purchase_order_lines pol
                     ON pol.id = il.purchase_order_line_id
 
                 WHERE il.invoice_id = %s
@@ -220104,7 +220104,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                 FROM {schema}.ops_vendor_invoice_lines il
 
-                LEFT JOIN {schema}.ops_purchase_order_lines pol
+                LEFT JOIN {schema}.purchase_order_lines pol
                     ON pol.id = il.purchase_order_line_id
 
                 WHERE il.invoice_id = %s
