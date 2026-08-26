@@ -13998,37 +13998,54 @@ function showCompanyView(key) {
   const screen = document.getElementById("screen-company");
   if (!screen) return;
   
-  // ✅ Step 1: HIDE ABSOLUTELY EVERYTHING (including VAT!)
-  const allViews = Array.from(screen.querySelectorAll(".company-view"));
+  // ══════════════════════════════════════════════════════════
+  // STEP 1: NUCLEAR HIDE - Hide EVERY .company-view element
+  // Use multiple techniques to ensure nothing stays visible
+  // ══════════════════════════════════════════════════════════
+  const allViews = screen.querySelectorAll(".company-view");
+  
   allViews.forEach(v => {
+    // Technique 1: Add hidden class
     v.classList.add("hidden");
-    v.style.setProperty("display", "none", "important");  // Force hide!
+    
+    // Technique 2: Force inline display:none with !important
+    v.style.setProperty("display", "none", "important");
+    v.style.setProperty("visibility", "hidden", "important");
+    
+    // Technique 3: Set attribute (backup)
+    v.setAttribute("data-force-hidden", "true");
   });
   
-  // ✅ Step 2: Show ONLY target + its parent chain
-  const target = screen.querySelector(`[data-view="${key}"]`);
+  // ══════════════════════════════════════════════════════════
+  // STEP 2: SHOW ONLY THE TARGET VIEW (override everything)
+  // ══════════════════════════════════════════════════════════
+  const target = screen.querySelector(`.company-view[data-view="${key}"]`);
+  if (!target) {
+    console.warn(`[showCompanyView] View not found: ${key}`);
+    return;
+  }
   
-  if (target) {
-    // Show target
-    target.classList.remove("hidden");
-    target.style.setProperty("display", "block", "important");
-    target.style.setProperty("visibility", "visible", "important");
-    
-    // Show all parent .company-view wrappers
-    let el = target.parentElement;
-    while (el && el !== screen) {
-      if (el.classList.contains("company-view")) {
-        el.classList.remove("hidden");
-        el.style.setProperty("display", "block", "important");
-        el.style.setProperty("visibility", "visible", "important");
-      }
-      el = el.parentElement;
+  // Remove all hiding mechanisms from target
+  target.classList.remove("hidden");
+  target.removeAttribute("data-force-hidden");
+  target.style.setProperty("display", "block", "important");
+  target.style.setProperty("visibility", "visible", "important");
+  
+  // Also unhide any PARENT .company-view wrappers (for nested structures)
+  let el = target.parentElement;
+  while (el && el !== screen) {
+    if (el.classList.contains("company-view")) {
+      el.classList.remove("hidden");
+      el.removeAttribute("data-force-hidden");
+      el.style.setProperty("display", "block", "important");
+      el.style.setProperty("visibility", "visible", "important");
     }
-    
-    console.log(`[showCompanyView] ✅ "${key}" shown (all others hidden)`);
+    el = el.parentElement;
   }
 
-  // Titles remain the same
+  // ══════════════════════════════════════════════════════════
+  // STEP 3: UPDATE TITLE
+  // ══════════════════════════════════════════════════════════
   const titles = {
     my: "My company",
     update: "Update company",
@@ -14045,8 +14062,80 @@ function showCompanyView(key) {
 
   const sub = document.getElementById("companySubTitle");
   if (sub) sub.textContent = titles[key] || "Company & Setup";
+  
+  // Debug output
+  const vatEl = screen.querySelector('.company-view[data-view="vat"]');
+  console.log(`✅ [showCompanyView] ${key} shown`);
+  console.log(`   VAT hidden: ${vatEl?.classList.contains('hidden')}, display: ${getComputedStyle(vatEl)?.display}`);
+  console.log(`   Target height: ${target.offsetHeight}px`);
+  
+  // 🛡️ Tell VAT Guard which view is active (so it can block others)
+  if (window.__companyActiveView) {
+    window.__companyActiveView(key);
+  }
 }
 window.showCompanyView = showCompanyView;
+
+// 🛡️ VAT GUARD - Catches ANY code trying to unhide non-target views
+(function() {
+  let activeViewKey = null;
+  
+  window.__companyActiveView = (key) => { activeViewKey = key; };
+  
+  const observer = new MutationObserver((mutations) => {
+    if (!activeViewKey) return;
+    
+    const screen = document.getElementById('screen-company');
+    if (!screen) return;
+    
+    mutations.forEach((mutation) => {
+      mutation.target.querySelectorAll?.('.company-view')?.forEach(el => {
+        const viewKey = el.dataset.view;
+        if (!viewKey || viewKey === activeViewKey) return;
+        
+        const computed = getComputedStyle(el);
+        if (computed.display !== 'none' && computed.visibility !== 'hidden') {
+          console.warn(`🛡️ [VAT Guard] Blocked "${viewKey}" from becoming visible`);
+          el.classList.add('hidden');
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+        }
+      });
+      
+      if (mutation.target.classList?.contains('company-view')) {
+        const el = mutation.target;
+        const viewKey = el.dataset.view;
+        if (viewKey && viewKey !== activeViewKey) {
+          const computed = getComputedStyle(el);
+          if (computed.display !== 'none') {
+            console.warn(`🛡️ [VAT Guard] Re-hidden "${viewKey}"`);
+            el.classList.add('hidden');
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('visibility', 'hidden', 'important');
+          }
+        }
+      }
+    });
+  });
+  
+  const startGuard = () => {
+    const screen = document.getElementById('screen-company');
+    if (screen) {
+      observer.observe(screen, {
+        attributes: true,
+        attributeFilter: ['class', 'style'],
+        subtree: true
+      });
+      console.log('🛡️ [VAT Guard] Active - watching for unauthorized view changes');
+    }
+  };
+  
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startGuard, { once: true });
+  } else {
+    setTimeout(startGuard, 500);
+  }
+})();
 
 async function ensureCompanyDataLoaded() {
   const cid = getActiveCompanyId?.() || companyId?.() || CURRENT_COMPANY_ID;
