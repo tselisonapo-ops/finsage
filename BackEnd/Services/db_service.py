@@ -33688,20 +33688,20 @@ class DatabaseService:
                 DATE_TRUNC('month', po.created_at) AS month,
                 po.vendor_id,
                 v.name AS vendor_name,
-                po.currency_code,  -- ✅ use the actual column name
+                po.currency_code,
                 COUNT(DISTINCT po.id) AS po_count,
-                SUM(pol.quantity * pol.unit_price) AS total_spend,
-                AVG(pol.unit_price) AS avg_unit_price,
+                SUM(pol.ordered_qty * pol.unit_cost) AS total_spend,
+                AVG(pol.unit_cost) AS avg_unit_price,
                 COUNT(DISTINCT CASE WHEN po.status = 'completed' THEN po.id END) AS completed_pos,
                 COUNT(DISTINCT CASE WHEN po.status = 'cancelled' THEN po.id END) AS cancelled_pos
             FROM {schema}.purchase_orders po
-            JOIN {schema}.purchase_order_lines pol ON pol.purchase_order_id = po.id
+            JOIN {schema}.purchase_order_lines pol ON pol.po_id = po.id
             LEFT JOIN {schema}.vendors v ON v.id = po.vendor_id
             WHERE po.company_id = {company_id}
             GROUP BY po.company_id, DATE_TRUNC('month', po.created_at), po.vendor_id, v.name, po.currency_code
             WITH NO DATA;
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_spend_summary_unique 
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_spend_sum_unique 
             ON {schema}.mv_procurement_spend_summary(company_id, month, vendor_id);
 
         CREATE MATERIALIZED VIEW IF NOT EXISTS {schema}.mv_procurement_spend_category AS
