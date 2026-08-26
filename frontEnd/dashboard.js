@@ -21170,14 +21170,15 @@ async function postJournalBatch() {
   // ------------------------------------------------------------
   const cleanedLines = [];
 
-  // 2. FIX: Iterate over JRNL_LINES instead of cleanedLines
   for (const [idx, ln] of JRNL_LINES.entries()) { 
-    const account = String(ln?.account ?? "").trim();
+    // FIX: Read 'accountCode' instead of 'account' to match your state objects
+    const account = String(ln?.accountCode || ln?.account || "").trim();
     const debit = Number(ln?.debit || 0);
     const credit = Number(ln?.credit || 0);
 
     // Completely empty/stale line: ignore it
     if (!account && debit === 0 && credit === 0) {
+
       console.warn(
         "[JRNL] Ignoring empty/stale line",
         idx + 1,
