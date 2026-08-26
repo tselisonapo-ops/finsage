@@ -1410,92 +1410,385 @@ function handleRegistration(event) {
     return;
   }
 
+  // --- Show progress overlay ---
+  var progressOverlay = showSignupProgress();
+  var completedSteps = {};
+
   fetch(AUTH_SIGNUP_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   })
-    .then(function (res) {
-      return res.json().then(function (p) {
-        return { ok: res.ok, status: res.status, payload: p };
-      });
-    })
-    .then(function (result) {
-      if (!result.ok) {
+  .then(function (response) {
+    // Read the SSE stream
+    return readSSEStream(response, function (stepKey, label) {
+      // Mark previous steps complete
+      var stepOrder = [
+        "validating", "creating_user", "validating_company",
+        "matching_industry", "creating_company", "seeding_accounts",
+        "finalizing", "sending_email"
+      ];
+      var currentIdx = stepOrder.indexOf(stepKey);
+      for (var i = 0; i < currentIdx; i++) {
+        if (!completedSteps[stepOrder[i]]) {
+          completedSteps[stepOrder[i]] = true;
+          // We might not have seen the label for earlier steps,
+          // so just mark them complete silently
+          updateProgressStep(stepOrder[i], stepOrder[i].replace(/_/g, " ") + "...", true);
+        }
+      }
+      completedSteps[stepKey] = true;
+      updateProgressStep(stepKey, label, true);
+    });
+  })
+  .then(function (result) {
+    // result is the terminal SSE event data (result or error)
+    if (!result || !result.success) {
+      // --- ERROR PATH ---
+      var errMsg = "Registration failed.";
+      if (result) {
+
         if (result.status === 409) {
-          const msg =
-            (result.payload && result.payload.error) ||
-            "A user with this email already exists. Please sign in instead.";
-
-          const box = document.getElementById("formMessage");
-          if (box) {
-            box.innerHTML = `
-              <div style="margin-bottom:6px;">${msg}</div>
-              <button id="goSignInBtn"
-                style="
-                  background:#0d9488;
-                  padding:6px 16px;
-                  border-radius:6px;
-                  color:white;
-                  border:none;
-                  cursor:pointer;
-                  font-size:0.9rem;
-                ">
-                OK
-              </button>
-            `;
-            box.classList.remove("hidden");
-            box.style.background = "#fee2e2";
-            box.style.color = "#b91c1c";
-            box.style.border = "1px solid #fecaca";
-
-            const btn = document.getElementById("goSignInBtn");
-            if (btn) btn.onclick = () => (window.location.href = "signin.html");
-          } else {
-            if (confirm(msg + "\n\nClick OK to go to the Sign In page.")) {
-              window.location.href = "signin.html";
-            }
-          }
+          errMsg = result.error || "A user with this email already exists. Please sign in instead.";
+          showProgressError(errMsg, function () {
+            window.location.href = "signin.html";
+          });
           return;
         }
-
-        let msg = "Registration failed.";
-        if (result.payload && result.payload.errors) {
-          msg = JSON.stringify(result.payload.errors, null, 2);
-        } else if (result.payload && result.payload.error) {
-          msg = result.payload.error;
+        if (result.errors) {
+          errMsg = Object.values(result.errors).join("\n");
+        } else if (result.error) {
+          errMsg = result.error;
         }
-        alert(msg);
+      }
+
+      showProgressError(errMsg, null);
+      return;
+    }
+
+    // --- SUCCESS PATH ---
+    hideSignupProgress();
+
+    sessionStorage.removeItem("fs_reg_step1_data");
+    sessionStorage.removeItem("fs_reg_step2_data");
+
+    var email =
+      result.user_email ||
+      result.email ||
+      result.userEmail ||
+      (step1.email || val("email") || "");
+
+    var query = email ? "?email=" + encodeURIComponent(email) : "";
+
+    if (result.email_sent === false || result.status_text === "confirmation_email_failed") {
+      alert("Your account was created, but we could not send the confirmation email right now.");
+      window.location.href = "check-email.html" + query + "&email_failed=1";
+    } else {
+      alert("Registration successful! Please check your email to confirm your account.");
+      window.location.href = "check-email.html" + query;
+    }
+  })
+  .catch(function (err) {
+    hideSignupProgress();
+    alert("Error: " + (err && err.message ? err.message : "Unexpected error"));
+    console.error(err);
+  });
+}
+
+const PROGRESS_CONTAINER_ID = "signupProgress";
+
+// Step icons for each phase (cycles through as steps progress)
+const STEP_ICONS = {
+  validating:         "\u2705",  // ✅
+  creating_user:      "\u2705",  // ✅
+  validating_company: "\u2705",  // ✅
+  matching_industry:  "\u2705",  // ✅
+  creating_company:   "\u2705",  // ✅
+  seeding_accounts:   "\u2705",  // ✅
+  finalizing:         "\u2705",  // ✅
+  sending_email:      "\u2705",  // ✅
+};
+
+const SPINNER_ICON = "\u23F3";  // ⏳
+
+/**
+ * Create or update the progress overlay inside the form.
+ */
+function showSignupProgress() {
+  let container = document.getElementById(PROGRESS_CONTAINER_ID);
+  if (!container) {
+    container = document.createElement("div");
+    container.id = PROGRESS_CONTAINER_ID;
+    // Insert at top of form or body
+    const form = document.getElementById("registrationForm")
+                 || document.querySelector("form")
+                 || document.body;
+    form.prepend(container);
+  }
+  container.style.cssText = `
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  `;
+
+  container.innerHTML = `
+    <div style="
+      background: white;
+      border-radius: 16px;
+      padding: 32px 36px 24px;
+      max-width: 420px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    ">
+      <div style="text-align:center; margin-bottom:20px;">
+        <div style="
+          width:48px; height:48px;
+          border: 4px solid #e5e7eb;
+          border-top-color: #0d9488;
+          border-radius: 50%;
+          animation: fs-spin 0.8s linear infinite;
+          margin: 0 auto 12px;
+        "></div>
+        <style>
+          @keyframes fs-spin { to { transform: rotate(360deg); } }
+        </style>
+        <h3 style="margin:0; font-size:1.15rem; color:#111827;">
+          Creating your account
+        </h3>
+        <p style="margin:6px 0 0; font-size:0.85rem; color:#6b7280;">
+          This may take a few seconds, please don't close this page.
+        </p>
+      </div>
+      <ul id="${PROGRESS_CONTAINER_ID}_steps"
+          style="
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            font-size: 0.875rem;
+            color: #374151;
+          ">
+      </ul>
+      <div id="${PROGRESS_CONTAINER_ID}_error"
+           style="display:none; margin-top:16px; padding:10px 14px;
+                  background:#fee2e2; border:1px solid #fecaca;
+                  border-radius:8px; color:#b91c1c; font-size:0.85rem;">
+      </div>
+    </div>
+  `;
+
+  return container;
+}
+
+/**
+ * Add / update a step row in the progress list.
+ */
+function updateProgressStep(stepKey, label, isComplete) {
+  const list = document.getElementById(PROGRESS_CONTAINER_ID + "_steps");
+  if (!list) return;
+
+  // Find existing or create new
+  let row = list.querySelector(`[data-step="${stepKey}"]`);
+  if (!row) {
+    row = document.createElement("li");
+    row.dataset.step = stepKey;
+    row.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid #f3f4f6;
+    `;
+    row.innerHTML = `
+      <span class="fs-step-icon" style="font-size:1rem; width:24px; text-align:center; flex-shrink:0;">${SPINNER_ICON}</span>
+      <span class="fs-step-label" style="flex:1;">${label}</span>
+    `;
+    list.appendChild(row);
+    // Auto-scroll to latest
+    row.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  // Update icon when complete
+  if (isComplete) {
+    const icon = row.querySelector(".fs-step-icon");
+    if (icon) {
+      icon.textContent = STEP_ICONS[stepKey] || "\u2705";
+      icon.style.animation = "none";
+    }
+    const lbl = row.querySelector(".fs-step-label");
+    if (lbl) {
+      lbl.style.color = "#059669";
+      lbl.style.fontWeight = "500";
+    }
+  }
+}
+
+/**
+ * Show error inside the progress modal.
+ */
+function showProgressError(message, onDismiss) {
+  const errBox = document.getElementById(PROGRESS_CONTAINER_ID + "_error");
+  if (!errBox) return;
+  errBox.style.display = "block";
+  errBox.textContent = message;
+  if (onDismiss) {
+    const btn = document.createElement("button");
+    btn.textContent = "OK";
+    btn.style.cssText = `
+      margin-top:10px; background:#b91c1c; color:white; border:none;
+      padding:6px 18px; border-radius:6px; cursor:pointer; font-size:0.85rem;
+    `;
+    btn.onclick = function () {
+      hideSignupProgress();
+      onDismiss();
+    };
+    errBox.appendChild(btn);
+  }
+}
+
+/**
+ * Remove the progress overlay.
+ */
+function hideSignupProgress() {
+  const container = document.getElementById(PROGRESS_CONTAINER_ID);
+  if (container) container.remove();
+}
+
+/**
+ * Parse SSE events from a ReadableStream.
+ * Calls onProgress(stepKey, label) for each progress event.
+ * Calls onResult(data) or onError(data) for the terminal event.
+ * Returns a Promise that resolves with the terminal event data.
+ */
+function readSSEStream(response, onProgress) {
+  // Fallback: if the backend returned plain JSON (not SSE yet), parse it directly
+  var contentType = (response.headers.get("Content-Type") || "").toLowerCase();
+  if (contentType.indexOf("text/event-stream") === -1) {
+    return response.text().then(function (text) {
+      try {
+        var data = JSON.parse(text);
+        if (data.success) {
+          return data;
+        }
+        return {
+          status: response.status,
+          success: false,
+          error: data.error || "Registration failed.",
+          errors: data.errors || null
+        };
+      } catch (e) {
+        return {
+          status: response.status,
+          success: false,
+          error: "Unexpected response from server. Please try again."
+        };
+      }
+    });
+  }
+
+  var reader = response.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = "";
+  var aborted = false;
+
+  // Safety timeout — 90s with no data = fail
+  var timeoutId = setTimeout(function () {
+    aborted = true;
+    try { reader.cancel(); } catch (e) {}
+  }, 90000);
+
+  function cleanupTimeout() {
+    if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+  }
+
+  return new Promise(function (resolve, reject) {
+    function pump() {
+      if (aborted) {
+        cleanupTimeout();
+        resolve({
+          status: 504,
+          success: false,
+          error: "Request timed out. The server took too long to respond. Please try again."
+        });
         return;
       }
 
-      const resp = result.payload || {};
-      sessionStorage.removeItem("fs_reg_step1_data");
-      sessionStorage.removeItem("fs_reg_step2_data");
+      reader.read().then(function (chunk) {
+        if (chunk.done) {
+          cleanupTimeout();
+          resolve({
+            status: 502,
+            success: false,
+            error: "Connection closed unexpectedly. Please check your internet and try again."
+          });
+          return;
+        }
 
-      const email =
-        resp.user_email ||
-        resp.email ||
-        resp.userEmail ||
-        (step1.email || val("email") || "");
+        // Got data — reset the idle timeout
+        cleanupTimeout();
+        timeoutId = setTimeout(function () {
+          aborted = true;
+          try { reader.cancel(); } catch (e) {}
+        }, 90000);
 
-      const query = email ? `?email=${encodeURIComponent(email)}` : "";
+        buffer += decoder.decode(chunk.value, { stream: true });
 
-      if (resp.email_sent === false || resp.status === "confirmation_email_failed") {
-        alert("Your account was created, but we could not send the confirmation email right now.");
-        window.location.href = `check-email.html${query}&email_failed=1`;
-      } else {
-        alert("Registration successful! Please check your email to confirm your account.");
-        window.location.href = `check-email.html${query}`;
-      }
-    })
-    .catch(function (err) {
-      alert("Error: " + (err && err.message ? err.message : "Unexpected error"));
-      console.error(err);
-    });
+        // SSE events are separated by \n\n
+        var parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+
+        for (var i = 0; i < parts.length; i++) {
+          var block = parts[i].trim();
+          if (!block) continue;
+
+          var eventType = "";
+          var dataLine = "";
+
+          var lines = block.split("\n");
+          for (var j = 0; j < lines.length; j++) {
+            var line = lines[j];
+            if (line.indexOf("event: ") === 0) {
+              eventType = line.substring(7).trim();
+            } else if (line.indexOf("data: ") === 0) {
+              dataLine = line.substring(6);
+            }
+          }
+
+          if (!dataLine) continue;
+
+          try {
+            var data = JSON.parse(dataLine);
+          } catch (e) {
+            continue;
+          }
+
+          if (eventType === "progress" && onProgress) {
+            onProgress(data.step, data.label);
+          } else if (eventType === "result") {
+            cleanupTimeout();
+            resolve(data);
+            return;
+          } else if (eventType === "error") {
+            cleanupTimeout();
+            resolve(data);
+            return;
+          }
+        }
+
+        pump();
+      }).catch(function (err) {
+        cleanupTimeout();
+        reject(err);
+      });
+    }
+
+    pump();
+  });
 }
-
-
 // =======================
 // UPDATED: DOMContentLoaded block (only the parts that changed)
 // =======================

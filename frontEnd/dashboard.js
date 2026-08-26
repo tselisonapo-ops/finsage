@@ -10264,6 +10264,17 @@ function shouldShowNavItem(item) {
     if (!companyUsesCogs()) return false;
   }
 
+  // ---- Public School: hide irrelevant nav items ----
+  if (typeof isPublicSchool === "function" && isPublicSchool()) {
+    const _schScreen = item.screen
+      ? (typeof resolveScreenName === "function" ? resolveScreenName(item.screen) || item.screen : item.screen)
+      : null;
+    const _schName = String(item.name || "").trim().toLowerCase();
+    if ((_schScreen && SCHOOL_HIDDEN_SCREENS[_schScreen]) || SCHOOL_HIDDEN_PARENT_NAMES[_schName]) {
+      return false;
+    }
+  }
+
   const screen = item.screen
     ? (resolveScreenName?.(item.screen) || item.screen)
     : null;
@@ -16328,18 +16339,14 @@ window.loadCompanyProfile = loadCompanyProfile;
 })();
 
 const SCHOOL_INDUSTRY_CATALOG_UPDATES = {
-  
-  // ✅ NEW: Public School industry with sub-types
   "Public School": [
     "Primary School",
-    "High School / Secondary School", 
+    "High School / Secondary School",
     "Combined School (Primary + High)",
     "Special Needs School",
     "Vocational / Technical College (Public)",
     "ECD Centre (Early Childhood Development)"
   ],
-  
-  // ✅ UPDATE: Private School with sub-types
   "Private School": [
     "Independent Primary School",
     "Independent High School",
@@ -16352,18 +16359,12 @@ const SCHOOL_INDUSTRY_CATALOG_UPDATES = {
   ]
 };
 
-
 function isSchoolCompany(company = window.CURRENT_COMPANY) {
   if (!company) return false;
-  
-  // Read from backend-provided flags (NOT local config!)
   const isSchool = company.is_school || company.school_type;
   if (isSchool) return true;
-  
-  // Fallback: check industry name
   const industry = String(company.industry || "").toLowerCase();
   const subIndustry = String(company.sub_industry || "").toLowerCase();
-  
   return (
     industry.includes("school") ||
     industry.includes("education") ||
@@ -16375,22 +16376,24 @@ function isSchoolCompany(company = window.CURRENT_COMPANY) {
 }
 
 function getSchoolType(company = window.CURRENT_COMPANY) {
-  // This comes from Python get_industry_profile() -> school_type field
-  return company?.school_type || null;  // "public", "private", "npo_education"
+  return company?.school_type || null;
 }
 
+function isPublicSchool(company = window.CURRENT_COMPANY) {
+  if (!isSchoolCompany(company)) return false;
+  const schoolType = getSchoolType(company);
+  if (schoolType === "public") return true;
+  const industry = String(company.industry || "").toLowerCase();
+  return industry.includes("public");
+}
 
 function isVatExemptSchool(company = window.CURRENT_COMPANY) {
-  // From Python: vat_exempt flag
   return company?.vat_exempt === true;
 }
 
-
 function getSchoolNavLabelOverrides(company = window.CURRENT_COMPANY) {
   if (!isSchoolCompany(company)) return null;
-  
   return {
-    // Rename sections for school context
     labelOverrides: {
       "Workflows": "Finance Desk",
       "Cash & Banking": "Banking & Fees",
@@ -16398,13 +16401,9 @@ function getSchoolNavLabelOverrides(company = window.CURRENT_COMPANY) {
       "Reports": "Financial Reports",
       "Standards": "Accounting Setup",
       "Control Room": "Controls & Audit",
-      "Catalog Studio": "Inventory & Library",    
+      "Catalog Studio": "Inventory & Library",
     },
-    
-    // Custom item labels
-    itemOverrides: {
-      // Could rename specific menu items if needed
-    }
+    itemOverrides: {}
   };
 }
 
@@ -16651,6 +16650,49 @@ function getSchoolTermInfo(company = window.CURRENT_COMPANY) {
 // ============================================================
 
 window.SCHOOL_INDUSTRY_CATALOG_UPDATES = SCHOOL_INDUSTRY_CATALOG_UPDATES;
+
+// Expose school functions globally
+window.SCHOOL_INDUSTRY_CATALOG_UPDATES = SCHOOL_INDUSTRY_CATALOG_UPDATES;
+window.isSchoolCompany = isSchoolCompany;
+window.getSchoolType = getSchoolType;
+window.isPublicSchool = isPublicSchool;
+window.isVatExemptSchool = isVatExemptSchool;
+window.getSchoolNavLabelOverrides = getSchoolNavLabelOverrides;
+window.getSchoolHelpContext = getSchoolHelpContext;
+window.getSchoolJournalCategories = getSchoolJournalCategories;
+window.getSchoolTermInfo = getSchoolTermInfo;
+
+// ---- Public School nav visibility rules ----
+const SCHOOL_HIDDEN_SCREENS = {
+  // IFRS 16
+  "lease-register": 1, "lease-payments": 1, "lease-monthly": 1, "lessor-subsequent": 1,
+  // Revenue Desk
+  "ar-invoices": 1, "ar-quotes": 1, "revenue": 1,
+  // Project Profitability
+  "project-profitability": 1,
+  // POS screens
+  "pos-launch": 1, "pos": 1,
+  // Loans & Financing
+  "loans": 1,
+  // Master Records
+  "customers": 1, "lessors": 1,
+  // Reports - VAT
+  "vat": 1,
+  // Standards (whole section)
+  "coa": 1, "fixedassets": 1, "revenue-setup": 1, "ifrs9": 1, "deferred-tax": 1, "ias41": 1,
+  // Control Room - AR
+  "ar-recon": 1, "ar-statements": 1, "ar-aging": 1,
+  // Settings - Company & Setup
+  "company-vat": 1, "company-income-tax": 1, "company-structure": 1,
+};
+
+const SCHOOL_HIDDEN_PARENT_NAMES = {
+  "ifrs 16": 1,
+  "revenue desk": 1,
+  "standards": 1,
+  "loans & financing": 1,
+  "ar controls": 1,
+};
 
 window.isSchoolCompany = isSchoolCompany;
 window.getSchoolType = getSchoolType;
