@@ -21405,11 +21405,12 @@ async function postJournalBatch() {
           `Please check Posted Journals before retrying.`
         );
       } else {
-        setPostingState(
-          false,
-          "Journal was not posted."
-        );
+        // FIX: Fallback to the specific error message sent back by your server
+        const serverMessage = result?.message || result?.error || "Journal was not posted.";
+        setPostingState(false, serverMessage);
+        alert(`Failed to post batch: ${serverMessage}`);
       }
+
 
       return;
     }
