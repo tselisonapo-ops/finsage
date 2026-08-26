@@ -13998,46 +13998,37 @@ function showCompanyView(key) {
   const screen = document.getElementById("screen-company");
   if (!screen) return;
   
-  // ✅ Step 1: Get ALL company-view elements
+  // ✅ Step 1: HIDE ABSOLUTELY EVERYTHING (including VAT!)
   const allViews = Array.from(screen.querySelectorAll(".company-view"));
-  
-  // ✅ Step 2: HIDE EVERYTHING first (clean slate - prevents "shows on top" issue)
   allViews.forEach(v => {
     v.classList.add("hidden");
-    // Reset inline styles
-    v.style.removeProperty("display");
-    v.style.removeProperty("visibility");
+    v.style.setProperty("display", "none", "important");  // Force hide!
   });
   
-  // ✅ Step 3: Find and SHOW target + parent chain
+  // ✅ Step 2: Show ONLY target + its parent chain
   const target = screen.querySelector(`[data-view="${key}"]`);
   
   if (target) {
-    // Unhide target itself
+    // Show target
     target.classList.remove("hidden");
     target.style.setProperty("display", "block", "important");
     target.style.setProperty("visibility", "visible", "important");
     
-    // ☢️ NUCLEAR: Walk up and unhide ALL parent .company-view wrappers
+    // Show all parent .company-view wrappers
     let el = target.parentElement;
-    let parentsFixed = 0;
-    
     while (el && el !== screen) {
       if (el.classList.contains("company-view")) {
         el.classList.remove("hidden");
         el.style.setProperty("display", "block", "important");
         el.style.setProperty("visibility", "visible", "important");
-        parentsFixed++;
       }
       el = el.parentElement;
     }
     
-    console.log(`[showCompanyView] ✅ "${key}" shown (${parentsFixed} parents unhid)`);
-  } else {
-    console.warn(`[showCompanyView] ⚠️ View "${key}" not found`);
+    console.log(`[showCompanyView] ✅ "${key}" shown (all others hidden)`);
   }
 
-  // Titles
+  // Titles remain the same
   const titles = {
     my: "My company",
     update: "Update company",
