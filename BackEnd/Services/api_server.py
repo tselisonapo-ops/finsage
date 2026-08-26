@@ -1363,6 +1363,14 @@ def api_auth_signup():
 
     owner_invite_email = (data.get("ownerInvite") or "").strip().lower() or None
 
+    # near the top of api_auth_signup (or module level):
+    ORG_TYPES_WITH_REG_FORMAT_CHECK = {"private_company", "public_company"}
+
+    organization_type = (
+        (data.get("organizationType") or data.get("organization_type") or "")
+        .strip().lower()
+    )
+
     first_name = (data.get("firstName") or "").strip()
     last_name  = (data.get("lastName") or "").strip()
     user_role = normalize_role(data.get("userRole"))
@@ -1533,20 +1541,32 @@ def api_auth_signup():
             vat            = company_payload.get("vat")
             company_email  = company_payload.get("companyEmail") or email
 
-            ok, errors = validate_company_payload({
+            # NEW: reg-number format check only applies to company org types.
+            # Schools (EMIS numbers), NGOs, trusts, sole traders etc. skip it.
+            organization_type = (
+                company_payload.get("organizationType")
+                or company_payload.get("organization_type")
+                or ""
+            )
+            organization_type = str(organization_type).strip().lower()
+
+            validation_payload = {
                 "country": country,
-                "companyRegNo": company_reg_no,
                 "tin": tin,
                 "vat": vat,
                 "companyEmail": company_email,
-            })
+            }
+            if organization_type in {"private_company", "public_company"}:
+                validation_payload["companyRegNo"] = company_reg_no
+
+            ok, errors = validate_company_payload(validation_payload)
             if not ok:
                 try:
                     db_service.delete_user(owner_id)
                 except Exception:
                     pass
                 return jsonify({"error": "Company validation failed", "errors": errors}), 400
-
+                
             currency       = (company_payload.get("currency") or get_currency_for_country(country) or "USD")
             fin_year_start = company_payload.get("finYearStart") or "01/01"
             company_reg_raw = (company_payload.get("companyRegDate") or "").strip() or None
