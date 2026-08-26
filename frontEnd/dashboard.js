@@ -13998,127 +13998,76 @@ function ensureVatAnchorMonths() {
 // 🛡️ BULLETPROOF showCompanyView() v4.0 - With DOM Structure Auto-Fix
 // Detects and fixes incorrect nesting + 5-layer hiding + MutationObserver
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+// 🛡️ BULLETPROOF showCompanyView() v5.0 - FINAL VERSION
+// Fixes: DOM nesting + proper style reset + VAT hiding
+// ════════════════════════════════════════════════════════════════════
 function showCompanyView(key) {
   const screen = document.getElementById("screen-company");
-  if (!screen) {
-    console.warn("[showCompanyView] #screen-company not found");
-    return;
-  }
+  if (!screen) return;
   
   // ══════════════════════════════════════════════════════════
-  // 🔧 PHASE 0: FIX DOM STRUCTURE (if views are wrongly nested)
+  // 🔧 PHASE 0: FIX DOM STRUCTURE (move nested views out)
   // ══════════════════════════════════════════════════════════
   const cardContainer = screen.querySelector('.card');
   if (cardContainer) {
     const viewsToFix = ['income-tax', 'structure', 'reporting', 'vat', 'my', 'update', 'mgmt-packs'];
-    let fixCount = 0;
     
     viewsToFix.forEach(viewKey => {
       const viewEl = screen.querySelector(`.company-view[data-view="${viewKey}"]`);
       if (!viewEl) return;
       
-      // Check if this view is nested inside ANOTHER .company-view
       let parent = viewEl.parentElement;
       while (parent && parent !== screen) {
         if (parent.classList.contains('company-view') && parent.dataset.view !== viewKey) {
-          // ❌ WRONG: This view is nested inside another company-view!
-          console.warn(`🔧 [DOM Fix] Moving [data-view="${viewKey}"] out of parent [data-view="${parent.dataset.view}"]`);
-          
-          // Move it to be a direct child of .card container
+          // Move to correct location (direct child of .card)
           cardContainer.appendChild(viewEl);
-          fixCount++;
-          break;  // Exit while loop after fixing
+          break;
         }
         parent = parent.parentElement;
       }
     });
-    
-    if (fixCount > 0) {
-      console.log(`🔧 [DOM Fix] Fixed ${fixCount} incorrectly nested views`);
-    }
   }
   
-  console.log(`\n🎯 [showCompanyView] Activating view: "${key}"`);
-  
   // ══════════════════════════════════════════════════════════
-  // LAYER 1: NUCLEAR HIDE - Hide EVERY .company-view element
+  // PHASE 1: HIDE ALL VIEWS with nuclear techniques
   // ══════════════════════════════════════════════════════════
   const allViews = screen.querySelectorAll(".company-view");
-  console.log(`   Found ${allViews.length} company-view elements`);
   
-  allViews.forEach((v, index) => {
-    const viewName = v.dataset.view || `unnamed-${index}`;
-    
-    // Technique 1: Add hidden class
+  allViews.forEach(v => {
     v.classList.add("hidden");
-    
-    // Technique 2: Force inline display:none with !important
     v.style.setProperty("display", "none", "important");
     v.style.setProperty("visibility", "hidden", "important");
-    
-    // Technique 3: Move off-screen (prevents visual overlap!)
     v.style.setProperty("position", "absolute", "important");
     v.style.setProperty("left", "-9999px", "important");
     v.style.setProperty("top", "-9999px", "important");
-    v.style.setProperty("width", "0", "important");
-    v.style.setProperty("height", "0", "important");
+    v.style.setProperty("width", "0", "important");     // Hide dimensions
+    v.style.setProperty("height", "0", "important");    // Hide dimensions
     v.style.setProperty("overflow", "hidden", "important");
-    
-    // Technique 4: Disable interaction
     v.style.setProperty("pointer-events", "none", "important");
-    v.style.setProperty("z-index", "-9999", "important");
-    
-    // Technique 5: Data attributes for debugging
     v.setAttribute("data-force-hidden", "true");
-    v.setAttribute("aria-hidden", "true");
-    
-    if (viewName === "vat") {
-      console.log(`   🔒 Hidden VAT with 5 nuclear techniques`);
-    }
   });
   
   // ══════════════════════════════════════════════════════════
-  // LAYER 2: SHOW ONLY THE TARGET VIEW
+  // PHASE 2: SHOW TARGET - Reset ALL styles completely!
   // ══════════════════════════════════════════════════════════
   const target = screen.querySelector(`.company-view[data-view="${key}"]`);
-  if (!target) {
-    console.error(`❌ [showCompanyView] Target view "${key}" NOT FOUND!`);
-    console.error(`   Available views:`, Array.from(allViews).map(v => v.dataset.view));
-    return;
-  }
+  if (!target) return;
   
-  // Remove all hiding mechanisms from TARGET
+  // Remove hidden class
   target.classList.remove("hidden");
   target.removeAttribute("data-force-hidden");
-  target.removeAttribute("aria-hidden");
   
-  // Reset ALL inline styles to normal
-  target.style.removeProperty("display");
-  target.style.removeProperty("visibility");
-  target.style.removeProperty("position");
-  target.style.removeProperty("left");
-  target.style.removeProperty("top");
-  target.style.removeProperty("width");
-  target.style.removeProperty("height");
-  target.style.removeProperty("overflow");
-  target.style.removeProperty("pointer-events");
-  target.style.removeProperty("z-index");
+  // 🔑 CRITICAL: Remove ALL inline styles (clean slate)
+  target.setAttribute('style', '');  // This clears EVERYTHING!
   
-  // Explicitly set visible styles with !important
+  // Now set ONLY the styles we want
   target.style.setProperty("display", "block", "important");
   target.style.setProperty("visibility", "visible", "important");
-  target.style.setProperty("position", "relative", "important");
-  target.style.setProperty("left", "auto", "important");
-  target.style.setProperty("top", "auto", "important");
-  target.style.setProperty("width", "auto", "important");
-  target.style.setProperty("height", "auto", "important");
-  target.style.setProperty("pointer-events", "auto", "important");
-  target.style.setProperty("z-index", "auto", "important");
-  
-  console.log(`   ✅ Showed target "${key}" (height: ${target.offsetHeight}px)`);
-  
+  // Don't set position/left/top/width/height - let CSS handle it naturally!
+
   // ══════════════════════════════════════════════════════════
-  // LAYER 3: UPDATE UI TITLE
+  // PHASE 3: Update title
   // ══════════════════════════════════════════════════════════
   const titles = {
     my: "My company",
@@ -14130,33 +14079,13 @@ function showCompanyView(key) {
     "mgmt-packs": "Management packs",
   };
 
-  if (key === "mgmt-packs") {
-    window.loadManagementPacks?.();
-  }
-
+  if (key === "mgmt-packs") window.loadManagementPacks?.();
+  
   const sub = document.getElementById("companySubTitle");
   if (sub) sub.textContent = titles[key] || "Company & Setup";
   
-  // ══════════════════════════════════════════════════════════
-  // LAYER 4: ACTIVATE MUTATION GUARD
-  // ══════════════════════════════════════════════════════════
-  if (window.__companyActiveView) {
-    window.__companyActiveView(key);
-  }
-  
-  // ══════════════════════════════════════════════════════════
-  // VERIFICATION LOG
-  // ══════════════════════════════════════════════════════════
-  setTimeout(() => {
-    const vatEl = screen.querySelector('.company-view[data-view="vat"]');
-    const vatDisplay = vatEl ? getComputedStyle(vatEl).display : "N/A";
-    const vatPosition = vatEl ? getComputedStyle(vatEl).position : "N/A";
-    
-    console.log(`   ✅ [showCompanyView] Verification after 50ms:`);
-    console.log(`      Target "${key}" height: ${target.offsetHeight}px ✅`);
-    console.log(`      VAT → display: ${vatDisplay}, position: ${vatPosition}`);
-    console.log(`      ───────────────────────────────────────\n`);
-  }, 50);
+  // Activate guard
+  if (window.__companyActiveView) window.__companyActiveView(key);
 }
 window.showCompanyView = showCompanyView;
 
