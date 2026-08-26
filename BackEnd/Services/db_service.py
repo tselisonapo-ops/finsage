@@ -29689,6 +29689,7 @@ class DatabaseService:
                 CHECK(format IN('snapshot','pdf','xlsx'))
         );
 
+        -- Existing block at line 1280
         ALTER TABLE {schema}.ops_documents
             ADD COLUMN IF NOT EXISTS document_status TEXT NOT NULL DEFAULT 'draft',
             ADD COLUMN IF NOT EXISTS storage_path TEXT NULL,
@@ -29696,7 +29697,8 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS file_size BIGINT NULL,
             ADD COLUMN IF NOT EXISTS checksum_sha256 TEXT NULL,
             ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL,
-            ADD COLUMN IF NOT EXISTS approved_by_user_id INT NULL;
+            ADD COLUMN IF NOT EXISTS approved_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS request_revision_no INT NOT NULL DEFAULT 1;   -- ← ADD THIS
 
         ALTER TABLE {schema}.ops_documents
             DROP CONSTRAINT IF EXISTS chk_ops_document_status;
@@ -30557,7 +30559,7 @@ class DatabaseService:
 
         CREATE UNIQUE INDEX IF NOT EXISTS uq_ops_active_workflow_per_request
         ON {schema}.ops_workflow_instances(request_id)
-        WHERE status IN('pending','active');
+        WHERE status = 'running';
 
         -- ============================================================
         -- FINFLOW PROCUREMENT SETTINGS — CANONICAL TABLE
