@@ -142,8 +142,9 @@
                     <option value="" disabled selected>Select...</option>
                     <option value="practitioner">Practitioner (Accounting Practice)</option>
                     <option value="enterprise">Enterprise (Company)</option>
+                    <option value="school">School</option>
                 </select>
-                <small class="text-xs text-gray-500">This changes wording later (e.g., Practice vs Company).</small>
+                <small class="text-xs text-gray-500">This changes wording later (e.g., Practice vs Company vs School).</small>
             </div>
 
             <div class="input-group">
@@ -172,7 +173,7 @@
 
             <!-- ✅ Wrap invite fields properly (so tags are balanced) -->
             <div id="teamInviteBlock" class="hidden">
-            <div class="input-group">
+            <div class="input-group" id="ownerInviteRow">
                 <label for="ownerEmail">Owner email (recommended if you are not the Owner)</label>
                 <input type="email" id="ownerEmail" name="ownerEmail"
                     placeholder="owner@company.com"
@@ -530,8 +531,8 @@
 <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places"></script>
 
 <!-- Single JS file that handles everything -->
-<script src="/app/config.js"></script>
-<script src="/app/app.js"></script>
+<!-- ✅ Cache-busted: bump ?v= on every deploy so users never run stale JS again -->
+<script src="/app/config.js?v=20260827a"></script>
+<script src="/app/app.js?v=20260827a"></script>
 </body>
 </html>
-

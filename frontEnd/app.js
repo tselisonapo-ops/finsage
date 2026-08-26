@@ -380,8 +380,56 @@ function updateCountryFieldHints(countryCode) {
       roleEl.appendChild(opt);
     });
 
-    const stillExists = roleSet.some(r => r.value === currentValue);
-    roleEl.value = stillExists ? currentValue : "";
+    // Apply a deferred (saved) role if present, otherwise keep current selection
+    const pending     = roleEl.dataset.pendingRole;
+    const effective   = pending || currentValue;
+    const stillExists = roleSet.some(r => r.value === effective);
+    roleEl.value = stillExists ? effective : "";
+    if (pending && stillExists) delete roleEl.dataset.pendingRole;
+
+    // Keep owner-invite UI and persistence listeners in sync after programmatic change
+    roleEl.dispatchEvent(new Event("change"));
+  }
+
+  // Original Organisation Type options captured from HTML (restored for non-school types)
+  let ORG_TYPE_ORIGINAL = null;
+
+  function adaptOrgTypeByAccountType(type) {
+    const orgSel = document.getElementById("organizationType");
+    if (!orgSel) return;
+
+    // Capture the original HTML options once, so we can always restore them
+    if (!ORG_TYPE_ORIGINAL) {
+      ORG_TYPE_ORIGINAL = Array.from(orgSel.options).map(function (o) {
+        return { value: o.value, text: o.textContent, disabled: o.disabled, selected: o.selected };
+      });
+    }
+
+    const isSchool = String(type || "").toLowerCase() === "school";
+    const list = isSchool
+      ? [
+          { value: "",                   text: "Select type...",                disabled: true  },
+          { value: "public_school",      text: "Public School",                disabled: false },
+          { value: "independent_school", text: "Independent / Private School", disabled: false },
+          { value: "ecd_centre",         text: "ECD / Pre-Primary Centre",     disabled: false },
+          { value: "other",              text: "Other",                        disabled: false }
+        ]
+      : ORG_TYPE_ORIGINAL;
+
+    const current = orgSel.value || "";
+    orgSel.innerHTML = "";
+    list.forEach(function (o) {
+      const opt = document.createElement("option");
+      opt.value = o.value;
+      opt.textContent = o.text;
+      if (o.disabled) opt.disabled = true;
+      if (o.selected) opt.selected = true;
+      orgSel.appendChild(opt);
+    });
+
+    // Preserve selection if it is still valid in the new list
+    const stillValid = Array.from(orgSel.options).some(o => o.value === current && !o.disabled);
+    if (stillValid) orgSel.value = current;
   }
 
   function adaptLabelsByAccountType() {
@@ -394,11 +442,15 @@ function updateCountryFieldHints(countryCode) {
     if (type === "practitioner") {
       companyNameLabel.textContent = "Practice Name";
       regNoLabel.textContent       = "Practice Registration Number";
+    } else if (type === "school") {
+      companyNameLabel.textContent = "School / Institution Name";
+      regNoLabel.textContent       = "School Registration Number (e.g., EMIS No.)";
     } else {
       companyNameLabel.textContent = "Company/Entity Name";
       regNoLabel.textContent       = "Company Registration Number";
     }
 
+    adaptOrgTypeByAccountType(type);
     populateRoleOptions();
   }
 
@@ -569,11 +621,16 @@ function updateCountryFieldHints(countryCode) {
     const saved = sessionStorage.getItem("fs_reg_step1_data");
     if (!saved) return false;
     const data = JSON.parse(saved || "{}");
-    ["firstName","lastName","email","userRole","accountType","phone"].forEach(function (id) {
+    // NOTE: userRole is NOT restored here directly — its <option> elements are
+    // (re)built by populateRoleOptions(), so we defer the restore via data-*
+    // and let populateRoleOptions() apply it once the options exist.
+    ["firstName","lastName","email","accountType","phone"].forEach(function (id) {
       const el = document.getElementById(id);
       if (!el || data[id] == null) return;
       el.value = data[id];
     });
+    const roleEl = document.getElementById("userRole");
+    if (roleEl && data.userRole) roleEl.dataset.pendingRole = data.userRole;
     return true;
   }
 
@@ -586,7 +643,8 @@ function initTeamInviteToggle() {
   if (!needTeam || !teamInviteBlock) return;
 
   function isOwnerRole() {
-    return String(userRole?.value || "").trim().toLowerCase() === "owner";
+    // "principal" is the equivalent of Owner for School accounts
+    return ["owner", "principal"].includes(String(userRole?.value || "").trim().toLowerCase());
   }
 
   function syncInviteUI() {
@@ -1201,7 +1259,9 @@ function handleRegistration(event) {
   const ownerEmail = (val("ownerEmail") || "").trim().toLowerCase();
 
   // ✅ If user is not owner, strongly encourage owner email
-  if (chosenRole && chosenRole !== "owner" && !ownerEmail) {
+  // ("principal" counts as the Owner for School accounts)
+  const OWNER_EQUIVALENT_ROLES = ["owner", "principal"];
+  if (chosenRole && !OWNER_EQUIVALENT_ROLES.includes(chosenRole) && !ownerEmail) {
     alert("You selected a non-owner role. Please add the Owner's email (recommended).");
     return;
   }
@@ -1220,7 +1280,9 @@ function handleRegistration(event) {
   }
 
   const rawType  = (step1.accountType || val("accountType") || "enterprise").toLowerCase();
-  const userType = rawType === "practitioner" ? "Practitioner" : "Enterprise";
+  const userType = rawType === "practitioner" ? "Practitioner"
+                 : rawType === "school"       ? "School"
+                 : "Enterprise";
 
   // --- Build structured registered + postal addresses ---
   const reg = {
@@ -1481,7 +1543,10 @@ document.addEventListener("DOMContentLoaded", function () {
   bindStep1Persistence();
   bindStep2Persistence();
 
-  // Rehydrate step 1
+  // Rehydrate step 1 — order matters:
+  //   1) loadStep1Data restores accountType (and stages the saved role as pending)
+  //   2) populateRoleOptions builds the role options for that accountType and applies the pending role
+  //   3) adaptLabelsByAccountType fixes labels/org-type (and re-runs populate, preserving selection)
   loadStep1Data();
 
   populateRoleOptions();
