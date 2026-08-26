@@ -51508,6 +51508,20 @@ class DatabaseService:
             source_id INT NULL,
 
             -- ============================================================
+            -- OPS / PROCUREMENT LINKAGE
+            -- ============================================================
+
+            award_id BIGINT NULL,
+
+            sourcing_event_id BIGINT NULL,
+
+            procurement_case_id BIGINT NULL,
+
+            request_id BIGINT NULL,
+
+            awarded_quote_id BIGINT NULL,
+
+            -- ============================================================
             -- COMMERCIAL
             -- ============================================================
 
@@ -51551,9 +51565,8 @@ class DatabaseService:
 
             acknowledged_at TIMESTAMPTZ NULL,
 
-            acknowledged_by_portal_user_id BIGINT NULL
-                REFERENCES {schema}.ops_vendor_portal_users(id)
-                ON DELETE SET NULL,
+            acknowledged_by_portal_user_id BIGINT NULL,
+            -- FK added via ALTER TABLE after ops_vendor_portal_users exists
 
             vendor_acknowledgement_status TEXT
                 NOT NULL DEFAULT 'not_sent',
@@ -51610,8 +51623,7 @@ class DatabaseService:
             )
         );
 
-        DO $$
-        BEGIN
+        DO $$ BEGIN
         IF NOT EXISTS (
             SELECT 1 FROM pg_constraint c
             JOIN pg_namespace n ON n.oid=c.connamespace
