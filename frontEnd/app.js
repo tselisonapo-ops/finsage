@@ -59,217 +59,245 @@ function updateCountryFieldHints(countryCode) {
 /* =========================================================
  * Static Industry Catalog  (front-end only)
  * =======================================================*/
-const INDUSTRY_CATALOG = {
-  "Agriculture": [
-    "Crop Farming",
-    "Livestock Farming",
-    "Mixed Farming",
-    "Dairy Farming",
-    "Poultry Farming",
-    "Horticulture",
-    "Fruit Farming",
-    "Forestry & Plantations",
-    "Aquaculture",
-    "Beekeeping",
-    "Game & Wildlife Farming",
-    "Agricultural Support Services"
-  ],
+  const INDUSTRY_CATALOG = {
+    "Agriculture": [
+      "Crop Farming",
+      "Livestock Farming",
+      "Mixed Farming",
+      "Dairy Farming",
+      "Poultry Farming",
+      "Horticulture",
+      "Fruit Farming",
+      "Forestry & Plantations",
+      "Aquaculture",
+      "Beekeeping",
+      "Game & Wildlife Farming",
+      "Agricultural Support Services"
+    ],
 
-  "Automotive Services": [
-    "Auto Repair Workshop",
-    "Auto Electrical",
-    "Tyre & Fitment",
-    "Panel Beating",
-    "Spray Painting",
-    "Parts & Spares"
-  ],
+    "Automotive Services": [
+      "Auto Repair Workshop",
+      "Auto Electrical",
+      "Tyre & Fitment",
+      "Panel Beating",
+      "Spray Painting",
+      "Parts & Spares"
+    ],
 
-  "Body Corporate": [],
+    "Body Corporate": [],
 
-  "Call Center": [],
+    "Call Center": [],
 
-  "Car Dealership": [
-    "New Vehicles",
-    "Used Vehicles",
-    "Motorcycle Dealership"
-  ],
+    "Car Dealership": [
+      "New Vehicles",
+      "Used Vehicles",
+      "Motorcycle Dealership"
+    ],
 
-  "Construction": [
-    "Residential Building Contractor",
-    "Civil Engineering",
-    "Electrical & Mechanical",
-    "Plumbing & Drainage",
-    "Roadworks"
-  ],
+    "Construction": [
+      "Residential Building Contractor",
+      "Civil Engineering",
+      "Electrical & Mechanical",
+      "Plumbing & Drainage",
+      "Roadworks"
+    ],
 
-  "Engineering & Technical": [
-    "Mechanical Engineering",
-    "Electrical Engineering",
-    "Industrial Engineering",
-    "Technical Services"
-  ],
+    "Engineering & Technical": [
+      "Mechanical Engineering",
+      "Electrical Engineering",
+      "Industrial Engineering",
+      "Technical Services"
+    ],
 
-  "Hospitality": [
-    "Hotel",
-    "Events & Catering",
-    "Guest House / Lodge"
-  ],
+    "Hospitality": [
+      "Hotel",
+      "Events & Catering",
+      "Guest House / Lodge"
+    ],
 
-  "IT & Technology": [
-    "Software Development",
-    "Managed IT Services",
-    "Networking & Infrastructure",
-    "Cybersecurity"
-  ],
+    "IT & Technology": [
+      "Software Development",
+      "Managed IT Services",
+      "Networking & Infrastructure",
+      "Cybersecurity"
+    ],
 
-  "Logistics & Transport": [
-    "Freight / Logistics",
-    "Courier / Last Mile",
-    "Public Transport",
-    "Fleet Services"
-  ],
+    "Logistics & Transport": [
+      "Freight / Logistics",
+      "Courier / Last Mile",
+      "Public Transport",
+      "Fleet Services"
+    ],
 
-  "Management Services": [],
+    "Management Services": [],
 
-  "Manufacturing": [
-    "Light Manufacturing",
-    "Fabrication",
-    "Food Processing"
-  ],
+    "Manufacturing": [
+      "Light Manufacturing",
+      "Fabrication",
+      "Food Processing"
+    ],
 
-  "Mining": [
-    "Open-Pit Mining",
-    "Underground Mining",
-    "Quarrying & Aggregates",
-    "Coal Mining",
-    "Gold & PGM Mining"
-  ],
+    "Mining": [
+      "Open-Pit Mining",
+      "Underground Mining",
+      "Quarrying & Aggregates",
+      "Coal Mining",
+      "Gold & PGM Mining"
+    ],
 
-  "NPO Education": [
-    "Primary Education",
-    "Higher Education"
-  ],
+    // ══════════════════════════════════════════════════
+    // ✅ UPDATED: NPO Education
+    // ══════════════════════════════════════════════════
+    "NPO Education": [
+      "Primary Education",
+      "Higher Education",
+      "ECD Centre (Early Childhood Development)",
+      "Adult Basic Education"
+    ],
 
-  "Private School": [],
+    // ══════════════════════════════════════════════════
+    // ✅ UPDATED: Private School - now has sub-types!
+    // ══════════════════════════════════════════════════
+    "Private School": [
+      "Independent Primary School",
+      "Independent High School",
+      "Combined Independent School",
+      "Special Needs Private School",
+      "Religious / Church School",
+      "Montessori School",
+      "Waldorf School",
+      "International School (Cambridge/IB)"
+    ],
 
-  "NPO Healthcare": [
-    "Clinic",
-    "Hospital"
-  ],
+    // ══════════════════════════════════════════════════
+    // ✅ NEW: Public School - ADD THIS ENTIRE ENTRY!
+    // ══════════════════════════════════════════════════
+    "Public School": [
+      "Primary School",
+      "High School / Secondary School",
+      "Combined School (Primary + High)",
+      "Special Needs School",
+      "Vocational / Technical College (Public)",
+      "ECD Centre (Early Childhood Development)"
+    ],
 
-  "NPO IT": [],
+    "NPO Healthcare": [
+      "Clinic",
+      "Hospital"
+    ],
 
-  "NPO Transport": [
-    "Fleet Services",
-    "Public Transport"
-  ],
+    "NPO IT": [],
 
-  "Private Healthcare": [
-    "GP Clinic",
-    "Specialist Practice",
-    "Dentistry"
-  ],
+    "NPO Transport": [
+      "Fleet Services",
+      "Public Transport"
+    ],
 
-  "Professional Services": [
-    "Auditing & Accounting",
-    "Architecture",
-    "Legal Services",
-    "Engineering Consulting",
-    "HR & Recruitment",
-    "Business Consulting"
-  ],
+    "Private Healthcare": [
+      "GP Clinic",
+      "Specialist Practice",
+      "Dentistry"
+    ],
 
-  "Property Management": [],
+    "Professional Services": [
+      "Auditing & Accounting",
+      "Architecture",
+      "Legal Services",
+      "Engineering Consulting",
+      "HR & Recruitment",
+      "Business Consulting"
+    ],
 
-  "Restaurant": [
-    "Fast Food",
-    "Casual Dining",
-    "Fine Dining"
-  ],
+    "Property Management": [],
 
-  "Retail & Wholesale": [
-    "Wholesale",
-    "E-commerce Retail",
-    "Brick & Mortar Retail"
-  ],
+    "Restaurant": [
+      "Fast Food",
+      "Casual Dining",
+      "Fine Dining"
+    ],
 
-  "Security Services": [
-    "Guarding",
-    "Alarm Monitoring",
-    "Technical Security Systems"
-  ],
+    "Retail & Wholesale": [
+      "Wholesale",
+      "E-commerce Retail",
+      "Brick & Mortar Retail"
+    ],
 
-  "Design & Creative Services": [
-    "Interior Design",
-    "Architecture",
-    "Graphic Design",
-    "Advertising Agency",
-    "Creative Studio",
-    "Landscape Design"
-  ],
+    "Security Services": [
+      "Guarding",
+      "Alarm Monitoring",
+      "Technical Security Systems"
+    ],
 
-  "Personal Care & Beauty Services": [
-    "Hair Salon",
-    "Barber Shop",
-    "Nail Salon",
-    "Beauty Spa",
-    "Makeup Artist",
-    "Wellness & Massage",
-    "Tattoo Studio"
-  ],
+    "Design & Creative Services": [
+      "Interior Design",
+      "Architecture",
+      "Graphic Design",
+      "Advertising Agency",
+      "Creative Studio",
+      "Landscape Design"
+    ],
 
-  "Health & Fitness": [
-    "Gym",
-    "Personal Trainer",
-    "Fitness Studio",
-    "CrossFit Box",
-    "Sports Academy"
-  ],
+    "Personal Care & Beauty Services": [
+      "Hair Salon",
+      "Barber Shop",
+      "Nail Salon",
+      "Beauty Spa",
+      "Makeup Artist",
+      "Wellness & Massage",
+      "Tattoo Studio"
+    ],
 
-  "Education & Training": [
-    "Training Provider",
-    "Skills Development",
-    "Driving School",
-    "Tutoring Services",
-    "Corporate Training"
-  ],
+    "Health & Fitness": [
+      "Gym",
+      "Personal Trainer",
+      "Fitness Studio",
+      "CrossFit Box",
+      "Sports Academy"
+    ],
 
-  "Cleaning Services": [
-    "Residential Cleaning",
-    "Commercial Cleaning",
-    "Industrial Cleaning",
-    "Pest Control"
-  ],
+    "Education & Training": [
+      "Training Provider",
+      "Skills Development",
+      "Driving School",
+      "Tutoring Services",
+      "Corporate Training"
+    ],
 
-  "Media & Entertainment": [
-    "Content Creator",
-    "Podcast Studio",
-    "Photography",
-    "Videography",
-    "Film Production",
-    "Music Production"
-  ],
+    "Cleaning Services": [
+      "Residential Cleaning",
+      "Commercial Cleaning",
+      "Industrial Cleaning",
+      "Pest Control"
+    ],
 
-  "Telecommunications": [
-    "Internet Service Provider",
-    "Mobile Network Operator",
-    "Pay TV Operator"
-  ],
+    "Media & Entertainment": [
+      "Content Creator",
+      "Podcast Studio",
+      "Photography",
+      "Videography",
+      "Film Production",
+      "Music Production"
+    ],
 
-  "Transport": [
-    "Courier / Last Mile",
-    "Freight / Logistics",
-    "Public Transport"
-  ],
+    "Telecommunications": [
+      "Internet Service Provider",
+      "Mobile Network Operator",
+      "Pay TV Operator"
+    ],
 
-  "Clubs & Associations": [
-    "Sports Club",
-    "Social Club",
-    "Professional Association",
-    "Recreational Association"
-  ]
-};
+    "Transport": [
+      "Courier / Last Mile",
+      "Freight / Logistics",
+      "Public Transport"
+    ],
 
+    "Clubs & Associations": [
+      "Sports Club",
+      "Social Club",
+      "Professional Association",
+      "Recreational Association"
+    ]
+  };
   /* =========================================================
    * Tiny helpers
    * =======================================================*/
@@ -297,6 +325,7 @@ const INDUSTRY_CATALOG = {
       { value: "accountant", label: "Accountant" },
       { value: "other", label: "Other Professional Role" }
     ],
+    
     practitioner: [
       { value: "owner", label: "Practice Owner / Founding Partner" },
       { value: "audit_partner", label: "Audit Partner" },
@@ -308,6 +337,24 @@ const INDUSTRY_CATALOG = {
       { value: "bookkeeper", label: "Bookkeeper" },
       { value: "reviewer", label: "Reviewer" },
       { value: "other", label: "Other Professional Role" }
+    ],
+
+    // ══════════════════════════════════════════════════
+    // ✅ NEW: School-specific roles
+    // ══════════════════════════════════════════════════
+    school: [
+      { value: "principal", label: "Principal / Headmaster" },
+      { value: "deputy_principal", label: "Deputy Principal" },
+      { value: "bursar", label: "Bursar / Finance Officer" },
+      { value: "school_secretary", label: "School Secretary" },
+      { value: "finance_clerk", label: "Finance Clerk" },
+      { value: "hod", label: "Head of Department (HOD)" },
+      { value: "grade_head", label: "Grade Head" },
+      { value: "sgb_treasurer", label: "SGB Treasurer" },
+      { value: "sgb_member", label: "SGB Member" },
+      { value: "educator", label: "Educator / Teacher" },
+      { value: "admin_staff", label: "Administrative Staff" },
+      { value: "other", label: "Other School Role" }
     ]
   };
 

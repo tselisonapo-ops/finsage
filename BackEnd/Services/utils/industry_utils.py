@@ -48,6 +48,13 @@ INDUSTRY_ALIASES = {
     "education and training": "Education & Training",
     "training": "Education & Training",
 
+    "public school": "Public School",
+    "government school": "Public School", 
+    "primary school": "Public School",
+    "high school": "Public School",
+    "secondary school": "Public School",
+    "combined school": "Public School",
+
     "cleaning services": "Cleaning Services",
     "cleaning": "Cleaning Services",
 
@@ -324,6 +331,7 @@ TEMPLATE_INDUSTRY_ALIASES = {
     "education training": "Education & Training",
     "education & training": "Education & Training",
     "education and training": "Education & Training",
+    "public school": "Public School",
 
     "cleaning services": "Cleaning Services",
 }
@@ -419,6 +427,7 @@ PROJECT_NON_MATERIAL_INDUSTRIES = {
     "private_healthcare",
     "npo_it",
     "general_business",
+    "public_school",        # ← ADD THIS!
 }
 
 

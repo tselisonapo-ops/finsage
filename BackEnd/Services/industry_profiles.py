@@ -58,10 +58,18 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
     "NPO Education": {
         "pnl_layout": "npo_performance",
         "is_service_only": True,
-        "uses_inventory": False,
+        "uses_inventory": True,                    # ← CHANGED from False
         "uses_cogs": False,
-        "default_inventory_mode": "none",
+        "default_inventory_mode": "service",         # ← CHANGED from "none"
         "default_valuation": None,
+        
+        # New school flags
+        "is_school": True,
+        "school_type": "npo_education",
+        "work_unit_label": "Learner",
+        "vat_exempt": True,
+        "input_vat_claimable": False,
+        "uses_projects": True,
     },
     "NPO IT": {
         "pnl_layout": "npo_performance",
@@ -209,14 +217,28 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
     # -----------------------------
     # Uses inventory (MUST have defaults)
     # -----------------------------
-    "Private School": {
-        "pnl_layout": "service_gross_margin",
-        "is_service_only": False,
-        "uses_inventory": True,
-        "uses_cogs": True,
-        "default_inventory_mode": "internal",
-        "default_valuation": "fifo",
-        "pnl_labels": {"cogs": "Cost of service"},
+    "Public School": {
+        "pnl_layout": "service_simple",               # ← CHANGED from "service_gross_margin"
+        "is_service_only": True,                      # ← CHANGED from False
+        "uses_inventory": True,                       # Keep True (for tracking)
+        "uses_cogs": False,                           # ← CHANGED from True!
+        "default_inventory_mode": "service",           # ← CHANGED from "optional"!
+        "default_valuation": None,                    # No valuation needed
+        "pos_mode": None,                             # ← CHANGED from "retail"!
+        "manufacturer_dealer_lessor_capable": False,
+        "pnl_labels": {"revenue": "Income"},          # Changed from cogs
+        
+        # ══════════════════════════════════════════════════
+        # School-specific fields (NEW!)
+        # ══════════════════════════════════════════════════
+        "is_school": True,
+        "school_type": "public",
+        "work_unit_label": "Learner",
+        "vat_exempt": True,                           # SA public schools VAT exempt!
+        "input_vat_claimable": False,                 # Cannot claim input VAT!
+        "uses_projects": True,                        # Capital projects enabled
+        "uses_material_costing": False,               # Non-material projects only
+        "uses_boq_budgeting": False,                  # No BOQ needed
     },
     "Public School": {
         "pnl_layout": "service_gross_margin",

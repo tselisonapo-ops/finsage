@@ -13995,10 +13995,6 @@ function ensureVatAnchorMonths() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// 🛡️ BULLETPROOF showCompanyView() v4.0 - With DOM Structure Auto-Fix
-// Detects and fixes incorrect nesting + 5-layer hiding + MutationObserver
-// ════════════════════════════════════════════════════════════════════
-// ════════════════════════════════════════════════════════════════════
 // 🛡️ BULLETPROOF showCompanyView() v5.0 - FINAL VERSION
 // Fixes: DOM nesting + proper style reset + VAT hiding
 // ════════════════════════════════════════════════════════════════════
@@ -15511,216 +15507,245 @@ window.loadCompanyProfile = loadCompanyProfile;
     `;
   }
 
-const INDUSTRY_CATALOG = {
-  "Agriculture": [
-    "Crop Farming",
-    "Livestock Farming",
-    "Mixed Farming",
-    "Dairy Farming",
-    "Poultry Farming",
-    "Horticulture",
-    "Fruit Farming",
-    "Forestry & Plantations",
-    "Aquaculture",
-    "Beekeeping",
-    "Game & Wildlife Farming",
-    "Agricultural Support Services"
-  ],
+  const INDUSTRY_CATALOG = {
+    "Agriculture": [
+      "Crop Farming",
+      "Livestock Farming",
+      "Mixed Farming",
+      "Dairy Farming",
+      "Poultry Farming",
+      "Horticulture",
+      "Fruit Farming",
+      "Forestry & Plantations",
+      "Aquaculture",
+      "Beekeeping",
+      "Game & Wildlife Farming",
+      "Agricultural Support Services"
+    ],
 
-  "Automotive Services": [
-    "Auto Repair Workshop",
-    "Auto Electrical",
-    "Tyre & Fitment",
-    "Panel Beating",
-    "Spray Painting",
-    "Parts & Spares"
-  ],
+    "Automotive Services": [
+      "Auto Repair Workshop",
+      "Auto Electrical",
+      "Tyre & Fitment",
+      "Panel Beating",
+      "Spray Painting",
+      "Parts & Spares"
+    ],
 
-  "Body Corporate": [],
+    "Body Corporate": [],
 
-  "Call Center": [],
+    "Call Center": [],
 
-  "Car Dealership": [
-    "New Vehicles",
-    "Used Vehicles",
-    "Motorcycle Dealership"
-  ],
+    "Car Dealership": [
+      "New Vehicles",
+      "Used Vehicles",
+      "Motorcycle Dealership"
+    ],
 
-  "Construction": [
-    "Residential Building Contractor",
-    "Civil Engineering",
-    "Electrical & Mechanical",
-    "Plumbing & Drainage",
-    "Roadworks"
-  ],
+    "Construction": [
+      "Residential Building Contractor",
+      "Civil Engineering",
+      "Electrical & Mechanical",
+      "Plumbing & Drainage",
+      "Roadworks"
+    ],
 
-  "Engineering & Technical": [
-    "Mechanical Engineering",
-    "Electrical Engineering",
-    "Industrial Engineering",
-    "Technical Services"
-  ],
+    "Engineering & Technical": [
+      "Mechanical Engineering",
+      "Electrical Engineering",
+      "Industrial Engineering",
+      "Technical Services"
+    ],
 
-  "Hospitality": [
-    "Hotel",
-    "Events & Catering",
-    "Guest House / Lodge"
-  ],
+    "Hospitality": [
+      "Hotel",
+      "Events & Catering",
+      "Guest House / Lodge"
+    ],
 
-  "IT & Technology": [
-    "Software Development",
-    "Managed IT Services",
-    "Networking & Infrastructure",
-    "Cybersecurity"
-  ],
+    "IT & Technology": [
+      "Software Development",
+      "Managed IT Services",
+      "Networking & Infrastructure",
+      "Cybersecurity"
+    ],
 
-  "Logistics & Transport": [
-    "Freight / Logistics",
-    "Courier / Last Mile",
-    "Public Transport",
-    "Fleet Services"
-  ],
+    "Logistics & Transport": [
+      "Freight / Logistics",
+      "Courier / Last Mile",
+      "Public Transport",
+      "Fleet Services"
+    ],
 
-  "Management Services": [],
+    "Management Services": [],
 
-  "Manufacturing": [
-    "Light Manufacturing",
-    "Fabrication",
-    "Food Processing"
-  ],
+    "Manufacturing": [
+      "Light Manufacturing",
+      "Fabrication",
+      "Food Processing"
+    ],
 
-  "Mining": [
-    "Open-Pit Mining",
-    "Underground Mining",
-    "Quarrying & Aggregates",
-    "Coal Mining",
-    "Gold & PGM Mining"
-  ],
+    "Mining": [
+      "Open-Pit Mining",
+      "Underground Mining",
+      "Quarrying & Aggregates",
+      "Coal Mining",
+      "Gold & PGM Mining"
+    ],
 
-  "NPO Education": [
-    "Primary Education",
-    "Higher Education"
-  ],
+    // ══════════════════════════════════════════════════
+    // ✅ UPDATED: NPO Education
+    // ══════════════════════════════════════════════════
+    "NPO Education": [
+      "Primary Education",
+      "Higher Education",
+      "ECD Centre (Early Childhood Development)",
+      "Adult Basic Education"
+    ],
 
-  "Private School": [],
+    // ══════════════════════════════════════════════════
+    // ✅ UPDATED: Private School - now has sub-types!
+    // ══════════════════════════════════════════════════
+    "Private School": [
+      "Independent Primary School",
+      "Independent High School",
+      "Combined Independent School",
+      "Special Needs Private School",
+      "Religious / Church School",
+      "Montessori School",
+      "Waldorf School",
+      "International School (Cambridge/IB)"
+    ],
 
-  "NPO Healthcare": [
-    "Clinic",
-    "Hospital"
-  ],
+    // ══════════════════════════════════════════════════
+    // ✅ NEW: Public School - ADD THIS ENTIRE ENTRY!
+    // ══════════════════════════════════════════════════
+    "Public School": [
+      "Primary School",
+      "High School / Secondary School",
+      "Combined School (Primary + High)",
+      "Special Needs School",
+      "Vocational / Technical College (Public)",
+      "ECD Centre (Early Childhood Development)"
+    ],
 
-  "NPO IT": [],
+    "NPO Healthcare": [
+      "Clinic",
+      "Hospital"
+    ],
 
-  "NPO Transport": [
-    "Fleet Services",
-    "Public Transport"
-  ],
+    "NPO IT": [],
 
-  "Private Healthcare": [
-    "GP Clinic",
-    "Specialist Practice",
-    "Dentistry"
-  ],
+    "NPO Transport": [
+      "Fleet Services",
+      "Public Transport"
+    ],
 
-  "Professional Services": [
-    "Auditing & Accounting",
-    "Architecture",
-    "Legal Services",
-    "Engineering Consulting",
-    "HR & Recruitment",
-    "Business Consulting"
-  ],
+    "Private Healthcare": [
+      "GP Clinic",
+      "Specialist Practice",
+      "Dentistry"
+    ],
 
-  "Property Management": [],
+    "Professional Services": [
+      "Auditing & Accounting",
+      "Architecture",
+      "Legal Services",
+      "Engineering Consulting",
+      "HR & Recruitment",
+      "Business Consulting"
+    ],
 
-  "Restaurant": [
-    "Fast Food",
-    "Casual Dining",
-    "Fine Dining"
-  ],
+    "Property Management": [],
 
-  "Retail & Wholesale": [
-    "Wholesale",
-    "E-commerce Retail",
-    "Brick & Mortar Retail"
-  ],
+    "Restaurant": [
+      "Fast Food",
+      "Casual Dining",
+      "Fine Dining"
+    ],
 
-  "Security Services": [
-    "Guarding",
-    "Alarm Monitoring",
-    "Technical Security Systems"
-  ],
+    "Retail & Wholesale": [
+      "Wholesale",
+      "E-commerce Retail",
+      "Brick & Mortar Retail"
+    ],
 
-  "Design & Creative Services": [
-    "Interior Design",
-    "Architecture",
-    "Graphic Design",
-    "Advertising Agency",
-    "Creative Studio",
-    "Landscape Design"
-  ],
+    "Security Services": [
+      "Guarding",
+      "Alarm Monitoring",
+      "Technical Security Systems"
+    ],
 
-  "Personal Care & Beauty Services": [
-    "Hair Salon",
-    "Barber Shop",
-    "Nail Salon",
-    "Beauty Spa",
-    "Makeup Artist",
-    "Wellness & Massage",
-    "Tattoo Studio"
-  ],
+    "Design & Creative Services": [
+      "Interior Design",
+      "Architecture",
+      "Graphic Design",
+      "Advertising Agency",
+      "Creative Studio",
+      "Landscape Design"
+    ],
 
-  "Health & Fitness": [
-    "Gym",
-    "Personal Trainer",
-    "Fitness Studio",
-    "CrossFit Box",
-    "Sports Academy"
-  ],
+    "Personal Care & Beauty Services": [
+      "Hair Salon",
+      "Barber Shop",
+      "Nail Salon",
+      "Beauty Spa",
+      "Makeup Artist",
+      "Wellness & Massage",
+      "Tattoo Studio"
+    ],
 
-  "Education & Training": [
-    "Training Provider",
-    "Skills Development",
-    "Driving School",
-    "Tutoring Services",
-    "Corporate Training"
-  ],
+    "Health & Fitness": [
+      "Gym",
+      "Personal Trainer",
+      "Fitness Studio",
+      "CrossFit Box",
+      "Sports Academy"
+    ],
 
-  "Cleaning Services": [
-    "Residential Cleaning",
-    "Commercial Cleaning",
-    "Industrial Cleaning",
-    "Pest Control"
-  ],
+    "Education & Training": [
+      "Training Provider",
+      "Skills Development",
+      "Driving School",
+      "Tutoring Services",
+      "Corporate Training"
+    ],
 
-  "Media & Entertainment": [
-    "Content Creator",
-    "Podcast Studio",
-    "Photography",
-    "Videography",
-    "Film Production",
-    "Music Production"
-  ],
+    "Cleaning Services": [
+      "Residential Cleaning",
+      "Commercial Cleaning",
+      "Industrial Cleaning",
+      "Pest Control"
+    ],
 
-  "Telecommunications": [
-    "Internet Service Provider",
-    "Mobile Network Operator",
-    "Pay TV Operator"
-  ],
+    "Media & Entertainment": [
+      "Content Creator",
+      "Podcast Studio",
+      "Photography",
+      "Videography",
+      "Film Production",
+      "Music Production"
+    ],
 
-  "Transport": [
-    "Courier / Last Mile",
-    "Freight / Logistics",
-    "Public Transport"
-  ],
+    "Telecommunications": [
+      "Internet Service Provider",
+      "Mobile Network Operator",
+      "Pay TV Operator"
+    ],
 
-  "Clubs & Associations": [
-    "Sports Club",
-    "Social Club",
-    "Professional Association",
-    "Recreational Association"
-  ]
-};
+    "Transport": [
+      "Courier / Last Mile",
+      "Freight / Logistics",
+      "Public Transport"
+    ],
+
+    "Clubs & Associations": [
+      "Sports Club",
+      "Social Club",
+      "Professional Association",
+      "Recreational Association"
+    ]
+  };
 
   function getSortedIndustries() {
     return Object.keys(INDUSTRY_CATALOG).sort((a, b) => a.localeCompare(b));
@@ -16267,6 +16292,339 @@ const INDUSTRY_CATALOG = {
   window.bindCorporateStructureScreen = bindCorporateStructureScreen;
   window.loadCorporateStructure = loadCorporateStructure;
 })();
+
+const SCHOOL_INDUSTRY_CATALOG_UPDATES = {
+  
+  // ✅ NEW: Public School industry with sub-types
+  "Public School": [
+    "Primary School",
+    "High School / Secondary School", 
+    "Combined School (Primary + High)",
+    "Special Needs School",
+    "Vocational / Technical College (Public)",
+    "ECD Centre (Early Childhood Development)"
+  ],
+  
+  // ✅ UPDATE: Private School with sub-types
+  "Private School": [
+    "Independent Primary School",
+    "Independent High School",
+    "Combined Independent School",
+    "Special Needs Private School",
+    "Religious / Church School",
+    "Montessori School",
+    "Waldorf School",
+    "International School (Cambridge/IB)"
+  ]
+};
+
+
+function isSchoolCompany(company = window.CURRENT_COMPANY) {
+  if (!company) return false;
+  
+  // Read from backend-provided flags (NOT local config!)
+  const isSchool = company.is_school || company.school_type;
+  if (isSchool) return true;
+  
+  // Fallback: check industry name
+  const industry = String(company.industry || "").toLowerCase();
+  const subIndustry = String(company.sub_industry || "").toLowerCase();
+  
+  return (
+    industry.includes("school") ||
+    industry.includes("education") ||
+    subIndustry.includes("primary") ||
+    subIndustry.includes("high school") ||
+    subIndustry.includes("secondary") ||
+    subIndustry.includes("combined")
+  );
+}
+
+function getSchoolType(company = window.CURRENT_COMPANY) {
+  // This comes from Python get_industry_profile() -> school_type field
+  return company?.school_type || null;  // "public", "private", "npo_education"
+}
+
+
+function isVatExemptSchool(company = window.CURRENT_COMPANY) {
+  // From Python: vat_exempt flag
+  return company?.vat_exempt === true;
+}
+
+
+function getSchoolNavLabelOverrides(company = window.CURRENT_COMPANY) {
+  if (!isSchoolCompany(company)) return null;
+  
+  return {
+    // Rename sections for school context
+    labelOverrides: {
+      "Workflows": "Finance Desk",
+      "Cash & Banking": "Banking & Fees",
+      "Master Records": "Contacts & Lists",
+      "Reports": "Financial Reports",
+      "Standards": "Accounting Setup",
+      "Control Room": "Controls & Audit",
+      "Catalog Studio": "Inventory & Library",    
+    },
+    
+    // Custom item labels
+    itemOverrides: {
+      // Could rename specific menu items if needed
+    }
+  };
+}
+
+
+function getSchoolHelpContext(screenName, company = window.CURRENT_COMPANY) {
+  if (!isSchoolCompany(company)) return null;
+  
+  const schoolType = getSchoolType(company);
+  const isPublic = (schoolType === "public");
+  
+  const helpTexts = {
+    
+    "vat": {
+      title: isPublic ? "VAT for Public Schools" : "VAT for Private Schools",
+      body: isPublic 
+        ? `As a public school, your educational services are VAT EXEMPT.
+        
+This means:
+• You cannot charge VAT on school fees
+• You CANNOT claim input VAT on purchases
+• The VAT you pay on supplies becomes part of your cost
+
+This screen is provided for reporting purposes only.
+If you run taxable activities (e.g., tuck shop, facility hire),
+consult your accountant about partial VAT recovery.`
+        : `As a private school, check your VAT registration status.
+
+If registered as VAT vendor:
+• May need to charge VAT on certain services
+• Can claim input VAT on business purchases
+
+Consult your accountant for specific advice.`,
+      icon: "📚",
+      showWarning: isPublic,
+    },
+    
+    "payroll": {
+      title: "School Payroll",
+      body: `Record teacher salaries, admin staff wages, and contractor payments.
+
+Remember to include:
+• Basic salaries (PED/GDE scales for public schools)
+• Housing allowances (where applicable)
+• Medical aid contributions
+• Pension/UIF contributions
+• Performance bonuses
+• Overtime (extramural supervision)`,
+      icon: "👩‍🏫",
+    },
+    
+    "budgeting": {
+      title: "School Budgeting",
+      body: `Create departmental budgets aligned to your allocation.
+
+Common budget categories:
+• Stationery & teaching materials
+• Utilities (water, electricity, refuse)
+• Maintenance (buildings, grounds, equipment)
+• Extramural activities & sports
+• Transport & trips
+• Staff development & training`,
+      icon: "📊",
+    },
+    
+    "fixedassets": {
+      title: "School Fixed Assets (NCA)",
+      body: `Schools have significant Non-Current Assets that MUST be tracked!
+
+🪑 FURNITURE & FIXTURES (5-10 year life):
+• Learner desks & chairs (need regular replacement!)
+• Teacher tables & chairs
+• Staff room furniture
+• Shelving & storage cabinets
+
+📚 TEACHING EQUIPMENT (5-15 year life):
+• Chalk boards / White boards / Smart boards
+• Projectors & screens
+• Computers, laptops, tablets
+• Printers & photocopiers
+
+🏟️ SPORTS FACILITIES & EQUIPMENT:
+• Sports courts (tennis, netball, basketball surfaces)
+• Basketball hoops, netball posts, volleyball poles
+• Soccer goal posts
+⚠️ These NEED replacement tracking!
+
+🚗 VEHICLES:
+• School buses (major asset!)
+
+NOTE: Buildings may be owned by DOE - check before capitalising.`,
+      icon: "🏫",
+    },
+    
+    "catalog-studio": {
+      title: "Catalogue Studio for Schools",
+      body: `Track items in SERVICE mode (no selling/POS).
+
+📦 STATIONERY & SUPPLIES:
+• Pens, pencils, rulers, paper
+• Printer cartridges & toner
+• Cleaning supplies
+
+📚 TEXTBOOKS & LIBRARY:
+• Subject textbooks (issued to learners)
+• Library books (for loan tracking)
+
+🔧 EQUIPMENT TRACKING:
+• Sports equipment
+• Laboratory apparatus
+• IT accessories`,
+      icon: "📦",
+    },
+    
+    "projects": {
+      title: "School Capital Projects",
+      body: `Use for MAJOR capital works funded by parent contributions.
+
+✅ WHEN TO USE PROJECTS:
+• School hall construction (R100k+)
+• New classroom / toilet block
+• Sports pavilion / change rooms
+• Major fencing / security upgrades
+
+❌ DON'T USE FOR:
+• Minor repairs (< R20k) → Use Journal → Maintenance expense
+• Routine maintenance → Expense directly
+
+💡 BENEFITS:
+• Track actual vs budget per cost category
+• Show parents/governors how money was spent
+• Clear audit trail for Department of Education
+• On completion: transfer total to Fixed Assets
+
+⚠️ Schools are NON-MATERIAL projects (no raw materials).`,
+      icon: "🏗️",
+    },
+    
+    "library": {
+      title: "Library & Book Rentals",
+      body: `Use Catalogue Studio service items to track:
+
+📖 BOOK CATEGORIES:
+• Fiction / Non-fiction
+• Textbooks (per subject per grade)
+• Reference materials
+
+👤 ISSUANCE TRACKING:
+• Issued to (learner name/ID)
+• Issue date / Due date / Return date
+• Overdue notifications
+
+TIP: Run term-end stocktakes for loss identification.`,
+      icon: "📚",
+    },
+  };
+  
+  return helpTexts[screenName] || null;
+}
+
+
+// ============================================================
+// 5. JOURNAL CATEGORIES FOR SCHOOLS
+// ============================================================
+
+/**
+ * Get custom journal entry categories for schools
+ */
+function getSchoolJournalCategories(company = window.CURRENT_COMPANY) {
+  if (!isSchoolCompany(company)) return null;
+  
+  const schoolType = getSchoolType(company);
+  
+  if (schoolType === "public") {
+    return [
+      "School Fees Received",
+      "Government Grant Received",
+      "Donation Received",
+      "Fundraising Income",
+      "Salaries & Wages (Teachers)",
+      "Salaries & Wages (Admin)",
+      "Stationery & Teaching Materials",
+      "Utilities (Water/Electricity)",
+      "Maintenance & Repairs",
+      "Equipment & Furniture",
+      "Transport & Travel",
+      "Professional Fees (Audit/Legal)",
+      "Insurance",
+      "Bank Charges",
+      "Miscellaneous Expenses",
+    ];
+  }
+  
+  // Private school categories
+  return [
+    "Tuition Fees Received",
+    "Registration Fees",
+    "After-Care / Extra-Mural Fees",
+    "Donation Received",
+    "Salaries & Wages",
+    "Stationery & Teaching Materials",
+    "Utilities (Water/Electricity)",
+    "Maintenance & Repairs",
+    "Equipment & Furniture",
+    "Transport (School Buses)",
+    "Professional Fees (Audit/Legal)",
+    "Insurance",
+    "Marketing & Admissions",
+    "Bank Charges",
+    "Lease Rentals (if applicable)",
+    "Miscellaneous Expenses",
+  ];
+}
+
+
+// ============================================================
+// 6. TERM-BASED REPORTING INFO
+// ============================================================
+
+/**
+ * Get school term information for reporting periods
+ */
+function getSchoolTermInfo(company = window.CURRENT_COMPANY) {
+  if (!isSchoolCompany(company)) return null;
+  
+  return {
+    useTermlyReporting: true,
+    terms: [
+      { name: "Term 1", start: "01-15", end: "04-10" },   // Jan-Apr
+      { name: "Term 2", start: "05-02", end: "08-09" },   // May-Aug
+      { name: "Term 3", start: "09-13", end: "12-06" },   // Sep-Dec
+    ],
+    termLabels: {
+      "Q1": "Term 1",
+      "Q2": "Term 2", 
+      "Q3": "Term 3",
+      "Q4": "Term 3 (Extended)",  // Some reports span term 3+
+    }
+  };
+}
+
+
+// ============================================================
+// 7. EXPORTS (Attach to window)
+// ============================================================
+
+window.SCHOOL_INDUSTRY_CATALOG_UPDATES = SCHOOL_INDUSTRY_CATALOG_UPDATES;
+
+window.isSchoolCompany = isSchoolCompany;
+window.getSchoolType = getSchoolType;
+window.isVatExemptSchool = isVatExemptSchool;
+window.getSchoolNavLabelOverrides = getSchoolNavLabelOverrides;
+window.getSchoolHelpContext = getSchoolHelpContext;
+window.getSchoolJournalCategories = getSchoolJournalCategories;
+window.getSchoolTermInfo = getSchoolTermInfo;
 
 ENDPOINTS.invoiceNextNumber = (companyId) =>
   `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/invoices/next_number`;
@@ -20513,6 +20871,10 @@ async function requirePostingDateModal(initialDate = "") {
 // Add journal entry from input fields
 function addJournalFromInput() {
   console.log("[JRNL] addJournalFromInput fired");
+
+  // ✅ ADD THIS:
+  validateVatForSchoolBeforePost();  // Force VAT=no for schools
+  
   const elVatBasisDr = document.getElementById("jrnlVatBasisDr");
   const elVatBasisCr = document.getElementById("jrnlVatBasisCr");
   const elDate       = document.getElementById("jrnlDate");
@@ -20928,6 +21290,235 @@ function enforceVatNotOnBank(side) {
   // not bank: enable VAT flag again
   setVatFlagState(side, false);
 }
+
+function enforceVatDisabledForSchools(side) {
+  // Check if this is a VAT-exempt school
+  // (uses global function from school-industry-profile.js)
+  const isExempt = typeof isVatExemptSchool === 'function' 
+    ? isVatExemptSchool() 
+    : false;
+  
+  // Also check generic school detection
+  const isSchool = typeof isSchoolCompany === 'function'
+    ? isSchoolCompany()
+    : false;
+  
+  // If not a VAT-exempt school, don't disable anything
+  if (!isExempt) return;
+  
+  // Get VAT control elements
+  const flagEl = document.getElementById(side === "dr" ? "jrnlVatFlag" : "jrnlVatFlagCr");
+  const codeEl = document.getElementById(side === "dr" ? "jrnlVatCode" : "jrnlVatCodeCr");
+  
+  if (!flagEl) return;
+  
+  // ──────────────────────────────────────────
+  // DISABLE VAT FLAG - Force to "No"
+  // ──────────────────────────────────────────
+  flagEl.value = "no";
+  flagEl.disabled = true;
+  flagEl.title = "VAT EXEMPT: Schools cannot claim or charge VAT. All amounts are VAT-free.";
+  flagEl.classList.add("opacity-60", "cursor-not-allowed");
+  
+  // Also disable VAT code selector if exists
+  if (codeEl) {
+    codeEl.disabled = true;
+    codeEl.title = "VAT options disabled - School is VAT exempt";
+    codeEl.classList.add("opacity-60", "cursor-not-allowed");
+  }
+  
+  console.log(`[JRNL-VAT] VAT disabled for ${side} side - School is VAT exempt`);
+}
+
+function enableVatForNonExempt(side) {
+  const flagEl = document.getElementById(side === "dr" ? "jrnlVatFlag" : "jrnlVatFlagCr");
+  const codeEl = document.getElementById(side === "dr" ? "jrnlVatCode" : "jrnlVatCodeCr");
+  
+  if (!flagEl) return;
+  
+  // Re-enable VAT flag
+  flagEl.disabled = false;
+  flagEl.title = "";
+  flagEl.classList.remove("opacity-60", "cursor-not-allowed");
+  
+  // Re-enable VAT code selector
+  if (codeEl) {
+    codeEl.disabled = false;
+    codeEl.title = "";
+    codeEl.classList.remove("opacity-60", "cursor-not-allowed");
+  }
+}
+
+// ============================================================
+// 2. MASTER CONTROL: Apply school VAT rules to both sides
+// ============================================================
+
+function applySchoolVatRulesToJournal() {
+  // Check if VAT-exempt school
+  const isExempt = typeof isVatExemptSchool === 'function' 
+    ? isVatExemptSchool() 
+    : false;
+  
+  if (!isExempt) {
+    // Not exempt - ensure VAT is enabled
+    enableVatForNonExempt("dr");
+    enableVatForNonExempt("cr");
+    
+    // Also ensure main VAT controls are enabled
+    enableMainVatControls(false);
+    return;
+  }
+  
+  // IS exempt - disable VAT on both sides
+  enforceVatDisabledForSchools("dr");
+  enforceVatDisabledForSchools("cr");
+  
+  // Also disable main VAT controls (code selector + custom rate)
+  enableMainVatControls(true);  // true = disable them
+  
+  // Show info message to user
+  showSchoolVatInfoMessage();
+  
+  console.log("[JRNL-VAT] School VAT exemption applied - all VAT options disabled");
+}
+
+// ============================================================
+// 3. MAIN VAT CONTROLS (Code selector + Custom Rate)
+// ============================================================
+
+function enableMainVatControls(disable) {
+  // Main VAT code selector (used by both sides)
+  const vatCodeSel = document.getElementById("jrnlVatCode");
+  const vatCodeCrSel = document.getElementById("jrnlVatCodeCr");
+  const vatRatePct = document.getElementById("jrnlVatRatePct");
+  const vatBasisDr = document.getElementById("jrnlVatBasisDr");
+  const vatBasisCr = document.getElementById("jrnlVatBasisCr");
+  
+  const elements = [vatCodeSel, vatCodeCrSel, vatRatePct, vatBasisDr, vatBasisCr];
+  
+  elements.forEach(el => {
+    if (!el) return;
+    
+    if (disable) {
+      el.disabled = true;
+      el.title = "VAT EXEMPT: School cannot use VAT options";
+      el.classList.add("opacity-60", "cursor-not-allowed");
+      
+      // For select elements, reset to safe default
+      if (el.tagName === "SELECT") {
+        // Keep current value but prevent changes
+      }
+    } else {
+      el.disabled = false;
+      el.title = "";
+      el.classList.remove("opacity-60", "cursor-not-allowed");
+    }
+  });
+}
+
+// ============================================================
+// 4. INFO MESSAGE DISPLAY
+// ============================================================
+
+function showSchoolVatInfoMessage() {
+  // Check if message already shown
+  if (document.getElementById("jrnlVatExemptNotice")) return;
+  
+  // Find the journal form area to insert message
+  const journalForm = document.getElementById("jrnlForm");
+  const vatArea = document.querySelector(".journal-vat-controls") || journalForm;
+  
+  if (!vatArea) {
+    // Fallback: show as console warning
+    console.warn("[JRNL-VAT] ⚠️ SCHOOL VAT NOTICE: This school is VAT EXEMPT.");
+    console.warn("[JRNL-VAT] All journal entries will be recorded WITHOUT VAT.");
+    console.warn("[JRNL-VAT] Input VAT paid on purchases becomes part of your cost (trapped VAT).");
+    return;
+  }
+  
+  // Create notice element
+  const notice = document.createElement("div");
+  notice.id = "jrnlVatExemptNotice";
+  notice.className = "mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm";
+  notice.innerHTML = `
+    <div class="flex items-start gap-2">
+      <span class="text-blue-500 text-lg">📚</span>
+      <div>
+        <div class="font-semibold text-blue-800 text-sm">VAT Exemption Notice</div>
+        <div class="text-blue-700 text-xs mt-1">
+          <strong>This school is VAT EXEMPT.</strong> All journal entries are recorded without VAT.
+          <ul class="list-disc list-inside mt-1 space-y-0.5 text-xs">
+            <li>VAT options have been disabled</li>
+            <li>Input VAT on purchases becomes part of your cost</li>
+            <li>No VAT can be charged on school fees</li>
+            <li>If you run taxable activities (tuck shop), consult your accountant</li>
+          </ul>
+        </div>
+      </div>
+      <button type="button" onclick="this.parentElement.remove()" 
+              class="text-blue-400 hover:text-blue-600 text-sm">✕</button>
+    </div>
+  `;
+  
+  // Insert at beginning of form
+  vatArea.insertBefore(notice, vatArea.firstChild);
+}
+
+// ============================================================
+// 5. VALIDATION HOOK: Prevent VAT selection in addJournalFromInput
+// ============================================================
+
+function validateVatForSchoolBeforePost() {
+  const isExempt = typeof isVatExemptSchool === 'function' 
+    ? isVatExemptSchool() 
+    : false;
+  
+  if (!isExempt) return true;  // Not exempt, allow normal flow
+  
+  // Force VAT flags to "no" regardless of what user tried to select
+  const flagDr = document.getElementById("jrnlVatFlag");
+  const flagCr = document.getElementById("jrnlVatFlagCr");
+  
+  if (flagDr) flagDr.value = "no";
+  if (flagCr) flagCr.value = "no";
+  
+  return true;  // Allow post to continue, but with VAT forced off
+}
+
+// ============================================================
+// 6. BINDING: Wire up school VAT rules
+// ============================================================
+
+function bindSchoolVatRules() {
+  // Prevent double-binding
+  if (window._schoolVatRulesBound) return;
+  window._schoolVatRulesBound = true;
+  
+  // Apply rules immediately
+  applySchoolVatRulesToJournal();
+  
+  // Re-apply when account changes (in case logic depends on account type)
+  document.getElementById("jrnlAccount")
+    ?.addEventListener("change", () => applySchoolVatRulesToJournal());
+  
+  document.getElementById("jrnlAccountCr")
+    ?.addEventListener("change", () => applySchoolVatRulesToJournal());
+  
+  console.log("[JRNL-VAT] School VAT rules bound successfully");
+}
+
+
+// ============================================================
+// 7. EXPORTS
+// ============================================================
+
+window.enforceVatDisabledForSchools = enforceVatDisabledForSchools;
+window.enableVatForNonExempt = enableVatForNonExempt;
+window.applySchoolVatRulesToJournal = applySchoolVatRulesToJournal;
+window.enableMainVatControls = enableMainVatControls;
+window.showSchoolVatInfoMessage = showSchoolVatInfoMessage;
+window.validateVatForSchoolBeforePost = validateVatForSchoolBeforePost;
+window.bindSchoolVatRules = bindSchoolVatRules;
 
 function bindJournalVatGuards() {
   // ✅ bind once
@@ -22569,6 +23160,7 @@ function detectFutureModuleHint(acct) {
   const code = String(acct.code || acct.account_code || "").toUpperCase();
   const category = String(acct.category || "").trim().toLowerCase();
   const role = String(acct.role || "").trim().toLowerCase();
+  const standard = String(acct.standard || "").trim().toUpperCase();
 
   // ════════════════════════════════════════════════════
   // EXCLUSIONS (check BEFORE positive matches)
@@ -22583,7 +23175,227 @@ function detectFutureModuleHint(acct) {
 
   const isExpenseCategory =
     category === "expense" ||
-    code.startsWith("PL_");  // Your account: PL_OPEX_6500
+    code.startsWith("PL_");
+
+  // ════════════════════════════════════════════════════
+  // LOAN SUBLEDGER DETECTION (MUST come before IFRS 9!)
+  // 
+  // These are DISTINCT from IFRS 9 financial instruments.
+  // Loan accounts have their own register/screen.
+  // Based on _coa_role_from_text() lines 1342-1478
+  // ════════════════════════════════════════════════════
+  
+  const loanSubledgerRoles = [
+    "loan_payable_current",
+    "loan_payable_noncurrent",
+    "loan_interest_expense",
+    "loan_fees_asset",
+    "accrued_loan_interest",
+    "loan_fee_expense",
+    "loan_fees_expense",
+  ];
+
+  const isLoanAccount = 
+    loanSubledgerRoles.includes(role) ||
+    // Additional text-based detection for loan-specific accounts
+    (txt.includes("loan payable") && !role.startsWith("ifrs9")) ||
+    (txt.includes("loan interest") && !role.startsWith("ifrs9")) ||
+    (txt.includes("borrowing") && (
+      role.includes("loan_") || 
+      txt.includes("loan fee") || 
+      txt.includes("deferred loan")
+    ));
+
+  if (isLoanAccount) {
+    console.log("[AD DETECT] → loan", { code: acct.code, name: acct.name, role: acct.role });
+    return "loan";
+  }
+
+  // ════════════════════════════════════════════════════
+  // IFRS 9 FINANCIAL INSTRUMENTS DETECTION
+  //
+  // These come AFTER loan roles have been caught.
+  // Only true IFRS 9 financial instrument accounts here.
+  // Based on _coa_role_from_text() lines 1480-1640+
+  // ════════════════════════════════════════════════════
+  
+  const ifrs9InstrumentRoles = [
+    // ECL / Impairment
+    "ifrs9_ecl_allowance_trade_receivables",
+    "ifrs9_ecl_impairment_loss",
+    "ifrs9_bad_debt_writeoff",
+    
+    // Financial Assets - FVOCI
+    "ifrs9_fair_value_oci_reserve",
+    "ifrs9_financial_asset_fvoci",
+    "deferred_tax_fvoci_reserve",  // OCI reserve from FVOCI reclass
+    
+    // Financial Assets - FVPL
+    "ifrs9_financial_asset_fvpl",
+    "ifrs9_fair_value_loss_fvpl",
+    
+    // Interest Income (investment securities, NOT loan interest)
+    "ifrs9_interest_income_amortised_cost",
+    
+    // Interest Expense (generic only - excludes "loan" keyword per Python fn)
+    "ifrs9_interest_expense_amortised_cost",
+    
+    // Modification / Derecognition
+    "ifrs9_modification_gain",
+    "ifrs9_modification_loss",
+    "ifrs9_derecognition_gain",
+    "ifrs9_derecognition_loss",
+    
+    // Financial Liabilities (amortised cost, excluding loans)
+    "ifrs9_financial_liability_amortised_cost",
+  ];
+
+  const isIFRS9Instrument = 
+    ifrs9InstrumentRoles.some(r => role === r || role.startsWith(r.replace("_gain", "").replace("_loss", ""))) ||
+    (standard === "IFRS 9" && !isLoanAccount) ||
+    (role.startsWith("ifrs9_") && !isLoanAccount);
+
+  if (isIFRS9Instrument) {
+    console.log("[AD DETECT] → ifrs9", { code: acct.code, name: acct.name, role: acct.role });
+    return "ifrs9";
+  }
+
+  // ════════════════════════════════════════════════════
+  // PAYROLL DETECTION (IAS 19)
+  // ════════════════════════════════════════════════════
+  
+  const payrollRoles = [
+    // Payables
+    "payroll_bonus_payable",
+    "payroll_leave_provision",
+    "payroll_net_salary_payable",
+    "payroll_pension_payable",
+    "payroll_medical_aid_payable",
+    "payroll_other_deductions_payable",
+    "payroll_termination_benefit_liability",
+    "payroll_defined_benefit_liability",
+    "payroll_long_term_benefit_liability",
+    
+    // Assets
+    "payroll_defined_benefit_asset",
+    
+    // OCI
+    "payroll_defined_benefit_oci",
+    
+    // Expenses
+    "payroll_salary_expense",
+    "payroll_employer_contribution_expense",
+    "payroll_bonus_expense",
+    "payroll_commission_expense",
+    "payroll_leave_expense",
+    "payroll_defined_benefit_expense",
+    "payroll_long_term_benefit_expense",
+    "payroll_termination_benefit_expense",
+    
+    // Employee receivables (advance from employee)
+    "employee_salary_advance_receivable",
+    "employee_loans_receivable",
+  ];
+
+  const isPayrollAccount = 
+    payrollRoles.includes(role) ||
+    role.startsWith("payroll_") ||
+    standard === "IAS 19" ||
+    (txt.includes("payroll") && !txt.includes("loan"));
+
+  if (isPayrollAccount) {
+    console.log("[AD DETECT] → payroll", { code: acct.code, name: acct.name, role: acct.role });
+    return "payroll";
+  }
+
+  // ════════════════════════════════════════════════════
+  // DEFERRED TAX DETECTION (IAS 12)
+  // ════════════════════════════════════════════════════
+  
+  const deferredTaxRoles = [
+    "deferred_tax_fvoci_reserve",
+    "deferred_tax_revaluation_reserve",
+    // Add more deferred tax roles as needed from your COA
+  ];
+
+  const isDeferredTax = 
+    deferredTaxRoles.includes(role) ||
+    role.startsWith("deferred_tax") ||
+    standard === "IAS 12" ||
+    txt.includes("deferred tax");
+
+  if (isDeferredTax) {
+    console.log("[AD DETECT] → deferred_tax", { code: acct.code, name: acct.name, role: acct.role });
+    return "deferred_tax";
+  }
+
+  // ════════════════════════════════════════════════════
+  // IAS 41 AGRICULTURE DETECTION
+  //
+  // Must run before generic inventory, sales, fair-value and PPE rules
+  // Based on _coa_role_from_text() lines 42-270+
+  // ════════════════════════════════════════════════════
+  
+  const isIAS41 = standard === "IAS 41";
+  
+  const ias41BiologicalAssetRoles = [
+    "ias41_biological_asset_noncurrent",
+    "ias41_biological_asset_current",
+    "ias41_biological_asset_crops",
+    "ias41_biological_asset_dairy",
+    "ias41_biological_asset_poultry",
+    "ias41_biological_asset_forestry",
+    "ias41_biological_asset_aquaculture",
+    "ias41_biological_asset_beekeeping",
+    "ias41_biological_asset_wildlife",
+    "ias41_biological_asset_livestock",
+  ];
+
+  const ias41ProduceInventoryRoles = [
+    "ias41_agricultural_produce_inventory",
+    "ias41_produce_inventory_dairy",
+    "ias41_produce_inventory_poultry",
+    "ias41_produce_inventory_fruit",
+    "ias41_produce_inventory_forestry",
+    "ias41_produce_inventory_aquaculture",
+    "ias41_produce_inventory_beekeeping",
+    "ias41_produce_inventory_crops",
+  ];
+
+  const ias41IncomeRoles = [
+    "ias41_fair_value_gain",
+    "ias41_government_grant_income",
+    "ias41_government_grant_receivable",
+    "ias41_crop_sales",
+    "ias41_livestock_sales",
+    "ias41_dairy_produce_sales",
+    "ias41_poultry_sales",
+    "ias41_horticulture_sales",
+    "ias41_fruit_sales",
+    "ias41_forestry_sales",
+    "ias41_aquaculture_sales",
+    "ias41_beekeeping_sales",
+    "ias41_wildlife_sales",
+    "ias41_support_service_revenue",
+  ];
+
+  const isIAS41Account = 
+    isIAS41 ||
+    ias41BiologicalAssetRoles.includes(role) ||
+    ias41ProduceInventoryRoles.includes(role) ||
+    ias41IncomeRoles.includes(role) ||
+    role.startsWith("ias41_") ||
+    // Text-based detection matching Python function
+    (txt.includes("biological asset") && !txt.includes("non-current")) ||
+    (txt.includes("growing crops") || txt.includes("growing crop")) ||
+    (txt.includes("livestock") && txt.includes("biological")) ||
+    (txt.includes("agricultural produce")) ||
+    (txt.includes("fair value gain") && txt.includes("biological"));
+
+  if (isIAS41Account) {
+    console.log("[AD DETECT] → ias41", { code: acct.code, name: acct.name, role: acct.role, standard: acct.standard });
+    return "ias41";
+  }
 
   // ════════════════════════════════════════════════════
   // PPE DETECTION (with exclusions)
@@ -22598,8 +23410,8 @@ function detectFutureModuleHint(acct) {
      txt.includes("computer equipment") ||
      txt.includes("furniture") ||
      txt.includes("machinery")) &&
-    !isMaintenanceOrRepair &&   // ← FIX: exclude maintenance/repair
-    !isExpenseCategory;        // ← FIX: exclude expense accounts
+    !isMaintenanceOrRepair &&
+    !isExpenseCategory;
 
   const isLease =
     txt.includes("lease") ||
@@ -22623,11 +23435,13 @@ function detectFutureModuleHint(acct) {
     code: acct.code,
     name: acct.name,
     role: acct.role,
-    roleLower: String(acct.role || "").trim().toLowerCase(),
+    roleLower: role,
   });
 
-  const roleLower = String(acct.role || "").trim().toLowerCase();
-
+  // ════════════════════════════════════════════════════
+  // ACCRUALS & DEFERRALS DETECTION
+  // ════════════════════════════════════════════════════
+  
   const adRoles = [
     "prepaid_expense",
     "deferred_expense",
@@ -22646,7 +23460,7 @@ function detectFutureModuleHint(acct) {
   ];
 
   const isAccrualDeferralAccount =
-    adRoles.includes(roleLower) ||
+    adRoles.includes(role) ||
     txt.includes("prepaid") ||
     txt.includes("prepayment") ||
     txt.includes("deferred income") ||
@@ -22659,6 +23473,7 @@ function detectFutureModuleHint(acct) {
     return "accrual_deferral";
   }
 
+  // Return detections in priority order
   if (isPPE) return "ppe";
   if (isLease) return "lease";
   if (isAmort) return "amort";
@@ -22666,6 +23481,7 @@ function detectFutureModuleHint(acct) {
 
   return null;
 }
+
 
 function getPostingMode(moduleKey, ctx = {}) {
   const companyId =
@@ -22676,6 +23492,7 @@ function getPostingMode(moduleKey, ctx = {}) {
     null;
 
   const defaults = {
+    // Existing modes
     ar: "enforced",
     ap: "enforced",
     ppe: "guided",
@@ -22686,6 +23503,13 @@ function getPostingMode(moduleKey, ctx = {}) {
     advertising_schedule: "guided",
     tax: "guided",
     accrual_deferral: "guided",
+    
+    // NEW modes
+    loan: "guided",          // Loan subledger
+    ifrs9: "guided",         // IFRS 9 Financial Instruments
+    payroll: "guided",       // Payroll (IAS 19)
+    deferred_tax: "guided",  // Deferred Tax (IAS 12)
+    ias41: "guided",         // IAS 41 Agriculture
   };
 
   // company-level overrides if you later inject them from backend
@@ -22703,6 +23527,8 @@ window.getPostingMode = getPostingMode;
 function getJournalGuardMessage(hint, acct) {
   const name = acct?.name || "This account";
 
+  // ─── Existing Cases ──────────────────────────────────────
+  
   if (hint === "ppe") {
     return {
       title: "Use Asset Register instead?",
@@ -22768,6 +23594,116 @@ function getJournalGuardMessage(hint, acct) {
       reasonPrefix: "accrual_deferral",
     };
   }
+
+  // ─── NEW CASES ──────────────────────────────────────────
+
+  // 📗 LOAN SUBLEDGER
+  if (hint === "loan") {
+    return {
+      title: "Use Loan Register instead?",
+      body:
+        `${name} is managed through the Loan subledger.\n\n` +
+        `If you continue in Journal, loan schedules, interest calculations, repayment tracking, ` +
+        `and loan note disclosures will need to be maintained manually.\n\n` +
+        `The Loan module handles:\n` +
+        `• Amortisation schedules (effective interest method)\n` +
+        `• Automatic interest accruals\n` +
+        `• Repayment allocation (interest vs principal)\n` +
+        `• Current/non-current classification\n` +
+        `• Deferred financing costs`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open Loan Register",
+      screen: "loans",
+      reasonPrefix: "loan",
+    };
+  }
+
+  // 💎 IFRS 9 FINANCIAL INSTRUMENTS
+  if (hint === "ifrs9") {
+    return {
+      title: "Use IFRS 9 workflow?",
+      body:
+        `${name} involves financial instrument accounting under IFRS 9.\n\n` +
+        `If you continue in Journal, the following may need manual maintenance:\n\n` +
+        `• Classification (FVPL/FVOCI/Amortised Cost)\n` +
+        `• Expected Credit Loss (ECL) calculations\n` +
+        `• Fair value measurements and OCI movements\n` +
+        `• Modification/derecognition accounting\n` +
+        `• Effective interest amortisation\n` +
+        `• IFRS 9 disclosure notes`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open IFRS 9 Instruments",
+      screen: "ifrs9",
+      reasonPrefix: "ifrs9",
+    };
+  }
+
+  // 💼 PAYROLL (IAS 19)
+  if (hint === "payroll") {
+    return {
+      title: "Use Payroll module instead?",
+      body:
+        `${name} is typically posted through Payroll runs.\n\n` +
+        `If you continue in Journal, the following may not update automatically:\n\n` +
+        `• Employee payslips and YTD balances\n` +
+        `• Statutory deductions (PAYE, SDL, UIF)\n` +
+        `• Pension and medical aid contributions\n` +
+        `• Leave provisions and accruals\n` +
+        `• Defined benefit obligation calculations\n` +
+        `• Termination benefit liabilities\n` +
+        `• Payroll tax filings and certificates`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open Payroll",
+      screen: "payroll",
+      reasonPrefix: "payroll",
+    };
+  }
+
+  // 🏛️ DEFERRED TAX (IAS 12)
+  if (hint === "deferred_tax") {
+    return {
+      title: "Use Deferred Tax workflow?",
+      body:
+        `${name} relates to deferred tax accounting under IAS 12.\n\n` +
+        `This account typically does not accept direct journal entries because:\n\n` +
+        `• Deferred tax is calculated from temporary differences\n` +
+        `• Tax rates and tax bases must be maintained\n` +
+        `• Movements flow to OCI or P&L automatically\n` +
+        `• Reconciliation to tax returns is required\n\n` +
+        `Use the Deferred Tax screen for:\n` +
+        `• Tax rate configuration\n` +
+        `• Temporary difference tracking\n` +
+        `• Manual adjustments (with audit trail)\n` +
+        `• Deferred tax note generation`,
+      continueLabel: "Continue in Journal (Manual Adjustment)",
+      moduleLabel: "Open Deferred Tax Screen",
+      screen: "deferred-tax",
+      reasonPrefix: "deferred_tax",
+    };
+  }
+
+  // 🌾 IAS 41 AGRICULTURE
+  if (hint === "ias41") {
+    return {
+      title: "Use IAS 41 Agriculture module?",
+      body:
+        `${name} involves biological asset accounting under IAS 41.\n\n` +
+        `Agricultural accounts require special treatment:\n\n` +
+        `• Fair value less costs to sell (FVLCS) measurement\n` +
+        `• Biological transformation (growth, degeneration, procreation)\n` -
+        `• Point of harvest determination (transition to IAS 2)\n` +
+        `• Government grant recognition (IAS 41 vs IAS 20)\n` +
+        `• Physical changes (quality, quantity, volume)\n` +
+        `• Agricultural activity documentation`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open IAS 41 Agriculture",
+      screen: "ias41",
+      reasonPrefix: "ias41",
+    };
+  }
+
+  // ─── Default Fallback ──────────────────────────────────
+  
   return {
     title: "Use workflow instead?",
     body:
@@ -22802,6 +23738,8 @@ async function openJournalModulePrompt({ hint, acct }) {
 window.openJournalModulePrompt = openJournalModulePrompt;
 
 async function redirectJournalGuardToModule({ hint, acct, side }) {
+  // ─── Existing Handlers ──────────────────────────────────
+  
   if (hint === "ppe") {
     await window.switchScreen?.("fixed-assets-register");
     window.openFixedAssetModal?.({
@@ -22834,6 +23772,107 @@ async function redirectJournalGuardToModule({ hint, acct, side }) {
 
   if (hint === "amort") {
     await window.switchScreen?.("fixed-assets-register");
+    return;
+  }
+
+  if (hint === "accrual_deferral") {
+    await window.switchScreen?.("accrual-deferrals");
+    
+    // Open new accrual/deferral modal pre-filled with account info
+    setTimeout(() => {
+      window.openNewAccrualDeferralModal?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+      });
+    }, 300);
+    
+    return;
+  }
+
+  // ─── NEW Handlers ──────────────────────────────────────
+
+  // 📗 LOAN SUBLEDGER
+  if (hint === "loan") {
+    await window.switchScreen?.("loans");
+    
+    setTimeout(() => {
+      // If there's a loan modal/function, open it with context
+      window.openLoanModal?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+        accountCode: acct?.code || "",
+        accountName: acct?.name || "",
+      });
+    }, 300);
+    
+    return;
+  }
+
+  // 💎 IFRS 9 FINANCIAL INSTRUMENTS
+  if (hint === "ifrs9") {
+    await window.switchScreen?.("ifrs9");
+    
+    setTimeout(() => {
+      window.openIFRS9Modal?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+        accountCode: acct?.code || "",
+        accountName: acct?.name || "",
+      });
+    }, 300);
+    
+    return;
+  }
+
+  // 💼 PAYROLL
+  if (hint === "payroll") {
+    await window.switchScreen?.("payroll");
+    
+    setTimeout(() => {
+      window.openPayrollRun?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+      });
+    }, 300);
+    
+    return;
+  }
+
+  // 🏛️ DEFERRED TAX
+  if (hint === "deferred_tax") {
+    await window.switchScreen?.("deferred-tax");
+    
+    setTimeout(() => {
+      window.openDeferredTaxAdjustment?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+        accountCode: acct?.code || "",
+        accountName: acct?.name || "",
+      });
+    }, 300);
+    
+    return;
+  }
+
+  // 🌾 IAS 41 AGRICULTURE
+  if (hint === "ias41") {
+    await window.switchScreen?.("ias41");
+    
+    setTimeout(() => {
+      window.openIAS41Event?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+        accountCode: acct?.code || "",
+        accountName: acct?.name || "",
+      });
+    }, 300);
+    
     return;
   }
 }
@@ -23615,6 +24654,12 @@ function initJournalUI() {
   // ✅ If already wired once, just refresh visuals + ensure guards
   if (window._journalUIBound) {
     ensureGuards();
+
+    // ✅ ADD THIS:
+    try { bindSchoolVatRules?.(); } catch (e) {
+      console.warn("[JRNL] bindSchoolVatRules failed:", e);
+    }
+
     renderJournalTable?.();
     recalcJournalSummary?.();
     renderRecentJournals?.().catch(e => console.warn("renderRecentJournals failed", e));

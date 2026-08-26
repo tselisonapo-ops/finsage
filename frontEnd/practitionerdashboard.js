@@ -4218,12 +4218,41 @@ const INDUSTRY_CATALOG = {
     "Gold & PGM Mining"
   ],
 
+  // ══════════════════════════════════════════════════
+  // ✅ UPDATED: NPO Education
+  // ══════════════════════════════════════════════════
   "NPO Education": [
     "Primary Education",
-    "Higher Education"
+    "Higher Education",
+    "ECD Centre (Early Childhood Development)",
+    "Adult Basic Education"
   ],
 
-  "Private School": [],
+  // ══════════════════════════════════════════════════
+  // ✅ UPDATED: Private School - now has sub-types!
+  // ══════════════════════════════════════════════════
+  "Private School": [
+    "Independent Primary School",
+    "Independent High School",
+    "Combined Independent School",
+    "Special Needs Private School",
+    "Religious / Church School",
+    "Montessori School",
+    "Waldorf School",
+    "International School (Cambridge/IB)"
+  ],
+
+  // ══════════════════════════════════════════════════
+  // ✅ NEW: Public School - ADD THIS ENTIRE ENTRY!
+  // ══════════════════════════════════════════════════
+  "Public School": [
+    "Primary School",
+    "High School / Secondary School",
+    "Combined School (Primary + High)",
+    "Special Needs School",
+    "Vocational / Technical College (Public)",
+    "ECD Centre (Early Childhood Development)"
+  ],
 
   "NPO Healthcare": [
     "Clinic",
