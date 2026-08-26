@@ -1552,12 +1552,12 @@ def api_auth_signup():
 
             validation_payload = {
                 "country": country,
+                "companyRegNo": company_reg_no,        # validator decides if it matters
+                "organizationType": organization_type, # ← REQUIRED, drives the gate
                 "tin": tin,
                 "vat": vat,
                 "companyEmail": company_email,
             }
-            if organization_type in {"private_company", "public_company"}:
-                validation_payload["companyRegNo"] = company_reg_no
 
             ok, errors = validate_company_payload(validation_payload)
             if not ok:

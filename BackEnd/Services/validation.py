@@ -203,11 +203,17 @@ def validate_company_payload(payload: Dict[str, Any]) -> Tuple[bool, Dict[str, s
     if email and not validate_email(email):
         errors["companyEmail"] = "Invalid company email address."
 
-    # Reg no
+    # Reg no — format-checked ONLY for company org types.
+    # Schools (EMIS no), NGOs, trusts, sole traders etc. are exempt.
+    org_type = str(payload.get("organizationType") or "").strip().lower()
     regno = payload.get("companyRegNo")
-    if country in REGNO_REGEX:
-        if not regno or not validate_regno(country, regno):
-            errors["companyRegNo"] = f"Invalid company registration format for {country}."
+
+    if org_type in {"private_company", "public_company"}:
+        if country in REGNO_REGEX:
+            if not regno or not validate_regno(country, regno):
+                errors["companyRegNo"] = f"Invalid company registration format for {country}."
+    # All other org types: free-form (EMIS no, NPO no, trust no...) — no check.
+    
     else:
         # if you want to *require* a format for ALL countries, keep an error here,
         # otherwise allow unknown countries to pass:
