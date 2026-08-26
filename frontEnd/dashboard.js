@@ -13994,17 +13994,29 @@ function ensureVatAnchorMonths() {
   });
 }
 
+// ════════════════════════════════════════════════════════════════════
+// 🛡️ BULLETPROOF showCompanyView() v3.0 - Fixes VAT overlap issue
+// Uses 5-layer hiding + MutationObserver guard + OFF-SCREEN positioning
+// ════════════════════════════════════════════════════════════════════
 function showCompanyView(key) {
   const screen = document.getElementById("screen-company");
-  if (!screen) return;
+  if (!screen) {
+    console.warn("[showCompanyView] #screen-company not found");
+    return;
+  }
+  
+  console.log(`\n🎯 [showCompanyView] Activating view: "${key}"`);
   
   // ══════════════════════════════════════════════════════════
-  // STEP 1: NUCLEAR HIDE - Hide EVERY .company-view element
-  // Use multiple techniques to ensure nothing stays visible
+  // LAYER 1: NUCLEAR HIDE - Hide EVERY .company-view element
+  // Uses 5 techniques including OFF-SCREEN positioning
   // ══════════════════════════════════════════════════════════
   const allViews = screen.querySelectorAll(".company-view");
+  console.log(`   Found ${allViews.length} company-view elements`);
   
-  allViews.forEach(v => {
+  allViews.forEach((v, index) => {
+    const viewName = v.dataset.view || `unnamed-${index}`;
+    
     // Technique 1: Add hidden class
     v.classList.add("hidden");
     
@@ -14012,39 +14024,94 @@ function showCompanyView(key) {
     v.style.setProperty("display", "none", "important");
     v.style.setProperty("visibility", "hidden", "important");
     
-    // Technique 3: Set attribute (backup)
+    // Technique 3: 🎯 MOVE OFF-SCREEN (prevents visual overlap!)
+    v.style.setProperty("position", "absolute", "important");
+    v.style.setProperty("left", "-9999px", "important");
+    v.style.setProperty("top", "-9999px", "important");
+    v.style.setProperty("width", "0", "important");
+    v.style.setProperty("height", "0", "important");
+    v.style.setProperty("overflow", "hidden", "important");
+    
+    // Technique 4: Disable interaction
+    v.style.setProperty("pointer-events", "none", "important");
+    v.style.setProperty("z-index", "-9999", "important");
+    
+    // Technique 5: Data attributes for debugging
     v.setAttribute("data-force-hidden", "true");
+    v.setAttribute("aria-hidden", "true");
+    
+    if (viewName === "vat") {
+      console.log(`   🔒 Hidden VAT with 5 nuclear techniques (including off-screen)`);
+    }
   });
   
   // ══════════════════════════════════════════════════════════
-  // STEP 2: SHOW ONLY THE TARGET VIEW (override everything)
+  // LAYER 2: SHOW ONLY THE TARGET VIEW
+  // Remove ALL hiding mechanisms from target only
   // ══════════════════════════════════════════════════════════
   const target = screen.querySelector(`.company-view[data-view="${key}"]`);
   if (!target) {
-    console.warn(`[showCompanyView] View not found: ${key}`);
+    console.error(`❌ [showCompanyView] Target view "${key}" NOT FOUND!`);
+    console.error(`   Available views:`, Array.from(allViews).map(v => v.dataset.view));
     return;
   }
   
-  // Remove all hiding mechanisms from target
+  // Remove all hiding mechanisms from TARGET
   target.classList.remove("hidden");
   target.removeAttribute("data-force-hidden");
+  target.removeAttribute("aria-hidden");
+  
+  // Reset ALL inline styles to normal
+  target.style.removeProperty("display");
+  target.style.removeProperty("visibility");
+  target.style.removeProperty("position");
+  target.style.removeProperty("left");
+  target.style.removeProperty("top");
+  target.style.removeProperty("width");
+  target.style.removeProperty("height");
+  target.style.removeProperty("overflow");
+  target.style.removeProperty("pointer-events");
+  target.style.removeProperty("z-index");
+  
+  // Explicitly set visible styles with !important
   target.style.setProperty("display", "block", "important");
   target.style.setProperty("visibility", "visible", "important");
+  target.style.setProperty("position", "relative", "important");
+  target.style.setProperty("left", "auto", "important");
+  target.style.setProperty("top", "auto", "important");
+  target.style.setProperty("width", "auto", "important");
+  target.style.setProperty("height", "auto", "important");
+  target.style.setProperty("pointer-events", "auto", "important");
+  target.style.setProperty("z-index", "auto", "important");
   
-  // Also unhide any PARENT .company-view wrappers (for nested structures)
+  console.log(`   ✅ Showed target "${key}" (height: ${target.offsetHeight}px)`);
+  
+  // ══════════════════════════════════════════════════════════
+  // LAYER 3: PARENT CHAIN UNHIDE (for nested structures)
+  // ══════════════════════════════════════════════════════════
   let el = target.parentElement;
+  let parentCount = 0;
   while (el && el !== screen) {
     if (el.classList.contains("company-view")) {
       el.classList.remove("hidden");
       el.removeAttribute("data-force-hidden");
+      el.removeAttribute("aria-hidden");
       el.style.setProperty("display", "block", "important");
       el.style.setProperty("visibility", "visible", "important");
+      el.style.setProperty("position", "relative", "important");
+      el.style.removeProperty("left");
+      el.style.removeProperty("top");
+      parentCount++;
     }
     el = el.parentElement;
   }
+  
+  if (parentCount > 0) {
+    console.log(`   🔓 Unhid ${parentCount} parent .company-view wrappers`);
+  }
 
   // ══════════════════════════════════════════════════════════
-  // STEP 3: UPDATE TITLE
+  // LAYER 4: UPDATE UI TITLE
   // ══════════════════════════════════════════════════════════
   const titles = {
     my: "My company",
@@ -14063,24 +14130,40 @@ function showCompanyView(key) {
   const sub = document.getElementById("companySubTitle");
   if (sub) sub.textContent = titles[key] || "Company & Setup";
   
-  // Debug output
-  const vatEl = screen.querySelector('.company-view[data-view="vat"]');
-  console.log(`✅ [showCompanyView] ${key} shown`);
-  console.log(`   VAT hidden: ${vatEl?.classList.contains('hidden')}, display: ${getComputedStyle(vatEl)?.display}`);
-  console.log(`   Target height: ${target.offsetHeight}px`);
-  
-  // 🛡️ Tell VAT Guard which view is active (so it can block others)
+  // ══════════════════════════════════════════════════════════
+  // LAYER 5: ACTIVATE MUTATION GUARD
+  // ══════════════════════════════════════════════════════════
   if (window.__companyActiveView) {
     window.__companyActiveView(key);
   }
+  
+  // ══════════════════════════════════════════════════════════
+  // VERIFICATION LOG
+  // ══════════════════════════════════════════════════════════
+  setTimeout(() => {
+    const vatEl = screen.querySelector('.company-view[data-view="vat"]');
+    const vatDisplay = vatEl ? getComputedStyle(vatEl).display : "N/A";
+    const vatPosition = vatEl ? getComputedStyle(vatEl).position : "N/A";
+    const vatLeft = vatEl ? getComputedStyle(vatEl).left : "N/A";
+    
+    console.log(`   ✅ [showCompanyView] Verification after 50ms:`);
+    console.log(`      Target "${key}" height: ${target.offsetHeight}px ✅`);
+    console.log(`      VAT → display: ${vatDisplay}, position: ${vatPosition}, left: ${vatLeft}`);
+    console.log(`      ───────────────────────────────────────\n`);
+  }, 50);
 }
 window.showCompanyView = showCompanyView;
 
-// 🛡️ VAT GUARD - Catches ANY code trying to unhide non-target views
+// ════════════════════════════════════════════════════════════════════
+// 🛡️ VAT GUARD v2.0 - Enhanced MutationObserver with OFF-SCREEN enforcement
+// ════════════════════════════════════════════════════════════════════
 (function() {
   let activeViewKey = null;
   
-  window.__companyActiveView = (key) => { activeViewKey = key; };
+  window.__companyActiveView = (key) => { 
+    activeViewKey = key;
+    console.log(`🛡️ [VAT Guard] Active view set to: "${key}"`);
+  };
   
   const observer = new MutationObserver((mutations) => {
     if (!activeViewKey) return;
@@ -14088,34 +14171,65 @@ window.showCompanyView = showCompanyView;
     const screen = document.getElementById('screen-company');
     if (!screen) return;
     
+    let blockedCount = 0;
+    
     mutations.forEach((mutation) => {
+      // Check mutated element itself
+      if (mutation.target.classList?.contains('company-view')) {
+        const el = mutation.target;
+        const viewKey = el.dataset.view;
+        
+        if (viewKey && viewKey !== activeViewKey) {
+          const computed = getComputedStyle(el);
+          const isVisible = computed.display !== 'none' && 
+                           computed.visibility !== 'hidden' &&
+                           computed.position !== 'absolute';
+          
+          if (isVisible || computed.left !== '-9999px') {
+            console.warn(`🛡️ [VAT Guard] ⚠️ BLOCKED "${viewKey}" from becoming visible!`);
+            
+            // Nuclear re-hide with ALL 5 techniques
+            el.classList.add('hidden');
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('visibility', 'hidden', 'important');
+            el.style.setProperty('position', 'absolute', 'important');
+            el.style.setProperty('left', '-9999px', 'important');
+            el.style.setProperty('top', '-9999px', 'important');
+            el.style.setProperty('width', '0', 'important');
+            el.style.setProperty('height', '0', 'important');
+            el.setAttribute('data-force-hidden', 'true');
+            
+            blockedCount++;
+          }
+        }
+      }
+      
+      // Check children
       mutation.target.querySelectorAll?.('.company-view')?.forEach(el => {
         const viewKey = el.dataset.view;
         if (!viewKey || viewKey === activeViewKey) return;
         
         const computed = getComputedStyle(el);
-        if (computed.display !== 'none' && computed.visibility !== 'hidden') {
-          console.warn(`🛡️ [VAT Guard] Blocked "${viewKey}" from becoming visible`);
+        const isVisible = computed.display !== 'none' && 
+                         computed.visibility !== 'hidden';
+        
+        if (isVisible) {
+          console.warn(`🛡️ [VAT Guard] ⚠️ RE-HIDDEN "${viewKey}"`);
+          
           el.classList.add('hidden');
           el.style.setProperty('display', 'none', 'important');
           el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('position', 'absolute', 'important');
+          el.style.setProperty('left', '-9999px', 'important');
+          
+          blockedCount++;
         }
       });
-      
-      if (mutation.target.classList?.contains('company-view')) {
-        const el = mutation.target;
-        const viewKey = el.dataset.view;
-        if (viewKey && viewKey !== activeViewKey) {
-          const computed = getComputedStyle(el);
-          if (computed.display !== 'none') {
-            console.warn(`🛡️ [VAT Guard] Re-hidden "${viewKey}"`);
-            el.classList.add('hidden');
-            el.style.setProperty('display', 'none', 'important');
-            el.style.setProperty('visibility', 'hidden', 'important');
-          }
-        }
-      }
     });
+    
+    if (blockedCount > 0) {
+      console.warn(`🛡️ [VAT Guard] Total blocked: ${blockedCount}`);
+    }
   });
   
   const startGuard = () => {
@@ -14123,17 +14237,20 @@ window.showCompanyView = showCompanyView;
     if (screen) {
       observer.observe(screen, {
         attributes: true,
-        attributeFilter: ['class', 'style'],
-        subtree: true
+        attributeFilter: ['class', 'style', 'data-force-hidden'],
+        subtree: true,
+        childList: false
       });
-      console.log('🛡️ [VAT Guard] Active - watching for unauthorized view changes');
+      console.log('🛡️ [VAT Guard] ✅ ACTIVE - Watching for unauthorized changes');
+    } else {
+      setTimeout(startGuard, 500);
     }
   };
   
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startGuard, { once: true });
+    document.addEventListener('DOMContentLoaded', () => setTimeout(startGuard, 100), { once: true });
   } else {
-    setTimeout(startGuard, 500);
+    setTimeout(startGuard, 100);
   }
 })();
 
