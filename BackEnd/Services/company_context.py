@@ -16,6 +16,11 @@ def get_company_context(db_service, company_id: int) -> Dict[str, Any]:
     )
     template = "npo" if is_npo else "ifrs"
 
+    is_public_school = (
+        "school" in industry.lower() and "public" in industry.lower()
+    )
+    template = "npo" if (is_npo or is_public_school) else "ifrs"
+    
     # ✅ NEW
     acct_settings = db_service.get_company_account_settings(company_id)
 
@@ -104,6 +109,20 @@ def normalize_role(role: str) -> str:
         "viewer": "viewer",
         "read_only": "viewer",
         "readonly": "viewer",
+
+        # ✅ NEW: school roles (front-end sends these from the School account type)
+        "principal": "owner",           # principal == school owner
+        "deputy_principal": "admin",
+        "bursar": "manager",            # school finance manager
+        "school_secretary": "clerk",
+        "finance_clerk": "clerk",
+        "admin_staff": "clerk",
+        "hod": "senior",                # head of department
+        "grade_head": "senior",
+        "sgb_treasurer": "cfo",         # governance-level finance oversight
+        "sgb_member": "viewer",
+        "educator": "viewer",
+        "teacher": "viewer",
     }
 
     return mapping.get(s2, "other")

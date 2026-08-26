@@ -5676,33 +5676,33 @@ console.log("[bootstrap] ENDPOINTS.users =", window.ENDPOINTS?.users);
     return api;
   }
 
-function companyId() {
-  const raw = localStorage.getItem(COMPANY_KEY);
-  return raw ? String(raw) : null; // ✅ no fake default
-}
+  function companyId() {
+    const raw = localStorage.getItem(COMPANY_KEY);
+    return raw ? String(raw) : null; // ✅ no fake default
+  }
 
-function getActiveCompanyId() {
-  try {
-    const postingCtx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
+  function getActiveCompanyId() {
+    try {
+      const postingCtx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
 
-    if (
-      postingCtx &&
-      postingCtx.launchMode === "posting" &&
-      Number(postingCtx.targetCompanyId || postingCtx.companyId || 0) > 0
-    ) {
-      return Number(postingCtx.targetCompanyId || postingCtx.companyId);
-    }
-  } catch (_) {}
+      if (
+        postingCtx &&
+        postingCtx.launchMode === "posting" &&
+        Number(postingCtx.targetCompanyId || postingCtx.companyId || 0) > 0
+      ) {
+        return Number(postingCtx.targetCompanyId || postingCtx.companyId);
+      }
+    } catch (_) {}
 
-  const raw = companyId();
-  if (!raw) return null;
+    const raw = companyId();
+    if (!raw) return null;
 
-  const cid = parseInt(raw, 10);
-  return Number.isNaN(cid) ? null : cid;
-}
-window.getActiveCompanyId = getActiveCompanyId;
+    const cid = parseInt(raw, 10);
+    return Number.isNaN(cid) ? null : cid;
+  }
+  window.getActiveCompanyId = getActiveCompanyId;
 
-window.companyId = companyId;
+  window.companyId = companyId;
 
   // Global store (in-memory)
   const store = makeStore(STORAGE_PREFIX);
@@ -5722,218 +5722,252 @@ window.companyId = companyId;
   // ==========================================================
   // 5) ROLES (single source of truth, no duplicates)
   // ==========================================================
-window.ROLE_LABELS = window.ROLE_LABELS || {
-  viewer: "Viewer",
-  clerk: "Accounts Clerk",
-  assistant: "Finance Assistant",
-  junior: "Junior Accountant",
-  senior: "Senior Accountant",
-  accountant: "Accountant",
-  manager: "Manager",
-  "credit controller": "Credit Controller",
-  cfo: "CFO",
-  owner: "Owner",
-  admin: "Admin",
+  window.ROLE_LABELS = window.ROLE_LABELS || {
+    viewer: "Viewer",
+    clerk: "Accounts Clerk",
+    assistant: "Finance Assistant",
+    junior: "Junior Accountant",
+    senior: "Senior Accountant",
+    accountant: "Accountant",
+    manager: "Manager",
+    "credit controller": "Credit Controller",
+    cfo: "CFO",
+    owner: "Owner",
+    admin: "Admin",
 
-  audit_staff: "Audit Staff",
-  senior_associate: "Senior Associate",
-  audit_manager: "Audit Manager",
-  audit_partner: "Audit Partner",
-  engagement_partner: "Engagement Partner",
-  quality_control_reviewer: "Quality Control Reviewer",
-  client_service_manager: "Client Service Manager",
-  fs_compiler: "Financial Statements Compiler",
-  reviewer: "Reviewer",
-  bookkeeper: "Bookkeeper",
+    audit_staff: "Audit Staff",
+    senior_associate: "Senior Associate",
+    audit_manager: "Audit Manager",
+    audit_partner: "Audit Partner",
+    engagement_partner: "Engagement Partner",
+    quality_control_reviewer: "Quality Control Reviewer",
+    client_service_manager: "Client Service Manager",
+    fs_compiler: "Financial Statements Compiler",
+    reviewer: "Reviewer",
+    bookkeeper: "Bookkeeper",
 
-  audit_trainee: "Audit Trainee",
-  accounting_trainee: "Accounting Trainee",
-  tax_preparer: "Tax Preparer",
-  tax_reviewer: "Tax Reviewer"
-};
+    audit_trainee: "Audit Trainee",
+    accounting_trainee: "Accounting Trainee",
+    tax_preparer: "Tax Preparer",
+    tax_reviewer: "Tax Reviewer",
 
-window.ROLE_ORDER = window.ROLE_ORDER || [
-  "viewer",
-  "clerk",
-  "assistant",
-  "junior",
-  "senior",
-  "accountant",
-  "manager",
-  "credit controller",
-  "cfo",
-  "owner",
-  "admin"
-];
-
-window.CORE_ROLE_ORDER = [
-  "viewer",
-  "clerk",
-  "assistant",
-  "junior",
-  "senior",
-  "accountant",
-  "manager",
-  "credit controller",
-  "cfo",
-  "owner",
-  "admin"
-];
-
-window.ASSIGNMENT_ROLE_ORDER = [
-  "viewer",
-  "accounting_trainee",
-  "audit_trainee",
-  "bookkeeper",
-  "fs_compiler",
-  "tax_preparer",
-  "audit_staff",
-  "reviewer",
-  "tax_reviewer",
-  "senior_associate",
-  "audit_manager",
-  "client_service_manager",
-  "quality_control_reviewer",
-  "engagement_partner",
-  "audit_partner",
-  "owner",
-  "admin"
-];
-
-window.ROLE_RANK = window.ROLE_RANK || {};
-window.ROLE_ORDER.forEach((r, i) => (window.ROLE_RANK[r] = i));
-
-window.normalizeRole = window.normalizeRole || function normalizeRole(raw) {
-  if (!raw) return "viewer";
-
-  let r = String(raw).toLowerCase().trim();
-  r = r.replace(/\(.*?\)/g, "");
-  r = r.replace(/\/.*/g, "");
-  r = r.replace(/\s+/g, " ").trim();
-  r = r.replace(/-/g, "_").replace(/\s+/g, "_");
-
-  const MAP = {
-    // enterprise canonical
-    viewer: "viewer",
-    clerk: "clerk",
-    assistant: "assistant",
-    junior: "junior",
-    senior: "senior",
-    accountant: "accountant",
-    manager: "manager",
-    cfo: "cfo",
-    owner: "owner",
-    admin: "admin",
-    credit_controller: "credit controller",
-
-    administrator: "admin",
-    superadmin: "admin",
-
-    business_owner: "owner",
-    founder: "owner",
-    business_owner_founder: "owner",
-    practice_owner: "owner",
-    practice_owner_founding_partner: "owner",
-    founding_partner: "owner",
-
-    head_of_finance: "cfo",
-    ceo: "manager",
-    managing_director: "manager",
-    finance_manager: "manager",
-    senior_accountant: "senior",
-    junior_accountant: "junior",
-    financial_accountant: "accountant",
-    accounts_clerk: "clerk",
-    finance_assistant: "assistant",
-
-    read_only: "viewer",
-    readonly: "viewer",
-    other: "viewer",
-    other_professional_role: "viewer",
-
-    // practitioner canonical
-    audit_staff: "audit_staff",
-    audit_associate: "audit_staff",
-    trainee_auditor: "audit_staff",
-
-    senior_associate: "senior_associate",
-    audit_senior: "senior_associate",
-    senior_auditor: "senior_associate",
-
-    audit_manager: "audit_manager",
-    engagement_manager: "audit_manager",
-
-    audit_partner: "audit_partner",
-    partner: "audit_partner",
-
-    engagement_partner: "engagement_partner",
-
-    quality_control_reviewer: "quality_control_reviewer",
-    eqcr: "quality_control_reviewer",
-    engagement_quality_reviewer: "quality_control_reviewer",
-
-    client_service_manager: "client_service_manager",
-
-    fs_compiler: "fs_compiler",
-    financial_statement_compiler: "fs_compiler",
-
-    reviewer: "reviewer",
-    bookkeeper: "bookkeeper",
-
-    audit_trainee: "audit_trainee",
-    audit_intern: "audit_trainee",
-    trainee_auditor: "audit_trainee",
-
-    accounting_trainee: "accounting_trainee",
-    accounting_intern: "accounting_trainee",
-    trainee_accountant: "accounting_trainee",
-    articles_clerk: "accounting_trainee",
-
-    tax_preparer: "tax_preparer",
-    tax_consultant: "tax_preparer",
-    tax_assistant: "tax_preparer",
-
-    tax_reviewer: "tax_reviewer",
-    tax_manager: "tax_reviewer",
+    // ✅ NEW: school role display labels (defensive — used if a raw school
+    // role surfaces in team lists before normalization)
+    principal: "Principal / Headmaster",
+    deputy_principal: "Deputy Principal",
+    bursar: "Bursar / Finance Officer",
+    school_secretary: "School Secretary",
+    finance_clerk: "Finance Clerk",
+    hod: "Head of Department",
+    grade_head: "Grade Head",
+    sgb_treasurer: "SGB Treasurer",
+    sgb_member: "SGB Member",
+    educator: "Educator / Teacher",
+    admin_staff: "Administrative Staff"
   };
 
-  return MAP[r] || "viewer";
-};
+  window.ROLE_ORDER = window.ROLE_ORDER || [
+    "viewer",
+    "clerk",
+    "assistant",
+    "junior",
+    "senior",
+    "accountant",
+    "manager",
+    "credit controller",
+    "cfo",
+    "owner",
+    "admin"
+  ];
 
-window.normalizeRoleForRank = window.normalizeRoleForRank || function normalizeRoleForRank(raw) {
-  const canonical = window.normalizeRole(raw);
+  window.CORE_ROLE_ORDER = [
+    "viewer",
+    "clerk",
+    "assistant",
+    "junior",
+    "senior",
+    "accountant",
+    "manager",
+    "credit controller",
+    "cfo",
+    "owner",
+    "admin"
+  ];
 
-  const rankMap = {
-    viewer: "viewer",
-    clerk: "clerk",
-    assistant: "assistant",
-    junior: "junior",
-    senior: "senior",
-    accountant: "accountant",
-    manager: "manager",
-    "credit controller": "credit controller",
-    cfo: "cfo",
-    owner: "owner",
-    admin: "admin",
+  window.ASSIGNMENT_ROLE_ORDER = [
+    "viewer",
+    "accounting_trainee",
+    "audit_trainee",
+    "bookkeeper",
+    "fs_compiler",
+    "tax_preparer",
+    "audit_staff",
+    "reviewer",
+    "tax_reviewer",
+    "senior_associate",
+    "audit_manager",
+    "client_service_manager",
+    "quality_control_reviewer",
+    "engagement_partner",
+    "audit_partner",
+    "owner",
+    "admin"
+  ];
 
-    audit_trainee: "assistant",
-    accounting_trainee: "assistant",
-    audit_staff: "assistant",
-    senior_associate: "senior",
-    audit_manager: "manager",
-    audit_partner: "owner",
-    engagement_partner: "owner",
-    quality_control_reviewer: "manager",
-    client_service_manager: "manager",
-    fs_compiler: "junior",
-    reviewer: "senior",
-    bookkeeper: "clerk",
-    tax_preparer: "junior",
-    tax_reviewer: "senior",
+  window.ROLE_RANK = window.ROLE_RANK || {};
+  window.ROLE_ORDER.forEach((r, i) => (window.ROLE_RANK[r] = i));
+
+  window.normalizeRole = window.normalizeRole || function normalizeRole(raw) {
+    if (!raw) return "viewer";
+
+    let r = String(raw).toLowerCase().trim();
+    r = r.replace(/\(.*?\)/g, "");
+    r = r.replace(/\/.*/g, "");
+    r = r.replace(/\s+/g, " ").trim();
+    r = r.replace(/-/g, "_").replace(/\s+/g, "_");
+
+    const MAP = {
+      // enterprise canonical
+      viewer: "viewer",
+      clerk: "clerk",
+      assistant: "assistant",
+      junior: "junior",
+      senior: "senior",
+      accountant: "accountant",
+      manager: "manager",
+      cfo: "cfo",
+      owner: "owner",
+      admin: "admin",
+      credit_controller: "credit controller",
+
+      administrator: "admin",
+      superadmin: "admin",
+
+      business_owner: "owner",
+      founder: "owner",
+      business_owner_founder: "owner",
+      practice_owner: "owner",
+      practice_owner_founding_partner: "owner",
+      founding_partner: "owner",
+
+      head_of_finance: "cfo",
+      ceo: "manager",
+      managing_director: "manager",
+      finance_manager: "manager",
+      senior_accountant: "senior",
+      junior_accountant: "junior",
+      financial_accountant: "accountant",
+      accounts_clerk: "clerk",
+      finance_assistant: "assistant",
+
+      read_only: "viewer",
+      readonly: "viewer",
+      other: "viewer",
+      other_professional_role: "viewer",
+
+      // ✅ NEW: school roles — MUST mirror backend normalize_role() targets.
+      // Raw school roles can surface from legacy user_role rows, invite tokens,
+      // or localStorage; without these they would all fall through to "viewer".
+      principal: "owner",
+      headmaster: "owner",
+      deputy_principal: "admin",
+      bursar: "manager",
+      school_secretary: "clerk",
+      finance_clerk: "clerk",
+      admin_staff: "clerk",
+      administrative_staff: "clerk",
+      hod: "senior",
+      head_of_department: "senior",
+      grade_head: "senior",
+      sgb_treasurer: "cfo",
+      sgb_member: "viewer",
+      educator: "viewer",
+      teacher: "viewer",
+      other_school_role: "viewer",
+
+      // practitioner canonical
+      audit_staff: "audit_staff",
+      audit_associate: "audit_staff",
+      trainee_auditor: "audit_staff",
+
+      senior_associate: "senior_associate",
+      audit_senior: "senior_associate",
+      senior_auditor: "senior_associate",
+
+      audit_manager: "audit_manager",
+      engagement_manager: "audit_manager",
+
+      audit_partner: "audit_partner",
+      partner: "audit_partner",
+
+      engagement_partner: "engagement_partner",
+
+      quality_control_reviewer: "quality_control_reviewer",
+      eqcr: "quality_control_reviewer",
+      engagement_quality_reviewer: "quality_control_reviewer",
+
+      client_service_manager: "client_service_manager",
+
+      fs_compiler: "fs_compiler",
+      financial_statement_compiler: "fs_compiler",
+
+      reviewer: "reviewer",
+      bookkeeper: "bookkeeper",
+
+      audit_trainee: "audit_trainee",
+      audit_intern: "audit_trainee",
+      trainee_auditor: "audit_trainee",
+
+      accounting_trainee: "accounting_trainee",
+      accounting_intern: "accounting_trainee",
+      trainee_accountant: "accounting_trainee",
+      articles_clerk: "accounting_trainee",
+
+      tax_preparer: "tax_preparer",
+      tax_consultant: "tax_preparer",
+      tax_assistant: "tax_preparer",
+
+      tax_reviewer: "tax_reviewer",
+      tax_manager: "tax_reviewer",
+    };
+
+    return MAP[r] || "viewer";
   };
 
-  return rankMap[canonical] || "viewer";
-};
+  window.normalizeRoleForRank = window.normalizeRoleForRank || function normalizeRoleForRank(raw) {
+    const canonical = window.normalizeRole(raw);
+
+    const rankMap = {
+      viewer: "viewer",
+      clerk: "clerk",
+      assistant: "assistant",
+      junior: "junior",
+      senior: "senior",
+      accountant: "accountant",
+      manager: "manager",
+      "credit controller": "credit controller",
+      cfo: "cfo",
+      owner: "owner",
+      admin: "admin",
+
+      audit_trainee: "assistant",
+      accounting_trainee: "assistant",
+      audit_staff: "assistant",
+      senior_associate: "senior",
+      audit_manager: "manager",
+      audit_partner: "owner",
+      engagement_partner: "owner",
+      quality_control_reviewer: "manager",
+      client_service_manager: "manager",
+      fs_compiler: "junior",
+      reviewer: "senior",
+      bookkeeper: "clerk",
+      tax_preparer: "junior",
+      tax_reviewer: "senior",
+    };
+
+    return rankMap[canonical] || "viewer";
+  };
 
 window.getCurrentSystemRole = function getCurrentSystemRole() {
   const u = window.currentUser || {};
@@ -20874,7 +20908,7 @@ function addJournalFromInput() {
 
   // ✅ ADD THIS:
   validateVatForSchoolBeforePost();  // Force VAT=no for schools
-  
+
   const elVatBasisDr = document.getElementById("jrnlVatBasisDr");
   const elVatBasisCr = document.getElementById("jrnlVatBasisCr");
   const elDate       = document.getElementById("jrnlDate");

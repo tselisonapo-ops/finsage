@@ -7758,8 +7758,13 @@ class DatabaseService:
         company_id: Optional[int] = None,
         confirmation_token_expires_at: Optional[datetime] = None,  # ✅ NEW
     ) -> Optional[int]:
-        access_level = 'PRACTITIONER_ADMIN' if user_type == 'Practitioner' else 'ADMIN'
-
+        if user_type == "Practitioner":
+            access_level = "PRACTITIONER_ADMIN"
+        elif user_type == "School":
+            access_level = "SCHOOL_ADMIN"    # ⚠ only if users.access_level is free-text VARCHAR
+        else:
+            access_level = "ADMIN"
+            
         sql = """
         INSERT INTO public.users
             (email, password_hash, user_type, first_name, last_name, user_role,

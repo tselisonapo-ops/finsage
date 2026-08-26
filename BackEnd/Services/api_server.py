@@ -1368,7 +1368,8 @@ def api_auth_signup():
     user_role = normalize_role(data.get("userRole"))
     email      = (data.get("email") or "").strip().lower()
     password   = data.get("password") or ""
-    user_type  = (data.get("userType") or "Enterprise").strip()
+    raw_user_type = (data.get("userType") or "Enterprise").strip().lower()
+    user_type = {"practitioner": "Practitioner", "school": "School"}.get(raw_user_type, "Enterprise")
 
     if not email or not password or not first_name or not last_name or not user_role:
         return jsonify({"error": "Name, Role, Email, and Password are required"}), 400
@@ -1408,6 +1409,10 @@ def api_auth_signup():
             "body_corporate",
             "club_association",
             "government_entity",
+            # ✅ NEW: school entity types
+            "public_school",
+            "independent_school",
+            "ecd_centre",
             "other",
         }
 
