@@ -397,9 +397,10 @@ def _footer(story):
 # 1) Filled VAT Return PDF
 # ==========================================================
 
-def generate_vat_return_pdf(filing: dict, company: dict, *, start_date, end_date) -> bytes:
+def generate_vat_return_pdf(filing: dict, company: dict, *, start_date, end_date, authority_return=None) -> bytes:
     filing = filing or {}
     company = company or {}
+    authority_return = authority_return or {}  # ← safe default
 
     buffer = BytesIO()
 
@@ -465,6 +466,28 @@ def generate_vat_return_pdf(filing: dict, company: dict, *, start_date, end_date
     story.append(vat_table)
     story.append(Spacer(1, 7 * mm))
 
+    # === NEW: Authority Return Section ===
+    if authority_return:
+        auth_code = authority_return.get("authority_code") or "VAT"
+        auth_ref = authority_return.get("submission_reference") or "-"
+        auth_status = authority_return.get("status") or "-"
+        
+        auth_rows = [
+            [Paragraph("Authority Return", styles["FS_SectionTitle"])],
+            [Paragraph("Authority", styles["FS_Label"]), Paragraph(str(auth_code).upper(), styles["FS_BodyBold"])],
+            [Paragraph("Authority Reference", styles["FS_Label"]), Paragraph(str(auth_ref), styles["FS_Body"])],
+            [Paragraph("Authority Status", styles["FS_Label"]), Paragraph(str(auth_status).upper(), styles["FS_BodyBold"])],
+        ]
+        
+        auth_table = _section_table(
+            [[r[0], r[1]] for r in auth_rows[1:]], 
+            [content_w * 0.4, content_w * 0.6]
+        )
+        
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph("Authority Filing Details", styles["FS_SectionTitle"]))
+        story.append(auth_table)
+
     declaration = Table([
         [Paragraph("Declaration", styles["FS_Label"])],
         [Paragraph(
@@ -495,7 +518,6 @@ def generate_vat_return_pdf(filing: dict, company: dict, *, start_date, end_date
         raise RuntimeError("Failed to generate VAT return PDF")
 
     return pdf_bytes
-
 
 # ==========================================================
 # 2) VAT Supporting Schedule PDF
