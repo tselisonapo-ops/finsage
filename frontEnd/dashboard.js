@@ -13995,31 +13995,49 @@ function ensureVatAnchorMonths() {
 }
 
 function showCompanyView(key) {
-  const views = Array.from(document.querySelectorAll("#screen-company .company-view"));
+  const screen = document.getElementById("screen-company");
+  if (!screen) return;
   
-  // ✅ NEW APPROACH: Hide ALL first, then ONLY show target + its parents
-  views.forEach(v => v.classList.add("hidden"));
+  // ✅ Step 1: Get ALL company-view elements
+  const allViews = Array.from(screen.querySelectorAll(".company-view"));
   
-  // Find target and unhide it PLUS all parent .company-view wrappers
-  const target = views.find(v => v.dataset.view === key);
+  // ✅ Step 2: HIDE EVERYTHING first (clean slate - prevents "shows on top" issue)
+  allViews.forEach(v => {
+    v.classList.add("hidden");
+    // Reset inline styles
+    v.style.removeProperty("display");
+    v.style.removeProperty("visibility");
+  });
+  
+  // ✅ Step 3: Find and SHOW target + parent chain
+  const target = screen.querySelector(`[data-view="${key}"]`);
   
   if (target) {
-    // Unhide target
+    // Unhide target itself
     target.classList.remove("hidden");
+    target.style.setProperty("display", "block", "important");
+    target.style.setProperty("visibility", "visible", "important");
     
-    // ☢️ NUCLEAR: Walk up and unhide ALL parent .company-view elements
+    // ☢️ NUCLEAR: Walk up and unhide ALL parent .company-view wrappers
     let el = target.parentElement;
-    while (el && el !== document.getElementById("screen-company")) {
+    let parentsFixed = 0;
+    
+    while (el && el !== screen) {
       if (el.classList.contains("company-view")) {
         el.classList.remove("hidden");
-        el.style.setProperty("display", "block", "important");  // Force it!
+        el.style.setProperty("display", "block", "important");
+        el.style.setProperty("visibility", "visible", "important");
+        parentsFixed++;
       }
       el = el.parentElement;
     }
     
-    console.log(`[showCompanyView] ✅ Showing: ${key}`);
+    console.log(`[showCompanyView] ✅ "${key}" shown (${parentsFixed} parents unhid)`);
+  } else {
+    console.warn(`[showCompanyView] ⚠️ View "${key}" not found`);
   }
 
+  // Titles
   const titles = {
     my: "My company",
     update: "Update company",
