@@ -22568,18 +22568,38 @@ function detectFutureModuleHint(acct) {
 
   const code = String(acct.code || acct.account_code || "").toUpperCase();
   const category = String(acct.category || "").trim().toLowerCase();
-  const role = String(acct.role || "").trim().toUpperCase();
-  const standard = String(acct.standard || "").trim().toUpperCase();
+  const role = String(acct.role || "").trim().toLowerCase();
 
+  // ════════════════════════════════════════════════════
+  // EXCLUSIONS (check BEFORE positive matches)
+  // ════════════════════════════════════════════════════
+  
+  const isMaintenanceOrRepair =
+    role === "maintenance_expense" ||
+    role === "repair_expense" ||
+    txt.includes("repair") ||
+    txt.includes("maintenance") ||
+    txt.includes("upkeep");
+
+  const isExpenseCategory =
+    category === "expense" ||
+    code.startsWith("PL_");  // Your account: PL_OPEX_6500
+
+  // ════════════════════════════════════════════════════
+  // PPE DETECTION (with exclusions)
+  // ════════════════════════════════════════════════════
+  
   const isPPE =
-    txt.includes("property plant") ||
-    txt.includes("equipment") ||
-    txt.includes("ppe") ||
-    txt.includes("motor vehicle") ||
-    txt.includes("vehicles") ||
-    txt.includes("computer equipment") ||
-    txt.includes("furniture") ||
-    txt.includes("machinery");
+    (txt.includes("property plant") ||
+     txt.includes("equipment") ||
+     txt.includes("ppe") ||
+     txt.includes("motor vehicle") ||
+     txt.includes("vehicles") ||
+     txt.includes("computer equipment") ||
+     txt.includes("furniture") ||
+     txt.includes("machinery")) &&
+    !isMaintenanceOrRepair &&   // ← FIX: exclude maintenance/repair
+    !isExpenseCategory;        // ← FIX: exclude expense accounts
 
   const isLease =
     txt.includes("lease") ||
