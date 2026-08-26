@@ -35368,22 +35368,6 @@ class DatabaseService:
         END; 
         $$ LANGUAGE plpgsql; 
 
-        CREATE TRIGGER trg_warehouses_updated_at 
-            BEFORE UPDATE ON {schema}.ops_warehouses 
-            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column(); 
-
-        CREATE TRIGGER trg_locations_updated_at 
-            BEFORE UPDATE ON {schema}.ops_locations 
-            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column(); 
-
-        CREATE TRIGGER txn_updated_at 
-            BEFORE UPDATE ON {schema}.inventory_transactions 
-            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column(); 
-
-        CREATE TRIGGER stk_sessions_updated_at 
-            BEFORE UPDATE ON {schema}.ops_stocktake_sessions 
-            FOR EACH ROW EXECUTE PROCEDURE {schema}.update_updated_at_column();
-
         INSERT INTO {schema}.ops_variance_reasons 
             (code, name, description, requires_approval, affect_gl) 
         VALUES 
