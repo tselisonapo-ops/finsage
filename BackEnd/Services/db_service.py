@@ -32653,6 +32653,110 @@ class DatabaseService:
         ALTER TABLE {schema}.ops_vendor_awards
         ADD COLUMN IF NOT EXISTS po_created_at TIMESTAMPTZ NULL;
 
+        -- ============================================================
+        -- ADD DEFERRED FKs TO purchase_orders (after OPS tables exist)
+        -- ============================================================
+
+        DO $$ BEGIN
+            -- award_id → ops_vendor_awards
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname = '{schema}_po_award_id_fk'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.purchase_orders
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (award_id) REFERENCES %I.ops_vendor_awards(id)
+                    ON DELETE RESTRICT',
+                    '{schema}', '{schema}_po_award_id_fk', '{schema}'
+                );
+            END IF;
+
+            -- sourcing_event_id → ops_sourcing_events
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname = '{schema}_po_sourcing_event_id_fk'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.purchase_orders
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (sourcing_event_id) REFERENCES %I.ops_sourcing_events(id)
+                    ON DELETE RESTRICT',
+                    '{schema}', '{schema}_po_sourcing_event_id_fk', '{schema}'
+                );
+            END IF;
+
+            -- procurement_case_id → ops_procurement_cases
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname = '{schema}_po_procurement_case_id_fk'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.purchase_orders
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (procurement_case_id) REFERENCES %I.ops_procurement_cases(id)
+                    ON DELETE RESTRICT',
+                    '{schema}', '{schema}_po_procurement_case_id_fk', '{schema}'
+                );
+            END IF;
+
+            -- request_id → ops_requests
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname = '{schema}_po_request_id_fk'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.purchase_orders
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (request_id) REFERENCES %I.ops_requests(id)
+                    ON DELETE RESTRICT',
+                    '{schema}', '{schema}_po_request_id_fk', '{schema}'
+                );
+            END IF;
+
+            -- awarded_quote_id → ops_vendor_quotes
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname = '{schema}_po_awarded_quote_id_fk'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.purchase_orders
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (awarded_quote_id) REFERENCES %I.ops_vendor_quotes(id)
+                    ON DELETE RESTRICT',
+                    '{schema}', '{schema}_po_awarded_quote_id_fk', '{schema}'
+                );
+            END IF;
+
+            -- acknowledged_by_portal_user_id → ops_vendor_portal_users
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname = '{schema}_po_ack_portal_user_fk'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.purchase_orders
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (acknowledged_by_portal_user_id)
+                    REFERENCES %I.ops_vendor_portal_users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_po_ack_portal_user_fk', '{schema}'
+                );
+            END IF;
+
+        END $$;
+                    
         CREATE INDEX IF NOT EXISTS ops_vendor_awards_status_idx
         ON {schema}.ops_vendor_awards(
             company_id,
@@ -51402,30 +51506,6 @@ class DatabaseService:
 
             source TEXT NULL,
             source_id INT NULL,
-
-            -- ============================================================
-            -- OPS / PROCUREMENT LINKAGE
-            -- ============================================================
-
-            award_id BIGINT NULL
-                REFERENCES {schema}.ops_vendor_awards(id)
-                ON DELETE RESTRICT,
-
-            sourcing_event_id BIGINT NULL
-                REFERENCES {schema}.ops_sourcing_events(id)
-                ON DELETE RESTRICT,
-
-            procurement_case_id BIGINT NULL
-                REFERENCES {schema}.ops_procurement_cases(id)
-                ON DELETE RESTRICT,
-
-            request_id BIGINT NULL
-                REFERENCES {schema}.ops_requests(id)
-                ON DELETE RESTRICT,
-
-            awarded_quote_id BIGINT NULL
-                REFERENCES {schema}.ops_vendor_quotes(id)
-                ON DELETE RESTRICT,
 
             -- ============================================================
             -- COMMERCIAL
