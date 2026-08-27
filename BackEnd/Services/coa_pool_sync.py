@@ -45,7 +45,10 @@ def sync_company_coa_from_pool(
     sub_industry: Optional[str] = None,
     industry_display: Optional[str] = None,
     sub_industry_display: Optional[str] = None,
+    cur=None,
+    conn=None,
 ) -> int:
+
     schema = f"company_{company_id}"
 
     print(
@@ -127,10 +130,19 @@ def sync_company_coa_from_pool(
     }
 
     db_service.execute_ddl(
-        f"ALTER TABLE {schema}.coa ADD COLUMN IF NOT EXISTS template_code_scoped TEXT NULL;"
+        f"""
+        ALTER TABLE {schema}.coa
+        ADD COLUMN IF NOT EXISTS template_code_scoped TEXT NULL;
+        """,
+        cur=cur,
     )
+
     db_service.execute_ddl(
-        f"CREATE INDEX IF NOT EXISTS {schema}_coa_template_code_scoped_idx ON {schema}.coa(template_code_scoped);"
+        f"""
+        CREATE INDEX IF NOT EXISTS {schema}_coa_template_code_scoped_idx
+        ON {schema}.coa(template_code_scoped);
+        """,
+        cur=cur,
     )
 
     # Existing scoped IDs + existing reporting codes already in company COA
@@ -138,7 +150,11 @@ def sync_company_coa_from_pool(
     existing_codes: Set[str] = set()
 
     existing_rows = db_service.fetch_all(
-        f"SELECT template_code_scoped, code, template_code, name FROM {schema}.coa;"
+        f"""
+        SELECT template_code_scoped, code, template_code, name
+        FROM {schema}.coa;
+        """,
+        cur=cur,
     ) or []
 
     for r in existing_rows:
@@ -197,7 +213,11 @@ def sync_company_coa_from_pool(
     """
 
     params = (g_pat, i_pat, sub_slug, s_pat)
-    pool_rows = db_service.fetch_all(sql, params) or []
+    pool_rows = db_service.fetch_all(
+        sql,
+        params,
+        cur=cur,
+    ) or []
     print(f"[POOL] fetched pool_rows={len(pool_rows)} g_pat={g_pat!r} i_pat={i_pat!r} s_pat={s_pat!r}")
 
     # Keep best row per (semantic_key, variant) using scope rank
@@ -479,7 +499,14 @@ def sync_company_coa_from_pool(
         base = BUCKET_BASE.get(family, 6000)
 
         if family not in next_code_cache:
-            next_code_cache[family] = _next_code_for_family(db_service, schema, family, base)
+            next_code_cache[family] = _next_code_for_family(
+                db_service,
+                schema,
+                family,
+                base,
+                cur=cur,
+                conn=conn,
+            )
 
         code_numeric = next_code_cache[family]
         next_code_cache[family] += 1
@@ -521,12 +548,25 @@ def sync_company_coa_from_pool(
     print("[POOL][DEBUG] missing 1501/1502:", [(x.get("template_code"), x.get("template_code_scoped"), x.get("name")) for x in dbg])
 
     print(f"[POOL] inserting missing={len(missing)} ...")
-    n = db_service.insert_coa(company_id, missing)
+    n = db_service.insert_coa(
+        company_id,
+        missing,
+        cur=cur,
+        conn=conn,
+    )
     print(f"[POOL] inserted={n}")
     return n
 
 
-def _next_code_for_family(db_service, schema: str, family: str, base: int) -> int:
+def _next_code_for_family(
+    db_service,
+    schema: str,
+    family: str,
+    base: int,
+    *,
+    cur=None,
+    conn=None,
+) -> int:
     row = db_service.fetch_one(
         f"""
         SELECT COALESCE(MAX(code_numeric), 0) AS max_num
@@ -534,10 +574,20 @@ def _next_code_for_family(db_service, schema: str, family: str, base: int) -> in
         WHERE code_family = %s
         """,
         (family,),
+        cur=cur,
     )
+
     max_num = 0
+
     if row:
-        max_num = row.get("max_num") if isinstance(row, dict) else row[0]
+        max_num = (
+            row.get("max_num")
+            if isinstance(row, dict)
+            else row[0]
+        )
+
     if not max_num or int(max_num) < base:
         return base
+
     return int(max_num) + 1
+
