@@ -63941,101 +63941,110 @@ class DatabaseService:
         )
 
 
-    def repair_company_coa_roles(self, company_id: int) -> None:
+    def repair_company_coa_roles(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ) -> None:
         schema = self.company_schema(company_id)
 
-        with self._conn_cursor() as (conn, cur):
-            try:
-                # --------------------------------------------------------
-                # Loan payable - current
-                # --------------------------------------------------------
-                cur.execute(
-                    f"""
-                    UPDATE {schema}.coa
-                    SET role = 'loan_payable_current'
-                    WHERE LOWER(TRIM(name)) IN (
-                        'loan payable - current',
-                        'loan payable current'
-                    )
-                    AND COALESCE(role, '') IN (
-                        '',
-                        'ifrs9_financial_liability_amortised_cost'
-                    );
-                    """
+        def _run(_cur):
+            # --------------------------------------------------------
+            # Loan payable - current
+            # --------------------------------------------------------
+            _cur.execute(
+                f"""
+                UPDATE {schema}.coa
+                SET role = 'loan_payable_current'
+                WHERE LOWER(TRIM(name)) IN (
+                    'loan payable - current',
+                    'loan payable current'
                 )
+                AND COALESCE(role, '') IN (
+                    '',
+                    'ifrs9_financial_liability_amortised_cost'
+                );
+                """
+            )
 
-                # --------------------------------------------------------
-                # Loan payable - non-current
-                # --------------------------------------------------------
-                cur.execute(
-                    f"""
-                    UPDATE {schema}.coa
-                    SET role = 'loan_payable_noncurrent'
-                    WHERE LOWER(TRIM(name)) IN (
-                        'loan payable - non-current',
-                        'loan payable - non current',
-                        'loan payable non-current',
-                        'loan payable non current'
-                    )
-                    AND COALESCE(role, '') IN (
-                        '',
-                        'ifrs9_financial_liability_amortised_cost'
-                    );
-                    """
+            # --------------------------------------------------------
+            # Loan payable - non-current
+            # --------------------------------------------------------
+            _cur.execute(
+                f"""
+                UPDATE {schema}.coa
+                SET role = 'loan_payable_noncurrent'
+                WHERE LOWER(TRIM(name)) IN (
+                    'loan payable - non-current',
+                    'loan payable - non current',
+                    'loan payable non-current',
+                    'loan payable non current'
                 )
+                AND COALESCE(role, '') IN (
+                    '',
+                    'ifrs9_financial_liability_amortised_cost'
+                );
+                """
+            )
 
-                # --------------------------------------------------------
-                # Loan interest expense
-                # --------------------------------------------------------
-                cur.execute(
-                    f"""
-                    UPDATE {schema}.coa
-                    SET role = 'loan_interest_expense'
-                    WHERE (
-                        LOWER(TRIM(name)) IN (
-                            'loan interest expense',
-                            'interest expense - loans'
-                        )
-                        OR (
-                            LOWER(TRIM(name)) = 'interest expense'
-                            AND (
-                                LOWER(COALESCE(description, '')) LIKE '%loan%'
-                                OR LOWER(COALESCE(description, '')) LIKE '%overdraft%'
-                            )
+            # --------------------------------------------------------
+            # Loan interest expense
+            # --------------------------------------------------------
+            _cur.execute(
+                f"""
+                UPDATE {schema}.coa
+                SET role = 'loan_interest_expense'
+                WHERE (
+                    LOWER(TRIM(name)) IN (
+                        'loan interest expense',
+                        'interest expense - loans'
+                    )
+                    OR (
+                        LOWER(TRIM(name)) = 'interest expense'
+                        AND (
+                            LOWER(COALESCE(description, '')) LIKE '%loan%'
+                            OR LOWER(COALESCE(description, '')) LIKE '%overdraft%'
                         )
                     )
-                    AND COALESCE(role, '') IN (
-                        '',
-                        'ifrs9_interest_expense_amortised_cost'
-                    );
-                    """
                 )
+                AND COALESCE(role, '') IN (
+                    '',
+                    'ifrs9_interest_expense_amortised_cost'
+                );
+                """
+            )
 
-                # --------------------------------------------------------
-                # Accrued loan interest
-                # --------------------------------------------------------
-                cur.execute(
-                    f"""
-                    UPDATE {schema}.coa
-                    SET role = 'loan_accrued_interest'
-                    WHERE LOWER(TRIM(name)) IN (
-                        'accrued interest',
-                        'accrued interest payable',
-                        'loan interest payable',
-                        'interest payable'
-                    )
-                    AND COALESCE(role, '') IN (
-                        '',
-                        'accrued_expense'
-                    );
-                    """
+            # --------------------------------------------------------
+            # Accrued loan interest
+            # --------------------------------------------------------
+            _cur.execute(
+                f"""
+                UPDATE {schema}.coa
+                SET role = 'loan_accrued_interest'
+                WHERE LOWER(TRIM(name)) IN (
+                    'accrued interest',
+                    'accrued interest payable',
+                    'loan interest payable',
+                    'interest payable'
                 )
+                AND COALESCE(role, '') IN (
+                    '',
+                    'accrued_expense'
+                );
+                """
+            )
 
-                conn.commit()
+        # Caller owns the transaction.
+        if cur is not None:
+            _run(cur)
+            return
 
-            except Exception:
-                conn.rollback()
-                raise
+        # No caller transaction: create our own.
+        with self._conn_cursor() as (_conn, _cur):
+            _run(_cur)
+
 
     def insert_coa(
         self,
