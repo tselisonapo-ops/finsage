@@ -128,21 +128,37 @@ ORG_EQUITY_REQUIRED = {
     },
 }
 
-def apply_organization_equity_accounts(db_service, company_id: int, organization_type: str) -> None:
+def apply_organization_equity_accounts(
+    db_service,
+    company_id: int,
+    organization_type: str,
+    *,
+    cur=None,
+    conn=None,
+) -> None:
     schema = f"company_{int(company_id)}"
     org_type = (organization_type or "private_company").strip().lower()
 
-    required = ORG_EQUITY_REQUIRED.get(org_type, ORG_EQUITY_REQUIRED["private_company"])
+    required = ORG_EQUITY_REQUIRED.get(
+        org_type,
+        ORG_EQUITY_REQUIRED["private_company"],
+    )
+
+    # ---------------------------------------------------------
+    # Use caller's transaction when supplied.
+    # Otherwise the DB helpers will create their own transaction.
+    # ---------------------------------------------------------
 
     existing = db_service.fetch_all(
         f"""
         SELECT id, code, name, role, section, category
         FROM {schema}.coa
         WHERE LOWER(COALESCE(section, '')) = 'equity'
-           OR COALESCE(role, '') LIKE 'equity_%'
+           OR COALESCE(role, '') LIKE 'equity_%%'
         ORDER BY code;
         """,
         (),
+        cur=cur,
     ) or []
 
     existing_by_role = {
@@ -151,9 +167,13 @@ def apply_organization_equity_accounts(db_service, company_id: int, organization
         if (r.get("role") or "").strip()
     }
 
+    # ---------------------------------------------------------
     # 1) Rename existing matching roles to organisation wording
+    # ---------------------------------------------------------
+
     for role, desired_name in required.items():
         row = existing_by_role.get(role)
+
         if row:
             db_service.execute_sql(
                 f"""
@@ -162,9 +182,13 @@ def apply_organization_equity_accounts(db_service, company_id: int, organization
                 WHERE id = %s;
                 """,
                 (desired_name, row["id"]),
+                cur=cur,
             )
 
-    # 2) Deactivate unsuitable equity rows for this organisation type
+    # ---------------------------------------------------------
+    # 2) Deactivate unsuitable equity rows
+    # ---------------------------------------------------------
+
     allowed_roles = list(
         set(required.keys()) | {
             "equity_oci_reserve",
@@ -184,6 +208,7 @@ def apply_organization_equity_accounts(db_service, company_id: int, organization
         AND COALESCE(role, '') NOT IN ({placeholders});
         """,
         tuple(allowed_roles),
+        cur=cur,
     )
 
 def seed_company_coa_once(
@@ -485,7 +510,13 @@ def seed_company_coa_once(
 
     return out
 
-def assert_reserved_control_integrity(db_service, company_id: int) -> None:
+def assert_reserved_control_integrity(
+    db_service,
+    company_id: int,
+    *,
+    cur=None,
+    conn=None,
+) -> None:
     schema = f"company_{company_id}"
 
     expected: Dict[str, Dict[str, Any]] = {
@@ -522,42 +553,78 @@ def assert_reserved_control_integrity(db_service, company_id: int) -> None:
         WHERE code = ANY(%s)
         """,
         (list(expected.keys()),),
+        cur=cur,
     ) or []
 
-    by_code = {str(r.get("code") or "").strip(): r for r in rows}
+    by_code = {
+        str(r.get("code") or "").strip(): r
+        for r in rows
+    }
+
     bad: List[str] = []
 
     for code, rule in expected.items():
         r = by_code.get(code)
+
         if not r:
             bad.append(f"{code}: missing")
             continue
 
-        actual_tc = str(r.get("template_code") or "").strip() or None
-        actual_tcs = str(r.get("template_code_scoped") or "").strip() or None
-        actual_name = str(r.get("name") or "").strip().lower()
+        actual_tc = (
+            str(r.get("template_code") or "").strip()
+            or None
+        )
 
-        expected_tc = str(rule.get("template_code") or "").strip() or None
-        expected_tcs = str(rule.get("template_code_scoped") or "").strip() or None
+        actual_tcs = (
+            str(r.get("template_code_scoped") or "").strip()
+            or None
+        )
+
+        actual_name = (
+            str(r.get("name") or "").strip().lower()
+        )
+
+        expected_tc = (
+            str(rule.get("template_code") or "").strip()
+            or None
+        )
+
+        expected_tcs = (
+            str(rule.get("template_code_scoped") or "").strip()
+            or None
+        )
 
         if expected_tc != actual_tc:
             bad.append(
-                f"{code}: wrong template_code actual={actual_tc!r} expected={expected_tc!r}"
+                f"{code}: wrong template_code "
+                f"actual={actual_tc!r} "
+                f"expected={expected_tc!r}"
             )
 
         if expected_tcs != actual_tcs:
             bad.append(
-                f"{code}: wrong template_code_scoped actual={actual_tcs!r} expected={expected_tcs!r}"
+                f"{code}: wrong template_code_scoped "
+                f"actual={actual_tcs!r} "
+                f"expected={expected_tcs!r}"
             )
 
         name_like_any = rule.get("name_like_any") or []
-        if name_like_any and not any(tok in actual_name for tok in name_like_any):
+
+        if (
+            name_like_any
+            and not any(
+                tok in actual_name
+                for tok in name_like_any
+            )
+        ):
             bad.append(
-                f"{code}: suspicious name={r.get('name')!r} expected one of {name_like_any!r}"
+                f"{code}: suspicious name={r.get('name')!r} "
+                f"expected one of {name_like_any!r}"
             )
 
     if bad:
         raise RuntimeError(
-            "Reserved control corruption detected for company "
-            f"{company_id}: " + "; ".join(bad)
+            "Reserved control corruption detected for "
+            f"company {company_id}: "
+            + "; ".join(bad)
         )
