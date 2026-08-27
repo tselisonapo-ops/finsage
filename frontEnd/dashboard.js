@@ -134348,6 +134348,82 @@ function closeProjectTaskModal() {
   document.getElementById("projectTaskModal")?.classList.add("hidden");
 }
 
+function clearProjectTaskModal() {
+  const fields = [
+    "projectTaskId",
+    "projectTaskCode",
+    "projectTaskName",
+    "projectTaskType",
+    "projectTaskWbsCode",
+    "projectTaskParentId",
+    "projectTaskPriority",
+    "projectTaskSequence",
+    "projectTaskProgress",
+    "projectTaskBudgetValue",
+    "projectTaskStartDate",
+    "projectTaskExpectedEndDate",
+    "projectTaskBaselineStart",
+    "projectTaskBaselineEnd",
+    "projectTaskDeliverable",
+    "projectTaskNotes",
+  ];
+
+  fields.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    if (el.tagName === "SELECT") {
+      el.selectedIndex = 0;
+    } else {
+      el.value = "";
+    }
+  });
+
+  // Keep the current project
+  const projectIdEl = document.getElementById("projectTaskProjectId");
+  if (projectIdEl) {
+    projectIdEl.value = String(ACTIVE_PROJECT_ID || "");
+  }
+
+  // Restore sensible defaults
+  const typeEl = document.getElementById("projectTaskType");
+  if (typeEl) typeEl.value = "task";
+
+  const priorityEl = document.getElementById("projectTaskPriority");
+  if (priorityEl) priorityEl.value = "normal";
+
+  const sequenceEl = document.getElementById("projectTaskSequence");
+  if (sequenceEl) sequenceEl.value = "0";
+
+  const statusEl = document.getElementById("projectTaskStatus");
+  if (statusEl) statusEl.value = "open";
+
+  const progressEl = document.getElementById("projectTaskProgress");
+  if (progressEl) progressEl.value = "0";
+
+  const budgetEl = document.getElementById("projectTaskBudgetValue");
+  if (budgetEl) budgetEl.value = "0";
+
+  // New task mode
+  const saveBtn = document.getElementById("projectTaskSaveBtn");
+  if (saveBtn) {
+    saveBtn.textContent = "Save Task";
+  }
+
+  const archiveBtn = document.getElementById("projectTaskArchiveBtn");
+  if (archiveBtn) {
+    archiveBtn.classList.add("hidden");
+  }
+
+  setElText("projectTaskMsg", "");
+
+  // Keep modal open
+  const modal = document.getElementById("projectTaskModal");
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+}
+
 async function submitProjectTask() {
   const cid =
     getActiveCompanyId?.() || CURRENT_COMPANY_ID;
@@ -134495,10 +134571,10 @@ async function submitProjectTask() {
       }
     );
 
-    closeProjectTaskModal();
-
     await loadProjects?.();
     await loadProjectDetail(projectId);
+
+    clearProjectTaskModal();
 
   } catch (err) {
     setElText(
