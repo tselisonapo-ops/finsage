@@ -2492,9 +2492,10 @@ def api_auth_signin():
             )
 
             current_app.logger.info(
-                "[AUTH] 2 - memberships: %s",
-                memberships if not is_ops_signin else primary_mem
+                "[AUTH] 2 - primary membership: %s",
+                primary_mem,
             )
+
 
             # Legacy/fallback users may not yet have is_primary correctly set.
             if not primary_mem:
@@ -2555,12 +2556,6 @@ def api_auth_signin():
                 row for row in memberships
                 if bool(row.get("is_primary"))
             ]
-
-            current_app.logger.info(
-                "[AUTH] 3 - role=%s access_scope=%s",
-                user_role,
-                access_scope,
-            )
 
             # ---------------------------------------------------------
             # More than one accessible company:
@@ -2679,6 +2674,12 @@ def api_auth_signin():
         else:
             user_role=normalize_role(base_role)
             access_scope="core"
+
+        current_app.logger.info(
+            "[AUTH] 3 - role=%s access_scope=%s",
+            user_role,
+            access_scope,
+        )
 
         dashboards = get_dashboard_access(
             user_role,
