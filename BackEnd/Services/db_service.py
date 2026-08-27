@@ -62861,7 +62861,7 @@ class DatabaseService:
         END IF;
         END $fk_vpa_bill_company$;                
         """
-        BOOTSTRAP_MIGRATION_VERSION=28
+        BOOTSTRAP_MIGRATION_VERSION=29
         AP_MIGRATION_VERSION=2
         TENANT_SYNC_MIGRATION_VERSION = 1
 
