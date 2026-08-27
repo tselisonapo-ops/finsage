@@ -1880,12 +1880,13 @@ def api_auth_signup():
         })
 
     return Response(
-        stream_with_context(generate()),
+        generate(), 
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",   # Nginx: don't buffer the stream
-        },
+            "Transfer-Encoding": "chunked",
+            "X-Accel-Buffering": "no"  # This stops Nginx/cPanel from dropping the stream!
+        }
     )
 
 
