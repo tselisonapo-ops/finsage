@@ -1380,6 +1380,11 @@ def _emit_step(gen, step_key: str):
 def api_auth_signup():
     data = request.get_json(silent=True) or {}
 
+    current_app.logger.info(
+        "SIGNUP DEBUG email=%r first_name=%r last_name=%r role=%r",
+        email, first_name, last_name, user_role,
+    )
+
     def generate():
         # ----------------------------------------------------------
         # EARLY VALIDATION  (before anything hits the DB)
