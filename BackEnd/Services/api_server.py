@@ -1606,47 +1606,46 @@ def api_auth_signup(cur=None, conn=None):
                 # User
                 yield from _emit_step(generate, "creating_user")
 
-                owner_id = db_service.insert_user(
-                    email=email,
-                    password_hash=generate_password_hash(password),
-                    user_type=user_type,
-                    first_name=first_name,
-                    last_name=last_name,
-                    user_role=user_role,
-                    is_confirmed=False,
-                    confirmation_token=confirm_token,
-                    confirmation_token_expires_at=confirm_expires_at,
-                    trial_start_date=str(date.today()),
-                    trial_end_date=str(date.today() + timedelta(days=30)),
-                    company_id=None,
-                    cur=tx_cur,
-                    conn=tx_conn,
-                )
+                try:
+                    owner_id = db_service.insert_user(
+                        email=email,
+                        password_hash=generate_password_hash(password),
+                        user_type=user_type,
+                        first_name=first_name,
+                        last_name=last_name,
+                        user_role=user_role,
+                        is_confirmed=False,
+                        confirmation_token=confirm_token,
+                        confirmation_token_expires_at=confirm_expires_at,
+                        trial_start_date=str(date.today()),
+                        trial_end_date=str(date.today() + timedelta(days=30)),
+                        company_id=None,
+                        cur=tx_cur,
+                        conn=tx_conn,
+                    )
 
-            except UniqueViolation as e:
-                constraint = getattr(
-                    getattr(e, "diag", None),
-                    "constraint_name",
-                    None,
-                )
+                except UniqueViolation as e:
+                    constraint = getattr(
+                        getattr(e, "diag", None),
+                        "constraint_name",
+                        None,
+                    )
 
-                detail = getattr(
-                    getattr(e, "diag", None),
-                    "message_detail",
-                    None,
-                )
+                    detail = getattr(
+                        getattr(e, "diag", None),
+                        "message_detail",
+                        None,
+                    )
 
-                current_app.logger.exception(
-                    "Signup unique violation email=%s constraint=%s detail=%s",
-                    email,
-                    constraint,
-                    detail,
-                )
+                    current_app.logger.warning(
+                        "Signup unique violation email=%s constraint=%s detail=%s",
+                        email,
+                        constraint,
+                        detail,
+                    )
 
-                if constraint == "users_email_key":
-                    yield _sse(
-                        "error",
-                        {
+                    if constraint == "users_email_key":
+                        yield _sse("error", {
                             "status": 409,
                             "error": (
                                 "A user with this email already exists. "
@@ -1654,19 +1653,16 @@ def api_auth_signup(cur=None, conn=None):
                             ),
                             "constraint": constraint,
                             "detail": detail,
-                        },
-                    )
-                else:
-                    yield _sse(
-                        "error",
-                        {
+                        })
+                    else:
+                        yield _sse("error", {
                             "status": 409,
                             "error": "Registration failed: duplicate data.",
                             "constraint": constraint,
                             "detail": detail,
-                        },
-                    )
+                        })
 
+                    return
 
                 if not owner_id:
                     raise RuntimeError("insert_user returned no id")
