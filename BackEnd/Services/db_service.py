@@ -8964,11 +8964,12 @@ class DatabaseService:
 
             REQUIRED_CONTROL_TEMPLATES["1000"]["code"],
             int(company_id),
-            cur=cur,
-                conn=conn,
-                commit=False,
-            )
-        ))
+        ),
+        cur=cur,
+        conn=conn,
+        commit=False,
+        )
+
 
     def ensure_bill_grni_link_table(self, company_id: int):
         schema = self.company_schema(company_id)
