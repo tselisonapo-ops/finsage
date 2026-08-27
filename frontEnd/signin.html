@@ -257,9 +257,34 @@
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type") || "";
+      let data;
+
+      if (contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+
+        console.error("Non-JSON signin response:", {
+          status: res.status,
+          statusText: res.statusText,
+          contentType,
+          body: text
+        });
+
+        statusEl.textContent = `Server error (${res.status}).`;
+        statusEl.style.color = "#b91c1c";
+        return;
+      }
+
       if (!res.ok) {
-        statusEl.textContent = data.detail || data.error || "Sign in failed.";
+        console.error("Signin API error:", res.status, data);
+
+        statusEl.textContent =
+          data.detail ||
+          data.error ||
+          "Sign in failed.";
+
         statusEl.style.color = "#b91c1c";
         return;
       }
