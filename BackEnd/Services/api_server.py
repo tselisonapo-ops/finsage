@@ -1603,6 +1603,8 @@ def api_auth_signup(cur=None, conn=None):
             def perform_signup(tx_conn, tx_cur):
                 nonlocal owner_id, created_company_id
 
+                invite_payload = None
+                
                 # User
                 yield from _emit_step(generate, "creating_user")
 
