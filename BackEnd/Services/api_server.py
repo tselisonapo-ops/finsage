@@ -2074,6 +2074,15 @@ def api_auth_signup(cur=None, conn=None):
                             "insert_company returned no id"
                         )
 
+                    # =========================================================
+                    # INITIALIZE COMPANY-SPECIFIC SCHEMA
+                    # =========================================================
+                    db_service.initialize_company_schema(
+                        created_company_id,
+                        cur=tx_cur,
+                        conn=tx_conn,
+                    )
+
                     # ---------------------------------------------
                     # Industry slugs
                     #
@@ -2148,28 +2157,6 @@ def api_auth_signup(cur=None, conn=None):
                             created_company_id,
                             owner_id,
                         ),
-                    )
-
-                    # ---------------------------------------------
-                    # Company account settings
-                    #
-                    # MUST use the same transaction.
-                    # ---------------------------------------------
-                    db_service.ensure_company_account_settings(
-                        created_company_id,
-                        cur=tx_cur,
-                        conn=tx_conn,
-                    )
-
-                    # ---------------------------------------------
-                    # Public schema
-                    #
-                    # This is idempotent and ensures the public
-                    # structures needed by signup exist.
-                    # ---------------------------------------------
-                    db_service.initialize_public_schema(
-                        cur=tx_cur,
-                        conn=tx_conn,
                     )
 
                     # ---------------------------------------------

@@ -199,31 +199,10 @@ def seed_company_coa_once(
 
     print(f"[SEED] start company={company_id} source={source!r}")
 
-    # ---------------------------------------------------------
-    # IMPORTANT:
-    # If cur/conn are supplied, we are already inside the
-    # caller's transaction.
-    #
-    # Do NOT commit here.
-    # Do NOT open a new connection here.
-    # ---------------------------------------------------------
 
-    db_service.ensure_company_schema(
-        company_id,
-        cur=cur,
-        conn=conn,
-    )
-
-    db_service.ensure_company_coa_table(
-        company_id,
-        cur=cur,
-        conn=conn,
-    )
-
-    db_service.initialize_public_schema(
-        cur=cur,
-        conn=conn,
-    )
+    # =========================================================
+    # INITIALIZE COMPANY-SPECIFIC SCHEMA
+    # =========================================================
 
     db_service.ensure_company_account_settings(
         company_id,

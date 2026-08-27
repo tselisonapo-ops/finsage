@@ -8774,7 +8774,13 @@ class DatabaseService:
             ),
         ) or {}
 
-    def ensure_required_control_accounts(self, company_id: int) -> None:
+    def ensure_required_control_accounts(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ) -> None:
         schema = f"company_{company_id}"
 
         for tpl, spec in (REQUIRED_CONTROL_TEMPLATES or {}).items():
@@ -8782,9 +8788,16 @@ class DatabaseService:
 
             # Skip if template already present
             if self.fetch_val(
-                f"SELECT 1 FROM {schema}.coa WHERE template_code=%s LIMIT 1;",
+                f"""
+                SELECT 1
+                FROM {schema}.coa
+                WHERE template_code=%s
+                LIMIT 1;
+                """,
                 (tpl,),
+                cur=cur,
             ):
+
                 continue
 
             code = (spec.get("code") or "").strip()
@@ -8793,8 +8806,14 @@ class DatabaseService:
 
             # Skip if code already exists
             if self.fetch_val(
-                f"SELECT 1 FROM {schema}.coa WHERE code=%s LIMIT 1;",
+                f"""
+                SELECT 1
+                FROM {schema}.coa
+                WHERE code=%s
+                LIMIT 1;
+                """,
                 (code,),
+                cur=cur,
             ):
                 continue
 
@@ -8820,32 +8839,68 @@ class DatabaseService:
             self.execute_sql(
                 f"""
                 INSERT INTO {schema}.coa
-                (company_id, code, name, section, category,
-                posting, cf_section, is_working_capital,
-                template_code, template_code_base, template_code_scoped,
-                code_family, code_numeric, role)
+                (
+                    company_id,
+                    code,
+                    name,
+                    section,
+                    category,
+                    posting,
+                    cf_section,
+                    is_working_capital,
+                    template_code,
+                    template_code_base,
+                    template_code_scoped,
+                    code_family,
+                    code_numeric,
+                    role
+                )
                 VALUES
-                (%s,%s,%s,%s,%s,
-                TRUE,%s,%s,
-                %s,%s,%s,
-                %s,%s,%s)
+                (
+                    %s,%s,%s,%s,%s,
+                    TRUE,%s,%s,
+                    %s,%s,%s,
+                    %s,%s,%s
+                )
                 ON CONFLICT (code) DO NOTHING;
                 """,
                 (
                     int(company_id),
-                    code, name, section, category,
-                    cf_section, is_wc,
-                    tpl, tpl, tcs,
-                    code_family, code_numeric, role,
+                    code,
+                    name,
+                    section,
+                    category,
+                    cf_section,
+                    is_wc,
+                    tpl,
+                    tpl,
+                    tcs,
+                    code_family,
+                    code_numeric,
+                    role,
                 ),
+                cur=cur,
+                conn=conn,
+                commit=False,
             )
 
-    def ensure_company_account_settings_defaults(self, company_id: int) -> None:
+
+    def ensure_company_account_settings_defaults(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ) -> None:
         """
         Fills in missing (NULL/empty) defaults for a company's control accounts.
         Safe to call repeatedly.
         """
-        self.ensure_company_account_settings(company_id)
+        self.ensure_company_account_settings(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
 
         self.execute_sql("""
         UPDATE public.company_account_settings
@@ -8880,6 +8935,7 @@ class DatabaseService:
             updated_at = NOW()
         WHERE company_id=%s;
         """, (
+
             REQUIRED_CONTROL_TEMPLATES["9002"]["code"],
             REQUIRED_CONTROL_TEMPLATES["2200"]["code"],
 
@@ -8908,6 +8964,10 @@ class DatabaseService:
 
             REQUIRED_CONTROL_TEMPLATES["1000"]["code"],
             int(company_id),
+            cur=cur,
+                conn=conn,
+                commit=False,
+            )
         ))
 
     def ensure_bill_grni_link_table(self, company_id: int):
@@ -8934,10 +8994,16 @@ class DatabaseService:
         ON {schema}.bill_grni_links(company_id, receipt_tx_id);
         """)
 
-    def ensure_asset_grni_link_table(self, company_id: int):
+    def ensure_asset_grni_link_table(    
+        self,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ):
         schema = self.company_schema(company_id)
 
-        self.execute_ddl(f"""
+        ddl = f"""
         CREATE TABLE IF NOT EXISTS {schema}.asset_grni_links (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -9004,7 +9070,11 @@ class DatabaseService:
             END IF;
         END $$;
 
-        """)
+        """
+        self.execute_ddl(
+            ddl,
+            cur=cur,
+        )
 
     def execute_values(self, sql: str, values: list[tuple], page_size: int = 500) -> int:
         """
@@ -9181,7 +9251,13 @@ class DatabaseService:
             lease_bank_account_code,
         ))
 
-    def ensure_mandatory_company_accounts(self, company_id: int) -> None:
+    def ensure_mandatory_company_accounts(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ) -> None:
         schema = f"company_{company_id}"
 
         mandatory = [
@@ -9567,103 +9643,195 @@ class DatabaseService:
             ON CONFLICT (code) DO NOTHING;
         """
 
-        with self._conn_cursor() as (conn, cur):
-            print(f"[CTRL] start ensure_mandatory_company_accounts company={company_id}")
+         def _run(c):
+            print(
+                f"[CTRL] start ensure_mandatory_company_accounts "
+                f"company={company_id}"
+            )
 
             existing_before = self.fetch_all(
                 f"""
-                SELECT id, code, template_code, template_code_scoped, name
+                SELECT
+                    id,
+                    code,
+                    template_code,
+                    template_code_scoped,
+                    name
                 FROM {schema}.coa
                 WHERE template_code = ANY(%s)
                 ORDER BY template_code, id;
                 """,
                 (list(CANON_BY_TC.keys()),),
-                cur=cur,
+                cur=c,
             ) or []
-            print(f"[CTRL] existing before count={len(existing_before)}")
+
+            print(
+                f"[CTRL] existing before count="
+                f"{len(existing_before)}"
+            )
+
             for r in existing_before:
-                print(f"[CTRL] BEFORE tc={r.get('template_code')} id={r.get('id')} code={r.get('code')} scoped={r.get('template_code_scoped')!r} name={r.get('name')!r}")
+                print(
+                    f"[CTRL] BEFORE "
+                    f"tc={r.get('template_code')} "
+                    f"id={r.get('id')} "
+                    f"code={r.get('code')} "
+                    f"scoped={r.get('template_code_scoped')!r} "
+                    f"name={r.get('name')!r}"
+                )
 
             for r in mandatory:
                 r["company_id"] = company_id
-                cur.execute(sql, r)
+                c.execute(sql, r)
 
-            conn.commit()
-            print(f"[CTRL] insert pass done (ON CONFLICT code DO NOTHING)")
+            print(
+                "[CTRL] insert pass done "
+                "(ON CONFLICT code DO NOTHING)"
+            )
 
             existing_after = self.fetch_all(
                 f"""
-                SELECT id, code, template_code, template_code_scoped, name
+                SELECT
+                    id,
+                    code,
+                    template_code,
+                    template_code_scoped,
+                    name
                 FROM {schema}.coa
                 WHERE template_code = ANY(%s)
-                ORDER BY template_code,
-                        (template_code_scoped IS NOT NULL AND template_code_scoped <> '') DESC,
-                        id ASC;
+                ORDER BY
+                    template_code,
+                    (
+                        template_code_scoped IS NOT NULL
+                        AND template_code_scoped <> ''
+                    ) DESC,
+                    id ASC;
                 """,
                 (list(CANON_BY_TC.keys()),),
-                cur=cur,
+                cur=c,
             ) or []
-            print(f"[CTRL] existing after count={len(existing_after)}")
-            for r in existing_after:
-                print(f"[CTRL] AFTER  tc={r.get('template_code')} id={r.get('id')} code={r.get('code')} scoped={r.get('template_code_scoped')!r} name={r.get('name')!r}")
 
-            def _dedupe_control(tc: str, canonical_code: str):
+            print(
+                f"[CTRL] existing after count="
+                f"{len(existing_after)}"
+            )
+
+            for r in existing_after:
+                print(
+                    f"[CTRL] AFTER "
+                    f"tc={r.get('template_code')} "
+                    f"id={r.get('id')} "
+                    f"code={r.get('code')} "
+                    f"scoped={r.get('template_code_scoped')!r} "
+                    f"name={r.get('name')!r}"
+                )
+
+            def _dedupe_control(
+                tc: str,
+                canonical_code: str,
+            ):
                 rows = self.fetch_all(
                     f"""
-                    SELECT id, code, template_code_scoped, name
+                    SELECT
+                        id,
+                        code,
+                        template_code_scoped,
+                        name
                     FROM {schema}.coa
                     WHERE template_code=%s
                     ORDER BY id ASC;
                     """,
                     (tc,),
-                    cur=cur,
+                    cur=c,
                 ) or []
 
                 if not rows:
-                    print(f"[CTRL] DEDUPE tc={tc}: none found")
+                    print(
+                        f"[CTRL] DEDUPE tc={tc}: none found"
+                    )
                     return None
 
                 keep = None
+
                 for r in rows:
-                    if (r.get("code") or "").strip() == canonical_code:
+                    if (
+                        (r.get("code") or "").strip()
+                        == canonical_code
+                    ):
                         keep = r
                         break
 
                 if keep is None:
                     for r in rows:
-                        tcs = (r.get("template_code_scoped") or "").strip()
+                        tcs = (
+                            r.get("template_code_scoped")
+                            or ""
+                        ).strip()
+
                         if tcs:
                             keep = r
                             break
+
                 if keep is None:
                     keep = rows[0]
 
                 keep_id = keep["id"]
-                kill_ids = [r["id"] for r in rows if r["id"] != keep_id]
+
+                kill_ids = [
+                    r["id"]
+                    for r in rows
+                    if r["id"] != keep_id
+                ]
 
                 print(
-                    f"[CTRL] DEDUPE tc={tc}: found={len(rows)} "
-                    f"KEEP id={keep_id} code={keep.get('code')} scoped={keep.get('template_code_scoped')!r} "
+                    f"[CTRL] DEDUPE tc={tc}: "
+                    f"found={len(rows)} "
+                    f"KEEP id={keep_id} "
+                    f"code={keep.get('code')} "
+                    f"scoped={keep.get('template_code_scoped')!r} "
                     f"KILL ids={kill_ids}"
                 )
 
                 if kill_ids:
-                    cur.execute(
-                        f"DELETE FROM {schema}.coa WHERE id = ANY(%s);",
+                    c.execute(
+                        f"""
+                        DELETE FROM {schema}.coa
+                        WHERE id = ANY(%s);
+                        """,
                         (kill_ids,),
                     )
 
-                cur.execute(
-                    f"UPDATE {schema}.coa SET code=%s WHERE id=%s;",
-                    (canonical_code, keep_id),
+                c.execute(
+                    f"""
+                    UPDATE {schema}.coa
+                    SET code=%s
+                    WHERE id=%s;
+                    """,
+                    (
+                        canonical_code,
+                        keep_id,
+                    ),
                 )
+
                 return keep_id
 
             for tc, canon_code in CANON_BY_TC.items():
-                _dedupe_control(tc, canon_code)
+                _dedupe_control(
+                    tc,
+                    canon_code,
+                )
 
-            conn.commit()
-            print(f"[CTRL] done ensure_mandatory_company_accounts company={company_id}")
+            print(
+                f"[CTRL] done ensure_mandatory_company_accounts "
+                f"company={company_id}"
+            )
+
+        if cur is not None:
+            _run(cur)
+        else:
+            with self._conn_cursor() as (local_conn, local_cur):
+                _run(local_cur)
+                local_conn.commit()
 
 
     def get_account_row_for_posting(self, company_id: int, key: str, cur=None):
@@ -10640,27 +10808,13 @@ class DatabaseService:
         # The caller owns the transaction.
         # =========================================================
         if cur is not None:
-            company_id = _insert(cur)
-
-            # These MUST use the same cursor/connection.
-            self.initialize_public_schema(
-                cur=cur,
-                conn=conn,
-            )
-
-            self.ensure_company_account_settings(
-                company_id,
-                cur=cur,
-                conn=conn,
-            )
-
-            return company_id
+            return _insert(cur)
 
         # =========================================================
         # CASE 2:
         # Caller supplied a connection but no cursor.
         #
-        # We own the transaction.
+        # We own the transaction for this standalone call.
         # =========================================================
         if conn is not None:
             try:
@@ -10669,17 +10823,6 @@ class DatabaseService:
                 ) as local_cur:
 
                     company_id = _insert(local_cur)
-
-                    self.initialize_public_schema(
-                        cur=local_cur,
-                        conn=conn,
-                    )
-
-                    self.ensure_company_account_settings(
-                        company_id,
-                        cur=local_cur,
-                        conn=conn,
-                    )
 
                 conn.commit()
 
@@ -10696,21 +10839,10 @@ class DatabaseService:
         # Create our own transaction.
         # =========================================================
         with self.transaction() as (tx_conn, tx_cur):
-
             company_id = _insert(tx_cur)
 
-            self.initialize_public_schema(
-                cur=tx_cur,
-                conn=tx_conn,
-            )
-
-            self.ensure_company_account_settings(
-                company_id,
-                cur=tx_cur,
-                conn=tx_conn,
-            )
-
         return company_id
+
 
     def get_group_reporting_profile(self, company_id: int) -> Optional[dict]:
         with self._conn_cursor() as (conn, cur):
@@ -19038,24 +19170,50 @@ class DatabaseService:
     # ---------------------------
     # per-company schema bootstrap
     # ---------------------------
-    def initialize_company_schema(self, company_id: int) -> None:
-        
-        self.ensure_company_schema(company_id)
+    def initialize_company_schema(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ) -> None:
 
-        # Tables maintained outside the main tenant DDL
-        self.ensure_asset_grni_link_table(company_id)
-        self.ensure_company_payroll(company_id)
-        self.ensure_company_vat_filings(company_id)
-        self.ensure_company_forecast(company_id)
+        self.ensure_company_schema(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
 
-        self.ensure_mandatory_company_accounts(company_id)
-        self.apply_basic_cashflow_tags(company_id)
-        self.ensure_required_control_accounts(company_id)
-        self.ensure_company_account_settings(company_id)
-        self.ensure_company_account_settings_defaults(company_id)
-        # 3) Optional: seed COA from pool once (your pool-first seeding)
-        # initialize_coa(db_service=self, company_id=company_id, industry=..., sub_industry=...)
-  
+        self.ensure_asset_grni_link_table(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
+
+        self.ensure_company_payroll(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
+
+        self.ensure_company_vat_filings(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
+
+        self.ensure_company_forecast(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
+
+        self.ensure_company_account_settings(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
+
     IAS41_MIGRATION_VERSION = 7
     def ensure_company_biological_assets(
         self,
@@ -35905,6 +36063,7 @@ class DatabaseService:
         company_id:int,
         *,
         cur=None,
+        conn=None,
     )->None:
         company_id=int(company_id)
         schema=self.company_schema(company_id)
@@ -39092,6 +39251,7 @@ class DatabaseService:
         company_id:int,
         *,
         cur=None,
+        conn=None,
     )->None:
         company_id=int(company_id)
         schema=self.company_schema(company_id)
@@ -39392,6 +39552,7 @@ class DatabaseService:
         self.execute_ddl(
             ddl,
             cur=cur,
+
             migration_key=f"{schema}:forecast",
             migration_version=self.FORECAST_MIGRATION_VERSION,
         )
@@ -64489,7 +64650,14 @@ class DatabaseService:
         return count
 
 
-    def apply_basic_cashflow_tags(self, company_id: int) -> None:
+    def apply_basic_cashflow_tags(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ) -> None:
+
         schema = f"company_{company_id}"
 
         # 1) Cash & Equivalents => cash accounts
@@ -64504,7 +64672,10 @@ class DatabaseService:
             OR LOWER(category) LIKE '%cash & equivalents%'
             OR LOWER(category) LIKE '%cash and equivalents%';
         """
-        self.execute_ddl(sql_cash)
+        self.execute_ddl(
+            sql_cash,
+            cur=cur,
+        )
 
         # 2) Working capital assets (receivables, inventory, VAT input, prepaid)
         sql_wc_assets = f"""
@@ -64524,7 +64695,10 @@ class DatabaseService:
                 OR LOWER(name) LIKE '%vat%'
             );
         """
-        self.execute_ddl(sql_wc_assets)
+        self.execute_ddl(
+            sql_wc_assets,
+            cur=cur,
+        )
 
         # 3) Working capital liabilities (payables, accruals, VAT output)
         sql_wc_liab = f"""
@@ -64542,7 +64716,10 @@ class DatabaseService:
                 OR LOWER(name) LIKE '%vat%'
             );
         """
-        self.execute_ddl(sql_wc_liab)
+        self.execute_ddl(
+            sql_wc_liab,
+            cur=cur,
+        )
 
         # 4) Non-cash addbacks (Depreciation & Amortisation)
         sql_addbacks = f"""
@@ -64562,7 +64739,10 @@ class DatabaseService:
             OR LOWER(name) LIKE '%depreciation%'
             OR LOWER(name) LIKE '%amort%';
         """
-        self.execute_ddl(sql_addbacks)
+        self.execute_ddl(
+            sql_addbacks,
+            cur=cur,
+        )
 
     def get_company_coa(self, company_id: int) -> List[Dict[str, Any]]:
         schema = f"company_{company_id}"
@@ -67878,7 +68058,13 @@ class DatabaseService:
         }
 
 
-    def ensure_company_vat_filings(self, company_id: int):
+    def ensure_company_vat_filings(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ):
         schema = self.company_schema(company_id)
 
         ddl = f"""
@@ -68199,9 +68385,12 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS is_out_of_scope BOOLEAN NOT NULL DEFAULT FALSE;
         """
 
-        with self._conn_cursor() as (conn, cur):
-            cur.execute(ddl)
-            conn.commit()
+        self.execute_ddl(
+            ddl,
+            cur=cur,
+            migration_key=f"{schema}:vat_filings",
+            migration_version=self.VAT_FILINGS_MIGRATION_VERSION,
+        )
 
     def mark_vat_filing_settlement_posted(self, company_id: int, filing_id: int, *, journal_id: int):
         schema = self.company_schema(company_id)
