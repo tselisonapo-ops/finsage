@@ -601,9 +601,6 @@ def _export_statement_csv(stmt: dict, filename="statement.csv"):
     return resp
 
 
-from flask import jsonify, request, current_app, g
-from datetime import date
-
 # -----------------------------
 # helpers
 # -----------------------------
@@ -1570,7 +1567,7 @@ def api_auth_signup():
             created_company_id = None
             if requires_company:
                 try:
-                    yield _emit_step(generate, "creating_company")
+                    yield from _emit_step(generate, "creating_company")
                     # Insert company into DB
                     country = (company_payload.get("country") or "").upper()
                     company_reg_no = (
@@ -1864,7 +1861,7 @@ def api_auth_signup():
             yield _sse("error", {"error": "Internal server error."})
 
     return Response(
-        generate(),
+        stream_with_context(generate()),
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -4779,7 +4776,6 @@ def update_company_profile(company_id: int):
             "error": str(e)
         }), 400
 
-from flask import send_from_directory
 
 @app.route("/api/companies/<int:company_id>/logo/file", methods=["GET"])
 def api_company_logo_file(company_id: int):
@@ -5295,7 +5291,6 @@ def upload_pos_roll(company_id: int):
         "file_url": file_url,
     }), 201
 
-from flask import send_from_directory
 
 @app.route("/api/companies/<int:company_id>/pos_imports/<int:import_id>/file", methods=["GET"])
 @require_auth
