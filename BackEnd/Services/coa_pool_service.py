@@ -193,20 +193,47 @@ def sync_company_coa_from_pool(db_service, company_id: int, industry: str, sub_i
 
     return db_service.insert_coa(company_id, missing)
 
-def _next_code_for_family(db_service, schema: str, family: str, base: int) -> int:
-    row = db_service.fetch_one(
-        f"""
+def _next_code_for_family(
+    db_service,
+    schema: str,
+    family: str,
+    base: int,
+    *,
+    cur=None,
+) -> int:
+
+    sql = f"""
         SELECT COALESCE(MAX(code_numeric), 0) AS max_num
         FROM {schema}.coa
         WHERE code_family = %s
-        """,
-        (family,),
-    )
-    max_num = 0
-    if row:
-        max_num = row.get("max_num") if isinstance(row, dict) else row[0]
+    """
 
-    # If family unused, start at base, else increment
-    if not max_num or max_num < base:
+    if cur is not None:
+        cur.execute(sql, (family,))
+        row = cur.fetchone()
+
+        if row is None:
+            max_num = 0
+        else:
+            max_num = row[0]
+
+    else:
+        row = db_service.fetch_one(
+            sql,
+            (family,),
+        )
+
+        max_num = 0
+
+        if row:
+            max_num = (
+                row.get("max_num")
+                if isinstance(row, dict)
+                else row[0]
+            )
+
+    if not max_num or int(max_num) < base:
         return base
+
     return int(max_num) + 1
+

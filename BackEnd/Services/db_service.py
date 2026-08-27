@@ -64073,7 +64073,10 @@ class DatabaseService:
         import time
 
         try:
-            existing_n = self.fetch_val(f"SELECT COUNT(*) FROM {schema}.coa;") or 0
+            existing_n = self.fetch_val(
+                f"SELECT COUNT(*) FROM {schema}.coa;",
+                cur=cur,
+            ) or 0
             if int(existing_n) > 0:
                 print(f"\n[COA-WRITE] insert_coa called but {schema}.coa already has {existing_n} rows @ {time.time()}")
                 print("".join(traceback.format_stack(limit=25)))
@@ -64121,7 +64124,8 @@ class DatabaseService:
             f"""
             SELECT code, template_code, template_code_scoped
             FROM {schema}.coa;
-            """
+            """,
+            cur=cur,
         ) or []
 
         for r in existing_rows:
