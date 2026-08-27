@@ -68058,7 +68058,7 @@ class DatabaseService:
             "uses_cogs": bool(profile.get("uses_cogs", False)),
         }
 
-
+    VAT_FILINGS_MIGRATION_VERSION = 1
     def ensure_company_vat_filings(
         self,
         company_id: int,
