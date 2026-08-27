@@ -1375,410 +1375,398 @@ def _emit_step(gen, step_key: str):
     label = dict(SIGNUP_STEPS).get(step_key, step_key.replace("_", " ").title() + "...")
     yield _sse("progress", {"step": step_key, "label": label})
 
+def generate():
+    while True:
+        yield ": keep-alive\n\n"  # SSE comment line as heartbeat
+        time.sleep(30)
+        
 
 @app.route("/api/auth/signup", methods=["POST"])
 def api_auth_signup():
     data = request.get_json(silent=True) or {}
 
-    # Extract variables from data
+    # Extract initial variables
     email = (data.get("email") or "").strip().lower()
     first_name = (data.get("firstName") or "").strip()
     last_name = (data.get("lastName") or "").strip()
     user_role = normalize_role(data.get("userRole"))
 
-    # Place the log here, after extracting data
+    # Log debug info
     current_app.logger.info(
         "SIGNUP DEBUG email=%r first_name=%r last_name=%r role=%r",
         email, first_name, last_name, user_role,
     )
 
     def generate():
-        # ----------------------------------------------------------
-        # EARLY VALIDATION  (before anything hits the DB)
-        # ----------------------------------------------------------
-        yield _emit_step(generate, "validating")
+        try:
+            # Step: Validation
+            yield from _emit_step(generate, "validating")
+            legal_consent = data.get("legalConsent") or {}
+            policy_version = str(legal_consent.get("policyVersion") or "1.0").strip()
 
-        legal_consent = data.get("legalConsent") or {}
-        policy_version = str(legal_consent.get("policyVersion") or "1.0").strip()
-
-        if not legal_consent.get("accepted"):
-            yield _sse("error", {
-                "status": 400,
-                "error": "You must accept the Terms of Use and Privacy Policy before registration."
-            })
-            return
-
-        owner_invite_email = (data.get("ownerInvite") or "").strip().lower() or None
-
-        organization_type = (
-            (data.get("organizationType") or data.get("organization_type") or "")
-            .strip().lower()
-        )
-
-        first_name = (data.get("firstName") or "").strip()
-        last_name  = (data.get("lastName") or "").strip()
-        user_role = normalize_role(data.get("userRole"))
-        email      = (data.get("email") or "").strip().lower()
-        password   = data.get("password") or ""
-        raw_user_type = (data.get("userType") or "Enterprise").strip().lower()
-        user_type = {"practitioner": "Practitioner", "school": "School"}.get(raw_user_type, "Enterprise")
-
-        if not email or not password or not first_name or not last_name or not user_role:
-            yield _sse("error", {
-                "status": 400,
-                "error": "Name, Role, Email, and Password are required"
-            })
-            return
-
-        confirm_token = secrets.token_urlsafe(32)
-        confirm_expires_at = datetime.now(timezone.utc) + timedelta(hours=48)
-
-        # ----------------------------------------------------------
-        # COMPANY PAYLOAD VALIDATION
-        # ----------------------------------------------------------
-        company_payload = data.get("company") or {}
-        company_name = (company_payload.get("companyName") or "").strip()
-        organization_type = (
-            company_payload.get("organizationType")
-            or company_payload.get("organisationType")
-            or ""
-        ).strip().lower()
-        requires_company = bool(company_name)
-
-        industry = None
-        sub_industry = None
-        industry_slug = None
-        sub_industry_slug = None
-
-        if requires_company:
-            yield _emit_step(generate, "validating_company")
-
-            ALLOWED_ORGANIZATION_TYPES = {
-                "private_company", "public_company", "sole_trader", "partnership",
-                "ngo", "npo", "trust", "cooperative", "body_corporate",
-                "club_association", "government_entity",
-                "public_school", "independent_school", "ecd_centre", "other",
-            }
-
-            if not organization_type:
+            # Check legal consent
+            if not legal_consent.get("accepted"):
                 yield _sse("error", {
                     "status": 400,
-                    "error": "Organisation type is required to create your company."
+                    "error": "You must accept the Terms of Use and Privacy Policy before registration."
                 })
                 return
 
-            if organization_type not in ALLOWED_ORGANIZATION_TYPES:
+            owner_invite_email = (data.get("ownerInvite") or "").strip().lower() or None
+
+            # Organization details
+            organization_type = (
+                (data.get("organizationType") or data.get("organization_type") or "")
+                .strip().lower()
+            )
+
+            # User info
+            first_name = (data.get("firstName") or "").strip()
+            last_name = (data.get("lastName") or "").strip()
+            email = (data.get("email") or "").strip().lower()
+            password = data.get("password") or ""
+            raw_user_type = (data.get("userType") or "Enterprise").strip().lower()
+            user_type = {"practitioner": "Practitioner", "school": "School"}.get(raw_user_type, "Enterprise")
+            user_role = normalize_role(data.get("userRole"))
+
+            # Basic validation
+            if not email or not password or not first_name or not last_name or not user_role:
                 yield _sse("error", {
                     "status": 400,
-                    "error": "Invalid organisation type selected.",
-                    "errors": {"organizationType": "Please choose a valid organisation type."}
+                    "error": "Name, Role, Email, and Password are required"
                 })
                 return
 
-            industry_raw = (company_payload.get("industry") or "").strip()
-            if not industry_raw:
-                yield _sse("error", {
-                    "status": 400,
-                    "error": "Industry is required to create your company."
-                })
-                return
+            # Generate confirmation token
+            confirm_token = secrets.token_urlsafe(32)
+            confirm_expires_at = datetime.now(timezone.utc) + timedelta(hours=48)
 
-            sub_industry_raw = (company_payload.get("subIndustry") or "").strip() or None
+            # Company validation
+            company_payload = data.get("company") or {}
+            company_name = (company_payload.get("companyName") or "").strip()
+            organization_type = (
+                company_payload.get("organizationType")
+                or company_payload.get("organisationType")
+                or ""
+            ).strip().lower()
+            requires_company = bool(company_name)
 
-            # Validate industry + sub-industry
-            yield _emit_step(generate, "matching_industry")
+            industry, sub_industry, industry_slug, sub_industry_slug = None, None, None, None
 
-            rows_ind = get_industry_template(industry_raw)
-            if not rows_ind:
-                yield _sse("error", {
-                    "status": 400,
-                    "error": f"Industry '{industry_raw}' not recognized. Please choose a valid industry."
-                })
-                return
+            if requires_company:
+                # Company validation
+                yield from _emit_step(generate, "validating_company")
+                ALLOWED_ORGANIZATION_TYPES = {
+                    "private_company", "public_company", "sole_trader", "partnership",
+                    "ngo", "npo", "trust", "cooperative", "body_corporate",
+                    "club_association", "government_entity",
+                    "public_school", "independent_school", "ecd_centre", "other",
+                }
 
-            if sub_industry_raw:
-                rows_sub = get_industry_template(industry_raw, sub_industry_raw)
-                if not rows_sub:
+                if not organization_type:
                     yield _sse("error", {
                         "status": 400,
-                        "error": f"Sub-industry '{sub_industry_raw}' is not valid for industry '{industry_raw}'."
+                        "error": "Organisation type is required to create your company."
                     })
                     return
 
-            industry, sub_industry, industry_slug, sub_industry_slug = normalize_industry_pair(
-                industry_raw, sub_industry_raw
-            )
-
-            ind_template = TEMPLATE_INDUSTRY_ALIASES.get((industry or "").strip().lower(), (industry or "").strip())
-            sub_key = canonical_subindustry_key(ind_template, sub_industry)
-            if sub_key:
-                sub_industry = sub_key
-                sub_industry_slug = slugify(sub_industry)
-
-        current_app.logger.info(
-            "SIGNUP DEBUG email=%r first_name=%r last_name=%r role=%r",
-            email, first_name, last_name, user_role,
-        )
-
-        # ----------------------------------------------------------
-        # CREATE USER
-        # ----------------------------------------------------------
-        yield _emit_step(generate, "creating_user")
-
-        try:
-            owner_id = db_service.insert_user(
-                email=email,
-                password_hash=generate_password_hash(password),
-                user_type=user_type,
-                first_name=first_name,
-                last_name=last_name,
-                user_role=user_role,
-                is_confirmed=False,
-                confirmation_token=confirm_token,
-                confirmation_token_expires_at=confirm_expires_at,
-                trial_start_date=str(date.today()),
-                trial_end_date=str(date.today() + timedelta(days=30)),
-                company_id=None,
-            )
-        except UniqueViolation as e:
-            constraint = getattr(getattr(e, "diag", None), "constraint_name", None)
-            detail = getattr(getattr(e, "diag", None), "message_detail", None)
-            current_app.logger.exception(
-                "Signup unique violation email=%s constraint=%s detail=%s",
-                email, constraint, detail,
-            )
-            if constraint == "users_email_key":
-                yield _sse("error", {
-                    "status": 409,
-                    "error": "A user with this email address already exists. Please sign in instead.",
-                    "constraint": constraint,
-                    "detail": detail,
-                })
-            else:
-                yield _sse("error", {
-                    "status": 409,
-                    "error": "Registration failed because a unique database value already exists.",
-                    "constraint": constraint,
-                    "detail": detail,
-                })
-            return
-        except Exception:
-            current_app.logger.exception("Signup failed")
-            yield _sse("error", {"status": 500, "error": "Internal server error during signup."})
-            return
-
-        if not owner_id:
-            yield _sse("error", {"status": 400, "error": "Registration failed"})
-            return
-
-        # ----------------------------------------------------------
-        # CREATE COMPANY + COA
-        # ----------------------------------------------------------
-        created_company_id = None
-
-        if requires_company:
-            try:
-                yield _emit_step(generate, "creating_company")
-
-                country        = (company_payload.get("country") or "").upper()
-                company_reg_no = (
-                    company_payload.get("companyRegNo")
-                    or company_payload.get("company_reg_no")
-                    or company_payload.get("regNo")
-                    or company_payload.get("registrationNumber")
-                )
-                company_reg_no = (company_reg_no or "").strip() or None
-                tin            = company_payload.get("tin")
-                vat            = company_payload.get("vat")
-                company_email  = company_payload.get("companyEmail") or email
-
-                organization_type = (
-                    company_payload.get("organizationType")
-                    or company_payload.get("organization_type")
-                    or ""
-                )
-                organization_type = str(organization_type).strip().lower()
-
-                validation_payload = {
-                    "country": country,
-                    "companyRegNo": company_reg_no,
-                    "organizationType": organization_type,
-                    "tin": tin,
-                    "vat": vat,
-                    "companyEmail": company_email,
-                }
-
-                ok, errors = validate_company_payload(validation_payload)
-                if not ok:
-                    try:
-                        db_service.delete_user(owner_id)
-                    except Exception:
-                        pass
-                    yield _sse("error", {"status": 400, "error": "Company validation failed", "errors": errors})
+                if organization_type not in ALLOWED_ORGANIZATION_TYPES:
+                    yield _sse("error", {
+                        "status": 400,
+                        "error": "Invalid organisation type selected.",
+                        "errors": {"organizationType": "Please choose a valid organisation type."}
+                    })
                     return
 
-                currency       = (company_payload.get("currency") or get_currency_for_country(country) or "USD")
-                fin_year_start = company_payload.get("finYearStart") or "01/01"
-                company_reg_raw = (company_payload.get("companyRegDate") or "").strip() or None
+                industry_raw = (company_payload.get("industry") or "").strip()
+                if not industry_raw:
+                    yield _sse("error", {
+                        "status": 400,
+                        "error": "Industry is required to create your company."
+                    })
+                    return
 
-                reg_date = None
-                if company_reg_raw:
-                    try:
-                        reg_date = date.fromisoformat(company_reg_raw)
-                    except ValueError:
-                        try:
-                            db_service.delete_user(owner_id)
-                        except Exception:
-                            pass
+                sub_industry_raw = (company_payload.get("subIndustry") or "").strip() or None
+
+                # Validate industry + sub-industry
+                # Industry matching
+                yield from _emit_step(generate, "matching_industry")
+                rows_ind = get_industry_template(industry_raw)
+                if not rows_ind:
+                    yield _sse("error", {
+                        "status": 400,
+                        "error": f"Industry '{industry_raw}' not recognized."
+                    })
+                    return
+
+                if sub_industry_raw:
+                    rows_sub = get_industry_template(industry_raw, sub_industry_raw)
+                    if not rows_sub:
                         yield _sse("error", {
                             "status": 400,
-                            "error": "Company validation failed",
-                            "errors": {"companyRegDate": "Registration date must be in YYYY-MM-DD format."}
+                            "error": f"Sub-industry '{sub_industry_raw}' invalid for industry '{industry_raw}'."
                         })
                         return
 
-                    if reg_date > date.today():
-                        try:
-                            db_service.delete_user(owner_id)
-                        except Exception:
-                            pass
-                        yield _sse("error", {
-                            "status": 400,
-                            "error": "Company validation failed",
-                            "errors": {"companyRegDate": "Registration date cannot be in the future."}
-                        })
-                        return
-
-                # JSONB addresses
-                reg_obj      = company_payload.get("registeredAddress")
-                post_obj     = company_payload.get("postalAddress")
-                postal_same  = bool(company_payload.get("postalSameAsReg") or False)
-
-                if postal_same and isinstance(reg_obj, dict) and not isinstance(post_obj, dict):
-                    post_obj = reg_obj
-
-                physical_address = format_address(reg_obj) if isinstance(reg_obj, dict) else None
-                postal_address   = format_address(post_obj) if isinstance(post_obj, dict) else None
-
-                place_id = None
-                lat = None
-                lng = None
-                if isinstance(reg_obj, dict):
-                    place_id = reg_obj.get("placeId") or None
-                    lat = reg_obj.get("lat")
-                    lng = reg_obj.get("lng")
-
-                company_phone = (
-                    company_payload.get("company_phone")
-                    or company_payload.get("companyPhone")
-                    or data.get("phone")
-                    or None
-                )
-                logo_url = (
-                    company_payload.get("logo_url")
-                    or company_payload.get("logoUrl")
-                    or None
+                industry, sub_industry, industry_slug, sub_industry_slug = normalize_industry_pair(
+                    industry_raw, sub_industry_raw
                 )
 
-                profile = get_industry_profile(industry, sub_industry)
+                ind_template = TEMPLATE_INDUSTRY_ALIASES.get((industry or "").strip().lower(), (industry or "").strip())
+                sub_key = canonical_subindustry_key(ind_template, sub_industry)
+                if sub_key:
+                    sub_industry = sub_key
+                    sub_industry_slug = slugify(sub_industry)
 
-                inventory_mode = (
-                    company_payload.get("inventory_mode")
-                    or profile.get("default_inventory_mode")
-                    or "none"
+            # Step: Create User
+            yield from _emit_step(generate, "creating_company")
+            try:
+                owner_id = db_service.insert_user(
+                    email=email,
+                    password_hash=generate_password_hash(password),
+                    user_type=user_type,
+                    first_name=first_name,
+                    last_name=last_name,
+                    user_role=user_role,
+                    is_confirmed=False,
+                    confirmation_token=confirm_token,
+                    confirmation_token_expires_at=confirm_expires_at,
+                    trial_start_date=str(date.today()),
+                    trial_end_date=str(date.today() + timedelta(days=30)),
+                    company_id=None,
                 )
-
-                inventory_valuation = (
-                    company_payload.get("inventory_valuation")
-                    or profile.get("default_valuation")
+            except UniqueViolation as e:
+                constraint = getattr(getattr(e, "diag", None), "constraint_name", None)
+                detail = getattr(getattr(e, "diag", None), "message_detail", None)
+                current_app.logger.exception(
+                    "Signup unique violation email=%s constraint=%s detail=%s",
+                    email, constraint, detail,
                 )
+                if constraint == "users_email_key":
+                    yield _sse("error", {
+                        "status": 409,
+                        "error": "A user with this email already exists. Please sign in.",
+                        "constraint": constraint,
+                        "detail": detail,
+                    })
+                else:
+                    yield _sse("error", {
+                        "status": 409,
+                        "error": "Registration failed: duplicate data.",
+                        "constraint": constraint,
+                        "detail": detail,
+                    })
+                return
+            except Exception:
+                current_app.logger.exception("Signup failed")
+                yield _sse("error", {"status": 500, "error": "Internal server error during signup."})
+                return
 
-                created_company_id = db_service.insert_company(
-                    name=company_name or "Company",
-                    organization_type=organization_type,
-                    client_code=company_payload.get("clientCode") or f"C{int(time.time())}",
-                    industry=industry,
-                    sub_industry=sub_industry,
-                    currency=currency,
-                    fin_year_start=fin_year_start,
-                    company_reg_date=reg_date,
-                    country=country,
-                    company_reg_no=company_reg_no,
-                    tin=tin,
-                    vat=vat,
-                    company_email=company_email,
-                    owner_user_id=owner_id,
-                    inventory_mode=inventory_mode,
-                    inventory_valuation=inventory_valuation,
-                    physical_address=physical_address,
-                    postal_address=postal_address,
-                    company_phone=company_phone,
-                    logo_url=logo_url,
-                    registered_address_json=reg_obj if isinstance(reg_obj, dict) else None,
-                    postal_address_json=post_obj if isinstance(post_obj, dict) else None,
-                    address_place_id=place_id,
-                    address_lat=str(lat) if lat is not None else None,
-                    address_lng=str(lng) if lng is not None else None,
-                )
+            if not owner_id:
+                yield _sse("error", {"status": 400, "error": "Registration failed"})
+                return
 
-                if not created_company_id:
-                    raise RuntimeError("insert_company returned no id")
-
-                # Update industry slugs
+            # --- Create Company & COA ---
+            created_company_id = None
+            if requires_company:
                 try:
+                    yield _emit_step(generate, "creating_company")
+                    # Insert company into DB
+                    country = (company_payload.get("country") or "").upper()
+                    company_reg_no = (
+                        company_payload.get("companyRegNo")
+                        or company_payload.get("company_reg_no")
+                        or company_payload.get("regNo")
+                        or company_payload.get("registrationNumber")
+                    )
+                    company_reg_no = (company_reg_no or "").strip() or None
+                    tin = company_payload.get("tin")
+                    vat = company_payload.get("vat")
+                    company_email = company_payload.get("companyEmail") or email
+
+                    organization_type = (
+                        company_payload.get("organizationType")
+                        or company_payload.get("organization_type")
+                        or ""
+                    )
+                    organization_type = str(organization_type).strip().lower()
+
+                    validation_payload = {
+                        "country": country,
+                        "companyRegNo": company_reg_no,
+                        "organizationType": organization_type,
+                        "tin": tin,
+                        "vat": vat,
+                        "companyEmail": company_email,
+                    }
+
+                    ok, errors = validate_company_payload(validation_payload)
+                    if not ok:
+                        try:
+                            db_service.delete_user(owner_id)
+                        except:
+                            pass
+                        yield _sse("error", {"status": 400, "error": "Company validation failed", "errors": errors})
+                        return
+
+                    currency = (company_payload.get("currency") or get_currency_for_country(country) or "USD")
+                    fin_year_start = company_payload.get("finYearStart") or "01/01"
+                    company_reg_raw = (company_payload.get("companyRegDate") or "").strip() or None
+
+                    reg_date = None
+                    if company_reg_raw:
+                        try:
+                            reg_date = date.fromisoformat(company_reg_raw)
+                        except ValueError:
+                            try:
+                                db_service.delete_user(owner_id)
+                            except:
+                                pass
+                            yield _sse("error", {
+                                "status": 400,
+                                "error": "Company validation failed",
+                                "errors": {"companyRegDate": "Must be YYYY-MM-DD"}
+                            })
+                            return
+                        if reg_date > date.today():
+                            try:
+                                db_service.delete_user(owner_id)
+                            except:
+                                pass
+                            yield _sse("error", {
+                                "status": 400,
+                                "error": "Company validation failed",
+                                "errors": {"companyRegDate": "Cannot be in future"}
+                            })
+                            return
+
+                    # Addresses
+                    reg_obj = company_payload.get("registeredAddress")
+                    post_obj = company_payload.get("postalAddress")
+                    postal_same = bool(company_payload.get("postalSameAsReg") or False)
+
+                    if postal_same and isinstance(reg_obj, dict) and not isinstance(post_obj, dict):
+                        post_obj = reg_obj
+
+                    physical_address = format_address(reg_obj) if isinstance(reg_obj, dict) else None
+                    postal_address = format_address(post_obj) if isinstance(post_obj, dict) else None
+
+                    place_id = None
+                    lat = None
+                    lng = None
+                    if isinstance(reg_obj, dict):
+                        place_id = reg_obj.get("placeId")
+                        lat = reg_obj.get("lat")
+                        lng = reg_obj.get("lng")
+
+                    company_phone = (
+                        company_payload.get("company_phone")
+                        or company_payload.get("companyPhone")
+                        or data.get("phone")
+                        or None
+                    )
+                    logo_url = (
+                        company_payload.get("logo_url")
+                        or company_payload.get("logoUrl")
+                        or None
+                    )
+
+                    profile = get_industry_profile(industry, sub_industry)
+                    inventory_mode = (
+                        company_payload.get("inventory_mode")
+                        or profile.get("default_inventory_mode")
+                        or "none"
+                    )
+                    inventory_valuation = (
+                        company_payload.get("inventory_valuation")
+                        or profile.get("default_valuation")
+                    )
+
+                    # Insert new company
+                    created_company_id = db_service.insert_company(
+                        name=company_name or "Company",
+                        organization_type=organization_type,
+                        client_code=company_payload.get("clientCode") or f"C{int(time.time())}",
+                        industry=industry,
+                        sub_industry=sub_industry,
+                        currency=currency,
+                        fin_year_start=fin_year_start,
+                        company_reg_date=reg_date,
+                        country=country,
+                        company_reg_no=company_reg_no,
+                        tin=tin,
+                        vat=vat,
+                        company_email=company_email,
+                        owner_user_id=owner_id,
+                        inventory_mode=inventory_mode,
+                        inventory_valuation=inventory_valuation,
+                        physical_address=physical_address,
+                        postal_address=postal_address,
+                        company_phone=company_phone,
+                        logo_url=logo_url,
+                        registered_address_json=reg_obj if isinstance(reg_obj, dict) else None,
+                        postal_address_json=post_obj if isinstance(post_obj, dict) else None,
+                        address_place_id=place_id,
+                        address_lat=str(lat) if lat is not None else None,
+                        address_lng=str(lng) if lng is not None else None,
+                    )
+
+                    if not created_company_id:
+                        raise RuntimeError("insert_company returned no id")
+
+                    # Update industry slugs
+                    try:
+                        db_service.execute_sql(
+                            """
+                            UPDATE public.companies
+                            SET industry_slug = %s,
+                                sub_industry_slug = %s
+                            WHERE id = %s;
+                            """,
+                            (industry_slug, sub_industry_slug, created_company_id),
+                        )
+                    except Exception as e:
+                        current_app.logger.warning(f"Industry slug update failed: {e}")
+
+                    # Bind user to company
+                    db_service.update_user(owner_id, company_id=created_company_id)
+
+                    # Ensure owner is a member
+                    try:
+                        db_service.execute_sql(
+                            """
+                            INSERT INTO public.company_users (company_id, user_id, role)
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT DO NOTHING;
+                            """,
+                            (created_company_id, owner_id, "owner")
+                        )
+                    except Exception as e:
+                        current_app.logger.warning(f"company_users insert failed: {e}")
+
+                    # Record policy acceptance
+                    user_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+                    user_agent = request.headers.get("User-Agent")
                     db_service.execute_sql(
                         """
-                        UPDATE public.companies
-                        SET industry_slug = %s,
-                            sub_industry_slug = %s
+                        UPDATE public.users
+                        SET accepted_terms_at = NOW(),
+                            accepted_privacy_at = NOW(),
+                            accepted_popia_at = NOW(),
+                            accepted_policy_version = %s
                         WHERE id = %s;
                         """,
-                        (industry_slug, sub_industry_slug, created_company_id),
-                    )
-                except Exception as e:
-                    current_app.logger.warning(f"Industry slug update failed: {e}")
-
-                # Bind user to company
-                db_service.update_user(owner_id, company_id=created_company_id)
-
-                # Ensure owner is a member
-                try:
-                    db_service.execute_sql(
-                        """
-                        INSERT INTO public.company_users (company_id, user_id, role)
-                        VALUES (%s, %s, %s)
-                        ON CONFLICT DO NOTHING;
-                        """,
-                        (created_company_id, owner_id, "owner")
-                    )
-                except Exception as e:
-                    current_app.logger.warning(f"company_users insert failed: {e}")
-
-                # Legal policy acceptance
-                user_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-                user_agent = request.headers.get("User-Agent")
-
-                db_service.execute_sql(
-                    """
-                    UPDATE public.users
-                    SET accepted_terms_at = NOW(),
-                        accepted_privacy_at = NOW(),
-                        accepted_popia_at = NOW(),
-                        accepted_policy_version = %s
-                    WHERE id = %s;
-                    """,
-                    (policy_version, owner_id),
-                )
-
-                for policy_type in ("terms_of_use", "privacy_policy", "popia_notice"):
-                    db_service.insert_policy_acceptance(
-                        owner_id, created_company_id,
-                        policy_type, policy_version,
-                        user_ip, user_agent
+                        (policy_version, owner_id),
                     )
 
-                # Owner invite
-                try:
+                    for policy_type in ("terms_of_use", "privacy_policy", "popia_notice"):
+                        db_service.insert_policy_acceptance(
+                            owner_id, created_company_id,
+                            policy_type, policy_version,
+                            user_ip, user_agent
+                        )
+
+                    # Invite Owner if needed
                     if owner_invite_email and (user_role or "").strip().lower() != "owner":
                         token = _create_invite_token(
                             email=owner_invite_email,
@@ -1787,120 +1775,103 @@ def api_auth_signup():
                             company_id=created_company_id,
                         )
                         invite_link = f"{FRONTEND_BASE}/accept-invite.html?token={token}"
-
                         subject = f"You've been invited as Owner of {company_name} on FinSage"
                         html = f"""
                         <div style="font-family:system-ui,Segoe UI,Arial;line-height:1.5">
                             <h2>Owner Invitation: {company_name}</h2>
                             <p>You have been invited to join <b>{company_name}</b> as the <b>Owner</b>.</p>
-                            <p><a href="{invite_link}" style="background:#00C8C8;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;display:inline-block">
-                            Accept invite
-                            </a></p>
+                            <p><a href="{invite_link}" style="background:#00C8C8;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;display:inline-block">Accept invite</a></p>
                             <p>If the button doesn't work, copy & paste this link:</p>
                             <p><code>{invite_link}</code></p>
                         </div>
                         """
                         text = f"Owner invite for {company_name}. Accept: {invite_link}"
-
                         send_mail(to_email=owner_invite_email, subject=subject, html_body=html, text_body=text)
-                except Exception as e:
-                    current_app.logger.warning(
-                        "Owner invite failed email=%s company_id=%s err=%s",
-                        owner_invite_email, created_company_id, e
+
+                    # Seed Chart of Accounts
+                    yield from _emit_step(generate, "seeding_accounts")
+                    company_info = db_service.fetch_one(
+                        """
+                        SELECT industry_slug, sub_industry_slug, industry, sub_industry
+                        FROM public.companies WHERE id=%s
+                        """,
+                        (created_company_id,)
+                    ) or {}
+                    ind_slug = (company_info.get("industry_slug") or "").strip() or slugify(company_info.get("industry")) or ""
+                    sub_slug = (company_info.get("sub_industry_slug") or "").strip() or slugify(company_info.get("sub_industry"))
+
+                    seed_company_coa_once(
+                        db_service,
+                        company_id=created_company_id,
+                        industry=ind_slug,
+                        sub_industry=sub_slug,
+                        source="pool",
                     )
 
-                # ------------------------------------------------------
-                # SEED CHART OF ACCOUNTS
-                # ------------------------------------------------------
-                yield _emit_step(generate, "seeding_accounts")
-
-                company = db_service.fetch_one(
-                    """
-                    SELECT industry_slug, sub_industry_slug, industry, sub_industry
-                    FROM public.companies
-                    WHERE id=%s
-                    """,
-                    (created_company_id,)
-                ) or {}
-
-                ind_slug = (company.get("industry_slug") or "").strip() or slugify(company.get("industry")) or ""
-                sub_slug = (company.get("sub_industry_slug") or "").strip() or slugify(company.get("sub_industry"))
-
-                seed_company_coa_once(
-                    db_service,
-                    company_id=created_company_id,
-                    industry=ind_slug,
-                    sub_industry=sub_slug,
-                    source="pool",
-                )
-
-                # Branding sync
-                try:
-                    db_service.upsert_company_branding(created_company_id, {
-                        "logo_url": logo_url,
-                        "contact_phone": company_phone,
-                        "contact_email": company_email,
-                        "address": physical_address or postal_address,
-                        "vat_no": vat,
-                        "website": company_payload.get("website") or None,
-                    })
-                except Exception as e:
-                    current_app.logger.warning(f"Branding upsert failed: {e}")
-
-            except Exception:
-                current_app.logger.exception("Error creating company + COA during signup")
-                try:
-                    db_service.delete_user(owner_id)
+                    # Sync branding
+                    try:
+                        db_service.upsert_company_branding(created_company_id, {
+                            "logo_url": logo_url,
+                            "contact_phone": company_phone,
+                            "contact_email": company_email,
+                            "address": physical_address or postal_address,
+                            "vat_no": vat,
+                            "website": company_payload.get("website") or None,
+                        })
+                    except:
+                        current_app.logger.warning("Branding sync failed.")
                 except Exception:
-                    pass
-                yield _sse("error", {"status": 500, "error": "Failed to create company during signup."})
-                return
+                    current_app.logger.exception("Error creating company + COA during signup")
+                    try:
+                        db_service.delete_user(owner_id)
+                    except:
+                        pass
+                    yield _sse("error", {"status": 500, "error": "Failed to create company during signup."})
+                    return
 
-        # ----------------------------------------------------------
-        # SEND CONFIRMATION EMAIL
-        # ----------------------------------------------------------
-        yield _emit_step(generate, "sending_email")
+            # Step: Send confirmation email
+            yield from _emit_step(generate, "sending_email")
+            confirm_link = f"{FRONTEND_BASE}/confirm.html?token={confirm_token}"
+            subject = "Confirm your FinSage account"
+            html_body = f"<p>Welcome {first_name}, please confirm your account: <a href='{confirm_link}'>Confirm</a></p>"
+            text_body = f"Welcome {first_name}, confirm your account: {confirm_link}"
+            email_sent = True
+            try:
+                send_mail(to_email=email, subject=subject, html_body=html_body, text_body=text_body)
+                current_app.logger.info("[AUTH] Email sent to %s", email)
+            except:
+                email_sent = False
+                current_app.logger.warning("[AUTH] Email send failed for %s", email)
 
-        link = f"{FRONTEND_BASE}/confirm.html?token={confirm_token}"
-        subject = "Confirm your FinSage account"
-        html = f"<p>Welcome {first_name}, confirm your account: <a href='{link}'>Confirm</a></p>"
-        text = f"Welcome {first_name}, confirm your account: {link}"
+            # Final response
+            yield from _emit_step(generate, "finalizing")
+            yield _sse("result", {
+                "status": 201,
+                "success": True,
+                "message": "Registration successful.",
+                "status_text": "confirmation_pending" if email_sent else "confirmation_email_failed",
+                "user_email": email,
+                "owner_id": owner_id,
+                "company_id": created_company_id,
+                "confirm_expires_hours": 48,
+                "email_sent": email_sent,
+            })
 
-        email_sent = True
-        try:
-            send_mail(to_email=email, subject=subject, html_body=html, text_body=text)
-            current_app.logger.info("[AUTH] EMAIL SENT OK for %s", email)
+        except GeneratorExit:
+            current_app.logger.info("Client disconnected.")
         except Exception as e:
-            email_sent = False
-            current_app.logger.warning("[AUTH] EMAIL SEND FAILED for %s: %s", email, e)
-
-        # ----------------------------------------------------------
-        # FINALIZE
-        # ----------------------------------------------------------
-        yield _emit_step(generate, "finalizing")
-
-        yield _sse("result", {
-            "status": 201,
-            "success": True,
-            "message": "Registration successful.",
-            "status_text": "confirmation_pending" if email_sent else "confirmation_email_failed",
-            "user_email": email,
-            "owner_id": owner_id,
-            "company_id": created_company_id,
-            "confirm_expires_hours": 48,
-            "email_sent": email_sent,
-        })
+            current_app.logger.exception("Unexpected error: %s", e)
+            yield _sse("error", {"error": "Internal server error."})
 
     return Response(
-        generate(), 
+        generate(),
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "Transfer-Encoding": "chunked",
-            "X-Accel-Buffering": "no"  # This stops Nginx/cPanel from dropping the stream!
+            "Content-Type": "text/event-stream",
+            "X-Accel-Buffering": "no"
         }
     )
-
 
 @app.route("/api/<path:_path>", methods=["OPTIONS"])
 def api_options(_path):

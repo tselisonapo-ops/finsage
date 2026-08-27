@@ -1694,6 +1694,7 @@ function readSSEStream(response, onProgress) {
   var decoder = new TextDecoder();
   var buffer = "";
   var aborted = false;
+  var terminalReceived = false;
 
   // Safety timeout — 90s with no data = fail
   var timeoutId = setTimeout(function () {
@@ -1719,13 +1720,18 @@ function readSSEStream(response, onProgress) {
 
       reader.read().then(function (chunk) {
         if (chunk.done) {
-          cleanupTimeout();
-          resolve({
-            status: 502,
-            success: false,
-            error: "Connection closed unexpectedly. Please check your internet and try again."
-          });
-          return;
+            cleanupTimeout();
+
+            if (terminalReceived) {
+                return;
+            }
+
+            resolve({
+                status: 502,
+                success: false,
+                error: "Connection closed unexpectedly. Please check your internet and try again."
+            });
+            return;
         }
 
         // Got data — reset the idle timeout
@@ -1767,15 +1773,19 @@ function readSSEStream(response, onProgress) {
           }
 
           if (eventType === "progress" && onProgress) {
-            onProgress(data.step, data.label);
+              onProgress(data.step, data.label);
+
           } else if (eventType === "result") {
-            cleanupTimeout();
-            resolve(data);
-            return;
+              terminalReceived = true;
+              cleanupTimeout();
+              resolve(data);
+              return;
+
           } else if (eventType === "error") {
-            cleanupTimeout();
-            resolve(data);
-            return;
+              terminalReceived = true;
+              cleanupTimeout();
+              resolve(data);
+              return;
           }
         }
 
