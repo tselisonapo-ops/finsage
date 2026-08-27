@@ -1380,6 +1380,13 @@ def _emit_step(gen, step_key: str):
 def api_auth_signup():
     data = request.get_json(silent=True) or {}
 
+    # Extract variables from data
+    email = (data.get("email") or "").strip().lower()
+    first_name = (data.get("firstName") or "").strip()
+    last_name = (data.get("lastName") or "").strip()
+    user_role = normalize_role(data.get("userRole"))
+
+    # Place the log here, after extracting data
     current_app.logger.info(
         "SIGNUP DEBUG email=%r first_name=%r last_name=%r role=%r",
         email, first_name, last_name, user_role,
