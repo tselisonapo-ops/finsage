@@ -9644,7 +9644,7 @@ class DatabaseService:
             ON CONFLICT (code) DO NOTHING;
         """
 
-         def _run(c):
+        def _run(c):
             print(
                 f"[CTRL] start ensure_mandatory_company_accounts "
                 f"company={company_id}"
