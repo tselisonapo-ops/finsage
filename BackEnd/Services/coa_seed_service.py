@@ -7,42 +7,68 @@ from BackEnd.Services.coa_pool_sync import sync_company_coa_from_pool
 
 MANDATORY_TEMPLATE_CODES = {"1410", "2310", "2105", "9002"}
 
-def _coa_is_seeded(db_service, company_id: int) -> bool:
+def _coa_is_seeded(
+    db_service,
+    company_id: int,
+    *,
+    cur=None,
+) -> bool:
+
     schema = f"company_{company_id}"
 
     row = db_service.fetch_one(
         f"""
         SELECT
-          COUNT(*) FILTER (
-            WHERE (
-              (template_code IS NOT NULL AND btrim(template_code) <> '')
-              OR
-              (template_code_scoped IS NOT NULL AND btrim(template_code_scoped) <> '')
-            )
-            -- ✅ exclude “controls” properly:
-            AND COALESCE(role,'') <> 'control'
-            AND COALESCE(posting, TRUE) = TRUE
-          ) AS n_template_posting,
+            COUNT(*) FILTER (
+                WHERE (
+                    (
+                        template_code IS NOT NULL
+                        AND btrim(template_code) <> ''
+                    )
+                    OR
+                    (
+                        template_code_scoped IS NOT NULL
+                        AND btrim(template_code_scoped) <> ''
+                    )
+                )
+                AND COALESCE(role, '') <> 'control'
+                AND COALESCE(posting, TRUE) = TRUE
+            ) AS n_template_posting,
 
-          COUNT(*) FILTER (
-            WHERE COALESCE(role,'') = 'control'
-               OR COALESCE(posting, TRUE) = FALSE
-          ) AS n_controls,
+            COUNT(*) FILTER (
+                WHERE COALESCE(role, '') = 'control'
+                   OR COALESCE(posting, TRUE) = FALSE
+            ) AS n_controls,
 
-          COUNT(*) AS n_total
+            COUNT(*) AS n_total
+
         FROM {schema}.coa
         """,
         (),
+        cur=cur,
     ) or {}
 
-    n_template_posting = int(row.get("n_template_posting") or 0)
-    n_controls = int(row.get("n_controls") or 0)
-    n_total = int(row.get("n_total") or 0)
+    n_template_posting = int(
+        row.get("n_template_posting") or 0
+    )
 
-    print(f"[SEED-CHECK] company={company_id} total={n_total} template_posting={n_template_posting} controls={n_controls}")
+    n_controls = int(
+        row.get("n_controls") or 0
+    )
 
-    # choose threshold you expect from a full industry template
+    n_total = int(
+        row.get("n_total") or 0
+    )
+
+    print(
+        f"[SEED-CHECK] company={company_id} "
+        f"total={n_total} "
+        f"template_posting={n_template_posting} "
+        f"controls={n_controls}"
+    )
+
     return n_template_posting >= 50
+
 
 ORG_EQUITY_REQUIRED = {
     "private_company": {
@@ -167,54 +193,129 @@ def seed_company_coa_once(
     industry: str,
     sub_industry: Optional[str],
     source: str = "pool",
+    cur=None,
+    conn=None,
 ) -> dict:
+
     print(f"[SEED] start company={company_id} source={source!r}")
 
-    db_service.ensure_company_schema(company_id)
-    db_service.ensure_company_coa_table(company_id)
-    db_service.initialize_public_schema()
-    db_service.ensure_company_account_settings(company_id)
+    # ---------------------------------------------------------
+    # IMPORTANT:
+    # If cur/conn are supplied, we are already inside the
+    # caller's transaction.
+    #
+    # Do NOT commit here.
+    # Do NOT open a new connection here.
+    # ---------------------------------------------------------
 
-    already_seeded = _coa_is_seeded(db_service, company_id)
-    print(f"[SEED] already_seeded={already_seeded} (company={company_id})")
+    db_service.ensure_company_schema(
+        company_id,
+        cur=cur,
+        conn=conn,
+    )
+
+    db_service.ensure_company_coa_table(
+        company_id,
+        cur=cur,
+        conn=conn,
+    )
+
+    db_service.initialize_public_schema(
+        cur=cur,
+        conn=conn,
+    )
+
+    db_service.ensure_company_account_settings(
+        company_id,
+        cur=cur,
+        conn=conn,
+    )
+
+    already_seeded = _coa_is_seeded(
+        db_service,
+        company_id,
+        cur=cur,
+    )
+
+    print(
+        f"[SEED] already_seeded={already_seeded} "
+        f"(company={company_id})"
+    )
 
     inserted = 0
     source_used = None
+
     src = (source or "pool").strip().lower()
 
     if src != "pool":
-        raise ValueError("Seeding is configured to use pool only (source must be 'pool').")
+        raise ValueError(
+            "Seeding is configured to use pool only "
+            "(source must be 'pool')."
+        )
+
+    # ---------------------------------------------------------
+    # SEED COA
+    # ---------------------------------------------------------
 
     if not already_seeded:
+
         print("[SEED] calling sync_company_coa_from_pool() ...")
 
         row = db_service.fetch_one(
             """
-            SELECT industry, sub_industry, industry_slug, sub_industry_slug, organization_type
+            SELECT
+                industry,
+                sub_industry,
+                industry_slug,
+                sub_industry_slug,
+                organization_type
             FROM public.companies
             WHERE id = %s
             """,
             (company_id,),
+            cur=cur,
         ) or {}
 
-        industry_display = (row.get("industry") or "").strip() or None
+        industry_display = (
+            (row.get("industry") or "").strip()
+            or None
+        )
+
         industry_slug = (
             (row.get("industry_slug") or "").strip()
-            or (slugify(industry_display) if industry_display else None)
+            or (
+                slugify(industry_display)
+                if industry_display
+                else None
+            )
             or slugify(industry)
         )
 
-        sub_display = (row.get("sub_industry") or "").strip() or None
+        sub_display = (
+            (row.get("sub_industry") or "").strip()
+            or None
+        )
+
         sub_slug = (
             (row.get("sub_industry_slug") or "").strip()
-            or (slugify(sub_display) if sub_display else None)
-            or (slugify(sub_industry) if sub_industry else None)
+            or (
+                slugify(sub_display)
+                if sub_display
+                else None
+            )
+            or (
+                slugify(sub_industry)
+                if sub_industry
+                else None
+            )
         )
 
         print(
             f"[SEED] resolved slugs company={company_id} "
-            f"industry_slug={industry_slug!r} sub_slug={sub_slug!r} "
-            f"industry_display={industry_display!r} sub_display={sub_display!r}"
+            f"industry_slug={industry_slug!r} "
+            f"sub_slug={sub_slug!r} "
+            f"industry_display={industry_display!r} "
+            f"sub_display={sub_display!r}"
         )
 
         inserted = sync_company_coa_from_pool(
@@ -224,56 +325,169 @@ def seed_company_coa_once(
             sub_industry=sub_slug,
             industry_display=industry_display,
             sub_industry_display=sub_display,
+            cur=cur,
+            conn=conn,
         )
 
         print(f"[SEED] pool inserted={inserted}")
 
-        organization_type = (row.get("organization_type") or "private_company").strip().lower()
+        organization_type = (
+            row.get("organization_type")
+            or "private_company"
+        ).strip().lower()
 
         apply_organization_equity_accounts(
             db_service,
             company_id=company_id,
             organization_type=organization_type,
+            cur=cur,
+            conn=conn,
         )
+
         if inserted > 0:
             source_used = "pool"
+
         else:
-            print("[SEED] pool returned 0, falling back to template build ...")
-            rows = build_coa_flat(industry, sub_industry)
+            print(
+                "[SEED] pool returned 0, "
+                "falling back to template build ..."
+            )
+
+            rows = build_coa_flat(
+                industry,
+                sub_industry,
+            )
+
             if rows:
-                inserted = db_service.insert_coa(company_id, rows)
+
+                inserted = db_service.insert_coa(
+                    company_id,
+                    rows,
+                    cur=cur,
+                    conn=conn,
+                )
+
                 source_used = "template"
-                print(f"[SEED] template inserted={inserted}")
+
+                print(
+                    f"[SEED] template inserted={inserted}"
+                )
+
             else:
                 source_used = "none"
-                print("[SEED] template fallback produced no rows")
 
-       # assert_reserved_control_integrity(db_service, company_id)
+                print(
+                    "[SEED] template fallback "
+                    "produced no rows"
+                )
+
     else:
-        print("[SEED] skipping pool seed (already seeded)")
+
+        print(
+            "[SEED] skipping pool seed "
+            "(already seeded)"
+        )
+
         source_used = "existing"
 
+    # ---------------------------------------------------------
+    # MANDATORY ACCOUNTS
+    # ---------------------------------------------------------
+
     print("[SEED] enforcing mandatory controls...")
-    db_service.ensure_mandatory_company_accounts(company_id)
-    print("[SEED] mandatory controls enforced")
 
-    if hasattr(db_service, "ensure_required_control_accounts"):
-        print("[SEED] enforcing required control accounts...")
-        db_service.ensure_required_control_accounts(company_id)
-        print("[SEED] required control accounts enforced")
+    db_service.ensure_mandatory_company_accounts(
+        company_id,
+        cur=cur,
+        conn=conn,
+    )
 
-    assert_reserved_control_integrity(db_service, company_id)
+    print(
+        "[SEED] mandatory controls enforced"
+    )
 
-    print("[SEED] applying account settings defaults...")
-    db_service.ensure_company_account_settings_defaults(company_id)
-    print("[SEED] account settings defaults applied")
+    # ---------------------------------------------------------
+    # REQUIRED CONTROL ACCOUNTS
+    # ---------------------------------------------------------
+
+    if hasattr(
+        db_service,
+        "ensure_required_control_accounts"
+    ):
+
+        print(
+            "[SEED] enforcing required control accounts..."
+        )
+
+        db_service.ensure_required_control_accounts(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
+
+        print(
+            "[SEED] required control accounts enforced"
+        )
+
+    # ---------------------------------------------------------
+    # INTEGRITY
+    # ---------------------------------------------------------
+
+    assert_reserved_control_integrity(
+        db_service,
+        company_id,
+        cur=cur,
+    )
+
+    # ---------------------------------------------------------
+    # ACCOUNT SETTINGS
+    # ---------------------------------------------------------
+
+    print(
+        "[SEED] applying account settings defaults..."
+    )
+
+    db_service.ensure_company_account_settings_defaults(
+        company_id,
+        cur=cur,
+        conn=conn,
+    )
+
+    print(
+        "[SEED] account settings defaults applied"
+    )
+
+    # ---------------------------------------------------------
+    # COMPANY DEFAULTS
+    # ---------------------------------------------------------
 
     print("[SEED] setup company defaults...")
-    db_service.setup_company_defaults(company_id)
-    print("[SEED] company defaults done")
-    assert_reserved_control_integrity(db_service, company_id)
 
-    final_seeded = _coa_is_seeded(db_service, company_id)
+    db_service.setup_company_defaults(
+        company_id,
+        cur=cur,
+        conn=conn,
+    )
+
+    print(
+        "[SEED] company defaults done"
+    )
+
+    assert_reserved_control_integrity(
+        db_service,
+        company_id,
+        cur=cur,
+    )
+
+    # ---------------------------------------------------------
+    # FINAL CHECK
+    # ---------------------------------------------------------
+
+    final_seeded = _coa_is_seeded(
+        db_service,
+        company_id,
+        cur=cur,
+    )
 
     out = {
         "seeded": final_seeded,
@@ -287,11 +501,10 @@ def seed_company_coa_once(
             else None
         ),
     }
+
     print(f"[SEED] done -> {out}")
+
     return out
-
-
-
 
 def assert_reserved_control_integrity(db_service, company_id: int) -> None:
     schema = f"company_{company_id}"

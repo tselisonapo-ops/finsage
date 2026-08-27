@@ -1224,16 +1224,42 @@ class DatabaseService:
     @contextmanager
     def transaction(self):
         conn = self.pool.getconn()
+
         try:
+            if conn.closed:
+                self.pool.putconn(conn, close=True)
+                conn = psycopg2.connect(self.dsn)
+
             conn.autocommit = False
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+
+            with conn.cursor(
+                cursor_factory=psycopg2.extras.RealDictCursor
+            ) as cur:
+
+                cur.execute("SET LOCAL lock_timeout = '5s';")
+                cur.execute("SET LOCAL statement_timeout = '60s';")
+
                 yield conn, cur
+
             conn.commit()
+
         except Exception:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             raise
+
         finally:
-            self.pool.putconn(conn)
+            if conn is not None:
+                try:
+                    if conn.closed:
+                        self.pool.putconn(conn, close=True)
+                    else:
+                        self.pool.putconn(conn)
+                except Exception:
+                    pass
+
 
     @contextmanager
     def _conn_cursor(self, *, ddl: bool = False):
@@ -7447,17 +7473,38 @@ class DatabaseService:
         policy_type,
         policy_version,
         ip_address=None,
-        user_agent=None
+        user_agent=None,
+        *,
+        cur=None,
+        conn=None,
     ):
         return self.execute_sql(
             """
             INSERT INTO public.legal_policy_acceptances
-                (user_id, company_id, policy_type, policy_version, ip_address, user_agent)
+                (
+                    user_id,
+                    company_id,
+                    policy_type,
+                    policy_version,
+                    ip_address,
+                    user_agent
+                )
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            (user_id, company_id, policy_type, policy_version, ip_address, user_agent),
+            (
+                user_id,
+                company_id,
+                policy_type,
+                policy_version,
+                ip_address,
+                user_agent,
+            ),
+            cur=cur,
+            conn=conn,
+            commit=False if cur is not None else True,
         )
+
 
     def create_company_relationship(
         self,
@@ -7756,34 +7803,102 @@ class DatabaseService:
         trial_start_date: Optional[Union[str, date]],
         trial_end_date: Optional[Union[str, date]],
         company_id: Optional[int] = None,
-        confirmation_token_expires_at: Optional[datetime] = None,  # ✅ NEW
+        confirmation_token_expires_at: Optional[datetime] = None,
+        *,
+        cur=None,
+        conn=None,
     ) -> Optional[int]:
+
         if user_type == "Practitioner":
             access_level = "PRACTITIONER_ADMIN"
         elif user_type == "School":
-            access_level = "SCHOOL_ADMIN"    # ⚠ only if users.access_level is free-text VARCHAR
+            access_level = "SCHOOL_ADMIN"
         else:
             access_level = "ADMIN"
-            
+
         sql = """
-        INSERT INTO public.users
-            (email, password_hash, user_type, first_name, last_name, user_role,
-            is_confirmed, confirmation_token, confirmation_token_expires_at,
-            trial_start_date, trial_end_date, company_id, access_level)
-        VALUES
-            (%s, %s, %s, %s, %s, %s,
-            %s, %s, %s,
-            %s, %s, %s, %s)
-        RETURNING id;
+            INSERT INTO public.users
+            (
+                email,
+                password_hash,
+                user_type,
+                first_name,
+                last_name,
+                user_role,
+                is_confirmed,
+                confirmation_token,
+                confirmation_token_expires_at,
+                trial_start_date,
+                trial_end_date,
+                company_id,
+                access_level
+            )
+            VALUES
+            (
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s, %s
+            )
+            RETURNING id;
         """
 
         params = (
-            email, password_hash, user_type, first_name, last_name, user_role,
-            is_confirmed, confirmation_token, confirmation_token_expires_at,
-            trial_start_date, trial_end_date, company_id, access_level
+            email,
+            password_hash,
+            user_type,
+            first_name,
+            last_name,
+            user_role,
+            is_confirmed,
+            confirmation_token,
+            confirmation_token_expires_at,
+            trial_start_date,
+            trial_end_date,
+            company_id,
+            access_level,
         )
 
-        return self.execute_sql(sql, params)
+        # Existing transaction
+        if cur is not None:
+            cur.execute(sql, params)
+
+            row = cur.fetchone()
+
+            if not row:
+                return None
+
+            return int(row["id"])
+
+        # Connection supplied
+        if conn is not None:
+            with conn.cursor(
+                cursor_factory=psycopg2.extras.RealDictCursor
+            ) as local_cur:
+
+                local_cur.execute(sql, params)
+
+                row = local_cur.fetchone()
+
+                if not row:
+                    return None
+
+                user_id = int(row["id"])
+
+            conn.commit()
+
+            return user_id
+
+        # Standalone operation
+        with self.transaction() as (tx_conn, tx_cur):
+
+            tx_cur.execute(sql, params)
+
+            row = tx_cur.fetchone()
+
+            if not row:
+                return None
+
+            return int(row["id"])
 
     def set_company_owner(self, company_id: int, owner_user_id: int) -> None:
         self.execute_sql(
@@ -7795,22 +7910,58 @@ class DatabaseService:
             (owner_user_id, company_id),
         )
 
-    def update_user(self, user_id: int, **kwargs: Any) -> bool:
+    def update_user(
+        self,
+        user_id: int,
+        *,
+        cur=None,
+        conn=None,
+        **kwargs: Any,
+    ) -> bool:
+
         if not kwargs:
             return True
-        set_clauses = [f"{k} = %s" for k in kwargs.keys()]
+
+        set_clauses = [
+            f"{k} = %s"
+            for k in kwargs.keys()
+        ]
+
         sql = f"""
-        UPDATE public.users SET {', '.join(set_clauses)}
-        WHERE id = %s;
+            UPDATE public.users
+            SET {', '.join(set_clauses)}
+            WHERE id = %s;
         """
+
         params = tuple(kwargs.values()) + (user_id,)
+
+        # Existing transaction
+        if cur is not None:
+            cur.execute(sql, params)
+            return cur.rowcount > 0
+
+        # Connection supplied
+        if conn is not None:
+            with conn.cursor() as local_cur:
+                local_cur.execute(sql, params)
+                changed = local_cur.rowcount > 0
+
+            conn.commit()
+
+            return changed
+
+        # Standalone
         try:
-            with self._conn_cursor() as (_c, cur):
-                cur.execute(sql, params)
-                return cur.rowcount > 0
+            with self.transaction() as (tx_conn, tx_cur):
+                tx_cur.execute(sql, params)
+                return tx_cur.rowcount > 0
+
         except Exception as e:
-            print(f"Error updating user {user_id}: {e}")
+            print(
+                f"Error updating user {user_id}: {e}"
+            )
             return False
+
 
     def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
         sql = """
@@ -8169,7 +8320,13 @@ class DatabaseService:
             # RealDictCursor -> rows are dicts like {"id": 6}
             return [int(r["id"]) for r in rows if r and r.get("id") is not None]
 
-    def ensure_company_account_settings(self, company_id: int) -> None:
+    def ensure_company_account_settings(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ) -> None:
 
         cash_bank_def   = REQUIRED_CONTROL_TEMPLATES["1000"]["code"]
         ar_default      = REQUIRED_CONTROL_TEMPLATES["9002"]["code"]  # BS_CA_9002
@@ -8310,7 +8467,17 @@ class DatabaseService:
             "lease_bank_account_code": cash_bank_def,
         }
 
-        self.execute_sql(sql, params)
+        if cur is not None:
+            self.execute_sql(
+                sql,
+                params,
+                cur=cur,
+                conn=conn,
+                commit=False,
+            )
+        else:
+            self.execute_sql(sql, params)
+
 
 
     def get_company_account_settings(self, company_id: int, cur=None) -> dict:
@@ -10050,125 +10217,364 @@ class DatabaseService:
         created_via: Optional[str] = None,
         source_customer_company_id: Optional[int] = None,
         provisioning_context: Optional[str] = None,
+        *,
+        cur=None,
+        conn=None,
     ) -> int:
+        """
+        Create a company and optionally its owner membership.
 
+        Transaction behavior:
+        ----------------------
+        If `cur` and `conn` are supplied:
+            - Uses the caller's transaction.
+            - DOES NOT commit.
+            - Any exception propagates to the caller so the caller can rollback.
+
+        If `cur` and `conn` are not supplied:
+            - Creates its own transaction.
+            - Commits on success.
+            - Rolls back on failure.
+
+        This allows signup to perform:
+            user -> company -> membership -> COA -> policies -> branding
+        as one atomic transaction.
+        """
+
+        # ---------------------------------------------------------
+        # Normalise industry
+        # ---------------------------------------------------------
         try:
             if industry_slug is None or sub_industry_slug is None:
-                ind_norm, sub_norm, ind_slug, sub_slug = normalize_industry_pair(industry, sub_industry)
+                ind_norm, sub_norm, ind_slug, sub_slug = normalize_industry_pair(
+                    industry,
+                    sub_industry,
+                )
 
                 if not industry:
                     industry = ind_norm
+
                 if not sub_industry:
                     sub_industry = sub_norm
 
                 industry_slug = industry_slug or ind_slug
                 sub_industry_slug = sub_industry_slug or sub_slug
+
         except Exception:
+            # Preserve existing behavior.
             pass
 
+        # ---------------------------------------------------------
+        # Entity kind
+        # ---------------------------------------------------------
         entity_kind = (entity_kind or "company").strip().lower()
+
         if entity_kind not in {"company", "branch_entity"}:
             entity_kind = "company"
 
-        membership_kind = (membership_kind or ("primary" if make_primary_membership else "secondary")).strip().lower()
+        # ---------------------------------------------------------
+        # Membership kind
+        # ---------------------------------------------------------
+        membership_kind = (
+            membership_kind
+            or ("primary" if make_primary_membership else "secondary")
+        ).strip().lower()
+
         if membership_kind not in {"primary", "secondary"}:
             membership_kind = "secondary"
 
-        profile = get_industry_profile(industry, sub_industry)
-
-        if not inventory_mode:
-            inventory_mode = profile.get("default_inventory_mode") or "none"
-
-        if inventory_valuation is None:
-            inventory_valuation = profile.get("default_valuation")
-
-        default_pnl_layout = profile.get("pnl_layout") or choose_layout("pnl", profile)
-        pnl_labels_json = Json(profile.get("pnl_labels") or {})
-
-        if physical_address is None:
-            physical_address = self._addr_to_text(registered_address_json)
-        if postal_address is None:
-            postal_address = self._addr_to_text(postal_address_json)
-
-        reg_json = Json(registered_address_json) if registered_address_json is not None else None
-        post_json = Json(postal_address_json) if postal_address_json is not None else None
-
-        created_via = (created_via or "").strip().lower() or None
-        if created_via not in {None, "self_signup", "firm_client_provisioning", "related_company", "admin", "migration", "import"}:
-            created_via = None
-
-        provisioning_context = (provisioning_context or "").strip() or None
-        organization_type = (organization_type or "private_company").strip().lower()
-
-        base_slug=_company_slug(name)
-
-        existing=self.fetch_one("""
-            SELECT id
-            FROM public.companies
-            WHERE slug=%s
-            LIMIT 1;
-        """,(base_slug,))
-
-        company_slug=(
-            f"{base_slug}-{uuid.uuid4().hex[:6]}"
-            if existing
-            else base_slug
+        # ---------------------------------------------------------
+        # Industry profile
+        # ---------------------------------------------------------
+        profile = get_industry_profile(
+            industry,
+            sub_industry,
         )
 
-        with self._conn_cursor() as (conn, cur):
+        if not inventory_mode:
+            inventory_mode = (
+                profile.get("default_inventory_mode")
+                or "none"
+            )
+
+        if inventory_valuation is None:
+            inventory_valuation = profile.get(
+                "default_valuation"
+            )
+
+        default_pnl_layout = (
+            profile.get("pnl_layout")
+            or choose_layout("pnl", profile)
+        )
+
+        pnl_labels_json = Json(
+            profile.get("pnl_labels") or {}
+        )
+
+        # ---------------------------------------------------------
+        # Addresses
+        # ---------------------------------------------------------
+        if physical_address is None:
+            physical_address = self._addr_to_text(
+                registered_address_json
+            )
+
+        if postal_address is None:
+            postal_address = self._addr_to_text(
+                postal_address_json
+            )
+
+        reg_json = (
+            Json(registered_address_json)
+            if registered_address_json is not None
+            else None
+        )
+
+        post_json = (
+            Json(postal_address_json)
+            if postal_address_json is not None
+            else None
+        )
+
+        # ---------------------------------------------------------
+        # Created via
+        # ---------------------------------------------------------
+        created_via = (
+            (created_via or "").strip().lower()
+            or None
+        )
+
+        allowed_created_via = {
+            None,
+            "self_signup",
+            "firm_client_provisioning",
+            "related_company",
+            "admin",
+            "migration",
+            "import",
+        }
+
+        if created_via not in allowed_created_via:
+            created_via = None
+
+        # ---------------------------------------------------------
+        # Provisioning context
+        # ---------------------------------------------------------
+        provisioning_context = (
+            (provisioning_context or "").strip()
+            or None
+        )
+
+        # ---------------------------------------------------------
+        # Organization type
+        # ---------------------------------------------------------
+        organization_type = (
+            (organization_type or "private_company")
+            .strip()
+            .lower()
+        )
+
+        # ---------------------------------------------------------
+        # Generate company slug
+        #
+        # IMPORTANT:
+        # This query must use the SAME transaction cursor when
+        # signup passes cur/conn.
+        # ---------------------------------------------------------
+        base_slug = _company_slug(name)
+
+        def _insert(cur):
+            # -----------------------------------------------------
+            # Determine unique slug
+            # -----------------------------------------------------
+            cur.execute(
+                """
+                SELECT id
+                FROM public.companies
+                WHERE slug = %s
+                LIMIT 1;
+                """,
+                (base_slug,),
+            )
+
+            existing = cur.fetchone()
+
+            company_slug = (
+                f"{base_slug}-{uuid.uuid4().hex[:6]}"
+                if existing
+                else base_slug
+            )
+
+            # -----------------------------------------------------
+            # Insert company
+            # -----------------------------------------------------
             cur.execute(
                 """
                 INSERT INTO public.companies
                 (
-                    name, slug, client_code, industry, sub_industry, organization_type,
-                    industry_slug, sub_industry_slug, inventory_mode, inventory_valuation,
-                    currency, fin_year_start, company_reg_date,
-                    country, company_reg_no, tin, vat,
-                    company_email, owner_user_id, is_active,
-                    default_pnl_layout, pnl_labels_json,
-                    physical_address, postal_address, company_phone, logo_url,
-                    registered_address_json, postal_address_json,
-                    address_place_id, address_lat, address_lng,
+                    name,
+                    slug,
+                    client_code,
+                    industry,
+                    sub_industry,
+                    organization_type,
+
+                    industry_slug,
+                    sub_industry_slug,
+
+                    inventory_mode,
+                    inventory_valuation,
+
+                    currency,
+                    fin_year_start,
+                    company_reg_date,
+
+                    country,
+                    company_reg_no,
+                    tin,
+                    vat,
+
+                    company_email,
+                    owner_user_id,
+                    is_active,
+
+                    default_pnl_layout,
+                    pnl_labels_json,
+
+                    physical_address,
+                    postal_address,
+                    company_phone,
+                    logo_url,
+
+                    registered_address_json,
+                    postal_address_json,
+
+                    address_place_id,
+                    address_lat,
+                    address_lng,
+
                     entity_kind,
-                    created_via, source_customer_company_id, provisioning_context
+
+                    created_via,
+                    source_customer_company_id,
+                    provisioning_context
                 )
                 VALUES
                 (
-                    %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s, TRUE,
-                    %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s,
-                    %s, %s, %s,
                     %s,
-                    %s, %s, %s
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+                    TRUE,
+
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+                    %s,
+
+                    %s,
+
+                    %s,
+                    %s,
+                    %s
                 )
                 RETURNING id;
                 """,
                 (
-                    name, company_slug, client_code, industry, sub_industry, organization_type,
-                    industry_slug, sub_industry_slug, inventory_mode, inventory_valuation,
-                    currency, fin_year_start, company_reg_date,
-                    country, company_reg_no, tin, vat,
-                    company_email, owner_user_id,
-                    default_pnl_layout, pnl_labels_json,
-                    physical_address, postal_address, company_phone, logo_url,
-                    reg_json, post_json,
-                    address_place_id, address_lat, address_lng,
-                    entity_kind, created_via, source_customer_company_id, provisioning_context,
+                    name,
+                    company_slug,
+                    client_code,
+                    industry,
+                    sub_industry,
+                    organization_type,
+
+                    industry_slug,
+                    sub_industry_slug,
+
+                    inventory_mode,
+                    inventory_valuation,
+
+                    currency,
+                    fin_year_start,
+                    company_reg_date,
+
+                    country,
+                    company_reg_no,
+                    tin,
+                    vat,
+
+                    company_email,
+                    owner_user_id,
+
+                    default_pnl_layout,
+                    pnl_labels_json,
+
+                    physical_address,
+                    postal_address,
+                    company_phone,
+                    logo_url,
+
+                    reg_json,
+                    post_json,
+
+                    address_place_id,
+                    address_lat,
+                    address_lng,
+
+                    entity_kind,
+
+                    created_via,
+                    source_customer_company_id,
+                    provisioning_context,
                 ),
             )
 
             row = cur.fetchone()
+
             if not row:
-                raise RuntimeError("Failed to insert company")
+                raise RuntimeError(
+                    "Failed to insert company"
+                )
 
             company_id = int(row["id"])
 
+            # -----------------------------------------------------
+            # Create primary owner membership
+            # -----------------------------------------------------
             if owner_user_id and make_primary_membership:
+
+                # Remove primary status from any existing
+                # primary company for this user.
                 cur.execute(
                     """
                     UPDATE public.company_users
@@ -10179,6 +10585,7 @@ class DatabaseService:
                     (int(owner_user_id),),
                 )
 
+                # Create/update membership.
                 cur.execute(
                     """
                     INSERT INTO public.company_users
@@ -10203,14 +10610,17 @@ class DatabaseService:
                         TRUE,
                         NOW()
                     )
-                    ON CONFLICT (company_id, user_id) DO UPDATE
-                    SET
+                    ON CONFLICT (company_id, user_id)
+                    DO UPDATE SET
                         role = 'owner',
                         access_scope = 'core',
                         membership_kind = EXCLUDED.membership_kind,
                         is_primary = EXCLUDED.is_primary,
                         is_active = TRUE,
-                        joined_at = COALESCE(public.company_users.joined_at, NOW());
+                        joined_at = COALESCE(
+                            public.company_users.joined_at,
+                            NOW()
+                        );
                     """,
                     (
                         company_id,
@@ -10220,10 +10630,86 @@ class DatabaseService:
                     ),
                 )
 
-            conn.commit()
+            return company_id
 
-        self.initialize_public_schema()
-        self.ensure_company_account_settings(company_id)
+        # =========================================================
+        # CASE 1:
+        # Caller supplied an existing transaction.
+        #
+        # DO NOT COMMIT HERE.
+        # The caller owns the transaction.
+        # =========================================================
+        if cur is not None:
+            company_id = _insert(cur)
+
+            # These MUST use the same cursor/connection.
+            self.initialize_public_schema(
+                cur=cur,
+                conn=conn,
+            )
+
+            self.ensure_company_account_settings(
+                company_id,
+                cur=cur,
+                conn=conn,
+            )
+
+            return company_id
+
+        # =========================================================
+        # CASE 2:
+        # Caller supplied a connection but no cursor.
+        #
+        # We own the transaction.
+        # =========================================================
+        if conn is not None:
+            try:
+                with conn.cursor(
+                    cursor_factory=psycopg2.extras.RealDictCursor
+                ) as local_cur:
+
+                    company_id = _insert(local_cur)
+
+                    self.initialize_public_schema(
+                        cur=local_cur,
+                        conn=conn,
+                    )
+
+                    self.ensure_company_account_settings(
+                        company_id,
+                        cur=local_cur,
+                        conn=conn,
+                    )
+
+                conn.commit()
+
+                return company_id
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        # =========================================================
+        # CASE 3:
+        # No transaction supplied.
+        #
+        # Create our own transaction.
+        # =========================================================
+        with self.transaction() as (tx_conn, tx_cur):
+
+            company_id = _insert(tx_cur)
+
+            self.initialize_public_schema(
+                cur=tx_cur,
+                conn=tx_conn,
+            )
+
+            self.ensure_company_account_settings(
+                company_id,
+                cur=tx_cur,
+                conn=tx_conn,
+            )
+
         return company_id
 
     def get_group_reporting_profile(self, company_id: int) -> Optional[dict]:
@@ -38910,7 +39396,14 @@ class DatabaseService:
             migration_version=self.FORECAST_MIGRATION_VERSION,
         )
         
-    def ensure_company_schema(self, company_id: int, *args, **kwargs):
+    def ensure_company_schema(
+        self,
+        company_id: int,
+        *args,
+        cur=None,
+        conn=None,
+        **kwargs,
+    ):
         import traceback
 
         print(
@@ -62226,7 +62719,7 @@ class DatabaseService:
                 file.write(ddl_bootstrap_sql)
             print(f"[BOOT][DEBUG SQL] wrote {debug_path}")
 
-        with self._conn_cursor() as (conn,cur):
+        def _run(cur, conn):
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);",(int(company_id),))
 
@@ -62302,6 +62795,12 @@ class DatabaseService:
                 traceback.print_exc()
                 print("[/BOOT][DDL-ERROR]\n")
                 raise
+        
+        if cur is not None:
+            _run(cur, conn)
+        else:
+            with self._conn_cursor() as (local_conn, local_cur):
+                _run(local_cur, local_conn)
 
     def setup_company_defaults(self, company_id: int) -> None:
         """
@@ -63206,10 +63705,24 @@ class DatabaseService:
             )
             return
 
-    def ensure_company_coa_table(db_service, company_id: int) -> None:
+    def ensure_company_coa_table(
+        db_service,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ) -> None:
+
         schema = f"company_{company_id}"
-        db_service.execute_ddl(f"CREATE SCHEMA IF NOT EXISTS {schema};")
-        db_service.execute_ddl(f"""
+
+        db_service.execute_ddl(
+            f"CREATE SCHEMA IF NOT EXISTS {schema};",
+            cur=cur,
+            conn=conn,
+        )
+
+        db_service.execute_ddl(
+            f"""
             CREATE TABLE IF NOT EXISTS {schema}.coa (
                 id SERIAL PRIMARY KEY,
                 company_id INT NOT NULL DEFAULT {company_id},
@@ -63239,13 +63752,32 @@ class DatabaseService:
                 role TEXT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
-        """)
-        db_service.execute_ddl(f"CREATE UNIQUE INDEX IF NOT EXISTS {schema}_coa_code_uniq ON {schema}.coa(code);")
-        db_service.execute_ddl(f"""
-            CREATE UNIQUE INDEX IF NOT EXISTS {schema}_coa_template_code_scoped_uniq
+            """,
+            cur=cur,
+            conn=conn,
+        )
+
+        db_service.execute_ddl(
+            f"""
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            {schema}_coa_code_uniq
+            ON {schema}.coa(code);
+            """,
+            cur=cur,
+            conn=conn,
+        )
+
+        db_service.execute_ddl(
+            f"""
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            {schema}_coa_template_code_scoped_uniq
             ON {schema}.coa(template_code_scoped)
             WHERE template_code_scoped IS NOT NULL;
-        """)
+            """,
+            cur=cur,
+            conn=conn,
+        )
+
 
     def repair_company_coa_roles(self, company_id: int) -> None:
         schema = self.company_schema(company_id)
@@ -63349,6 +63881,8 @@ class DatabaseService:
         rows: List[Dict[str, Any]],
         *,
         dedupe_after: bool = False,
+        cur=None,
+        conn=None,
     ) -> int:
         schema = f"company_{company_id}"
 
@@ -63669,78 +64203,124 @@ class DatabaseService:
         # 5) Insert rows with reserved control protection
         # ------------------------------------------------------------
         count = 0
-        with self._conn_cursor() as (conn, cur):
+        def _insert(_cur):
+            nonlocal count
+
             for row in (normalized or []):
+
                 name = (row.get("name") or "").strip()
                 code = (row.get("code") or "").strip()
 
                 if not name:
-                    name = (row.get("reporting_description") or "").strip() or code
+                    name = (
+                        (row.get("reporting_description") or "").strip()
+                        or code
+                    )
 
                 if not name or not code:
                     continue
 
-                tc = (row.get("template_code") or "").strip() or None
-                tcs = (row.get("template_code_scoped") or "").strip() or None
+                tc = (
+                    (row.get("template_code") or "").strip()
+                    or None
+                )
 
-                # --------------------------------------------------------
-                # HARD RESERVATION RULE:
-                # non-canonical rows may NOT claim reserved control IDs
-                # --------------------------------------------------------
+                tcs = (
+                    (row.get("template_code_scoped") or "").strip()
+                    or None
+                )
+
+                # -----------------------------------------------------
+                # YOUR EXISTING RESERVED CONTROL LOGIC
+                # -----------------------------------------------------
+
                 if tc in canonical_by_tc:
                     canonical_code = canonical_by_tc[tc]
 
-                    # If this row is not the canonical control row, strip reserved IDs
                     if code != canonical_code:
                         print(
-                            f"[COA-RESERVE] stripping reserved tc/tcs from non-canonical row "
-                            f"code={code} tc={tc} tcs={tcs!r} canonical={canonical_code}"
+                            f"[COA-RESERVE] stripping reserved "
+                            f"tc/tcs from non-canonical row "
+                            f"code={code} tc={tc} "
+                            f"tcs={tcs!r} "
+                            f"canonical={canonical_code}"
                         )
+
                         tc = None
                         tcs = None
 
                 if tcs in reserved_template_code_scoped:
                     reserved_tc = tcs.split("::")[-1]
-                    canonical_code = canonical_by_tc.get(reserved_tc)
+                    canonical_code = canonical_by_tc.get(
+                        reserved_tc
+                    )
 
                     if canonical_code and code != canonical_code:
                         print(
-                            f"[COA-RESERVE] stripping reserved scoped template from non-canonical row "
-                            f"code={code} tc={tc} tcs={tcs!r} canonical={canonical_code}"
+                            f"[COA-RESERVE] stripping reserved "
+                            f"scoped template from non-canonical row "
+                            f"code={code} tc={tc} "
+                            f"tcs={tcs!r} "
+                            f"canonical={canonical_code}"
                         )
+
                         tcs = None
+
                         if tc == reserved_tc:
                             tc = None
 
-                # If company already has an owner for reserved tc, nobody else may claim it
                 if tc and tc in existing_reserved_owner_by_tc:
                     owner_code = existing_reserved_owner_by_tc[tc]
+
                     if owner_code and owner_code != code:
                         print(
-                            f"[COA-RESERVE] existing tenant owner for tc={tc} is {owner_code}, "
+                            f"[COA-RESERVE] existing tenant owner "
+                            f"for tc={tc} is {owner_code}, "
                             f"stripping from incoming code={code}"
                         )
+
+                        original_tc = tc
+
                         tc = None
-                        if tcs == f"G::{tc}":
+
+                        if tcs == f"G::{original_tc}":
                             tcs = None
 
-                # If company already has an owner for reserved scoped tc, nobody else may claim it
                 if tcs and tcs in existing_reserved_owner_by_scoped:
                     owner_code = existing_reserved_owner_by_scoped[tcs]
+
                     if owner_code and owner_code != code:
                         print(
-                            f"[COA-RESERVE] existing tenant owner for tcs={tcs} is {owner_code}, "
+                            f"[COA-RESERVE] existing tenant owner "
+                            f"for tcs={tcs} is {owner_code}, "
                             f"stripping from incoming code={code}"
                         )
+
                         if tc and f"G::{tc}" == tcs:
                             tc = None
+
                         tcs = None
 
                 if tc in ("1501", "1502"):
-                    print("[COA-DEBUG] inserting tc=", tc, "tcs=", tcs, "name=", name, "code=", code)
-                    print("[COA-DEBUG] stack:\n", "".join(traceback.format_stack(limit=12)))
+                    print(
+                        "[COA-DEBUG] inserting tc=",
+                        tc,
+                        "tcs=",
+                        tcs,
+                        "name=",
+                        name,
+                        "code=",
+                        code,
+                    )
 
-                cur.execute(
+                    print(
+                        "[COA-DEBUG] stack:\n",
+                        "".join(
+                            traceback.format_stack(limit=12)
+                        ),
+                    )
+
+                _cur.execute(
                     sql_by_code,
                     (
                         company_id,
@@ -63751,52 +64331,83 @@ class DatabaseService:
                         row.get("description"),
                         row.get("reporting_description") or "",
                         row.get("standard"),
+
                         tc,
                         tcs,
                         row.get("template_code_base") or None,
+
                         row.get("code_family"),
                         row.get("code_numeric"),
+
                         row.get("subcategory") or "",
+
                         row.get("cf_section") or "operating",
                         row.get("cf_bucket") or "",
+
                         row.get("posting", True),
                         row.get("posting_rules") or "",
+
                         row.get("is_working_capital", False),
                         row.get("is_cash_equiv", False),
                         row.get("is_non_cash_addback", False),
+
                         row.get("is_contra", False),
                         row.get("role") or "",
                     ),
                 )
+
                 count += 1
 
-                # Track newly claimed reserved ownership inside this same batch
+                # Track newly claimed reserved ownership
                 if tc in canonical_by_tc:
                     existing_reserved_owner_by_tc[tc] = code
-                    existing_reserved_owner_by_scoped[f"G::{tc}"] = code
+                    existing_reserved_owner_by_scoped[
+                        f"G::{tc}"
+                    ] = code
 
                 if tcs in reserved_template_code_scoped:
                     existing_reserved_owner_by_scoped[tcs] = code
 
                 existing_codes.add(code)
 
-            conn.commit()
 
-        # ------------------------------------------------------------
-        # 6) Repair known historical COA role misclassifications
-        # ------------------------------------------------------------
-        self.repair_company_coa_roles(company_id)
+        # =============================================================
+        # USE CALLER'S TRANSACTION IF ONE WAS PROVIDED
+        # =============================================================
+        if cur is not None:
 
-        # ------------------------------------------------------------
-        # 7) Optional: dedupe after bulk seeding/sync
-        # ------------------------------------------------------------
+            _insert(cur)
+
+        else:
+
+            with self._conn_cursor() as (conn2, cur2):
+                _insert(cur2)
+
+                # DO NOT manually commit.
+                # _conn_cursor() commits when the with-block exits.
+
+
+        # =============================================================
+        # AFTER INSERT
+        # =============================================================
+        self.repair_company_coa_roles(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
+
         if dedupe_after:
             try:
-                self.dedupe_company_coa(company_id)
+                self.dedupe_company_coa(
+                    company_id,
+                    cur=cur,
+                    conn=conn,
+                )
             except Exception:
                 pass
 
         return count
+
 
     def upsert_coa_pool(self, rows):
         print("[DEBUG] ✅ using the ONLY upsert_coa_pool() version")
@@ -97833,7 +98444,14 @@ class DatabaseService:
         """
         return self.fetch_one(sql, (int(company_id),))
 
-    def upsert_company_branding(self, company_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def upsert_company_branding(
+        self,
+        company_id: int,
+        payload: Dict[str, Any],
+        *,
+        cur=None,
+        conn=None,
+    ):
         """
         Upsert branding for a company.
 
@@ -97909,8 +98527,14 @@ class DatabaseService:
             has_vat_no,
         )
 
-        row = self.fetch_one(sql, params)
+        row = self.fetch_one(
+            sql,
+            params,
+            cur=cur,
+        )
+
         return row or {"company_id": cid}
+
 
     def create_bank_import(self, company_id: int, bank_account_id: int | None, file_name: str, file_ext: str,
                         file_hash: str, uploaded_by: int | None, currency: str = "USD") -> int:
