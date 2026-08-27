@@ -62964,16 +62964,38 @@ class DatabaseService:
             with self._conn_cursor() as (local_conn, local_cur):
                 _run(local_cur, local_conn)
 
-    def setup_company_defaults(self, company_id: int) -> None:
+    def setup_company_defaults(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+        conn=None,
+    ) -> None:
         """
-        ✅ Data setup that must happen ONCE per company.
+        Data setup that must happen ONCE per company.
         Call only from seed_company_coa_once().
         """
+
         # self.initialize_public_schema()
-        self.ensure_company_account_settings(company_id)
-        self.ensure_required_control_accounts(company_id)  # if you use this
-        # self.ensure_mandatory_company_accounts(company_id)
-        self.apply_basic_cashflow_tags(company_id)
+
+        self.ensure_company_account_settings(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
+
+        self.ensure_required_control_accounts(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
+
+        self.apply_basic_cashflow_tags(
+            company_id,
+            cur=cur,
+            conn=conn,
+        )
+
 
     TENANT_SYNC_MIGRATION_VERSION = 1
     def sync_existing_company_schema(
