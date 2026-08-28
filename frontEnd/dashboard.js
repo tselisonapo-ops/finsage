@@ -127237,53 +127237,67 @@ async function populateProjectCostCodeSelect(selectId, blank = "None") {
 window._projectTeamEmployeesCache = [];
 
 function fillProjectTeamMemberSelect(selectedId = "") {
+  // Get all three elements of the searchable combobox
   const searchInput = document.getElementById("projectTeamUserSearch");
   const hiddenSelect = document.getElementById("projectTeamUserId");
   const dropdownList = document.getElementById("projectTeamUserList");
   
-  if (!searchInput || !hiddenSelect || !dropdownList) return;
+  if (!searchInput || !hiddenSelect || !dropdownList) {
+    console.warn("[TeamMember] Missing elements:", { 
+      searchInput: !!searchInput, 
+      hiddenSelect: !!hiddenSelect, 
+      dropdownList: !!dropdownList 
+    });
+    return;
+  }
 
   let allEmployees = [];
   let debounceTimer = null;
 
-  // --- FILTER & RENDER DROPDOWN ---
+  // --- RENDER FILTERED DROPDOWN ---
   const renderDropdown = (filterText = "") => {
     const query = filterText.toLowerCase().trim();
+    
+    // Filter employees by name/email
     const filtered = allEmployees.filter(emp => {
-      const name = [emp.first_name, emp.last_name, emp.email].filter(Boolean).join(" ").toLowerCase();
-      return !query || name.includes(query);
+      const searchText = [emp.first_name, emp.last_name, emp.email]
+        .filter(Boolean).join(" ").toLowerCase();
+      return !query || searchText.includes(query);
     });
 
     if (filtered.length === 0) {
       dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">No matching employees</li>';
     } else {
       dropdownList.innerHTML = filtered.map(emp => {
-        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `Employee #${emp.id}`;
+        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") 
+          || ('Employee #' + emp.id);
         const isSelected = String(emp.id) === String(selectedId);
-        return `<li class="px-2 py-1.5 cursor-pointer hover:bg-blue-50 ${isSelected ? 'bg-blue-100 font-semibold' : ''}" 
-                     data-id="${emp.id}" data-name="${name}">${esc(name)}</li>`;
+        const selClass = isSelected ? ' bg-blue-100 font-semibold' : '';
+        return '<li class="px-2 py-1.5 cursor-pointer hover:bg-blue-50' + selClass + '" '
+          + 'data-id="' + esc(String(emp.id)) + '" data-name="' + esc(name) + '">'
+          + esc(name) + '</li>';
       }).join("");
 
-      // Click handler for dropdown items
-      dropdownList.querySelectorAll("li[data-id]").forEach(li => {
-        li.addEventListener("click", () => {
-          searchInput.value = li.dataset.name;
-          hiddenSelect.value = li.dataset.id;
-          dropdownList.classList.add("hidden");
-        });
-      });
-    }
-    
-    if (!dropdownList.classList.contains("hidden")) {
-      dropdownList.classList.remove("hidden");
+      // *** CRITICAL: Click handler sets BOTH fields ***
+      var items = dropdownList.querySelectorAll("li[data-id]");
+      for (var i = 0; i < items.length; i++) {
+        (function(item) {
+          item.addEventListener("click", function() {
+            searchInput.value = item.getAttribute("data-name");     // Show name
+            hiddenSelect.value = item.getAttribute("data-id");       // Store ID ← FIX!
+            dropdownList.classList.add("hidden");
+            console.log("[TeamMember] Selected:", item.getAttribute("data-name"), 
+              "ID:", item.getAttribute("data-id"));
+          });
+        })(items[i]);
+      }
     }
   };
 
   // --- LOAD EMPLOYEES FROM PAYROLL API ---
-  const loadEmployees = () => {
-    // Check cache first
-    const cached = projectLookupState?.employees;
-    if (Array.isArray(cached) && cached.length) {
+  const loadEmployees = function() {
+    var cached = projectLookupState && projectLookupState.employees;
+    if (cached && Array.isArray(cached) && cached.length > 0) {
       allEmployees = cached;
       window._projectTeamEmployeesCache = cached;
       renderDropdown(searchInput.value);
@@ -127291,85 +127305,75 @@ function fillProjectTeamMemberSelect(selectedId = "") {
     }
 
     dropdownList.classList.remove("hidden");
-    dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">Loading employees...</li>';
+    dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">Loading...</li>';
 
-    const cid = window.COMPANY_ID || currentCompanyId || "";
-    const endpoint = typeof ENDPOINTS !== 'undefined' && ENDPOINTS.payroll?.employees 
-      ? ENDPOINTS.payroll.employees(cid) 
-      : `/api/payroll/employees?company_id=${cid}`;
+    var cid = (window.COMPANY_ID || window.currentCompanyId || "");
+    var endpoint = (typeof ENDPOINTS !== 'undefined' && ENDPOINTS.payroll && typeof ENDPOINTS.payroll.employees === 'function')
+      ? ENDPOINTS.payroll.employees(cid)
+      : '/api/payroll/employees?company_id=' + encodeURIComponent(cid);
 
     apiFetch(endpoint)
-      .then(res => {
-        const employees = res?.data || res?.employees || res?.items || res || [];
+      .then(function(res) {
+        var employees = (res && res.data) || (res && res.employees) || (res && res.items) || res || [];
         allEmployees = Array.isArray(employees) ? employees : [];
-        
         window._projectTeamEmployeesCache = allEmployees;
-        if (projectLookupState) {
+        if (typeof projectLookupState !== 'undefined' && projectLookupState) {
           projectLookupState.employees = allEmployees;
         }
-        
         renderDropdown(searchInput.value);
       })
-      .catch(err => {
+      .catch(function(err) {
         console.warn("[Projects] Failed to load payroll employees:", err);
-        dropdownList.innerHTML = '<li class="px-2 py-1.5 text-red-500">Failed to load employees</li>';
+        dropdownList.innerHTML = '<li class="px-2 py-1.5 text-red-500">Failed to load</li>';
       });
   };
 
-  // --- EVENT HANDLERS ---
-  searchInput.addEventListener("focus", () => {
+  // --- EVENT LISTENERS ---
+  searchInput.addEventListener("focus", function() {
     if (allEmployees.length === 0) loadEmployees();
-    else {
-      dropdownList.classList.remove("hidden");
-      renderDropdown(searchInput.value);
-    }
+    else { dropdownList.classList.remove("hidden"); renderDropdown(searchInput.value); }
   });
 
-  searchInput.addEventListener("input", () => {
+  searchInput.addEventListener("input", function() {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
+    debounceTimer = setTimeout(function() {
       renderDropdown(searchInput.value);
-    }, 150);  // 150ms debounce for live filtering
+      dropdownList.classList.remove("hidden");
+    }, 150);
   });
 
-  // Close when clicking outside
-  document.addEventListener("click", (e) => {
+  document.addEventListener("click", function(e) {
     if (!searchInput.contains(e.target) && !dropdownList.contains(e.target)) {
       dropdownList.classList.add("hidden");
     }
   });
 
-  // Keyboard: Escape closes, Enter selects
-  searchInput.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      dropdownList.classList.add("hidden");
-      searchInput.blur();
-    } else if (e.key === "Enter") {
+  searchInput.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") { dropdownList.classList.add("hidden"); searchInput.blur(); }
+    else if (e.key === "Enter") {
       e.preventDefault();
-      const highlighted = dropdownList.querySelector("li.hover:bg-blue-50:not(.text-slate-400):not(.text-red-500)");
-      if (highlighted) highlighted.click();
+      var highlighted = dropdownList.querySelector("li.hover\\:bg-blue-50");
+      if (highlighted && highlighted.getAttribute("data-id")) highlighted.click();
     }
   });
 
-  // Pre-select if editing existing member
+  // Pre-select if editing
   if (selectedId) {
-    const preloadAndSelect = () => {
-      const emp = allEmployees.find(e => String(e.id) === String(selectedId));
-      if (emp) {
-        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ");
-        searchInput.value = name;
+    var tryPreselect = function() {
+      var found = null;
+      for (var j = 0; j < allEmployees.length; j++) {
+        if (String(allEmployees[j].id) === String(selectedId)) { found = allEmployees[j]; break; }
+      }
+      if (found) {
+        searchInput.value = [found.first_name, found.last_name].filter(Boolean).join(" ");
         hiddenSelect.value = selectedId;
       }
     };
-    
-    if (allEmployees.length > 0) {
-      preloadAndSelect();
-    } else {
-      setTimeout(checkAndSet, 100);
-    }
+    if (allEmployees.length > 0) tryPreselect();
+    else { var t=0; var iv=setInterval(function(){t++;if(allEmployees.length>0){clearInterval(iv);tryPreselect();}else if(t>20)clearInterval(iv);},100); }
   }
 
-  loadEmployees();  // Initial load
+  loadEmployees();
 }
 
 function populateExpenseAccountSelect(selectedCode = "") {
