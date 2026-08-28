@@ -133067,23 +133067,23 @@ function renderProjectTeamMini(team = []) {
 
         <thead class="bg-slate-50 border-b">
           <tr>
-            <th class="text-left px-2 py-1">
-              User
+            <th class="text-left px-3 py-1.5 w-[28%]">
+              Employee
             </th>
 
-            <th class="text-left px-2 py-1">
+            <th class="text-left px-2 py-1.5 w-[25%]">
               Role
             </th>
 
-            <th class="text-left px-2 py-1">
+            <th class="text-left px-2 py-1.5 w-[18%]">
               Type
             </th>
 
-            <th class="text-right px-2 py-1">
+            <th class="text-right px-2 py-1.5 w-[15%]">
               Allocation
             </th>
 
-            <th class="text-right px-2 py-1">
+            <th class="text-right px-2 py-1.5 w-[14%]">
               Action
             </th>
           </tr>
@@ -133093,25 +133093,25 @@ function renderProjectTeamMini(team = []) {
           ${team.map(m => `
             <tr class="border-b">
 
-              <td class="px-2 py-1">
+              <td class="px-3 py-1.5 font-medium text-slate-800">
                 ${esc(String(m.user_id || ""))}
               </td>
 
-              <td class="px-2 py-1">
+              <td class="px-2 py-1.5">
                 ${esc(m.project_role || "")}
               </td>
 
-              <td class="px-2 py-1">
+              <td class="px-2 py-1.5">
                 ${esc(m.role_type || "")}
               </td>
 
-              <td class="px-2 py-1 text-right">
+              <td class="px-2 py-1.5 text-right">
                 ${Number(
                   m.allocation_percent || 0
                 ).toFixed(0)}%
               </td>
 
-              <td class="px-2 py-1 text-right">
+              <td class="px-2 py-1.5 text-right">
 
                 <button
                   class="text-red-600 underline"
@@ -133154,19 +133154,19 @@ function renderProjectDependenciesMini(
 
         <thead class="bg-slate-50 border-b">
           <tr>
-            <th class="text-left px-2 py-1">
+            <th class="text-left px-3 py-1.5 w-[35%]">
               Predecessor
             </th>
 
-            <th class="text-left px-2 py-1">
+            <th class="text-left px-2 py-1.5 w-[10%]">
               Type
             </th>
 
-            <th class="text-left px-2 py-1">
+            <th class="text-left px-3 py-1.5 w-[35%]">
               Successor
             </th>
 
-            <th class="text-right px-2 py-1">
+            <th class="text-right px-2 py-1.5 w-[10%]">
               Lag
             </th>
           </tr>
@@ -133176,15 +133176,15 @@ function renderProjectDependenciesMini(
           ${items.map(d => `
             <tr class="border-b">
 
-              <td class="px-2 py-1">
+              <td class="px-3 py-1.5 font-medium text-slate-800">
                 ${esc(
-                  d.predecessor_code ||
                   d.predecessor_name ||
+                  d.predecessor_code ||
                   ""
                 )}
               </td>
 
-              <td class="px-2 py-1">
+              <td class="px-2 py-1.5">
                 ${esc(
                   typeLabel(
                     d.dependency_type
@@ -133192,15 +133192,15 @@ function renderProjectDependenciesMini(
                 )}
               </td>
 
-              <td class="px-2 py-1">
+              <td class="px-3 py-1.5 font-medium text-slate-800">
                 ${esc(
-                  d.successor_code ||
                   d.successor_name ||
+                  d.successor_code ||
                   ""
                 )}
               </td>
 
-              <td class="px-2 py-1 text-right">
+              <td class="px-2 py-1.5 text-right">
                 ${esc(
                   String(d.lag_days || 0)
                 )}
