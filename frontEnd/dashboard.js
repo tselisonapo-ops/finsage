@@ -127140,7 +127140,7 @@ async function getProjectInventoryItems() {
   }
 }
 
-async function populateProjectTaskSelect(selectId, projectId, blank = "None") {
+async function populateProjectTaskSelect(selectId, projectId, blank = "None", nameOnly = false) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
 
@@ -127148,11 +127148,15 @@ async function populateProjectTaskSelect(selectId, projectId, blank = "None") {
 
   sel.innerHTML = `
     <option value="">${blank}</option>
-    ${tasks.map(t => `
+    ${tasks.map(t => {
+      const label = nameOnly
+        ? (t.task_name || t.name || t.task_code || `Task #${t.id}`)
+        : `${t.task_code || ""} — ${t.task_name || ""}`;
+      return `
       <option value="${esc(String(t.id))}">
-        ${esc(t.task_code || "")} — ${esc(t.task_name || "")}
-      </option>
-    `).join("")}
+        ${esc(label)}
+      </option>`;
+    }).join("")}
   `;
 }
 
@@ -127189,6 +127193,200 @@ async function populateProjectCostCodeSelect(selectId, blank = "None") {
       </option>
     `).join("")}
   `;
+}
+
+function fillProjectTeamMemberSelect(selectedId = "") {
+  const el = document.getElementById("projectTeamUserId");
+  if (!el) return;
+
+  const renderOptions = (employees) => {
+    const rows = (Array.isArray(employees) ? employees : [])
+      .filter(emp => {
+        const status = String(emp?.employment_status || "active").toLowerCase();
+        return status !== "inactive" && Number(emp?.id || 0) > 0;
+      })
+      .sort((a, b) => {
+        const aName = [a.first_name, a.last_name].filter(Boolean).join(" ");
+        const bName = [b.first_name, b.last_name].filter(Boolean).join(" ");
+        return aName.localeCompare(bName);
+      });
+
+    el.innerHTML = `
+      <option value="">Select team member…</option>
+      ${rows.map(emp => {
+        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `User #${emp.id}`;
+        const email = emp.email ? ` — ${emp.email}` : "";
+        const selected = String(emp.id) === String(selectedId) ? " selected" : "";
+        return `
+        <option value="${esc(String(emp.id))}"${selected}>${esc(name)}${esc(email)}</option>`;
+      }).join("")}
+    `;
+  };
+
+  const cached = projectLookupState?.employees;
+  if (Array.isArray(cached) && cached.length) {
+    renderOptions(cached);
+    return;
+  }
+
+  // Cache empty -> show loading placeholder and fetch raw users as a fallback.
+  el.innerHTML = `<option value="">Loading team members…</option>`;
+
+  apiFetch(window.ENDPOINTS.users)
+    .then(res => {
+      const users = res?.users || res?.items || res || [];
+      renderOptions(Array.isArray(users) ? users : []);
+    })
+    .catch(err => {
+      console.warn("[Projects] failed to load users for team select", err);
+      el.innerHTML = `<option value="">No users available</option>`;
+    });
+}
+
+function populateExpenseAccountSelect(selectedCode = "") {
+  const sel = document.getElementById("projectExpenseAccount");
+  if (!sel) return;
+
+  const rawRows =
+    window.COA ||
+    window.CURRENT_COA ||
+    window.COA_CACHE ||
+    window.COMPANY_COA ||
+    window.CHART_OF_ACCOUNTS ||
+    [];
+
+  const accounts = (Array.isArray(rawRows) ? rawRows : [])
+    .map(a => ({
+      ...a,
+      code: String(a.code || a.account_code || a.template_code || "").trim(),
+      name: String(a.name || a.account_name || a.description || "").trim(),
+      section: String(a.section || a.account_section || "").toLowerCase(),
+      category: String(a.category || a.account_category || "").toLowerCase(),
+      type: String(a.account_type || a.type || "").toLowerCase(),
+    }))
+    .filter(a => a.code && a.name);
+
+  const isExpense = a => {
+    const hay = [a.section, a.category, a.type, a.name.toLowerCase()].join(" ");
+    return /expense|cost|cost of sales|materials|labour|subcontract/.test(hay);
+  };
+
+  const expense = accounts.filter(isExpense).sort(
+    (a, b) => a.name.localeCompare(b.name) || a.code.localeCompare(b.code)
+  );
+
+  const list = expense.length ? expense : accounts;
+
+  sel.innerHTML = `
+    <option value="">Select expense account…</option>
+    ${list.map(a => {
+      const selected = String(a.code) === String(selectedCode) ? " selected" : "";
+      return `
+      <option value="${esc(a.code)}"${selected}>${esc(a.name)}</option>`;
+    }).join("")}
+  `;
+
+  // Preserve a previously saved code even if it no longer matches.
+  if (
+    selectedCode &&
+    !list.some(a => String(a.code) === String(selectedCode))
+  ) {
+    const saved = accounts.find(a => String(a.code) === String(selectedCode));
+    const savedName = saved?.name || selectedCode;
+    sel.insertAdjacentHTML(
+      "beforeend",
+      `<option value="${esc(selectedCode)}" selected>${esc(savedName)}</option>`
+    );
+  }
+}
+
+async function autoSetExpenseCostCodeFromTask(taskId) {
+  const sel = document.getElementById("projectExpenseCostCodeId");
+  if (!sel) return;
+
+  sel.disabled = true;
+  sel.innerHTML = `<option value="">Resolving cost code…</option>`;
+  sel.value = "";
+
+  if (!taskId) {
+    sel.innerHTML = `<option value="">No cost code</option>`;
+    sel.disabled = false;
+    return;
+  }
+
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) {
+    sel.innerHTML = `<option value="">No cost code</option>`;
+    sel.disabled = false;
+    return;
+  }
+
+  try {
+    const projectId = Number(
+      document.getElementById("projectExpenseProjectId")?.value || 0
+    );
+
+    // Look up the task so we can derive cost_code / cost_name if we need
+    // to auto-create a cost code.
+    let task = null;
+    if (projectId) {
+      try {
+        const tasks = await getProjectTasks(projectId);
+        task = tasks.find(t => String(t.id) === String(taskId));
+      } catch (_) {}
+    }
+
+    let codes = await getProjectCostCodes();
+
+    const matchByTaskId = c =>
+      String(c.task_id || "") === String(taskId);
+
+    const matchByCode = c =>
+      task?.task_code &&
+      String(c.cost_code || c.code || "") === String(task.task_code);
+
+    let match = codes.find(matchByTaskId) || codes.find(matchByCode);
+
+    if (!match && task) {
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.costCodesCreate(cid),
+          {
+            method: "POST",
+            body: JSON.stringify({
+              task_id: Number(taskId),
+              cost_code: task.task_code || `TASK-${taskId}`,
+              cost_name: task.task_name || `Task ${taskId}`,
+              description: `Auto-created from task #${taskId}`,
+            })
+          }
+        );
+        codes = await getProjectCostCodes();
+        match = codes.find(matchByTaskId) || codes.find(matchByCode);
+      } catch (err) {
+        console.warn("[Projects] auto-create cost code failed", err);
+      }
+    }
+
+    sel.innerHTML =
+      `<option value="">No cost code</option>` +
+      codes.map(c => {
+        const code = c.cost_code || c.code || "";
+        const name = c.cost_name || c.name || c.description || "";
+        const selected = match && String(c.id) === String(match.id) ? " selected" : "";
+        return `<option value="${esc(String(c.id))}"${selected}>${esc(code)} — ${esc(name)}</option>`;
+      }).join("");
+
+    if (match) {
+      sel.value = String(match.id);
+    }
+
+    sel.disabled = false;
+  } catch (err) {
+    console.warn("[Projects] auto-set cost code failed", err);
+    sel.innerHTML = `<option value="">No cost code</option>`;
+    sel.disabled = false;
+  }
 }
 
 async function buildInventoryItemOptions(selectedId = "") {
@@ -130776,6 +130974,15 @@ function bindProjectExpenseModalOnce() {
       "click",
       submitProjectExpense
     );
+
+  // "Task becomes cost": when a task is selected, resolve (or auto-create)
+  // the matching cost code and auto-select it.
+  document.getElementById("projectExpenseTaskId")
+    ?.addEventListener("change", e => {
+      const v = Number(e?.target?.value || 0);
+      autoSetExpenseCostCodeFromTask(v)
+        .catch(err => console.warn("[Projects] auto cost-code lookup failed", err));
+    });
 }
 
 function bindProjectControlModalsOnce() {
@@ -132074,16 +132281,21 @@ async function submitProjectDocument() {
   }
 }
 
-function openProjectTeamModal(projectId) {
+async function openProjectTeamModal(projectId) {
   bindProjectTeamModalOnce();
 
   document
     .getElementById("projectTeamProjectId")
     .value = String(projectId);
 
-  document
-    .getElementById("projectTeamUserId")
-    .value = "";
+  // Team Member dropdown: pull from the same project-lookup employee
+  // cache used by Manager / Sponsor dropdowns.
+  if (!Array.isArray(projectLookupState?.employees) || !projectLookupState.employees.length) {
+    try { await loadProjectPeopleAndDepartments(); } catch (e) {
+      console.warn("[Projects] loadProjectPeopleAndDepartments failed", e);
+    }
+  }
+  fillProjectTeamMemberSelect("");
 
   document
     .getElementById("projectTeamRoleType")
@@ -133358,8 +133570,10 @@ async function openProjectExpenseModal(
   document.getElementById("projectExpenseReference").value =
     "";
 
-  document.getElementById("projectExpenseAccount").value =
-    "";
+  // Account Name <select> (formerly the free-text "Account Code" input).
+  // Populated from GL expense accounts; existing payload key stays the
+  // same because the <option> value is the account CODE.
+  populateExpenseAccountSelect("");
 
   document.getElementById("projectExpenseCapitalizable").checked = false;
 
@@ -133372,16 +133586,22 @@ async function openProjectExpenseModal(
   document.getElementById("projectExpenseDescription").value =
     "";
 
+  // Task dropdown: name only (no task code) per project-expense UX.
   await populateProjectTaskSelect(
     "projectExpenseTaskId",
     projectId,
-    "No task"
+    "No task",
+    true
   );
 
-  await populateProjectCostCodeSelect(
-    "projectExpenseCostCodeId",
-    "No cost code"
-  );
+  // Cost code dropdown: cleared; will be auto-populated when a task is
+  // picked. We keep it disabled-looking (placeholder only) until then.
+  const ccSel = document.getElementById("projectExpenseCostCodeId");
+  if (ccSel) {
+    ccSel.innerHTML = `<option value="">No cost code</option>`;
+    ccSel.value = "";
+    ccSel.disabled = false;
+  }
 
   setElText(
     "projectExpenseMsg",
