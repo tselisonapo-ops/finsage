@@ -7995,31 +7995,29 @@ function bindSessionUnlockForm() {
     }
 
     try {
-      await apiFetch(ENDPOINTS.auth.reauth, {
+      const res = await apiFetch(ENDPOINTS.auth.reauth, {
         method: "POST",
         body: JSON.stringify({ password }),
         _allowWhenLocked: true,
       });
 
-      // ✅ NEW: Show success message before closing
+      // Show success message from backend (or fallback)
       if (msg) {
-        msg.textContent = "Session restored successfully. Redirecting...";
+        msg.textContent = res?.message || "Session restored successfully.";
         msg.className = "text-xs min-h-[18px] text-green-600 font-medium";
       }
       
       input.value = "";
       
-      // ✅ NEW: Brief delay so user sees the success message
+      // Brief delay so user sees the success message
       await new Promise(resolve => setTimeout(resolve, 800));
       
       unlockSession();
     } catch (err) {
-      // ✅ CHANGED: Better error handling with button reset
       if (msg) {
         msg.textContent = err.message || "Unlock failed. Please try again.";
         msg.className = "text-xs min-h-[18px] text-red-600";
       }
-      // ✅ NEW: Re-enable button on error
       if (unlockBtn) {
         unlockBtn.disabled = false;
         unlockBtn.textContent = "Unlock";
@@ -133268,6 +133266,60 @@ function bindProjectChangeModalOnce() {
     );
 }
 
+function fillProjectTimeEmployeeSelect(selectedId = "") {
+  const el = document.getElementById("projectTimeUserId");
+  if (!el) return;
+
+  const renderOptions = (employees) => {
+    const rows = (Array.isArray(employees) ? employees : [])
+      .filter(emp => {
+        const status = String(emp?.employment_status || emp?.status || "active").toLowerCase();
+        return status !== "inactive" && Number(emp?.id || 0) > 0;
+      })
+      .sort((a, b) => {
+        const aName = [a.first_name, a.last_name].filter(Boolean).join(" ");
+        const bName = [b.first_name, b.last_name].filter(Boolean).join(" ");
+        return aName.localeCompare(bName);
+      });
+
+    el.innerHTML = `
+      <option value="">Select employee…</option>
+      ${rows.map(emp => {
+        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `Employee #${emp.id}`;
+        const selected = String(emp.id) === String(selectedId) ? " selected" : "";
+        return `
+        <option value="${esc(String(emp.id))}"${selected}>${esc(name)}</option>`;
+      }).join("")}
+    `;
+  };
+
+  // Use cached project lookup employees if available
+  const cached = projectLookupState?.employees;
+  if (Array.isArray(cached) && cached.length) {
+    renderOptions(cached);
+    return;
+  }
+
+  // Fetch from payroll employees endpoint
+  el.innerHTML = `<option value="">Loading employees…</option>`;
+
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) {
+    el.innerHTML = `<option value="">No company selected</option>`;
+    return;
+  }
+
+  apiFetch(ENDPOINTS.payroll.employees(cid))
+    .then(res => {
+      const employees = res?.data || res?.employees || res?.items || res || [];
+      renderOptions(Array.isArray(employees) ? employees : []);
+    })
+    .catch(err => {
+      console.warn("[Time Entry] failed to load payroll employees", err);
+      el.innerHTML = `<option value="">No employees available</option>`;
+    });
+}
+
 async function openProjectTimeModal(
   projectId,
   entry = null
@@ -133283,8 +133335,8 @@ async function openProjectTimeModal(
   document.getElementById("projectTimeProjectId").value =
     String(projectId);
 
-  document.getElementById("projectTimeUserId").value =
-    entry?.user_id || "";
+  // Populate employee dropdown
+  fillProjectTimeEmployeeSelect(entry?.user_id || "");  // ← Already done! ✅
 
   document.getElementById("projectTimeDate").value =
     entry?.work_date || today;
