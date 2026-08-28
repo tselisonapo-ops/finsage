@@ -29158,13 +29158,15 @@ tbody tr:hover {
         placeholder="Enter your password"
       />
 
-      <p id="sessionUnlockMsg" class="text-xs text-red-600"></p>
+      <!-- ✅ CHANGED: Added min-h-[18px] for stable message area, removed fixed red color -->
+      <p id="sessionUnlockMsg" class="text-xs min-h-[18px]"></p>
 
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" id="sessionLockSignOutBtn" class="btn">
           Sign out
         </button>
-        <button type="submit" class="btn btn-highlight">
+        <!-- ✅ CHANGED: Added ID for JS control -->
+        <button type="submit" id="sessionUnlockBtn" class="btn btn-highlight">
           Unlock
         </button>
       </div>

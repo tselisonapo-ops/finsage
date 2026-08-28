@@ -7965,11 +7965,33 @@ function bindSessionUnlockForm() {
     e.preventDefault();
 
     const password = input?.value || "";
-    if (msg) msg.textContent = "";
+    // ✅ NEW: Get button reference for state control
+    const unlockBtn = document.getElementById("sessionUnlockBtn");
+    
+    // ✅ CHANGED: Reset message with proper styling
+    if (msg) {
+      msg.textContent = "";
+      msg.className = "text-xs min-h-[18px]";
+    }
 
     if (!password) {
-      if (msg) msg.textContent = "Enter your password.";
+      // ✅ CHANGED: Styled error message
+      if (msg) {
+        msg.textContent = "Enter your password.";
+        msg.className = "text-xs min-h-[18px] text-red-600";
+      }
       return;
+    }
+
+    // ✅ NEW: Show "unlocking" feedback
+    if (msg) {
+      msg.textContent = "Verifying credentials...";
+      msg.className = "text-xs min-h-[18px] text-slate-500";
+    }
+    // ✅ NEW: Disable button and change text
+    if (unlockBtn) {
+      unlockBtn.disabled = true;
+      unlockBtn.textContent = "Unlocking...";
     }
 
     try {
@@ -7979,14 +8001,32 @@ function bindSessionUnlockForm() {
         _allowWhenLocked: true,
       });
 
+      // ✅ NEW: Show success message before closing
+      if (msg) {
+        msg.textContent = "Session restored successfully. Redirecting...";
+        msg.className = "text-xs min-h-[18px] text-green-600 font-medium";
+      }
+      
       input.value = "";
+      
+      // ✅ NEW: Brief delay so user sees the success message
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
       unlockSession();
     } catch (err) {
-      if (msg) msg.textContent = err.message || "Unlock failed.";
+      // ✅ CHANGED: Better error handling with button reset
+      if (msg) {
+        msg.textContent = err.message || "Unlock failed. Please try again.";
+        msg.className = "text-xs min-h-[18px] text-red-600";
+      }
+      // ✅ NEW: Re-enable button on error
+      if (unlockBtn) {
+        unlockBtn.disabled = false;
+        unlockBtn.textContent = "Unlock";
+      }
     }
   });
 }
-
 window.bindSessionUnlockForm = bindSessionUnlockForm;
 
 bindSessionUnlockForm?.();
