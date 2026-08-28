@@ -127243,143 +127243,133 @@ function fillProjectTeamMemberSelect(selectedId = "") {
   
   if (!searchInput || !hiddenSelect || !dropdownList) return;
 
-  // Render filtered employee list
-  const renderOptions = (employees, filterText = "") => {
-    window._projectTeamEmployeesCache = employees; // Store for search
-    
-    // Filter employees
-    const filtered = (Array.isArray(employees) ? employees : [])
-      .filter(emp => {
-        const status = String(emp?.employment_status || emp?.status || "active").toLowerCase();
-        if (status === "inactive") return false;
-        if (Number(emp?.id || 0) <= 0) return false;
-        
-        // Apply text filter if provided
-        if (filterText && filterText.trim()) {
-          const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ").toLowerCase();
-          const email = (emp.email || "").toLowerCase();
-          const searchText = filterText.toLowerCase().trim();
-          return name.includes(searchText) || email.includes(searchText);
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        const aName = [a.first_name, a.last_name].filter(Boolean).join(" ");
-        const bName = [b.first_name, b.last_name].filter(Boolean).join(" ");
-        return aName.localeCompare(bName);
-      });
+  let allEmployees = [];
+  let debounceTimer = null;
 
-    // Show no results message if filtered but empty
-    if (!filtered.length && filterText.trim()) {
-      dropdownList.innerHTML = '<li class="px-2 py-2 text-slate-400 italic">No matching employees</li>';
-      dropdownList.classList.remove('hidden');
+  // --- FILTER & RENDER DROPDOWN ---
+  const renderDropdown = (filterText = "") => {
+    const query = filterText.toLowerCase().trim();
+    const filtered = allEmployees.filter(emp => {
+      const name = [emp.first_name, emp.last_name, emp.email].filter(Boolean).join(" ").toLowerCase();
+      return !query || name.includes(query);
+    });
+
+    if (filtered.length === 0) {
+      dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">No matching employees</li>';
+    } else {
+      dropdownList.innerHTML = filtered.map(emp => {
+        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `Employee #${emp.id}`;
+        const isSelected = String(emp.id) === String(selectedId);
+        return `<li class="px-2 py-1.5 cursor-pointer hover:bg-blue-50 ${isSelected ? 'bg-blue-100 font-semibold' : ''}" 
+                     data-id="${emp.id}" data-name="${name}">${esc(name)}</li>`;
+      }).join("");
+
+      // Click handler for dropdown items
+      dropdownList.querySelectorAll("li[data-id]").forEach(li => {
+        li.addEventListener("click", () => {
+          searchInput.value = li.dataset.name;
+          hiddenSelect.value = li.dataset.id;
+          dropdownList.classList.add("hidden");
+        });
+      });
+    }
+    
+    if (!dropdownList.classList.contains("hidden")) {
+      dropdownList.classList.remove("hidden");
+    }
+  };
+
+  // --- LOAD EMPLOYEES FROM PAYROLL API ---
+  const loadEmployees = () => {
+    // Check cache first
+    const cached = projectLookupState?.employees;
+    if (Array.isArray(cached) && cached.length) {
+      allEmployees = cached;
+      window._projectTeamEmployeesCache = cached;
+      renderDropdown(searchInput.value);
       return;
     }
 
-    // Build list HTML
-    dropdownList.innerHTML = filtered.map(emp => {
-      const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || "Employee #" + emp.id;
-      const selected = String(emp.id) === String(selectedId) ? " bg-blue-100 font-medium" : "";
-      return '<li data-value="' + esc(String(emp.id)) + '" data-name="' + esc(name) + '" class="px-2 py-1.5 cursor-pointer hover:bg-blue-50' + selected + '">' + esc(name) + '</li>';
-    }).join("");
+    dropdownList.classList.remove("hidden");
+    dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">Loading employees...</li>';
 
-    // Show dropdown when there's content
-    if (filtered.length > 0) {
-      dropdownList.classList.remove('hidden');
-    }
+    const cid = window.COMPANY_ID || currentCompanyId || "";
+    const endpoint = typeof ENDPOINTS !== 'undefined' && ENDPOINTS.payroll?.employees 
+      ? ENDPOINTS.payroll.employees(cid) 
+      : `/api/payroll/employees?company_id=${cid}`;
 
-    // Add click handlers to list items
-    dropdownList.querySelectorAll("li[data-value]").forEach(li => {
-      li.onclick = function() {
-        var val = this.dataset.value;
-        var name = this.dataset.name;
+    apiFetch(endpoint)
+      .then(res => {
+        const employees = res?.data || res?.employees || res?.items || res || [];
+        allEmployees = Array.isArray(employees) ? employees : [];
         
-        // Set values
-        hiddenSelect.value = val;
-        searchInput.value = name;
+        window._projectTeamEmployeesCache = allEmployees;
+        if (projectLookupState) {
+          projectLookupState.employees = allEmployees;
+        }
         
-        // Hide dropdown
-        dropdownList.classList.add('hidden');
-        
-        // Visual feedback
-        this.classList.add('bg-blue-100');
-        var self = this;
-        setTimeout(function() { self.classList.remove('bg-blue-100'); }, 200);
-      };
-    });
+        renderDropdown(searchInput.value);
+      })
+      .catch(err => {
+        console.warn("[Projects] Failed to load payroll employees:", err);
+        dropdownList.innerHTML = '<li class="px-2 py-1.5 text-red-500">Failed to load employees</li>';
+      });
   };
 
-  // Set initial display for pre-selected item
+  // --- EVENT HANDLERS ---
+  searchInput.addEventListener("focus", () => {
+    if (allEmployees.length === 0) loadEmployees();
+    else {
+      dropdownList.classList.remove("hidden");
+      renderDropdown(searchInput.value);
+    }
+  });
+
+  searchInput.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      renderDropdown(searchInput.value);
+    }, 150);  // 150ms debounce for live filtering
+  });
+
+  // Close when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!searchInput.contains(e.target) && !dropdownList.contains(e.target)) {
+      dropdownList.classList.add("hidden");
+    }
+  });
+
+  // Keyboard: Escape closes, Enter selects
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      dropdownList.classList.add("hidden");
+      searchInput.blur();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const highlighted = dropdownList.querySelector("li.hover:bg-blue-50:not(.text-slate-400):not(.text-red-500)");
+      if (highlighted) highlighted.click();
+    }
+  });
+
+  // Pre-select if editing existing member
   if (selectedId) {
-    var cached = projectLookupState ? projectLookupState.employees : null;
-    if (Array.isArray(cached) && cached.length) {
-      var found = cached.find(function(e) { return String(e.id) === String(selectedId); });
-      if (found) {
-        var name = [found.first_name, found.last_name].filter(Boolean).join(" ") || ("Employee #" + found.id);
+    const preloadAndSelect = () => {
+      const emp = allEmployees.find(e => String(e.id) === String(selectedId));
+      if (emp) {
+        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ");
         searchInput.value = name;
         hiddenSelect.value = selectedId;
       }
+    };
+    
+    if (allEmployees.length > 0) {
+      preloadAndSelect();
+    } else {
+      setTimeout(checkAndSet, 100);
     }
-  } else {
-    searchInput.value = "";
-    hiddenSelect.value = "";
   }
 
-  // Use cached project lookup employees if available
-  var cached = projectLookupState ? projectLookupState.employees : null;
-  if (Array.isArray(cached) && cached.length) {
-    renderOptions(cached, "");
-    return;
-  }
-
-  // Show loading state
-  dropdownList.innerHTML = '<li class="px-2 py-2 text-slate-400">Loading employees...</li>';
-  dropdownList.classList.remove('hidden');
-
-  // Fetch from payroll employees endpoint
-  var cid = (typeof getActiveCompanyId === 'function') ? getActiveCompanyId() : CURRENT_COMPANY_ID;
-  if (!cid) {
-    dropdownList.innerHTML = '<li class="px-2 py-2 text-red-500">No company selected</li>';
-    return;
-  }
-
-  apiFetch(ENDPOINTS.payroll.employees(cid))
-    .then(function(res) {
-      var employees = (res && res.data) || (res && res.employees) || (res && res.items) || res || [];
-      renderOptions(Array.isArray(employees) ? employees : []);
-    })
-    .catch(function(err) {
-      console.warn("[Projects] failed to load payroll employees", err);
-      dropdownList.innerHTML = '<li class="px-2 py-2 text-red-500">Failed to load</li>';
-    });
-
-  // LIVE SEARCH: Filter on every keystroke with debounce
-  var debounceTimer;
-  searchInput.oninput = function() {
-    clearTimeout(debounceTimer);
-    var self = this;
-    debounceTimer = setTimeout(function() {
-      var employees = window._projectTeamEmployeesCache;
-      if (employees && employees.length) {
-        renderOptions(employees, self.value);
-      }
-    }, 150); // Small delay for better UX
-  };
-
-  // Show dropdown on focus
-  searchInput.onfocus = function() {
-    var employees = window._projectTeamEmployeesCache;
-    if (employees && employees.length) {
-      renderOptions(employees, this.value);
-    }
-  };
-
-  // Hide dropdown when clicking outside
-  document.addEventListener('click', function(e) {
-    if (!e.target.closest('label')) {
-      dropdownList.classList.add('hidden');
-    }
-  });
+  loadEmployees();  // Initial load
 }
 
 function populateExpenseAccountSelect(selectedCode = "") {
