@@ -132517,6 +132517,11 @@ async function openProjectTeamModal(projectId) {
       console.warn("[Projects] loadProjectPeopleAndDepartments failed", e);
     }
   }
+
+  // CLEAR: Reset search field and hidden ID before re-initializing
+  document.getElementById("projectTeamUserSearch").value = "";  // Clear name display
+  document.getElementById("projectTeamUserId").value = "";       // Clear stored ID
+
   fillProjectTeamMemberSelect("");
 
   document
