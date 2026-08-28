@@ -127237,27 +127237,106 @@ async function populateProjectCostCodeSelect(selectId, blank = "None") {
 window._projectTeamEmployeesCache = [];
 
 // 1. Helper: Match typed name to an employee in projectLookupState.employees
-function resolveEmployeeFromSearch(query) {
+// Helper to extract a clean full name from any employee object format
+function getEmpFullName(emp) {
+  if (!emp) return "";
+  if (emp.name) return emp.name.trim();
+  if (emp.full_name) return emp.full_name.trim();
+  if (emp.employee_name) return emp.employee_name.trim();
+  return `${emp.first_name || ""} ${emp.last_name || ""}`.trim();
+}
+
+// 1. Resolver helper for exact/fallback matching
+function resolveEmployeeFromSearch(query, exactOnly = false) {
   if (!query || !Array.isArray(projectLookupState?.employees)) return null;
   const q = query.trim().toLowerCase();
-  
-  // Exact or contains match on "First Last", "Last First", email, or employee_no
-  return (
-    projectLookupState.employees.find((emp) => {
-      const fullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim().toLowerCase();
-      const reverseName = `${emp.last_name || ""} ${emp.first_name || ""}`.trim().toLowerCase();
-      const email = (emp.email || "").toLowerCase();
-      const empNo = (emp.employee_no || "").toLowerCase();
+  if (!q) return null;
 
-      return (
-        fullName === q ||
-        reverseName === q ||
-        empNo === q ||
-        email === q ||
-        fullName.includes(q)
-      );
-    }) || null
-  );
+  const employees = projectLookupState.employees;
+
+  // Exact Match
+  const exactMatch = employees.find((emp) => {
+    const fullName = getEmpFullName(emp).toLowerCase();
+    const empNo = (emp.employee_no || emp.code || "").toLowerCase();
+    const email = (emp.email || "").toLowerCase();
+    return fullName === q || empNo === q || email === q;
+  });
+
+  if (exactMatch || exactOnly) return exactMatch || null;
+
+  // Fuzzy / Starts-with match
+  return employees.find((emp) => {
+    const fullName = getEmpFullName(emp).toLowerCase();
+    return fullName.startsWith(q) || fullName.includes(q);
+  }) || null;
+}
+
+// 2. Dropdown Filter and Renderer
+function fillProjectTeamMemberSelect(query = "") {
+  const listEl = document.getElementById("projectTeamUserList");
+  if (!listEl) return;
+
+  const employees = Array.isArray(projectLookupState?.employees)
+    ? projectLookupState.employees
+    : [];
+
+  const q = (query || "").trim().toLowerCase();
+
+  // Filter based on full name or employee number
+  const filtered = q
+    ? employees.filter((emp) => {
+        const name = getEmpFullName(emp).toLowerCase();
+        const empNo = (emp.employee_no || emp.code || "").toLowerCase();
+        return name.includes(q) || empNo.includes(q);
+      })
+    : employees.slice(0, 30); // show top 30 when search is empty
+
+  if (!filtered.length) {
+    listEl.innerHTML = `<li class="p-2 text-slate-400">No matching employees found</li>`;
+    listEl.classList.remove("hidden");
+    return;
+  }
+
+  listEl.innerHTML = filtered
+    .map((emp) => {
+      const fullName = getEmpFullName(emp);
+      const empNo = emp.employee_no || emp.code || "";
+      const role = emp.position_title || emp.position || emp.role || "";
+      const empId = emp.id || emp.user_id;
+
+      return `
+        <li class="p-2 hover:bg-slate-100 cursor-pointer flex justify-between items-center text-xs border-b last:border-b-0"
+            data-id="${empId}"
+            data-name="${fullName}"
+            data-role="${role}">
+          <span class="font-medium text-slate-800">${fullName}</span>
+          <span class="text-slate-400 font-mono">${empNo}</span>
+        </li>
+      `;
+    })
+    .join("");
+
+  listEl.classList.remove("hidden");
+
+  // Bind clicks to each item
+  listEl.querySelectorAll("li[data-id]").forEach((item) => {
+    item.onmousedown = (e) => {
+      e.preventDefault(); // Prevents input blur from firing first
+      const id = item.dataset.id;
+      const name = item.dataset.name;
+      const role = item.dataset.role;
+
+      document.getElementById("projectTeamUserId").value = id;
+      document.getElementById("projectTeamUserSearch").value = name;
+
+      const roleInput = document.getElementById("projectTeamRole");
+      if (roleInput && !roleInput.value && role) {
+        roleInput.value = role;
+      }
+
+      listEl.classList.add("hidden");
+    };
+  });
 }
 
 // 2. Helper: Filter and render the dropdown list
@@ -127324,45 +127403,28 @@ function fillProjectTeamMemberSelect(query = "") {
 // 3. Event Binder (Run once on modal setup)
 let _teamModalBound = false;
 function bindProjectTeamModalOnce() {
-  const modal = document.getElementById("projectTeamModal");
-  if (!modal || modal.dataset.bound === "true") return;
-  modal.dataset.bound = "true"; // Flag stored safely on DOM element
-
   const searchInput = document.getElementById("projectTeamUserSearch");
   const hiddenIdInput = document.getElementById("projectTeamUserId");
   const listEl = document.getElementById("projectTeamUserList");
 
-  if (!searchInput || !hiddenIdInput) return;
+  if (!searchInput || searchInput.dataset.bound === "true") return;
+  searchInput.dataset.bound = "true";
 
-  // On typing: Filter dropdown & only set ID on exact match
+  // Filter on every keystroke
   searchInput.addEventListener("input", (e) => {
     const val = e.target.value;
     fillProjectTeamMemberSelect(val);
 
-    // Only resolve if they typed the full/exact name or ID
-    const exactMatch = resolveEmployeeFromSearch(val, true);
-    hiddenIdInput.value = exactMatch ? String(exactMatch.id) : "";
+    const match = resolveEmployeeFromSearch(val, true);
+    hiddenIdInput.value = match ? String(match.id || match.user_id) : "";
   });
 
-  // On focus: Open dropdown
+  // Open dropdown on focus
   searchInput.addEventListener("focus", () => {
     fillProjectTeamMemberSelect(searchInput.value);
   });
 
-  // Prevent Enter key in search box from triggering accidental form submit
-  searchInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const match = resolveEmployeeFromSearch(searchInput.value);
-      if (match) {
-        hiddenIdInput.value = String(match.id);
-        searchInput.value = `${match.first_name || ""} ${match.last_name || ""}`.trim();
-        listEl?.classList.add("hidden");
-      }
-    }
-  });
-
-  // On blur: Lock in closest match if user typed manually
+  // On blur, auto-resolve if typed manually
   searchInput.addEventListener("blur", () => {
     setTimeout(() => {
       if (listEl) listEl.classList.add("hidden");
@@ -127370,14 +127432,27 @@ function bindProjectTeamModalOnce() {
       if (!hiddenIdInput.value && searchInput.value.trim()) {
         const match = resolveEmployeeFromSearch(searchInput.value);
         if (match) {
-          hiddenIdInput.value = String(match.id);
-          searchInput.value = `${match.first_name || ""} ${match.last_name || ""}`.trim();
+          hiddenIdInput.value = String(match.id || match.user_id);
+          searchInput.value = getEmpFullName(match);
         }
       }
     }, 200);
   });
 
-  // Click outside to close dropdown
+  // Handle Enter key
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const match = resolveEmployeeFromSearch(searchInput.value);
+      if (match) {
+        hiddenIdInput.value = String(match.id || match.user_id);
+        searchInput.value = getEmpFullName(match);
+        listEl?.classList.add("hidden");
+      }
+    }
+  });
+
+  // Close dropdown if clicking outside
   document.addEventListener("click", (e) => {
     if (!searchInput.contains(e.target) && !listEl?.contains(e.target)) {
       listEl?.classList.add("hidden");
