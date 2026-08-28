@@ -127202,7 +127202,7 @@ function fillProjectTeamMemberSelect(selectedId = "") {
   const renderOptions = (employees) => {
     const rows = (Array.isArray(employees) ? employees : [])
       .filter(emp => {
-        const status = String(emp?.employment_status || "active").toLowerCase();
+        const status = String(emp?.employment_status || emp?.status || "active").toLowerCase();
         return status !== "inactive" && Number(emp?.id || 0) > 0;
       })
       .sort((a, b) => {
@@ -127214,32 +127214,38 @@ function fillProjectTeamMemberSelect(selectedId = "") {
     el.innerHTML = `
       <option value="">Select team member…</option>
       ${rows.map(emp => {
-        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `User #${emp.id}`;
-        const email = emp.email ? ` — ${emp.email}` : "";
+        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `Employee #${emp.id}`;
         const selected = String(emp.id) === String(selectedId) ? " selected" : "";
         return `
-        <option value="${esc(String(emp.id))}"${selected}>${esc(name)}${esc(email)}</option>`;
+        <option value="${esc(String(emp.id))}"${selected}>${esc(name)}</option>`;
       }).join("")}
     `;
   };
 
+  // Use cached project lookup employees if available
   const cached = projectLookupState?.employees;
   if (Array.isArray(cached) && cached.length) {
     renderOptions(cached);
     return;
   }
 
-  // Cache empty -> show loading placeholder and fetch raw users as a fallback.
+  // Fetch from payroll employees endpoint
   el.innerHTML = `<option value="">Loading team members…</option>`;
 
-  apiFetch(window.ENDPOINTS.users)
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) {
+    el.innerHTML = `<option value="">No company selected</option>`;
+    return;
+  }
+
+  apiFetch(ENDPOINTS.payroll.employees(cid))
     .then(res => {
-      const users = res?.users || res?.items || res || [];
-      renderOptions(Array.isArray(users) ? users : []);
+      const employees = res?.data || res?.employees || res?.items || res || [];
+      renderOptions(Array.isArray(employees) ? employees : []);
     })
     .catch(err => {
-      console.warn("[Projects] failed to load users for team select", err);
-      el.innerHTML = `<option value="">No users available</option>`;
+      console.warn("[Projects] failed to load payroll employees for team select", err);
+      el.innerHTML = `<option value="">No employees available</option>`;
     });
 }
 
