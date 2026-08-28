@@ -9938,17 +9938,19 @@ tbody tr:hover {
   }
 }
 
-/* Styles for searchable dropdown */
-label.focused #projectTeamUserList:not(:empty):not(.hidden) {
-  display: block !important;
-}
-#projectTeamUserList li {
-  cursor: pointer;
-}
+/* Searchable Employee Dropdown Styles */
 #projectTeamUserList li:hover,
-#projectTeamUserList li.selected {
+#projectTeamUserList li:focus {
   background-color: #e0f2fe;
   color: var(--fs-navy);
+}
+
+#projectTeamUserList li.bg-blue-100 {
+  background-color: #dbeafe;
+}
+
+label:has(#projectTeamUserSearch) {
+  position: relative;
 }
   </style>
 
@@ -18277,27 +18279,24 @@ label.focused #projectTeamUserList:not(:empty):not(.hidden) {
 
                   <!-- AFTER: Searchable combobox -->
                   <label class="relative block">
-                    <div class="text-slate-500 mb-1">Team Member</div>
-                    
-                    <!-- Search input -->
+                    <div class="text-slate-500 mb-1">
+                      Team Member
+                    </div>
+
                     <input id="projectTeamUserSearch"
                           type="text"
-                          class="w-full border rounded px-2 py-2 pr-8"
+                          class="w-full border rounded px-2 py-2"
                           placeholder="Type to search employees..."
-                          autocomplete="off"
-                          onfocus="this.parentElement.classList.add('focused')"
-                          onblur="setTimeout(() => this.parentElement.classList.remove('focused'), 200)">
-                    
-                    <!-- Hidden select stores actual value -->
-                    <select id="projectTeamUserId" 
+                          autocomplete="off">
+
+                    <select id="projectTeamUserId"
                             class="absolute opacity-0 h-0 w-0"
                             tabindex="-1">
                     </select>
-                    
-                    <!-- Dropdown list (shown/hidden) -->
+
                     <ul id="projectTeamUserList"
-                        class="hidden absolute z-10 w-full bg-white border rounded shadow-lg mt-1 max-h-48 overflow-auto text-xs">
-                      <li class="px-2 py-1 text-slate-400">Loading...</li>
+                        class="hidden absolute z-50 w-full bg-white border rounded shadow-lg mt-1 max-h-48 overflow-auto text-xs left-0">
+                      <li class="px-2 py-1.5 text-slate-400">Loading...</li>
                     </ul>
                   </label>
 
