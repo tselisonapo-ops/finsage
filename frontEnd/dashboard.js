@@ -127271,133 +127271,137 @@ function resolveEmployeeFromSearch(query, exactOnly = false) {
   }) || null;
 }
 
-// 2. Dropdown Filter and Renderer
-function fillProjectTeamMemberSelect(query = "") {
-  const listEl = document.getElementById("projectTeamUserList");
-  if (!listEl) return;
-
-  const employees = Array.isArray(projectLookupState?.employees)
-    ? projectLookupState.employees
-    : [];
-
-  const q = (query || "").trim().toLowerCase();
-
-  // Filter based on full name or employee number
-  const filtered = q
-    ? employees.filter((emp) => {
-        const name = getEmpFullName(emp).toLowerCase();
-        const empNo = (emp.employee_no || emp.code || "").toLowerCase();
-        return name.includes(q) || empNo.includes(q);
-      })
-    : employees.slice(0, 30); // show top 30 when search is empty
-
-  if (!filtered.length) {
-    listEl.innerHTML = `<li class="p-2 text-slate-400">No matching employees found</li>`;
-    listEl.classList.remove("hidden");
-    return;
-  }
-
-  listEl.innerHTML = filtered
-    .map((emp) => {
-      const fullName = getEmpFullName(emp);
-      const empNo = emp.employee_no || emp.code || "";
-      const role = emp.position_title || emp.position || emp.role || "";
-      const empId = emp.id || emp.user_id;
-
-      return `
-        <li class="p-2 hover:bg-slate-100 cursor-pointer flex justify-between items-center text-xs border-b last:border-b-0"
-            data-id="${empId}"
-            data-name="${fullName}"
-            data-role="${role}">
-          <span class="font-medium text-slate-800">${fullName}</span>
-          <span class="text-slate-400 font-mono">${empNo}</span>
-        </li>
-      `;
-    })
-    .join("");
-
-  listEl.classList.remove("hidden");
-
-  // Bind clicks to each item
-  listEl.querySelectorAll("li[data-id]").forEach((item) => {
-    item.onmousedown = (e) => {
-      e.preventDefault(); // Prevents input blur from firing first
-      const id = item.dataset.id;
-      const name = item.dataset.name;
-      const role = item.dataset.role;
-
-      document.getElementById("projectTeamUserId").value = id;
-      document.getElementById("projectTeamUserSearch").value = name;
-
-      const roleInput = document.getElementById("projectTeamRole");
-      if (roleInput && !roleInput.value && role) {
-        roleInput.value = role;
-      }
-
-      listEl.classList.add("hidden");
-    };
-  });
-}
-
 // 2. Helper: Filter and render the dropdown list
-function fillProjectTeamMemberSelect(query = "") {
-  const listEl = document.getElementById("projectTeamUserList");
-  if (!listEl) return;
-
-  const employees = projectLookupState?.employees || [];
-  const q = query.trim().toLowerCase();
-
-  const filtered = q
-    ? employees.filter((emp) => {
-        const name = `${emp.first_name || ""} ${emp.last_name || ""}`.toLowerCase();
-        const empNo = (emp.employee_no || "").toLowerCase();
-        return name.includes(q) || empNo.includes(q);
-      })
-    : employees.slice(0, 30); // show top 30 if query is empty
-
-  if (!filtered.length) {
-    listEl.innerHTML = `<li class="p-2 text-slate-400">No matching employees</li>`;
-    listEl.classList.remove("hidden");
+function fillProjectTeamMemberSelect(selectedId = "") {
+  // Get all three elements of the searchable combobox
+  const searchInput = document.getElementById("projectTeamUserSearch");
+  const hiddenInput = document.getElementById("projectTeamUserId");
+  const dropdownList = document.getElementById("projectTeamUserList");
+  
+  if (!searchInput || !hiddenInput || !dropdownList) {
+    console.error("[TeamMember] Missing elements:", !!searchInput, !!hiddenInput, !!dropdownList);
     return;
   }
 
-  listEl.innerHTML = filtered
-    .map((emp) => {
-      const fullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim();
-      return `
-        <li class="p-2 hover:bg-slate-100 cursor-pointer flex justify-between items-center text-xs"
-            data-id="${emp.id}"
-            data-name="${fullName}"
-            data-role="${emp.position_title || ""}">
-          <span class="font-medium text-slate-800">${fullName}</span>
-          <span class="text-slate-400">${emp.employee_no || ""}</span>
-        </li>
-      `;
-    })
-    .join("");
+  let allEmployees = [];
+  let debounceTimer = null;
 
-  listEl.classList.remove("hidden");
+  // --- RENDER FILTERED DROPDOWN ---
+  const renderDropdown = (filterText = "") => {
+    const query = filterText.toLowerCase().trim();
+    
+    // FILTER: Only show matching employees
+    const filtered = allEmployees.filter(emp => {
+      const searchText = [emp.first_name, emp.last_name].filter(Boolean).join(" ").toLowerCase();
+      return !query || searchText.includes(query);
+    });
 
-  // Bind click handlers to each list item
-  listEl.querySelectorAll("li[data-id]").forEach((item) => {
-    item.onmousedown = (e) => {
-      e.preventDefault(); // Prevent input blur from closing before click registers
-      const empId = item.dataset.id;
-      const empName = item.dataset.name;
-      const empRole = item.dataset.role;
+    // Clear and render
+    if (filtered.length === 0) {
+      dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">No matches found</li>';
+    } else {
+      dropdownList.innerHTML = filtered.map(emp => {
+        // Show ONLY name, no codes/emails
+        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || ('Employee #' + emp.id);
+        const isSelected = String(emp.id) === String(selectedId);
+        return '<li class="px-2 py-1.5 cursor-pointer hover:bg-blue-50' + (isSelected ? ' bg-blue-100 font-semibold' : '') + '" data-id="' + esc(String(emp.id)) + '" data-name="' + esc(name) + '">' + esc(name) + '</li>';
+      }).join("");
 
-      document.getElementById("projectTeamUserId").value = empId;
-      document.getElementById("projectTeamUserSearch").value = empName;
+      // Click handler - sets BOTH fields
+      const items = dropdownList.querySelectorAll("li[data-id]");
+      items.forEach(item => {
+        item.onclick = () => {
+          searchInput.value = item.dataset.name;
+          hiddenInput.value = item.dataset.id;
+          dropdownList.classList.add("hidden");
+          console.log("[TeamMember] Selected:", item.dataset.name, "ID:", item.dataset.id);
+        };
+      });
+    }
+  };
 
-      // Optional: Auto-fill Project Role if empty
-      const roleInput = document.getElementById("projectTeamRole");
-      if (roleInput && !roleInput.value && empRole) {
-        roleInput.value = empRole;
-      }
+  // --- LOAD EMPLOYEES FROM PAYROLL API ---
+  const loadEmployees = () => {
+    // Check cache first
+    const cached = projectLookupState?.employees;
+    if (Array.isArray(cached) && cached.length) {
+      allEmployees = cached;
+      renderDropdown(searchInput.value);
+      return;
+    }
 
-      listEl.classList.add("hidden");
-    };
+    // Show loading
+    dropdownList.classList.remove("hidden");
+    dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">Loading...</li>';
+
+    // Get endpoint
+    const cid = window.COMPANY_ID || window.currentCompanyId || "";
+    const endpoint = (typeof ENDPOINTS !== 'undefined' && ENDPOINTS.payroll?.employees)
+      ? ENDPOINTS.payroll.employees(cid)
+      : `/api/payroll/employees?company_id=${encodeURIComponent(cid)}`;
+
+    apiFetch(endpoint)
+      .then(res => {
+        const employees = res?.data || res?.employees || res?.items || res || [];
+        allEmployees = Array.isArray(employees) ? employees : [];
+        
+        // Cache it
+        window._projectTeamEmployeesCache = allEmployees;
+        if (projectLookupState) projectLookupState.employees = allEmployees;
+        
+        renderDropdown(searchInput.value);
+      })
+      .catch(err => {
+        console.warn("[TeamMember] Load error:", err);
+        dropdownList.innerHTML = '<li class="px-2 py-1.5 text-red-500">Failed to load</li>';
+      });
+  };
+
+  // --- EVENT LISTENERS ---
+  
+  // Focus: show dropdown
+  searchInput.addEventListener("focus", () => {
+    if (!allEmployees.length) loadEmployees();
+    else { dropdownList.classList.remove("hidden"); renderDropdown(searchInput.value); }
   });
+
+  // Input: LIVE FILTER with debounce
+  searchInput.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      renderDropdown(searchInput.value);  // THIS IS THE FILTERING!
+      dropdownList.classList.remove("hidden");
+    }, 150);
+  });
+
+  // Click outside: close
+  document.addEventListener("click", (e) => {
+    if (!searchInput.contains(e.target) && !dropdownList.contains(e.target)) {
+      dropdownList.classList.add("hidden");
+    }
+  });
+
+  // Keyboard
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { dropdownList.classList.add("hidden"); searchInput.blur(); }
+    else if (e.key === "Enter") { e.preventDefault(); dropdownList.querySelector("li[data-id]")?.click(); }
+  });
+
+  // Pre-select if editing existing member
+  if (selectedId) {
+    const tryPreselect = () => {
+      const found = allEmployees.find(e => String(e.id) === String(selectedId));
+      if (found) {
+        searchInput.value = [found.first_name, found.last_name].filter(Boolean).join(" ");
+        hiddenInput.value = selectedId;
+      }
+    };
+    if (allEmployees.length > 0) tryPreselect();
+    else { let c=0; const iv=setInterval(()=>{c++;if(allEmployees.length>0){clearInterval(iv);tryPreselect();}else if(c>20)clearInterval(iv);},100); }
+  }
+
+  // Initial load
+  loadEmployees();
 }
 
 // 3. Event Binder (Run once on modal setup)
