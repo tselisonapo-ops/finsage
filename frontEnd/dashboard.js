@@ -127236,144 +127236,153 @@ async function populateProjectCostCodeSelect(selectId, blank = "None") {
 // Store employees globally for search
 window._projectTeamEmployeesCache = [];
 
-function fillProjectTeamMemberSelect(selectedId = "") {
-  // Get all three elements of the searchable combobox
-  const searchInput = document.getElementById("projectTeamUserSearch");
-  const hiddenSelect = document.getElementById("projectTeamUserId");
-  const dropdownList = document.getElementById("projectTeamUserList");
+// 1. Helper: Match typed name to an employee in projectLookupState.employees
+function resolveEmployeeFromSearch(query) {
+  if (!query || !Array.isArray(projectLookupState?.employees)) return null;
+  const q = query.trim().toLowerCase();
   
-  if (!searchInput || !hiddenSelect || !dropdownList) {
-    console.warn("[TeamMember] Missing elements:", { 
-      searchInput: !!searchInput, 
-      hiddenSelect: !!hiddenSelect, 
-      dropdownList: !!dropdownList 
-    });
+  // Exact or contains match on "First Last", "Last First", email, or employee_no
+  return (
+    projectLookupState.employees.find((emp) => {
+      const fullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim().toLowerCase();
+      const reverseName = `${emp.last_name || ""} ${emp.first_name || ""}`.trim().toLowerCase();
+      const email = (emp.email || "").toLowerCase();
+      const empNo = (emp.employee_no || "").toLowerCase();
+
+      return (
+        fullName === q ||
+        reverseName === q ||
+        empNo === q ||
+        email === q ||
+        fullName.includes(q)
+      );
+    }) || null
+  );
+}
+
+// 2. Helper: Filter and render the dropdown list
+function fillProjectTeamMemberSelect(query = "") {
+  const listEl = document.getElementById("projectTeamUserList");
+  if (!listEl) return;
+
+  const employees = projectLookupState?.employees || [];
+  const q = query.trim().toLowerCase();
+
+  const filtered = q
+    ? employees.filter((emp) => {
+        const name = `${emp.first_name || ""} ${emp.last_name || ""}`.toLowerCase();
+        const empNo = (emp.employee_no || "").toLowerCase();
+        return name.includes(q) || empNo.includes(q);
+      })
+    : employees.slice(0, 30); // show top 30 if query is empty
+
+  if (!filtered.length) {
+    listEl.innerHTML = `<li class="p-2 text-slate-400">No matching employees</li>`;
+    listEl.classList.remove("hidden");
     return;
   }
 
-  let allEmployees = [];
-  let debounceTimer = null;
+  listEl.innerHTML = filtered
+    .map((emp) => {
+      const fullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim();
+      return `
+        <li class="p-2 hover:bg-slate-100 cursor-pointer flex justify-between items-center text-xs"
+            data-id="${emp.id}"
+            data-name="${fullName}"
+            data-role="${emp.position_title || ""}">
+          <span class="font-medium text-slate-800">${fullName}</span>
+          <span class="text-slate-400">${emp.employee_no || ""}</span>
+        </li>
+      `;
+    })
+    .join("");
 
-  // --- RENDER FILTERED DROPDOWN ---
-  const renderDropdown = (filterText = "") => {
-    const query = filterText.toLowerCase().trim();
-    
-    // Filter employees by name/email
-    const filtered = allEmployees.filter(emp => {
-      const searchText = [emp.first_name, emp.last_name, emp.email]
-        .filter(Boolean).join(" ").toLowerCase();
-      return !query || searchText.includes(query);
-    });
+  listEl.classList.remove("hidden");
 
-    if (filtered.length === 0) {
-      dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">No matching employees</li>';
-    } else {
-      dropdownList.innerHTML = filtered.map(emp => {
-        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") 
-          || ('Employee #' + emp.id);
-        const isSelected = String(emp.id) === String(selectedId);
-        const selClass = isSelected ? ' bg-blue-100 font-semibold' : '';
-        return '<li class="px-2 py-1.5 cursor-pointer hover:bg-blue-50' + selClass + '" '
-          + 'data-id="' + esc(String(emp.id)) + '" data-name="' + esc(name) + '">'
-          + esc(name) + '</li>';
-      }).join("");
+  // Bind click handlers to each list item
+  listEl.querySelectorAll("li[data-id]").forEach((item) => {
+    item.onmousedown = (e) => {
+      e.preventDefault(); // Prevent input blur from closing before click registers
+      const empId = item.dataset.id;
+      const empName = item.dataset.name;
+      const empRole = item.dataset.role;
 
-      // *** CRITICAL: Click handler sets BOTH fields ***
-      var items = dropdownList.querySelectorAll("li[data-id]");
-      for (var i = 0; i < items.length; i++) {
-        (function(item) {
-          item.addEventListener("click", function() {
-            searchInput.value = item.getAttribute("data-name");     // Show name
-            hiddenSelect.value = item.getAttribute("data-id");       // Store ID ← FIX!
-            dropdownList.classList.add("hidden");
-            console.log("[TeamMember] Selected:", item.getAttribute("data-name"), 
-              "ID:", item.getAttribute("data-id"));
-          });
-        })(items[i]);
+      document.getElementById("projectTeamUserId").value = empId;
+      document.getElementById("projectTeamUserSearch").value = empName;
+
+      // Optional: Auto-fill Project Role if empty
+      const roleInput = document.getElementById("projectTeamRole");
+      if (roleInput && !roleInput.value && empRole) {
+        roleInput.value = empRole;
       }
-    }
-  };
 
-  // --- LOAD EMPLOYEES FROM PAYROLL API ---
-  const loadEmployees = function() {
-    var cached = projectLookupState && projectLookupState.employees;
-    if (cached && Array.isArray(cached) && cached.length > 0) {
-      allEmployees = cached;
-      window._projectTeamEmployeesCache = cached;
-      renderDropdown(searchInput.value);
-      return;
-    }
-
-    dropdownList.classList.remove("hidden");
-    dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">Loading...</li>';
-
-    var cid = (window.COMPANY_ID || window.currentCompanyId || "");
-    var endpoint = (typeof ENDPOINTS !== 'undefined' && ENDPOINTS.payroll && typeof ENDPOINTS.payroll.employees === 'function')
-      ? ENDPOINTS.payroll.employees(cid)
-      : '/api/payroll/employees?company_id=' + encodeURIComponent(cid);
-
-    apiFetch(endpoint)
-      .then(function(res) {
-        var employees = (res && res.data) || (res && res.employees) || (res && res.items) || res || [];
-        allEmployees = Array.isArray(employees) ? employees : [];
-        window._projectTeamEmployeesCache = allEmployees;
-        if (typeof projectLookupState !== 'undefined' && projectLookupState) {
-          projectLookupState.employees = allEmployees;
-        }
-        renderDropdown(searchInput.value);
-      })
-      .catch(function(err) {
-        console.warn("[Projects] Failed to load payroll employees:", err);
-        dropdownList.innerHTML = '<li class="px-2 py-1.5 text-red-500">Failed to load</li>';
-      });
-  };
-
-  // --- EVENT LISTENERS ---
-  searchInput.addEventListener("focus", function() {
-    if (allEmployees.length === 0) loadEmployees();
-    else { dropdownList.classList.remove("hidden"); renderDropdown(searchInput.value); }
-  });
-
-  searchInput.addEventListener("input", function() {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(function() {
-      renderDropdown(searchInput.value);
-      dropdownList.classList.remove("hidden");
-    }, 150);
-  });
-
-  document.addEventListener("click", function(e) {
-    if (!searchInput.contains(e.target) && !dropdownList.contains(e.target)) {
-      dropdownList.classList.add("hidden");
-    }
-  });
-
-  searchInput.addEventListener("keydown", function(e) {
-    if (e.key === "Escape") { dropdownList.classList.add("hidden"); searchInput.blur(); }
-    else if (e.key === "Enter") {
-      e.preventDefault();
-      var highlighted = dropdownList.querySelector("li.hover\\:bg-blue-50");
-      if (highlighted && highlighted.getAttribute("data-id")) highlighted.click();
-    }
-  });
-
-  // Pre-select if editing
-  if (selectedId) {
-    var tryPreselect = function() {
-      var found = null;
-      for (var j = 0; j < allEmployees.length; j++) {
-        if (String(allEmployees[j].id) === String(selectedId)) { found = allEmployees[j]; break; }
-      }
-      if (found) {
-        searchInput.value = [found.first_name, found.last_name].filter(Boolean).join(" ");
-        hiddenSelect.value = selectedId;
-      }
+      listEl.classList.add("hidden");
     };
-    if (allEmployees.length > 0) tryPreselect();
-    else { var t=0; var iv=setInterval(function(){t++;if(allEmployees.length>0){clearInterval(iv);tryPreselect();}else if(t>20)clearInterval(iv);},100); }
-  }
+  });
+}
 
-  loadEmployees();
+// 3. Event Binder (Run once on modal setup)
+let _teamModalBound = false;
+function bindProjectTeamModalOnce() {
+  const modal = document.getElementById("projectTeamModal");
+  if (!modal || modal.dataset.bound === "true") return;
+  modal.dataset.bound = "true"; // Flag stored safely on DOM element
+
+  const searchInput = document.getElementById("projectTeamUserSearch");
+  const hiddenIdInput = document.getElementById("projectTeamUserId");
+  const listEl = document.getElementById("projectTeamUserList");
+
+  if (!searchInput || !hiddenIdInput) return;
+
+  // On typing: Filter dropdown & only set ID on exact match
+  searchInput.addEventListener("input", (e) => {
+    const val = e.target.value;
+    fillProjectTeamMemberSelect(val);
+
+    // Only resolve if they typed the full/exact name or ID
+    const exactMatch = resolveEmployeeFromSearch(val, true);
+    hiddenIdInput.value = exactMatch ? String(exactMatch.id) : "";
+  });
+
+  // On focus: Open dropdown
+  searchInput.addEventListener("focus", () => {
+    fillProjectTeamMemberSelect(searchInput.value);
+  });
+
+  // Prevent Enter key in search box from triggering accidental form submit
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const match = resolveEmployeeFromSearch(searchInput.value);
+      if (match) {
+        hiddenIdInput.value = String(match.id);
+        searchInput.value = `${match.first_name || ""} ${match.last_name || ""}`.trim();
+        listEl?.classList.add("hidden");
+      }
+    }
+  });
+
+  // On blur: Lock in closest match if user typed manually
+  searchInput.addEventListener("blur", () => {
+    setTimeout(() => {
+      if (listEl) listEl.classList.add("hidden");
+
+      if (!hiddenIdInput.value && searchInput.value.trim()) {
+        const match = resolveEmployeeFromSearch(searchInput.value);
+        if (match) {
+          hiddenIdInput.value = String(match.id);
+          searchInput.value = `${match.first_name || ""} ${match.last_name || ""}`.trim();
+        }
+      }
+    }, 200);
+  });
+
+  // Click outside to close dropdown
+  document.addEventListener("click", (e) => {
+    if (!searchInput.contains(e.target) && !listEl?.contains(e.target)) {
+      listEl?.classList.add("hidden");
+    }
+  });
 }
 
 function populateExpenseAccountSelect(selectedCode = "") {
@@ -132469,103 +132478,55 @@ function closeProjectTeamModal() {
 }
 
 async function submitProjectTeamMember() {
-  const cid =
-    getActiveCompanyId?.() ||
-    CURRENT_COMPANY_ID;
-
-  const projectId = Number(
-    document
-      .getElementById("projectTeamProjectId")
-      ?.value || 0
-  );
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(document.getElementById("projectTeamProjectId")?.value || 0);
 
   if (!cid || !projectId) return;
 
+  let userId = Number(document.getElementById("projectTeamUserId")?.value || 0);
+  const searchName = document.getElementById("projectTeamUserSearch")?.value?.trim();
+
+  // Fallback: If user typed name without selecting from dropdown, resolve it now
+  if (!userId && searchName) {
+    const matched = resolveEmployeeFromSearch(searchName);
+    if (matched) {
+      userId = Number(matched.id);
+      document.getElementById("projectTeamUserId").value = String(userId);
+    }
+  }
+
+  if (!userId) {
+    setElText("projectTeamMsg", "Please select or type a valid employee name.");
+    return;
+  }
+
   const payload = {
-    user_id: Number(
-      document
-        .getElementById("projectTeamUserId")
-        ?.value || 0
-    ),
-
-    role_type:
-      document
-        .getElementById("projectTeamRoleType")
-        ?.value || "member",
-
-    project_role:
-      document
-        .getElementById("projectTeamRole")
-        ?.value?.trim() || null,
-
-    allocation_percent: Number(
-      document
-        .getElementById("projectTeamAllocation")
-        ?.value || 100
-    ),
-
-    start_date:
-      document
-        .getElementById("projectTeamStartDate")
-        ?.value || null,
-
-    end_date:
-      document
-        .getElementById("projectTeamEndDate")
-        ?.value || null,
-
-    notes:
-      document
-        .getElementById("projectTeamNotes")
-        ?.value?.trim() || null,
+    user_id: userId,
+    role_type: document.getElementById("projectTeamRoleType")?.value || "member",
+    project_role: document.getElementById("projectTeamRole")?.value?.trim() || null,
+    allocation_percent: Number(document.getElementById("projectTeamAllocation")?.value || 100),
+    start_date: document.getElementById("projectTeamStartDate")?.value || null,
+    end_date: document.getElementById("projectTeamEndDate")?.value || null,
+    notes: document.getElementById("projectTeamNotes")?.value?.trim() || null,
   };
 
-  if (!payload.user_id) {
-    setElText(
-      "projectTeamMsg",
-      "User is required."
-    );
+  if (payload.allocation_percent < 0 || payload.allocation_percent > 100) {
+    setElText("projectTeamMsg", "Allocation must be 0–100%.");
     return;
   }
 
-  if (
-    payload.allocation_percent < 0 ||
-    payload.allocation_percent > 100
-  ) {
-    setElText(
-      "projectTeamMsg",
-      "Allocation must be 0–100%."
-    );
-    return;
-  }
-
-  setElText(
-    "projectTeamMsg",
-    "Saving team member..."
-  );
+  setElText("projectTeamMsg", "Saving team member...");
 
   try {
-    await apiFetch(
-      ENDPOINTS.projects.teamCreate(
-        cid,
-        projectId
-      ),
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }
-    );
+    await apiFetch(ENDPOINTS.projects.teamCreate(cid, projectId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
 
     closeProjectTeamModal();
-
     await loadProjectDetail(projectId);
-
   } catch (err) {
-    setElText(
-      "projectTeamMsg",
-      err?.message ||
-      "Failed to save team member."
-    );
+    setElText("projectTeamMsg", err?.message || "Failed to save team member.");
   }
 }
 
