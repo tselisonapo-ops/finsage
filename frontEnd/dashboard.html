@@ -18240,6 +18240,85 @@ label:has(#projectTeamUserSearch) {
             </div>
           </div>
 
+          <!-- ==================== PROJECT ROLES MODAL ==================== -->
+          <div id="projectRolesModal"
+              class="fixed inset-0 z-50 hidden">
+
+            <div id="projectRolesOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5">
+
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-4">
+                  <div>
+                    <div class="font-bold text-base">Project Roles</div>
+                    <div class="text-xs text-slate-500">Create and manage custom role types</div>
+                  </div>
+                  <button id="projectRolesCloseBtn"
+                          class="px-2 py-1 border rounded hover:bg-gray-100">
+                    ✕
+                  </button>
+                </div>
+
+                <!-- Hidden project ID -->
+                <input id="projectRolesProjectId" type="hidden">
+
+                <!-- Create New Role Form -->
+                <div class="bg-gray-50 rounded-lg p-3 mb-4">
+                  <div class="font-semibold text-sm mb-2">Create New Role</div>
+                  
+                  <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label class="block text-slate-600 mb-1">Role Name *</label>
+                      <input id="projectRoleNameInput"
+                            type="text"
+                            class="w-full border rounded px-2 py-2"
+                            placeholder="e.g., Site Supervisor">
+                    </div>
+                    
+                    <div>
+                      <label class="block text-slate-600 mb-1">Role Code *</label>
+                      <input id="projectRoleCodeInput"
+                            type="text"
+                            class="w-full border rounded px-2 py-2"
+                            placeholder="e.g., SUPV"
+                            maxlength="10">
+                    </div>
+                    
+                    <div class="col-span-2">
+                      <label class="block text-slate-600 mb-1">Description</label>
+                      <input id="projectRoleDescInput"
+                            type="text"
+                            class="w-full border rounded px-2 py-2"
+                            placeholder="Optional description">
+                    </div>
+                  </div>
+
+                  <!-- Message area -->
+                  <div id="projectRoleMsg" class="text-xs mt-2 min-h-[16px]"></div>
+
+                  <!-- Save button -->
+                  <button id="projectRoleSaveBtn"
+                          class="mt-2 w-full bg-blue-600 text-white py-2 rounded text-sm font-medium hover:bg-blue-700">
+                    Add Role
+                  </button>
+                </div>
+
+                <!-- Existing Roles List -->
+                <div>
+                  <div class="font-semibold text-sm mb-2">Existing Roles</div>
+                  <div id="projectRolesList"
+                      class="max-h-48 overflow-auto space-y-2 text-xs">
+                    <div class="text-slate-400 p-3 text-center">Loading roles...</div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
           <div id="projectTeamModal"
               class="fixed inset-0 z-50 hidden">
 
@@ -18287,21 +18366,25 @@ label:has(#projectTeamUserSearch) {
                         shadow-lg mt-1 max-h-48 overflow-auto text-xs left-0"></ul>
                   </label>
 
-                  <label>
-                    <div class="text-slate-500 mb-1">
-                      Role Type
+                  <label class="relative block">
+                    <div class="flex justify-between items-center mb-1">
+                      <span class="text-slate-500">Role Type</span>
+                      <button type="button"
+                              id="manageProjectRolesBtn"
+                              class="text-blue-600 text-xs hover:text-blue-800 hover:underline">
+                        ⚙ Manage Roles
+                      </button>
                     </div>
 
                     <select id="projectTeamRoleType"
-                            class="w-full border
-                                  rounded px-2 py-2">
-
+                            class="w-full border rounded px-2 py-2">
                       <option value="member">Member</option>
                       <option value="lead">Lead</option>
                       <option value="manager">Manager</option>
                       <option value="reviewer">Reviewer</option>
                       <option value="approver">Approver</option>
                       <option value="observer">Observer</option>
+                      <!-- Custom roles will be dynamically added here -->
                     </select>
                   </label>
 

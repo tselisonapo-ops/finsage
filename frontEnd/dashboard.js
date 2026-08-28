@@ -4709,6 +4709,19 @@ const ENDPOINTS = {
     update: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}`,
 
+    // Project Roles CRUD
+    rolesList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/roles`,
+
+    rolesCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/roles`,
+
+    rolesUpdate: (cid, projectId, roleId) =>
+      `/api/companies/${cid}/projects/${projectId}/roles/${roleId}`,
+
+    rolesDelete: (cid, projectId, roleId) =>
+      `/api/companies/${cid}/projects/${projectId}/roles/${roleId}`,
+
     teamList: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/team`,
 
@@ -126957,6 +126970,244 @@ function projectEmployeeUserId(employee = {}) {
   return Number(employee.id || 0) || null;
 }
 
+function openProjectRolesModal(projectId) {
+  const modal = document.getElementById("projectRolesModal");
+  if (!modal) return;
+
+  // Set project ID
+  document.getElementById("projectRolesProjectId").value = projectId;
+
+  // Clear form fields
+  document.getElementById("projectRoleNameInput").value = "";
+  document.getElementById("projectRoleCodeInput").value = "";
+  document.getElementById("projectRoleDescInput").value = "";
+  document.getElementById("projectRoleMsg").textContent = "";
+
+  // Load existing roles
+  loadProjectRoles(projectId);
+
+  // Show modal
+  modal.classList.remove("hidden");
+
+  console.log("[Roles] Opened modal for project:", projectId);
+}
+
+function closeProjectRolesModal() {
+  const modal = document.getElementById("projectRolesModal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+async function loadProjectRoles(projectId) {
+  const listContainer = document.getElementById("projectRolesList");
+  if (!listContainer) return;
+
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) {
+    listContainer.innerHTML = '<div class="text-red-500 p-3 text-center">Missing context</div>';
+    return;
+  }
+
+  listContainer.innerHTML = '<div class="text-slate-400 p-3 text-center">Loading...</div>';
+
+  try {
+    const endpoint = typeof ENDPOINTS !== 'undefined' && ENDPOINTS.projects?.rolesList
+      ? ENDPOINTS.projects.rolesList(cid, projectId)
+      : `/api/companies/${cid}/projects/${projectId}/roles`;
+
+    const res = await apiFetch(endpoint);
+    const roles = res?.data || res?.roles || res?.items || res || [];
+
+    window._projectRolesCache = Array.isArray(roles) ? roles : [];
+
+    renderProjectRolesList(roles);
+
+  } catch (err) {
+    console.warn("[Roles] Failed to load:", err);
+    listContainer.innerHTML = '<div class="text-red-500 p-3 text-center">Failed to load roles</div>';
+  }
+}
+
+function renderProjectRolesList(roles) {
+  const container = document.getElementById("projectRolesList");
+  if (!container) return;
+
+  if (!roles.length) {
+    container.innerHTML = `
+      <div class="text-slate-400 p-3 text-center text-xs">
+        No custom roles yet.<br>Create one above!
+      </div>`;
+    return;
+  }
+
+  let html = '';
+  roles.forEach(role => {
+    const name = esc(role.name || role.role_name || 'Unnamed');
+    const code = esc(role.code || role.role_code || '');
+    const desc = esc(role.description || role.desc || '');
+    const roleId = role.id || role.role_id;
+
+    html += `
+      <div class="flex items-center justify-between bg-white border rounded p-2 hover:bg-gray-50">
+        <div class="flex-1">
+          <div class="font-medium">${name}</div>
+          ${code ? `<span class="text-slate-400">[${code}]</span>` : ''}
+          ${desc ? `<div class="text-slate-500 text-xs">${desc}</div>` : ''}
+        </div>
+        <button onclick="deleteProjectRole('${projectId}', ${roleId})"
+                class="ml-2 px-2 py-1 text-red-600 hover:bg-red-50 rounded text-xs">
+          Delete
+        </button>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+async function saveProjectRole() {
+  const msgEl = document.getElementById("projectRoleMsg");
+  
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = document.getElementById("projectRolesProjectId")?.value;
+  
+  const name = document.getElementById("projectRoleNameInput")?.value?.trim();
+  const code = document.getElementById("projectRoleCodeInput")?.value?.trim().toUpperCase();
+  const desc = document.getElementById("projectRoleDescInput")?.value?.trim();
+
+  // Validation
+  if (!name) {
+    msgEl.textContent = "Role name is required.";
+    msgEl.className = "text-xs mt-2 min-h-[16px] text-red-600";
+    return;
+  }
+  if (!code) {
+    msgEl.textContent = "Role code is required.";
+    msgEl.className = "text-xs mt-2 min-h-[16px] text-red-600";
+    return;
+  }
+
+  // Show loading state
+  msgEl.textContent = "Saving...";
+  msgEl.className = "text-xs mt-2 min-h-[16px] text-blue-600";
+
+  try {
+    const endpoint = typeof ENDPOINTS !== 'undefined' && ENDPOINTS.projects?.rolesCreate
+      ? ENDPOINTS.projects.rolesCreate(cid, projectId)
+      : `/api/companies/${cid}/projects/${projectId}/roles`;
+
+    await apiFetch(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        code,
+        description: desc
+      })
+    });
+
+    // Success
+    msgEl.textContent = "✓ Role created successfully!";
+    msgEl.className = "text-xs mt-2 min-h-[16px] text-green-600";
+
+    // Clear form
+    document.getElementById("projectRoleNameInput").value = "";
+    document.getElementById("projectRoleCodeInput").value = "";
+    document.getElementById("projectRoleDescInput").value = "";
+
+    // Reload list and update team member dropdown
+    await loadProjectRoles(projectId);
+    populateTeamMemberRoleTypeSelect();
+
+    // Auto-clear success message after 2s
+    setTimeout(() => { msgEl.textContent = ""; }, 2000);
+
+  } catch (err) {
+    msgEl.textContent = err?.message || "Failed to save role.";
+    msgEl.className = "text-xs mt-2 min-h-[16px] text-red-600";
+  }
+}
+
+async function deleteProjectRole(projectId, roleId) {
+  if (!confirm("Are you sure you want to delete this role?")) return;
+
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const msgEl = document.getElementById("projectRoleMsg");
+
+  try {
+    const endpoint = typeof ENDPOINTS !== 'undefined' && ENDPOINTS.projects?.rolesDelete
+      ? ENDPOINTS.projects.rolesDelete(cid, projectId, roleId)
+      : `/api/companies/${cid}/projects/${projectId}/roles/${roleId}`;
+
+    await apiFetch(endpoint, { method: "DELETE" });
+
+    // Reload list
+    await loadProjectRoles(projectId);
+    populateTeamMemberRoleTypeSelect();
+
+  } catch (err) {
+    alert(err?.message || "Failed to delete role.");
+  }
+}
+
+function populateTeamMemberRoleTypeSelect() {
+  const select = document.getElementById("projectTeamRoleType");
+  if (!select) return;
+
+  // Default options (always present)
+  const defaults = [
+    { value: "member", label: "Member" },
+    { value: "lead", label: "Lead" },
+    { value: "manager", label: "Manager" },
+    { value: "reviewer", label: "Reviewer" },
+    { value: "approver", label: "Approver" },
+    { value: "observer", label: "Observer" }
+  ];
+
+  let html = '';
+  
+  // Add defaults
+  defaults.forEach(opt => {
+    html += `<option value="${opt.value}">${opt.label}</option>`;
+  });
+
+  // Add custom roles from cache
+  const customRoles = window._projectRolesCache || [];
+  if (customRoles.length > 0) {
+    html += '<optgroup label="Custom Roles">';
+    customRoles.forEach(role => {
+      const val = (role.code || role.role_code || '').toLowerCase();
+      const lbl = role.name || role.role_name || 'Custom';
+      html += `<option value="${esc(val)}">${esc(lbl)}</option>`;
+    });
+    html += '</optgroup>';
+  }
+
+  select.innerHTML = html;
+  console.log("[Roles] Populated dropdown with", customRoles.length, "custom roles");
+}
+
+function bindProjectRolesModalOnce() {
+  const modal = document.getElementById("projectRolesModal");
+  if (!modal || modal.dataset.bound === "1") return;
+  
+  modal.dataset.bound = "1";
+
+  // Close buttons
+  document.getElementById("projectRolesOverlay")?.addEventListener("click", closeProjectRolesModal);
+  document.getElementById("projectRolesCloseBtn")?.addEventListener("click", closeProjectRolesModal);
+
+  // Save button
+  document.getElementById("projectRoleSaveBtn")?.addEventListener("click", saveProjectRole);
+
+  // Manage Roles button in Team Member modal
+  document.getElementById("manageProjectRolesBtn")?.addEventListener("click", () => {
+    const projectId = document.getElementById("projectTeamProjectId")?.value;
+    if (projectId) openProjectRolesModal(projectId);
+  });
+
+  console.log("[Roles] Modal event listeners bound");
+}
+
 function fillProjectManagerSelect(
   selectedEmployeeId = ""
 ) {
@@ -132505,6 +132756,7 @@ async function submitProjectDocument() {
 
 async function openProjectTeamModal(projectId) {
   bindProjectTeamModalOnce();
+  populateTeamMemberRoleTypeSelect();   // Populate with custom roles
 
   document
     .getElementById("projectTeamProjectId")
@@ -132608,6 +132860,7 @@ async function submitProjectTeamMember() {
     });
 
     closeProjectTeamModal();
+    populateTeamMemberRoleTypeSelect();   // Refresh roles in case changed
     await loadProjectDetail(projectId);
   } catch (err) {
     setElText("projectTeamMsg", err?.message || "Failed to save team member.");
