@@ -127233,15 +127233,34 @@ async function populateProjectCostCodeSelect(selectId, blank = "None") {
   `;
 }
 
-function fillProjectTeamMemberSelect(selectedId = "") {
-  const el = document.getElementById("projectTeamUserId");
-  if (!el) return;
+// Store employees globally for this modal
+window._projectTeamEmployees = [];
 
-  const renderOptions = (employees) => {
-    const rows = (Array.isArray(employees) ? employees : [])
+function fillProjectTeamMemberSelect(selectedId = "") {
+  const searchInput = document.getElementById("projectTeamUserSearch");
+  const hiddenSelect = document.getElementById("projectTeamUserId");
+  const dropdownList = document.getElementById("projectTeamUserList");
+  
+  if (!searchInput || !hiddenSelect || !dropdownList) return;
+
+  // Process and render employee list
+  const renderOptions = (employees, filterText = "") => {
+    window._projectTeamEmployees = employees; // Store for lookup
+    
+    const filtered = (Array.isArray(employees) ? employees : [])
       .filter(emp => {
         const status = String(emp?.employment_status || emp?.status || "active").toLowerCase();
-        return status !== "inactive" && Number(emp?.id || 0) > 0;
+        if (status === "inactive") return false;
+        if (Number(emp?.id || 0) <= 0) return false;
+        
+        // Apply filter
+        if (filterText) {
+          const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ").toLowerCase();
+          const email = (emp.email || "").toLowerCase();
+          const searchText = filterText.toLowerCase();
+          return name.includes(searchText) || email.includes(searchText);
+        }
+        return true;
       })
       .sort((a, b) => {
         const aName = [a.first_name, a.last_name].filter(Boolean).join(" ");
@@ -127249,30 +127268,73 @@ function fillProjectTeamMemberSelect(selectedId = "") {
         return aName.localeCompare(bName);
       });
 
-    el.innerHTML = `
-      <option value="">Select team member…</option>
-      ${rows.map(emp => {
-        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `Employee #${emp.id}`;
-        const selected = String(emp.id) === String(selectedId) ? " selected" : "";
-        return `
-        <option value="${esc(String(emp.id))}"${selected}>${esc(name)}</option>`;
-      }).join("")}
-    `;
+    if (!filtered.length && filterText) {
+      dropdownList.innerHTML = `<li class="px-2 py-2 text-slate-400">No matches found</li>`;
+      dropdownList.classList.remove("hidden");
+      return;
+    }
+
+    dropdownList.innerHTML = filtered.map(emp => {
+      const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `Employee #${emp.id}`;
+      const selected = String(emp.id) === String(selectedId) ? " selected" : "";
+      return `<li data-value="${esc(String(emp.id))}" data-name="${esc(name)}"${selected} class="px-2 py-1.5 hover:bg-blue-50 cursor-pointer">${esc(name)}</li>`;
+    }).join("");
+
+    // Show/hide based on filter
+    if (filterText || !selectedId) {
+      dropdownList.classList.remove("hidden");
+    }
+
+    // Add click handlers
+    dropdownList.querySelectorAll("li[data-value]").forEach(li => {
+      li.addEventListener("click", () => {
+        const val = li.dataset.value;
+        const name = li.dataset.name;
+        
+        // Set values
+        hiddenSelect.value = val;
+        searchInput.value = name;
+        
+        // Hide dropdown
+        dropdownList.classList.add("hidden");
+        
+        // Remove selected from others
+        dropdownList.querySelectorAll("li").forEach(l => l.classList.remove("selected"));
+        li.classList.add("selected");
+      });
+    });
   };
+
+  // Set initial display for selected item
+  if (selectedId) {
+    const cached = projectLookupState?.employees;
+    if (Array.isArray(cached)) {
+      const found = cached.find(e => String(e.id) === String(selectedId));
+      if (found) {
+        const name = [found.first_name, found.last_name].filter(Boolean).join(" ") || `Employee #${found.id}`;
+        searchInput.value = name;
+        hiddenSelect.value = selectedId;
+      }
+    }
+  } else {
+    searchInput.value = "";
+    hiddenSelect.value = "";
+  }
 
   // Use cached project lookup employees if available
   const cached = projectLookupState?.employees;
   if (Array.isArray(cached) && cached.length) {
-    renderOptions(cached);
+    renderOptions(cached, "");
     return;
   }
 
-  // Fetch from payroll employees endpoint
-  el.innerHTML = `<option value="">Loading team members…</option>`;
+  // Show loading state
+  dropdownList.innerHTML = `<li class="px-2 py-2 text-slate-400">Loading employees...</li>`;
 
+  // Fetch from payroll employees endpoint
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid) {
-    el.innerHTML = `<option value="">No company selected</option>`;
+    dropdownList.innerHTML = `<li class="px-2 py-2 text-red-500">No company selected</li>`;
     return;
   }
 
@@ -127282,9 +127344,50 @@ function fillProjectTeamMemberSelect(selectedId = "") {
       renderOptions(Array.isArray(employees) ? employees : []);
     })
     .catch(err => {
-      console.warn("[Projects] failed to load payroll employees for team select", err);
-      el.innerHTML = `<option value="">No employees available</option>`;
+      console.warn("[Projects] failed to load payroll employees", err);
+      dropdownList.innerHTML = `<li class="px-2 py-2 text-red-500">Failed to load employees</li>`;
     });
+
+  // Add input event listener for live search
+  searchInput.oninput = () => {
+    const employees = window._projectTeamEmployees;
+    if (employees.length) {
+      renderOptions(employees, searchInput.value);
+    }
+  };
+
+  // Close dropdown when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("label")) {
+      dropdownList.classList.add("hidden");
+    }
+  });
+}
+
+// Helper: Get resolved employee name from cache or API
+function getEmployeeNameById(employeeId) {
+  const id = Number(employeeId);
+  if (!id) return String(employeeId || "");
+  
+  // Check cache first
+  const cached = projectLookupState?.employees;
+  if (Array.isArray(cached)) {
+    const emp = cached.find(e => Number(e.id) === id);
+    if (emp) {
+      return [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `Employee #${id}`;
+    }
+  }
+  
+  // Check global store
+  const stored = window._projectTeamEmployees;
+  if (Array.isArray(stored)) {
+    const emp = stored.find(e => Number(e.id) === id);
+    if (emp) {
+      return [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `Employee #${id}`;
+    }
+  }
+  
+  return `ID: ${id}`; // Fallback - shows ID when name not found
 }
 
 function populateExpenseAccountSelect(selectedCode = "") {
@@ -133092,7 +133195,7 @@ function renderProjectTeamMini(team = []) {
             <tr class="border-b">
 
               <td class="px-3 py-1.5 font-medium text-slate-800">
-                ${esc(String(m.user_id || ""))}
+                ${esc(getEmployeeNameById(m.user_id))}
               </td>
 
               <td class="px-2 py-1.5">
