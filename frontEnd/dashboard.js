@@ -4709,18 +4709,18 @@ const ENDPOINTS = {
     update: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}`,
 
-    // Project Roles CRUD
-    rolesList: (cid, projectId) =>
-      `/api/companies/${cid}/projects/${projectId}/roles`,
-
-    rolesCreate: (cid, projectId) =>
-      `/api/companies/${cid}/projects/${projectId}/roles`,
-
-    rolesUpdate: (cid, projectId, roleId) =>
-      `/api/companies/${cid}/projects/${projectId}/roles/${roleId}`,
-
-    rolesDelete: (cid, projectId, roleId) =>
-      `/api/companies/${cid}/projects/${projectId}/roles/${roleId}`,
+    // ✅ CORRECTED: Include companyId parameter
+    rolesList: (companyId, projectId) => 
+      `/api/companies/${companyId}/projects/${projectId}/roles`,
+    
+    rolesCreate: (companyId, projectId) => 
+      `/api/companies/${companyId}/projects/${projectId}/roles`,
+    
+    rolesUpdate: (companyId, projectId, roleId) => 
+      `/api/companies/${companyId}/projects/${projectId}/roles/${roleId}`,
+    
+    rolesDelete: (companyId, projectId, roleId) => 
+      `/api/companies/${companyId}/projects/${projectId}/roles/${roleId}`,
 
     teamList: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/team`,
@@ -127055,62 +127055,39 @@ function bindProjectRolesModalOnce() {
 /**
  * Load existing roles for a project and display them in the list
  */
+/**
+ * Load existing roles for a project and display them in the list
+ */
 async function loadProjectRoles(projectId) {
   const listContainer = document.getElementById("projectRolesList");
   if (!listContainer) return;
   
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  
+  // ✅ VALIDATION: Check both IDs exist
   if (!cid || !projectId) {
-    listContainer.innerHTML = `
-      <div class="text-slate-400 p-3 text-center">
-        Unable to load roles.
-      </div>
-    `;
+    console.error("[ProjectRoles] Missing IDs:", { cid, projectId });
+    renderProjectRolesList([]);  // Empty list shows "No custom yet" message
     return;
   }
   
   try {
+    // Show loading state
     listContainer.innerHTML = `
       <div class="text-slate-400 p-3 text-center">
         Loading roles...
       </div>
     `;
     
-    const url = ENDPOINTS.projects.rolesList(projectId);
+    // ✅ FIXED: Pass BOTH companyId AND projectId
+    const url = ENDPOINTS.projects.rolesList(cid, projectId);
+    console.log("[ProjectRoles] Fetching from:", url);  // Debug log
     
-    // ✅ FIXED: Use apiFetch (not authFetch), response is direct object
     const data = await apiFetch(url);
     
-    const roles = data?.data || data?.roles || data?.items || [];
+    const roles = data?.data || data?.items || [];
     
-    if (!roles.length) {
-      listContainer.innerHTML = `
-        <div class="text-slate-400 p-3 text-center">
-          No custom roles yet.<br>Create one above!
-        </div>
-      `;
-      return;
-    }
-    
-    // Render roles list
-    listContainer.innerHTML = roles.map(role => `
-      <div class="flex items-center justify-between bg-white border rounded p-2 hover:bg-slate-50">
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-slate-800">${escapeHtml(role.name)}</div>
-          <div class="text-slate-500 flex gap-2">
-            ${role.code ? `<span class="bg-slate-100 px-1.5 rounded">${escapeHtml(role.code)}</span>` : ''}
-            ${role.type ? `<span class="bg-blue-50 text-blue-700 px-1.5 rounded capitalize">${escapeHtml(role.type)}</span>` : ''}
-          </div>
-          ${role.description ? `<div class="text-slate-400 mt-0.5 truncate">${escapeHtml(role.description)}</div>` : ''}
-        </div>
-        <button onclick="deleteProjectRole(${projectId}, ${role.id})"
-                class="ml-2 px-2 py-1 text-red-600 hover:bg-red-50 rounded text-xs border border-red-200 hover:border-red-300">
-          Delete
-        </button>
-      </div>
-    `).join("");
-
-    // ✅ CALL THE RENDER FUNCTION
+    // Call the render function
     renderProjectRolesList(roles);
     
     // Cache roles for use in team member dropdown
@@ -127121,9 +127098,12 @@ async function loadProjectRoles(projectId) {
     
   } catch (err) {
     console.error("[ProjectRoles] Failed to load:", err);
+    
+    // Show error in the container
     listContainer.innerHTML = `
-      <div class="text-red-400 p-3 text-center">
-        Failed to load roles.<br>${escapeHtml(err.message)}
+      <div class="text-red-400 p-3 text-center text-xs">
+        ❌ Failed to load roles<br>
+        <span class="text-slate-500">${escapeHtml(err.message)}</span>
       </div>
     `;
   }
@@ -127171,8 +127151,10 @@ async function saveProjectRole() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   const projectId = Number(document.getElementById("projectRolesProjectId")?.value || 0);
   
+  // ✅ VALIDATION: Check both IDs
   if (!cid || !projectId) {
     setElText("projectRoleMsg", "Missing company or project ID.", true);
+    console.error("[ProjectRoles] Save - Missing IDs:", { cid, projectId });
     return;
   }
   
@@ -127207,17 +127189,19 @@ async function saveProjectRole() {
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving..."; }
     
     const payload = { type, name, code, description };
-    const url = ENDPOINTS.projects.rolesCreate(projectId);
     
-    // ✅ FIXED: Use apiFetch with proper options format
-    const data = await apiFetch(url, {
+    // ✅ FIXED: Pass BOTH IDs
+    const url = ENDPOINTS.projects.rolesCreate(cid, projectId);
+    console.log("[ProjectRoles] Creating at:", url, payload);  // Debug log
+    
+    const result = await apiFetch(url, {
       method: "POST",
       body: JSON.stringify(payload)
     });
     
     // Check for error in response
-    if (data?.error || data?.success === false) {
-      throw new Error(data?.error || data?.message || "Failed to create role");
+    if (result?.error || result?.ok === false) {
+      throw new Error(result?.error || result?.details || "Failed to create role");
     }
     
     // Success!
@@ -127245,7 +127229,6 @@ async function saveProjectRole() {
   }
 }
 
-
 /**
  * Delete a project role
  */
@@ -127255,18 +127238,25 @@ async function deleteProjectRole(projectId, roleId) {
   }
   
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-  if (!cid || !projectId || !roleId) return;
+  
+  // ✅ VALIDATION: Check all three IDs
+  if (!cid || !projectId || !roleId) {
+    console.error("[ProjectRoles] Delete - Missing IDs:", { cid, projectId, roleId });
+    alert("Cannot delete: Missing required IDs");
+    return;
+  }
   
   try {
-    const url = ENDPOINTS.projects.rolesDelete(projectId, roleId);
+    // ✅ FIXED: Pass ALL THREE parameters
+    const url = ENDPOINTS.projects.rolesDelete(cid, projectId, roleId);
+    console.log("[ProjectRoles] Deleting from:", url);  // Debug log
     
-    // ✅ FIXED: Use apiFetch with DELETE method
     const result = await apiFetch(url, {
       method: "DELETE"
     });
     
     // Check for error in response
-    if (result?.error || result?.success === false) {
+    if (result?.error || result?.ok === false) {
       throw new Error(result?.error || "Failed to delete role");
     }
     
