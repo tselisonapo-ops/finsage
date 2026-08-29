@@ -18300,12 +18300,14 @@ label:has(#projectTeamUserSearch) {
                     <!-- Role Name comes AFTER Role Type -->
                     <div>
                       <label class="block text-slate-600 mb-1">Role Name *</label>
-                      <input id="projectRoleNameInput"
+                      <!-- NEW -->
+                      <input id="projectRoleCodeInput"
                             type="text"
-                            class="w-full border rounded px-2 py-2"
-                            placeholder="e.g., Site Supervisor"
-                            oninput="autoGenerateRoleCode(this.value)">
-                    </div>
+                            class="w-full border rounded px-2 py-2 bg-slate-50"
+                            placeholder="e.g., FRM-001"
+                            maxlength="10"
+                            readonly>
+                      <div class="text-[10px] text-slate-400 mt-1">Auto-generated format: 3 letters + sequence number</div>
                     
                     <!-- ✅ FIX 2: Auto-generated Code (readonly) -->
                     <div>

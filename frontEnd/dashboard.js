@@ -126970,24 +126970,63 @@ function projectEmployeeUserId(employee = {}) {
   return Number(employee.id || 0) || null;
 }
 
+/**
+ * Auto-generate role code from role name
+ * Format: XXX-NNN (3 letters + 3 numbers)
+ * Examples: "Foreman" -> "FRM-001", "Site Supervisor" -> "SSP-002"
+ */
 function autoGenerateRoleCode(roleName) {
+  const codeInput = document.getElementById("projectRoleCodeInput");
+  if (!codeInput) return;
+  
   if (!roleName || !roleName.trim()) {
-    const codeInput = document.getElementById("projectRoleCodeInput");
-    if (codeInput) codeInput.value = "";
+    codeInput.value = "";
     return;
   }
   
-  // Take first letter of each word, convert to uppercase
-  const code = roleName
-    .trim()
-    .split(/\s+/)
-    .map(word => word.charAt(0).toUpperCase())
-    .join("")
-    .substring(0, 10); // Max 10 characters
+  // Generate 3-letter prefix from role name
+  // Take first letter of each word, pad/truncate to 3 chars
+  const words = roleName.trim().split(/\s+/);
+  let prefix = "";
   
-  const codeInput = document.getElementById("projectRoleCodeInput");
-  if (codeInput) codeInput.value = code;
+  if (words.length >= 3) {
+    // If 3+ words, take first letter of first 3 words
+    prefix = words.slice(0, 3).map(w => w.charAt(0).toUpperCase()).join("");
+  } else if (words.length === 2) {
+    // If 2 words, take first 2 letters of first word + first letter of second
+    prefix = (words[0].substring(0, 2) + words[1].charAt(0)).toUpperCase();
+  } else {
+    // If 1 word, take first 3 letters (pad with X if needed)
+    prefix = (words[0].substring(0, 3) + "XXX").substring(0, 3).toUpperCase();
+  }
+  
+  // Generate sequential number (001, 002, etc.)
+  // Check existing roles to get next number
+  const existingRoles = window._projectRolesCache || [];
+  const existingCodes = existingRoles
+    .map(r => r.code || "")
+    .filter(c => c.startsWith(prefix + "-"));
+  
+  let nextNum = 1;
+  if (existingCodes.length > 0) {
+    // Extract numbers from existing codes and find max
+    const numbers = existingCodes
+      .map(c => parseInt(c.split("-")[1]) || 0)
+      .filter(n => n > 0);
+    
+    if (numbers.length > 0) {
+      nextNum = Math.max(...numbers) + 1;
+    }
+  }
+  
+  // Format: FRM-001
+  const code = `${prefix}-${String(nextNum).padStart(3, "0")}`;
+  
+  codeInput.value = code;
 }
+
+// Make it globally available for HTML oninput handler
+window.autoGenerateRoleCode = autoGenerateRoleCode;
 
 /**
  * Open the Project Roles management modal
@@ -127272,45 +127311,77 @@ async function deleteProjectRole(projectId, roleId) {
  * Populate the Team Member modal's Role Type dropdown with custom roles
  * This is called after loading roles so users can select them when adding team members
  */
+/**
+ * Populate the Team Member modal's Role dropdown with custom roles
+ * This is called after loading roles so users can select them when adding team members
+ */
 function populateTeamMemberRoleTypeSelect() {
   const select = document.getElementById("projectTeamRole");
-  if (!select) return;
-  
-  const cachedRoles = window._projectRolesCache || [];
-  if (!cachedRoles.length) return;
-  
-  // Check if we've already added custom roles (look for our marker option)
-  const hasCustomMarker = Array.from(select.options).some(opt => opt.value === "__custom_roles__");
-  if (hasCustomMarker) {
-    // Remove old custom options to refresh them
-    const customOptions = Array.from(select.options).filter(
-      opt => opt.dataset && opt.dataset.customRole === "true"
-    );
-    customOptions.forEach(opt => opt.remove());
-    
-    // Also remove the marker if no roles left
-    const marker = select.querySelector('option[value="__custom_roles__"]');
-    if (marker && cachedRoles.length === 0) marker.remove();
-  } else if (cachedRoles.length > 0) {
-    // Add separator option
-    const separator = new Option("--- Custom Roles ---", "__custom_roles__");
-    separator.disabled = true;
-    separator.style.fontWeight = "bold";
-    separator.style.backgroundColor = "#f0f9ff";
-    select.add(separator);
+  if (!select || !select.options) {
+    console.warn("[ProjectRoles] projectTeamRole select not found");
+    return;
   }
   
-  // Add each custom role as an option
-  cachedRoles.forEach(role => {
-    const option = new Option(`${role.name}${role.code ? ` (${role.code})` : ''}`, role.id);
-    option.dataset.customRole = "true";
-    option.style.color = "#0369a1";
-    select.add(option);
-  });
+  // ✅ FIX: Ensure cachedRoles is a valid array
+  const cachedRoles = Array.isArray(window._projectRolesCache) 
+    ? window._projectRolesCache 
+    : [];
+  
+  if (!cachedRoles.length) return;  // No roles to add
+  
+  try {
+    // ✅ FIX: Safely convert options to array
+    const options = select.options ? Array.from(select.options) : [];
+    
+    // Check if we've already added custom roles (look for our marker option)
+    const hasCustomMarker = options.some(opt => opt && opt.value === "__custom_roles__");
+    
+    if (hasCustomMarker) {
+      // Remove old custom options to refresh them
+      const customOptions = options.filter(
+        opt => opt && opt.dataset && opt.dataset.customRole === "true"
+      );
+      customOptions.forEach(opt => {
+        if (opt && opt.parentNode) opt.remove();
+      });
+      
+      // Also remove the marker if no roles left
+      const marker = select.querySelector('option[value="__custom_roles__"]');
+      if (marker && cachedRoles.length === 0) {
+        marker.remove();
+      }
+    } else if (cachedRoles.length > 0) {
+      // Add separator option
+      const separator = new Option("--- Custom Roles ---", "__custom_roles__");
+      separator.disabled = true;
+      separator.style.fontWeight = "bold";
+      separator.style.backgroundColor = "#f0f9ff";
+      select.add(separator);
+    }
+    
+    // Add each custom role as an option
+    cachedRoles.forEach(role => {
+      if (!role || !role.id) return;  // Skip invalid roles
+      
+      const roleName = role.name || role.role_name || 'Unnamed';
+      const roleCode = role.code || role.role_code || '';
+      
+      const displayText = roleCode 
+        ? `${roleName} (${roleCode})` 
+        : roleName;
+        
+      const option = new Option(displayText, role.id);
+      option.dataset.customRole = "true";
+      option.style.color = "#0369a1";
+      select.add(option);
+    });
+    
+    console.log(`[ProjectRoles] Added ${cachedRoles.length} custom roles to team member dropdown`);
+    
+  } catch (err) {
+    console.error("[ProjectRoles] Error populating team role select:", err);
+  }
 }
-
-// Make autoGenerateRoleCode globally available (for HTML oninput handler)
-window.autoGenerateRoleCode = autoGenerateRoleCode;
 
 function bindProjectRolesModalOnce() {
   const modal = document.getElementById("projectRolesModal");
