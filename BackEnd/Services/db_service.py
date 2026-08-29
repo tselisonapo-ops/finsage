@@ -129062,6 +129062,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         # And add to the returned dict:
         project["roles"] = roles
+        if "totals" not in project or not isinstance(project.get("totals"), dict):
+            project["totals"] = {}
+
         project["totals"]["custom_role_count"] = len(roles)
 
         assignments = self.list_project_task_assignments(
