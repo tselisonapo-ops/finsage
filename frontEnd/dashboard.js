@@ -127340,6 +127340,69 @@ function populateTeamMemberRoleTypeSelect() {
   }
 }
 
+/**
+ * FIX: Force-bind all project modals and log status
+ * Call this from browser console if modals don't open
+ */
+function debugBindAllProjectModals() {
+  console.log('[DEBUG] Binding all project modals...');
+  
+  try {
+    // Bind team modal
+    if (typeof bindProjectTeamModalOnce === 'function') {
+      bindProjectTeamModalOnce();
+      console.log('[DEBUG] ✓ Team modal bound');
+    } else {
+      console.error('[DEBUG] ✗ bindProjectTeamModalOnce NOT found');
+    }
+    
+    // Bind dependency modal
+    if (typeof bindProjectDependencyModalOnce === 'function') {
+      bindProjectDependencyModalOnce();
+      console.log('[DEBUG] ✓ Dependency modal bound');
+    } else {
+      console.error('[DEBUG] ✗ bindProjectDependencyModalOnce NOT found');
+    }
+    
+    // Bind roles modal
+    if (typeof bindProjectRolesModalOnce === 'function') {
+      bindProjectRolesModalOnce();
+      console.log('[DEBUG] ✓ Roles modal bound');
+    }
+    
+    // Check if modal elements exist
+    const teamModal = document.getElementById('projectTeamModal');
+    const depModal = document.getElementById('projectDependencyModal');
+    const rolesModal = document.getElementById('projectRolesModal');
+    
+    console.log('[DEBUG] Modal elements:', {
+      teamModal: !!teamModal,
+      dependencyModal: !!depModal,
+      rolesModal: !!rolesModal
+    });
+    
+    // Check if trigger buttons exist
+    const teamBtn = document.querySelector('[data-project-team-new]');
+    const depBtn = document.querySelector('[data-project-dependency-new]');
+    
+    console.log('[DEBUG] Trigger buttons:', {
+      teamButton: !!teamBtn,
+      dependencyButton: !!depBtn
+    });
+    
+    return { success: true };
+    
+  } catch (err) {
+    console.error('[DEBUG] Error binding modals:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// Auto-run when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(debugBindAllProjectModals, 500);
+});
+
 function bindProjectRolesModalOnce() {
   const modal = document.getElementById("projectRolesModal");
   if (!modal || modal.dataset.bound === "1") return;

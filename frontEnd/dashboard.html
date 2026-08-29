@@ -18430,10 +18430,11 @@ label:has(#projectTeamUserSearch) {
                       Project Role
                     </div>
 
-                    <input id="projectTeamRole"
-                          class="w-full border
-                                  rounded px-2 py-2"
-                          placeholder="Site Engineer">
+                    <select id="projectTeamRole"
+                            class="w-full border rounded px-2 py-2 text-sm">
+                      <option value="">-- Select Custom Role --</option>
+                      <!-- Options populated dynamically by populateTeamMemberRoleTypeSelect() -->
+                    </select>
                   </label>
 
                   <label>
