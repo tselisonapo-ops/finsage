@@ -18241,50 +18241,82 @@ label:has(#projectTeamUserSearch) {
           </div>
 
           <!-- ==================== PROJECT ROLES MODAL ==================== -->
+          <!-- ==================== PROJECT ROLES MODAL ==================== -->
+          <!-- ✅ FIX 3: z-[60] ensures it renders ON TOP of Team Member Modal (z-50) -->
           <div id="projectRolesModal"
-              class="fixed inset-0 z-50 hidden">
+              class="fixed inset-0 z-[60] hidden">
 
             <div id="projectRolesOverlay"
                 class="absolute inset-0 bg-black/40"></div>
 
-            <div class="absolute inset-0 flex items-center justify-center p-4">
-              <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5">
+            <div class="absolute inset-0 flex
+                        items-center justify-center p-4">
 
-                <!-- Header -->
-                <div class="flex items-center justify-between mb-4">
+              <div class="bg-white rounded-2xl
+                          shadow-xl w-full max-w-lg p-5">
+
+                <div class="flex items-center
+                            justify-between mb-4">
+
                   <div>
-                    <div class="font-bold text-base">Project Roles</div>
-                    <div class="text-xs text-slate-500">Create and manage custom role types</div>
+                    <div class="font-bold text-base">
+                      Project Roles
+                    </div>
+                    <div class="text-xs text-slate-500">
+                      Create and manage custom role types
+                    </div>
                   </div>
+
                   <button id="projectRolesCloseBtn"
-                          class="px-2 py-1 border rounded hover:bg-gray-100">
+                          class="px-2 py-1 border rounded">
                     ✕
                   </button>
                 </div>
 
-                <!-- Hidden project ID -->
-                <input id="projectRolesProjectId" type="hidden">
+                <input id="projectRolesProjectId"
+                      type="hidden">
 
                 <!-- Create New Role Form -->
                 <div class="bg-gray-50 rounded-lg p-3 mb-4">
                   <div class="font-semibold text-sm mb-2">Create New Role</div>
                   
                   <div class="grid grid-cols-2 gap-3 text-xs">
+                    
+                    <!-- ✅ FIX 1: Role Type field BEFORE Role Name -->
+                    <div>
+                      <label class="block text-slate-600 mb-1">Role Type *</label>
+                      <select id="projectRoleTypeInput"
+                              class="w-full border rounded px-2 py-2">
+                        <option value="">Select type...</option>
+                        <option value="leadership">Leadership</option>
+                        <option value="technical">Technical</option>
+                        <option value="management">Management</option>
+                        <option value="support">Support</option>
+                        <option value="operational">Operational</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </div>
+
+                    <!-- Role Name comes AFTER Role Type -->
                     <div>
                       <label class="block text-slate-600 mb-1">Role Name *</label>
                       <input id="projectRoleNameInput"
                             type="text"
                             class="w-full border rounded px-2 py-2"
-                            placeholder="e.g., Site Supervisor">
+                            placeholder="e.g., Site Supervisor"
+                            oninput="autoGenerateRoleCode(this.value)">
                     </div>
                     
+                    <!-- ✅ FIX 2: Auto-generated Code (readonly) -->
                     <div>
-                      <label class="block text-slate-600 mb-1">Role Code *</label>
+                      <label class="block text-slate-600 mb-1">Role Code * <span class="text-slate-400 font-normal">(auto-generated)</span></label>
                       <input id="projectRoleCodeInput"
                             type="text"
-                            class="w-full border rounded px-2 py-2"
+                            class="w-full border rounded px-2 py-2 bg-slate-50"
                             placeholder="e.g., SUPV"
-                            maxlength="10">
+                            maxlength="10"
+                            readonly>
+                      <div class="text-[10px] text-slate-400 mt-1">Auto-generated from role name initials</div>
                     </div>
                     
                     <div class="col-span-2">
@@ -18296,12 +18328,12 @@ label:has(#projectTeamUserSearch) {
                     </div>
                   </div>
 
-                  <!-- Message area -->
-                  <div id="projectRoleMsg" class="text-xs mt-2 min-h-[16px]"></div>
+                  <div id="projectRolesMsg"
+                      class="text-xs mt-2 min-h-[16px]"></div>
 
-                  <!-- Save button -->
                   <button id="projectRoleSaveBtn"
-                          class="mt-2 w-full bg-blue-600 text-white py-2 rounded text-sm font-medium hover:bg-blue-700">
+                          class="mt-2 w-full bg-blue-600 text-white py-2 
+                                rounded text-sm font-medium hover:bg-blue-700">
                     Add Role
                   </button>
                 </div>
@@ -18311,13 +18343,16 @@ label:has(#projectTeamUserSearch) {
                   <div class="font-semibold text-sm mb-2">Existing Roles</div>
                   <div id="projectRolesList"
                       class="max-h-48 overflow-auto space-y-2 text-xs">
-                    <div class="text-slate-400 p-3 text-center">Loading roles...</div>
+                    <div class="text-slate-400 p-3 text-center">
+                      Loading roles...
+                    </div>
                   </div>
                 </div>
 
               </div>
             </div>
           </div>
+          <!-- END PROJECT ROLES MODAL -->
 
           <div id="projectTeamModal"
               class="fixed inset-0 z-50 hidden">
