@@ -18241,87 +18241,73 @@ label:has(#projectTeamUserSearch) {
           </div>
 
           <!-- ==================== PROJECT ROLES MODAL ==================== -->
-          <!-- ==================== PROJECT ROLES MODAL ==================== -->
-          <!-- ✅ FIX 3: z-[60] ensures it renders ON TOP of Team Member Modal (z-50) -->
           <div id="projectRolesModal"
               class="fixed inset-0 z-[60] hidden">
 
             <div id="projectRolesOverlay"
                 class="absolute inset-0 bg-black/40"></div>
 
-            <div class="absolute inset-0 flex
-                        items-center justify-center p-4">
-
-              <div class="bg-white rounded-2xl
-                          shadow-xl w-full max-w-lg p-5">
-
-                <div class="flex items-center
-                            justify-between mb-4">
-
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5">
+                
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-4">
                   <div>
-                    <div class="font-bold text-base">
-                      Project Roles
-                    </div>
-                    <div class="text-xs text-slate-500">
-                      Create and manage custom role types
-                    </div>
+                    <div class="font-bold text-base">Project Roles</div>
+                    <div class="text-xs text-slate-500">Create and manage custom role types</div>
                   </div>
-
-                  <button id="projectRolesCloseBtn"
-                          class="px-2 py-1 border rounded">
-                    ✕
-                  </button>
+                  <button id="projectRolesCloseBtn" class="px-2 py-1 border rounded">✕</button>
                 </div>
 
-                <input id="projectRolesProjectId"
-                      type="hidden">
+                <input id="projectRolesProjectId" type="hidden">
 
                 <!-- Create New Role Form -->
                 <div class="bg-gray-50 rounded-lg p-3 mb-4">
                   <div class="font-semibold text-sm mb-2">Create New Role</div>
                   
-                  <div class="grid grid-cols-2 gap-3 text-xs">
+                  <div class="grid grid-cols-1 gap-3 text-xs">
                     
-                    <!-- ✅ FIX 1: Role Type field BEFORE Role Name -->
-                    <div>
-                      <label class="block text-slate-600 mb-1">Role Type *</label>
-                      <select id="projectRoleTypeInput"
-                              class="w-full border rounded px-2 py-2">
-                        <option value="">Select type...</option>
-                        <option value="leadership">Leadership</option>
-                        <option value="technical">Technical</option>
-                        <option value="management">Management</option>
-                        <option value="support">Support</option>
-                        <option value="operational">Operational</option>
-                        <option value="custom">Custom</option>
-                      </select>
-                    </div>
-
-                    <!-- Role Name comes AFTER Role Type -->
+                    <!-- Row 1: Role Name (NEW - was missing!) -->
                     <div>
                       <label class="block text-slate-600 mb-1">Role Name *</label>
-                      <!-- NEW -->
-                      <input id="projectRoleCodeInput"
+                      <input id="projectRoleNameInput"
                             type="text"
-                            class="w-full border rounded px-2 py-2 bg-slate-50"
-                            placeholder="e.g., FRM-001"
-                            maxlength="10"
-                            readonly>
-                      <div class="text-[10px] text-slate-400 mt-1">Auto-generated format: 3 letters + sequence number</div>
-                    
-                    <!-- ✅ FIX 2: Auto-generated Code (readonly) -->
-                    <div>
-                      <label class="block text-slate-600 mb-1">Role Code * <span class="text-slate-400 font-normal">(auto-generated)</span></label>
-                      <input id="projectRoleCodeInput"
-                            type="text"
-                            class="w-full border rounded px-2 py-2 bg-slate-50"
-                            placeholder="e.g., SUPV"
-                            maxlength="10"
-                            readonly>
-                      <div class="text-[10px] text-slate-400 mt-1">Auto-generated from role name initials</div>
+                            class="w-full border rounded px-2 py-2"
+                            placeholder="e.g., Site Engineer"
+                            required
+                            oninput="autoGenerateRoleCode()">
                     </div>
-                    
-                    <div class="col-span-2">
+
+                    <!-- Row 2: Role Type + Role Code side by side -->
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-slate-600 mb-1">Role Type *</label>
+                        <select id="projectRoleTypeInput"
+                                class="w-full border rounded px-2 py-2">
+                          <option value="">Select type...</option>
+                          <option value="leadership">Leadership</option>
+                          <option value="technical">Technical</option>
+                          <option value="management">Management</option>
+                          <option value="support">Support</option>
+                          <option value="operational">Operational</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label class="block text-slate-600 mb-1">Role Code * <span class="text-slate-400 font-normal">(auto)</span></label>
+                        <input id="projectRoleCodeInput"
+                              type="text"
+                              class="w-full border rounded px-2 py-2 bg-slate-50"
+                              placeholder="e.g., SE-001"
+                              maxlength="10"
+                              readonly>
+                        <div class="text-[10px] text-slate-400 mt-1">Auto-generated from initials</div>
+                      </div>
+                    </div>
+
+                    <!-- Row : Description (full width) -->
+                    <div>
                       <label class="block text-slate-600 mb-1">Description</label>
                       <input id="projectRoleDescInput"
                             type="text"
@@ -18330,12 +18316,10 @@ label:has(#projectTeamUserSearch) {
                     </div>
                   </div>
 
-                  <div id="projectRolesMsg"
-                      class="text-xs mt-2 min-h-[16px]"></div>
+                  <div id="projectRolesMsg" class="text-xs mt-2 min-h-[16px]"></div>
 
                   <button id="projectRoleSaveBtn"
-                          class="mt-2 w-full bg-blue-600 text-white py-2 
-                                rounded text-sm font-medium hover:bg-blue-700">
+                          class="mt-2 w-full bg-blue-600 text-white py-2 rounded text-sm font-medium hover:bg-blue-700">
                     Add Role
                   </button>
                 </div>
@@ -18345,9 +18329,7 @@ label:has(#projectTeamUserSearch) {
                   <div class="font-semibold text-sm mb-2">Existing Roles</div>
                   <div id="projectRolesList"
                       class="max-h-48 overflow-auto space-y-2 text-xs">
-                    <div class="text-slate-400 p-3 text-center">
-                      Loading roles...
-                    </div>
+                    <div class="text-slate-400 p-3 text-center">Loading roles...</div>
                   </div>
                 </div>
 
@@ -18356,63 +18338,55 @@ label:has(#projectTeamUserSearch) {
           </div>
           <!-- END PROJECT ROLES MODAL -->
 
+
+          <!-- ==================== TEAM MEMBER MODAL ==================== -->
           <div id="projectTeamModal"
               class="fixed inset-0 z-50 hidden">
 
             <div id="projectTeamOverlay"
                 class="absolute inset-0 bg-black/40"></div>
 
-            <div class="absolute inset-0 flex
-                        items-center justify-center p-4">
-
-              <div class="bg-white rounded-2xl
-                          shadow-xl w-full max-w-xl p-4">
-
-                <div class="flex items-center
-                            justify-between mb-3">
-
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-4">
+                
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-3">
                   <div>
-                    <div class="font-bold text-base">
-                      Project Team Member
-                    </div>
-
-                    <div class="text-xs text-slate-500">
-                      Add or update a project resource
-                    </div>
+                    <div class="font-bold text-base">Project Team Member</div>
+                    <div class="text-xs text-slate-500">Add or update a project resource</div>
                   </div>
-
-                  <button id="projectTeamCloseBtn"
-                          class="px-2 py-1 border rounded">
-                    ✕
-                  </button>
+                  <button id="projectTeamCloseBtn" class="px-2 py-1 border rounded">✕</button>
                 </div>
 
-                <input id="projectTeamProjectId"
-                      type="hidden">
+                <input id="projectTeamProjectId" type="hidden">
 
-                <div class="grid grid-cols-1
-                            md:grid-cols-2 gap-3 text-xs">
-
-                  <!-- AFTER: Searchable combobox -->
+                <!-- Form Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  
+                  <!-- Row 1: Team Member Search -->
                   <label class="relative block">
                     <div class="text-slate-500 mb-1">Team Member</div>
-                    <input id="projectTeamUserSearch" type="text" class="w-full border rounded px-2 py-2" 
-                          placeholder="Type to search employees..." autocomplete="off">
+                    <input id="projectTeamUserSearch" 
+                          type="text" 
+                          class="w-full border rounded px-2 py-2" 
+                          placeholder="Type to search employees..." 
+                          autocomplete="off">
                     <input id="projectTeamUserId" type="hidden" value="">
-                    <ul id="projectTeamUserList" class="hidden absolute z-50 w-full bg-white border rounded 
-                        shadow-lg mt-1 max-h-48 overflow-auto text-xs left-0"></ul>
+                    <ul id="projectTeamUserList" 
+                        class="hidden absolute z-50 w-full bg-white border rounded shadow-lg mt-1 max-h-48 overflow-auto text-xs left-0"></ul>
                   </label>
 
+                  <!-- Row 1: Role Type with Manage Button -->
                   <label class="relative block">
                     <div class="flex justify-between items-center mb-1">
                       <span class="text-slate-500">Role Type</span>
+                      <!-- ✅ UNIQUE ID now -->
                       <button type="button"
                               id="manageProjectRolesBtn"
                               class="text-blue-600 text-xs hover:text-blue-800 hover:underline">
                         ⚙ Manage Roles
                       </button>
                     </div>
-
                     <select id="projectTeamRoleType"
                             class="w-full border rounded px-2 py-2">
                       <option value="member">Member</option>
@@ -18421,92 +18395,106 @@ label:has(#projectTeamUserSearch) {
                       <option value="reviewer">Reviewer</option>
                       <option value="approver">Approver</option>
                       <option value="observer">Observer</option>
-                      <!-- Custom roles will be dynamically added here -->
                     </select>
                   </label>
 
-                  <label>
-                    <div class="text-slate-500 mb-1">
-                      Project Role
-                    </div>
-
+                  <!-- Row 2: Project Role (full width) - ✅ Fixed col-span-2 -->
+                  <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">
+                      Project Role 
+                      <span id="rolesWarning" class="text-amber-500 text-xs ml-2 hidden">
+                        ⚠️ Define roles first
+                      </span>
+                    </label>
+                    
                     <select id="projectTeamRole"
-                            class="w-full border rounded px-2 py-2 text-sm">
-                      <option value="">-- Select Custom Role --</option>
-                      <!-- Options populated dynamically by populateTeamMemberRoleTypeSelect() -->
+                            class="w-full border rounded px-2 py-2 text-sm"
+                            onchange="onTeamRoleChange(this)">
+                      <option value="">-- Select Role --</option>
                     </select>
-                  </label>
-
-                  <label>
-                    <div class="text-slate-500 mb-1">
-                      Allocation %
+                    
+                    <!-- ✅ REMOVED duplicate button - use the one above instead -->
+                    <div class="mt-1 text-[10px] text-slate-400">
+                      💡 Create custom roles via "⚙ Manage Roles" button above
                     </div>
+                  </div>
 
+                  <!-- Row 3: Allocation -->
+                  <label>
+                    <div class="text-slate-500 mb-1">Allocation %</div>
                     <input id="projectTeamAllocation"
                           type="number"
                           min="0"
                           max="100"
                           value="100"
-                          class="w-full border
-                                  rounded px-2 py-2">
+                          class="w-full border rounded px-2 py-2">
                   </label>
 
+                  <!-- Row 3: Start Date -->
                   <label>
-                    <div class="text-slate-500 mb-1">
-                      Start Date
-                    </div>
-
+                    <div class="text-slate-500 mb-1">Start Date</div>
                     <input id="projectTeamStartDate"
                           type="date"
-                          class="w-full border
-                                  rounded px-2 py-2">
+                          class="w-full border rounded px-2 py-2">
                   </label>
 
+                  <!-- Row 4: End Date -->
                   <label>
-                    <div class="text-slate-500 mb-1">
-                      End Date
-                    </div>
-
+                    <div class="text-slate-500 mb-1">End Date</div>
                     <input id="projectTeamEndDate"
                           type="date"
-                          class="w-full border
-                                  rounded px-2 py-2">
+                          class="w-full border rounded px-2 py-2">
                   </label>
 
+                  <!-- Row 5: Notes (full width) -->
                   <label class="md:col-span-2">
-                    <div class="text-slate-500 mb-1">
-                      Notes
-                    </div>
-
+                    <div class="text-slate-500 mb-1">Notes</div>
                     <textarea id="projectTeamNotes"
                               rows="3"
-                              class="w-full border
-                                    rounded px-2 py-2"></textarea>
+                              class="w-full border rounded px-2 py-2"></textarea>
                   </label>
                 </div>
 
-                <div id="projectTeamMsg"
-                    class="mt-3 text-xs text-slate-500"></div>
+                <div id="projectTeamMsg" class="mt-3 text-xs text-slate-500"></div>
 
-                <div class="flex justify-end
-                            gap-2 mt-4">
-
+                <!-- Buttons -->
+                <div class="flex justify-end gap-2 mt-4">
                   <button id="projectTeamCancelBtn"
-                          class="px-3 py-2
-                                text-xs border rounded">
+                          class="px-3 py-2 text-xs border rounded">
                     Cancel
                   </button>
-
                   <button id="projectTeamSaveBtn"
-                          class="px-3 py-2 text-xs
-                                bg-[var(--fs-navy)]
-                                text-white rounded">
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
                     Save Member
                   </button>
                 </div>
               </div>
             </div>
           </div>
+
+          <!-- Helper Scripts (place at end of body or in main JS file) -->
+          <script>
+          /**
+          * Open Roles Modal from within Team Modal
+          */
+          function openManageRolesFromTeam() {
+            const projectId = document.getElementById("projectTeamProjectId")?.value;
+            if (projectId) {
+              console.log("[TeamModal] → Opening Roles Modal to define roles");
+              openProjectRolesModal(projectId);
+            }
+          }
+
+          /**
+          * Handle role selection change
+          */
+          function onTeamRoleChange(select) {
+            const warning = document.getElementById("rolesWarning");
+            if (warning) {
+              warning.classList.toggle('hidden', !!select.value);
+            }
+          }
+          </script>
 
           <div id="projectAssignModal"
               class="fixed inset-0 z-50 hidden">
@@ -18624,139 +18612,117 @@ label:has(#projectTeamUserSearch) {
             </div>
           </div>
 
+          <!-- ==================== DEPENDENCY MODAL ==================== -->
           <div id="projectDependencyModal"
               class="fixed inset-0 z-50 hidden">
 
             <div id="projectDependencyOverlay"
                 class="absolute inset-0 bg-black/40"></div>
 
-            <div class="absolute inset-0 flex
-                        items-center justify-center p-4">
-
-              <div class="bg-white rounded-2xl
-                          shadow-xl w-full max-w-xl p-4">
-
-                <div class="flex items-center
-                            justify-between mb-3">
-
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-4">
+                
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-3">
                   <div>
-                    <div class="font-bold text-base">
-                      Task Dependency
-                    </div>
-
-                    <div class="text-xs text-slate-500">
-                      Link predecessor and successor tasks
-                    </div>
+                    <div class="font-bold text-base">Task Dependency</div>
+                    <div class="text-xs text-slate-500">Link predecessor and successor tasks</div>
                   </div>
-
-                  <button id="projectDependencyCloseBtn"
-                          class="px-2 py-1 border rounded">
+                  <button id="projectDependencyCloseBtn" 
+                          class="px-2 py-1 border rounded hover:bg-gray-100">
                     ✕
                   </button>
                 </div>
 
-                <input id="projectDependencyProjectId"
-                      type="hidden">
+                <input id="projectDependencyProjectId" type="hidden">
 
-                <div class="grid grid-cols-1
-                            md:grid-cols-2 gap-3 text-xs">
-
+                <!-- Form -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  
+                  <!-- Predecessor Task -->
                   <label>
                     <div class="text-slate-500 mb-1">
-                      Predecessor
+                      Predecessor 
+                      <span class="text-slate-400 font-normal">(must finish first)</span>
                     </div>
-
                     <select id="projectDependencyPredecessor"
-                            class="w-full border
-                                  rounded px-2 py-2">
+                            class="w-full border rounded px-2 py-2"
+                            required>
+                      <option value="">-- Select task --</option>
                     </select>
                   </label>
 
+                  <!-- Successor Task -->
                   <label>
                     <div class="text-slate-500 mb-1">
-                      Successor
+                      Successor 
+                      <span class="text-slate-400 font-normal">(depends on predecessor)</span>
                     </div>
-
                     <select id="projectDependencySuccessor"
-                            class="w-full border
-                                  rounded px-2 py-2">
+                            class="w-full border rounded px-2 py-2"
+                            required>
+                      <option value="">-- Select task --</option>
                     </select>
                   </label>
 
+                  <!-- Dependency Type -->
                   <label>
-                    <div class="text-slate-500 mb-1">
-                      Type
-                    </div>
-
+                    <div class="text-slate-500 mb-1">Dependency Type</div>
                     <select id="projectDependencyType"
-                            class="w-full border
-                                  rounded px-2 py-2">
-
-                      <option value="finish_to_start">
-                        Finish → Start
-                      </option>
-
-                      <option value="start_to_start">
-                        Start → Start
-                      </option>
-
-                      <option value="finish_to_finish">
-                        Finish → Finish
-                      </option>
-
-                      <option value="start_to_finish">
-                        Start → Finish
-                      </option>
+                            class="w-full border rounded px-2 py-2">
+                      <option value="finish_to_start" selected>🔗 Finish → Start (FS)</option>
+                      <option value="start_to_start">⏯️ Start → Start (SS)</option>
+                      <option value="finish_to_finish">🎯 Finish → Finish (FF)</option>
+                      <option value="start_to_finish">⬅️ Start → Finish (SF)</option>
                     </select>
+                    <div class="text-[10px] text-slate-400 mt-1">Most common: Finish → Start</div>
                   </label>
 
+                  <!-- Lag Days -->
                   <label>
                     <div class="text-slate-500 mb-1">
-                      Lag Days
+                      Lag Days 
+                      <span class="text-slate-400 font-normal">(delay/overlap)</span>
                     </div>
-
                     <input id="projectDependencyLagDays"
                           type="number"
                           value="0"
-                          class="w-full border
-                                  rounded px-2 py-2">
+                          min="-30"
+                          max="365"
+                          class="w-full border rounded px-2 py-2">
+                    <div class="text-[10px] text-slate-400 mt-1">Negative = overlap, Positive = delay</div>
                   </label>
 
+                  <!-- Notes (full width) -->
                   <label class="md:col-span-2">
-                    <div class="text-slate-500 mb-1">
-                      Notes
-                    </div>
-
+                    <div class="text-slate-500 mb-1">Notes</div>
                     <textarea id="projectDependencyNotes"
                               rows="3"
-                              class="w-full border
-                                    rounded px-2 py-2"></textarea>
+                              class="w-full border rounded px-2 py-2"
+                              placeholder="Optional: Add context about this dependency..."></textarea>
                   </label>
                 </div>
 
+                <!-- Message Area -->
                 <div id="projectDependencyMsg"
-                    class="mt-3 text-xs text-slate-500">
-                </div>
+                    class="mt-3 text-xs text-slate-500 min-h-[16px]"></div>
 
-                <div class="flex justify-end
-                            gap-2 mt-4">
-
+                <!-- Buttons -->
+                <div class="flex justify-end gap-2 mt-4">
                   <button id="projectDependencyCancelBtn"
-                          class="px-3 py-2
-                                text-xs border rounded">
+                          class="px-3 py-2 text-xs border rounded hover:bg-gray-50">
                     Cancel
                   </button>
-
                   <button id="projectDependencySaveBtn"
-                          class="px-3 py-2 text-xs
-                                bg-[var(--fs-navy)]
-                                text-white rounded">
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded hover:opacity-90">
                     Save Dependency
                   </button>
                 </div>
+                
               </div>
             </div>
           </div>
+          <!-- END DEPENDENCY MODAL -->
 
           <div id="projectTimeModal"
               class="fixed inset-0 z-50 hidden">
