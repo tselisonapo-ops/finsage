@@ -127255,25 +127255,41 @@ async function deleteProjectRole(projectId, roleId) {
 }
 
 
+/**
+ * Populate the Team Member modal's Role dropdown with custom roles
+ * FIXED: Works with SELECT element (not INPUT)
+ */
 function populateTeamMemberRoleTypeSelect() {
   const select = document.getElementById("projectTeamRole");
-  if (!select || !select.options) {
-    console.warn("[ProjectRoles] projectTeamRole select not found");
+  
+  // ✅ Check if element exists AND is a SELECT
+  if (!select) {
+    console.log("[ProjectRoles] projectTeamRole not found (modal may not be open yet)");
     return;
   }
   
-  // ✅ FIX: Ensure cachedRoles is a valid array
+  // Check if it's actually a select element
+  if (select.tagName !== 'SELECT') {
+    console.warn("[ProjectRoles] projectTeamRole is not a SELECT element:", select.tagName);
+    return;
+  }
+  
+  // Ensure cachedRoles is a valid array
   const cachedRoles = Array.isArray(window._projectRolesCache) 
     ? window._projectRolesCache 
     : [];
   
-  if (!cachedRoles.length) return;
+  // No custom roles to add - that's OK, just return
+  if (!cachedRoles.length) {
+    console.log("[ProjectRoles] No custom roles to add to dropdown");
+    return;
+  }
   
   try {
-    // ✅ FIX: Safely convert options to array
+    // Convert options to array safely
     const options = select.options ? Array.from(select.options) : [];
     
-    // Check if we've already added custom roles
+    // Check if we've already added custom roles (look for marker)
     const hasCustomMarker = options.some(opt => opt && opt.value === "__custom_roles__");
     
     if (hasCustomMarker) {
@@ -127289,35 +127305,40 @@ function populateTeamMemberRoleTypeSelect() {
       const marker = select.querySelector('option[value="__custom_roles__"]');
       if (marker && cachedRoles.length === 0) marker.remove();
     } else if (cachedRoles.length > 0) {
-      // Add separator option
+      // Add separator for custom roles
       const separator = new Option("--- Custom Roles ---", "__custom_roles__");
       separator.disabled = true;
       separator.style.fontWeight = "bold";
       separator.style.backgroundColor = "#f0f9ff";
+      separator.style.color = "#0369a1";
       select.add(separator);
     }
     
     // Add each custom role as an option
     cachedRoles.forEach(role => {
-      if (!role || !role.id) return;
+      if (!role || !role.id) return;  // Skip invalid
       
       const roleName = role.name || role.role_name || 'Unnamed';
       const roleCode = role.code || role.role_code || '';
-      const displayText = roleCode ? `${roleName} (${roleCode})` : roleName;
+      
+      // Display format: "Role Name (CODE)" or just "Role Name"
+      const displayText = roleCode 
+        ? `${roleName} (${roleCode})` 
+        : roleName;
         
       const option = new Option(displayText, role.id);
-      option.dataset.customRole = "true";
-      option.style.color = "#0369a1";
+      option.dataset.customRole = "true";  // Mark as custom role
+      option.style.color = "#0369a1";       // Blue color for custom roles
+      option.style.fontStyle = "italic";     // Italic to distinguish
       select.add(option);
     });
     
-    console.log(`[ProjectRoles] Added ${cachedRoles.length} custom roles to dropdown`);
+    console.log(`[ProjectRoles] ✅ Added ${cachedRoles.length} custom roles to Project Role dropdown`);
     
   } catch (err) {
     console.error("[ProjectRoles] Error populating team role select:", err);
   }
 }
-
 
 function bindProjectRolesModalOnce() {
   const modal = document.getElementById("projectRolesModal");
