@@ -216,6 +216,170 @@ def remove_project_team_member_route(
 
     return jsonify({"ok": True}), 200
 
+# ============================================================
+# PROJECT ROLES - Custom Role Types
+# ============================================================
+
+@projects_bp.route(
+    "/api/companies/<int:cid>/projects/<int:project_id>/roles",
+    methods=["GET"],
+)
+@require_auth
+def list_project_roles_route(cid: int, project_id: int):
+    """List all custom roles for a project."""
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    rows = db_service.list_project_roles(
+        company_id,
+        int(project_id),
+    )
+
+    return jsonify({
+        "data": rows,
+        "items": rows,
+        "count": len(rows),
+    }), 200
+
+
+@projects_bp.route(
+    "/api/companies/<int:cid>/projects/<int:project_id>/roles",
+    methods=["POST"],
+)
+@require_auth
+def create_project_role_route(cid: int, project_id: int):
+    """Create a new custom project role."""
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    data = _payload()
+    data["created_by"] = _current_user_id(user)
+
+    try:
+        role_id = db_service.create_project_role(
+            company_id,
+            int(project_id),
+            data,
+        )
+
+        return jsonify({
+            "ok": True,
+            "id": role_id,
+            "message": "Role created successfully",
+        }), 201
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "[ROLE CREATE] FAILED | company_id=%s | project_id=%s",
+            company_id,
+            project_id,
+        )
+        return jsonify({
+            "error": "failed_to_create_role",
+            "details": str(e),
+        }), 500
+
+
+@projects_bp.route(
+    "/api/companies/<int:cid>/projects/<int:project_id>/roles/<int:role_id>",
+    methods=["PUT", "PATCH"],
+)
+@require_auth
+def update_project_role_route(cid: int, project_id: int, role_id: int):
+    """Update an existing project role."""
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        ok = db_service.update_project_role(
+            company_id,
+            int(project_id),
+            int(role_id),
+            _payload(),
+        )
+
+        if not ok:
+            return jsonify({"error": "role_not_found"}), 404
+
+        return jsonify({
+            "ok": True,
+            "id": int(role_id),
+            "message": "Role updated successfully",
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "[ROLE UPDATE] FAILED | company_id=%s | project_id=%s | role_id=%s",
+            company_id,
+            project_id,
+            role_id,
+        )
+        return jsonify({
+            "error": "failed_to_update_role",
+            "details": str(e),
+        }), 500
+
+
+@projects_bp.route(
+    "/api/companies/<int:cid>/projects/<int:project_id>/roles/<int:role_id>",
+    methods=["DELETE"],
+)
+@require_auth
+def delete_project_role_route(
+    cid: int,
+    project_id: int,
+    role_id: int,
+):
+    """Delete a project role (soft delete)."""
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        ok = db_service.delete_project_role(
+            company_id,
+            int(project_id),
+            int(role_id),
+        )
+
+        if not ok:
+            return jsonify({"error": "role_not_found"}), 404
+
+        return jsonify({
+            "ok": True,
+            "id": int(role_id),
+            "message": "Role deleted successfully",
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "[ROLE DELETE] FAILED | company_id=%s | project_id=%s | role_id=%s",
+            company_id,
+            project_id,
+            role_id,
+        )
+        return jsonify({
+            "error": "failed_to_delete_role",
+            "details": str(e),
+        }), 500
+    
 @projects_bp.route(
     "/api/companies/<int:cid>/projects/<int:project_id>/task-assignments",
     methods=["GET"],

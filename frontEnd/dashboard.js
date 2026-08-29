@@ -127047,6 +127047,7 @@ function renderProjectRolesList(roles) {
     const code = esc(role.code || role.role_code || '');
     const desc = esc(role.description || role.desc || '');
     const roleId = role.id || role.role_id;
+    const projId = document.getElementById("projectRolesProjectId")?.value || '';
 
     html += `
       <div class="flex items-center justify-between bg-white border rounded p-2 hover:bg-gray-50">
@@ -127055,9 +127056,10 @@ function renderProjectRolesList(roles) {
           ${code ? `<span class="text-slate-400">[${code}]</span>` : ''}
           ${desc ? `<div class="text-slate-500 text-xs">${desc}</div>` : ''}
         </div>
-        <button onclick="deleteProjectRole('${projectId}', ${roleId})"
-                class="ml-2 px-2 py-1 text-red-600 hover:bg-red-50 rounded text-xs">
-          Delete
+        <button onclick="deleteProjectRole('${projId}', ${roleId})"
+                class="ml-2 px-2 py-1 text-red-600 hover:bg-red-50 rounded text-xs"
+                title="Delete this role">
+          🗑 Delete
         </button>
       </div>`;
   });
@@ -127131,7 +127133,6 @@ async function deleteProjectRole(projectId, roleId) {
   if (!confirm("Are you sure you want to delete this role?")) return;
 
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-  const msgEl = document.getElementById("projectRoleMsg");
 
   try {
     const endpoint = typeof ENDPOINTS !== 'undefined' && ENDPOINTS.projects?.rolesDelete
@@ -127140,7 +127141,7 @@ async function deleteProjectRole(projectId, roleId) {
 
     await apiFetch(endpoint, { method: "DELETE" });
 
-    // Reload list
+    // Reload list and update dropdown
     await loadProjectRoles(projectId);
     populateTeamMemberRoleTypeSelect();
 
@@ -127199,7 +127200,7 @@ function bindProjectRolesModalOnce() {
   // Save button
   document.getElementById("projectRoleSaveBtn")?.addEventListener("click", saveProjectRole);
 
-  // Manage Roles button in Team Member modal
+  // Manage Roles button in Team Member modal - opens this modal
   document.getElementById("manageProjectRolesBtn")?.addEventListener("click", () => {
     const projectId = document.getElementById("projectTeamProjectId")?.value;
     if (projectId) openProjectRolesModal(projectId);
@@ -128461,6 +128462,7 @@ async function bindProjectsScreen(name = "projects") {
   showProjectLanding();
   applyProjectNamingLabels?.();
   bindProjectOperationalModalsOnce?.();
+  bindProjectRolesModalOnce?.();
   const btnNew = document.getElementById("projectNewBtn");
   const btnRefresh = document.getElementById("projectRefreshBtn");
   const q = document.getElementById("projectSearch");

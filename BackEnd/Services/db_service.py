@@ -52892,6 +52892,53 @@ class DatabaseService:
         END IF;
         END $$;
 
+        -- ============================================================
+        -- STEP 1: CREATE project_roles TABLE (must exist BEFORE team_members FK)
+        -- ============================================================
+        CREATE TABLE IF NOT EXISTS {schema}.project_roles (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            project_id INT NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            code VARCHAR(50),                    -- Optional short code like "PM", "DEV", "QA"
+            description TEXT,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by INT,                      -- User ID who created this role
+            
+            -- Foreign Keys
+            CONSTRAINT fk_project_roles_company 
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+            
+            CONSTRAINT fk_project_roles_project 
+                FOREIGN KEY (project_id) REFERENCES {schema}.projects(id) ON DELETE CASCADE
+        );
+
+        -- Index for faster lookups
+        CREATE INDEX IF NOT EXISTS idx_project_roles_project 
+            ON {schema}.project_roles(project_id);
+
+        CREATE INDEX IF NOT EXISTS idx_project_roles_company 
+            ON {schema}.project_roles(company_id);
+
+        -- ============================================================
+        -- STEP 2: ADD FK COLUMN TO project_team_members (references project_roles)
+        -- ============================================================
+        ALTER TABLE {schema}.project_team_members 
+        ADD COLUMN IF NOT EXISTS project_role_id INT NULL;
+
+        -- Add the foreign key constraint
+        ALTER TABLE {schema}.project_team_members 
+        ADD CONSTRAINT fk_team_member_role 
+            FOREIGN KEY (project_role_id) 
+            REFERENCES {schema}.project_roles(id) 
+            ON DELETE SET NULL;          -- If role deleted, set to NULL (don't lose team member)
+
+        -- Index for faster joins
+        CREATE INDEX IF NOT EXISTS idx_team_members_role 
+            ON {schema}.project_team_members(project_role_id);
+
         CREATE TABLE IF NOT EXISTS {schema}.project_task_assignments (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -129010,6 +129057,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         team = self.list_project_team(company_id, project_id)
 
+        # ADD THIS:
+        roles = self.list_project_roles(company_id, project_id)
+
+        # And add to the returned dict:
+        project["roles"] = roles
+        project["totals"]["custom_role_count"] = len(roles)
+
         assignments = self.list_project_task_assignments(
             company_id,
             project_id,
@@ -129673,6 +129727,124 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 int(project_id),
             ),
         )
+
+    # ============================================================
+    # PROJECT ROLES CRUD METHODS
+    # ============================================================
+
+    def create_project_role(self, company_id, project_id, data):
+        """Create a new custom role for a project"""
+        schema = self.company_schema(company_id)
+        query = f"""
+            INSERT INTO {schema}.project_roles 
+            (company_id, project_id, name, code, description, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id, name, code, description, is_active, created_at
+        """
+        params = (
+            company_id,
+            project_id,
+            data.get('name'),
+            data.get('code'),
+            data.get('description'),
+            data.get('created_by')  # Current user ID
+        )
+        return self.fetch_one(query, params)
+
+
+    def list_project_roles(self, company_id, project_id=None):
+        """
+        List all roles for a project or company
+        If project_id provided, filter by project; otherwise return all company roles
+        """
+        schema = self.company_schema(company_id)
+        
+        if project_id:
+            query = f"""
+                SELECT id, name, code, description, is_active, created_at, updated_at
+                FROM {schema}.project_roles
+                WHERE company_id = %s AND project_id = %s
+                ORDER BY name ASC
+            """
+            params = (company_id, project_id)
+        else:
+            query = f"""
+                SELECT id, name, code, description, is_active, created_at, updated_at
+                FROM {schema}.project_roles
+                WHERE company_id = %s
+                ORDER BY name ASC
+            """
+            params = (company_id,)
+        
+        return self.fetch_all(query, params)
+
+
+    def get_project_role(self, company_id, role_id):
+        """Get a single role by ID"""
+        schema = self.company_schema(company_id)
+        query = f"""
+            SELECT id, company_id, project_id, name, code, description, 
+                is_active, created_at, updated_at, created_by
+            FROM {schema}.project_roles
+            WHERE id = %s AND company_id = %s
+        """
+        return self.fetch_one(query, (role_id, company_id))
+
+
+    def update_project_role(self, company_id, role_id, data):
+        """Update an existing role"""
+        schema = self.company_schema(company_id)
+        
+        # Build dynamic SET clause based on provided fields
+        set_clauses = []
+        params = []
+        
+        if 'name' in data:
+            set_clauses.append("name = %s")
+            params.append(data['name'])
+        
+        if 'code' in data:
+            set_clauses.append("code = %s")
+            params.append(data['code'])
+        
+        if 'description' in data:
+            set_clauses.append("description = %s")
+            params.append(data['description'])
+        
+        if 'is_active' in data:
+            set_clauses.append("is_active = %s")
+            params.append(data['is_active'])
+        
+        if not set_clauses:
+            raise ValueError("No valid fields to update")
+        
+        set_clauses.append("updated_at = CURRENT_TIMESTAMP")
+        params.extend([role_id, company_id])
+        
+        query = f"""
+            UPDATE {schema}.project_roles
+            SET {', '.join(set_clauses)}
+            WHERE id = %s AND company_id = %s
+            RETURNING id, name, code, description, is_active, updated_at
+        """
+        
+        return self.fetch_one(query, params)
+
+
+    def delete_project_role(self, company_id, role_id):
+        """
+        Delete a role (CASCADE will set project_team_members.project_role_id to NULL
+        due to ON DELETE SET NULL constraint)
+        """
+        schema = self.company_schema(company_id)
+        query = f"""
+            DELETE FROM {schema}.project_roles
+            WHERE id = %s AND company_id = %s
+            RETURNING id
+        """
+        result = self.fetch_one(query, (role_id, company_id))
+        return result is not None
+
 
     def list_project_team(self, company_id: int, project_id: int) -> list[dict]:
         schema = self.company_schema(company_id)
