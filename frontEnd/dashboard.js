@@ -127077,12 +127077,11 @@ async function loadProjectRoles(projectId) {
     `;
     
     const url = ENDPOINTS.projects.rolesList(projectId);
-    const res = await authFetch(url, { method: "GET" });
     
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // ✅ FIXED: Use apiFetch (not authFetch), response is direct object
+    const data = await apiFetch(url);
     
-    const data = await res.json();
-    const roles = data?.data || data?.roles || [];
+    const roles = data?.data || data?.roles || data?.items || [];
     
     if (!roles.length) {
       listContainer.innerHTML = `
@@ -127110,6 +127109,9 @@ async function loadProjectRoles(projectId) {
         </button>
       </div>
     `).join("");
+
+    // ✅ CALL THE RENDER FUNCTION
+    renderProjectRolesList(roles);
     
     // Cache roles for use in team member dropdown
     window._projectRolesCache = roles;
@@ -127126,7 +127128,6 @@ async function loadProjectRoles(projectId) {
     `;
   }
 }
-
 
 function renderProjectRolesList(roles) {
   const container = document.getElementById("projectRolesList");
@@ -127208,16 +127209,15 @@ async function saveProjectRole() {
     const payload = { type, name, code, description };
     const url = ENDPOINTS.projects.rolesCreate(projectId);
     
-    const res = await authFetch(url, {
+    // ✅ FIXED: Use apiFetch with proper options format
+    const data = await apiFetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
     
-    const data = await res.json();
-    
-    if (!res.ok) {
-      throw new Error(data?.error || data?.message || `Failed to create role (HTTP ${res.status})`);
+    // Check for error in response
+    if (data?.error || data?.success === false) {
+      throw new Error(data?.error || data?.message || "Failed to create role");
     }
     
     // Success!
@@ -127245,6 +127245,7 @@ async function saveProjectRole() {
   }
 }
 
+
 /**
  * Delete a project role
  */
@@ -127258,11 +127259,15 @@ async function deleteProjectRole(projectId, roleId) {
   
   try {
     const url = ENDPOINTS.projects.rolesDelete(projectId, roleId);
-    const res = await authFetch(url, { method: "DELETE" });
     
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data?.error || `Failed to delete (HTTP ${res.status})`);
+    // ✅ FIXED: Use apiFetch with DELETE method
+    const result = await apiFetch(url, {
+      method: "DELETE"
+    });
+    
+    // Check for error in response
+    if (result?.error || result?.success === false) {
+      throw new Error(result?.error || "Failed to delete role");
     }
     
     // Reload roles list
@@ -127273,7 +127278,6 @@ async function deleteProjectRole(projectId, roleId) {
     alert(`Failed to delete role: ${err.message}`);
   }
 }
-
 /**
  * Populate the Team Member modal's Role Type dropdown with custom roles
  * This is called after loading roles so users can select them when adding team members
