@@ -98302,53 +98302,137 @@ async function renderContractPreview(c = {}) {
   }
 
   async function loadRuns() {
-    // ✅ Use Revenue module's $ helper (not $id from Deferred Tax)
-    const mount = $("dtRunList");
-    if (!mount) return;
+    const cid = state.cid || activeCid();
+    
+    if (!cid) {
+      console.warn("[Revenue] loadRuns: No company ID");
+      return;
+    }
 
-    // 1. Show loading state
-    mount.innerHTML = `<div class="dt-loading">Loading deferred tax runs...</div>`;
-
-    try {
-      // ✅ Use activeCid() or state.cid (Revenue module's CID getter)
-      const companyId = state.cid || activeCid();
-      if (!companyId) {
-        mount.innerHTML = `
-          <div class="dt-error" style="color: #dc2626; padding: 20px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">
-            <strong>⚠️ No company selected</strong>
-            <p>Please select a company first.</p>
-          </div>
-        `;
-        return;
-      }
-
-      const res = await apiFetch(ENDPOINTS.deferredTax.runs(companyId));
-
-      // 2. Robust data extraction
-      const rows = Array.isArray(res?.data) ? res.data : (res?.items || []);
-
-      // 3. Render using Deferred Tax's render function
-      if (typeof renderDeferredTaxRunList === 'function') {
-        renderDeferredTaxRunList(rows);
-      } else {
-        // Fallback if render function not available
-        mount.innerHTML = rows.length 
-          ? `<div class="text-sm text-slate-600">${rows.length} run(s) loaded</div>`
-          : `<div class="text-sm text-slate-400">No deferred tax runs yet</div>`;
-      }
-
-    } catch (error) {
-      // 4. Error handling - use esc() (Revenue module's escape helper)
-      mount.innerHTML = `
-        <div class="dt-error" style="color: #dc2626; padding: 20px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">
-          <strong>⚠️ Failed to load runs</strong>
-          <p>${esc(error.message)}</p>
-          <small>Check the console for technical details.</small>
+    // Show loading state in Saved Runs area
+    const savedRunsEl = $("revRunList");
+    if (savedRunsEl) {
+      savedRunsEl.innerHTML = `
+        <div class="text-xs text-slate-400 p-2 text-center animate-pulse">
+          Loading recognition runs...
         </div>
       `;
-      console.error("[DeferredTax] loadRuns failed:", error);
+    }
+
+    try {
+      // ✅ Use REVENUE runs endpoint (NOT deferred tax!)
+      const res = await apiFetch(ENDPOINTS.revenue.runs(cid));
+      
+      // Extract runs from various response formats
+      const runs = Array.isArray(res?.data) 
+        ? res.data 
+        : (Array.isArray(res?.items) ? res.items : (Array.isArray(res) ? res : []));
+      
+      // ✅ CRITICAL: Store in state so postRun()/reverseRun() can find them!
+      state.runs = runs;
+      
+      console.log(`[Revenue] ✓ Loaded ${runs.length} recognition run(s)`);
+
+      // Render to YOUR actual HTML element: revRunList
+      if (savedRunsEl) {
+        if (!runs.length) {
+          savedRunsEl.innerHTML = `
+            <div class="text-xs text-slate-400 p-3 text-center">
+              No recognition runs yet.<br>
+              <span class="text-[10px]">Create a run using "Create Run" button above.</span>
+            </div>
+          `;
+        } else {
+          savedRunsEl.innerHTML = runs.map(r => `
+            <div class="flex items-center justify-between p-2 border rounded text-xs hover:bg-blue-50 cursor-pointer transition-colors"
+                onclick="selectRevenueRun(${r.id})"
+                data-run-id="${r.id}"
+                title="Click to select this run">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full ${
+                  r.status === 'posted' ? 'bg-green-500' : 
+                  r.status === 'reversed' ? 'bg-red-400' : 'bg-amber-400'
+                }"></span>
+                <div>
+                  <div class="font-medium text-slate-700">
+                    ${esc(r.run_number || r.description || `Recognition Run #${r.id}`)}
+                  </div>
+                  <div class="text-slate-400 text-[10px]">
+                    ${esc(r.period_start || 'N/A')} → ${esc(r.period_end || 'N/A')}
+                    ${r.created_at ? `· Created ${new Date(r.created_at).toLocaleDateString()}` : ''}
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-medium ${
+                  r.status === 'posted' ? 'bg-green-100 text-green-700' : 
+                  r.status === 'reversed' ? 'bg-red-100 text-red-700' :
+                  'bg-amber-100 text-amber-700'
+                }">
+                  ${esc((r.status || 'draft').toUpperCase())}
+                </span>
+              </div>
+            </div>
+          `).join("");
+        }
+      }
+      
+    } catch (error) {
+      console.error("[Revenue] loadRuns failed:", error);
+      state.runs = []; // Reset on error
+      
+      // Show error in UI
+      if (savedRunsEl) {
+        savedRunsEl.innerHTML = `
+          <div class="text-xs text-red-600 p-3 text-center bg-red-50 rounded">
+            ❌ Failed to load runs<br>
+            <span class="text-[10px]">${esc(error.message)}</span>
+          </div>
+        `;
+      }
     }
   }
+
+  /**
+   * Select a run from the Saved Runs list
+   * Updates form fields and highlights selection
+   */
+  function selectRevenueRun(runId) {
+    if (!runId) return;
+    
+    // Set hidden field (used by postRun/reverseRun)
+    const runIdField = $("revRunId");
+    if (runIdField) runIdField.value = String(runId);
+    
+    // Find run in state
+    const run = (state.runs || []).find(r => Number(r.id) === Number(runId));
+    
+    if (!run) {
+      setRunMsg(`⚠️ Run #${runId} not found in loaded runs`);
+      return;
+    }
+    
+    console.log("[Revenue] Selected run:", run);
+    
+    // Update form fields with run data
+    if ($("revRunStart")) $("revRunStart").value = run.period_start || "";
+    if ($("revRunEnd")) $("revRunEnd").value = run.period_end || "";
+    if ($("revRunReason") && run.reason) $("revRunReason").value = run.reason;
+    
+    // Visual feedback - highlight selected row
+    document.querySelectorAll('[data-run-id]').forEach(el => {
+      el.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-100');
+    });
+    const selectedRow = document.querySelector(`[data-run-id="${runId}"]`);
+    if (selectedRow) {
+      selectedRow.classList.add('ring-2', 'ring-blue-500', 'bg-blue-100');
+    }
+    
+    setRunMsg(`✅ Selected: ${run.run_number || `Run #${run.id}`}`);
+  }
+
+  // Make selectRevenueRun globally available
+  window.selectRevenueRun = selectRevenueRun;
 
   async function loadBillingOverview(contractId) {
     const cid = activeCid();
