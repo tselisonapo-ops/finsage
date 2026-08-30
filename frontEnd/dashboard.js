@@ -93939,23 +93939,39 @@ async function saveEditModal() {
       return;
     }
 
-    const tasks = await apiFetch(
-      ENDPOINTS.projects.tasksList(cid, projectId)
-    );
+    // ✅ NEW: Try cached tasks from contract data first (no extra API call!)
+    let rows = [];
+    
+    const cachedTasks = state.selectedContract?.project_tasks || 
+                        state.selectedContract?.payload_json?.project_tasks;
+    
+    if (Array.isArray(cachedTasks) && cachedTasks.length > 0) {
+      console.log("[Revenue] Using cached project tasks from contract:", cachedTasks.length);
+      rows = cachedTasks;
+    } else {
+      // Fallback: Fetch from API if not cached
+      console.log("[Revenue] Fetching project tasks from API...");
+      try {
+        const apiResponse = await apiFetch(
+          ENDPOINTS.projects.tasksList(cid, projectId)
+        );
+        rows = Array.isArray(apiResponse) ? apiResponse : (apiResponse?.data || apiResponse?.rows || []);
+      } catch (err) {
+        console.error("[Revenue] Failed to fetch tasks:", err);
+        rows = [];
+      }
+    }
 
-    const rows = Array.isArray(tasks)
-      ? tasks
-      : (tasks?.data || tasks?.rows || []);
+    // Populate dropdown
+    sel.innerHTML =
+      `<option value="">No linked task</option>` +
+      rows.map(t => `
+        <option value="${t.id}">
+          ${esc(t.task_name || t.name || "Unnamed Task")}
+        </option>
+      `).join("");
 
-      sel.innerHTML =
-        `<option value="">No linked task</option>` +
-        rows.map(t => `
-          <option value="${t.id}">
-            ${esc(t.task_name || t.name || t.task_code || "Unnamed Task")}
-          </option>
-        `).join("");
-
-      sel.value = selectedTaskId ? String(selectedTaskId) : "";
+    sel.value = selectedTaskId ? String(selectedTaskId) : "";
 
     if (hint) {
       hint.textContent = rows.length

@@ -118435,7 +118435,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ON c.id = rc.customer_id
             LEFT JOIN {schema}.projects p
                 ON p.company_id = rc.company_id
-            AND p.id = rc.project_id
+                AND p.id = rc.project_id
             WHERE rc.company_id = %s
             AND rc.id = %s
             LIMIT 1;
@@ -118457,6 +118457,41 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payload_json["project_id"] = int(row.get("project_id"))
             payload_json["project_code"] = row.get("project_code")
             payload_json["project_name"] = row.get("project_name")
+
+        # ✅ NEW: Fetch and include project tasks
+        if row.get("project_id"):
+            try:
+                tasks_sql = f"""
+                    SELECT id, task_code, task_name, status, 
+                        start_date, expected_end_date, progress_percent
+                    FROM {schema}.project_tasks
+                    WHERE company_id = %s
+                    AND project_id = %s
+                    AND is_archived = FALSE
+                    ORDER BY sequence_no, task_code, task_name;
+                """
+                tasks = self.fetch_all(tasks_sql, (int(company_id), int(row["project_id"])), cur=cur)
+                
+                # Convert to list of dicts if needed
+                project_tasks = []
+                if tasks:
+                    for t in tasks:
+                        project_tasks.append({
+                            "id": t.get("id"),
+                            "task_code": t.get("task_code"),
+                            "task_name": t.get("task_name"),
+                            "status": t.get("status"),
+                            "start_date": str(t.get("start_date")) if t.get("start_date") else None,
+                            "expected_end_date": str(t.get("expected_end_date")) if t.get("expected_end_date") else None,
+                            "progress_percent": float(t.get("progress_percent") or 0),
+                        })
+                
+                payload_json["project_tasks"] = project_tasks
+                row["project_tasks"] = project_tasks  # Also at root level
+                
+            except Exception as e:
+                print(f"[WARNING] Failed to load project tasks: {e}")
+                payload_json["project_tasks"] = []
 
         row["payload_json"] = payload_json
 
