@@ -118748,11 +118748,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 data.get("notes"),
                 json.dumps(data.get("payload_json") or {}, default=str),
 
-                int(user_id) if user_id else None,
-                data.get("updated_by_user_id") or user_id,
-                data.get("source_company_id"),
-                data.get("engagement_company_id"),
-                data.get("engagement_id"),
+                int(user_id) if user_id else None,           # created_by_user_id
+                data.get("updated_by_user_id") or user_id,   # updated_by_user_id
+                data.get("source_company_id"),               # source_company_id
+                data.get("engagement_company_id"),           # engagement_company_id  
+                data.get("engagement_id"),                   # engagement_id
+                
+                # ✅ ADD THIS LINE (missing 25th parameter):
+                datetime.utcnow() if 'created_at' in sql_columns else None,  # or whatever fits your schema
             )
 
             cur.execute(sql, params)
