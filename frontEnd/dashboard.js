@@ -5398,6 +5398,9 @@ const ENDPOINTS = {
     runs: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs`,
 
+    runDetail: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs/${encodeURIComponent(runId)}`,
+
     postRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs/${encodeURIComponent(runId)}/post`,
 
@@ -91051,44 +91054,85 @@ async function saveEditModal() {
     }
   }
 
-  async function previewRun(runId) {
-    try {
-      IFRS9.previewRunId = Number(runId);
-      const result = await apiFetch(ENDPOINTS.ifrs9.eclRunPreview(cid(), runId));
-      const preview = result.preview || {};
+  async function previewRun() {
+    const cid = state.cid;
+    if (!cid) throw new Error("Missing company id");
 
-      $("ifrs9PreviewBody").innerHTML = `
-        <div class="journal-preview-header">
-          <p><b>Date:</b> ${dateText(preview.date)}</p>
-          <p><b>Reference:</b> ${preview.ref || "—"}</p>
-          <p><b>Description:</b> ${preview.description || "—"}</p>
-        </div>
-
-        <div class="table-responsive">
-          <table>
-            <thead><tr><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
-            <tbody>
-              ${(preview.lines || []).map(line => `
-                <tr>
-                  <td>${line.account_name || "—"}</td>
-                  <td>${line.description || "—"}</td>
-                  <td>${money(line.debit)}</td>
-                  <td>${money(line.credit)}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-            <tfoot>
-              <tr><th colspan="2">Total</th><th>${money(preview.dr_total)}</th><th>${money(preview.cr_total)}</th></tr>
-            </tfoot>
-          </table>
-        </div>
-      `;
-
-      $("ifrs9JournalPreviewModal").classList.remove("hidden");
-    } catch (error) {
-      IFRS9.previewRunId = null;
-      setMsg(error.message || "Failed to preview ECL journal.");
+    // Auto-select first contract if none selected
+    let contractId = Number($("revContractId")?.value || 0) || null;
+    if (!contractId && (state.contracts || []).length > 0) {
+      const firstContract = state.contracts[0];
+      contractId = firstContract.id;
+      if ($("revContractId")) $("revContractId").value = String(contractId);
+      state.selectedContract = firstContract;
+      renderContractKpis(firstContract);
+      console.log("[Revenue] Auto-selected first contract for preview:", contractId);
     }
+
+    const payload = runPayloadFromUI();
+    const periodStart = payload.period_start || "";
+    const periodEnd = payload.period_end || "";
+
+    // First, ensure runs are loaded
+    if (!state.runs || !state.runs.length) {
+      await loadRuns();
+    }
+
+    // Check for existing DRAFT run with same period + contract
+    const existingDraftRun = (state.runs || []).find(r => {
+      const rStart = String(r.period_start || "").slice(0, 10);
+      const rEnd = String(r.period_end || "").slice(0, 10);
+      const rContractId = Number(r.contract_id || 0) || null;
+      const matchPeriod = rStart === periodStart.slice(0, 10) && rEnd === periodEnd.slice(0, 10);
+      const matchContract = (rContractId === contractId) || (!rContractId && !contractId);
+      return String(r.status || "").toLowerCase() === "draft" && matchPeriod && matchContract;
+    });
+
+    let data;
+
+    if (existingDraftRun) {
+      // Reuse existing draft run - fetch its details with entries
+      console.log("[Revenue] Reusing existing draft run:", existingDraftRun.id);
+
+      try {
+        // Try to get run detail with entries
+        const runDetailUrl = ENDPOINTS.revenue.runDetail(cid, existingDraftRun.id);
+        const runRes = await apiFetch(runDetailUrl, { method: "GET" });
+        
+        data = runRes?.data || runRes;
+        
+        // If we got entries from the existing run, use them
+        if (data?.entries && data.entries.length > 0) {
+          state.preview = data;
+          // Set the run ID in UI
+          if ($("revRunId")) $("revRunId").value = String(existingDraftRun.id);
+          renderRunPreview(data);
+          refreshRunActionState(data);
+          setRunMsg(`Preview loaded from existing Run #${existingDraftRun.id}.`);
+          return data;
+        }
+      } catch (e) {
+        console.warn("[Revenue] Could not fetch existing run details, falling back to preview API:", e);
+      }
+    }
+
+    // No existing draft run or fetch failed - call preview API
+    const out = await apiFetch(ENDPOINTS.revenue.previewRun(cid), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    data = out?.data || out;
+    state.preview = data;
+    renderRunPreview(data);
+    refreshRunActionState(out);
+    
+    if (existingDraftRun) {
+      setRunMsg(`Preview refreshed (Run #${existingDraftRun.id} exists).`);
+    } else {
+      setRunMsg("Preview loaded (no existing draft run for this period).");
+    }
+    return data;
   }
 
   function closePreview() {

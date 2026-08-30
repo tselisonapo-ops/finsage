@@ -926,7 +926,28 @@ def api_revenue_runs(company_id: int):
         return jsonify({"ok": False, "error": str(e)}), 400
     
 
+@revenue_bp.route("/api/companies/<int:company_id>/revenue/runs/<int:run_id>", methods=["GET", "OPTIONS"])
+@require_auth
+def api_get_revenue_recognition_run_detail(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
 
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        out = db_service.get_revenue_recognition_run_with_entries(
+            company_id=int(company_id),
+            run_id=int(run_id),
+            user_id=_jwt_user_id(),
+        )
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("get_revenue_recognition_run_with_entries failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    
 @revenue_bp.route(
     "/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>/satisfy",
     methods=["POST", "OPTIONS"],

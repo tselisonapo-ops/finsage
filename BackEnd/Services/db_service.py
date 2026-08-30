@@ -122155,6 +122155,40 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 },
             }
 
+    def get_revenue_recognition_run_with_entries(self, company_id: int, run_id: int, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+        
+        with self._conn_cursor() as (conn, cur):
+            run = self.fetch_one(
+                f"SELECT * FROM {schema}.revenue_recognition_runs WHERE id=%s LIMIT 1",
+                (int(run_id),),
+                cur=cur,
+            )
+            
+            if not run:
+                raise ValueError(f"Recognition run {run_id} not found")
+            
+            entries = self.fetch_all(
+                f"""
+                SELECT * FROM {schema}.revenue_recognition_entries 
+                WHERE run_id=%s 
+                ORDER BY id ASC
+                """,
+                (int(run_id),),
+                cur=cur,
+            ) or []
+            
+            return {
+                "ok": True,
+                "run": dict(run),
+                "entries": [dict(e) for e in entries],
+                "totals": {
+                    "total_revenue_delta": float(run.get("total_revenue_delta", 0)),
+                    "total_contract_asset_delta": float(run.get("total_contract_asset_delta", 0)),
+                    "total_contract_liability_delta": float(run.get("total_contract_liability_delta", 0)),
+                },
+            }
+
     def _enrich_obligation_milestone_fields(self, contract: dict | None, obligation: dict | None) -> dict | None:
         import json
 
