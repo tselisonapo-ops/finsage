@@ -98274,6 +98274,17 @@ async function renderContractPreview(c = {}) {
     }
   }
 
+  // Helper for safe HTML escaping in error messages
+  function dtEscape(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   async function loadRuns() {
     // ✅ AFTER:
     const mount = document.getElementById("dtRunList");
