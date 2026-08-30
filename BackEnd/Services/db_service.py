@@ -118722,7 +118722,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 %s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s,
                 %s,%s,%s,%s::jsonb,
-                %s,%s,%s,%s,%s,%s
+                %s,%s,%s,%s,%s
             )
             RETURNING *;
             """
