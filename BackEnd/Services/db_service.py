@@ -118727,38 +118727,35 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             RETURNING *;
             """
 
+            # ✅ Exactly 24 params for 24 columns (matching above):
             params = (
-                int(company_id),
-                customer_id,
-                project_id,
-                (data.get("contract_number") or "").strip(),
-                (data.get("contract_title") or "").strip(),
-                (data.get("status") or "draft").strip().lower(),
-                (data.get("contract_currency") or "USD").strip().upper(),
-                data.get("contract_date"),
-                data.get("start_date"),
-                data.get("end_date"),
-                (data.get("billing_method") or "milestone").strip().lower(),
-                float(data.get("transaction_price") or 0.0),
-                float(data.get("variable_consideration_est") or 0.0),
-                float(data.get("variable_consideration_constrained") or 0.0),
-                float(financing_component_amount or 0.0),
-                bool(data.get("has_significant_financing_component", False)),
-                bool(data.get("is_over_time", True)),
-                data.get("notes"),
-                json.dumps(data.get("payload_json") or {}, default=str),
-
-                int(user_id) if user_id else None,           # created_by_user_id
-                data.get("updated_by_user_id") or user_id,   # updated_by_user_id
-                data.get("source_company_id"),               # source_company_id
-                data.get("engagement_company_id"),           # engagement_company_id  
-                data.get("engagement_id"),                   # engagement_id
-                
-                # ✅ ADD THIS LINE (missing 25th parameter):
-                datetime.utcnow() if 'created_at' in sql_columns else None,  # or whatever fits your schema
+                int(company_id),                                          # 1. company_id
+                customer_id,                                              # 2. customer_id
+                project_id,                                               # 3. project_id
+                (data.get("contract_number") or "").strip(),              # 4. contract_number
+                (data.get("contract_title") or "").strip(),               # 5. contract_title
+                (data.get("status") or "draft").strip().lower(),          # 6. status
+                (data.get("contract_currency") or "USD").strip().upper(), # 7. contract_currency
+                data.get("contract_date"),                                # 8. contract_date
+                data.get("start_date"),                                   # 9. start_date
+                data.get("end_date"),                                     # 10. end_date
+                (data.get("billing_method") or "milestone").strip().lower(), # 11. billing_method
+                float(data.get("transaction_price") or 0.0),              # 12. transaction_price
+                float(data.get("variable_consideration_est") or 0.0),     # 13. variable_consideration_est
+                float(data.get("variable_consideration_constrained") or 0.0), # 14. variable_consideration_constrained
+                float(financing_component_amount or 0.0),                 # 15. financing_component_amount
+                bool(data.get("has_significant_financing_component", False)), # 16. has_significant_financing_component
+                bool(data.get("is_over_time", True)),                     # 17. is_over_time
+                data.get("notes"),                                        # 18. notes
+                json.dumps(data.get("payload_json") or {}, default=str),  # 19. payload_json
+                int(user_id) if user_id else None,                        # 20. created_by_user_id
+                data.get("updated_by_user_id") or user_id,                # 21. updated_by_user_id
+                data.get("source_company_id"),                            # 22. source_company_id
+                data.get("engagement_company_id"),                        # 23. engagement_company_id
+                data.get("engagement_id"),                                # 24. engagement_id
             )
 
-            cur.execute(sql, params)
+            cur.execute(sql, params)  # ✅ Now this will work!
             row = dict(cur.fetchone())
 
             row["customer_name"] = customer.get("name")
