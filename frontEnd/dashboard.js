@@ -133009,6 +133009,7 @@ async function openProjectTeamModal(projectId) {
   // Reset form fields
   resetProjectTeamForm();
   
+  
   // ✅ CHECK: Do roles exist?
   const hasRoles = Array.isArray(window._projectRolesCache) && window._projectRolesCache.length > 0;
   
