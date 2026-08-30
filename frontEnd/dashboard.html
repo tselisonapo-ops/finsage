@@ -18267,18 +18267,19 @@ label:has(#projectTeamUserSearch) {
                   
                   <div class="grid grid-cols-1 gap-3 text-xs">
                     
-                    <!-- Row 1: Role Name (NEW - was missing!) -->
+                    <!-- ✅ Row 1: Role Name (was missing!) -->
                     <div>
                       <label class="block text-slate-600 mb-1">Role Name *</label>
                       <input id="projectRoleNameInput"
                             type="text"
                             class="w-full border rounded px-2 py-2"
-                            placeholder="e.g., Site Engineer"
+                            placeholder="e.g., Site Engineer, Project Manager"
                             required
-                            oninput="autoGenerateRoleCode()">
+                            oninput="autoGenerateRoleCode(this.value)">
+                      <div class="text-[10px] text-slate-400 mt-1">Type name to auto-generate code below</div>
                     </div>
 
-                    <!-- Row 2: Role Type + Role Code side by side -->
+                    <!-- ✅ Row 2: Role Type + Role Code side by side -->
                     <div class="grid grid-cols-2 gap-3">
                       <div>
                         <label class="block text-slate-600 mb-1">Role Type *</label>
@@ -18299,14 +18300,14 @@ label:has(#projectTeamUserSearch) {
                         <input id="projectRoleCodeInput"
                               type="text"
                               class="w-full border rounded px-2 py-2 bg-slate-50"
-                              placeholder="e.g., SE-001"
+                              placeholder="e.g., PM-001"
                               maxlength="10"
                               readonly>
                         <div class="text-[10px] text-slate-400 mt-1">Auto-generated from initials</div>
                       </div>
                     </div>
 
-                    <!-- Row : Description (full width) -->
+                    <!-- ✅ Row 3: Description (full width) -->
                     <div>
                       <label class="block text-slate-600 mb-1">Description</label>
                       <input id="projectRoleDescInput"

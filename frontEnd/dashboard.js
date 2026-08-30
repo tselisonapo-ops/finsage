@@ -127858,6 +127858,10 @@ function bindProjectTeamModalOnce() {
   if (!searchInput || searchInput.dataset.bound === "true") return;
   searchInput.dataset.bound = "true";
 
+  // ════════════════════════════════════════
+  // 🔍 SEARCH & DROPDOWN FUNCTIONALITY
+  // ════════════════════════════════════════
+
   // Filter on every keystroke
   searchInput.addEventListener("input", (e) => {
     const val = e.target.value;
@@ -127907,12 +127911,34 @@ function bindProjectTeamModalOnce() {
     }
   });
 
+  // ════════════════════════════════════════
+  // 🔘 MODAL CONTROL BUTTONS (from overwritten function)
+  // ════════════════════════════════════════
+
+  // Close on overlay click
+  document.getElementById("projectTeamOverlay")
+    ?.addEventListener("click", closeProjectTeamModal);
+
+  // Close on X button
+  document.getElementById("projectTeamCloseBtn")
+    ?.addEventListener("click", closeProjectTeamModal);
+
+  // Cancel button
+  document.getElementById("projectTeamCancelBtn")
+    ?.addEventListener("click", closeProjectTeamModal);
+
+  // Save button
+  document.getElementById("projectTeamSaveBtn")
+    ?.addEventListener("click", submitProjectTeamMember);
+
   // Manage Roles button - opens roles modal ON TOP of team member modal
   document.getElementById("manageProjectRolesBtn")
     ?.addEventListener("click", () => {
       const projectId = Number(document.getElementById("projectTeamProjectId")?.value || 0);
       if (projectId) openProjectRolesModal(projectId);
     });
+
+  console.log("[TeamModal] ✓ Full binding complete (search + buttons + roles)");
 }
 
 function populateExpenseAccountSelect(selectedCode = "") {
@@ -131493,43 +131519,6 @@ function bindProjectPlanningModalsOnce() {
   bindProjectTeamModalOnce();
   bindProjectAssignModalOnce();
   bindProjectDependencyModalOnce();
-}
-
-function bindProjectTeamModalOnce() {
-  const m =
-    document.getElementById("projectTeamModal");
-
-  if (!m || m.dataset.bound === "1") return;
-
-  m.dataset.bound = "1";
-
-  document
-    .getElementById("projectTeamOverlay")
-    ?.addEventListener(
-      "click",
-      closeProjectTeamModal
-    );
-
-  document
-    .getElementById("projectTeamCloseBtn")
-    ?.addEventListener(
-      "click",
-      closeProjectTeamModal
-    );
-
-  document
-    .getElementById("projectTeamCancelBtn")
-    ?.addEventListener(
-      "click",
-      closeProjectTeamModal
-    );
-
-  document
-    .getElementById("projectTeamSaveBtn")
-    ?.addEventListener(
-      "click",
-      submitProjectTeamMember
-    );
 }
 
 function bindProjectAssignModalOnce() {
