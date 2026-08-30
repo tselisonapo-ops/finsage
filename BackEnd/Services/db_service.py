@@ -96064,14 +96064,15 @@ class DatabaseService:
                     invoice_net_amount + vat_amount
                 )
 
+                # FIXED - correct keys from resolve_ifrs15_accounts()
                 contract_asset_account = ifrs15_account_code(
-                    ifrs15_accounts.get("contract_asset")
-                    or ifrs15_accounts.get("CONTRACT_ASSET")
+                    ifrs15_accounts.get("contract_asset_code")
+                    or ifrs15_accounts.get("contract_asset_account")
                 )
 
                 contract_liability_account = ifrs15_account_code(
-                    ifrs15_accounts.get("contract_liability")
-                    or ifrs15_accounts.get("CONTRACT_LIABILITY")
+                    ifrs15_accounts.get("contract_liability_code")
+                    or ifrs15_accounts.get("contract_liability_account")
                 )
 
                 if contract_asset_release > 0:
