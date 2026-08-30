@@ -18338,7 +18338,6 @@ label:has(#projectTeamUserSearch) {
           </div>
           <!-- END PROJECT ROLES MODAL -->
 
-
           <!-- ==================== TEAM MEMBER MODAL ==================== -->
           <div id="projectTeamModal"
               class="fixed inset-0 z-50 hidden">
@@ -18359,6 +18358,15 @@ label:has(#projectTeamUserSearch) {
                 </div>
 
                 <input id="projectTeamProjectId" type="hidden">
+
+                <!-- Existing Team Members Section (add inside modal, before the form grid) -->
+                <div id="projectTeamExistingList" class="mb-3 max-h-48 overflow-auto">
+                  <!-- Populated by loadProjectTeamMembers() -->
+                </div>
+
+                <hr class="my-3 border-slate-200">
+
+                <div class="font-semibold text-sm mb-2 text-slate-700">Add New Member</div>
 
                 <!-- Form Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">

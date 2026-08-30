@@ -132999,6 +132999,131 @@ function resetProjectTeamForm() {
   console.log("[TeamModal] Form reset to defaults");
 }
 
+/**
+ * Load and display existing team members for a project
+ * Called when Team Modal opens
+ */
+async function loadProjectTeamMembers(projectId) {
+  const listContainer = document.getElementById("projectTeamExistingList");
+  if (!listContainer) {
+    console.log("[TeamModal] No existing team list container found (optional)");
+    return;  // Optional - modal may not have this element
+  }
+  
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  
+  if (!cid || !projectId) {
+    listContainer.innerHTML = `
+      <div class="text-slate-400 text-xs p-2 text-center">
+        No project selected
+      </div>
+    `;
+    return;
+  }
+  
+  try {
+    // Show loading state
+    listContainer.innerHTML = `
+      <div class="text-slate-400 text-xs p-2 text-center animate-pulse">
+        Loading team members...
+      </div>
+    `;
+    
+    // Fetch team members from API
+    const url = ENDPOINTS.projects.teamList(cid, projectId);
+    console.log("[TeamModal] Fetching team from:", url);
+    
+    const data = await apiFetch(url);
+    const members = data?.data || data?.items || data?.members || [];
+    
+    // Render team members list
+    if (!members.length) {
+      listContainer.innerHTML = `
+        <div class="text-slate-400 text-xs p-3 text-center">
+          No team members yet<br>
+          <span class="text-[10px]">Add your first team member above</span>
+        </div>
+      `;
+      return;
+    }
+    
+    // Build HTML for each member
+    let html = '<div class="space-y-2 max-h-40 overflow-auto">';
+    
+    members.forEach(member => {
+      const name = member.user_name || member.name || member.employee_name || 'Unknown';
+      const roleType = member.role_type || 'member';
+      const role = member.project_role || '-';
+      const allocation = member.allocation_percent || 100;
+      
+      html += `
+        <div class="flex items-center justify-between bg-slate-50 rounded p-2 text-xs">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-medium">
+              ${name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div class="font-medium text-slate-700">${escapeHtml(name)}</div>
+              <div class="text-slate-400">${roleType} ${role ? '• ' + role : ''}</div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-slate-600">${allocation}%</div>
+            ${member.id ? `
+              <button onclick="deleteProjectTeamMember(${projectId}, ${member.id})" 
+                      class="text-red-500 hover:text-red-700 text-[10px]">
+                Remove
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    });
+    
+    html += '</div>';
+    listContainer.innerHTML = html;
+    
+    console.log(`[TeamModal] ✓ Loaded ${members.length} team members`);
+    
+  } catch (err) {
+    console.error("[TeamModal] Failed to load team:", err);
+    listContainer.innerHTML = `
+      <div class="text-red-400 text-xs p-2 text-center">
+        ❌ Failed to load: ${escapeHtml(err.message)}
+      </div>
+    `;
+  }
+}
+
+/**
+ * Delete a team member from project
+ */
+async function deleteProjectTeamMember(projectId, memberId) {
+  if (!confirm('Remove this team member from the project?')) return;
+  
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  
+  try {
+    await apiFetch(ENDPOINTS.projects.teamDelete(cid, projectId, memberId), {
+      method: 'DELETE'
+    });
+    
+    console.log('[TeamModal] ✓ Member removed');
+    
+    // Refresh the list
+    await loadProjectTeamMembers(projectId);
+    
+    // Also refresh project detail if function exists
+    if (typeof loadProjectDetail === 'function') {
+      await loadProjectDetail(projectId);
+    }
+    
+  } catch (err) {
+    console.error('[TeamModal] Failed to delete member:', err);
+    alert('Failed to remove member: ' + err.message);
+  }
+}
+
 async function openProjectTeamModal(projectId) {
   bindProjectTeamModalOnce();
   
@@ -133009,7 +133134,7 @@ async function openProjectTeamModal(projectId) {
   // Reset form fields
   resetProjectTeamForm();
   
-  
+
   // ✅ CHECK: Do roles exist?
   const hasRoles = Array.isArray(window._projectRolesCache) && window._projectRolesCache.length > 0;
   
