@@ -98276,7 +98276,8 @@ async function renderContractPreview(c = {}) {
   }
 
   async function loadRuns() {
-    const mount = $id("dtRunList"); // Uses your helper
+    // ✅ AFTER:
+    const mount = document.getElementById("dtRunList");
     if (!mount) return;
 
     // 1. Show loading state so the user knows something is happening
