@@ -98286,29 +98286,47 @@ async function renderContractPreview(c = {}) {
   }
 
   async function loadRuns() {
-    // ✅ AFTER:
-    const mount = document.getElementById("dtRunList");
+    // ✅ Use Revenue module's $ helper (not $id from Deferred Tax)
+    const mount = $("dtRunList");
     if (!mount) return;
 
-    // 1. Show loading state so the user knows something is happening
+    // 1. Show loading state
     mount.innerHTML = `<div class="dt-loading">Loading deferred tax runs...</div>`;
 
     try {
-      const res = await apiFetch(ENDPOINTS.deferredTax.runs(cid()));
+      // ✅ Use activeCid() or state.cid (Revenue module's CID getter)
+      const companyId = state.cid || activeCid();
+      if (!companyId) {
+        mount.innerHTML = `
+          <div class="dt-error" style="color: #dc2626; padding: 20px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">
+            <strong>⚠️ No company selected</strong>
+            <p>Please select a company first.</p>
+          </div>
+        `;
+        return;
+      }
 
-      // 2. Robust data extraction 
-      // (Matches the pattern res.data which your backend typically uses)
+      const res = await apiFetch(ENDPOINTS.deferredTax.runs(companyId));
+
+      // 2. Robust data extraction
       const rows = Array.isArray(res?.data) ? res.data : (res?.items || []);
 
-      // 3. Render the list
-      renderDeferredTaxRunList(rows);
+      // 3. Render using Deferred Tax's render function
+      if (typeof renderDeferredTaxRunList === 'function') {
+        renderDeferredTaxRunList(rows);
+      } else {
+        // Fallback if render function not available
+        mount.innerHTML = rows.length 
+          ? `<div class="text-sm text-slate-600">${rows.length} run(s) loaded</div>`
+          : `<div class="text-sm text-slate-400">No deferred tax runs yet</div>`;
+      }
 
     } catch (error) {
-      // 4. ✅ Error handling: Prevent the blank page by showing the error in the UI
+      // 4. Error handling - use esc() (Revenue module's escape helper)
       mount.innerHTML = `
         <div class="dt-error" style="color: #dc2626; padding: 20px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">
           <strong>⚠️ Failed to load runs</strong>
-          <p>${dtEscape(error.message)}</p>
+          <p>${esc(error.message)}</p>
           <small>Check the console for technical details.</small>
         </div>
       `;
