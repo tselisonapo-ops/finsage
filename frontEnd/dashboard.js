@@ -132955,6 +132955,50 @@ async function submitProjectDocument() {
   }
 }
 
+/**
+ * Reset Team Member form to default values
+ */
+function resetProjectTeamForm() {
+  // Clear user search
+  const searchInput = document.getElementById("projectTeamUserSearch");
+  const hiddenIdInput = document.getElementById("projectTeamUserId");
+  const userList = document.getElementById("projectTeamUserList");
+  
+  if (searchInput) searchInput.value = "";
+  if (hiddenIdInput) hiddenIdInput.value = "";
+  if (userList) {
+    userList.classList.add("hidden");
+    userList.innerHTML = "";
+  }
+  
+  // Reset role type to default
+  const roleTypeSelect = document.getElementById("projectTeamRoleType");
+  if (roleTypeSelect) roleTypeSelect.value = "member";
+  
+  // Reset project role
+  const roleSelect = document.getElementById("projectTeamRole");
+  if (roleSelect) roleSelect.value = "";
+  
+  // Reset allocation
+  const allocation = document.getElementById("projectTeamAllocation");
+  if (allocation) allocation.value = "100";
+  
+  // Reset dates
+  const startDate = document.getElementById("projectTeamStartDate");
+  const endDate = document.getElementById("projectTeamEndDate");
+  if (startDate) startDate.value = "";
+  if (endDate) endDate.value = "";
+  
+  // Reset notes
+  const notes = document.getElementById("projectTeamNotes");
+  if (notes) notes.value = "";
+  
+  // Clear message
+  setElText("projectTeamMsg", "");
+  
+  console.log("[TeamModal] Form reset to defaults");
+}
+
 async function openProjectTeamModal(projectId) {
   bindProjectTeamModalOnce();
   
