@@ -93947,15 +93947,15 @@ async function saveEditModal() {
       ? tasks
       : (tasks?.data || tasks?.rows || []);
 
-    sel.innerHTML =
-      `<option value="">No linked task</option>` +
-      rows.map(t => `
-        <option value="${t.id}">
-          ${esc(t.task_code || t.code || "")} — ${esc(t.task_name || t.name || "")}
-        </option>
-      `).join("");
+      sel.innerHTML =
+        `<option value="">No linked task</option>` +
+        rows.map(t => `
+          <option value="${t.id}">
+            ${esc(t.task_name || t.name || t.task_code || "Unnamed Task")}
+          </option>
+        `).join("");
 
-    sel.value = selectedTaskId ? String(selectedTaskId) : "";
+      sel.value = selectedTaskId ? String(selectedTaskId) : "";
 
     if (hint) {
       hint.textContent = rows.length
@@ -96122,8 +96122,7 @@ async function renderContractPreview(c = {}) {
         <option value="">None</option>
         ${items.map(p => `
           <option value="${esc(String(p.id))}">
-            ${esc(p.project_code || "")}
-            ${p.project_name ? ` — ${esc(p.project_name)}` : ""}
+            ${esc(p.project_name || p.project_code || "Unnamed Project")}
           </option>
         `).join("")}
       `;
@@ -99255,7 +99254,8 @@ async function renderContractPreview(c = {}) {
       setContractViewMode("form");
     });
 
-    $("revAddObligation")?.addEventListener("click", () => {
+    // ✅ FIXED CODE:
+    $("revAddObligation")?.addEventListener("click", async () => {
       if (!state.selectedContract?.id) {
         setMsg("Select a contract first. Obligations belong to a specific contract.", "error");
         setActiveTab("contracts");
@@ -99267,8 +99267,14 @@ async function renderContractPreview(c = {}) {
 
       hydrateObligationForm({});
 
-      // 🔥 banner always uses actual selected contract
+      // banner always uses actual selected contract
       renderObligationContractBanner(state.selectedContract);
+
+      // ✅ NEW: Load project tasks into dropdown when contract has a project!
+      await loadRevenueProjectTaskOptions(
+        "",  // No task pre-selected for new obligation
+        state.selectedContract?.project_id || null  // Use contract's project ID
+      );
 
       setObligationViewMode("form");
       setActiveTab("obligations");
@@ -99322,12 +99328,13 @@ async function renderContractPreview(c = {}) {
       }
     });
 
-    $("revEditObligationBtn")?.addEventListener("click", () => {
+    $("revEditObligationBtn")?.addEventListener("click", async () => {
       if (!state.selectedObligation) return;
 
-      hydrateObligationForm(state.selectedObligation);
+      // ✅ Use openRevenueObligationForEdit - it loads tasks AND hydrates form!
+      await openRevenueObligationForEdit(state.selectedObligation);
+      
       renderObligationContractBanner(state.selectedContract);
-      setObligationViewMode("form");
     });
 
     $("revCreateBillingInvoice")?.addEventListener("click", async () => {
