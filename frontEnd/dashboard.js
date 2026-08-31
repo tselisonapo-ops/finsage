@@ -8661,7 +8661,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       permission: "can_view_reports",
       children: [
         { name: "Chart of Accounts", screen: "coa", icon: "📒", minRole: "assistant", permission: "can_view_reports" },
-        { name: "IFRS 16 Lease Wizard", icon: "🧙", wizard: "ifrs16", minRole: "assistant", permission: "can_prepare_financials" },
+        { name: "IFRS 16 Lease WiUSDd", icon: "🧙", wiUSDd: "ifrs16", minRole: "assistant", permission: "can_prepare_financials" },
         { name: "Fixed Assets Register", screen: "fixedassets", icon: "🏭", minRole: "assistant", permission: "can_manage_fixed_assets" },
         { name: "Revenue Setup", screen: "revenue-setup", icon: "📐", minRole: "assistant", permission: "can_prepare_financials" },
         { name: "IFRS 9 Financial Instruments", screen: "ifrs9", icon: "💎", minRole: "assistant", permissionAny: ["can_post_journals", "can_prepare_financials", "can_view_reports"] },
@@ -10025,10 +10025,10 @@ function renderNavMenu(menu, targetEl, level = 0) {
     }
 
     // ---------------------------
-    // WIZARD LINK
+    // WIUSDD LINK
     // ---------------------------
-    else if (item.wizard) {
-      link.setAttribute("data-wizard", item.wizard);
+    else if (item.wiUSDd) {
+      link.setAttribute("data-wiUSDd", item.wiUSDd);
       link.classList.add("hover");
       li.appendChild(link);
     }
@@ -10080,13 +10080,13 @@ function bindNav() {
 
   // Single delegated listener for the entire document / navigation
   document.addEventListener("click", (e) => {
-    const link = e.target.closest(".nav-item-link, [data-nav], [data-wizard]");
+    const link = e.target.closest(".nav-item-link, [data-nav], [data-wiUSDd]");
     if (!link) return;
 
-    const wizard = link.dataset.wizard;
-    if (wizard && typeof wizardMap !== "undefined" && wizardMap[wizard]) {
+    const wiUSDd = link.dataset.wiUSDd;
+    if (wiUSDd && typeof wiUSDdMap !== "undefined" && wiUSDdMap[wiUSDd]) {
       e.preventDefault();
-      wizardMap[wizard]();
+      wiUSDdMap[wiUSDd]();
       return;
     }
 
@@ -10225,7 +10225,7 @@ const DELEGATED_POSTING_SCREENS = new Set([
   "bank-recon",
 
   "ifrs16",
-  "lease-wizard",
+  "lease-wiUSDd",
   "leases",
 
   "loan-register",
@@ -12966,14 +12966,14 @@ window.showSignupPrompt = showSignupPrompt;
   * Bindings
   * ============================== */
  
-const wizardMap = {
-  ifrs16: openLeaseWizard,
-  // future wizards: "vat": openVatWizard, etc.
+const wiUSDdMap = {
+  ifrs16: openLeaseWiUSDd,
+  // future wiUSDds: "vat": openVatWiUSDd, etc.
 };
 
-  // Open/close IFRS 16 wizard drawer
-function openLeaseWizard(ctx = {}) {
-  const pending = window.__LEASE_WIZARD_PENDING_CONTEXT__ || {};
+  // Open/close IFRS 16 wiUSDd drawer
+function openLeaseWiUSDd(ctx = {}) {
+  const pending = window.__LEASE_WIUSDD_PENDING_CONTEXT__ || {};
 
   ctx = {
     ...pending,
@@ -12988,10 +12988,10 @@ function openLeaseWizard(ctx = {}) {
     },
   };
 
-  window.__LEASE_WIZARD_PENDING_CONTEXT__ = null;
+  window.__LEASE_WIUSDD_PENDING_CONTEXT__ = null;
 
-  const drawer = document.getElementById("leaseWizardDrawer");
-  const frame = document.getElementById("leaseWizardFrame");
+  const drawer = document.getElementById("leaseWiUSDdDrawer");
+  const frame = document.getElementById("leaseWiUSDdFrame");
 
   if (!drawer || !frame) {
     console.error("[LEASE] drawer or iframe missing");
@@ -13001,8 +13001,8 @@ function openLeaseWizard(ctx = {}) {
   const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
 
   const url = isLocal
-    ? "http://localhost:5173/lease-wizard.html"
-    : `${location.origin}/app/dist/lease-wizard.html?v=20260814b`;
+    ? "http://localhost:5173/lease-wiUSDd.html"
+    : `${location.origin}/app/dist/lease-wiUSDd.html?v=20260814b`;
 
   const origin = isLocal
     ? "http://localhost:5173"
@@ -13025,7 +13025,7 @@ function openLeaseWizard(ctx = {}) {
   const isLessor = ["BS_CA_1710", "BS_NCA_1720"].includes(accountCode);
 
   const payload = {
-    type: "lease_wizard_context",
+    type: "lease_wiUSDd_context",
     token:
       window.getToken?.() ||
       sessionStorage.getItem("fs_user_token") ||
@@ -13060,7 +13060,7 @@ function openLeaseWizard(ctx = {}) {
     },
   };
 
-  window.__LEASE_WIZARD_ACTIVE_CONTEXT__ = payload;
+  window.__LEASE_WIUSDD_ACTIVE_CONTEXT__ = payload;
 
   const sendContext = () => {
     if (!frame.contentWindow) return;
@@ -13110,10 +13110,10 @@ function openLeaseWizard(ctx = {}) {
   }, 150);
 }
 
-window.openLeaseWizard = openLeaseWizard;
+window.openLeaseWiUSDd = openLeaseWiUSDd;
 
-function closeLeaseWizard() {
-  const drawer = document.getElementById("leaseWizardDrawer");
+function closeLeaseWiUSDd() {
+  const drawer = document.getElementById("leaseWiUSDdDrawer");
   if (drawer) drawer.classList.remove("active");
 }
 
@@ -20532,7 +20532,7 @@ async function renderVatDashboard() {
   }
 }
 
-// Generic VAT expansion for *batch lines* (invoice, POS, IFRS wizards)
+// Generic VAT expansion for *batch lines* (invoice, POS, IFRS wiUSDds)
 function expandVatForBatch(lines, cfg) {
 
   const vatCfg =
@@ -23683,13 +23683,13 @@ function getJournalGuardMessage(hint, acct) {
 
   if (hint === "lease") {
     return {
-      title: "Use Lease Wizard instead?",
+      title: "Use Lease WiUSDd instead?",
       body:
         `${name} is usually managed through the Lease module.\n\n` +
         `If you continue in Journal, lease schedules, interest unwind, ROU amortisation, remeasurements, and lease disclosures will need to be handled manually.`,
       continueLabel: "Continue in Journal",
-      moduleLabel: "Open Lease Wizard",
-      screen: "ifrs16-lease-wizard",
+      moduleLabel: "Open Lease WiUSDd",
+      screen: "ifrs16-lease-wiUSDd",
       reasonPrefix: "lease",
     };
   }
@@ -23892,8 +23892,8 @@ async function redirectJournalGuardToModule({ hint, acct, side }) {
   }
 
   if (hint === "lease") {
-    await window.switchScreen?.("ifrs16-lease-wizard");
-    window.openLeaseWizard?.({
+    await window.switchScreen?.("ifrs16-lease-wiUSDd");
+    window.openLeaseWiUSDd?.({
       side,
       account: acct,
       accountCode: acct?.code || "",
@@ -24205,7 +24205,7 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
         "BS_NCA_1720",
       ].includes(accountCode);
 
-      window.__LEASE_WIZARD_PENDING_CONTEXT__ = {
+      window.__LEASE_WIUSDD_PENDING_CONTEXT__ = {
         mode: isLessor ? "inception" : "existing",
         leaseRole: isLessor ? "lessor" : "lessee",
         accountCode,
@@ -24303,7 +24303,7 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
       return null;
     }
 
-    return await window.openLeaseWizard?.({
+    return await window.openLeaseWiUSDd?.({
       mode: "existing",
       accountCode: account?.code || "",
       accountName: account?.name || "",
@@ -24692,7 +24692,7 @@ function handleJournalAccountSelected(side, accountCode, meta = {}) {
     acc_cf_bucket: acc.cf_bucket,
     meta_standard: meta.standard,
     meta_cf_bucket: meta.cf_bucket,
-    hasOpenLeaseWizard: typeof window.openLeaseWizard,
+    hasOpenLeaseWiUSDd: typeof window.openLeaseWiUSDd,
   });
 
   // --- helpers ---
@@ -24723,11 +24723,11 @@ function handleJournalAccountSelected(side, accountCode, meta = {}) {
 
   if (directLeaseRedirect) {
     window.showToast?.(
-      "Lease account selected (IFRS 16). Opening Lease Wizard to capture lease metadata and build the amortization schedule…",
+      "Lease account selected (IFRS 16). Opening Lease WiUSDd to capture lease metadata and build the amortization schedule…",
       "info"
     );
-    console.log("[IFRS16] calling openLeaseWizard now");
-    window.openLeaseWizard?.({
+    console.log("[IFRS16] calling openLeaseWiUSDd now");
+    window.openLeaseWiUSDd?.({
       side,
       account: acc,
       accountCode,
@@ -36818,10 +36818,10 @@ function bindInterpretationToolbar() {
 }
 
 // ==============================
-// IFRS wizard posting placeholders
+// IFRS wiUSDd posting placeholders
 // ==============================
-function bindLeaseWizard() {
-  const form = document.getElementById("leaseWizardForm");
+function bindLeaseWiUSDd() {
+  const form = document.getElementById("leaseWiUSDdForm");
   if (!form) return;
 
   form.addEventListener("submit", async (e) => {
@@ -36837,7 +36837,7 @@ function bindLeaseWizard() {
     };
 
     await postLeaseJournal(lease);
-    closeLeaseWizard();
+    closeLeaseWiUSDd();
   });
 }
 
@@ -41147,7 +41147,7 @@ function renderLeaseHeaderTabs(routeName = "") {
     r === "lease-register" ||
     r === "ifrs16" ||
     r === "lease-center" ||
-    r === "lease-wizard";
+    r === "lease-wiUSDd";
 
   // -----------------------------
   // Decide which set to render
@@ -41466,21 +41466,21 @@ window.postTerm = async function postTerm() {
 })();
 
 // ===============================
-// IFRS 16 Lease Wizard drawer open/close
+// IFRS 16 Lease WiUSDd drawer open/close
 // ===============================
-(function bindLeaseWizardDrawer() {
-  const navBtn = document.getElementById("openLeaseWizardNav");
-  const drawer = document.getElementById("leaseWizardDrawer");
-  const closeBtn = document.getElementById("closeLeaseWizard");
-  const frame = document.getElementById("leaseWizardFrame");
+(function bindLeaseWiUSDdDrawer() {
+  const navBtn = document.getElementById("openLeaseWiUSDdNav");
+  const drawer = document.getElementById("leaseWiUSDdDrawer");
+  const closeBtn = document.getElementById("closeLeaseWiUSDd");
+  const frame = document.getElementById("leaseWiUSDdFrame");
 
   if (!drawer || !frame) {
     console.warn("[LEASE HOST] drawer or iframe missing");
     return;
   }
 
-  if (window.__LEASE_WIZARD_BOUND__) return;
-  window.__LEASE_WIZARD_BOUND__ = true;
+  if (window.__LEASE_WIUSDD_BOUND__) return;
+  window.__LEASE_WIUSDD_BOUND__ = true;
 
   const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
   const origin = isLocal ? "http://localhost:5173" : location.origin;
@@ -41494,7 +41494,7 @@ window.postTerm = async function postTerm() {
   }
 
   function sendActiveContext() {
-    const payload = window.__LEASE_WIZARD_ACTIVE_CONTEXT__;
+    const payload = window.__LEASE_WIUSDD_ACTIVE_CONTEXT__;
     if (!payload || !frame.contentWindow) return;
 
     payload.token =
@@ -41511,7 +41511,7 @@ window.postTerm = async function postTerm() {
     frame.contentWindow.postMessage(payload, origin);
   }
 
-  window.closeLeaseWizard = closeDrawer;
+  window.closeLeaseWiUSDd = closeDrawer;
 
   navBtn?.addEventListener("click", () => {
     const companyId =
@@ -41523,9 +41523,9 @@ window.postTerm = async function postTerm() {
       return;
     }
 
-    sessionStorage.removeItem("lease_wizard_context");
+    sessionStorage.removeItem("lease_wiUSDd_context");
 
-    window.openLeaseWizard?.({
+    window.openLeaseWiUSDd?.({
       source: "nav",
       mode: "inception",
       leaseRole: "lessee",
@@ -41548,12 +41548,12 @@ window.postTerm = async function postTerm() {
       data,
     });
 
-    if (data.type === "lease_wizard_ready") {
+    if (data.type === "lease_wiUSDd_ready") {
       sendActiveContext();
       return;
     }
 
-    if (data.type === "lease_wizard_close") {
+    if (data.type === "lease_wiUSDd_close") {
       closeDrawer();
       return;
     }
@@ -43406,7 +43406,7 @@ window.postTerm = async function postTerm() {
 ========================================================= */
 
 
-// IFRS 16 Lease wizard → initial recognition
+// IFRS 16 Lease wiUSDd → initial recognition
 async function postLeaseJournal(lease) {
   // lease: { startDate, ref, rightOfUseAccount, leaseLiabilityAccount, pvOfLease, initialDirectCosts, etc. }
   const date = lease.startDate;
@@ -74790,7 +74790,7 @@ async function saveEditModal() {
     const currency =
       payrollState.settings?.default_currency ||
       window.CURRENT_COMPANY?.currency ||
-      "ZAR";
+      "USD";
 
     return new Intl.NumberFormat("en-ZA", {
       style: "currency",
@@ -85230,7 +85230,7 @@ async function saveEditModal() {
       document.getElementById("adModalCancelBtn")?.addEventListener("click", closeAdNewModal);
 
       document.getElementById("adPreviewBtn")?.addEventListener("click", async () => {
-        const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
+        const payload = adPayloadFromWiUSDd(window._AD_FINAL_CTX || {});
 
         if (!payload.settlement_method) {
           return alert("Select Bank / Cash or Accounts Payable.");
@@ -85254,7 +85254,7 @@ async function saveEditModal() {
       });
 
       document.getElementById("adSaveDraftBtn")?.addEventListener("click", async () => {
-        const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
+        const payload = adPayloadFromWiUSDd(window._AD_FINAL_CTX || {});
 
         if (!payload.item_title) {
           return alert("Item title is required.");
@@ -85301,7 +85301,7 @@ async function saveEditModal() {
           e.preventDefault();
 
           const ctx = window._AD_FINAL_CTX || {};
-          const payload = adPayloadFromWizard(ctx);
+          const payload = adPayloadFromWiUSDd(ctx);
 
           // --------------------------------------------------
           // Core validation
@@ -85594,7 +85594,7 @@ async function saveEditModal() {
   }
   window.openNewAccrualDeferralModal = openNewAccrualDeferralModal;
 
-  function adPayloadFromWizard(ctx = {}) {
+  function adPayloadFromWiUSDd(ctx = {}) {
     const settlementMethod =
       $("adNewSettlementMethod")?.value || "";
 
@@ -85777,7 +85777,7 @@ async function saveEditModal() {
   }
 
   async function refreshAdPreview(ctx = {}) {
-    const payload = adPayloadFromWizard(ctx);
+    const payload = adPayloadFromWiUSDd(ctx);
 
     if (!payload.item_title || !(payload.original_amount > 0) || !payload.start_date || !payload.end_date) {
       renderAdJournalPreview(null);
@@ -136082,11 +136082,9 @@ function bindProjectIssueModalOnce() {
   if (window._projectIssueModalBound) return;
   window._projectIssueModalBound = true;
 
-  // Close button
+  // Close/overlay/cancel buttons
   document.getElementById("projectIssueCloseBtn")?.addEventListener("click", closeProjectIssueModal);
   document.getElementById("projectIssueOverlay")?.addEventListener("click", closeProjectIssueModal);
-  
-  // Cancel button
   document.getElementById("projectIssueCancelBtn")?.addEventListener("click", closeProjectIssueModal);
 
   // Add line button
@@ -136094,18 +136092,55 @@ function bindProjectIssueModalOnce() {
     await addProjectIssueLine();
   });
 
-  // Preview button
-  document.getElementById("projectIssuePreviewBtn")?.addEventListener("click", previewProjectIssueJournal);
+  // PREVIEW BUTTON - Main action, triggers journal preview
+  const previewBtn = document.getElementById("projectIssuePreviewBtn");
+  if (previewBtn) {
+    // Use both addEventListener AND onclick for reliability
+    previewBtn.addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      previewProjectIssueJournal();
+    });
+    previewBtn.onclick = function(e) {
+      e.preventDefault();
+      previewProjectIssueJournal();
+    };
+  }
 
-  // Post button
+  // POST BUTTON - Only visible after preview
   document.getElementById("projectIssueSaveBtn")?.addEventListener("click", submitProjectIssue);
 }
 
 function closeProjectIssueModal() {
   document.getElementById("projectIssueModal")?.classList.add("hidden");
   hideIssueJournalPreview();
+  resetIssueModalState();
   ACTIVE_PROJECT_ID = null;
   window._currentProjectForIssue = null;
+}
+
+function resetIssueModalState() {
+  // Hide post button, show preview button
+  const previewBtn = document.getElementById("projectIssuePreviewBtn");
+  const saveBtn = document.getElementById("projectIssueSaveBtn");
+  
+  if (previewBtn) {
+    previewBtn.classList.remove("hidden");
+    previewBtn.disabled = false;
+    previewBtn.innerHTML = `
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+      </svg>
+      Preview & Review Journal
+    `;
+  }
+  
+  if (saveBtn) {
+    saveBtn.classList.add("hidden");
+  }
+  
+  clearIssueMessage();
 }
 
 function hideIssueJournalPreview() {
@@ -136116,11 +136151,10 @@ function showIssueMessage(msg, isError = false) {
   const el = document.getElementById("projectIssueMsg");
   if (!el) return;
   el.textContent = msg;
-  el.classList.remove("hidden", "bg-red-50", "text-red-700", "bg-green-50", "text-green-700", "bg-blue-50", "text-blue-700");
+  el.classList.remove("hidden", "bg-red-50", "text-red-700", "bg-green-50", "text-green-700", "bg-blue-50", "text-blue-700", "bg-amber-50", "text-amber-700");
   if (msg) {
-    el.classList.add("hidden");
     el.classList.remove("hidden");
-    el.classList.add(isError ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700");
+    el.classList.add(isError ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700");
   } else {
     el.classList.add("hidden");
   }
@@ -136205,7 +136239,7 @@ async function updateLineEstimate(tr) {
       
       const detail = preview?.line_details?.[0];
       if (detail) {
-        estSpan.textContent = `ZAR ${detail.total_cost?.toFixed(2) || '0.00'}`;
+        estSpan.textContent = `USD ${detail.total_cost?.toFixed(2) || '0.00'}`;
       }
     } catch (e) {
       estSpan.textContent = "—";
@@ -136234,13 +136268,21 @@ function updateIssueEstimates() {
   const countEl = document.getElementById("projectIssueLineCount");
   const totalEl = document.getElementById("projectIssueEstTotal");
   if (countEl) countEl.textContent = count;
-  if (totalEl) totalEl.textContent = `ZAR ${total.toFixed(2)}`;
+  if (totalEl) totalEl.textContent = `USD ${total.toFixed(2)}`;
 }
 
 async function previewProjectIssueJournal() {
+  console.log("[Preview] Button clicked!"); // Debug log
+  
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   const projectId = Number(document.getElementById("projectIssueProjectId")?.value || ACTIVE_PROJECT_ID || 0);
-  if (!cid || !projectId) return;
+  
+  console.log("[Preview] cid:", cid, "projectId:", projectId); // Debug
+  
+  if (!cid || !projectId) {
+    showIssueMessage("Missing company or project ID.", true);
+    return;
+  }
 
   const lines = Array.from(document.querySelectorAll("#projectIssueLines tr"))
     .map(tr => ({
@@ -136250,16 +136292,25 @@ async function previewProjectIssueJournal() {
     }))
     .filter(x => x.item_id > 0 && x.qty > 0);
 
+  console.log("[Preview] Lines:", lines); // Debug
+
   if (!lines.length) {
-    showIssueMessage("Add at least one material line before previewing.", true);
+    showIssueMessage("⚠️ Add at least one material line before previewing.", true);
     return;
   }
 
   clearIssueMessage();
+  
   const previewBtn = document.getElementById("projectIssuePreviewBtn");
   if (previewBtn) {
     previewBtn.disabled = true;
-    previewBtn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Loading...`;
+    previewBtn.innerHTML = `
+      <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg>
+      Loading Preview...
+    `;
   }
 
   try {
@@ -136271,6 +136322,8 @@ async function previewProjectIssueJournal() {
       lines,
     };
 
+    console.log("[Preview] Sending payload:", payload); // Debug
+
     const preview = await apiFetch(
       ENDPOINTS.projects.previewIssueJournal(cid, projectId),
       {
@@ -136279,14 +136332,48 @@ async function previewProjectIssueJournal() {
       }
     );
 
-    renderIssueJournalPreview(preview);
+    console.log("[Preview] Response:", preview); // Debug
 
-  } catch (err) {
-    showIssueMessage(`Preview failed: ${err?.message || "Unknown error"}`, true);
-  } finally {
+    renderIssueJournalPreview(preview);
+    
+    // ✅ SUCCESS: Show the Post Issue button now!
+    const saveBtn = document.getElementById("projectIssueSaveBtn");
+    if (saveBtn) {
+      saveBtn.classList.remove("hidden");
+      // Scroll to make it visible
+      setTimeout(() => {
+        saveBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        saveBtn.classList.add('ring-2', 'ring-green-400', 'ring-offset-2');
+        setTimeout(() => {
+          saveBtn.classList.remove('ring-2', 'ring-green-400', 'ring-offset-2');
+        }, 2000);
+      }, 100);
+    }
+    
+    // Update preview button to show "Refresh Preview"
     if (previewBtn) {
       previewBtn.disabled = false;
-      previewBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg> Preview Journal`;
+      previewBtn.innerHTML = `
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        Refresh Preview
+      `;
+    }
+
+  } catch (err) {
+    console.error("[Preview] Error:", err); // Debug
+    showIssueMessage(`❌ Preview failed: ${err?.message || "Unknown error"}`, true);
+    
+    if (previewBtn) {
+      previewBtn.disabled = false;
+      previewBtn.innerHTML = `
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+        </svg>
+        Retry Preview
+      `;
     }
   }
 }
@@ -136300,30 +136387,35 @@ function renderIssueJournalPreview(preview) {
   // Header info
   setElText("journalPreviewDate", preview.journal_header?.date || "");
   setElText("journalPreviewDesc", preview.journal_header?.description || "");
-  setElText("journalPreviewTotal", `ZAR ${preview.totals?.total_debit?.toFixed(2) || "0.00"}`);
+  setElText("journalPreviewTotal", `USD ${preview.totals?.total_debit?.toFixed(2) || "0.00"}`);
   setElText("projectIssueJournalRef", preview.journal_header?.ref || "");
 
   // Journal lines
   const tbody = document.getElementById("projectIssueJournalLines");
   if (tbody) {
-    tbody.innerHTML = (preview.journal_lines || []).map(line => `
-      <tr class="border-b hover:bg-amber-50/30">
-        <td class="px-3 py-2 font-mono text-xs">${esc(line.account_code || "")}</td>
-        <td class="px-3 py-2 text-xs">${esc(line.account_name || "")}</td>
-        <td class="px-3 py-2 text-right font-mono text-xs ${line.debit > 0 ? 'font-semibold text-green-700' : ''}">${line.debit > 0 ? line.debit.toFixed(2) : ''}</td>
-        <td class="px-3 py-2 text-right font-mono text-xs ${line.credit > 0 ? 'font-semibold text-red-700' : ''}">${line.credit > 0 ? line.credit.toFixed(2) : ''}</td>
-        <td class="px-3 py-2 text-xs text-slate-500">${esc(line.memo || "")}</td>
-      </tr>
-    `).join("");
+    if (!preview.journal_lines || preview.journal_lines.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="px-3 py-4 text-center text-amber-600">No journal lines generated</td></tr>`;
+    } else {
+      tbody.innerHTML = preview.journal_lines.map(line => `
+        <tr class="border-b hover:bg-amber-50/50 transition-colors">
+          <td class="px-3 py-2.5 font-mono text-xs font-medium">${esc(line.account_code || "")}</td>
+          <td class="px-3 py-2.5 text-xs">${esc(line.account_name || "")}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-xs ${line.debit > 0 ? 'font-bold text-green-700 bg-green-50' : ''}">${line.debit > 0 ? line.debit.toFixed(2) : ''}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-xs ${line.credit > 0 ? 'font-bold text-red-700 bg-red-50' : ''}">${line.credit > 0 ? line.credit.toFixed(2) : ''}</td>
+          <td class="px-3 py-2.5 text-xs text-slate-500 italic">${esc(line.memo || "")}</td>
+        </tr>
+      `).join("");
+    }
   }
 
   // Totals
   setElText("journalPreviewTotalDr", preview.totals?.total_debit?.toFixed(2) || "0.00");
   setElText("journalPreviewTotalCr", preview.totals?.total_credit?.toFixed(2) || "0.00");
 
-  // Show the preview section
+  // Show the preview section with animation
   container.classList.remove("hidden");
-
+  container.style.animation = "slideDown 0.3s ease-out";
+  
   // Update line estimates from server response
   if (preview.line_details) {
     const rows = document.querySelectorAll("#projectIssueLines tr");
@@ -136331,13 +136423,13 @@ function renderIssueJournalPreview(preview) {
       const detail = preview.line_details[idx];
       if (detail) {
         const estSpan = row.querySelector("[data-pi-est-cost]");
-        if (estSpan) estSpan.textContent = `ZAR ${detail.total_cost?.toFixed(2) || "0.00"}`;
+        if (estSpan) estSpan.textContent = `USD ${detail.total_cost?.toFixed(2) || "0.00"}`;
       }
     });
     updateIssueEstimates();
   }
 
-  showIssueMessage("✓ Journal preview ready. Review entries before posting.", false);
+  showIssueMessage("✅ Journal preview ready! Review entries above, then click 'Confirm & Post Issue'.", false);
 }
 
 async function openProjectIssueModal(projectId) {
@@ -136473,7 +136565,7 @@ async function submitProjectIssue() {
       await loadProjectDetail(projectId);
     }
 
-    alert(`✅ Material issue posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: ZAR ${out?.total_cost?.toFixed(2) || '0.00'}`);
+    alert(`✅ Material issue posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: USD ${out?.total_cost?.toFixed(2) || '0.00'}`);
 
   } catch (err) {
     showIssueMessage(`Failed to post: ${err?.message || "Unknown error"}`, true);
@@ -136674,7 +136766,7 @@ async function updateReturnLineEstimate(tr) {
       
       const detail = preview?.line_details?.[0];
       if (detail) {
-        estSpan.textContent = `ZAR ${detail.total_cost?.toFixed(2) || '0.00'}`;
+        estSpan.textContent = `USD ${detail.total_cost?.toFixed(2) || '0.00'}`;
       }
     } catch (e) {
       estSpan.textContent = "—";
@@ -136703,7 +136795,7 @@ function updateReturnEstimates() {
   const countEl = document.getElementById("projectReturnLineCount");
   const totalEl = document.getElementById("projectReturnEstTotal");
   if (countEl) countEl.textContent = count;
-  if (totalEl) totalEl.textContent = `ZAR ${total.toFixed(2)}`;
+  if (totalEl) totalEl.textContent = `USD ${total.toFixed(2)}`;
 }
 
 async function previewProjectReturnJournal() {
@@ -136772,7 +136864,7 @@ function renderReturnJournalPreview(preview) {
   // Header info
   setElText("returnJournalPreviewDate", preview.journal_header?.date || "");
   setElText("returnJournalPreviewDesc", preview.journal_header?.description || "");
-  setElText("returnJournalPreviewTotal", `ZAR ${preview.totals?.total_credit?.toFixed(2) || "0.00"}`);
+  setElText("returnJournalPreviewTotal", `USD ${preview.totals?.total_credit?.toFixed(2) || "0.00"}`);
   setElText("projectReturnJournalRef", preview.journal_header?.ref || "");
 
   // Journal lines
@@ -136803,7 +136895,7 @@ function renderReturnJournalPreview(preview) {
       const detail = preview.line_details[idx];
       if (detail) {
         const estSpan = row.querySelector("[data-pr-est-value]");
-        if (estSpan) estSpan.textContent = `ZAR ${detail.total_cost?.toFixed(2) || "0.00"}`;
+        if (estSpan) estSpan.textContent = `USD ${detail.total_cost?.toFixed(2) || "0.00"}`;
       }
     });
     updateReturnEstimates();
@@ -136868,7 +136960,7 @@ async function submitProjectReturn() {
       await loadProjectDetail(projectId);
     }
 
-    alert(`✅ Material return posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: ZAR ${out?.total_return_cost?.toFixed(2) || '0.00'}`);
+    alert(`✅ Material return posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: USD ${out?.total_return_cost?.toFixed(2) || '0.00'}`);
 
   } catch (err) {
     showReturnMessage(`Failed to post return: ${err?.message || "Unknown error"}`, true);
@@ -137982,7 +138074,7 @@ async function bootstrapApp(currentUser) {
   if (typeof bindQuickBillingUI === "function") bindQuickBillingUI();
   if (typeof bindCoaDrawer === "function") bindCoaDrawer();
   if (typeof bindReportsScreen === "function") bindReportsScreen();
-  if (typeof bindLeaseWizard === "function") bindLeaseWizard();
+  if (typeof bindLeaseWiUSDd === "function") bindLeaseWiUSDd();
   if (typeof bindLeaseTabs === "function") bindLeaseTabs();   // ✅ ADD THIS
   if (typeof bindBankScreen === "function") bindBankScreen();
   if (typeof bindBankSetupScreen === "function") bindBankSetupScreen();
