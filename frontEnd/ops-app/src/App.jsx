@@ -39,6 +39,11 @@ import PaymentVouchersPage from "./pages/PaymentVouchersPage";
 
 import CompanyEmailSettingsPage from "./pages/CompanyEmailSettingsPage";
 
+import InventoryDashboardPage from "./pages/InventoryDashboardPage";
+import StockMovementsPage from "./pages/StockMovementsPage";
+import StocktakePage from "./pages/StocktakePage";
+import WarehousePage from "./pages/WarehousePage";
+
 function Protected({children}){
   if(!getToken()||!getCompanyId()) return <Navigate to="/signin" replace/>;
   return children;
@@ -102,6 +107,28 @@ export default function App(){
         <Route path="/settings" element={<Protected><SettingsPage/></Protected>}/>
         <Route path="/procurement/:caseId" element={<Protected><ProcurementCasePage/></Protected>}/>
         <Route path="/sourcing/:eventId" element={<Protected><ProcurementCasePage/></Protected>}/>
+        
+        {/* ============================================================
+         * PHASE 6: INVENTORY & WAREHOUSE MANAGEMENT ROUTES
+         * ============================================================ */}
+        
+        {/* Inventory Dashboard */}
+        <Route path="/inventory" element={<Protected><InventoryDashboardPage/></Protected>}/>
+        
+        {/* Stock Movements (Transaction Journal) */}
+        <Route path="/inventory/movements" element={<Protected><StockMovementsPage/></Protected>}/>
+        <Route path="/inventory/movements/new" element={<Protected><StockMovementsPage/></Protected>}/>
+        
+        {/* Stocktake / Cycle Counting */}
+        <Route path="/inventory/stocktake" element={<Protected><StocktakePage/></Protected>}/>
+        
+        {/* Warehouse Management */}
+        <Route path="/inventory/warehouses" element={<Protected><WarehousePage/></Protected>}/>
+        
+        {/* Inventory Items (Master File) - Can be added later */}
+        {/* <Route path="/inventory/items" element={<Protected><InventoryItemsPage/></Protected>}/> */}
+        {/* <Route path="/inventory/items/:itemId" element={<Protected><InventoryItemDetailPage/></Protected>}/> */}
+
         <Route path="*" element={<Navigate to="/" replace/>}/>
       </Routes>
     </BrowserRouter>

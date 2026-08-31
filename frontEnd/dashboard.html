@@ -19973,8 +19973,15 @@ label:has(#projectTeamUserSearch) {
 
               <div class="flex items-center gap-2">
                 <button id="projectIssueDeskNewBtn"
+                        data-project-issue
                         class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded">
                   + Issue Materials
+                </button>
+
+                <button id="projectReturnDeskNewBtn"
+                        data-project-return
+                        class="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
+                  ← Return Materials
                 </button>
 
                 <button id="projectIssueDeskRefreshBtn" class="px-3 py-1 text-xs border rounded">
@@ -28566,12 +28573,20 @@ label:has(#projectTeamUserSearch) {
 
         <label>
           <div class="text-slate-500 mb-1">Usage Type</div>
-          <select id="projectIssueUsageType" class="w-full border rounded px-2 py-2">
-            <option value="consumed">Consumed</option>
-            <option value="installed">Installed</option>
-            <option value="waste">Waste</option>
-            <option value="scrap">Scrap</option>
-          </select>
+            <select id="projectIssueUsageType" class="w-full border rounded px-2 py-2">
+              <optgroup label="Material Usage">
+                <option value="consumed">Consumed (used up)</option>
+                <option value="installed">Installed (embedded)</option>
+              </optgroup>
+              <optgroup label="Site Status">
+                <option value="allocated">Allocated (at site, not used)</option>
+                <option value="returned">Returned (to storage)</option>
+              </optgroup>
+              <optgroup label="Loss">
+                <option value="waste">Waste (damaged)</option>
+                <option value="scrap">Scrap (written off)</option>
+              </optgroup>
+            </select>
         </label>
       </div>
 
@@ -28596,6 +28611,90 @@ label:has(#projectTeamUserSearch) {
       <div class="flex justify-end gap-2 mt-4">
         <button id="projectIssueCancelBtn" class="px-3 py-2 text-xs border rounded">Cancel</button>
         <button id="projectIssueSaveBtn" class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">Post Issue</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- RETURN MATERIALS TO STORAGE MODAL -->
+<!-- ============================================ -->
+<div id="projectReturnModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-auto">
+    <div class="sticky top-0 bg-white border-b px-4 py-3 flex justify-between items-start">
+      <div>
+        <h3 class="font-semibold text-sm">Return Materials to Storage</h3>
+        <p class="text-xs text-slate-500 mt-1">Return unused materials from project back to inventory/warehouse</p>
+      </div>
+      <button onclick="closeProjectReturnModal()" class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+    </div>
+
+    <div class="p-4 space-y-4">
+      <!-- Project Info -->
+      <div class="bg-green-50 border border-green-200 rounded p-3 text-xs">
+        <div class="font-medium text-green-800 mb-1">Project: <span id="returnProjectInfo">Loading...</span></div>
+        <div id="returnAccountingMsg" class="text-green-600"></div>
+      </div>
+
+      <!-- Form Fields -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <label>
+          <div class="text-slate-500 mb-1">Date *</div>
+          <input type="date" id="projectReturnDate" class="w-full border rounded px-2 py-2">
+        </label>
+        <label>
+          <div class="text-slate-500 mb-1">Task</div>
+          <select id="projectReturnTaskId" class="w-full border rounded px-2 py-2">
+            <option value="">Select task...</option>
+          </select>
+        </label>
+        <label>
+          <div class="text-slate-500 mb-1">Cost Code</div>
+          <select id="projectReturnCostCodeId" class="w-full border rounded px-2 py-2">
+            <option value="">Select cost code...</option>
+          </select>
+        </label>
+      </div>
+
+      <label>
+        <div class="text-slate-500 mb-1">Reference</div>
+        <input type="text" id="projectReturnRef" class="w-full border rounded px-2 py-2" placeholder="Auto-generated if blank">
+      </label>
+
+      <label>
+        <div class="text-slate-500 mb-1">Notes</div>
+        <textarea id="projectReturnNotes" rows="2" class="w-full border rounded px-2 py-2" 
+                  placeholder="Reason for return"></textarea>
+      </label>
+
+      <label class="flex items-center gap-2">
+        <input type="checkbox" id="projectReturnLinkOriginal" class="rounded">
+        <span class="text-xs text-slate-600">Link to original issue transaction</span>
+      </label>
+      <input type="hidden" id="projectReturnOriginalTxId">
+
+      <!-- Return Lines -->
+      <div class="border rounded overflow-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-green-50 border-b">
+            <tr>
+              <th class="text-left px-2 py-2">Item</th>
+              <th class="text-right px-2 py-2">Qty to Return</th>
+              <th class="text-left px-2 py-2">Reason</th>
+              <th class="text-right px-2 py-2">Action</th>
+            </tr>
+          </thead>
+          <tbody id="projectReturnLines"></tbody>
+        </table>
+      </div>
+
+      <button id="projectReturnAddLineBtn" class="px-3 py-1 text-xs border rounded hover:bg-green-50">+ Add Return Line</button>
+
+      <div id="projectReturnMsg" class="mt-3 text-xs text-slate-500"></div>
+
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeProjectReturnModal()" class="px-3 py-2 text-xs border rounded">Cancel</button>
+        <button onclick="submitProjectReturn()" class="px-3 py-2 text-xs bg-green-600 text-white rounded hover:bg-green-700">Post Return</button>
       </div>
     </div>
   </div>

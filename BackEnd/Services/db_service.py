@@ -134028,6 +134028,298 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "total_cost": total_issue_cost,
             }
         
+    def return_inventory_from_project(
+        self,
+        company_id: int,
+        *,
+        project_id: int,
+        tx_date,
+        lines: list[dict],
+        task_id: int | None = None,
+        cost_code_id: int | None = None,
+        ref: str | None = None,
+        notes: str | None = None,
+        created_by: int | None = None,
+        post_now: bool = True,
+        original_tx_id: int | None = None,
+    ) -> dict:
+        """
+        Return materials from a project back to inventory/storage.
+        
+        Creates a REVERSE transaction that:
+        1. Credits WIP/CIP (reverses the debit from issue)
+        2. Debits Inventory (adds stock back)
+        3. Creates proper FIFO/AVG cost layers for the return
+        4. Links to original issue transaction for traceability
+        
+        Usage Types:
+        - 'returned': Full return to warehouse (stock restored)
+        """
+        schema = self.company_schema(company_id)
+
+        if not lines or not isinstance(lines, list):
+            raise ValueError("lines required")
+
+        if hasattr(tx_date, "isoformat"):
+            tx_date = tx_date.isoformat()[:10]
+        else:
+            tx_date = str(tx_date or "")[:10]
+
+        if not tx_date:
+            raise ValueError("tx_date is required")
+
+        ref = (ref or f"PMR-{int(project_id)}-{tx_date}").strip()
+
+        def money(x) -> float:
+            from decimal import Decimal, ROUND_HALF_UP
+            return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+        def _to_int(v, default=None):
+            try:
+                if v in (None, ""):
+                    return default
+                return int(v)
+            except Exception:
+                return default
+
+        def _to_float(v, default=0.0):
+            try:
+                if v in (None, ""):
+                    return default
+                return float(str(v).replace(",", "").strip())
+            except Exception:
+                return default
+
+        with self._conn_cursor() as (conn, cur):
+            # 1) Validate project
+            project = self.fetch_one(
+                f"""
+                SELECT * FROM {schema}.projects
+                WHERE company_id=%s AND id=%s FOR UPDATE
+                """,
+                (int(company_id), int(project_id)),
+                cur=cur,
+            )
+
+            if not project:
+                raise ValueError("PROJECT_NOT_FOUND")
+
+            # 2) Resolve project credit account (reverse of issue)
+            accounting_mode = str(project.get("accounting_mode") or "contract").strip().lower()
+
+            if accounting_mode in {"contract", "wip", "capital"}:
+                project_credit_raw = (
+                    project.get("wip_account_code")
+                    or self.find_project_wip_account_code(company_id, cur=cur)
+                    or ""
+                ).strip()
+            else:
+                project_credit_raw = (
+                    project.get("cost_account_code") or ""
+                ).strip()
+
+            if not project_credit_raw:
+                raise ValueError("PROJECT_ACCOUNT_NOT_CONFIGURED_FOR_RETURN")
+
+            # 3) Create RETURN transaction header
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.inventory_tx (
+                    company_id, tx_date, tx_type, status,
+                    ref, notes, source, source_id,
+                    created_at, updated_at
+                )
+                VALUES (
+                    %s, %s, 'return_from_job', 'draft',
+                    %s, %s, 'project_material_return', %s,
+                    NOW(), NOW()
+                )
+                RETURNING id
+                """,
+                (
+                    int(company_id),
+                    tx_date,
+                    ref,
+                    notes or f"Return materials from project {project_id}",
+                    int(project_id),
+                ),
+            )
+            tx_id = int((cur.fetchone() or {}).get("id") or 0)
+            if not tx_id:
+                raise ValueError("FAILED_TO_CREATE_RETURN_TX")
+
+            # 4) Process each line
+            total_return_cost = 0.0
+            inv_debit_totals = {}
+
+            for idx, ln in enumerate(lines, start=1):
+                item_id = _to_int(ln.get("item_id") or ln.get("itemId"))
+                qty = _to_float(ln.get("qty"))
+                memo = ln.get("memo", "")
+
+                if not item_id or qty <= 0:
+                    continue
+
+                line_task_id = _to_int(ln.get("task_id") or ln.get("taskId"), task_id)
+                line_cost_code_id = _to_int(ln.get("cost_code_id") or ln.get("costCodeId"), cost_code_id)
+
+                # Load item details
+                item = self.fetch_one(
+                    f"""SELECT * FROM {schema}.inventory_items 
+                        WHERE company_id=%s AND id=%s LIMIT 1""",
+                    (int(company_id), int(item_id)),
+                    cur=cur,
+                )
+
+                if not item:
+                    raise ValueError(f"INVENTORY_ITEM_NOT_FOUND|item_id={item_id}")
+
+                track_stock = bool(item.get("track_stock", True))
+                inv_raw = (item.get("inventory_account") or "").strip()
+
+                if not inv_raw:
+                    inv_raw = (self.find_default_inventory_account_code(company_id, cur=cur) or "").strip()
+
+                if not inv_raw:
+                    raise ValueError(f"ITEM_INVENTORY_ACCOUNT_MISSING|item_id={item_id}")
+
+                inv_row = self.get_account_row_for_posting(company_id, inv_raw)
+                if not inv_row:
+                    raise ValueError(f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}")
+
+                inventory_account = (inv_row[1] or inv_raw).strip()
+                valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
+                if valuation_method not in ("AVG", "FIFO"):
+                    valuation_method = "AVG"
+
+                # Get unit cost
+                if original_tx_id:
+                    original_line = self.fetch_one(
+                        """SELECT unit_cost FROM {schema}.inventory_tx_lines
+                            WHERE tx_id=%s AND item_id=%s LIMIT 1""".format(schema=schema),
+                        (int(original_tx_id), int(item_id)),
+                        cur=cur,
+                    )
+                    unit_cost = money(original_line.get("unit_cost") if original_line else 0)
+                    if unit_cost <= 0:
+                        unit_cost = money(self._inventory_avg_cost_cur(company_id, item_id, cur))
+                        if unit_cost <= 0:
+                            unit_cost = money(item.get("purchase_cost") or 0)
+                else:
+                    unit_cost = money(self._inventory_avg_cost_cur(company_id, item_id, cur))
+                    if unit_cost <= 0:
+                        unit_cost = money(item.get("purchase_cost") or 0)
+
+                if unit_cost <= 0:
+                    raise ValueError(f"MISSING_COST_FOR_RETURN|item_id={item_id}")
+
+                line_cost = money(qty * unit_cost)
+
+                # ADD STOCK BACK (qty_in positive for returns)
+                if track_stock:
+                    cur.execute(
+                        f"""INSERT INTO {schema}.inventory_layers (
+                            company_id, item_id, tx_date,
+                            qty_in, qty_out, unit_cost,
+                            ref, source, source_id, tx_id, created_at
+                        ) VALUES (%s,%s,%s,%s,0,%s,%s,'project_material_return',%s,%s,NOW())""",
+                        (
+                            int(company_id), int(item_id), tx_date,
+                            float(qty), float(unit_cost), ref,
+                            int(tx_id), int(tx_id),
+                        ),
+                    )
+
+                # Insert return tx line
+                cur.execute(
+                    f"""INSERT INTO {schema}.inventory_tx_lines (
+                        company_id, tx_id, line_no, item_id,
+                        qty, unit_cost, unit_price, vat_code, memo,
+                        project_id, task_id, cost_code_id, usage_type, created_at
+                    ) VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,'returned',NOW())""",
+                    (
+                        int(company_id), int(tx_id), int(idx), int(item_id),
+                        float(qty), float(unit_cost),
+                        ln.get("vat_code") or ln.get("vatCode"), memo,
+                        int(project_id), line_task_id, line_cost_code_id,
+                    ),
+                )
+
+                inv_debit_totals[inventory_account] = money(
+                    inv_debit_totals.get(inventory_account, 0.0) + line_cost
+                )
+                total_return_cost = money(total_return_cost + line_cost)
+
+            if total_return_cost <= 0:
+                raise ValueError("PROJECT_RETURN_TOTAL_IS_ZERO")
+
+            journal_id = None
+
+            # 5) Post reversing journal
+            if post_now:
+                journal_lines = [
+                    {
+                        "account_code": project_credit_raw,
+                        "debit": 0.0,
+                        "credit": total_return_cost,
+                        "memo": f"Materials returned from project {project.get('project_code') or project_id}",
+                    }
+                ]
+
+                for acct, amt in inv_debit_totals.items():
+                    if amt <= 0:
+                        continue
+                    journal_lines.append({
+                        "account_code": acct,
+                        "debit": amt,
+                        "credit": 0.0,
+                        "memo": "Inventory returned from project",
+                    })
+
+                journal_id = self.post_journal(
+                    company_id,
+                    {
+                        "date": tx_date,
+                        "ref": ref,
+                        "description": f"Project material return #{tx_id}",
+                        "source": "project_material_return",
+                        "source_id": int(tx_id),
+                        "source_table": "inventory_tx",
+                        "module_name": "inventory",
+                        "event_type": "posted",
+                        "engagement_company_id": project.get("engagement_company_id"),
+                        "engagement_id": project.get("engagement_id"),
+                        "created_by_user_id": created_by,
+                        "updated_by_user_id": created_by,
+                        "prepared_by_user_id": created_by,
+                        "lines": journal_lines,
+                    },
+                    cur=cur,
+                    conn=conn,
+                )
+
+                cur.execute(
+                    f"""UPDATE {schema}.inventory_tx SET status='posted',
+                        posted_journal_id=%s, posted_at=NOW(), posted_by=%s, updated_at=NOW()
+                        WHERE company_id=%s AND id=%s""",
+                    (int(journal_id), created_by, int(company_id), int(tx_id)),
+                )
+
+                cur.execute(
+                    f"""UPDATE {schema}.inventory_layers SET posted_journal_id=%s
+                        WHERE company_id=%s AND source='project_material_return' AND source_id=%s""",
+                    (int(journal_id), int(company_id), int(tx_id)),
+                )
+
+            return {
+                "ok": True,
+                "project_id": int(project_id),
+                "inventory_tx_id": int(tx_id),
+                "journal_id": int(journal_id) if journal_id else None,
+                "total_return_cost": total_return_cost,
+                "tx_type": "return_from_job",
+            }
+
     def list_project_budget_lines_all(
         self,
         company_id: int,

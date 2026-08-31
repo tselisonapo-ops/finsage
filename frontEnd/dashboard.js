@@ -4916,6 +4916,9 @@ const ENDPOINTS = {
     issueMaterials: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/issue-materials`,
 
+    returnMaterials: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/return-materials`,
+
     inventoryItemsLite: (cid) =>
       `/api/companies/${cid}/inventory/items-lite`,
   
@@ -130706,6 +130709,10 @@ function renderProjectDetail(p) {
     openProjectIssueModal?.(p.id);
   });
 
+  mount.querySelector("[data-project-return]")?.addEventListener("click", () => {
+    openProjectReturnModal?.(p.id);
+  });
+
   mount.querySelector("[data-project-edit]")?.addEventListener("click", () => {
     openProjectCreateModal?.(p);
   });
@@ -136257,6 +136264,171 @@ window.openProjectTaskModal = openProjectTaskModal;
 window.openProjectBudgetModal = openProjectBudgetModal;
 window.openProjectIssueModal = openProjectIssueModal;
 window.bindProjectOperationalModalsOnce = bindProjectOperationalModalsOnce;
+
+// ============================================
+// RETURN MATERIALS TO STORAGE - COMPLETE FUNCTIONS
+// ============================================
+
+let ACTIVE_RETURN_PROJECT_ID = null;
+
+function bindProjectReturnModalOnce() {
+  if (window._projectReturnModalBound) return;
+  window._projectReturnModalBound = true;
+
+  document.getElementById("projectReturnAddLineBtn")?.addEventListener("click", async () => {
+    await addProjectReturnLine();
+  });
+}
+
+async function openProjectReturnModal(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return;
+
+  bindProjectReturnModalOnce();
+  ACTIVE_RETURN_PROJECT_ID = Number(projectId);
+
+  try {
+    const project = await apiFetch(ENDPOINTS.projects.one(cid, projectId));
+
+    if (!project) {
+      alert("Project not found.");
+      return;
+    }
+
+    setElText("returnProjectInfo", `${project.project_code || project.id} — ${project.project_name || ""}`);
+    
+    const mode = String(project.accounting_mode || "contract").toLowerCase();
+    const account = ["contract", "wip", "capital"].includes(mode) 
+      ? project.wip_account_code 
+      : project.cost_account_code;
+    
+    const modeLabel = {
+      contract: "Contract / WIP",
+      wip: "Work in Progress",
+      capital: "Capital / CIP",
+      expense: "Project Expense",
+      none: "Operational Expense"
+    }[mode] || mode;
+
+    setElText("returnAccountingMsg", `Accounting: ${modeLabel} • Credit account: ${account}`);
+    document.getElementById("projectReturnDate").value = new Date().toISOString().slice(0, 10);
+    document.getElementById("projectReturnRef").value = `PMR-${projectId}-${new Date().toISOString().slice(0, 10)}`;
+    document.getElementById("projectReturnNotes").value = "";
+    document.getElementById("projectReturnLinkOriginal").checked = false;
+    document.getElementById("projectReturnOriginalTxId").value = "";
+
+    await populateProjectTaskSelect("projectReturnTaskId", projectId, "Select task...");
+    await populateProjectCostCodeSelect("projectReturnCostCodeId", "Select cost code...");
+
+    const tbody = document.getElementById("projectReturnLines");
+    if (tbody) tbody.innerHTML = "";
+
+    await addProjectReturnLine();
+    document.getElementById("projectReturnModal")?.classList.remove("hidden");
+
+  } catch (err) {
+    console.error("[Projects] open material return failed", err);
+    alert(err?.message || "Failed to prepare material return.");
+  }
+}
+
+function closeProjectReturnModal() {
+  document.getElementById("projectReturnModal")?.classList.add("hidden");
+  ACTIVE_RETURN_PROJECT_ID = null;
+}
+
+async function addProjectReturnLine(line = {}) {
+  const tbody = document.getElementById("projectReturnLines");
+  if (!tbody) return;
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b";
+
+  tr.innerHTML = `
+    <td class="px-2 py-2">
+      <select data-pr-item-id class="w-full border rounded px-2 py-1">
+        ${await buildInventoryItemOptions(line.item_id || "")}
+      </select>
+    </td>
+    <td class="px-2 py-2">
+      <input data-pr-qty type="number" step="0.0001" min="0.0001" 
+             class="w-full border rounded px-2 py-1 text-right" 
+             value="${esc(line.qty || "")}" placeholder="Qty">
+    </td>
+    <td class="px-2 py-2">
+      <input data-pr-memo class="w-full border rounded px-2 py-1" 
+             value="${esc(line.memo || "")}" placeholder="Reason for return">
+    </td>
+    <td class="px-2 py-2 text-right">
+      <button type="button" class="text-rose-600 underline" data-pr-remove>Remove</button>
+    </td>
+  `;
+
+  tr.querySelector("[data-pr-remove]")?.addEventListener("click", () => tr.remove());
+  tbody.appendChild(tr);
+}
+
+async function submitProjectReturn() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(ACTIVE_RETURN_PROJECT_ID || 0);
+  
+  if (!cid || !projectId) {
+    alert("Missing company or project ID.");
+    return;
+  }
+
+  const lines = Array.from(document.querySelectorAll("#projectReturnLines tr"))
+    .map(tr => ({
+      item_id: Number(tr.querySelector("[data-pr-item-id]")?.value || 0),
+      qty: Number(tr.querySelector("[data-pr-qty]")?.value || 0),
+      memo: tr.querySelector("[data-pr-memo]")?.value?.trim() || "",
+    }))
+    .filter(x => x.item_id > 0 && x.qty > 0);
+
+  if (!lines.length) {
+    setElText("projectReturnMsg", "Add at least one valid return line.");
+    return;
+  }
+
+  const payload = {
+    tx_date: document.getElementById("projectReturnDate")?.value,
+    task_id: Number(document.getElementById("projectReturnTaskId")?.value || 0) || null,
+    cost_code_id: Number(document.getElementById("projectReturnCostCodeId")?.value || 0) || null,
+    ref: document.getElementById("projectReturnRef")?.value || undefined,
+    notes: document.getElementById("projectReturnNotes")?.value || undefined,
+    original_tx_id: document.getElementById("projectReturnLinkOriginal")?.checked 
+      ? (Number(document.getElementById("projectReturnOriginalTxId")?.value) || null)
+      : null,
+    lines,
+    post_now: true,
+  };
+
+  setElText("projectReturnMsg", "Posting material return...");
+
+  try {
+    const out = await apiFetch(ENDPOINTS.projects.returnMaterials(cid, projectId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    closeProjectReturnModal();
+    
+    if (typeof loadProjectDetail === 'function') {
+      await loadProjectDetail(projectId);
+    }
+
+    alert(`Material return posted!\n\nTransaction: PMR-${out?.inventory_tx_id || '—'}\nJournal: ${out?.journal_id || '—'}\nTotal Value: ZAR ${out?.total_return_cost?.toFixed(2) || '0.00'}`);
+
+  } catch (err) {
+    console.error("[Projects] submitProjectReturn failed", err);
+    setElText("projectReturnMsg", err?.message || "Failed to post material return.");
+  }
+}
+
+// Expose globally
+window.openProjectReturnModal = openProjectReturnModal;
+window.closeProjectReturnModal = closeProjectReturnModal;
+window.submitProjectReturn = submitProjectReturn;
 
 async function populateProjectDeskDropdown(selectId) {
   const sel = document.getElementById(selectId);

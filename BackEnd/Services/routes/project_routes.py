@@ -1846,6 +1846,64 @@ def issue_materials_to_project_route(cid: int, project_id: int):
             "details": str(e),
         }), 500
     
+@projects_bp.route("/api/companies/<int:cid>/projects/<int:project_id>/return-materials", methods=["POST"])
+@require_auth
+def return_materials_from_project_route(cid: int, project_id: int):
+    """
+    Return materials from a project back to inventory/storage.
+    
+    POST /api/companies/{cid}/projects/{project_id}/return-materials
+    
+    Payload:
+    {
+        "tx_date": "2026-01-15",
+        "lines": [{"item_id": 1, "qty": 5, "memo": "Unused cement"}],
+        "task_id": null,
+        "cost_code_id": null,
+        "ref": "PMR-001-2026-01-15",
+        "notes": "Site cleanup",
+        "original_tx_id": 123,
+        "post_now": true
+    }
+    """
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    data = _payload()
+
+    try:
+        out = db_service.return_inventory_from_project(
+            company_id,
+            project_id=int(project_id),
+            tx_date=data.get("tx_date") or data.get("date"),
+            lines=data.get("lines") or [],
+            task_id=data.get("task_id") or data.get("taskId"),
+            cost_code_id=data.get("cost_code_id") or data.get("costCodeId"),
+            ref=data.get("ref"),
+            notes=data.get("notes"),
+            created_by=_current_user_id(user),
+            post_now=bool(data.get("post_now", True)),
+            original_tx_id=data.get("original_tx_id"),
+        )
+
+        return jsonify(out), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "[PROJECT RETURN MATERIALS] FAILED | company_id=%s | project_id=%s",
+            company_id, project_id,
+        )
+        return jsonify({
+            "error": "failed_to_return_materials_from_project",
+            "details": str(e),
+        }), 500
+        
 @projects_bp.route("/api/companies/<int:cid>/projects/budget-lines", methods=["GET"])
 @require_auth
 def list_all_project_budget_lines_route(cid: int):
