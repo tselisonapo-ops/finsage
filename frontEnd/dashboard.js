@@ -4922,6 +4922,12 @@ const ENDPOINTS = {
     inventoryItemsLite: (cid) =>
       `/api/companies/${cid}/inventory/items-lite`,
   
+    // Add to your ENDPOINTS.projects object:
+    previewIssueJournal: (cid, projectId) => 
+      `/api/companies/${cid}/projects/${projectId}/preview-issue-journal`,
+    previewReturnJournal: (cid, projectId) => 
+      `/api/companies/${cid}/projects/${projectId}/preview-return-journal`,
+
     revenue: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/revenue`,
   },
@@ -136073,17 +136079,265 @@ async function submitProjectBudgetLine() {
 }
 
 function bindProjectIssueModalOnce() {
-  const m = document.getElementById("projectIssueModal");
-  if (!m || m.dataset.bound === "1") return;
-  m.dataset.bound = "1";
+  if (window._projectIssueModalBound) return;
+  window._projectIssueModalBound = true;
 
-  document.getElementById("projectIssueOverlay")?.addEventListener("click", closeProjectIssueModal);
+  // Close button
   document.getElementById("projectIssueCloseBtn")?.addEventListener("click", closeProjectIssueModal);
+  document.getElementById("projectIssueOverlay")?.addEventListener("click", closeProjectIssueModal);
+  
+  // Cancel button
   document.getElementById("projectIssueCancelBtn")?.addEventListener("click", closeProjectIssueModal);
-  document.getElementById("projectIssueSaveBtn")?.addEventListener("click", submitProjectIssue);
+
+  // Add line button
   document.getElementById("projectIssueAddLineBtn")?.addEventListener("click", async () => {
     await addProjectIssueLine();
   });
+
+  // Preview button
+  document.getElementById("projectIssuePreviewBtn")?.addEventListener("click", previewProjectIssueJournal);
+
+  // Post button
+  document.getElementById("projectIssueSaveBtn")?.addEventListener("click", submitProjectIssue);
+}
+
+function closeProjectIssueModal() {
+  document.getElementById("projectIssueModal")?.classList.add("hidden");
+  hideIssueJournalPreview();
+  ACTIVE_PROJECT_ID = null;
+  window._currentProjectForIssue = null;
+}
+
+function hideIssueJournalPreview() {
+  document.getElementById("projectIssueJournalPreview")?.classList.add("hidden");
+}
+
+function showIssueMessage(msg, isError = false) {
+  const el = document.getElementById("projectIssueMsg");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove("hidden", "bg-red-50", "text-red-700", "bg-green-50", "text-green-700", "bg-blue-50", "text-blue-700");
+  if (msg) {
+    el.classList.add("hidden");
+    el.classList.remove("hidden");
+    el.classList.add(isError ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700");
+  } else {
+    el.classList.add("hidden");
+  }
+}
+
+function clearIssueMessage() {
+  showIssueMessage("");
+}
+
+async function addProjectIssueLine(line = {}) {
+  const tbody = document.getElementById("projectIssueLines");
+  if (!tbody) return;
+
+  const lineNum = tbody.children.length + 1;
+  const tr = document.createElement("tr");
+  tr.className = "border-b hover:bg-slate-50";
+
+  tr.innerHTML = `
+    <td class="px-3 py-2 text-slate-400 font-mono text-xs">${lineNum}</td>
+    <td class="px-3 py-2">
+      <select data-pi-item-id class="w-full border rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-[var(--fs-navy)]/20">
+        ${await buildInventoryItemOptions(line.item_id || "")}
+      </select>
+    </td>
+    <td class="px-3 py-2">
+      <input data-pi-qty type="number" step="0.0001" min="0.0001" 
+             class="w-full border rounded px-2 py-1.5 text-right text-xs focus:ring-2 focus:ring-[var(--fs-navy)]/20" 
+             value="${esc(line.qty || "")}" placeholder="0.00">
+    </td>
+    <td class="px-3 py-2 text-right text-xs font-mono text-slate-500">
+      <span data-pi-est-cost>${line.qty ? '—' : ''}</span>
+    </td>
+    <td class="px-3 py-2">
+      <input data-pi-memo class="w-full border rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-[var(--fs-navy)]/20" 
+             value="${esc(line.memo || "")}" placeholder="Memo (optional)">
+    </td>
+    <td class="px-3 py-2 text-right">
+      <button type="button" class="text-rose-600 hover:text-rose-800 underline text-xs" data-pi-remove>Remove</button>
+    </td>
+  `;
+
+  tr.querySelector("[data-pi-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    renumberIssueLines();
+    updateIssueEstimates();
+  });
+
+  // Auto-update estimate when qty changes
+  tr.querySelector("[data-pi-qty]")?.addEventListener("change", async () => {
+    await updateLineEstimate(tr);
+  });
+
+  tbody.appendChild(tr);
+  updateIssueEstimates();
+}
+
+function renumberIssueLines() {
+  const rows = document.querySelectorAll("#projectIssueLines tr");
+  rows.forEach((row, idx) => {
+    row.querySelector("td:first-child")?.textContent && (row.querySelector("td:first-child").textContent = idx + 1);
+  });
+}
+
+async function updateLineEstimate(tr) {
+  const itemId = tr.querySelector("[data-pi-item-id]")?.value;
+  const qty = parseFloat(tr.querySelector("[data-pi-qty]")?.value || 0);
+  const estSpan = tr.querySelector("[data-pi-est-cost]");
+  
+  if (estSpan && itemId && qty > 0) {
+    estSpan.textContent = "Calculating...";
+    try {
+      // Simple estimate - will be refined by server preview
+      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+      const preview = await apiFetch(ENDPOINTS.projects.previewIssueJournal(cid, ACTIVE_PROJECT_ID), {
+        method: "POST",
+        body: JSON.stringify({
+          tx_date: document.getElementById("projectIssueDate")?.value,
+          lines: [{ item_id: parseInt(itemId), qty }],
+          usage_type: document.getElementById("projectIssueUsageType")?.value,
+        }),
+      });
+      
+      const detail = preview?.line_details?.[0];
+      if (detail) {
+        estSpan.textContent = `ZAR ${detail.total_cost?.toFixed(2) || '0.00'}`;
+      }
+    } catch (e) {
+      estSpan.textContent = "—";
+    }
+  } else if (estSpan) {
+    estSpan.textContent = qty > 0 ? "—" : "";
+  }
+  
+  updateIssueEstimates();
+}
+
+function updateIssueEstimates() {
+  const rows = document.querySelectorAll("#projectIssueLines tr");
+  let count = 0;
+  let total = 0;
+  
+  rows.forEach(row => {
+    const costText = row.querySelector("[data-pi-est-cost]")?.textContent || "";
+    const cost = parseFloat(costText.replace(/[^\d.-]/g, "")) || 0;
+    if (cost > 0) {
+      count++;
+      total += cost;
+    }
+  });
+  
+  const countEl = document.getElementById("projectIssueLineCount");
+  const totalEl = document.getElementById("projectIssueEstTotal");
+  if (countEl) countEl.textContent = count;
+  if (totalEl) totalEl.textContent = `ZAR ${total.toFixed(2)}`;
+}
+
+async function previewProjectIssueJournal() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(document.getElementById("projectIssueProjectId")?.value || ACTIVE_PROJECT_ID || 0);
+  if (!cid || !projectId) return;
+
+  const lines = Array.from(document.querySelectorAll("#projectIssueLines tr"))
+    .map(tr => ({
+      item_id: Number(tr.querySelector("[data-pi-item-id]")?.value || 0),
+      qty: Number(tr.querySelector("[data-pi-qty]")?.value || 0),
+      memo: tr.querySelector("[data-pi-memo]")?.value?.trim() || "",
+    }))
+    .filter(x => x.item_id > 0 && x.qty > 0);
+
+  if (!lines.length) {
+    showIssueMessage("Add at least one material line before previewing.", true);
+    return;
+  }
+
+  clearIssueMessage();
+  const previewBtn = document.getElementById("projectIssuePreviewBtn");
+  if (previewBtn) {
+    previewBtn.disabled = true;
+    previewBtn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Loading...`;
+  }
+
+  try {
+    const payload = {
+      tx_date: document.getElementById("projectIssueDate")?.value,
+      task_id: Number(document.getElementById("projectIssueTaskId")?.value || 0) || null,
+      cost_code_id: Number(document.getElementById("projectIssueCostCodeId")?.value || 0) || null,
+      usage_type: document.getElementById("projectIssueUsageType")?.value || "consumed",
+      lines,
+    };
+
+    const preview = await apiFetch(
+      ENDPOINTS.projects.previewIssueJournal(cid, projectId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    renderIssueJournalPreview(preview);
+
+  } catch (err) {
+    showIssueMessage(`Preview failed: ${err?.message || "Unknown error"}`, true);
+  } finally {
+    if (previewBtn) {
+      previewBtn.disabled = false;
+      previewBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg> Preview Journal`;
+    }
+  }
+}
+
+function renderIssueJournalPreview(preview) {
+  if (!preview) return;
+
+  const container = document.getElementById("projectIssueJournalPreview");
+  if (!container) return;
+
+  // Header info
+  setElText("journalPreviewDate", preview.journal_header?.date || "");
+  setElText("journalPreviewDesc", preview.journal_header?.description || "");
+  setElText("journalPreviewTotal", `ZAR ${preview.totals?.total_debit?.toFixed(2) || "0.00"}`);
+  setElText("projectIssueJournalRef", preview.journal_header?.ref || "");
+
+  // Journal lines
+  const tbody = document.getElementById("projectIssueJournalLines");
+  if (tbody) {
+    tbody.innerHTML = (preview.journal_lines || []).map(line => `
+      <tr class="border-b hover:bg-amber-50/30">
+        <td class="px-3 py-2 font-mono text-xs">${esc(line.account_code || "")}</td>
+        <td class="px-3 py-2 text-xs">${esc(line.account_name || "")}</td>
+        <td class="px-3 py-2 text-right font-mono text-xs ${line.debit > 0 ? 'font-semibold text-green-700' : ''}">${line.debit > 0 ? line.debit.toFixed(2) : ''}</td>
+        <td class="px-3 py-2 text-right font-mono text-xs ${line.credit > 0 ? 'font-semibold text-red-700' : ''}">${line.credit > 0 ? line.credit.toFixed(2) : ''}</td>
+        <td class="px-3 py-2 text-xs text-slate-500">${esc(line.memo || "")}</td>
+      </tr>
+    `).join("");
+  }
+
+  // Totals
+  setElText("journalPreviewTotalDr", preview.totals?.total_debit?.toFixed(2) || "0.00");
+  setElText("journalPreviewTotalCr", preview.totals?.total_credit?.toFixed(2) || "0.00");
+
+  // Show the preview section
+  container.classList.remove("hidden");
+
+  // Update line estimates from server response
+  if (preview.line_details) {
+    const rows = document.querySelectorAll("#projectIssueLines tr");
+    rows.forEach((row, idx) => {
+      const detail = preview.line_details[idx];
+      if (detail) {
+        const estSpan = row.querySelector("[data-pi-est-cost]");
+        if (estSpan) estSpan.textContent = `ZAR ${detail.total_cost?.toFixed(2) || "0.00"}`;
+      }
+    });
+    updateIssueEstimates();
+  }
+
+  showIssueMessage("✓ Journal preview ready. Review entries before posting.", false);
 }
 
 async function openProjectIssueModal(projectId) {
@@ -136115,79 +136369,33 @@ async function openProjectIssueModal(projectId) {
       return;
     }
 
-    const mode = String(
-      project.accounting_mode || "contract"
-    ).toLowerCase();
+    // Store project info for preview
+    window._currentProjectForIssue = project;
 
-    const account =
-      ["contract", "wip", "capital"].includes(mode)
-        ? project.wip_account_code
-        : project.cost_account_code;
+    document.getElementById("projectIssueProjectId").value = String(projectId);
+    document.getElementById("projectIssueDate").value = new Date().toISOString().slice(0, 10);
+    document.getElementById("projectIssueUsageType").value = "consumed";
 
-    if (!account) {
-      alert(
-        ["contract", "wip", "capital"].includes(mode)
-          ? "Configure the project's WIP/CIP account before issuing materials."
-          : "Configure the project's cost/expense account before issuing materials."
-      );
-      return;
-    }
+    await populateProjectTaskSelect("projectIssueTaskId", projectId, "Select task...");
+    await populateProjectCostCodeSelect("projectIssueCostCodeId", "Select cost code...");
 
-    document.getElementById("projectIssueProjectId").value =
-      String(projectId);
-
-    document.getElementById("projectIssueDate").value =
-      new Date().toISOString().slice(0, 10);
-
-    document.getElementById("projectIssueUsageType").value =
-      "consumed";
-
-    await populateProjectTaskSelect(
-      "projectIssueTaskId",
-      projectId,
-      "Select task..."
-    );
-
-    await populateProjectCostCodeSelect(
-      "projectIssueCostCodeId",
-      "Select cost code..."
-    );
-
+    // Clear lines and add first empty line
     const tbody = document.getElementById("projectIssueLines");
     if (tbody) tbody.innerHTML = "";
-
     await addProjectIssueLine();
 
-    const modeLabel = {
-      contract: "Contract / WIP",
-      wip: "Work in Progress",
-      capital: "Capital / CIP",
-      expense: "Project Expense",
-      none: "Operational Expense",
-    }[mode] || mode;
+    // Hide journal preview on open
+    hideIssueJournalPreview();
+    clearIssueMessage();
 
-    setElText(
-      "projectIssueMsg",
-      `Accounting: ${modeLabel} • Debit account: ${account}`
-    );
-
-    document
-      .getElementById("projectIssueModal")
-      ?.classList.remove("hidden");
+    document.getElementById("projectIssueModal")?.classList.remove("hidden");
 
   } catch (err) {
     console.error("[Projects] open material issue failed", err);
-
-    alert(
-      err?.message ||
-      "Failed to prepare material issue."
-    );
+    alert(err?.message || "Failed to prepare material issue.");
   }
 }
 
-function closeProjectIssueModal() {
-  document.getElementById("projectIssueModal")?.classList.add("hidden");
-}
 
 async function addProjectIssueLine(line = {}) {
   const tbody = document.getElementById("projectIssueLines");
@@ -136231,7 +136439,7 @@ async function submitProjectIssue() {
     .filter(x => x.item_id > 0 && x.qty > 0);
 
   if (!lines.length) {
-    setElText("projectIssueMsg", "Add at least one valid material line.");
+    showIssueMessage("Add at least one valid material line.", true);
     return;
   }
 
@@ -136244,7 +136452,14 @@ async function submitProjectIssue() {
     post_now: true,
   };
 
-  setElText("projectIssueMsg", "Posting material issue...");
+  showIssueMessage("Posting material issue...", false);
+
+  // Disable buttons during post
+  const saveBtn = document.getElementById("projectIssueSaveBtn");
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Posting...`;
+  }
 
   try {
     const out = await apiFetch(ENDPOINTS.projects.issueMaterials(cid, projectId), {
@@ -136253,10 +136468,20 @@ async function submitProjectIssue() {
     });
 
     closeProjectIssueModal();
-    await loadProjectDetail(projectId);
-    alert(`Material issue posted. Journal: ${out?.journal_id || "—"}`);
+    
+    if (typeof loadProjectDetail === 'function') {
+      await loadProjectDetail(projectId);
+    }
+
+    alert(`✅ Material issue posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: ZAR ${out?.total_cost?.toFixed(2) || '0.00'}`);
+
   } catch (err) {
-    setElText("projectIssueMsg", err?.message || "Failed to post material issue.");
+    showIssueMessage(`Failed to post: ${err?.message || "Unknown error"}`, true);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Post Issue`;
+    }
   }
 }
 
@@ -136269,6 +136494,10 @@ window.bindProjectOperationalModalsOnce = bindProjectOperationalModalsOnce;
 // RETURN MATERIALS TO STORAGE - COMPLETE FUNCTIONS
 // ============================================
 
+// ============================================
+// RETURN MATERIALS TO STORAGE - WITH JOURNAL PREVIEW
+// ============================================
+
 let ACTIVE_RETURN_PROJECT_ID = null;
 
 function bindProjectReturnModalOnce() {
@@ -136278,6 +136507,9 @@ function bindProjectReturnModalOnce() {
   document.getElementById("projectReturnAddLineBtn")?.addEventListener("click", async () => {
     await addProjectReturnLine();
   });
+
+  // Preview button
+  document.getElementById("projectReturnPreviewBtn")?.addEventListener("click", previewProjectReturnJournal);
 }
 
 async function openProjectReturnModal(projectId) {
@@ -136295,6 +136527,9 @@ async function openProjectReturnModal(projectId) {
       return;
     }
 
+    // Store for preview
+    window._currentProjectForReturn = project;
+
     setElText("returnProjectInfo", `${project.project_code || project.id} — ${project.project_name || ""}`);
     
     const mode = String(project.accounting_mode || "contract").toLowerCase();
@@ -136310,7 +136545,7 @@ async function openProjectReturnModal(projectId) {
       none: "Operational Expense"
     }[mode] || mode;
 
-    setElText("returnAccountingMsg", `Accounting: ${modeLabel} • Credit account: ${account}`);
+    setElText("returnAccountingMsg", `Accounting: ${modeLabel} • Reversal account: ${account}`);
     document.getElementById("projectReturnDate").value = new Date().toISOString().slice(0, 10);
     document.getElementById("projectReturnRef").value = `PMR-${projectId}-${new Date().toISOString().slice(0, 10)}`;
     document.getElementById("projectReturnNotes").value = "";
@@ -136324,6 +136559,11 @@ async function openProjectReturnModal(projectId) {
     if (tbody) tbody.innerHTML = "";
 
     await addProjectReturnLine();
+    
+    // Hide journal preview on open
+    hideReturnJournalPreview();
+    clearReturnMessage();
+
     document.getElementById("projectReturnModal")?.classList.remove("hidden");
 
   } catch (err) {
@@ -136334,46 +136574,144 @@ async function openProjectReturnModal(projectId) {
 
 function closeProjectReturnModal() {
   document.getElementById("projectReturnModal")?.classList.add("hidden");
+  hideReturnJournalPreview();
   ACTIVE_RETURN_PROJECT_ID = null;
+  window._currentProjectForReturn = null;
+}
+
+function hideReturnJournalPreview() {
+  document.getElementById("projectReturnJournalPreview")?.classList.add("hidden");
+}
+
+function showReturnMessage(msg, isError = false) {
+  const el = document.getElementById("projectReturnMsg");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove("hidden", "bg-red-50", "text-red-700", "bg-green-50", "text-green-700", "bg-blue-50", "text-blue-700");
+  if (msg) {
+    el.classList.remove("hidden");
+    el.classList.add(isError ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700");
+  } else {
+    el.classList.add("hidden");
+  }
+}
+
+function clearReturnMessage() {
+  showReturnMessage("");
 }
 
 async function addProjectReturnLine(line = {}) {
   const tbody = document.getElementById("projectReturnLines");
   if (!tbody) return;
 
+  const lineNum = tbody.children.length + 1;
   const tr = document.createElement("tr");
-  tr.className = "border-b";
+  tr.className = "border-b hover:bg-green-50/30";
 
   tr.innerHTML = `
-    <td class="px-2 py-2">
-      <select data-pr-item-id class="w-full border rounded px-2 py-1">
+    <td class="px-3 py-2 text-slate-400 font-mono text-xs">${lineNum}</td>
+    <td class="px-3 py-2">
+      <select data-pr-item-id class="w-full border rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-green-500/20">
         ${await buildInventoryItemOptions(line.item_id || "")}
       </select>
     </td>
-    <td class="px-2 py-2">
+    <td class="px-3 py-2">
       <input data-pr-qty type="number" step="0.0001" min="0.0001" 
-             class="w-full border rounded px-2 py-1 text-right" 
-             value="${esc(line.qty || "")}" placeholder="Qty">
+             class="w-full border rounded px-2 py-1.5 text-right text-xs focus:ring-2 focus:ring-green-500/20" 
+             value="${esc(line.qty || "")}" placeholder="Qty to return">
     </td>
-    <td class="px-2 py-2">
-      <input data-pr-memo class="w-full border rounded px-2 py-1" 
+    <td class="px-3 py-2 text-right text-xs font-mono text-slate-500">
+      <span data-pr-est-value>${line.qty ? '—' : ''}</span>
+    </td>
+    <td class="px-3 py-2">
+      <input data-pr-memo class="w-full border rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-green-500/20" 
              value="${esc(line.memo || "")}" placeholder="Reason for return">
     </td>
-    <td class="px-2 py-2 text-right">
-      <button type="button" class="text-rose-600 underline" data-pr-remove>Remove</button>
+    <td class="px-3 py-2 text-right">
+      <button type="button" class="text-rose-600 hover:text-rose-800 underline text-xs" data-pr-remove>Remove</button>
     </td>
   `;
 
-  tr.querySelector("[data-pr-remove]")?.addEventListener("click", () => tr.remove());
+  tr.querySelector("[data-pr-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    renumberReturnLines();
+    updateReturnEstimates();
+  });
+
+  // Auto-update estimate
+  tr.querySelector("[data-pr-qty]")?.addEventListener("change", async () => {
+    await updateReturnLineEstimate(tr);
+  });
+
   tbody.appendChild(tr);
+  updateReturnEstimates();
 }
 
-async function submitProjectReturn() {
+function renumberReturnLines() {
+  const rows = document.querySelectorAll("#projectReturnLines tr");
+  rows.forEach((row, idx) => {
+    const firstCell = row.querySelector("td:first-child");
+    if (firstCell) firstCell.textContent = idx + 1;
+  });
+}
+
+async function updateReturnLineEstimate(tr) {
+  const itemId = tr.querySelector("[data-pr-item-id]")?.value;
+  const qty = parseFloat(tr.querySelector("[data-pr-qty]")?.value || 0);
+  const estSpan = tr.querySelector("[data-pr-est-value]");
+  
+  if (estSpan && itemId && qty > 0) {
+    estSpan.textContent = "Calculating...";
+    try {
+      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+      const preview = await apiFetch(ENDPOINTS.projects.previewReturnJournal(cid, ACTIVE_RETURN_PROJECT_ID), {
+        method: "POST",
+        body: JSON.stringify({
+          tx_date: document.getElementById("projectReturnDate")?.value,
+          lines: [{ item_id: parseInt(itemId), qty }],
+        }),
+      });
+      
+      const detail = preview?.line_details?.[0];
+      if (detail) {
+        estSpan.textContent = `ZAR ${detail.total_cost?.toFixed(2) || '0.00'}`;
+      }
+    } catch (e) {
+      estSpan.textContent = "—";
+    }
+  } else if (estSpan) {
+    estSpan.textContent = qty > 0 ? "—" : "";
+  }
+  
+  updateReturnEstimates();
+}
+
+function updateReturnEstimates() {
+  const rows = document.querySelectorAll("#projectReturnLines tr");
+  let count = 0;
+  let total = 0;
+  
+  rows.forEach(row => {
+    const valText = row.querySelector("[data-pr-est-value]")?.textContent || "";
+    const val = parseFloat(valText.replace(/[^\d.-]/g, "")) || 0;
+    if (val > 0) {
+      count++;
+      total += val;
+    }
+  });
+  
+  const countEl = document.getElementById("projectReturnLineCount");
+  const totalEl = document.getElementById("projectReturnEstTotal");
+  if (countEl) countEl.textContent = count;
+  if (totalEl) totalEl.textContent = `ZAR ${total.toFixed(2)}`;
+}
+
+async function previewProjectReturnJournal() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   const projectId = Number(ACTIVE_RETURN_PROJECT_ID || 0);
   
   if (!cid || !projectId) {
-    alert("Missing company or project ID.");
+    showReturnMessage("Missing company or project ID.", true);
     return;
   }
 
@@ -136386,7 +136724,113 @@ async function submitProjectReturn() {
     .filter(x => x.item_id > 0 && x.qty > 0);
 
   if (!lines.length) {
-    setElText("projectReturnMsg", "Add at least one valid return line.");
+    showReturnMessage("Add at least one return line before previewing.", true);
+    return;
+  }
+
+  clearReturnMessage();
+  const previewBtn = document.getElementById("projectReturnPreviewBtn");
+  if (previewBtn) {
+    previewBtn.disabled = true;
+    previewBtn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Loading...`;
+  }
+
+  try {
+    const payload = {
+      tx_date: document.getElementById("projectReturnDate")?.value,
+      task_id: Number(document.getElementById("projectReturnTaskId")?.value || 0) || null,
+      cost_code_id: Number(document.getElementById("projectReturnCostCodeId")?.value || 0) || null,
+      lines,
+    };
+
+    const preview = await apiFetch(
+      ENDPOINTS.projects.previewReturnJournal(cid, projectId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    renderReturnJournalPreview(preview);
+
+  } catch (err) {
+    showReturnMessage(`Preview failed: ${err?.message || "Unknown error"}`, true);
+  } finally {
+    if (previewBtn) {
+      previewBtn.disabled = false;
+      previewBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg> Preview Reversal`;
+    }
+  }
+}
+
+function renderReturnJournalPreview(preview) {
+  if (!preview) return;
+
+  const container = document.getElementById("projectReturnJournalPreview");
+  if (!container) return;
+
+  // Header info
+  setElText("returnJournalPreviewDate", preview.journal_header?.date || "");
+  setElText("returnJournalPreviewDesc", preview.journal_header?.description || "");
+  setElText("returnJournalPreviewTotal", `ZAR ${preview.totals?.total_credit?.toFixed(2) || "0.00"}`);
+  setElText("projectReturnJournalRef", preview.journal_header?.ref || "");
+
+  // Journal lines
+  const tbody = document.getElementById("projectReturnJournalLines");
+  if (tbody) {
+    tbody.innerHTML = (preview.journal_lines || []).map(line => `
+      <tr class="border-b hover:bg-emerald-50/30">
+        <td class="px-3 py-2 font-mono text-xs">${esc(line.account_code || "")}</td>
+        <td class="px-3 py-2 text-xs">${esc(line.account_name || "")}</td>
+        <td class="px-3 py-2 text-right font-mono text-xs ${line.debit > 0 ? 'font-semibold text-green-700' : ''}">${line.debit > 0 ? line.debit.toFixed(2) : ''}</td>
+        <td class="px-3 py-2 text-right font-mono text-xs ${line.credit > 0 ? 'font-semibold text-red-700' : ''}">${line.credit > 0 ? line.credit.toFixed(2) : ''}</td>
+        <td class="px-3 py-2 text-xs text-slate-500">${esc(line.memo || "")}</td>
+      </tr>
+    `).join("");
+  }
+
+  // Totals
+  setElText("returnJournalPreviewTotalDr", preview.totals?.total_debit?.toFixed(2) || "0.00");
+  setElText("returnJournalPreviewTotalCr", preview.totals?.total_credit?.toFixed(2) || "0.00");
+
+  // Show the preview section
+  container.classList.remove("hidden");
+
+  // Update line estimates from server
+  if (preview.line_details) {
+    const rows = document.querySelectorAll("#projectReturnLines tr");
+    rows.forEach((row, idx) => {
+      const detail = preview.line_details[idx];
+      if (detail) {
+        const estSpan = row.querySelector("[data-pr-est-value]");
+        if (estSpan) estSpan.textContent = `ZAR ${detail.total_cost?.toFixed(2) || "0.00"}`;
+      }
+    });
+    updateReturnEstimates();
+  }
+
+  showReturnMessage("✓ Reversal journal ready. Review before posting return.", false);
+}
+
+async function submitProjectReturn() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(ACTIVE_RETURN_PROJECT_ID || 0);
+  
+  if (!cid || !projectId) {
+    showReturnMessage("Missing company or project ID.", true);
+    return;
+  }
+
+  const lines = Array.from(document.querySelectorAll("#projectReturnLines tr"))
+    .map(tr => ({
+      item_id: Number(tr.querySelector("[data-pr-item-id]")?.value || 0),
+      qty: Number(tr.querySelector("[data-pr-qty]")?.value || 0),
+      memo: tr.querySelector("[data-pr-memo]")?.value?.trim() || "",
+    }))
+    .filter(x => x.item_id > 0 && x.qty > 0);
+
+  if (!lines.length) {
+    showReturnMessage("Add at least one valid return line.", true);
     return;
   }
 
@@ -136403,7 +136847,14 @@ async function submitProjectReturn() {
     post_now: true,
   };
 
-  setElText("projectReturnMsg", "Posting material return...");
+  showReturnMessage("Posting material return...", false);
+
+  // Disable button during post
+  const postBtn = document.querySelector('[onclick="submitProjectReturn()"]');
+  if (postBtn) {
+    postBtn.disabled = true;
+    postBtn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Posting...`;
+  }
 
   try {
     const out = await apiFetch(ENDPOINTS.projects.returnMaterials(cid, projectId), {
@@ -136417,18 +136868,24 @@ async function submitProjectReturn() {
       await loadProjectDetail(projectId);
     }
 
-    alert(`Material return posted!\n\nTransaction: PMR-${out?.inventory_tx_id || '—'}\nJournal: ${out?.journal_id || '—'}\nTotal Value: ZAR ${out?.total_return_cost?.toFixed(2) || '0.00'}`);
+    alert(`✅ Material return posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: ZAR ${out?.total_return_cost?.toFixed(2) || '0.00'}`);
 
   } catch (err) {
-    console.error("[Projects] submitProjectReturn failed", err);
-    setElText("projectReturnMsg", err?.message || "Failed to post material return.");
+    showReturnMessage(`Failed to post return: ${err?.message || "Unknown error"}`, true);
+  } finally {
+    if (postBtn) {
+      postBtn.disabled = false;
+      postBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Post Return`;
+    }
   }
 }
 
 // Expose globally
+window.openProjectIssueModal = openProjectIssueModal;
 window.openProjectReturnModal = openProjectReturnModal;
+window.closeProjectIssueModal = closeProjectIssueModal;
 window.closeProjectReturnModal = closeProjectReturnModal;
-window.submitProjectReturn = submitProjectReturn;
+window.bindProjectOperationalModalsOnce = bindProjectIssueModalOnce;
 
 async function populateProjectDeskDropdown(selectId) {
   const sel = document.getElementById(selectId);

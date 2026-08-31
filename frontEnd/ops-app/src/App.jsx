@@ -111,20 +111,20 @@ export default function App(){
         {/* ============================================================
          * PHASE 6: INVENTORY & WAREHOUSE MANAGEMENT ROUTES
          * ============================================================ */}
-        
+
+        {/* Warehouse / Inventory Main Shell */}
+        <Route path="/inventory" element={<Protected><WarehousePage/></Protected>}/>
+
         {/* Inventory Dashboard */}
-        <Route path="/inventory" element={<Protected><InventoryDashboardPage/></Protected>}/>
-        
+        <Route path="/inventory/dashboard" element={<Protected><InventoryDashboardPage/></Protected>}/>
+
         {/* Stock Movements (Transaction Journal) */}
         <Route path="/inventory/movements" element={<Protected><StockMovementsPage/></Protected>}/>
         <Route path="/inventory/movements/new" element={<Protected><StockMovementsPage/></Protected>}/>
-        
+
         {/* Stocktake / Cycle Counting */}
         <Route path="/inventory/stocktake" element={<Protected><StocktakePage/></Protected>}/>
-        
-        {/* Warehouse Management */}
-        <Route path="/inventory/warehouses" element={<Protected><WarehousePage/></Protected>}/>
-        
+
         {/* Inventory Items (Master File) - Can be added later */}
         {/* <Route path="/inventory/items" element={<Protected><InventoryItemsPage/></Protected>}/> */}
         {/* <Route path="/inventory/items/:itemId" element={<Protected><InventoryItemDetailPage/></Protected>}/> */}

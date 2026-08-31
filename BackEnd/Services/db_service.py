@@ -134168,6 +134168,528 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "total_cost": total_issue_cost,
             }
         
+    # =========================================================================
+    # JOURNAL PREVIEW FOR PROJECT MATERIAL ISSUE (NO POSTING)
+    # =========================================================================
+    def preview_journal_for_project_issue(
+        self,
+        company_id: int,
+        *,
+        project_id: int,
+        tx_date,
+        lines: list[dict],
+        task_id: int | None = None,
+        cost_code_id: int | None = None,
+        usage_type: str = "consumed",
+    ) -> dict:
+        """
+        Preview journal entries for a material issue to project WITHOUT posting.
+        
+        Returns:
+            {
+                "project": { ... },
+                "journal_header": { date, ref, description, source, ... },
+                "journal_lines": [ { account_code, account_name, debit, credit, memo }, ... ],
+                "line_details": [ { item_id, item_name, qty, unit_cost, total_cost, inventory_account }, ... ],
+                "totals": { total_debit, total_credit, total_cost }
+            }
+        """
+        schema = self.company_schema(company_id)
+        
+        if not lines or not isinstance(lines, list):
+            raise ValueError("lines required")
+        
+        if hasattr(tx_date, "isoformat"):
+            tx_date = tx_date.isoformat()[:10]
+        else:
+            tx_date = str(tx_date or "")[:10]
+        
+        if not tx_date:
+            raise ValueError("tx_date is required")
+        
+        ref = f"PMI-{int(project_id)}-{tx_date}".strip()
+        usage_type = (usage_type or "consumed").strip().lower()
+        
+        def money(x) -> float:
+            from decimal import Decimal, ROUND_HALF_UP
+            return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        
+        def _to_int(v, default=None):
+            try:
+                if v in (None, ""):
+                    return default
+                return int(v)
+            except Exception:
+                return default
+        
+        def _to_float(v, default=0.0):
+            try:
+                if v in (None, ""):
+                    return default
+                return float(str(v).replace(",", "").strip())
+            except Exception:
+                return default
+
+        # 1) Validate and load project
+        project = self.fetch_one(
+            f"""
+            SELECT * FROM {schema}.projects
+            WHERE company_id=%s AND id=%s
+            """,
+            (int(company_id), int(project_id)),
+        )
+        
+        if not project:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        # 2) Resolve debit account (same logic as issue but read-only)
+        accounting_mode = str(project.get("accounting_mode") or "contract").strip().lower()
+        
+        if accounting_mode in {"contract", "wip", "capital"}:
+            project_debit_raw = (
+                project.get("wip_account_code")
+                or self.find_project_wip_account_code(company_id)
+                or ""
+            ).strip()
+            
+            # Try role-based resolution
+            debit_row = None
+            if project_debit_raw:
+                debit_row = self.get_account_row_for_posting(company_id, project_debit_raw)
+            
+            if not debit_row:
+                debit_row = self.resolve_coa_account_by_roles_for_posting(
+                    company_id,
+                    ["project_wip", "wip", "work_in_progress", "construction_wip"],
+                    required=False,
+                )
+                
+            # Fallback: search by name
+            if not debit_row and project_debit_raw:
+                debit_row = self.fetch_one(
+                    f"""
+                    SELECT id, code, name, section, category, description, 
+                           standard, template_code, role, posting
+                    FROM {schema}.coa
+                    WHERE company_id = %s
+                      AND posting = TRUE
+                      AND (
+                          LOWER(TRIM(code)) = %s
+                          OR LOWER(TRIM(name)) = %s
+                      )
+                    LIMIT 1;
+                    """,
+                    (company_id, project_debit_raw.lower(), project_debit_raw.lower()),
+                )
+                    
+        elif accounting_mode in {"expense", "none"}:
+            project_debit_raw = (project.get("cost_account_code") or "").strip()
+            debit_row = self.get_account_row_for_posting(company_id, project_debit_raw)
+            if not debit_row:
+                debit_row = self.resolve_coa_account_by_roles_for_posting(
+                    company_id,
+                    ["project_expense", "cost_of_sales", "direct_expense", "expense"],
+                    required=False,
+                )
+        else:
+            raise ValueError(f"INVALID_PROJECT_ACCOUNTING_MODE|{accounting_mode}")
+
+        if not debit_row:
+            raise ValueError(
+                f"PROJECT_DEBIT_ACCOUNT_NOT_FOUND|tried={project_debit_raw or 'empty'}"
+            )
+
+        project_debit_account = str(debit_row.get("code") or project_debit_raw or "").strip()
+        project_debit_name = str(debit_row.get("name") or project_debit_account).strip()
+
+        # 3) Process lines and calculate costs
+        journal_lines = []
+        line_details = []
+        inv_credit_totals: dict[str, dict] = {}  # account -> {name, amount}
+        total_issue_cost = 0.0
+
+        for idx, ln in enumerate(lines, start=1):
+            item_id = _to_int(ln.get("item_id") or ln.get("itemId"), 0)
+            qty = _to_float(ln.get("qty") or ln.get("quantity"), 0.0)
+
+            if item_id <= 0 or qty <= 0:
+                continue
+
+            # Load item
+            item = self.fetch_one(
+                f"""
+                SELECT id, sku, name, unit, category, purchase_cost, 
+                       valuation_method, track_stock, inventory_account
+                FROM {schema}.inventory_items
+                WHERE company_id=%s AND id=%s
+                LIMIT 1
+                """,
+                (int(company_id), int(item_id)),
+            )
+
+            if not item:
+                raise ValueError(f"INVENTORY_ITEM_NOT_FOUND|item_id={item_id}")
+
+            # Resolve inventory credit account
+            inv_raw = (item.get("inventory_account") or "").strip()
+            if not inv_raw:
+                inv_raw = (self.find_default_inventory_account_code(company_id) or "").strip()
+            
+            inv_row = self.get_account_row_for_posting(company_id, inv_raw)
+            if not inv_row:
+                # Try role-based fallback
+                inv_row = self.resolve_coa_account_by_roles_for_posting(
+                    company_id,
+                    ["inventory", "inventory_raw_materials", "inventory_finished_goods"],
+                    required=False,
+                )
+            
+            if not inv_row:
+                raise ValueError(f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}")
+            
+            inventory_account = str(inv_row.get("code") or inv_raw).strip()
+            inventory_account_name = str(inv_row.get("name") or inventory_account).strip()
+
+            # Calculate cost
+            valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
+            if valuation_method not in ("AVG", "FIFO"):
+                valuation_method = "AVG"
+
+            if valuation_method == "FIFO":
+                # For FIFO preview, get estimated cost from layers
+                line_cost = money(self._estimate_fifo_cost_preview(
+                    company_id, item_id, qty
+                ))
+            else:
+                unit_cost = money(self._inventory_avg_cost_cur(company_id, item_id))
+                if unit_cost <= 0:
+                    unit_cost = money(item.get("purchase_cost") or 0)
+                line_cost = money(qty * unit_cost)
+
+            if line_cost <= 0:
+                raise ValueError(f"MISSING_COST|item_id={item_id}")
+
+            unit_cost_for_line = money(line_cost / qty) if qty > 0 else 0.0
+            
+            # Accumulate inventory credits
+            if inventory_account not in inv_credit_totals:
+                inv_credit_totals[inventory_account] = {
+                    "name": inventory_account_name,
+                    "amount": 0.0
+                }
+            inv_credit_totals[inventory_account]["amount"] = money(
+                inv_credit_totals[inventory_account]["amount"] + line_cost
+            )
+            
+            total_issue_cost = money(total_issue_cost + line_cost)
+
+            line_details.append({
+                "line_no": idx,
+                "item_id": item_id,
+                "item_sku": item.get("sku") or "",
+                "item_name": item.get("name") or "",
+                "unit": item.get("unit") or "",
+                "qty": qty,
+                "unit_cost": unit_cost_for_line,
+                "total_cost": line_cost,
+                "inventory_account": inventory_account,
+                "inventory_account_name": inventory_account_name,
+                "memo": ln.get("memo") or "",
+            })
+
+        if total_issue_cost <= 0:
+            raise ValueError("PROJECT_ISSUE_TOTAL_IS_ZERO")
+
+        # Build journal lines: Dr WIP / Cr Inventory
+        journal_lines.append({
+            "account_code": project_debit_account,
+            "account_name": project_debit_name,
+            "debit": total_issue_cost,
+            "credit": 0.0,
+            "memo": f"Materials issued to project {project.get('project_code') or project_id}",
+            "line_type": "project_debit",
+        })
+
+        for acct, info in inv_credit_totals.items():
+            if info["amount"] <= 0:
+                continue
+            journal_lines.append({
+                "account_code": acct,
+                "account_name": info["name"],
+                "debit": 0.0,
+                "credit": info["amount"],
+                "memo": "Inventory issued to project",
+                "line_type": "inventory_credit",
+            })
+
+        return {
+            "preview": True,
+            "project": {
+                "id": project.get("id"),
+                "project_code": project.get("project_code"),
+                "project_name": project.get("project_name"),
+                "accounting_mode": accounting_mode,
+            },
+            "journal_header": {
+                "date": tx_date,
+                "ref": ref,
+                "description": f"Project material issue (PREVIEW)",
+                "source": "project_material_issue",
+                "usage_type": usage_type,
+            },
+            "journal_lines": journal_lines,
+            "line_details": line_details,
+            "totals": {
+                "total_debit": total_issue_cost,
+                "total_credit": total_issue_cost,
+                "line_count": len(line_details),
+            }
+        }
+
+    def _estimate_fifo_cost_preview(self, company_id: int, item_id: int, qty: float) -> float:
+        """Estimate FIFO cost without consuming layers (for preview only)."""
+        schema = self.company_schema(company_id)
+        rows = self.fetch_all(
+            f"""
+            SELECT unit_cost, qty_remaining 
+            FROM {schema}.inventory_layers
+            WHERE company_id=%s AND item_id=%s
+              AND qty_out = 0 AND COALESCE(qty_remaining, 0) > 0
+            ORDER BY created_at ASC, id ASC
+            """,
+            (company_id, item_id),
+        ) or []
+        
+        remaining = qty
+        total_cost = 0.0
+        
+        for row in rows:
+            if remaining <= 0:
+                break
+            layer_qty = min(remaining, float(row.get("qty_remaining") or 0))
+            total_cost += layer_qty * float(row.get("unit_cost") or 0)
+            remaining -= layer_qty
+        
+        return total_cost if (qty - remaining) > 0 else 0.0
+
+    # =========================================================================
+    # JOURNAL PREVIEW FOR PROJECT MATERIAL RETURN (NO POSTING)
+    # =========================================================================
+    def preview_journal_for_project_return(
+        self,
+        company_id: int,
+        *,
+        project_id: int,
+        tx_date,
+        lines: list[dict],
+        task_id: int | None = None,
+        cost_code_id: int | None = None,
+    ) -> dict:
+        """
+        Preview journal entries for returning materials from project WITHOUT posting.
+        
+        Returns reversal journal: Dr Inventory / Cr WIP
+        """
+        schema = self.company_schema(company_id)
+        
+        if not lines or not isinstance(lines, list):
+            raise ValueError("lines required")
+        
+        if hasattr(tx_date, "isoformat"):
+            tx_date = tx_date.isoformat()[:10]
+        else:
+            tx_date = str(tx_date or "")[:10]
+        
+        if not tx_date:
+            raise ValueError("tx_date is required")
+        
+        ref = f"PMR-{int(project_id)}-{tx_date}".strip()
+        
+        def money(x) -> float:
+            from decimal import Decimal, ROUND_HALF_UP
+            return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        
+        def _to_int(v, default=None):
+            try:
+                if v in (None, ""):
+                    return default
+                return int(v)
+            except Exception:
+                return default
+        
+        def _to_float(v, default=0.0):
+            try:
+                if v in (None, ""):
+                    return default
+                return float(str(v).replace(",", "").strip())
+            except Exception:
+                return default
+
+        # 1) Load project
+        project = self.fetch_one(
+            f"""
+            SELECT * FROM {schema}.projects
+            WHERE company_id=%s AND id=%s
+            """,
+            (int(company_id), int(project_id)),
+        )
+        
+        if not project:
+            raise ValueError("PROJECT_NOT_FOUND")
+
+        # 2) Resolve accounts (REVERSAL of issue: Dr Inventory / Cr WIP)
+        accounting_mode = str(project.get("accounting_mode") or "contract").strip().lower()
+        
+        if accounting_mode in {"contract", "wip", "capital"}:
+            wip_raw = (project.get("wip_account_code") or "").strip()
+            wip_row = self.get_account_row_for_posting(company_id, wip_raw) if wip_raw else None
+            if not wip_row:
+                wip_row = self.resolve_coa_account_by_roles_for_posting(
+                    company_id, ["project_wip", "wip", "work_in_progress"], required=False
+                )
+            wip_account = str(wip_row.get("code") or wip_raw or "").strip() if wip_row else ""
+            wip_name = str(wip_row.get("name") or wip_account).strip() if wip_row else wip_raw
+        else:
+            wip_raw = (project.get("cost_account_code") or "").strip()
+            wip_row = self.get_account_row_for_posting(company_id, wip_raw) if wip_raw else None
+            wip_account = str(wip_row.get("code") or wip_raw or "").strip() if wip_row else ""
+            wip_name = str(wip_row.get("name") or wip_account).strip() if wip_row else wip_raw
+
+        # 3) Process lines
+        journal_lines = []
+        line_details = []
+        inv_debit_totals: dict[str, dict] = {}
+        total_return_cost = 0.0
+
+        for idx, ln in enumerate(lines, start=1):
+            item_id = _to_int(ln.get("item_id") or ln.get("itemId"), 0)
+            qty = _to_float(ln.get("qty") or ln.get("quantity"), 0.0)
+
+            if item_id <= 0 or qty <= 0:
+                continue
+
+            # Load item
+            item = self.fetch_one(
+                f"""
+                SELECT id, sku, name, unit, purchase_cost, 
+                       valuation_method, inventory_account
+                FROM {schema}.inventory_items
+                WHERE company_id=%s AND id=%s
+                LIMIT 1
+                """,
+                (int(company_id), int(item_id)),
+            )
+
+            if not item:
+                raise ValueError(f"INVENTORY_ITEM_NOT_FOUND|item_id={item_id}")
+
+            # Resolve inventory account
+            inv_raw = (item.get("inventory_account") or "").strip()
+            if not inv_raw:
+                inv_raw = (self.find_default_inventory_account_code(company_id) or "").strip()
+            
+            inv_row = self.get_account_row_for_posting(company_id, inv_raw)
+            if not inv_row:
+                inv_row = self.resolve_coa_account_by_roles_for_posting(
+                    company_id, ["inventory", "inventory_raw_materials"], required=False
+                )
+            
+            if not inv_row:
+                raise ValueError(f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}")
+            
+            inventory_account = str(inv_row.get("code") or inv_raw).strip()
+            inventory_account_name = str(inv_row.get("name") or inventory_account).strip()
+
+            # Use original issue cost or current avg cost as estimate
+            valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
+            if valuation_method == "FIFO":
+                line_cost = money(self._estimate_fifo_cost_preview(company_id, item_id, qty))
+            else:
+                unit_cost = money(self._inventory_avg_cost_cur(company_id, item_id))
+                if unit_cost <= 0:
+                    unit_cost = money(item.get("purchase_cost") or 0)
+                line_cost = money(qty * unit_cost)
+
+            if line_cost <= 0:
+                raise ValueError(f"MISSING_COST|item_id={item_id}")
+
+            unit_cost_for_line = money(line_cost / qty) if qty > 0 else 0.0
+
+            # Accumulate inventory debits (reversal)
+            if inventory_account not in inv_debit_totals:
+                inv_debit_totals[inventory_account] = {
+                    "name": inventory_account_name,
+                    "amount": 0.0
+                }
+            inv_debit_totals[inventory_account]["amount"] = money(
+                inv_debit_totals[inventory_account]["amount"] + line_cost
+            )
+            
+            total_return_cost = money(total_return_cost + line_cost)
+
+            line_details.append({
+                "line_no": idx,
+                "item_id": item_id,
+                "item_sku": item.get("sku") or "",
+                "item_name": item.get("name") or "",
+                "unit": item.get("unit") or "",
+                "qty": qty,
+                "unit_cost": unit_cost_for_line,
+                "total_cost": line_cost,
+                "inventory_account": inventory_account,
+                "inventory_account_name": inventory_account_name,
+                "memo": ln.get("memo") or "",
+            })
+
+        if total_return_cost <= 0:
+            raise ValueError("PROJECT_RETURN_TOTAL_IS_ZERO")
+
+        # Build journal lines: Dr Inventory / Cr WIP (REVERSAL of issue)
+        for acct, info in inv_debit_totals.items():
+            if info["amount"] <= 0:
+                continue
+            journal_lines.append({
+                "account_code": acct,
+                "account_name": info["name"],
+                "debit": info["amount"],
+                "credit": 0.0,
+                "memo": "Materials returned from project to inventory",
+                "line_type": "inventory_debit",
+            })
+
+        if wip_account:
+            journal_lines.append({
+                "account_code": wip_account,
+                "account_name": wip_name,
+                "debit": 0.0,
+                "credit": total_return_cost,
+                "memo": f"Return of materials from project {project.get('project_code') or project_id}",
+                "line_type": "project_credit",
+            })
+
+        return {
+            "preview": True,
+            "project": {
+                "id": project.get("id"),
+                "project_code": project.get("project_code"),
+                "project_name": project.get("project_name"),
+                "accounting_mode": accounting_mode,
+            },
+            "journal_header": {
+                "date": tx_date,
+                "ref": ref,
+                "description": f"Project material return (PREVIEW)",
+                "source": "project_material_return",
+            },
+            "journal_lines": journal_lines,
+            "line_details": line_details,
+            "totals": {
+                "total_debit": total_return_cost,
+                "total_credit": total_return_cost,
+                "line_count": len(line_details),
+            }
+        }
+    
     def return_inventory_from_project(
         self,
         company_id: int,

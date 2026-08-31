@@ -1903,7 +1903,121 @@ def return_materials_from_project_route(cid: int, project_id: int):
             "error": "failed_to_return_materials_from_project",
             "details": str(e),
         }), 500
+
+@projects_bp.route("/api/companies/<int:cid>/projects/<int:project_id>/preview-issue-journal", methods=["POST"])
+@require_auth
+def preview_issue_journal_route(cid: int, project_id: int):
+    """
+    Preview journal entries for material issue WITHOUT posting.
+    
+    POST /api/companies/{cid}/projects/{project_id}/preview-issue-journal
+    
+    Payload (same as issue-materials):
+    {
+        "tx_date": "2026-01-15",
+        "lines": [{"item_id": 1, "qty": 10, "memo": "Cement for foundation"}],
+        "task_id": null,
+        "cost_code_id": null,
+        "usage_type": "consumed"
+    }
+    
+    Returns:
+    {
+        "preview": true,
+        "journal_header": { date, ref, description },
+        "journal_lines": [ { account_code, account_name, debit, credit, memo } ],
+        "line_details": [ { item_name, qty, unit_cost, total_cost, ... } ],
+        "totals": { total_debit, total_credit }
+    }
+    """
+    company_id = int(cid)
+    
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+    
+    data = _payload()
+    
+    try:
+        preview = db_service.preview_journal_for_project_issue(
+            company_id,
+            project_id=int(project_id),
+            tx_date=data.get("tx_date") or data.get("date"),
+            lines=data.get("lines") or [],
+            task_id=data.get("task_id") or data.get("taskId"),
+            cost_code_id=data.get("cost_code_id") or data.get("costCodeId"),
+            usage_type=data.get("usage_type") or data.get("usageType") or "consumed",
+        )
         
+        return jsonify(preview), 200
+    
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    
+    except Exception as e:
+        current_app.logger.exception(
+            "[PROJECT PREVIEW ISSUE JOURNAL] FAILED | company_id=%s | project_id=%s",
+            company_id,
+            project_id,
+        )
+        return jsonify({
+            "error": "failed_to_preview_issue_journal",
+            "details": str(e),
+        }), 500
+
+
+@projects_bp.route("/api/companies/<int:cid>/projects/<int:project_id>/preview-return-journal", methods=["POST"])
+@require_auth
+def preview_return_journal_route(cid: int, project_id: int):
+    """
+    Preview journal entries for material return WITHOUT posting.
+    
+    POST /api/companies/{cid}/projects/{project_id}/preview-return-journal
+    
+    Payload (same as return-materials):
+    {
+        "tx_date": "2026-01-15",
+        "lines": [{"item_id": 1, "qty": 5, "memo": "Unused - returned to stores"}],
+        "task_id": null,
+        "cost_code_id": null
+    }
+    
+    Returns reversal journal preview: Dr Inventory / Cr WIP
+    """
+    company_id = int(cid)
+    
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+    
+    data = _payload()
+    
+    try:
+        preview = db_service.preview_journal_for_project_return(
+            company_id,
+            project_id=int(project_id),
+            tx_date=data.get("tx_date") or data.get("date"),
+            lines=data.get("lines") or [],
+            task_id=data.get("task_id") or data.get("taskId"),
+            cost_code_id=data.get("cost_code_id") or data.get("costCodeId"),
+        )
+        
+        return jsonify(preview), 200
+    
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    
+    except Exception as e:
+        current_app.logger.exception(
+            "[PROJECT PREVIEW RETURN JOURNAL] FAILED | company_id=%s | project_id=%s",
+            company_id,
+            project_id,
+        )
+        return jsonify({
+            "error": "failed_to_preview_return_journal",
+            "details": str(e),
+        }), 500
+    
 @projects_bp.route("/api/companies/<int:cid>/projects/budget-lines", methods=["GET"])
 @require_auth
 def list_all_project_budget_lines_route(cid: int):

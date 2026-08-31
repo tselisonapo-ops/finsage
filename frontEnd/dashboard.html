@@ -28532,48 +28532,58 @@ label:has(#projectTeamUserSearch) {
   </div>
 </div>
 
+<!-- ============================================ -->
+<!-- ISSUE MATERIALS TO PROJECT MODAL (WITH JOURNAL PREVIEW) -->
+<!-- ============================================ -->
 <div id="projectIssueModal" class="fixed inset-0 z-50 hidden">
   <div id="projectIssueOverlay" class="absolute inset-0 bg-black/40"></div>
 
-  <div class="absolute inset-0 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl p-4">
-      <div class="flex items-center justify-between mb-3">
+  <div class="absolute inset-0 flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl my-8 flex flex-col max-h-[90vh]">
+      <!-- Header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b shrink-0">
         <div>
-          <div class="font-bold text-base">Issue Materials to Project</div>
-          <div class="text-xs text-slate-500">
-            Issues tracked inventory to the project and applies the project's accounting treatment
+          <div class="font-bold text-base flex items-center gap-2">
+            <svg class="w-5 h-5 text-[var(--fs-navy)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+            </svg>
+            Issue Materials to Project
+          </div>
+          <div class="text-xs text-slate-500 mt-1">
+            Issues tracked inventory to project • Preview journal before posting
           </div>
         </div>
-        <button id="projectIssueCloseBtn" class="text-sm px-2 py-1 border rounded">✕</button>
+        <button id="projectIssueCloseBtn" class="text-slate-400 hover:text-slate-600 p-1">✕</button>
       </div>
 
       <input id="projectIssueProjectId" type="hidden">
 
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs mb-3">
-        <label>
-          <div class="text-slate-500 mb-1">Date</div>
-          <input id="projectIssueDate" type="date" class="w-full border rounded px-2 py-2">
-        </label>
+      <!-- Scrollable Content -->
+      <div class="flex-1 overflow-auto px-6 py-4 space-y-4">
+        <!-- Form Fields -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+          <label>
+            <div class="text-slate-500 mb-1 font-medium">Date *</div>
+            <input id="projectIssueDate" type="date" class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-[var(--fs-navy)]/20 focus:border-[var(--fs-navy)]">
+          </label>
 
-        <label>
-          <div class="text-slate-500 mb-1">Task</div>
-          <select id="projectIssueTaskId"
-                  class="w-full border rounded px-2 py-2">
-            <option value="">Select task...</option>
-          </select>
-        </label>
+          <label>
+            <div class="text-slate-500 mb-1 font-medium">Task</div>
+            <select id="projectIssueTaskId" class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-[var(--fs-navy)]/20">
+              <option value="">Select task...</option>
+            </select>
+          </label>
 
-        <label>
-          <div class="text-slate-500 mb-1">Cost Code</div>
-          <select id="projectIssueCostCodeId"
-                  class="w-full border rounded px-2 py-2">
-            <option value="">Select cost code...</option>
-          </select>
-        </label>
+          <label>
+            <div class="text-slate-500 mb-1 font-medium">Cost Code</div>
+            <select id="projectIssueCostCodeId" class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-[var(--fs-navy)]/20">
+              <option value="">Select cost code...</option>
+            </select>
+          </label>
 
-        <label>
-          <div class="text-slate-500 mb-1">Usage Type</div>
-            <select id="projectIssueUsageType" class="w-full border rounded px-2 py-2">
+          <label>
+            <div class="text-slate-500 mb-1 font-medium">Usage Type</div>
+            <select id="projectIssueUsageType" class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-[var(--fs-navy)]/20">
               <optgroup label="Material Usage">
                 <option value="consumed">Consumed (used up)</option>
                 <option value="installed">Installed (embedded)</option>
@@ -28587,114 +28597,284 @@ label:has(#projectTeamUserSearch) {
                 <option value="scrap">Scrap (written off)</option>
               </optgroup>
             </select>
-        </label>
+          </label>
+
+          <label class="flex items-end">
+            <button type="button" id="projectIssuePreviewBtn" 
+                    class="w-full bg-amber-500 hover:bg-amber-600 text-white rounded-lg px-4 py-2 text-xs font-medium transition-colors flex items-center justify-center gap-1">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+              Preview Journal
+            </button>
+          </label>
+        </div>
+
+        <!-- Material Lines Table -->
+        <div class="border rounded-lg overflow-hidden">
+          <div class="bg-slate-50 px-4 py-2 border-b flex items-center justify-between">
+            <span class="font-medium text-xs text-slate-700">Material Lines</span>
+            <button id="projectIssueAddLineBtn" class="text-xs text-[var(--fs-navy)] hover:underline font-medium">+ Add Line</button>
+          </div>
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50/50 border-b">
+              <tr>
+                <th class="text-left px-3 py-2 font-medium text-slate-600">#</th>
+                <th class="text-left px-3 py-2 font-medium text-slate-600">Item</th>
+                <th class="text-right px-3 py-2 font-medium text-slate-600">Qty</th>
+                <th class="text-right px-3 py-2 font-medium text-slate-600">Est. Cost</th>
+                <th class="text-left px-3 py-2 font-medium text-slate-600">Memo</th>
+                <th class="text-right px-3 py-2 font-medium text-slate-600">Action</th>
+              </tr>
+            </thead>
+            <tbody id="projectIssueLines"></tbody>
+          </table>
+        </div>
+
+        <!-- Journal Preview Section (Hidden until preview clicked) -->
+        <div id="projectIssueJournalPreview" class="hidden border-2 border-amber-200 rounded-lg overflow-hidden bg-amber-50/30">
+          <div class="bg-amber-100 px-4 py-2 border-b flex items-center justify-between">
+            <span class="font-medium text-xs text-amber-800 flex items-center gap-1">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              Journal Entry Preview
+            </span>
+            <span id="projectIssueJournalRef" class="text-xs text-amber-700 font-mono"></span>
+          </div>
+          
+          <!-- Journal Header Info -->
+          <div class="px-4 py-2 bg-white border-b grid grid-cols-3 gap-4 text-xs">
+            <div>
+              <span class="text-slate-500">Date:</span>
+              <span id="journalPreviewDate" class="ml-1 font-medium"></span>
+            </div>
+            <div>
+              <span class="text-slate-500">Description:</span>
+              <span id="journalPreviewDesc" class="ml-1 font-medium"></span>
+            </div>
+            <div>
+              <span class="text-slate-500">Total Value:</span>
+              <span id="journalPreviewTotal" class="ml-1 font-bold text-amber-700"></span>
+            </div>
+          </div>
+
+          <!-- Journal Lines Table -->
+          <div class="overflow-auto max-h-48">
+            <table class="w-full text-xs">
+              <thead class="bg-amber-50/50 border-b sticky top-0">
+                <tr>
+                  <th class="text-left px-3 py-2 font-medium text-amber-800">Account Code</th>
+                  <th class="text-left px-3 py-2 font-medium text-amber-800">Account Name</th>
+                  <th class="text-right px-3 py-2 font-medium text-amber-800">Debit</th>
+                  <th class="text-right px-3 py-2 font-medium text-amber-800">Credit</th>
+                  <th class="text-left px-3 py-2 font-medium text-amber-800">Memo</th>
+                </tr>
+              </thead>
+              <tbody id="projectIssueJournalLines" class="bg-white"></tbody>
+              <tfoot class="bg-amber-100 font-bold">
+                <tr>
+                  <td colspan="2" class="px-3 py-2 text-right text-amber-800">TOTALS:</td>
+                  <td id="journalPreviewTotalDr" class="px-3 py-2 text-right text-amber-800"></td>
+                  <td id="journalPreviewTotalCr" class="px-3 py-2 text-right text-amber-800"></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- Message Area -->
+        <div id="projectIssueMsg" class="text-xs p-3 rounded-lg hidden"></div>
       </div>
 
-      <div class="border rounded overflow-auto">
-        <table class="w-full text-xs">
-          <thead class="bg-slate-50 border-b">
-            <tr>
-              <th class="text-left px-2 py-2">Item ID</th>
-              <th class="text-right px-2 py-2">Qty</th>
-              <th class="text-left px-2 py-2">Memo</th>
-              <th class="text-right px-2 py-2">Action</th>
-            </tr>
-          </thead>
-          <tbody id="projectIssueLines"></tbody>
-        </table>
-      </div>
-
-      <button id="projectIssueAddLineBtn" class="mt-2 px-3 py-1 text-xs border rounded">+ Add Line</button>
-
-      <div id="projectIssueMsg" class="mt-3 text-xs text-slate-500"></div>
-
-      <div class="flex justify-end gap-2 mt-4">
-        <button id="projectIssueCancelBtn" class="px-3 py-2 text-xs border rounded">Cancel</button>
-        <button id="projectIssueSaveBtn" class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">Post Issue</button>
+      <!-- Footer Actions -->
+      <div class="flex justify-between items-center px-6 py-4 border-t bg-slate-50/50 shrink-0">
+        <div class="text-xs text-slate-500">
+          <span id="projectIssueLineCount">0</span> lines • 
+          <span id="projectIssueEstTotal">ZAR 0.00</span> estimated
+        </div>
+        <div class="flex gap-2">
+          <button id="projectIssueCancelBtn" class="px-4 py-2 text-xs border rounded-lg hover:bg-slate-100 transition-colors">Cancel</button>
+          <button id="projectIssueSaveBtn" class="px-4 py-2 text-xs bg-[var(--fs-navy)] text-white rounded-lg hover:bg-[var(--fs-navy)]/90 transition-colors font-medium flex items-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            Post Issue
+          </button>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
 <!-- ============================================ -->
-<!-- RETURN MATERIALS TO STORAGE MODAL -->
+<!-- RETURN MATERIALS TO STORAGE MODAL (WITH JOURNAL PREVIEW) -->
 <!-- ============================================ -->
-<div id="projectReturnModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-  <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-auto">
-    <div class="sticky top-0 bg-white border-b px-4 py-3 flex justify-between items-start">
+<div id="projectReturnModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl my-8 flex flex-col max-h-[90vh]">
+    <!-- Header -->
+    <div class="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-start z-10 rounded-t-2xl">
       <div>
-        <h3 class="font-semibold text-sm">Return Materials to Storage</h3>
-        <p class="text-xs text-slate-500 mt-1">Return unused materials from project back to inventory/warehouse</p>
+        <h3 class="font-semibold text-sm flex items-center gap-2 text-green-800">
+          <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+          </svg>
+          Return Materials to Storage
+        </h3>
+        <p class="text-xs text-slate-500 mt-1">Return unused materials from project back to inventory • Preview reversal journal</p>
       </div>
-      <button onclick="closeProjectReturnModal()" class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+      <button onclick="closeProjectReturnModal()" class="text-slate-400 hover:text-slate-600 text-xl p-1">&times;</button>
     </div>
 
-    <div class="p-4 space-y-4">
-      <!-- Project Info -->
-      <div class="bg-green-50 border border-green-200 rounded p-3 text-xs">
-        <div class="font-medium text-green-800 mb-1">Project: <span id="returnProjectInfo">Loading...</span></div>
-        <div id="returnAccountingMsg" class="text-green-600"></div>
+    <!-- Scrollable Content -->
+    <div class="flex-1 overflow-auto p-6 space-y-4">
+      <!-- Project Info Banner -->
+      <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="font-medium text-green-800 text-sm">Project: <span id="returnProjectInfo" class="font-normal">Loading...</span></div>
+            <div id="returnAccountingMsg" class="text-green-600 text-xs mt-1"></div>
+          </div>
+          <button type="button" id="projectReturnPreviewBtn" 
+                  class="bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg px-4 py-2 text-xs font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+            Preview Reversal
+          </button>
+        </div>
       </div>
 
       <!-- Form Fields -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <label>
-          <div class="text-slate-500 mb-1">Date *</div>
-          <input type="date" id="projectReturnDate" class="w-full border rounded px-2 py-2">
+          <div class="text-slate-500 mb-1 text-xs font-medium">Date *</div>
+          <input type="date" id="projectReturnDate" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500">
         </label>
         <label>
-          <div class="text-slate-500 mb-1">Task</div>
-          <select id="projectReturnTaskId" class="w-full border rounded px-2 py-2">
+          <div class="text-slate-500 mb-1 text-xs font-medium">Task</div>
+          <select id="projectReturnTaskId" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20">
             <option value="">Select task...</option>
           </select>
         </label>
         <label>
-          <div class="text-slate-500 mb-1">Cost Code</div>
-          <select id="projectReturnCostCodeId" class="w-full border rounded px-2 py-2">
+          <div class="text-slate-500 mb-1 text-xs font-medium">Cost Code</div>
+          <select id="projectReturnCostCodeId" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20">
             <option value="">Select cost code...</option>
           </select>
+        </label>
+        <label>
+          <div class="text-slate-500 mb-1 text-xs font-medium">Reference</div>
+          <input type="text" id="projectReturnRef" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20" placeholder="Auto-generated if blank">
         </label>
       </div>
 
       <label>
-        <div class="text-slate-500 mb-1">Reference</div>
-        <input type="text" id="projectReturnRef" class="w-full border rounded px-2 py-2" placeholder="Auto-generated if blank">
+        <div class="text-slate-500 mb-1 text-xs font-medium">Notes / Reason for Return</div>
+        <textarea id="projectReturnNotes" rows="2" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20" placeholder="Explain why materials are being returned..."></textarea>
       </label>
 
-      <label>
-        <div class="text-slate-500 mb-1">Notes</div>
-        <textarea id="projectReturnNotes" rows="2" class="w-full border rounded px-2 py-2" 
-                  placeholder="Reason for return"></textarea>
-      </label>
-
-      <label class="flex items-center gap-2">
-        <input type="checkbox" id="projectReturnLinkOriginal" class="rounded">
-        <span class="text-xs text-slate-600">Link to original issue transaction</span>
+      <label class="flex items-center gap-2 bg-slate-50 p-3 rounded-lg cursor-pointer hover:bg-slate-100 transition-colors">
+        <input type="checkbox" id="projectReturnLinkOriginal" class="rounded text-green-600 focus:ring-green-500">
+        <span class="text-xs text-slate-600">Link to original issue transaction (for full traceability)</span>
       </label>
       <input type="hidden" id="projectReturnOriginalTxId">
 
-      <!-- Return Lines -->
-      <div class="border rounded overflow-auto">
+      <!-- Return Lines Table -->
+      <div class="border rounded-lg overflow-hidden">
+        <div class="bg-green-50 px-4 py-2 border-b flex items-center justify-between">
+          <span class="font-medium text-xs text-green-800">Return Lines</span>
+          <button id="projectReturnAddLineBtn" class="text-xs text-green-700 hover:underline font-medium">+ Add Return Line</button>
+        </div>
         <table class="w-full text-xs">
-          <thead class="bg-green-50 border-b">
+          <thead class="bg-green-50/50 border-b">
             <tr>
-              <th class="text-left px-2 py-2">Item</th>
-              <th class="text-right px-2 py-2">Qty to Return</th>
-              <th class="text-left px-2 py-2">Reason</th>
-              <th class="text-right px-2 py-2">Action</th>
+              <th class="text-left px-3 py-2 font-medium text-green-800">#</th>
+              <th class="text-left px-3 py-2 font-medium text-green-800">Item</th>
+              <th class="text-right px-3 py-2 font-medium text-green-800">Qty to Return</th>
+              <th class="text-right px-3 py-2 font-medium text-green-800">Est. Value</th>
+              <th class="text-left px-3 py-2 font-medium text-green-800">Reason</th>
+              <th class="text-right px-3 py-2 font-medium text-green-800">Action</th>
             </tr>
           </thead>
           <tbody id="projectReturnLines"></tbody>
         </table>
       </div>
 
-      <button id="projectReturnAddLineBtn" class="px-3 py-1 text-xs border rounded hover:bg-green-50">+ Add Return Line</button>
+      <!-- Journal Preview Section (Hidden until preview clicked) -->
+      <div id="projectReturnJournalPreview" class="hidden border-2 border-emerald-200 rounded-lg overflow-hidden bg-emerald-50/30">
+        <div class="bg-emerald-100 px-4 py-2 border-b flex items-center justify-between">
+          <span class="font-medium text-xs text-emerald-800 flex items-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            Reversal Journal Preview (Dr Inventory / Cr WIP)
+          </span>
+          <span id="projectReturnJournalRef" class="text-xs text-emerald-700 font-mono"></span>
+        </div>
+        
+        <!-- Journal Header Info -->
+        <div class="px-4 py-2 bg-white border-b grid grid-cols-3 gap-4 text-xs">
+          <div>
+            <span class="text-slate-500">Date:</span>
+            <span id="returnJournalPreviewDate" class="ml-1 font-medium"></span>
+          </div>
+          <div>
+            <span class="text-slate-500">Description:</span>
+            <span id="returnJournalPreviewDesc" class="ml-1 font-medium"></span>
+          </div>
+          <div>
+            <span class="text-slate-500">Total Reversal:</span>
+            <span id="returnJournalPreviewTotal" class="ml-1 font-bold text-emerald-700"></span>
+          </div>
+        </div>
 
-      <div id="projectReturnMsg" class="mt-3 text-xs text-slate-500"></div>
+        <!-- Journal Lines Table -->
+        <div class="overflow-auto max-h-48">
+          <table class="w-full text-xs">
+            <thead class="bg-emerald-50/50 border-b sticky top-0">
+              <tr>
+                <th class="text-left px-3 py-2 font-medium text-emerald-800">Account Code</th>
+                <th class="text-left px-3 py-2 font-medium text-emerald-800">Account Name</th>
+                <th class="text-right px-3 py-2 font-medium text-emerald-800">Debit</th>
+                <th class="text-right px-3 py-2 font-medium text-emerald-800">Credit</th>
+                <th class="text-left px-3 py-2 font-medium text-emerald-800">Memo</th>
+              </tr>
+            </thead>
+            <tbody id="projectReturnJournalLines" class="bg-white"></tbody>
+            <tfoot class="bg-emerald-100 font-bold">
+              <tr>
+                <td colspan="2" class="px-3 py-2 text-right text-emerald-800">TOTALS:</td>
+                <td id="returnJournalPreviewTotalDr" class="px-3 py-2 text-right text-emerald-800"></td>
+                <td id="returnJournalPreviewTotalCr" class="px-3 py-2 text-right text-emerald-800"></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
 
-      <div class="flex justify-end gap-2 mt-4">
-        <button onclick="closeProjectReturnModal()" class="px-3 py-2 text-xs border rounded">Cancel</button>
-        <button onclick="submitProjectReturn()" class="px-3 py-2 text-xs bg-green-600 text-white rounded hover:bg-green-700">Post Return</button>
+      <!-- Message Area -->
+      <div id="projectReturnMsg" class="text-xs p-3 rounded-lg hidden"></div>
+    </div>
+
+    <!-- Footer Actions -->
+    <div class="flex justify-between items-center px-6 py-4 border-t bg-slate-50/50 shrink-0 rounded-b-2xl">
+      <div class="text-xs text-slate-500">
+        <span id="projectReturnLineCount">0</span> lines • 
+        <span id="projectReturnEstTotal">ZAR 0.00</span> estimated reversal
+      </div>
+      <div class="flex gap-2">
+        <button onclick="closeProjectReturnModal()" class="px-4 py-2 text-xs border rounded-lg hover:bg-slate-100 transition-colors">Cancel</button>
+        <button onclick="submitProjectReturn()" class="px-4 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+          </svg>
+          Post Return
+        </button>
       </div>
     </div>
   </div>

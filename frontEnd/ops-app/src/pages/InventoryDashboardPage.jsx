@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { opsApi } from '../../api/api';
+import { opsApi } from "../api/api";
 import './InventoryDashboardPage.css';
 
 const InventoryDashboardPage = ({ companyId }) => {
