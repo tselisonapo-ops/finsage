@@ -136409,16 +136409,15 @@ function renderIssueJournalPreview(preview) {
   setElText("journalPreviewTotal", `USD ${preview.totals?.total_debit?.toFixed(2) || "0.00"}`);
   setElText("projectIssueJournalRef", preview.journal_header?.ref || "");
 
-  // Journal lines
+  // Journal lines - 4 columns: Account Name | Debit | Credit | Memo (NO code)
   const tbody = document.getElementById("projectIssueJournalLines");
   if (tbody) {
     if (!preview.journal_lines || preview.journal_lines.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="px-3 py-4 text-center text-amber-600">No journal lines generated</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="px-3 py-4 text-center text-amber-600">No journal lines generated</td></tr>`;
     } else {
       tbody.innerHTML = preview.journal_lines.map(line => `
         <tr class="border-b hover:bg-amber-50/50 transition-colors">
-          <td class="px-3 py-2.5 font-mono text-xs font-medium">${esc(line.account_code || "")}</td>
-          <td class="px-3 py-2.5 text-xs">${esc(line.account_name || "")}</td>
+          <td class="px-3 py-2.5 text-xs font-medium text-slate-800">${esc(line.account_name || "Unnamed Account")}</td>
           <td class="px-3 py-2.5 text-right font-mono text-xs ${line.debit > 0 ? 'font-bold text-green-700 bg-green-50' : ''}">${line.debit > 0 ? line.debit.toFixed(2) : ''}</td>
           <td class="px-3 py-2.5 text-right font-mono text-xs ${line.credit > 0 ? 'font-bold text-red-700 bg-red-50' : ''}">${line.credit > 0 ? line.credit.toFixed(2) : ''}</td>
           <td class="px-3 py-2.5 text-xs text-slate-500 italic">${esc(line.memo || "")}</td>
@@ -136886,16 +136885,15 @@ function renderReturnJournalPreview(preview) {
   setElText("returnJournalPreviewTotal", `USD ${preview.totals?.total_credit?.toFixed(2) || "0.00"}`);
   setElText("projectReturnJournalRef", preview.journal_header?.ref || "");
 
-  // Journal lines
+  // Journal lines - 4 columns: Account Name | Debit | Credit | Memo (NO code)
   const tbody = document.getElementById("projectReturnJournalLines");
   if (tbody) {
     tbody.innerHTML = (preview.journal_lines || []).map(line => `
       <tr class="border-b hover:bg-emerald-50/30">
-        <td class="px-3 py-2 font-mono text-xs">${esc(line.account_code || "")}</td>
-        <td class="px-3 py-2 text-xs">${esc(line.account_name || "")}</td>
-        <td class="px-3 py-2 text-right font-mono text-xs ${line.debit > 0 ? 'font-semibold text-green-700' : ''}">${line.debit > 0 ? line.debit.toFixed(2) : ''}</td>
-        <td class="px-3 py-2 text-right font-mono text-xs ${line.credit > 0 ? 'font-semibold text-red-700' : ''}">${line.credit > 0 ? line.credit.toFixed(2) : ''}</td>
-        <td class="px-3 py-2 text-xs text-slate-500">${esc(line.memo || "")}</td>
+        <td class="px-3 py-2.5 text-xs font-medium text-slate-800">${esc(line.account_name || "Unnamed Account")}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-xs ${line.debit > 0 ? 'font-semibold text-green-700' : ''}">${line.debit > 0 ? line.debit.toFixed(2) : ''}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-xs ${line.credit > 0 ? 'font-semibold text-red-700' : ''}">${line.credit > 0 ? line.credit.toFixed(2) : ''}</td>
+        <td class="px-3 py-2.5 text-xs text-slate-500">${esc(line.memo || "")}</td>
       </tr>
     `).join("");
   }
@@ -136920,7 +136918,7 @@ function renderReturnJournalPreview(preview) {
     updateReturnEstimates();
   }
 
-  showReturnMessage("✓ Reversal journal ready. Review before posting return.", false);
+  showReturnMessage("✅ Reversal journal ready! Review before posting return.", false);
 }
 
 async function submitProjectReturn() {
