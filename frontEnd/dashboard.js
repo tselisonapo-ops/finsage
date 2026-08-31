@@ -136507,33 +136507,7 @@ async function openProjectIssueModal(projectId) {
 }
 
 
-async function addProjectIssueLine(line = {}) {
-  const tbody = document.getElementById("projectIssueLines");
-  if (!tbody) return;
 
-  const tr = document.createElement("tr");
-  tr.className = "border-b";
-
-  tr.innerHTML = `
-    <td class="px-2 py-2">
-      <select data-pi-item-id class="w-full border rounded px-2 py-1">
-        ${await buildInventoryItemOptions(line.item_id || "")}
-      </select>
-    </td>
-    <td class="px-2 py-2">
-      <input data-pi-qty type="number" step="0.0001" class="w-full border rounded px-2 py-1 text-right" value="${esc(line.qty || "")}">
-    </td>
-    <td class="px-2 py-2">
-      <input data-pi-memo class="w-full border rounded px-2 py-1" value="${esc(line.memo || "")}" placeholder="Memo">
-    </td>
-    <td class="px-2 py-2 text-right">
-      <button type="button" class="text-rose-600 underline" data-pi-remove>Remove</button>
-    </td>
-  `;
-
-  tr.querySelector("[data-pi-remove]")?.addEventListener("click", () => tr.remove());
-  tbody.appendChild(tr);
-}
 
 async function submitProjectIssue() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
