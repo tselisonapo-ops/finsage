@@ -134344,7 +134344,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             # Resolve inventory credit account
             inv_raw = (item.get("inventory_account") or "").strip()
             if not inv_raw:
-                inv_raw = (self.find_default_inventory_account_code(company_id) or "").strip()
+                inv_raw = (self.find_default_inventory_account_code(company_id, cur=cur) or "").strip()
             
             inv_row = self.get_account_row_for_posting(company_id, inv_raw)
             if not inv_row:
@@ -134597,7 +134597,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             # Resolve inventory account
             inv_raw = (item.get("inventory_account") or "").strip()
             if not inv_raw:
-                inv_raw = (self.find_default_inventory_account_code(company_id) or "").strip()
+                inv_raw = (self.find_default_inventory_account_code(company_id, cur=cur) or "").strip()
             
             inv_row = self.get_account_row_for_posting(company_id, inv_raw)
             if not inv_row:
@@ -134875,7 +134875,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     else inv_row[1]
                 ) or inv_raw
                 inventory_account = str(inventory_account).strip()
-                
+
                 valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
                 if valuation_method not in ("AVG", "FIFO"):
                     valuation_method = "AVG"
