@@ -1940,16 +1940,17 @@ def inventory_items_lite_route(cid: int):
 
     rows = db_service.fetch_all(
         f"""
-        SELECT
+        SELECT 
             id,
-            sku,
-            name,
-            inventory_account,
+            sku, 
+            name, 
+            inventory_account, 
             valuation_method,
-            on_hand_qty
-        FROM {db_service.company_schema(company_id)}.inventory_items
-        WHERE company_id = %s
-        AND is_active = TRUE
+            unit,           -- ✅ Valid column
+            category,       -- ✅ Valid column  
+            is_active       -- ✅ Valid column
+        FROM inventory_items
+        WHERE company_id = %s AND is_active = TRUE
         ORDER BY name ASC
         """,
         (company_id,),

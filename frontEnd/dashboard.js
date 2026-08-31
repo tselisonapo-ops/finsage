@@ -102500,7 +102500,7 @@ async function openInvoiceIntoForm(invoiceId, { mode = "view" } = {}) {
   $("invDate") && ($("invDate").value = toIsoDateOnly(inv.invoice_date));
   $("invDueDate") && ($("invDueDate").value = toIsoDateOnly(inv.due_date));
   $("invTerms") && ($("invTerms").value = inv.terms || "Due on receipt");
-  $("invCurrency") && ($("invCurrency").value = inv.currency || "USD");
+  $("invCurrency") && ($("invCurrency").value = inv.currency || window.resolveCurrency?.() || "USD");
 
   $("invDefaultVat") && ($("invDefaultVat").value = inv.default_vat_code || "STANDARD");
 
@@ -102913,7 +102913,7 @@ async function loadInvoiceIntoForm(invoiceId) {
   const dueISO = toISODateInput(inv.due_date);
   $("invDueDate") && ($("invDueDate").value = dueISO);
 
-  $("invCurrency") && ($("invCurrency").value = inv.currency || "USD");
+  $("invCurrency") && ($("invCurrency").value = inv.currency || window.resolveCurrency?.() || "USD");
   $("invTerms") && ($("invTerms").value = inv.terms || $("invTerms").value || "Due on receipt");
 
   const headerRevSel =
@@ -109717,7 +109717,7 @@ function bindAR() {
         if ($("invNumber")) $("invNumber").value = "";
         if ($("invDate")) $("invDate").value = new Date().toISOString().slice(0, 10);
         if ($("invDueDate")) $("invDueDate").value = "";
-        if ($("invCurrency")) $("invCurrency").value = "USD";
+        if ($("invCurrency")) $("invCurrency").value = window.resolveCurrency?.() || "USD";
         if ($("invMemo")) $("invMemo").value = "";
         if ($("invRevenueContractId")) $("invRevenueContractId").value = "";
 

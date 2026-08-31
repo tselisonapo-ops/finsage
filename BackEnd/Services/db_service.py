@@ -58987,6 +58987,15 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS source_performance_obligation_id BIGINT NULL,
         ADD COLUMN IF NOT EXISTS source_billing_id BIGINT NULL;
 
+        ALTER TABLE {schema}.accrual_deferral_items
+        ADD COLUMN IF NOT EXISTS source_module TEXT NULL,
+        ADD COLUMN IF NOT EXISTS source_table TEXT NULL,
+        ADD COLUMN IF NOT EXISTS source_id BIGINT NULL,
+        ADD COLUMN IF NOT EXISTS source_reference TEXT NULL,
+        ADD COLUMN IF NOT EXISTS is_system_generated BOOLEAN DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS is_mirror_item BOOLEAN DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ NULL;
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -59072,7 +59081,11 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_items_approval_idx
         ON {schema}.accrual_deferral_items(company_id, approval_status, created_at DESC);
-        -- ==================================================
+        
+        CREATE INDEX IF NOT EXISTS {schema}_ad_source_module_idx
+        ON {schema}.accrual_deferral_items(company_id, source_module, source_id)
+        WHERE source_module IS NOT NULL;
+
         -- ACCRUALS & DEFERRALS: SCHEDULE LINES
         -- One line per month/period
         -- ==================================================
