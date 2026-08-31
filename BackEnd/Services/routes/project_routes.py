@@ -1932,25 +1932,36 @@ def project_profitability_route(cid: int):
 @projects_bp.route("/api/companies/<int:cid>/inventory/items-lite", methods=["GET"])
 @require_auth
 def inventory_items_lite_route(cid: int):
+    """
+    Lightweight inventory items endpoint for project material issue dropdown.
+    Queries company_{cid}.inventory_items table.
+    """
     company_id = int(cid)
 
     user, err = _company_auth_or_403(company_id)
     if err:
         return err
 
+    schema = db_service.company_schema(company_id)  # Returns "company_36"
+    
+    # Query inventory_items with explicit schema qualification
     rows = db_service.fetch_all(
         f"""
-        SELECT 
+        SELECT
             id,
-            sku, 
-            name, 
-            inventory_account, 
-            valuation_method,
-            unit,           -- ✅ Valid column
-            category,       -- ✅ Valid column  
-            is_active       -- ✅ Valid column
-        FROM inventory_items
-        WHERE company_id = %s AND is_active = TRUE
+            sku,
+            name,
+            unit,
+            category,
+            sales_price,
+            purchase_cost,
+            barcode,
+            is_active,
+            track_stock,
+            valuation_method
+        FROM {schema}.inventory_items
+        WHERE company_id = %s
+        AND is_active = TRUE
         ORDER BY name ASC
         """,
         (company_id,),
