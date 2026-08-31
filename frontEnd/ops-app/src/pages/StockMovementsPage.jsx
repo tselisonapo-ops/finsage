@@ -5,7 +5,7 @@
 // running balance, filtering, and detail views
 
 import React, { useState, useEffect, useCallback } from 'react';
-import request from '../../utils/request';
+import { opsApi } from '../api/api';
 import './StockMovementsPage.css';
 
 const StockMovementsPage = ({ companyId }) => {
@@ -28,16 +28,15 @@ const StockMovementsPage = ({ companyId }) => {
   // Fetch items for dropdown (on-hand items)
   const fetchItems = useCallback(async () => {
     try {
-      const response = await request(`/api/companies/${companyId}/ops/inventory/on-hand`, {
-        method: 'GET',
-        params: { include_zero_qty: false },
+      const data = await opsApi.inventoryBalances(companyId, {
+        include_zero_qty: false,
       });
-      
-      if (response.data) {
-        setItems(response.data);
+
+      if (data) {
+        setItems(data);
       }
     } catch (err) {
-      console.error('Failed to load items:', err);
+      console.error("Failed to load items:", err);
     }
   }, [companyId]);
 
@@ -45,38 +44,31 @@ const StockMovementsPage = ({ companyId }) => {
   const fetchMovements = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       let data;
-      
+
       if (filters.item_id) {
-        // Get specific item movements with running balance
-        const response = await request(
-          `/api/companies/${companyId}/ops/inventory/items/${filters.item_id}/movements`,
-          { method: 'GET', params: filters }
-        );
-        data = response.data;
+        // Get transactions for the selected item
+        data = await opsApi.inventoryTransactions(companyId, filters);
       } else {
-        // Get all transactions list
-        const response = await request(
-          `/api/companies/${companyId}/ops/inventory/transactions`,
-          { method: 'GET', params: filters }
-        );
-        data = response.data;
+        // Get all inventory transactions
+        data = await opsApi.inventoryTransactions(companyId, filters);
       }
-      
+
       setMovementsData(data);
-      
+
       // If item selected, also get item detail
       if (filters.item_id && !selectedItem) {
-        const itemResponse = await request(
-          `/api/companies/${companyId}/ops/inventory/items/${filters.item_id}`,
-          { method: 'GET' }
+        const itemData = await opsApi.inventoryItem(
+          companyId,
+          filters.item_id
         );
-        setSelectedItem(itemResponse.data);
+
+        setSelectedItem(itemData);
       }
     } catch (err) {
-      setError(err.message || 'Failed to load stock movements');
+      setError(err.message || "Failed to load stock movements");
     } finally {
       setLoading(false);
     }

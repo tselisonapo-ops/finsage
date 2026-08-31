@@ -1,11 +1,6 @@
-// ============================================================
-// FinSage Nexus - Phase 6: Inventory Dashboard Page
-// ============================================================
-// Main dashboard showing inventory summary, valuation,
-// reorder alerts, recent activity, warehouse breakdown
 
 import React, { useState, useEffect, useCallback } from 'react';
-import request from '../../utils/request';
+import { opsApi } from '../../api/api';
 import './InventoryDashboardPage.css';
 
 const InventoryDashboardPage = ({ companyId }) => {
@@ -19,21 +14,19 @@ const InventoryDashboardPage = ({ companyId }) => {
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      const params = {};
-      if (selectedWarehouse) params.warehouse_id = selectedWarehouse;
-      
-      const response = await request(`/api/companies/${companyId}/ops/inventory/dashboard`, {
-        method: 'GET',
-        params,
-      });
-      
-      if (response.data) {
-        setDashboardData(response.data);
+      const data = await opsApi.inventoryDashboard(
+        companyId,
+        selectedWarehouse || null
+      );
+
+      if (data) {
+        setDashboardData(data);
+
         // Extract warehouses from breakdown for filter dropdown
-        if (response.data.warehouse_breakdown) {
-          setWarehouses(response.data.warehouse_breakdown);
+        if (data.warehouse_breakdown) {
+          setWarehouses(data.warehouse_breakdown);
         }
       }
     } catch (err) {
@@ -42,6 +35,12 @@ const InventoryDashboardPage = ({ companyId }) => {
       setLoading(false);
     }
   }, [companyId, selectedWarehouse]);
+
+  useEffect(() => {
+    if (companyId) {
+      fetchDashboard();
+    }
+  }, [companyId, fetchDashboard]);
 
   useEffect(() => {
     fetchDashboard();

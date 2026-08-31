@@ -1186,6 +1186,10 @@ export const opsApi = {
   varianceReasons: (companyId) =>
     request(`${base(companyId)}/stocktake/variance-reasons`),
 
+  stocktakeVariances: (companyId, sessionId) =>
+    request(
+      `${base(companyId)}/stocktakes/${encodeURIComponent(sessionId)}/variances`
+    ),
   // ============================================================
   // TRANSFER REQUESTS
   // ============================================================

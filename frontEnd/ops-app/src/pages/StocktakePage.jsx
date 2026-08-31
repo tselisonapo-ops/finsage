@@ -5,7 +5,7 @@
 // review variances, complete and post adjustments
 
 import React, { useState, useEffect, useCallback } from 'react';
-import request from '../../utils/request';
+import { opsApi } from "../api/api";
 import './StocktakePage.css';
 
 const StocktakePage = ({ companyId }) => {
@@ -42,44 +42,41 @@ const StocktakePage = ({ companyId }) => {
   const fetchSessions = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      const response = await request(`/api/companies/${companyId}/ops/stocktakes`, {
-        method: 'GET',
-      });
-      
-      if (response.data) {
-        setSessions(response.data);
+      const data = await opsApi.stocktakeSessions(companyId);
+
+      if (data) {
+        setSessions(data);
       }
     } catch (err) {
-      setError(err.message || 'Failed to load stocktake sessions');
+      setError(err.message || "Failed to load stocktake sessions");
     } finally {
       setLoading(false);
     }
   }, [companyId]);
 
-  // Fetch single session detail
+
+    // Fetch single session detail
   const fetchSessionDetail = useCallback(async (sessionId) => {
     setLoading(true);
-    
+    setError(null);
+
     try {
-      const response = await request(
-        `/api/companies/${companyId}/ops/stocktakes/${sessionId}`,
-        { method: 'GET' }
-      );
-      
-      if (response.data) {
-        setActiveSession(response.data);
-        
-        // Also fetch variances
-        const varResponse = await request(
-          `/api/companies/${companyId}/ops/stocktakes/${sessionId}/variances`,
-          { method: 'GET' }
-        );
-        setVariances(varResponse.data || []);
+      const data = await opsApi.stocktakeSession(companyId, sessionId);
+
+      if (data) {
+        setActiveSession(data);
       }
+
+      const variances = await opsApi.stocktakeVariances(
+        companyId,
+        sessionId
+      );
+
+      setVariances(variances || []);
     } catch (err) {
-      setError(err.message || 'Failed to load session details');
+      setError(err.message || "Failed to load session details");
     } finally {
       setLoading(false);
     }

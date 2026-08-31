@@ -133602,6 +133602,39 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             prefer_project_wip=True,
         )
 
+    def find_account_by_role(self, company_id: int, role: str, cur=None) -> dict | None:
+        """
+        Find an account by its role (e.g., 'project_wip', 'inventory', 'inventory_raw_materials')
+        
+        Args:
+            company_id: Company identifier
+            role: The role string (from _coa_role_from_text)
+            cur: Optional cursor for transactional use
+        
+        Returns:
+            Dict with account details or None if not found
+        """
+        schema = f"company_{company_id}"
+        role_clean = (role or "").strip().lower()
+        
+        if not role_clean:
+            return None
+        
+        sql = f"""
+        SELECT id, code, name, section, category, description, 
+            standard, template_code, role, posting
+        FROM {schema}.coa
+        WHERE LOWER(TRIM(COALESCE(role, ''))) = %s
+        AND posting = TRUE
+        ORDER BY 
+            CASE WHEN code LIKE 'BS_%' THEN 0 ELSE 1 END,
+            id ASC
+        LIMIT 1;
+        """
+        
+        result = self.fetch_one(sql, (role_clean,), cur=cur)
+        return result
+
     def issue_inventory_to_project(
         self,
         company_id: int,
@@ -133696,27 +133729,134 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 raise ValueError("PROJECT_INVENTORY_DISABLED")
 
             if accounting_mode in {"contract", "wip", "capital"}:
+                # Try role-based resolution first (handles name or code stored in wip_account_code)
                 project_debit_raw = (
                     project.get("wip_account_code")
                     or self.find_project_wip_account_code(company_id, cur=cur)
                     or ""
                 ).strip()
                 missing_error = "PROJECT_WIP_ACCOUNT_NOT_CONFIGURED"
+                
+                # Role-based lookup with auto-repair via ensure_coa_role_for_posting
+                debit_row = None
+                if project_debit_raw:
+                    # First try direct lookup (in case it's a valid code)
+                    debit_row = self.get_account_row_for_posting(company_id, project_debit_raw)
+                
+                if not debit_row:
+                    # Fall back to role-based resolution with auto-repair
+                    # Tries: 'project_wip' → 'wip' → 'work_in_progress' → 'inventory_wip'
+                    debit_row = self.resolve_coa_account_by_roles_for_posting(
+                        company_id,
+                        [
+                            "project_wip",       # Primary: project-specific WIP
+                            "wip",               # Generic WIP
+                            "work_in_progress",  # Alternative naming
+                            "construction_wip",  # Construction/contract context
+                        ],
+                        cur=cur,
+                        required=False,
+                    )
+                    
+                    # If still not found, try matching by NAME (for legacy data like "Work in Progress (WIP)")
+                    if not debit_row and project_debit_raw:
+                        debit_row = self.fetch_one(
+                            f"""
+                            SELECT id, code, name, section, category, description, 
+                                standard, template_code, role, posting
+                            FROM {schema}.coa
+                            WHERE company_id = %s
+                            AND posting = TRUE
+                            AND (
+                                LOWER(TRIM(code)) = %s
+                                OR LOWER(TRIM(name)) = %s
+                                OR LOWER(TRIM(template_code)) = %s
+                            )
+                            ORDER BY 
+                                CASE WHEN LOWER(TRIM(code)) = %s THEN 0 ELSE 1 END,
+                                CASE WHEN LOWER(TRIM(name)) = %s THEN 0 ELSE 1 END,
+                                id ASC
+                            LIMIT 1;
+                            """,
+                            (
+                                company_id,
+                                project_debit_raw.lower(),
+                                project_debit_raw.lower(),
+                                project_debit_raw.lower(),
+                                project_debit_raw.lower(),
+                                project_debit_raw.lower(),
+                            ),
+                            cur=cur,
+                        )
+                        
+                        # Auto-repair: if found by name, assign the correct role
+                        if debit_row:
+                            detected_role = ac._coa_role_from_text(
+                                debit_row.get("name", ""),
+                                debit_row.get("section", ""),
+                                debit_row.get("category", ""),
+                                debit_row.get("subcategory", ""),
+                                debit_row.get("standard", ""),
+                                debit_row.get("description", ""),
+                            )
+                            if detected_role and str(detected_role or "").strip().lower() in ("project_wip", "wip", "work_in_progress"):
+                                cur.execute(
+                                    f"""
+                                    UPDATE {schema}.coa
+                                    SET role = %s
+                                    WHERE id = %s AND company_id = %s
+                                    """,
+                                    (str(detected_role).strip().lower(), int(debit_row["id"]), company_id),
+                                )
+                                try:
+                                    current_app.logger.info(
+                                        "[COA-ROLE-AUTO-REPAIR] company=%s code=%s name=%s assigned_role=%s (resolved from project.wip_account_code)",
+                                        company_id,
+                                        debit_row.get("code"),
+                                        debit_row.get("name"),
+                                        detected_role,
+                                    )
+                                except Exception:
+                                    print(
+                                        "[COA-ROLE-AUTO-REPAIR]",
+                                        {
+                                            "company_id": company_id,
+                                            "code": debit_row.get("code"),
+                                            "name": debit_row.get("name"),
+                                            "assigned_role": detected_role,
+                                        },
+                                        flush=True,
+                                    )
+
             elif accounting_mode in {"expense", "none"}:
                 project_debit_raw = (project.get("cost_account_code") or "").strip()
                 missing_error = "PROJECT_COST_ACCOUNT_NOT_CONFIGURED"
+                
+                # Same role-based approach for expense accounts
+                debit_row = None
+                if project_debit_raw:
+                    debit_row = self.get_account_row_for_posting(company_id, project_debit_raw)
+                
+                if not debit_row:
+                    debit_row = self.resolve_coa_account_by_roles_for_posting(
+                        company_id,
+                        [
+                            "project_expense",     # Primary: project expense
+                            "cost_of_sales",       # COS
+                            "direct_expense",      # Direct expense
+                            "expense",             # Generic expense
+                        ],
+                        cur=cur,
+                        required=False,
+                    )
             else:
                 raise ValueError(f"INVALID_PROJECT_ACCOUNTING_MODE|{accounting_mode}")
 
-            if not project_debit_raw:
-                raise ValueError(missing_error)
-
-            debit_row = self.get_account_row_for_posting(company_id, project_debit_raw)
             if not debit_row:
-                raise ValueError(f"PROJECT_DEBIT_ACCOUNT_NOT_FOUND|{project_debit_raw}")
+                raise ValueError(f"{missing_error}|tried={project_debit_raw or 'empty'}")
 
-            project_debit_account = (debit_row[1] or project_debit_raw).strip()
-            # 3) Create inventory_tx header
+            project_debit_account = str(debit_row.get("code") or project_debit_raw or "").strip()
+
             cur.execute(
                 f"""
                 INSERT INTO {schema}.inventory_tx (
