@@ -4818,7 +4818,7 @@ class DatabaseService:
         INSERT INTO public.tax_authorities (code, name, country_code, currency_code)
         VALUES
         ('RSL',  'Revenue Services Lesotho', 'LS', 'LSL'),
-        ('SARS', 'South African Revenue Service', 'ZA', 'ZAR'),
+        ('SARS', 'South African Revenue Service', 'ZA', 'USD'),
         ('BURS', 'Botswana Unified Revenue Service', 'BW', 'BWP')
         ON CONFLICT (code) DO UPDATE
         SET name = EXCLUDED.name,
@@ -6656,7 +6656,7 @@ class DatabaseService:
                 "ZA",
                 "South African Revenue Service",
                 "Value-Added Tax",
-                "ZAR",
+                "USD",
             ),
             (
                 "RSL",
@@ -24249,7 +24249,7 @@ class DatabaseService:
 
             default_role VARCHAR(20) NOT NULL DEFAULT 'lessee',
 
-            default_wizard_mode VARCHAR(20) NOT NULL DEFAULT 'existing',
+            default_wiUSDd_mode VARCHAR(20) NOT NULL DEFAULT 'existing',
             default_go_live_date DATE,
 
             default_currency VARCHAR(10),
@@ -24304,7 +24304,7 @@ class DatabaseService:
                 CHECK(default_role IN('lessee','lessor')),
 
             CONSTRAINT ck_migration_lease_settings_mode
-                CHECK(default_wizard_mode IN('inception','existing')),
+                CHECK(default_wiUSDd_mode IN('inception','existing')),
 
             CONSTRAINT ck_migration_lease_settings_frequency
                 CHECK(default_payment_frequency IN('monthly','quarterly','annually')),
@@ -28512,8 +28512,8 @@ class DatabaseService:
             ("lessor_reference","Lessor","text",False,False,
             ["lessor","lessor name","landlord","supplier"],100),
 
-            ("wizard_mode","Lease Setup Mode","text",False,False,
-            ["wizard mode","migration mode","lease mode"],110),
+            ("wiUSDd_mode","Lease Setup Mode","text",False,False,
+            ["wiUSDd mode","migration mode","lease mode"],110),
 
             ("go_live_date","Go-live Date","date",False,False,
             ["go live date","go-live date","transition date","migration date"],120),
@@ -34072,7 +34072,7 @@ class DatabaseService:
 
             value NUMERIC(15,2) NOT NULL DEFAULT 0,
             currency TEXT NOT NULL DEFAULT 'USD'
-                CHECK(currency IN ('USD','EUR','GBP','ZAR','KES','NGN','GHS','other')),
+                CHECK(currency IN ('USD','EUR','GBP','USD','KES','NGN','GHS','other')),
 
             status TEXT NOT NULL DEFAULT 'draft'
                 CHECK(status IN ('draft','active','expired','cancelled')),
@@ -34118,7 +34118,7 @@ class DatabaseService:
 
             value NUMERIC(15,2) NOT NULL DEFAULT 0,
             currency TEXT NOT NULL DEFAULT 'USD'
-                CHECK(currency IN ('USD','EUR','GBP','ZAR','KES','NGN','GHS','other')),
+                CHECK(currency IN ('USD','EUR','GBP','USD','KES','NGN','GHS','other')),
 
             payment_terms TEXT NOT NULL DEFAULT 'net_30'
                 CHECK(payment_terms IN ('net_15','net_30','net_45','net_60','net_90','cod','milestone','advance')),
@@ -35502,7 +35502,7 @@ class DatabaseService:
             min_order_qty       DECIMAL(15,3) DEFAULT 1, 
             order_multiples     DECIMAL(15,3) DEFAULT 1, 
             unit_cost           DECIMAL(18,6), 
-            currency            VARCHAR(3) NOT NULL DEFAULT 'ZAR', 
+            currency            VARCHAR(3) NOT NULL DEFAULT 'USD', 
             effective_date      DATE, 
             expiry_date         DATE, 
             is_preferred        BOOLEAN NOT NULL DEFAULT FALSE, 
@@ -64786,7 +64786,7 @@ class DatabaseService:
     def get_company_currency(
         self,
         company_id: int,
-        default: str = "ZAR",
+        default: str = "USD",
         cur=None,
     ) -> str:
         sql = """
@@ -66136,11 +66136,11 @@ class DatabaseService:
         # Currency priority:
         # 1. Explicit journal currency
         # 2. Company's configured currency
-        # 3. ZAR fallback
+        # 3. USD fallback
         currency = str(
             entry.get("currency")
             or self.get_company_currency(company_id)
-            or "ZAR"
+            or "USD"
         ).strip().upper()
 
         sql = f"""
@@ -74021,7 +74021,7 @@ class DatabaseService:
                 COALESCE(l.initial_direct_costs,0) AS initial_direct_costs,
                 COALESCE(l.guaranteed_residual_value,0) AS guaranteed_residual_value,
                 COALESCE(l.unguaranteed_residual_value,0) AS unguaranteed_residual_value,
-                COALESCE(l.currency,'ZAR') AS currency,
+                COALESCE(l.currency,'USD') AS currency,
                 COALESCE(l.status,'active') AS status
             FROM {schema}.lessor_leases l
             WHERE l.company_id=%s
@@ -133945,17 +133945,28 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                 inv_raw = (item.get("inventory_account") or "").strip()
 
-                if not inv_raw:
-                    inv_raw = (self.find_default_inventory_account_code(company_id, cur=cur) or "").strip()
+                inv_row = None
 
-                if not inv_raw:
-                    raise ValueError(f"ITEM_INVENTORY_ACCOUNT_MISSING|item_id={item_id}")
+                if inv_raw:
+                    inv_row = self.get_account_row_for_posting(company_id, inv_raw)
 
-                inv_row = self.get_account_row_for_posting(company_id, inv_raw)
                 if not inv_row:
-                    raise ValueError(f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}")
+                    inv_raw = (self.find_default_inventory_account_code(company_id, cur=cur) or "").strip()
+                    if inv_raw:
+                        inv_row = self.get_account_row_for_posting(company_id, inv_raw)
 
-                inventory_account = (inv_row[1] or inv_raw).strip()
+                if not inv_row:
+                    raise ValueError(
+                        f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}"
+                    )
+
+                inventory_account = str(
+                    inv_row.get("code") or inv_raw
+                ).strip()
+
+                inventory_account_name = str(
+                    inv_row.get("name") or inventory_account
+                ).strip()
 
                 valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
                 if valuation_method not in ("AVG", "FIFO"):
@@ -134839,17 +134850,32 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 track_stock = bool(item.get("track_stock", True))
                 inv_raw = (item.get("inventory_account") or "").strip()
 
-                if not inv_raw:
+                inv_row = None
+
+                if inv_raw:
+                    inv_row = self.get_account_row_for_posting(
+                        company_id,
+                        inv_raw,
+                    )
+
+                if not inv_row:
                     inv_raw = (self.find_default_inventory_account_code(company_id, cur=cur) or "").strip()
+                    if inv_raw:
+                        inv_row = self.get_account_row_for_posting(
+                            company_id,
+                            inv_raw,
+                        )
 
-                if not inv_raw:
-                    raise ValueError(f"ITEM_INVENTORY_ACCOUNT_MISSING|item_id={item_id}")
-
-                inv_row = self.get_account_row_for_posting(company_id, inv_raw)
                 if not inv_row:
                     raise ValueError(f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}")
 
-                inventory_account = (inv_row[1] or inv_raw).strip()
+                inventory_account = (
+                    inv_row.get("code")
+                    if isinstance(inv_row, dict)
+                    else inv_row[1]
+                ) or inv_raw
+                inventory_account = str(inventory_account).strip()
+                
                 valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
                 if valuation_method not in ("AVG", "FIFO"):
                     valuation_method = "AVG"
@@ -175957,7 +175983,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "dataset_id":dataset_id,
 
             "default_role":"lessee",
-            "default_wizard_mode":"existing",
+            "default_wiUSDd_mode":"existing",
             "default_go_live_date":project.get("cutover_date"),
             "default_currency":project.get("default_currency"),
 
@@ -176013,7 +176039,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         role=str(data.get("default_role") or current["default_role"]).strip().lower()
-        mode=str(data.get("default_wizard_mode") or current["default_wizard_mode"]).strip().lower()
+        mode=str(data.get("default_wiUSDd_mode") or current["default_wiUSDd_mode"]).strip().lower()
         pay_freq=str(data.get("default_payment_frequency") or current["default_payment_frequency"]).strip().lower()
         pay_timing=str(data.get("default_payment_timing") or current["default_payment_timing"]).strip().lower()
 
@@ -176024,7 +176050,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if role not in {"lessee","lessor"}:
             raise ValueError("Lease role must be lessee or lessor.")
         if mode not in {"inception","existing"}:
-            raise ValueError("Lease wizard mode must be inception or existing.")
+            raise ValueError("Lease wiUSDd mode must be inception or existing.")
         if pay_freq not in {"monthly","quarterly","annually"}:
             raise ValueError("Unsupported lessee payment frequency.")
         if pay_timing not in {"arrears","advance"}:
@@ -176062,7 +176088,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         self.execute_sql(f"""
             INSERT INTO {schema}.migration_lease_settings(
                 company_id,project_id,dataset_id,
-                default_role,default_wizard_mode,default_go_live_date,
+                default_role,default_wiUSDd_mode,default_go_live_date,
                 default_currency,
                 default_payment_frequency,default_payment_timing,
                 default_billing_basis,default_billing_frequency,default_billing_timing,
@@ -176104,7 +176130,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ON CONFLICT(company_id,project_id,dataset_id)
             DO UPDATE SET
                 default_role=EXCLUDED.default_role,
-                default_wizard_mode=EXCLUDED.default_wizard_mode,
+                default_wiUSDd_mode=EXCLUDED.default_wiUSDd_mode,
                 default_go_live_date=EXCLUDED.default_go_live_date,
                 default_currency=EXCLUDED.default_currency,
                 default_payment_frequency=EXCLUDED.default_payment_frequency,
@@ -176594,8 +176620,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         mode=str(
-            normalized.get("wizard_mode")
-            or settings.get("default_wizard_mode")
+            normalized.get("wiUSDd_mode")
+            or settings.get("default_wiUSDd_mode")
             or "existing"
         ).strip().lower()
 
@@ -176701,7 +176727,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "payload":{
                     **normalized,
                     "lessor_id":lessor_id,
-                    "wizard_mode":mode,
+                    "wiUSDd_mode":mode,
                 },
             }
 
@@ -176730,7 +176756,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 **normalized,
                 "role":"lessee",
                 "lessor_id":lessor_id,
-                "wizard_mode":mode,
+                "wiUSDd_mode":mode,
                 "go_live_date":str(go_live) if go_live else None,
             },
             "opening_lease_liability":preview.get("opening_lease_liability"),
@@ -224028,7 +224054,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 - contact_name, contact_email, contact_phone
                 - warehouse_type: 'main', 'branch', 'transit', 'returns', 'quarantine'
                 - is_temperature_controlled (bool)
-                - is hazardous_materials (bool)
+                - is haUSDdous_materials (bool)
                 - notes (str)
         
         Returns:
@@ -224078,7 +224104,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     contact_phone,
                     warehouse_type,
                     is_temperature_controlled,
-                    is_hazardous_materials,
+                    is_haUSDdous_materials,
                     is_active,
                     notes,
                     created_by_user_id,
@@ -224108,7 +224134,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     (payload.get("contact_phone") or "").strip() or None,
                     (payload.get("warehouse_type") or "main").strip().lower(),
                     bool(payload.get("is_temperature_controlled")),
-                    bool(payload.get("is_hazardous_materials")),
+                    bool(payload.get("is_haUSDdous_materials")),
                     (payload.get("notes") or "").strip() or None,
                     actor_user_id,
                     actor_user_id,
@@ -224168,7 +224194,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "contact_phone": "contact_phone",
             "warehouse_type": "warehouse_type",
             "is_temperature_controlled": "is_temperature_controlled",
-            "is_hazardous_materials": "is_hazardous_materials",
+            "is_haUSDdous_materials": "is_haUSDdous_materials",
             "is_active": "is_active",
             "notes": "notes",
         }
@@ -224189,7 +224215,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 if col == "warehouse_type" and val:
                     val = val.lower()
             
-            if col in {"is_temperature_controlled", "is_hazardous_materials", "is_active"}:
+            if col in {"is_temperature_controlled", "is_haUSDdous_materials", "is_active"}:
                 if isinstance(val, str):
                     val = val.strip().lower() in {"true", "1", "yes"}
                 val = bool(val)
