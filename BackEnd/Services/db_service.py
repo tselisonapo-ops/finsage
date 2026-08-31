@@ -134208,6 +134208,19 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         """
         schema = self.company_schema(company_id)
         
+        if cur is None:
+            with self._conn_cursor() as (conn, cursor):
+                return self.preview_journal_for_project_issue(
+                    company_id,
+                    project_id=project_id,
+                    tx_date=tx_date,
+                    lines=lines,
+                    task_id=task_id,
+                    cost_code_id=cost_code_id,
+                    usage_type=usage_type,
+                    cur=cursor,
+                )
+            
         if not lines or not isinstance(lines, list):
             raise ValueError("lines required")
         
@@ -134249,6 +134262,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             WHERE company_id=%s AND id=%s
             """,
             (int(company_id), int(project_id)),
+            cur=cur,
         )
         
         if not project:
@@ -134330,13 +134344,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             # Load item
             item = self.fetch_one(
                 f"""
-                SELECT id, sku, name, unit, category, purchase_cost, 
+                SELECT id, sku, name, unit, category, purchase_cost,
                        valuation_method, track_stock, inventory_account
                 FROM {schema}.inventory_items
                 WHERE company_id=%s AND id=%s
                 LIMIT 1
                 """,
                 (int(company_id), int(item_id)),
+                cur=cur,
             )
 
             if not item:
