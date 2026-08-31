@@ -134391,7 +134391,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     company_id, item_id, qty
                 ))
             else:
-                unit_cost = money(self._inventory_avg_cost_cur(company_id, item_id))
+                unit_cost = money(self._inventory_avg_cost_cur(company_id, item_id, cur))
                 if unit_cost <= 0:
                     unit_cost = money(item.get("purchase_cost") or 0)
                 line_cost = money(qty * unit_cost)
@@ -134640,7 +134640,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if valuation_method == "FIFO":
                 line_cost = money(self._estimate_fifo_cost_preview(company_id, item_id, qty))
             else:
-                unit_cost = money(self._inventory_avg_cost_cur(company_id, item_id))
+                unit_cost = money(self._inventory_avg_cost_cur(company_id, item_id, cur))
                 if unit_cost <= 0:
                     unit_cost = money(item.get("purchase_cost") or 0)
                 line_cost = money(qty * unit_cost)
