@@ -134192,6 +134192,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         task_id: int | None = None,
         cost_code_id: int | None = None,
         usage_type: str = "consumed",
+        cur=None,
     ) -> dict:
         """
         Preview journal entries for a material issue to project WITHOUT posting.
@@ -134495,6 +134496,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         lines: list[dict],
         task_id: int | None = None,
         cost_code_id: int | None = None,
+        cur=None,
     ) -> dict:
         """
         Preview journal entries for returning materials from project WITHOUT posting.
