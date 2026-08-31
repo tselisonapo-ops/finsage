@@ -134288,6 +134288,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     company_id,
                     ["project_wip", "wip", "work_in_progress", "construction_wip"],
                     required=False,
+                    cur=cur,
                 )
                 
             # Fallback: search by name
@@ -134316,6 +134317,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     company_id,
                     ["project_expense", "cost_of_sales", "direct_expense", "expense"],
                     required=False,
+                    cur=cur,
                 )
         else:
             raise ValueError(f"INVALID_PROJECT_ACCOUNTING_MODE|{accounting_mode}")
@@ -134362,20 +134364,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if not inv_raw:
                 inv_raw = (self.find_default_inventory_account_code(company_id, cur=cur) or "").strip()
             
-            inv_row = self.get_account_row_for_posting(company_id, inv_raw)
+            inv_row = self.get_account_row_for_posting(company_id, inv_raw, cur=cur)
             if not inv_row:
                 # Try role-based fallback
                 inv_row = self.resolve_coa_account_by_roles_for_posting(
                     company_id,
                     ["inventory", "inventory_raw_materials", "inventory_finished_goods"],
                     required=False,
+                    cur=cur,
                 )
-            
+
             if not inv_row:
                 raise ValueError(f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}")
-            
-            inventory_account = str(inv_row.get("code") or inv_raw).strip()
-            inventory_account_name = str(inv_row.get("name") or inventory_account).strip()
+
+            inventory_account = str(inv_row[1] or inv_raw).strip()
+            inventory_account_name = str(inv_row[0] or inventory_account).strip()
 
             # Calculate cost
             valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
@@ -134573,7 +134576,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             wip_row = self.get_account_row_for_posting(company_id, wip_raw) if wip_raw else None
             if not wip_row:
                 wip_row = self.resolve_coa_account_by_roles_for_posting(
-                    company_id, ["project_wip", "wip", "work_in_progress"], required=False
+                    company_id, ["project_wip", "wip", "work_in_progress"], required=False,
+                    cur=cur,
                 )
             wip_account = str(wip_row.get("code") or wip_raw or "").strip() if wip_row else ""
             wip_name = str(wip_row.get("name") or wip_account).strip() if wip_row else wip_raw
@@ -134616,17 +134620,20 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if not inv_raw:
                 inv_raw = (self.find_default_inventory_account_code(company_id, cur=cur) or "").strip()
             
-            inv_row = self.get_account_row_for_posting(company_id, inv_raw)
+            inv_row = self.get_account_row_for_posting(company_id, inv_raw, cur=cur)
             if not inv_row:
                 inv_row = self.resolve_coa_account_by_roles_for_posting(
-                    company_id, ["inventory", "inventory_raw_materials"], required=False
+                    company_id,
+                    ["inventory", "inventory_raw_materials"],
+                    required=False,
+                    cur=cur,
                 )
-            
+
             if not inv_row:
                 raise ValueError(f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}")
-            
-            inventory_account = str(inv_row.get("code") or inv_raw).strip()
-            inventory_account_name = str(inv_row.get("name") or inventory_account).strip()
+
+            inventory_account = str(inv_row[1] or inv_raw).strip()
+            inventory_account_name = str(inv_row[0] or inventory_account).strip()
 
             # Use original issue cost or current avg cost as estimate
             valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
