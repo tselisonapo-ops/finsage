@@ -28606,10 +28606,18 @@ label:has(#projectTeamUserSearch) {
             <span class="font-medium text-xs text-slate-700">Material Lines</span>
             <button id="projectIssueAddLineBtn" class="text-xs text-[var(--fs-navy)] hover:underline font-medium">+ Add Line</button>
           </div>
-          <table class="w-full text-xs">
+          <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
+            <colgroup>
+              <col style="width: 6%">   <!-- # -->
+              <col style="width: 32%">  <!-- Item -->
+              <col style="width: 12%">  <!-- Qty -->
+              <col style="width: 15%">  <!-- Est Cost -->
+              <col style="width: 25%">  <!-- Memo -->
+              <col style="width: 10%">  <!-- Action -->
+            </colgroup>
             <thead class="bg-slate-50/50 border-b">
               <tr>
-                <th class="text-left px-3 py-2 font-medium text-slate-600">#</th>
+                <th class="text-center px-3 py-2 font-medium text-slate-600">#</th>
                 <th class="text-left px-3 py-2 font-medium text-slate-600">Item</th>
                 <th class="text-right px-3 py-2 font-medium text-slate-600">Qty</th>
                 <th class="text-right px-3 py-2 font-medium text-slate-600">Est. Cost</th>
@@ -28651,23 +28659,32 @@ label:has(#projectTeamUserSearch) {
 
           <!-- Journal Lines Table -->
           <div class="overflow-auto max-h-48">
-            <table class="w-full text-xs">
-              <thead class="bg-amber-50/50 border-b sticky top-0">
+            <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
+              <!-- Explicit column widths to ensure header/body alignment -->
+              <colgroup>
+                <col style="width: 22%;">  <!-- Account Code -->
+                <col style="width: 30%;">  <!-- Account Name -->
+                <col style="width: 18%;">  <!-- Memo -->
+                <col style="width: 15%;">  <!-- Debit -->
+                <col style="width: 15%;">  <!-- Credit -->
+                
+              </colgroup>
+              <thead class="bg-amber-50/50 border-b sticky top-0 z-10">
                 <tr>
-                  <th class="text-left px-3 py-2 font-medium text-amber-800">Account Code</th>
-                  <th class="text-left px-3 py-2 font-medium text-amber-800">Account Name</th>
-                  <th class="text-right px-3 py-2 font-medium text-amber-800">Debit</th>
-                  <th class="text-right px-3 py-2 font-medium text-amber-800">Credit</th>
-                  <th class="text-left px-3 py-2 font-medium text-amber-800">Memo</th>
+                  <th class="text-left px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Account Code</th>
+                  <th class="text-left px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Account Name</th>
+                  <th class="text-right px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Debit</th>
+                  <th class="text-right px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Credit</th>
+                  <th class="text-left px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Memo</th>
                 </tr>
               </thead>
               <tbody id="projectIssueJournalLines" class="bg-white"></tbody>
-              <tfoot class="bg-amber-100 font-bold">
+              <tfoot class="bg-amber-100 font-bold border-t-2 border-amber-300">
                 <tr>
-                  <td colspan="2" class="px-3 py-2 text-right text-amber-800">TOTALS:</td>
-                  <td id="journalPreviewTotalDr" class="px-3 py-2 text-right text-amber-800"></td>
-                  <td id="journalPreviewTotalCr" class="px-3 py-2 text-right text-amber-800"></td>
-                  <td></td>
+                  <td colspan="2" class="px-3 py-2.5 text-right text-amber-900 font-bold">TOTALS:</td>
+                  <td id="journalPreviewTotalDr" class="px-3 py-2.5 text-right font-mono text-amber-900 font-bold"></td>
+                  <td id="journalPreviewTotalCr" class="px-3 py-2.5 text-right font-mono text-amber-900 font-bold"></td>
+                  <td class="px-3 py-2.5"></td>
                 </tr>
               </tfoot>
             </table>
@@ -28791,10 +28808,18 @@ label:has(#projectTeamUserSearch) {
           <span class="font-medium text-xs text-green-800">Return Lines</span>
           <button id="projectReturnAddLineBtn" class="text-xs text-green-700 hover:underline font-medium">+ Add Return Line</button>
         </div>
-        <table class="w-full text-xs">
+        <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
+          <colgroup>
+            <col style="width: 6%">   <!-- # -->
+            <col style="width: 32%">  <!-- Item -->
+            <col style="width: 14%">  <!-- Qty -->
+            <col style="width: 14%">  <!-- Est Value -->
+            <col style="width: 24%">  <!-- Reason -->
+            <col style="width: 10%">  <!-- Action -->
+          </colgroup>
           <thead class="bg-green-50/50 border-b">
             <tr>
-              <th class="text-left px-3 py-2 font-medium text-green-800">#</th>
+              <th class="text-center px-3 py-2 font-medium text-green-800">#</th>
               <th class="text-left px-3 py-2 font-medium text-green-800">Item</th>
               <th class="text-right px-3 py-2 font-medium text-green-800">Qty to Return</th>
               <th class="text-right px-3 py-2 font-medium text-green-800">Est. Value</th>
@@ -28836,23 +28861,32 @@ label:has(#projectTeamUserSearch) {
 
         <!-- Journal Lines Table -->
         <div class="overflow-auto max-h-48">
-          <table class="w-full text-xs">
-            <thead class="bg-emerald-50/50 border-b sticky top-0">
+          <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
+            <!-- Explicit column widths to ensure header/body alignment -->
+            <colgroup>
+              <col style="width: 22%;">  <!-- Account Code -->
+              <col style="width: 30%">  <!-- Account Name -->
+              <col style="width: 18%">  <!-- Memo -->
+              <col style="width: 15%">  <!-- Debit -->
+              <col style="width: 15%">  <!-- Credit -->
+              
+            </colgroup>
+            <thead class="bg-emerald-50/50 border-b sticky top-0 z-10">
               <tr>
-                <th class="text-left px-3 py-2 font-medium text-emerald-800">Account Code</th>
-                <th class="text-left px-3 py-2 font-medium text-emerald-800">Account Name</th>
-                <th class="text-right px-3 py-2 font-medium text-emerald-800">Debit</th>
-                <th class="text-right px-3 py-2 font-medium text-emerald-800">Credit</th>
-                <th class="text-left px-3 py-2 font-medium text-emerald-800">Memo</th>
+                <th class="text-left px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Account Code</th>
+                <th class="text-left px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Account Name</th>
+                <th class="text-right px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Debit</th>
+                <th class="text-right px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Credit</th>
+                <th class="text-left px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Memo</th>
               </tr>
             </thead>
             <tbody id="projectReturnJournalLines" class="bg-white"></tbody>
-            <tfoot class="bg-emerald-100 font-bold">
+            <tfoot class="bg-emerald-100 font-bold border-t-2 border-emerald-300">
               <tr>
-                <td colspan="2" class="px-3 py-2 text-right text-emerald-800">TOTALS:</td>
-                <td id="returnJournalPreviewTotalDr" class="px-3 py-2 text-right text-emerald-800"></td>
-                <td id="returnJournalPreviewTotalCr" class="px-3 py-2 text-right text-emerald-800"></td>
-                <td></td>
+                <td colspan="2" class="px-3 py-2.5 text-right text-emerald-900 font-bold">TOTALS:</td>
+                <td id="returnJournalPreviewTotalDr" class="px-3 py-2.5 text-right font-mono text-emerald-900 font-bold"></td>
+                <td id="returnJournalPreviewTotalCr" class="px-3 py-2.5 text-right font-mono text-emerald-900 font-bold"></td>
+                <td class="px-3 py-2.5"></td>
               </tr>
             </tfoot>
           </table>

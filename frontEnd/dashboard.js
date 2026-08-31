@@ -136149,12 +136149,31 @@ function hideIssueJournalPreview() {
 
 function showIssueMessage(msg, isError = false) {
   const el = document.getElementById("projectIssueMsg");
+
   if (!el) return;
+
   el.textContent = msg;
-  el.classList.remove("hidden", "bg-red-50", "text-red-700", "bg-green-50", "text-green-700", "bg-blue-50", "text-blue-700", "bg-amber-50", "text-amber-700");
+
+  el.classList.remove(
+    "hidden",
+    "bg-red-50",
+    "text-red-700",
+    "bg-green-50",
+    "text-green-700",
+    "bg-blue-50",
+    "text-blue-700",
+    "bg-amber-50",
+    "text-amber-700"
+  );
+
   if (msg) {
     el.classList.remove("hidden");
-    el.classList.add(isError ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700");
+
+    if (isError) {
+      el.classList.add("bg-red-50", "text-red-700");
+    } else {
+      el.classList.add("bg-amber-50", "text-amber-700");
+    }
   } else {
     el.classList.add("hidden");
   }
