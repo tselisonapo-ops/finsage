@@ -152454,222 +152454,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 })
 
         return deductions,contributions
-    
-    def payroll_employee_period_facts(
-        self,
-        company_id:int,
-        payroll_run_id:int,
-        employee:dict,
-        setup:dict,
-        run:dict|None=None,
-    )->dict:
-        company_id=int(company_id)
-        payroll_run_id=int(payroll_run_id)
-        schema=self.company_schema(company_id)
-
-        if not run:
-            run=self.fetch_one(f"""
-                SELECT period_start,period_end
-                FROM {schema}.payroll_runs
-                WHERE company_id=%s AND id=%s
-                LIMIT 1;
-            """,(company_id,payroll_run_id))
-
-        if not run:
-            raise ValueError("Payroll run not found")
-
-        start=max(run["period_start"],employee["start_date"])
-        end=min(
-            run["period_end"],
-            employee.get("termination_date") or run["period_end"],
-        )
-
-        zero=Decimal("0")
-
-        if end<start:
-            return{
-                "eligible":False,
-                "eligible_from":start,
-                "eligible_to":end,
-                "scheduled_days":zero,
-                "eligible_days":zero,
-                "worked_days":zero,
-                "paid_leave_days":zero,
-                "unpaid_days":zero,
-                "scheduled_hours":zero,
-                "worked_hours":zero,
-                "unpaid_hours":zero,
-                "proration_method":
-                    setup.get("proration_method") or "working_days",
-                "proration_factor":zero,
-            }
-
-        hours_per_day=_payroll_decimal(
-            setup.get("hours_per_day") or 8
-        )
-
-        days=self.fetch_one(f"""
-            WITH dates AS(
-                SELECT d::date AS work_date
-                FROM generate_series(
-                    %s::date,
-                    %s::date,
-                    INTERVAL '1 day'
-                ) d
-            )
-            SELECT
-                COUNT(*)::NUMERIC AS calendar_days,
-
-                COUNT(*) FILTER(
-                    WHERE work_date BETWEEN %s AND %s
-                )::NUMERIC AS eligible_calendar_days,
-
-                COUNT(*) FILTER(
-                    WHERE EXTRACT(ISODOW FROM work_date)<6
-                    AND h.id IS NULL
-                )::NUMERIC AS working_days,
-
-                COUNT(*) FILTER(
-                    WHERE work_date BETWEEN %s AND %s
-                    AND EXTRACT(ISODOW FROM work_date)<6
-                    AND h.id IS NULL
-                )::NUMERIC AS eligible_working_days
-            FROM dates
-            LEFT JOIN {schema}.company_holidays h
-            ON h.company_id=%s
-            AND h.holiday_date=dates.work_date;
-        """,(
-            run["period_start"],
-            run["period_end"],
-            start,
-            end,
-            start,
-            end,
-            company_id,
-        )) or {}
-
-        attendance=self.fetch_one(f"""
-            SELECT
-                COUNT(*) FILTER(
-                    WHERE approved=TRUE
-                    AND attendance_type='present'
-                )::NUMERIC AS worked_days,
-
-                COUNT(*) FILTER(
-                    WHERE approved=TRUE
-                    AND attendance_type IN(
-                        'paid_leave',
-                        'sick_leave',
-                        'public_holiday'
-                    )
-                )::NUMERIC AS paid_leave_days,
-
-                COUNT(*) FILTER(
-                    WHERE approved=TRUE
-                    AND attendance_type IN(
-                        'unpaid_leave',
-                        'absent'
-                    )
-                )::NUMERIC AS unpaid_days,
-
-                COALESCE(SUM(worked_hours)
-                    FILTER(WHERE approved=TRUE),0
-                ) AS worked_hours,
-
-                COALESCE(SUM(unpaid_hours)
-                    FILTER(WHERE approved=TRUE),0
-                ) AS unpaid_hours
-            FROM {schema}.payroll_attendance_inputs
-            WHERE company_id=%s
-            AND payroll_run_id=%s
-            AND employee_id=%s
-            AND attendance_date BETWEEN %s AND %s;
-        """,(
-            company_id,
-            payroll_run_id,
-            int(employee["id"]),
-            start,
-            end,
-        )) or {}
-
-        calendar_days=_payroll_decimal(
-            days.get("calendar_days")
-        )
-        eligible_calendar=_payroll_decimal(
-            days.get("eligible_calendar_days")
-        )
-        working_days=_payroll_decimal(
-            days.get("working_days")
-        )
-        eligible_days=_payroll_decimal(
-            days.get("eligible_working_days")
-        )
-        unpaid_days=_payroll_decimal(
-            attendance.get("unpaid_days")
-        )
-        worked_days=_payroll_decimal(
-            attendance.get("worked_days")
-        )
-        paid_leave_days=_payroll_decimal(
-            attendance.get("paid_leave_days")
-        )
-        worked_hours=_payroll_decimal(
-            attendance.get("worked_hours")
-        )
-        unpaid_hours=_payroll_decimal(
-            attendance.get("unpaid_hours")
-        )
-
-        scheduled_hours=eligible_days*hours_per_day
-        method=setup.get("proration_method") or "working_days"
-
-        if method=="calendar_days":
-            factor=(
-                eligible_calendar/calendar_days
-                if calendar_days else zero
-            )
-
-        elif method=="fixed_30_days":
-            payable=max(eligible_calendar-unpaid_days,zero)
-            factor=payable/Decimal("30")
-
-        elif method=="scheduled_hours":
-            full_hours=working_days*hours_per_day
-            payable=max(scheduled_hours-unpaid_hours,zero)
-            factor=payable/full_hours if full_hours else zero
-
-        elif method=="actual_hours":
-            full_hours=working_days*hours_per_day
-            factor=worked_hours/full_hours if full_hours else zero
-
-        elif method=="no_proration":
-            factor=Decimal("1")
-
-        else:
-            payable=max(eligible_days-unpaid_days,zero)
-            factor=payable/working_days if working_days else zero
-
-        factor=max(zero,min(factor,Decimal("1")))
-
-        return{
-            "eligible":True,
-            "eligible_from":start,
-            "eligible_to":end,
-            "calendar_days":calendar_days,
-            "eligible_calendar_days":eligible_calendar,
-            "scheduled_days":working_days,
-            "eligible_days":eligible_days,
-            "worked_days":worked_days,
-            "paid_leave_days":paid_leave_days,
-            "unpaid_days":unpaid_days,
-            "scheduled_hours":scheduled_hours,
-            "worked_hours":worked_hours,
-            "unpaid_hours":unpaid_hours,
-            "hours_per_day":hours_per_day,
-            "proration_method":method,
-            "proration_factor":factor,
-        }
-
 
     def payroll_calculate_basic_pay(
         self,
@@ -152725,170 +152509,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "rate":rate,
             "proration_factor":factor,
             "prorated_basic_amount":amount,
-        }
-
-    def payroll_run_eligibility(
-        self,
-        company_id:int,
-        payroll_run_id:int,
-    )->dict:
-        company_id=int(company_id)
-        payroll_run_id=int(payroll_run_id)
-        schema=self.company_schema(company_id)
-
-        run=self.fetch_one(f"""
-            SELECT r.*,c.frequency
-            FROM {schema}.payroll_runs r
-            JOIN {schema}.payroll_pay_calendars c
-            ON c.id=r.pay_calendar_id
-            AND c.company_id=r.company_id
-            WHERE r.company_id=%s
-            AND r.id=%s
-            LIMIT 1;
-        """,(company_id,payroll_run_id))
-
-        if not run:
-            raise ValueError("Payroll run not found")
-
-        employees=self.fetch_all(f"""
-            SELECT e.*
-            FROM {schema}.payroll_employees e
-            WHERE e.company_id=%s
-            AND e.start_date<=%s
-            AND(
-                e.termination_date IS NULL
-                OR e.termination_date>=%s
-            )
-            AND e.employment_status IN(
-                'active',
-                'terminated',
-                'suspended'
-            )
-            ORDER BY e.employee_no;
-        """,(
-            company_id,
-            run["period_end"],
-            run["period_start"],
-        ))
-
-        items=[]
-        errors=[]
-        warnings=[]
-
-        for employee in employees:
-            employee_id=int(employee["id"])
-            name=" ".join(filter(None,[
-                employee.get("first_name"),
-                employee.get("last_name"),
-            ]))
-
-            setup=self.payroll_employee_pay_setup_for_period(
-                company_id,
-                employee_id,
-                run["period_end"],
-            )
-
-            if not setup:
-                message=(
-                    f"{employee['employee_no']} {name}: "
-                    "no effective remuneration setup."
-                )
-                errors.append(message)
-                items.append({
-                    "employee_id":employee_id,
-                    "employee_no":employee["employee_no"],
-                    "employee_name":name,
-                    "eligible":False,
-                    "error":"No effective remuneration setup",
-                })
-                continue
-
-            facts=self.payroll_employee_period_facts(
-                company_id,
-                payroll_run_id,
-                employee,
-                setup,
-                run,
-            )
-            basic=self.payroll_calculate_basic_pay(
-                setup,
-                facts,
-            )
-
-            employee_warnings=[]
-
-            if employee["start_date"]>run["period_start"]:
-                employee_warnings.append(
-                    "Employee starts during this payroll period."
-                )
-
-            termination=employee.get("termination_date")
-
-            if termination and termination<run["period_end"]:
-                employee_warnings.append(
-                    "Employee terminates during this payroll period."
-                )
-
-            if (
-                setup.get("attendance_required")
-                and facts["eligible_days"]>0
-                and(
-                    facts["worked_days"]
-                    +facts["paid_leave_days"]
-                    +facts["unpaid_days"]
-                )<=0
-            ):
-                employee_warnings.append(
-                    "Attendance is required but has not been captured."
-                )
-
-            warnings.extend(
-                f"{employee['employee_no']} {name}: {message}"
-                for message in employee_warnings
-            )
-
-            items.append({
-                "employee_id":employee_id,
-                "employee_no":employee["employee_no"],
-                "employee_name":name,
-                "employment_status":
-                    employee.get("employment_status"),
-                "start_date":employee.get("start_date"),
-                "termination_date":
-                    employee.get("termination_date"),
-                "pay_setup_id":setup["id"],
-                "pay_basis":setup.get("pay_basis"),
-                "attendance_required":bool(
-                    setup.get("attendance_required")
-                ),
-                **facts,
-                **basic,
-                "warnings":employee_warnings,
-            })
-
-        return{
-            "run":{
-                "id":run["id"],
-                "run_no":run.get("run_no"),
-                "period_start":run["period_start"],
-                "period_end":run["period_end"],
-                "payment_date":run["payment_date"],
-                "status":run["status"],
-                "frequency":run["frequency"],
-            },
-            "items":items,
-            "summary":{
-                "candidate_count":len(employees),
-                "eligible_count":sum(
-                    1 for item in items
-                    if item.get("eligible")
-                ),
-                "error_count":len(errors),
-                "warning_count":len(warnings),
-                "ready":not errors,
-            },
-            "errors":errors,
-            "warnings":warnings,
         }
 
     def payroll_assert_run_editable(
@@ -154095,42 +153715,47 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         payroll_run_id:int,
         employee:dict,
         setup:dict,
+        run:dict|None=None,
     )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
         schema=self.company_schema(company_id)
 
-        run=self.fetch_one(f"""
-            SELECT period_start,period_end
-            FROM {schema}.payroll_runs
-            WHERE company_id=%s AND id=%s;
-        """,(int(company_id),int(payroll_run_id)))
+        if not run:
+            run=self.fetch_one(f"""
+                SELECT period_start,period_end
+                FROM {schema}.payroll_runs
+                WHERE company_id=%s AND id=%s
+                LIMIT 1;
+            """,(company_id,payroll_run_id))
 
         if not run:
             raise ValueError("Payroll run not found")
 
-        eligible_from=max(
-            run["period_start"],
-            employee["start_date"],
-        )
-
-        eligible_to=min(
+        start=max(run["period_start"],employee["start_date"])
+        end=min(
             run["period_end"],
-            employee.get("termination_date")
-            or run["period_end"],
+            employee.get("termination_date") or run["period_end"],
         )
 
-        if eligible_to<eligible_from:
-            return {
-                "eligible_from":eligible_from,
-                "eligible_to":eligible_to,
-                "scheduled_days":Decimal("0"),
-                "eligible_days":Decimal("0"),
-                "worked_days":Decimal("0"),
-                "paid_leave_days":Decimal("0"),
-                "unpaid_days":Decimal("0"),
-                "scheduled_hours":Decimal("0"),
-                "worked_hours":Decimal("0"),
-                "unpaid_hours":Decimal("0"),
-                "proration_factor":Decimal("0"),
+        zero=Decimal("0")
+
+        if end<start:
+            return{
+                "eligible":False,
+                "eligible_from":start,
+                "eligible_to":end,
+                "scheduled_days":zero,
+                "eligible_days":zero,
+                "worked_days":zero,
+                "paid_leave_days":zero,
+                "unpaid_days":zero,
+                "scheduled_hours":zero,
+                "worked_hours":zero,
+                "unpaid_hours":zero,
+                "proration_method":
+                    setup.get("proration_method") or "working_days",
+                "proration_factor":zero,
             }
 
         hours_per_day=_payroll_decimal(
@@ -154141,26 +153766,28 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             WITH dates AS(
                 SELECT d::date AS work_date
                 FROM generate_series(
-                    %s::date,%s::date,INTERVAL '1 day'
+                    %s::date,
+                    %s::date,
+                    INTERVAL '1 day'
                 ) d
             )
             SELECT
+                COUNT(*)::NUMERIC AS calendar_days,
+
+                COUNT(*) FILTER(
+                    WHERE work_date BETWEEN %s AND %s
+                )::NUMERIC AS eligible_calendar_days,
+
                 COUNT(*) FILTER(
                     WHERE EXTRACT(ISODOW FROM work_date)<6
                     AND h.id IS NULL
-                ) AS full_working_days,
+                )::NUMERIC AS working_days,
 
                 COUNT(*) FILTER(
                     WHERE work_date BETWEEN %s AND %s
                     AND EXTRACT(ISODOW FROM work_date)<6
                     AND h.id IS NULL
-                ) AS eligible_working_days,
-
-                COUNT(*) AS calendar_days,
-
-                COUNT(*) FILTER(
-                    WHERE work_date BETWEEN %s AND %s
-                ) AS eligible_calendar_days
+                )::NUMERIC AS eligible_working_days
             FROM dates
             LEFT JOIN {schema}.company_holidays h
             ON h.company_id=%s
@@ -154168,34 +153795,36 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         """,(
             run["period_start"],
             run["period_end"],
-            eligible_from,
-            eligible_to,
-            eligible_from,
-            eligible_to,
-            int(company_id),
+            start,
+            end,
+            start,
+            end,
+            company_id,
         )) or {}
 
         attendance=self.fetch_one(f"""
             SELECT
                 COUNT(*) FILTER(
-                    WHERE attendance_type='present'
-                    AND approved=TRUE
-                ) AS present_days,
+                    WHERE approved=TRUE
+                    AND attendance_type='present'
+                )::NUMERIC AS worked_days,
 
                 COUNT(*) FILTER(
-                    WHERE attendance_type IN(
-                        'paid_leave','sick_leave',
+                    WHERE approved=TRUE
+                    AND attendance_type IN(
+                        'paid_leave',
+                        'sick_leave',
                         'public_holiday'
                     )
-                    AND approved=TRUE
-                ) AS paid_leave_days,
+                )::NUMERIC AS paid_leave_days,
 
                 COUNT(*) FILTER(
-                    WHERE attendance_type IN(
-                        'unpaid_leave','absent'
+                    WHERE approved=TRUE
+                    AND attendance_type IN(
+                        'unpaid_leave',
+                        'absent'
                     )
-                    AND approved=TRUE
-                ) AS unpaid_days,
+                )::NUMERIC AS unpaid_days,
 
                 COALESCE(SUM(worked_hours)
                     FILTER(WHERE approved=TRUE),0
@@ -154210,98 +153839,255 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             AND employee_id=%s
             AND attendance_date BETWEEN %s AND %s;
         """,(
-            int(company_id),
-            int(payroll_run_id),
+            company_id,
+            payroll_run_id,
             int(employee["id"]),
-            eligible_from,
-            eligible_to,
+            start,
+            end,
         )) or {}
 
-        method=setup.get("proration_method") or "working_days"
-        full_working=_payroll_decimal(
-            days.get("full_working_days")
-        )
-        eligible_working=_payroll_decimal(
-            days.get("eligible_working_days")
-        )
-        full_calendar=_payroll_decimal(
+        calendar_days=_payroll_decimal(
             days.get("calendar_days")
         )
         eligible_calendar=_payroll_decimal(
             days.get("eligible_calendar_days")
         )
-
+        working_days=_payroll_decimal(
+            days.get("working_days")
+        )
+        eligible_days=_payroll_decimal(
+            days.get("eligible_working_days")
+        )
         unpaid_days=_payroll_decimal(
             attendance.get("unpaid_days")
         )
-
-        payable_working=max(
-            eligible_working-unpaid_days,
-            Decimal("0"),
+        worked_days=_payroll_decimal(
+            attendance.get("worked_days")
         )
-
-        scheduled_hours=eligible_working*hours_per_day
-        unpaid_hours=_payroll_decimal(
-            attendance.get("unpaid_hours")
+        paid_leave_days=_payroll_decimal(
+            attendance.get("paid_leave_days")
         )
         worked_hours=_payroll_decimal(
             attendance.get("worked_hours")
         )
+        unpaid_hours=_payroll_decimal(
+            attendance.get("unpaid_hours")
+        )
+
+        scheduled_hours=eligible_days*hours_per_day
+        method=setup.get("proration_method") or "working_days"
 
         if method=="calendar_days":
             factor=(
-                eligible_calendar/full_calendar
-                if full_calendar else Decimal("0")
+                eligible_calendar/calendar_days
+                if calendar_days else zero
             )
+
         elif method=="fixed_30_days":
-            factor=eligible_calendar/Decimal("30")
+            payable=max(eligible_calendar-unpaid_days,zero)
+            factor=payable/Decimal("30")
+
         elif method=="scheduled_hours":
-            full_hours=full_working*hours_per_day
-            payable_hours=max(
-                scheduled_hours-unpaid_hours,
-                Decimal("0"),
-            )
-            factor=(
-                payable_hours/full_hours
-                if full_hours else Decimal("0")
-            )
+            full_hours=working_days*hours_per_day
+            payable=max(scheduled_hours-unpaid_hours,zero)
+            factor=payable/full_hours if full_hours else zero
+
         elif method=="actual_hours":
-            full_hours=full_working*hours_per_day
-            factor=(
-                worked_hours/full_hours
-                if full_hours else Decimal("0")
-            )
+            full_hours=working_days*hours_per_day
+            factor=worked_hours/full_hours if full_hours else zero
+
         elif method=="no_proration":
             factor=Decimal("1")
+
         else:
-            factor=(
-                payable_working/full_working
-                if full_working else Decimal("0")
-            )
+            payable=max(eligible_days-unpaid_days,zero)
+            factor=payable/working_days if working_days else zero
 
-        factor=max(
-            Decimal("0"),
-            min(factor,Decimal("1")),
-        )
+        factor=max(zero,min(factor,Decimal("1")))
 
-        return {
-            "eligible_from":eligible_from,
-            "eligible_to":eligible_to,
-            "scheduled_days":full_working,
-            "eligible_days":eligible_working,
-            "worked_days":_payroll_decimal(
-                attendance.get("present_days")
-            ),
-            "paid_leave_days":_payroll_decimal(
-                attendance.get("paid_leave_days")
-            ),
+        return{
+            "eligible":True,
+            "eligible_from":start,
+            "eligible_to":end,
+            "calendar_days":calendar_days,
+            "eligible_calendar_days":eligible_calendar,
+            "scheduled_days":working_days,
+            "eligible_days":eligible_days,
+            "worked_days":worked_days,
+            "paid_leave_days":paid_leave_days,
             "unpaid_days":unpaid_days,
             "scheduled_hours":scheduled_hours,
             "worked_hours":worked_hours,
             "unpaid_hours":unpaid_hours,
+            "hours_per_day":hours_per_day,
+            "proration_method":method,
             "proration_factor":factor,
         }
 
+    def payroll_run_eligibility(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        run=self.fetch_one(f"""
+            SELECT r.*,c.frequency
+            FROM {schema}.payroll_runs r
+            JOIN {schema}.payroll_pay_calendars c
+            ON c.id=r.pay_calendar_id
+            AND c.company_id=r.company_id
+            WHERE r.company_id=%s
+            AND r.id=%s
+            LIMIT 1;
+        """,(company_id,payroll_run_id))
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        employees=self.fetch_all(f"""
+            SELECT e.*
+            FROM {schema}.payroll_employees e
+            WHERE e.company_id=%s
+            AND e.start_date<=%s
+            AND(
+                e.termination_date IS NULL
+                OR e.termination_date>=%s
+            )
+            AND e.employment_status IN(
+                'active',
+                'terminated',
+                'suspended'
+            )
+            ORDER BY e.employee_no;
+        """,(
+            company_id,
+            run["period_end"],
+            run["period_start"],
+        ))
+
+        items=[]
+        errors=[]
+        warnings=[]
+
+        for employee in employees:
+            employee_id=int(employee["id"])
+            name=" ".join(filter(None,[
+                employee.get("first_name"),
+                employee.get("last_name"),
+            ]))
+
+            setup=self.payroll_employee_pay_setup_for_period(
+                company_id,
+                employee_id,
+                run["period_end"],
+            )
+
+            if not setup:
+                message=(
+                    f"{employee['employee_no']} {name}: "
+                    "no effective remuneration setup."
+                )
+                errors.append(message)
+                items.append({
+                    "employee_id":employee_id,
+                    "employee_no":employee["employee_no"],
+                    "employee_name":name,
+                    "eligible":False,
+                    "error":"No effective remuneration setup",
+                })
+                continue
+
+            facts=self.payroll_employee_period_facts(
+                company_id,
+                payroll_run_id,
+                employee,
+                setup,
+                run=run
+            )
+            basic=self.payroll_calculate_basic_pay(
+                setup,
+                facts,
+            )
+
+            employee_warnings=[]
+
+            if employee["start_date"]>run["period_start"]:
+                employee_warnings.append(
+                    "Employee starts during this payroll period."
+                )
+
+            termination=employee.get("termination_date")
+
+            if termination and termination<run["period_end"]:
+                employee_warnings.append(
+                    "Employee terminates during this payroll period."
+                )
+
+            if (
+                setup.get("attendance_required")
+                and facts["eligible_days"]>0
+                and(
+                    facts["worked_days"]
+                    +facts["paid_leave_days"]
+                    +facts["unpaid_days"]
+                )<=0
+            ):
+                employee_warnings.append(
+                    "Attendance is required but has not been captured."
+                )
+
+            warnings.extend(
+                f"{employee['employee_no']} {name}: {message}"
+                for message in employee_warnings
+            )
+
+            items.append({
+                "employee_id":employee_id,
+                "employee_no":employee["employee_no"],
+                "employee_name":name,
+                "employment_status":
+                    employee.get("employment_status"),
+                "start_date":employee.get("start_date"),
+                "termination_date":
+                    employee.get("termination_date"),
+                "pay_setup_id":setup["id"],
+                "pay_basis":setup.get("pay_basis"),
+                "attendance_required":bool(
+                    setup.get("attendance_required")
+                ),
+                **facts,
+                **basic,
+                "warnings":employee_warnings,
+            })
+
+        return{
+            "run":{
+                "id":run["id"],
+                "run_no":run.get("run_no"),
+                "period_start":run["period_start"],
+                "period_end":run["period_end"],
+                "payment_date":run["payment_date"],
+                "status":run["status"],
+                "frequency":run["frequency"],
+            },
+            "items":items,
+            "summary":{
+                "candidate_count":len(employees),
+                "eligible_count":sum(
+                    1 for item in items
+                    if item.get("eligible")
+                ),
+                "error_count":len(errors),
+                "warning_count":len(warnings),
+                "ready":not errors,
+            },
+            "errors":errors,
+            "warnings":warnings,
+        }
+    
     def _payroll_prepare_run(
         self,
         company_id:int,
@@ -154961,7 +154747,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payroll_run_id,
             employee,
             setup,
-            run,
+            run=run
         )
 
         if not facts.get("eligible"):
