@@ -136189,51 +136189,89 @@ async function addProjectIssueLine(line = {}) {
 
   const lineNum = tbody.children.length + 1;
   const tr = document.createElement("tr");
-  tr.className = "border-b hover:bg-slate-50";
+  tr.className = "border-b hover:bg-slate-50/50 transition-colors";
 
+  // Build the 6 columns matching the colgroup / thead
   tr.innerHTML = `
-    <td class="px-3 py-2 text-slate-400 font-mono text-xs">${lineNum}</td>
+    <!-- 1. # (5%) -->
+    <td class="px-2 py-2 text-center text-slate-400 font-mono text-xs">
+      <span data-pi-linenum>${lineNum}</span>
+    </td>
+
+    <!-- 2. Item (38%) -->
     <td class="px-3 py-2">
-      <select data-pi-item-id class="w-full border rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-[var(--fs-navy)]/20">
+      <select data-pi-item-id class="w-full border border-slate-300 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--fs-navy)]/20 truncate">
         ${await buildInventoryItemOptions(line.item_id || "")}
       </select>
     </td>
-    <td class="px-3 py-2">
+
+    <!-- 3. Qty (12%) -->
+    <td class="px-2 py-2">
       <input data-pi-qty type="number" step="0.0001" min="0.0001" 
-             class="w-full border rounded px-2 py-1.5 text-right text-xs focus:ring-2 focus:ring-[var(--fs-navy)]/20" 
-             value="${esc(line.qty || "")}" placeholder="0.00">
+             class="w-full border border-slate-300 rounded px-2 py-1.5 text-right text-xs focus:outline-none focus:ring-2 focus:ring-[var(--fs-navy)]/20" 
+             value="${typeof esc === 'function' ? esc(line.qty || "") : (line.qty || "")}" placeholder="0.00">
     </td>
-    <td class="px-3 py-2 text-right text-xs font-mono text-slate-500">
-      <span data-pi-est-cost>${line.qty ? '—' : ''}</span>
+
+    <!-- 4. Est Cost (14%) -->
+    <td class="px-2 py-2 text-right text-xs font-mono text-slate-600">
+      <span data-pi-est-cost>0.00</span>
     </td>
+
+    <!-- 5. Memo (21%) -->
     <td class="px-3 py-2">
-      <input data-pi-memo class="w-full border rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-[var(--fs-navy)]/20" 
-             value="${esc(line.memo || "")}" placeholder="Memo (optional)">
+      <input data-pi-memo type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--fs-navy)]/20" 
+             value="${typeof esc === 'function' ? esc(line.memo || "") : (line.memo || "")}" placeholder="Memo (optional)">
     </td>
-    <td class="px-3 py-2 text-right">
-      <button type="button" class="text-rose-600 hover:text-rose-800 underline text-xs" data-pi-remove>Remove</button>
+
+    <!-- 6. Action (10%) -->
+    <td class="px-2 py-2 text-right">
+      <button type="button" class="text-rose-600 hover:text-rose-800 text-xs font-medium hover:underline" data-pi-remove>Remove</button>
     </td>
   `;
 
+  // --- Event Handlers ---
+
+  // 1. Remove Row
   tr.querySelector("[data-pi-remove]")?.addEventListener("click", () => {
     tr.remove();
     renumberIssueLines();
     updateIssueEstimates();
   });
 
-  // Auto-update estimate when qty changes
-  tr.querySelector("[data-pi-qty]")?.addEventListener("change", async () => {
-    await updateLineEstimate(tr);
+  // 2. Item Changed -> Update Estimate
+  tr.querySelector("[data-pi-item-id]")?.addEventListener("change", async () => {
+    if (typeof updateLineEstimate === "function") await updateLineEstimate(tr);
+    if (typeof updateIssueEstimates === "function") updateIssueEstimates();
   });
 
+  // 3. Qty Changed (both on typing 'input' and 'change') -> Update Estimate
+  const qtyInput = tr.querySelector("[data-pi-qty]");
+  const handleQtyChange = async () => {
+    if (typeof updateLineEstimate === "function") await updateLineEstimate(tr);
+    if (typeof updateIssueEstimates === "function") updateIssueEstimates();
+  };
+  qtyInput?.addEventListener("input", handleQtyChange);
+  qtyInput?.addEventListener("change", handleQtyChange);
+
   tbody.appendChild(tr);
-  updateIssueEstimates();
+
+  // If initial line data was passed, calculate estimate immediately
+  if (line.item_id && typeof updateLineEstimate === "function") {
+    await updateLineEstimate(tr);
+  }
+
+  if (typeof updateIssueEstimates === "function") {
+    updateIssueEstimates();
+  }
 }
 
 function renumberIssueLines() {
   const rows = document.querySelectorAll("#projectIssueLines tr");
   rows.forEach((row, idx) => {
-    row.querySelector("td:first-child")?.textContent && (row.querySelector("td:first-child").textContent = idx + 1);
+    const firstCell = row.querySelector("td:first-child");
+    if (firstCell) {
+      firstCell.textContent = idx + 1;
+    }
   });
 }
 
