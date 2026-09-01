@@ -133856,7 +133856,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 raise ValueError(f"{missing_error}|tried={project_debit_raw or 'empty'}")
 
             project_debit_account = str(debit_row.get("code") or project_debit_raw or "").strip()
-
+            project_debit_name = str(debit_row.get("name") or project_debit_account).strip()
+            
             cur.execute(
                 f"""
                 INSERT INTO {schema}.inventory_tx (
@@ -133892,7 +133893,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if tx_id <= 0:
                 raise ValueError("FAILED_TO_CREATE_PROJECT_ISSUE_TX")
 
-            inv_credit_totals: dict[str, float] = {}
+            inv_credit_totals: dict[str, dict] = {}
             total_issue_cost = 0.0
 
             # 4) Lines + costing
@@ -133960,13 +133961,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}"
                     )
 
-                inventory_account = str(
-                    inv_row.get("code") or inv_raw
-                ).strip()
-
-                inventory_account_name = str(
-                    inv_row.get("name") or inventory_account
-                ).strip()
+                inventory_account = (inv_row[1] or inv_raw).strip()
+                inventory_account_name = (inv_row[0] or inventory_account).strip()
 
                 valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
                 if valuation_method not in ("AVG", "FIFO"):
@@ -134070,8 +134066,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     ),
                 )
 
-                inv_credit_totals[inventory_account] = money(
-                    inv_credit_totals.get(inventory_account, 0.0) + line_cost
+                if inventory_account not in inv_credit_totals:
+                    inv_credit_totals[inventory_account] = {
+                        "name": inventory_account_name,
+                        "amount": 0.0,
+                    }
+
+                inv_credit_totals[inventory_account]["amount"] = money(
+                    inv_credit_totals[inventory_account]["amount"] + line_cost
                 )
                 total_issue_cost = money(total_issue_cost + line_cost)
 
@@ -134085,19 +134087,22 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 journal_lines = [
                     {
                         "account_code": project_debit_account,
+                        "account_name": project_debit_name,
                         "debit": total_issue_cost,
                         "credit": 0.0,
                         "memo": f"Materials issued to project {project.get('project_code') or project_id}",
                     }
                 ]
 
-                for acct, amt in inv_credit_totals.items():
-                    if amt <= 0:
+                for acct, info in inv_credit_totals.items():
+                    if info["amount"] <= 0:
                         continue
+
                     journal_lines.append({
                         "account_code": acct,
+                        "account_name": info["name"],
                         "debit": 0.0,
-                        "credit": amt,
+                        "credit": info["amount"],
                         "memo": "Inventory issued to project",
                     })
 
