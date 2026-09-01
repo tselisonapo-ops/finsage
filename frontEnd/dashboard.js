@@ -136277,44 +136277,41 @@ function renumberIssueLines() {
 
 async function updateLineEstimate(tr) {
   const itemId = tr.querySelector("[data-pi-item-id]")?.value;
-  const qty = parseFloat(tr.querySelector("[data-pi-qty]")?.value || 0);
-  const estSpan = tr.querySelector("[data-pi-est-cost]");
-  
-  if (estSpan && itemId && qty > 0) {
-    estSpan.textContent = "Calculating...";
-    try {
-      // Simple estimate - will be refined by server preview
-      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-      const preview = await apiFetch(ENDPOINTS.projects.previewIssueJournal(cid, ACTIVE_PROJECT_ID), {
-        method: "POST",
-        body: JSON.stringify({
-          tx_date: document.getElementById("projectIssueDate")?.value,
-          lines: [{ item_id: parseInt(itemId), qty }],
-          usage_type: document.getElementById("projectIssueUsageType")?.value,
-        }),
-      });
-      
-      const detail = preview?.line_details?.[0];
-      if (detail) {
-        estSpan.textContent = `USD ${detail.total_cost?.toFixed(2) || '0.00'}`;
-      }
-    } catch (e) {
-      estSpan.textContent = "—";
-    }
-  } else if (estSpan) {
-    estSpan.textContent = qty > 0 ? "—" : "";
+  const qty = parseFloat(tr.querySelector("[data-pi-qty]")?.value) || 0;
+  const costEl = tr.querySelector("[data-pi-est-cost]");
+  if (!costEl) return;
+
+  const currency = resolveCurrency();
+
+  if (!itemId || qty <= 0) {
+    costEl.textContent = "—";
+    return;
   }
-  
-  updateIssueEstimates();
+
+  // Fetch or retrieve unit cost for the item
+  const unitCost = typeof getItemUnitCost === "function" 
+    ? await getItemUnitCost(itemId) 
+    : 0;
+
+  const lineTotal = qty * unitCost;
+
+  const formattedLineTotal = lineTotal.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+
+  costEl.textContent = `${currency} ${formattedLineTotal}`;
 }
 
 function updateIssueEstimates() {
   const rows = document.querySelectorAll("#projectIssueLines tr");
   let count = 0;
   let total = 0;
+  const currency = resolveCurrency();
   
   rows.forEach(row => {
     const costText = row.querySelector("[data-pi-est-cost]")?.textContent || "";
+    // Strip everything except digits and decimal point
     const cost = parseFloat(costText.replace(/[^\d.-]/g, "")) || 0;
     if (cost > 0) {
       count++;
@@ -136324,8 +136321,15 @@ function updateIssueEstimates() {
   
   const countEl = document.getElementById("projectIssueLineCount");
   const totalEl = document.getElementById("projectIssueEstTotal");
+  
+  // Format total with commas (e.g. 54,900.00)
+  const formattedTotal = total.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+
   if (countEl) countEl.textContent = count;
-  if (totalEl) totalEl.textContent = `USD ${total.toFixed(2)}`;
+  if (totalEl) totalEl.textContent = `${currency} ${formattedTotal}`;
 }
 
 async function previewProjectIssueJournal() {
@@ -136441,34 +136445,44 @@ function renderIssueJournalPreview(preview) {
   const container = document.getElementById("projectIssueJournalPreview");
   if (!container) return;
 
+  const currency = resolveCurrency();
+  const totalDebit = Number(preview.totals?.total_debit || 0);
+  const totalCredit = Number(preview.totals?.total_credit || 0);
+
   // Header info
   setElText("journalPreviewDate", preview.journal_header?.date || "");
   setElText("journalPreviewDesc", preview.journal_header?.description || "");
-  setElText("journalPreviewTotal", `USD ${preview.totals?.total_debit?.toFixed(2) || "0.00"}`);
+  setElText(
+    "journalPreviewTotal", 
+    `${currency} ${totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  );
   setElText("projectIssueJournalRef", preview.journal_header?.ref || "");
 
-  // Journal lines - 4 columns: Account Name | Debit | Credit | Memo (NO code)
+  // Journal lines - 4 columns: Account Name | Debit | Credit | Memo
   const tbody = document.getElementById("projectIssueJournalLines");
   if (tbody) {
     if (!preview.journal_lines || preview.journal_lines.length === 0) {
       tbody.innerHTML = `<tr><td colspan="4" class="px-3 py-4 text-center text-amber-600">No journal lines generated</td></tr>`;
     } else {
-      tbody.innerHTML = preview.journal_lines.map(line => `
-        <tr class="border-b hover:bg-amber-50/50 transition-colors">
-          <td class="px-3 py-2.5 text-xs font-medium text-slate-800">${esc(line.account_name || "Unnamed Account")}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-xs ${line.debit > 0 ? 'font-bold text-green-700 bg-green-50' : ''}">${line.debit > 0 ? line.debit.toFixed(2) : ''}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-xs ${line.credit > 0 ? 'font-bold text-red-700 bg-red-50' : ''}">${line.credit > 0 ? line.credit.toFixed(2) : ''}</td>
-          <td class="px-3 py-2.5 text-xs text-slate-500 italic">${esc(line.memo || "")}</td>
-        </tr>
-      `).join("");
+      tbody.innerHTML = preview.journal_lines.map(line => {
+        const dr = Number(line.debit || 0);
+        const cr = Number(line.credit || 0);
+        return `
+          <tr class="border-b hover:bg-amber-50/50 transition-colors">
+            <td class="px-3 py-2.5 text-xs font-medium text-slate-800">${esc(line.account_name || "Unnamed Account")}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-xs ${dr > 0 ? 'font-bold text-green-700 bg-green-50' : ''}">${dr > 0 ? dr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-xs ${cr > 0 ? 'font-bold text-red-700 bg-red-50' : ''}">${cr > 0 ? cr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
+            <td class="px-3 py-2.5 text-xs text-slate-500 italic">${esc(line.memo || "")}</td>
+          </tr>
+        `;
+      }).join("");
     }
   }
 
   // Totals
-  setElText("journalPreviewTotalDr", preview.totals?.total_debit?.toFixed(2) || "0.00");
-  setElText("journalPreviewTotalCr", preview.totals?.total_credit?.toFixed(2) || "0.00");
+  setElText("journalPreviewTotalDr", totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  setElText("journalPreviewTotalCr", totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
-  // Show the preview section with animation
   container.classList.remove("hidden");
   container.style.animation = "slideDown 0.3s ease-out";
   
@@ -136478,8 +136492,9 @@ function renderIssueJournalPreview(preview) {
     rows.forEach((row, idx) => {
       const detail = preview.line_details[idx];
       if (detail) {
+        const cost = Number(detail.total_cost || 0);
         const estSpan = row.querySelector("[data-pi-est-cost]");
-        if (estSpan) estSpan.textContent = `USD ${detail.total_cost?.toFixed(2) || "0.00"}`;
+        if (estSpan) estSpan.textContent = `${currency} ${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       }
     });
     updateIssueEstimates();
@@ -136544,13 +136559,15 @@ async function openProjectIssueModal(projectId) {
   }
 }
 
-
-
-
 async function submitProjectIssue() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   const projectId = Number(document.getElementById("projectIssueProjectId")?.value || ACTIVE_PROJECT_ID || 0);
-  if (!cid || !projectId) return;
+  const currency = resolveCurrency();
+
+  if (!cid || !projectId) {
+    showIssueMessage("Missing company or project ID.", true);
+    return;
+  }
 
   const lines = Array.from(document.querySelectorAll("#projectIssueLines tr"))
     .map(tr => ({
@@ -136576,11 +136593,17 @@ async function submitProjectIssue() {
 
   showIssueMessage("Posting material issue...", false);
 
-  // Disable buttons during post
+  // Disable button during post
   const saveBtn = document.getElementById("projectIssueSaveBtn");
   if (saveBtn) {
     saveBtn.disabled = true;
-    saveBtn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Posting...`;
+    saveBtn.innerHTML = `
+      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg> 
+      Posting...
+    `;
   }
 
   try {
@@ -136595,14 +136618,24 @@ async function submitProjectIssue() {
       await loadProjectDetail(projectId);
     }
 
-    alert(`✅ Material issue posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: USD ${out?.total_cost?.toFixed(2) || '0.00'}`);
+    const formattedCost = Number(out?.total_cost || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    alert(`✅ Material issue posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: ${currency} ${formattedCost}`);
 
   } catch (err) {
     showIssueMessage(`Failed to post: ${err?.message || "Unknown error"}`, true);
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Post Issue`;
+      saveBtn.innerHTML = `
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg> 
+        Confirm & Post Issue
+      `;
     }
   }
 }
@@ -136616,24 +136649,34 @@ window.bindProjectOperationalModalsOnce = bindProjectOperationalModalsOnce;
 // RETURN MATERIALS TO STORAGE - COMPLETE FUNCTIONS
 // ============================================
 
-// ============================================
-// RETURN MATERIALS TO STORAGE - WITH JOURNAL PREVIEW
-// ============================================
-
 let ACTIVE_RETURN_PROJECT_ID = null;
 
 function bindProjectReturnModalOnce() {
   if (window._projectReturnModalBound) return;
   window._projectReturnModalBound = true;
 
+  // 1. Add Line Button
   document.getElementById("projectReturnAddLineBtn")?.addEventListener("click", async () => {
-    await addProjectReturnLine();
+    if (typeof addProjectReturnLine === "function") {
+      await addProjectReturnLine();
+    }
   });
 
-  // Preview button
-  document.getElementById("projectReturnPreviewBtn")?.addEventListener("click", previewProjectReturnJournal);
-}
+  // 2. Preview Journal Button
+  document.getElementById("projectReturnPreviewBtn")?.addEventListener("click", async () => {
+    if (typeof previewProjectReturnJournal === "function") {
+      await previewProjectReturnJournal();
+    }
+  });
 
+  // 3. Post Return Button (Submit)
+  document.getElementById("projectReturnSubmitBtn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    if (typeof submitProjectReturn === "function") {
+      await submitProjectReturn();
+    }
+  });
+}
 async function openProjectReturnModal(projectId) {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid || !projectId) return;
@@ -136812,20 +136855,27 @@ function updateReturnEstimates() {
   const rows = document.querySelectorAll("#projectReturnLines tr");
   let count = 0;
   let total = 0;
-  
+  const currency = resolveCurrency();
+
   rows.forEach(row => {
-    const valText = row.querySelector("[data-pr-est-value]")?.textContent || "";
-    const val = parseFloat(valText.replace(/[^\d.-]/g, "")) || 0;
-    if (val > 0) {
+    const costText = row.querySelector("[data-pr-est-value]")?.textContent || "";
+    const cost = parseFloat(costText.replace(/[^\d.-]/g, "")) || 0;
+    if (cost > 0) {
       count++;
-      total += val;
+      total += cost;
     }
   });
-  
+
   const countEl = document.getElementById("projectReturnLineCount");
   const totalEl = document.getElementById("projectReturnEstTotal");
+
+  const formattedTotal = total.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
   if (countEl) countEl.textContent = count;
-  if (totalEl) totalEl.textContent = `USD ${total.toFixed(2)}`;
+  if (totalEl) totalEl.textContent = `${currency} ${formattedTotal}`;
 }
 
 async function previewProjectReturnJournal() {
@@ -136891,40 +136941,55 @@ function renderReturnJournalPreview(preview) {
   const container = document.getElementById("projectReturnJournalPreview");
   if (!container) return;
 
+  const currency = resolveCurrency();
+  const totalDebit = Number(preview.totals?.total_debit || 0);
+  const totalCredit = Number(preview.totals?.total_credit || 0);
+
   // Header info
   setElText("returnJournalPreviewDate", preview.journal_header?.date || "");
   setElText("returnJournalPreviewDesc", preview.journal_header?.description || "");
-  setElText("returnJournalPreviewTotal", `USD ${preview.totals?.total_credit?.toFixed(2) || "0.00"}`);
+  setElText(
+    "returnJournalPreviewTotal", 
+    `${currency} ${totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  );
   setElText("projectReturnJournalRef", preview.journal_header?.ref || "");
 
-  // Journal lines - 4 columns: Account Name | Debit | Credit | Memo (NO code)
+  // Journal lines - 4 columns: Account Name | Debit | Credit | Memo
   const tbody = document.getElementById("projectReturnJournalLines");
   if (tbody) {
-    tbody.innerHTML = (preview.journal_lines || []).map(line => `
-      <tr class="border-b hover:bg-emerald-50/30">
-        <td class="px-3 py-2.5 text-xs font-medium text-slate-800">${esc(line.account_name || "Unnamed Account")}</td>
-        <td class="px-3 py-2.5 text-right font-mono text-xs ${line.debit > 0 ? 'font-semibold text-green-700' : ''}">${line.debit > 0 ? line.debit.toFixed(2) : ''}</td>
-        <td class="px-3 py-2.5 text-right font-mono text-xs ${line.credit > 0 ? 'font-semibold text-red-700' : ''}">${line.credit > 0 ? line.credit.toFixed(2) : ''}</td>
-        <td class="px-3 py-2.5 text-xs text-slate-500">${esc(line.memo || "")}</td>
-      </tr>
-    `).join("");
+    if (!preview.journal_lines || preview.journal_lines.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" class="px-3 py-4 text-center text-emerald-600">No journal lines generated</td></tr>`;
+    } else {
+      tbody.innerHTML = preview.journal_lines.map(line => {
+        const dr = Number(line.debit || 0);
+        const cr = Number(line.credit || 0);
+        return `
+          <tr class="border-b hover:bg-emerald-50/30">
+            <td class="px-3 py-2.5 text-xs font-medium text-slate-800">${esc(line.account_name || "Unnamed Account")}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-xs ${dr > 0 ? 'font-semibold text-green-700' : ''}">${dr > 0 ? dr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-xs ${cr > 0 ? 'font-semibold text-red-700' : ''}">${cr > 0 ? cr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
+            <td class="px-3 py-2.5 text-xs text-slate-500">${esc(line.memo || "")}</td>
+          </tr>
+        `;
+      }).join("");
+    }
   }
 
   // Totals
-  setElText("returnJournalPreviewTotalDr", preview.totals?.total_debit?.toFixed(2) || "0.00");
-  setElText("returnJournalPreviewTotalCr", preview.totals?.total_credit?.toFixed(2) || "0.00");
+  setElText("returnJournalPreviewTotalDr", totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  setElText("returnJournalPreviewTotalCr", totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
-  // Show the preview section
   container.classList.remove("hidden");
 
-  // Update line estimates from server
+  // Update return line estimates from server response
   if (preview.line_details) {
     const rows = document.querySelectorAll("#projectReturnLines tr");
     rows.forEach((row, idx) => {
       const detail = preview.line_details[idx];
       if (detail) {
+        const cost = Number(detail.total_cost || 0);
         const estSpan = row.querySelector("[data-pr-est-value]");
-        if (estSpan) estSpan.textContent = `USD ${detail.total_cost?.toFixed(2) || "0.00"}`;
+        if (estSpan) estSpan.textContent = `${currency} ${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       }
     });
     updateReturnEstimates();
@@ -136936,6 +137001,7 @@ function renderReturnJournalPreview(preview) {
 async function submitProjectReturn() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   const projectId = Number(ACTIVE_RETURN_PROJECT_ID || 0);
+  const currency = resolveCurrency();
   
   if (!cid || !projectId) {
     showReturnMessage("Missing company or project ID.", true);
@@ -136970,11 +137036,17 @@ async function submitProjectReturn() {
 
   showReturnMessage("Posting material return...", false);
 
-  // Disable button during post
-  const postBtn = document.querySelector('[onclick="submitProjectReturn()"]');
+  // Target by ID directly
+  const postBtn = document.getElementById("projectReturnSubmitBtn");
   if (postBtn) {
     postBtn.disabled = true;
-    postBtn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Posting...`;
+    postBtn.innerHTML = `
+      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg> 
+      Posting...
+    `;
   }
 
   try {
@@ -136989,14 +137061,24 @@ async function submitProjectReturn() {
       await loadProjectDetail(projectId);
     }
 
-    alert(`✅ Material return posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: USD ${out?.total_return_cost?.toFixed(2) || '0.00'}`);
+    const formattedCost = Number(out?.total_return_cost || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    alert(`✅ Material return posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: ${currency} ${formattedCost}`);
 
   } catch (err) {
     showReturnMessage(`Failed to post return: ${err?.message || "Unknown error"}`, true);
   } finally {
     if (postBtn) {
       postBtn.disabled = false;
-      postBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Post Return`;
+      postBtn.innerHTML = `
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg> 
+        Post Return
+      `;
     }
   }
 }

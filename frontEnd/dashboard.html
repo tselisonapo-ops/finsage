@@ -28657,19 +28657,17 @@ label:has(#projectTeamUserSearch) {
             </div>
           </div>
 
-          <!-- Journal Lines Table -->
+          <!-- Journal Lines Table (4 Aligned Columns) -->
           <div class="overflow-auto max-h-48">
             <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
-              <!-- Explicit column widths to ensure header/body alignment -->
               <colgroup>
-                <col style="width: 30%;">  <!-- Account Name -->
-                <col style="width: 18%;">  <!-- Memo -->
-                <col style="width: 15%;">  <!-- Debit -->
-                <col style="width: 15%;">  <!-- Credit -->                
+                <col style="width: 35%;">  <!-- Account Name -->
+                <col style="width: 18%;">  <!-- Debit -->
+                <col style="width: 18%;">  <!-- Credit -->                
+                <col style="width: 29%;">  <!-- Memo -->
               </colgroup>
               <thead class="bg-amber-50/50 border-b sticky top-0 z-10">
                 <tr>
-                  <th class="text-left px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Account Code</th>
                   <th class="text-left px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Account Name</th>
                   <th class="text-right px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Debit</th>
                   <th class="text-right px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Credit</th>
@@ -28679,7 +28677,7 @@ label:has(#projectTeamUserSearch) {
               <tbody id="projectIssueJournalLines" class="bg-white"></tbody>
               <tfoot class="bg-amber-100 font-bold border-t-2 border-amber-300">
                 <tr>
-                  <td colspan="2" class="px-3 py-2.5 text-right text-amber-900 font-bold">TOTALS:</td>
+                  <td class="px-3 py-2.5 text-right text-amber-900 font-bold">TOTALS:</td>
                   <td id="journalPreviewTotalDr" class="px-3 py-2.5 text-right font-mono text-amber-900 font-bold"></td>
                   <td id="journalPreviewTotalCr" class="px-3 py-2.5 text-right font-mono text-amber-900 font-bold"></td>
                   <td class="px-3 py-2.5"></td>
@@ -28691,37 +28689,36 @@ label:has(#projectTeamUserSearch) {
 
         <!-- Message Area -->
         <div id="projectIssueMsg" class="text-xs p-3 rounded-lg hidden"></div>
-      </div>
 
-      <!-- Footer Actions -->
-      <div class="flex justify-between items-center px-6 py-4 border-t bg-slate-50/50 shrink-0">
-        <div class="text-xs text-slate-500">
-          <span id="projectIssueLineCount">0</span> lines • 
-          <span id="projectIssueEstTotal">USD 0.00</span> estimated
+        <!-- Footer Actions -->
+        <div class="flex justify-between items-center px-6 py-4 border-t bg-slate-50/50 shrink-0">
+          <div class="text-xs text-slate-500">
+            <span id="projectIssueLineCount">0</span> lines • 
+            <span id="projectIssueEstTotal">0.00</span> estimated
+          </div>
+          <div class="flex gap-2" id="projectIssueFooterButtons">
+            <!-- STEP 1: Preview Button -->
+            <button type="button" id="projectIssuePreviewBtn" 
+                    class="px-6 py-2.5 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors font-semibold flex items-center gap-2 shadow-md hover:shadow-lg">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+              Preview & Review Journal
+            </button>
+            
+            <!-- STEP 2: Post Button (Hidden initially) -->
+            <button type="button" id="projectIssueSaveBtn" 
+                    class="hidden px-6 py-2.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-semibold flex items-center gap-2 shadow-md hover:shadow-lg">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              Confirm & Post Issue
+            </button>
+            
+            <button type="button" id="projectIssueCancelBtn" class="px-4 py-2.5 text-xs border rounded-lg hover:bg-slate-100 transition-colors">Cancel</button>
+          </div>
         </div>
-        <div class="flex gap-2" id="projectIssueFooterButtons">
-          <!-- STEP 1: Preview Button (shown initially) -->
-          <button id="projectIssuePreviewBtn" 
-                  class="px-6 py-2.5 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors font-semibold flex items-center gap-2 shadow-md hover:shadow-lg">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-            </svg>
-            Preview & Review Journal
-          </button>
-          
-          <!-- STEP 2: Post Button (HIDDEN until preview is shown) -->
-          <button id="projectIssueSaveBtn" 
-                  class="hidden px-6 py-2.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-semibold flex items-center gap-2 shadow-md hover:shadow-lg">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-            </svg>
-            Confirm & Post Issue
-          </button>
-          
-          <button id="projectIssueCancelBtn" class="px-4 py-2.5 text-xs border rounded-lg hover:bg-slate-100 transition-colors">Cancel</button>
-        </div>
-      </div>
     </div>
   </div>
 </div>
@@ -28808,8 +28805,8 @@ label:has(#projectTeamUserSearch) {
         </div>
         <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
           <colgroup>
-            <col style="width: 5%">   <!-- # (just numbers) -->
-            <col style="width: 38%">  <!-- Item (full name) -->
+            <col style="width: 5%">   <!-- # -->
+            <col style="width: 38%">  <!-- Item -->
             <col style="width: 12%">  <!-- Qty -->
             <col style="width: 14%">  <!-- Est Value -->
             <col style="width: 21%">  <!-- Reason -->
@@ -28829,7 +28826,7 @@ label:has(#projectTeamUserSearch) {
         </table>
       </div>
 
-      <!-- Journal Preview Section (Hidden until preview clicked) -->
+      <!-- Journal Preview Section -->
       <div id="projectReturnJournalPreview" class="hidden border-2 border-emerald-200 rounded-lg overflow-hidden bg-emerald-50/30">
         <div class="bg-emerald-100 px-4 py-2 border-b flex items-center justify-between">
           <span class="font-medium text-xs text-emerald-800 flex items-center gap-1">
@@ -28857,19 +28854,17 @@ label:has(#projectTeamUserSearch) {
           </div>
         </div>
 
-        <!-- Journal Lines Table -->
+        <!-- Journal Lines Table (Aligned 4 Columns) -->
         <div class="overflow-auto max-h-48">
           <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
-            <!-- Explicit column widths to ensure header/body alignment -->
             <colgroup>
-              <col style="width: 30%">  <!-- Account Name -->
-              <col style="width: 18%">  <!-- Memo -->
-              <col style="width: 15%">  <!-- Debit -->
-              <col style="width: 15%">  <!-- Credit -->              
+              <col style="width: 35%">  <!-- Account Name -->
+              <col style="width: 18%">  <!-- Debit -->
+              <col style="width: 18%">  <!-- Credit -->              
+              <col style="width: 29%">  <!-- Memo -->
             </colgroup>
             <thead class="bg-emerald-50/50 border-b sticky top-0 z-10">
               <tr>
-                <th class="text-left px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Account Code</th>
                 <th class="text-left px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Account Name</th>
                 <th class="text-right px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Debit</th>
                 <th class="text-right px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Credit</th>
@@ -28879,7 +28874,7 @@ label:has(#projectTeamUserSearch) {
             <tbody id="projectReturnJournalLines" class="bg-white"></tbody>
             <tfoot class="bg-emerald-100 font-bold border-t-2 border-emerald-300">
               <tr>
-                <td colspan="2" class="px-3 py-2.5 text-right text-emerald-900 font-bold">TOTALS:</td>
+                <td class="px-3 py-2.5 text-right text-emerald-900 font-bold">TOTALS:</td>
                 <td id="returnJournalPreviewTotalDr" class="px-3 py-2.5 text-right font-mono text-emerald-900 font-bold"></td>
                 <td id="returnJournalPreviewTotalCr" class="px-3 py-2.5 text-right font-mono text-emerald-900 font-bold"></td>
                 <td class="px-3 py-2.5"></td>
@@ -28897,11 +28892,11 @@ label:has(#projectTeamUserSearch) {
     <div class="flex justify-between items-center px-6 py-4 border-t bg-slate-50/50 shrink-0 rounded-b-2xl">
       <div class="text-xs text-slate-500">
         <span id="projectReturnLineCount">0</span> lines • 
-        <span id="projectReturnEstTotal">USD 0.00</span> estimated reversal
+        <span id="projectReturnEstTotal">0.00</span> estimated reversal
       </div>
       <div class="flex gap-2">
-        <button onclick="closeProjectReturnModal()" class="px-4 py-2 text-xs border rounded-lg hover:bg-slate-100 transition-colors">Cancel</button>
-        <button onclick="submitProjectReturn()" class="px-4 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center gap-1">
+        <button type="button" onclick="closeProjectReturnModal()" class="px-4 py-2 text-xs border rounded-lg hover:bg-slate-100 transition-colors">Cancel</button>
+        <button type="button" id="projectReturnSubmitBtn" class="px-4 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center gap-1">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
           </svg>
