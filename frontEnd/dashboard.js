@@ -8661,7 +8661,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       permission: "can_view_reports",
       children: [
         { name: "Chart of Accounts", screen: "coa", icon: "📒", minRole: "assistant", permission: "can_view_reports" },
-        { name: "IFRS 16 Lease WiUSDd", icon: "🧙", wiUSDd: "ifrs16", minRole: "assistant", permission: "can_prepare_financials" },
+        { name: "IFRS 16 Lease Wizard", icon: "🧙", wizard: "ifrs16", minRole: "assistant", permission: "can_prepare_financials" },
         { name: "Fixed Assets Register", screen: "fixedassets", icon: "🏭", minRole: "assistant", permission: "can_manage_fixed_assets" },
         { name: "Revenue Setup", screen: "revenue-setup", icon: "📐", minRole: "assistant", permission: "can_prepare_financials" },
         { name: "IFRS 9 Financial Instruments", screen: "ifrs9", icon: "💎", minRole: "assistant", permissionAny: ["can_post_journals", "can_prepare_financials", "can_view_reports"] },
@@ -10027,8 +10027,8 @@ function renderNavMenu(menu, targetEl, level = 0) {
     // ---------------------------
     // WIUSDD LINK
     // ---------------------------
-    else if (item.wiUSDd) {
-      link.setAttribute("data-wiUSDd", item.wiUSDd);
+    else if (item.wizard) {
+      link.setAttribute("data-wizard", item.wizard);
       link.classList.add("hover");
       li.appendChild(link);
     }
@@ -10080,13 +10080,13 @@ function bindNav() {
 
   // Single delegated listener for the entire document / navigation
   document.addEventListener("click", (e) => {
-    const link = e.target.closest(".nav-item-link, [data-nav], [data-wiUSDd]");
+    const link = e.target.closest(".nav-item-link, [data-nav], [data-wizard]");
     if (!link) return;
 
-    const wiUSDd = link.dataset.wiUSDd;
-    if (wiUSDd && typeof wiUSDdMap !== "undefined" && wiUSDdMap[wiUSDd]) {
+    const wizard = link.dataset.wizard;
+    if (wizard && typeof wizardMap !== "undefined" && wizardMap[wizard]) {
       e.preventDefault();
-      wiUSDdMap[wiUSDd]();
+      wizardMap[wizard]();
       return;
     }
 
@@ -10225,7 +10225,7 @@ const DELEGATED_POSTING_SCREENS = new Set([
   "bank-recon",
 
   "ifrs16",
-  "lease-wiUSDd",
+  "lease-wizard",
   "leases",
 
   "loan-register",
@@ -12966,14 +12966,14 @@ window.showSignupPrompt = showSignupPrompt;
   * Bindings
   * ============================== */
  
-const wiUSDdMap = {
-  ifrs16: openLeaseWiUSDd,
+const wizardMap = {
+  ifrs16: openLeaseWizard,
   // future wiUSDds: "vat": openVatWiUSDd, etc.
 };
 
   // Open/close IFRS 16 wiUSDd drawer
-function openLeaseWiUSDd(ctx = {}) {
-  const pending = window.__LEASE_WIUSDD_PENDING_CONTEXT__ || {};
+function openLeaseWizard(ctx = {}) {
+  const pending = window.__LEASE_WIZARD_PENDING_CONTEXT__ || {};
 
   ctx = {
     ...pending,
@@ -12988,10 +12988,10 @@ function openLeaseWiUSDd(ctx = {}) {
     },
   };
 
-  window.__LEASE_WIUSDD_PENDING_CONTEXT__ = null;
+  window.__LEASE_WIZARD_PENDING_CONTEXT__ = null;
 
-  const drawer = document.getElementById("leaseWiUSDdDrawer");
-  const frame = document.getElementById("leaseWiUSDdFrame");
+  const drawer = document.getElementById("leaseWizardDrawer");
+  const frame = document.getElementById("leaseWizardFrame");
 
   if (!drawer || !frame) {
     console.error("[LEASE] drawer or iframe missing");
@@ -13001,8 +13001,8 @@ function openLeaseWiUSDd(ctx = {}) {
   const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
 
   const url = isLocal
-    ? "http://localhost:5173/lease-wiUSDd.html"
-    : `${location.origin}/app/dist/lease-wiUSDd.html?v=20260814b`;
+    ? "http://localhost:5173/lease-wizard.html"
+    : `${location.origin}/app/dist/lease-wizard.html?v=20260814b`;
 
   const origin = isLocal
     ? "http://localhost:5173"
@@ -13025,7 +13025,7 @@ function openLeaseWiUSDd(ctx = {}) {
   const isLessor = ["BS_CA_1710", "BS_NCA_1720"].includes(accountCode);
 
   const payload = {
-    type: "lease_wiUSDd_context",
+    type: "lease_wizard_context",
     token:
       window.getToken?.() ||
       sessionStorage.getItem("fs_user_token") ||
@@ -13060,7 +13060,7 @@ function openLeaseWiUSDd(ctx = {}) {
     },
   };
 
-  window.__LEASE_WIUSDD_ACTIVE_CONTEXT__ = payload;
+  window.__LEASE_WIZARD_ACTIVE_CONTEXT__ = payload;
 
   const sendContext = () => {
     if (!frame.contentWindow) return;
@@ -13110,10 +13110,10 @@ function openLeaseWiUSDd(ctx = {}) {
   }, 150);
 }
 
-window.openLeaseWiUSDd = openLeaseWiUSDd;
+window.openLeaseWizard = openLeaseWizard;
 
-function closeLeaseWiUSDd() {
-  const drawer = document.getElementById("leaseWiUSDdDrawer");
+function closeLeaseWizard() {
+  const drawer = document.getElementById("leaseWizardDrawer");
   if (drawer) drawer.classList.remove("active");
 }
 
@@ -13383,6 +13383,8 @@ async function openFixedAssetsDrawer(ctx = {}) {
     assetId: Number(ctx.assetId || 0) || null,
     defaults: ctx.defaults || {},
     source: ctx.source || "",
+    journalDate: ctx.journalDate || ctx.defaults?.journalDate || "",
+    journalRef: ctx.journalRef || ctx.defaults?.journalRef || "",
   };
 
   const mount = window.FS_MOUNT_FIXED_ASSETS_DRAWER;
@@ -23683,13 +23685,13 @@ function getJournalGuardMessage(hint, acct) {
 
   if (hint === "lease") {
     return {
-      title: "Use Lease WiUSDd instead?",
+      title: "Use Lease Wizard instead?",
       body:
         `${name} is usually managed through the Lease module.\n\n` +
         `If you continue in Journal, lease schedules, interest unwind, ROU amortisation, remeasurements, and lease disclosures will need to be handled manually.`,
       continueLabel: "Continue in Journal",
-      moduleLabel: "Open Lease WiUSDd",
-      screen: "ifrs16-lease-wiUSDd",
+      moduleLabel: "Open Lease Wizard",
+      screen: "ifrs16-lease-wizard",
       reasonPrefix: "lease",
     };
   }
@@ -23892,8 +23894,8 @@ async function redirectJournalGuardToModule({ hint, acct, side }) {
   }
 
   if (hint === "lease") {
-    await window.switchScreen?.("ifrs16-lease-wiUSDd");
-    window.openLeaseWiUSDd?.({
+    await window.switchScreen?.("ifrs16-lease-wizard");
+    window.openLeaseWizard?.({
       side,
       account: acct,
       accountCode: acct?.code || "",
@@ -24205,7 +24207,7 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
         "BS_NCA_1720",
       ].includes(accountCode);
 
-      window.__LEASE_WIUSDD_PENDING_CONTEXT__ = {
+      window.__LEASE_WIZARD_PENDING_CONTEXT__ = {
         mode: isLessor ? "inception" : "existing",
         leaseRole: isLessor ? "lessor" : "lessee",
         accountCode,
@@ -24284,8 +24286,11 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
     return await window.openFixedAssetsDrawer?.({
       mode: "acquire",
       companyName,
-      accountCode: account?.code,
-      accountName: account?.name,
+      accountCode: account?.code || "",
+      accountName: account?.name || "",
+      source: "journal_guard",
+      journalDate,
+      journalRef,
       defaults: {
         acquisitionDate: journalDate || null,
         openingAsAt: journalDate || null,
@@ -24293,6 +24298,8 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
         reference: journalRef || null,
         source: "journal_guard",
         journalSide: side,
+        journalDate,
+        journalRef,
       },
     });
   }
@@ -24303,7 +24310,7 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
       return null;
     }
 
-    return await window.openLeaseWiUSDd?.({
+    return await window.openLeaseWizard?.({
       mode: "existing",
       accountCode: account?.code || "",
       accountName: account?.name || "",
@@ -24382,14 +24389,20 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
     return await window.openFixedAssetsDrawer?.({
       mode: "acquire",
       companyName,
-      accountCode: account?.code,
-      accountName: account?.name,
+      accountCode: account?.code || "",
+      accountName: account?.name || "",
+      source: "journal_guard",
+      journalDate,
+      journalRef,
       defaults: {
         acquisitionDate: journalDate || null,
         openingAsAt: journalDate || null,
         postingDate: journalDate || null,
+        reference: journalRef || null,
         source: "journal_guard",
         journalSide: side,
+        journalDate,
+        journalRef,
       },
     });
   }
@@ -24692,7 +24705,7 @@ function handleJournalAccountSelected(side, accountCode, meta = {}) {
     acc_cf_bucket: acc.cf_bucket,
     meta_standard: meta.standard,
     meta_cf_bucket: meta.cf_bucket,
-    hasOpenLeaseWiUSDd: typeof window.openLeaseWiUSDd,
+    hasOpenLeaseWizard: typeof window.openLeaseWizard,
   });
 
   // --- helpers ---
@@ -24723,11 +24736,11 @@ function handleJournalAccountSelected(side, accountCode, meta = {}) {
 
   if (directLeaseRedirect) {
     window.showToast?.(
-      "Lease account selected (IFRS 16). Opening Lease WiUSDd to capture lease metadata and build the amortization schedule…",
+      "Lease account selected (IFRS 16). Opening Lease Wizard to capture lease metadata and build the amortization schedule…",
       "info"
     );
-    console.log("[IFRS16] calling openLeaseWiUSDd now");
-    window.openLeaseWiUSDd?.({
+    console.log("[IFRS16] calling openLeaseWizard now");
+    window.openLeaseWizard?.({
       side,
       account: acc,
       accountCode,
@@ -36820,8 +36833,8 @@ function bindInterpretationToolbar() {
 // ==============================
 // IFRS wiUSDd posting placeholders
 // ==============================
-function bindLeaseWiUSDd() {
-  const form = document.getElementById("leaseWiUSDdForm");
+function bindLeaseWizard() {
+  const form = document.getElementById("leaseWizardForm");
   if (!form) return;
 
   form.addEventListener("submit", async (e) => {
@@ -36837,7 +36850,7 @@ function bindLeaseWiUSDd() {
     };
 
     await postLeaseJournal(lease);
-    closeLeaseWiUSDd();
+    closeLeaseWizard();
   });
 }
 
@@ -41147,7 +41160,7 @@ function renderLeaseHeaderTabs(routeName = "") {
     r === "lease-register" ||
     r === "ifrs16" ||
     r === "lease-center" ||
-    r === "lease-wiUSDd";
+    r === "lease-wizard";
 
   // -----------------------------
   // Decide which set to render
@@ -41468,19 +41481,19 @@ window.postTerm = async function postTerm() {
 // ===============================
 // IFRS 16 Lease WiUSDd drawer open/close
 // ===============================
-(function bindLeaseWiUSDdDrawer() {
-  const navBtn = document.getElementById("openLeaseWiUSDdNav");
-  const drawer = document.getElementById("leaseWiUSDdDrawer");
-  const closeBtn = document.getElementById("closeLeaseWiUSDd");
-  const frame = document.getElementById("leaseWiUSDdFrame");
+(function bindLeaseWizardDrawer() {
+  const navBtn = document.getElementById("openLeaseWizardNav");
+  const drawer = document.getElementById("leaseWizardDrawer");
+  const closeBtn = document.getElementById("closeLeaseWizard");
+  const frame = document.getElementById("leaseWizardFrame");
 
   if (!drawer || !frame) {
     console.warn("[LEASE HOST] drawer or iframe missing");
     return;
   }
 
-  if (window.__LEASE_WIUSDD_BOUND__) return;
-  window.__LEASE_WIUSDD_BOUND__ = true;
+  if (window.__LEASE_WIZARD_BOUND__) return;
+  window.__LEASE_WIZARD_BOUND__ = true;
 
   const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
   const origin = isLocal ? "http://localhost:5173" : location.origin;
@@ -41494,7 +41507,7 @@ window.postTerm = async function postTerm() {
   }
 
   function sendActiveContext() {
-    const payload = window.__LEASE_WIUSDD_ACTIVE_CONTEXT__;
+    const payload = window.__LEASE_WIZARD_ACTIVE_CONTEXT__;
     if (!payload || !frame.contentWindow) return;
 
     payload.token =
@@ -41511,7 +41524,7 @@ window.postTerm = async function postTerm() {
     frame.contentWindow.postMessage(payload, origin);
   }
 
-  window.closeLeaseWiUSDd = closeDrawer;
+  window.closeLeaseWizard = closeDrawer;
 
   navBtn?.addEventListener("click", () => {
     const companyId =
@@ -41523,9 +41536,9 @@ window.postTerm = async function postTerm() {
       return;
     }
 
-    sessionStorage.removeItem("lease_wiUSDd_context");
+    sessionStorage.removeItem("lease_wizard_context");
 
-    window.openLeaseWiUSDd?.({
+    window.openLeaseWizard?.({
       source: "nav",
       mode: "inception",
       leaseRole: "lessee",
@@ -41548,12 +41561,12 @@ window.postTerm = async function postTerm() {
       data,
     });
 
-    if (data.type === "lease_wiUSDd_ready") {
+    if (data.type === "lease_wizard_ready") {
       sendActiveContext();
       return;
     }
 
-    if (data.type === "lease_wiUSDd_close") {
+    if (data.type === "lease_wizard_close") {
       closeDrawer();
       return;
     }
@@ -85230,7 +85243,7 @@ async function saveEditModal() {
       document.getElementById("adModalCancelBtn")?.addEventListener("click", closeAdNewModal);
 
       document.getElementById("adPreviewBtn")?.addEventListener("click", async () => {
-        const payload = adPayloadFromWiUSDd(window._AD_FINAL_CTX || {});
+        const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
 
         if (!payload.settlement_method) {
           return alert("Select Bank / Cash or Accounts Payable.");
@@ -85254,7 +85267,7 @@ async function saveEditModal() {
       });
 
       document.getElementById("adSaveDraftBtn")?.addEventListener("click", async () => {
-        const payload = adPayloadFromWiUSDd(window._AD_FINAL_CTX || {});
+        const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
 
         if (!payload.item_title) {
           return alert("Item title is required.");
@@ -85301,7 +85314,7 @@ async function saveEditModal() {
           e.preventDefault();
 
           const ctx = window._AD_FINAL_CTX || {};
-          const payload = adPayloadFromWiUSDd(ctx);
+          const payload = adPayloadFromWizard(ctx);
 
           // --------------------------------------------------
           // Core validation
@@ -85594,7 +85607,7 @@ async function saveEditModal() {
   }
   window.openNewAccrualDeferralModal = openNewAccrualDeferralModal;
 
-  function adPayloadFromWiUSDd(ctx = {}) {
+  function adPayloadFromWizard(ctx = {}) {
     const settlementMethod =
       $("adNewSettlementMethod")?.value || "";
 
@@ -85777,7 +85790,7 @@ async function saveEditModal() {
   }
 
   async function refreshAdPreview(ctx = {}) {
-    const payload = adPayloadFromWiUSDd(ctx);
+    const payload = adPayloadFromWizard(ctx);
 
     if (!payload.item_title || !(payload.original_amount > 0) || !payload.start_date || !payload.end_date) {
       renderAdJournalPreview(null);
@@ -138185,7 +138198,7 @@ async function bootstrapApp(currentUser) {
   if (typeof bindQuickBillingUI === "function") bindQuickBillingUI();
   if (typeof bindCoaDrawer === "function") bindCoaDrawer();
   if (typeof bindReportsScreen === "function") bindReportsScreen();
-  if (typeof bindLeaseWiUSDd === "function") bindLeaseWiUSDd();
+  if (typeof bindLeaseWizard === "function") bindLeaseWizard();
   if (typeof bindLeaseTabs === "function") bindLeaseTabs();   // ✅ ADD THIS
   if (typeof bindBankScreen === "function") bindBankScreen();
   if (typeof bindBankSetupScreen === "function") bindBankSetupScreen();

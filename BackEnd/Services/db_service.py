@@ -40702,6 +40702,8 @@ class DatabaseService:
 
                         ''inventory'',
                         ''inventory_reversal'',
+                        ''project_material_issue'',
+                        ''project_material_return'',
 
                         ''asset'',
                         ''asset_reversal'',
@@ -133857,7 +133859,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             project_debit_account = str(debit_row.get("code") or project_debit_raw or "").strip()
             project_debit_name = str(debit_row.get("name") or project_debit_account).strip()
-            
+
             cur.execute(
                 f"""
                 INSERT INTO {schema}.inventory_tx (
