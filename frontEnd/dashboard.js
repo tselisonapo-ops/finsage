@@ -13357,6 +13357,26 @@ function updateHeaderCompanyBadge() {
   badge.classList.remove("hidden");
 }
 
+function ensureFixedAssetsDrawerRoot() {
+  const root = document.getElementById("fs-react-drawer-root");
+
+  if (!root) {
+    console.warn("[PPE] #fs-react-drawer-root not found.");
+    return null;
+  }
+
+  const issueModal = document.getElementById("projectIssueModal");
+
+  if (issueModal && issueModal.contains(root)) {
+    console.log("[PPE] Moving Fixed Assets drawer root outside projectIssueModal.");
+
+    document.body.appendChild(root);
+  }
+
+  return root;
+}
+
+
 async function openFixedAssetsDrawer(ctx = {}) {
   console.log("[PPE] openFixedAssetsDrawer called", ctx);
 
@@ -13387,7 +13407,20 @@ async function openFixedAssetsDrawer(ctx = {}) {
     journalRef: ctx.journalRef || ctx.defaults?.journalRef || "",
   };
 
+  ensureFixedAssetsDrawerRoot();
+
   const mount = window.FS_MOUNT_FIXED_ASSETS_DRAWER;
+
+  console.log("[PPE] drawer host status", { 
+    mount: typeof mount, 
+    open: typeof window.FS_OPEN_FIXED_ASSETS_DRAWER, 
+    rootParent: document.getElementById("fs-react-drawer-root")?.parentElement?.id, 
+  }); 
+  
+  if (typeof mount === "function") { 
+    await mount(); 
+  }  
+
   const open = window.FS_OPEN_FIXED_ASSETS_DRAWER;
 
   console.log("[PPE] drawer host status", {

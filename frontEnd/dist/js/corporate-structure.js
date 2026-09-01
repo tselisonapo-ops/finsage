@@ -2,7 +2,11 @@
   "use strict";
 
   const FS = window.FinSage || {};
-  const ENDPOINTS = FS.ENDPOINTS || window.ENDPOINTS;
+
+  const ENDPOINTS =
+    FS.ENDPOINTS?.companyStructure
+      ? FS.ENDPOINTS
+      : window.ENDPOINTS;
   const apiFetch = FS.apiFetch || window.apiFetch;
   const getActiveCompanyId = FS.getActiveCompanyId || window.getActiveCompanyId;
   const resolveCurrency=currency=>

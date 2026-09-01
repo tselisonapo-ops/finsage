@@ -2005,6 +2005,84 @@ const ENDPOINTS = {
 
     inventoryLocationsPreview:(companyId,projectId,datasetId)=>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/locations/preview`,
+  
+    inventoryOpening:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/inventory/opening`,
+
+    inventoryOpeningSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/opening/settings`,
+
+    inventoryOpeningPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/opening/preview`,
+
+    inventoryOpeningReconcile:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/opening/reconcile`,
+  
+    inventoryMovements:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/inventory/movements`,
+
+    inventoryMovementSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/movements/settings`,
+
+    inventoryMovementTypes:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/movements/types`,
+
+    inventoryMovementPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/movements/preview`,
+
+    inventoryMovementReconcile:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/movements/reconcile`,
+  
+    posConfiguration:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/pos/configuration`,
+
+    posPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/preview`,
+
+    posTerminals:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/terminals`,
+
+    posPaymentMethods:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/payment-methods`,
+
+    posCatalogue:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/catalogue`,
+
+    posReconcile:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/pos/reconcile`,
+  
+    posMenu:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/pos/menu`,
+
+    posMenuSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/settings`,
+
+    posMenuItems:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/items`,
+
+    posMenuComponents:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/components`,
+
+    posMenuAddons:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/addons`,
+
+    posMenuPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/preview`,
+
+    posMenuReconcile:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/menu/reconcile`,
+  
+    posHistory:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/pos/history`,
+
+    posHistorySettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/history/settings`,
+
+    posHistoryPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/history/preview`,
+
+    posHistoryReconcile:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/pos/history/reconcile`,
   },
 
   ifrs9: {
@@ -2265,6 +2343,20 @@ const ENDPOINTS = {
     pdf:   (cid, qid, t) => `${API_BASE}/api/companies/${cid}/quotes/${qid}/pdf?t=${encodeURIComponent(t||"")}`,
     create:(cid) => `${API_BASE}/api/companies/${cid}/quotes`,
     update:(cid, qid) => `${API_BASE}/api/companies/${cid}/quotes/${qid}`, 
+  },
+
+  taxFiling: {
+      authorities: (cid) =>
+          `${API_BASE}/api/companies/${encodeURIComponent(cid)}/payroll/tax-filing/authorities`,
+
+      validate: (cid) =>
+          `${API_BASE}/api/companies/${encodeURIComponent(cid)}/payroll/tax-filing/validate`,
+
+      export: (cid) =>
+          `${API_BASE}/api/companies/${encodeURIComponent(cid)}/payroll/tax-filing/export`,
+
+      preview: (cid, authority, period) =>
+          `${API_BASE}/api/companies/${encodeURIComponent(cid)}/payroll/tax-filing/preview?authority=${encodeURIComponent(authority)}&period=${encodeURIComponent(period)}`,
   },
 
   payroll: {
@@ -4617,6 +4709,177 @@ const ENDPOINTS = {
     update: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}`,
 
+    // ✅ CORRECTED: Include companyId parameter
+    rolesList: (companyId, projectId) => 
+      `/api/companies/${companyId}/projects/${projectId}/roles`,
+    
+    rolesCreate: (companyId, projectId) => 
+      `/api/companies/${companyId}/projects/${projectId}/roles`,
+    
+    rolesUpdate: (companyId, projectId, roleId) => 
+      `/api/companies/${companyId}/projects/${projectId}/roles/${roleId}`,
+    
+    rolesDelete: (companyId, projectId, roleId) => 
+      `/api/companies/${companyId}/projects/${projectId}/roles/${roleId}`,
+
+    teamList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/team`,
+
+    teamCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/team`,
+
+    teamDelete: (cid, projectId, memberId) =>
+      `/api/companies/${cid}/projects/${projectId}/team/${memberId}`,
+
+    taskAssignmentsList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/task-assignments`,
+
+    taskAssign: (cid, projectId, taskId) =>
+      `/api/companies/${cid}/projects/${projectId}/tasks/${taskId}/assign`,
+
+    dependenciesList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/dependencies`,
+
+    dependenciesCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/dependencies`,
+
+    timeList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/time`,
+
+    timeCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/time`,
+
+    timeUpdate: (cid, projectId, entryId) =>
+      `/api/companies/${cid}/projects/${projectId}/time/${entryId}`,
+
+    timeAction: (cid, projectId, entryId, action) =>
+      `/api/companies/${cid}/projects/${projectId}/time/${entryId}/${action}`,
+
+    expensesList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/expenses`,
+
+    expensesCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/expenses`,
+
+    expenseApprove: (cid, projectId, expenseId) =>
+      `/api/companies/${cid}/projects/${projectId}/expenses/${expenseId}/approve`,
+
+    commitmentsList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/commitments`,
+
+    changesList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/changes`,
+
+    changesCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/changes`,
+
+    changeAction: (
+      cid,
+      projectId,
+      changeId,
+      action
+    ) =>
+      `/api/companies/${cid}/projects/${projectId}/changes/${changeId}/${action}`,
+
+    risksList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/risks`,
+
+    risksCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/risks`,
+
+    riskUpdate: (cid, projectId, riskId) =>
+      `/api/companies/${cid}/projects/${projectId}/risks/${riskId}`,
+
+    issuesList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/issues`,
+
+    issuesCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/issues`,
+
+    issueUpdate: (cid, projectId, issueId) =>
+      `/api/companies/${cid}/projects/${projectId}/issues/${issueId}`,
+
+    documentsList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/documents`,
+
+    documentsCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/documents`,
+
+    activityList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/activity`,
+
+    performance: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/performance`,
+
+    forecastsList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/forecasts`,
+
+    forecastsCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/forecasts`,
+
+    capitalPosition: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/capital-position`,
+
+    capitalisationsList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/capitalisations`,
+
+    capitalisationsCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/capitalisations`,
+
+    capitalisationAction: (cid, projectId, capitalisationId, action) =>
+      `/api/companies/${cid}/projects/${projectId}/capitalisations/${capitalisationId}/${action}`,
+
+    internalSummary: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/internal-summary`,
+
+    assetLinks: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/assets`,
+
+    assetLinkCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/assets`,
+
+    capitalPosition: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/capital-position`,
+
+    assetCreate: (cid) =>
+      `/api/companies/${cid}/assets`,
+
+    assetOne: (cid, assetId) =>
+      `/api/companies/${cid}/assets/${assetId}`,
+
+    borrowingOptions: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/borrowing-options`,
+
+    borrowingLinks: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/borrowing-links`,
+
+    borrowingLinkCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/borrowing-links`,
+
+    borrowingLinkStop: (cid, projectId, linkId) =>
+      `/api/companies/${cid}/projects/${projectId}/borrowing-links/${linkId}/stop`,
+
+    closeoutAssessment: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/closeout-assessment`,
+
+    commissioningComplete: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/commissioning-complete`,
+
+    close: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/close`,
+
+    reopen: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/reopen`,
+
+    assetUpdate: (cid, assetId) =>
+      `/api/companies/${cid}/assets/${assetId}`,
+
+    assetAcquisitionCreate: (cid, assetId) =>
+      `/api/companies/${cid}/assets/${assetId}/acquisitions`,
+
+    assetAcquisitionPost: (cid, acquisitionId) =>
+      `/api/companies/${cid}/asset-acquisitions/${acquisitionId}/post`,
+
     tasksList: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/tasks`,
 
@@ -4653,8 +4916,20 @@ const ENDPOINTS = {
     issueMaterials: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/issue-materials`,
 
+    returnMaterials: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/return-materials`,
+
     inventoryItemsLite: (cid) =>
       `/api/companies/${cid}/inventory/items-lite`,
+  
+    // Add to your ENDPOINTS.projects object:
+    previewIssueJournal: (cid, projectId) => 
+      `/api/companies/${cid}/projects/${projectId}/preview-issue-journal`,
+    previewReturnJournal: (cid, projectId) => 
+      `/api/companies/${cid}/projects/${projectId}/preview-return-journal`,
+
+    revenue: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/revenue`,
   },
 
   // ✅ ADD THIS as a sibling object
@@ -5132,6 +5407,9 @@ const ENDPOINTS = {
     runs: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs`,
 
+    runDetail: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs/${encodeURIComponent(runId)}`,
+
     postRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs/${encodeURIComponent(runId)}/post`,
 
@@ -5278,16 +5556,22 @@ const ENDPOINTS = {
     const params = new URLSearchParams();
     if (from) params.append("from", from);
     if (to) params.append("to", to);
+
     const qs = params.toString();
-    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_summary` + (qs ? `?${qs}` : "");
+
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_summary`
+      + (qs ? `?${qs}` : "");
   },
 
   vatLines: (companyId, from, to) => {
     const params = new URLSearchParams();
     if (from) params.append("from", from);
     if (to) params.append("to", to);
+
     const qs = params.toString();
-    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/lines` + (qs ? `?${qs}` : "");
+
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/lines`
+      + (qs ? `?${qs}` : "");
   },
 
   vatPeriods: (companyId) =>
@@ -5296,29 +5580,48 @@ const ENDPOINTS = {
   vatSettings: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_settings`,
 
+  vatSetupOptions: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/setup-options`,
+
   vatFilings: (companyId, from, to) => {
     const params = new URLSearchParams();
     if (from) params.append("from", from);
     if (to) params.append("to", to);
+
     const qs = params.toString();
-    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings` + (qs ? `?${qs}` : "");
+
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings`
+      + (qs ? `?${qs}` : "");
   },
 
-  vatFilingExport: (cid) => 
-    `${API_BASE}/api/companies/${cid}/vat/filings/export`,
-  
-  vatFilingPackExport: (cid) => 
-    `${API_BASE}/api/companies/${cid}/vat/filings/export-pack`,
-  
-  vatFilingPackEmail:  (cid) => 
-    `${API_BASE}/api/companies/${cid}/vat/filings/email-pack`,
+  vatRates: (companyId, transactionDate) => {
+    const params = new URLSearchParams();
+
+    if (transactionDate) {
+      params.append("date", transactionDate);
+    }
+
+    const qs = params.toString();
+
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/rates`
+      + (qs ? `?${qs}` : "");
+  },
+
+  vatFilingExport: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/export`,
+
+  vatFilingPackExport: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/export-pack`,
+
+  vatFilingPackEmail: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/email-pack`,
 
   vatPrepareFiling: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/prepare`,
-  
-  vatFilingPay: (cid) => 
-    `${API_BASE}/api/companies/${cid}/vat/filings/pay`,
-  
+
+  vatFilingPay: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/pay`,
+
   vatSubmitFiling: (companyId, filingId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/${encodeURIComponent(filingId)}/submit`,
 };
@@ -5398,33 +5701,33 @@ console.log("[bootstrap] ENDPOINTS.users =", window.ENDPOINTS?.users);
     return api;
   }
 
-function companyId() {
-  const raw = localStorage.getItem(COMPANY_KEY);
-  return raw ? String(raw) : null; // ✅ no fake default
-}
+  function companyId() {
+    const raw = localStorage.getItem(COMPANY_KEY);
+    return raw ? String(raw) : null; // ✅ no fake default
+  }
 
-function getActiveCompanyId() {
-  try {
-    const postingCtx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
+  function getActiveCompanyId() {
+    try {
+      const postingCtx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
 
-    if (
-      postingCtx &&
-      postingCtx.launchMode === "posting" &&
-      Number(postingCtx.targetCompanyId || postingCtx.companyId || 0) > 0
-    ) {
-      return Number(postingCtx.targetCompanyId || postingCtx.companyId);
-    }
-  } catch (_) {}
+      if (
+        postingCtx &&
+        postingCtx.launchMode === "posting" &&
+        Number(postingCtx.targetCompanyId || postingCtx.companyId || 0) > 0
+      ) {
+        return Number(postingCtx.targetCompanyId || postingCtx.companyId);
+      }
+    } catch (_) {}
 
-  const raw = companyId();
-  if (!raw) return null;
+    const raw = companyId();
+    if (!raw) return null;
 
-  const cid = parseInt(raw, 10);
-  return Number.isNaN(cid) ? null : cid;
-}
-window.getActiveCompanyId = getActiveCompanyId;
+    const cid = parseInt(raw, 10);
+    return Number.isNaN(cid) ? null : cid;
+  }
+  window.getActiveCompanyId = getActiveCompanyId;
 
-window.companyId = companyId;
+  window.companyId = companyId;
 
   // Global store (in-memory)
   const store = makeStore(STORAGE_PREFIX);
@@ -5444,218 +5747,252 @@ window.companyId = companyId;
   // ==========================================================
   // 5) ROLES (single source of truth, no duplicates)
   // ==========================================================
-window.ROLE_LABELS = window.ROLE_LABELS || {
-  viewer: "Viewer",
-  clerk: "Accounts Clerk",
-  assistant: "Finance Assistant",
-  junior: "Junior Accountant",
-  senior: "Senior Accountant",
-  accountant: "Accountant",
-  manager: "Manager",
-  "credit controller": "Credit Controller",
-  cfo: "CFO",
-  owner: "Owner",
-  admin: "Admin",
+  window.ROLE_LABELS = window.ROLE_LABELS || {
+    viewer: "Viewer",
+    clerk: "Accounts Clerk",
+    assistant: "Finance Assistant",
+    junior: "Junior Accountant",
+    senior: "Senior Accountant",
+    accountant: "Accountant",
+    manager: "Manager",
+    "credit controller": "Credit Controller",
+    cfo: "CFO",
+    owner: "Owner",
+    admin: "Admin",
 
-  audit_staff: "Audit Staff",
-  senior_associate: "Senior Associate",
-  audit_manager: "Audit Manager",
-  audit_partner: "Audit Partner",
-  engagement_partner: "Engagement Partner",
-  quality_control_reviewer: "Quality Control Reviewer",
-  client_service_manager: "Client Service Manager",
-  fs_compiler: "Financial Statements Compiler",
-  reviewer: "Reviewer",
-  bookkeeper: "Bookkeeper",
+    audit_staff: "Audit Staff",
+    senior_associate: "Senior Associate",
+    audit_manager: "Audit Manager",
+    audit_partner: "Audit Partner",
+    engagement_partner: "Engagement Partner",
+    quality_control_reviewer: "Quality Control Reviewer",
+    client_service_manager: "Client Service Manager",
+    fs_compiler: "Financial Statements Compiler",
+    reviewer: "Reviewer",
+    bookkeeper: "Bookkeeper",
 
-  audit_trainee: "Audit Trainee",
-  accounting_trainee: "Accounting Trainee",
-  tax_preparer: "Tax Preparer",
-  tax_reviewer: "Tax Reviewer"
-};
+    audit_trainee: "Audit Trainee",
+    accounting_trainee: "Accounting Trainee",
+    tax_preparer: "Tax Preparer",
+    tax_reviewer: "Tax Reviewer",
 
-window.ROLE_ORDER = window.ROLE_ORDER || [
-  "viewer",
-  "clerk",
-  "assistant",
-  "junior",
-  "senior",
-  "accountant",
-  "manager",
-  "credit controller",
-  "cfo",
-  "owner",
-  "admin"
-];
-
-window.CORE_ROLE_ORDER = [
-  "viewer",
-  "clerk",
-  "assistant",
-  "junior",
-  "senior",
-  "accountant",
-  "manager",
-  "credit controller",
-  "cfo",
-  "owner",
-  "admin"
-];
-
-window.ASSIGNMENT_ROLE_ORDER = [
-  "viewer",
-  "accounting_trainee",
-  "audit_trainee",
-  "bookkeeper",
-  "fs_compiler",
-  "tax_preparer",
-  "audit_staff",
-  "reviewer",
-  "tax_reviewer",
-  "senior_associate",
-  "audit_manager",
-  "client_service_manager",
-  "quality_control_reviewer",
-  "engagement_partner",
-  "audit_partner",
-  "owner",
-  "admin"
-];
-
-window.ROLE_RANK = window.ROLE_RANK || {};
-window.ROLE_ORDER.forEach((r, i) => (window.ROLE_RANK[r] = i));
-
-window.normalizeRole = window.normalizeRole || function normalizeRole(raw) {
-  if (!raw) return "viewer";
-
-  let r = String(raw).toLowerCase().trim();
-  r = r.replace(/\(.*?\)/g, "");
-  r = r.replace(/\/.*/g, "");
-  r = r.replace(/\s+/g, " ").trim();
-  r = r.replace(/-/g, "_").replace(/\s+/g, "_");
-
-  const MAP = {
-    // enterprise canonical
-    viewer: "viewer",
-    clerk: "clerk",
-    assistant: "assistant",
-    junior: "junior",
-    senior: "senior",
-    accountant: "accountant",
-    manager: "manager",
-    cfo: "cfo",
-    owner: "owner",
-    admin: "admin",
-    credit_controller: "credit controller",
-
-    administrator: "admin",
-    superadmin: "admin",
-
-    business_owner: "owner",
-    founder: "owner",
-    business_owner_founder: "owner",
-    practice_owner: "owner",
-    practice_owner_founding_partner: "owner",
-    founding_partner: "owner",
-
-    head_of_finance: "cfo",
-    ceo: "manager",
-    managing_director: "manager",
-    finance_manager: "manager",
-    senior_accountant: "senior",
-    junior_accountant: "junior",
-    financial_accountant: "accountant",
-    accounts_clerk: "clerk",
-    finance_assistant: "assistant",
-
-    read_only: "viewer",
-    readonly: "viewer",
-    other: "viewer",
-    other_professional_role: "viewer",
-
-    // practitioner canonical
-    audit_staff: "audit_staff",
-    audit_associate: "audit_staff",
-    trainee_auditor: "audit_staff",
-
-    senior_associate: "senior_associate",
-    audit_senior: "senior_associate",
-    senior_auditor: "senior_associate",
-
-    audit_manager: "audit_manager",
-    engagement_manager: "audit_manager",
-
-    audit_partner: "audit_partner",
-    partner: "audit_partner",
-
-    engagement_partner: "engagement_partner",
-
-    quality_control_reviewer: "quality_control_reviewer",
-    eqcr: "quality_control_reviewer",
-    engagement_quality_reviewer: "quality_control_reviewer",
-
-    client_service_manager: "client_service_manager",
-
-    fs_compiler: "fs_compiler",
-    financial_statement_compiler: "fs_compiler",
-
-    reviewer: "reviewer",
-    bookkeeper: "bookkeeper",
-
-    audit_trainee: "audit_trainee",
-    audit_intern: "audit_trainee",
-    trainee_auditor: "audit_trainee",
-
-    accounting_trainee: "accounting_trainee",
-    accounting_intern: "accounting_trainee",
-    trainee_accountant: "accounting_trainee",
-    articles_clerk: "accounting_trainee",
-
-    tax_preparer: "tax_preparer",
-    tax_consultant: "tax_preparer",
-    tax_assistant: "tax_preparer",
-
-    tax_reviewer: "tax_reviewer",
-    tax_manager: "tax_reviewer",
+    // ✅ NEW: school role display labels (defensive — used if a raw school
+    // role surfaces in team lists before normalization)
+    principal: "Principal / Headmaster",
+    deputy_principal: "Deputy Principal",
+    bursar: "Bursar / Finance Officer",
+    school_secretary: "School Secretary",
+    finance_clerk: "Finance Clerk",
+    hod: "Head of Department",
+    grade_head: "Grade Head",
+    sgb_treasurer: "SGB Treasurer",
+    sgb_member: "SGB Member",
+    educator: "Educator / Teacher",
+    admin_staff: "Administrative Staff"
   };
 
-  return MAP[r] || "viewer";
-};
+  window.ROLE_ORDER = window.ROLE_ORDER || [
+    "viewer",
+    "clerk",
+    "assistant",
+    "junior",
+    "senior",
+    "accountant",
+    "manager",
+    "credit controller",
+    "cfo",
+    "owner",
+    "admin"
+  ];
 
-window.normalizeRoleForRank = window.normalizeRoleForRank || function normalizeRoleForRank(raw) {
-  const canonical = window.normalizeRole(raw);
+  window.CORE_ROLE_ORDER = [
+    "viewer",
+    "clerk",
+    "assistant",
+    "junior",
+    "senior",
+    "accountant",
+    "manager",
+    "credit controller",
+    "cfo",
+    "owner",
+    "admin"
+  ];
 
-  const rankMap = {
-    viewer: "viewer",
-    clerk: "clerk",
-    assistant: "assistant",
-    junior: "junior",
-    senior: "senior",
-    accountant: "accountant",
-    manager: "manager",
-    "credit controller": "credit controller",
-    cfo: "cfo",
-    owner: "owner",
-    admin: "admin",
+  window.ASSIGNMENT_ROLE_ORDER = [
+    "viewer",
+    "accounting_trainee",
+    "audit_trainee",
+    "bookkeeper",
+    "fs_compiler",
+    "tax_preparer",
+    "audit_staff",
+    "reviewer",
+    "tax_reviewer",
+    "senior_associate",
+    "audit_manager",
+    "client_service_manager",
+    "quality_control_reviewer",
+    "engagement_partner",
+    "audit_partner",
+    "owner",
+    "admin"
+  ];
 
-    audit_trainee: "assistant",
-    accounting_trainee: "assistant",
-    audit_staff: "assistant",
-    senior_associate: "senior",
-    audit_manager: "manager",
-    audit_partner: "owner",
-    engagement_partner: "owner",
-    quality_control_reviewer: "manager",
-    client_service_manager: "manager",
-    fs_compiler: "junior",
-    reviewer: "senior",
-    bookkeeper: "clerk",
-    tax_preparer: "junior",
-    tax_reviewer: "senior",
+  window.ROLE_RANK = window.ROLE_RANK || {};
+  window.ROLE_ORDER.forEach((r, i) => (window.ROLE_RANK[r] = i));
+
+  window.normalizeRole = window.normalizeRole || function normalizeRole(raw) {
+    if (!raw) return "viewer";
+
+    let r = String(raw).toLowerCase().trim();
+    r = r.replace(/\(.*?\)/g, "");
+    r = r.replace(/\/.*/g, "");
+    r = r.replace(/\s+/g, " ").trim();
+    r = r.replace(/-/g, "_").replace(/\s+/g, "_");
+
+    const MAP = {
+      // enterprise canonical
+      viewer: "viewer",
+      clerk: "clerk",
+      assistant: "assistant",
+      junior: "junior",
+      senior: "senior",
+      accountant: "accountant",
+      manager: "manager",
+      cfo: "cfo",
+      owner: "owner",
+      admin: "admin",
+      credit_controller: "credit controller",
+
+      administrator: "admin",
+      superadmin: "admin",
+
+      business_owner: "owner",
+      founder: "owner",
+      business_owner_founder: "owner",
+      practice_owner: "owner",
+      practice_owner_founding_partner: "owner",
+      founding_partner: "owner",
+
+      head_of_finance: "cfo",
+      ceo: "manager",
+      managing_director: "manager",
+      finance_manager: "manager",
+      senior_accountant: "senior",
+      junior_accountant: "junior",
+      financial_accountant: "accountant",
+      accounts_clerk: "clerk",
+      finance_assistant: "assistant",
+
+      read_only: "viewer",
+      readonly: "viewer",
+      other: "viewer",
+      other_professional_role: "viewer",
+
+      // ✅ NEW: school roles — MUST mirror backend normalize_role() targets.
+      // Raw school roles can surface from legacy user_role rows, invite tokens,
+      // or localStorage; without these they would all fall through to "viewer".
+      principal: "owner",
+      headmaster: "owner",
+      deputy_principal: "admin",
+      bursar: "manager",
+      school_secretary: "clerk",
+      finance_clerk: "clerk",
+      admin_staff: "clerk",
+      administrative_staff: "clerk",
+      hod: "senior",
+      head_of_department: "senior",
+      grade_head: "senior",
+      sgb_treasurer: "cfo",
+      sgb_member: "viewer",
+      educator: "viewer",
+      teacher: "viewer",
+      other_school_role: "viewer",
+
+      // practitioner canonical
+      audit_staff: "audit_staff",
+      audit_associate: "audit_staff",
+      trainee_auditor: "audit_staff",
+
+      senior_associate: "senior_associate",
+      audit_senior: "senior_associate",
+      senior_auditor: "senior_associate",
+
+      audit_manager: "audit_manager",
+      engagement_manager: "audit_manager",
+
+      audit_partner: "audit_partner",
+      partner: "audit_partner",
+
+      engagement_partner: "engagement_partner",
+
+      quality_control_reviewer: "quality_control_reviewer",
+      eqcr: "quality_control_reviewer",
+      engagement_quality_reviewer: "quality_control_reviewer",
+
+      client_service_manager: "client_service_manager",
+
+      fs_compiler: "fs_compiler",
+      financial_statement_compiler: "fs_compiler",
+
+      reviewer: "reviewer",
+      bookkeeper: "bookkeeper",
+
+      audit_trainee: "audit_trainee",
+      audit_intern: "audit_trainee",
+      trainee_auditor: "audit_trainee",
+
+      accounting_trainee: "accounting_trainee",
+      accounting_intern: "accounting_trainee",
+      trainee_accountant: "accounting_trainee",
+      articles_clerk: "accounting_trainee",
+
+      tax_preparer: "tax_preparer",
+      tax_consultant: "tax_preparer",
+      tax_assistant: "tax_preparer",
+
+      tax_reviewer: "tax_reviewer",
+      tax_manager: "tax_reviewer",
+    };
+
+    return MAP[r] || "viewer";
   };
 
-  return rankMap[canonical] || "viewer";
-};
+  window.normalizeRoleForRank = window.normalizeRoleForRank || function normalizeRoleForRank(raw) {
+    const canonical = window.normalizeRole(raw);
+
+    const rankMap = {
+      viewer: "viewer",
+      clerk: "clerk",
+      assistant: "assistant",
+      junior: "junior",
+      senior: "senior",
+      accountant: "accountant",
+      manager: "manager",
+      "credit controller": "credit controller",
+      cfo: "cfo",
+      owner: "owner",
+      admin: "admin",
+
+      audit_trainee: "assistant",
+      accounting_trainee: "assistant",
+      audit_staff: "assistant",
+      senior_associate: "senior",
+      audit_manager: "manager",
+      audit_partner: "owner",
+      engagement_partner: "owner",
+      quality_control_reviewer: "manager",
+      client_service_manager: "manager",
+      fs_compiler: "junior",
+      reviewer: "senior",
+      bookkeeper: "clerk",
+      tax_preparer: "junior",
+      tax_reviewer: "senior",
+    };
+
+    return rankMap[canonical] || "viewer";
+  };
 
 window.getCurrentSystemRole = function getCurrentSystemRole() {
   const u = window.currentUser || {};
@@ -7034,7 +7371,7 @@ async function downloadVatFiling() {
     const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
     if (!cid) throw new Error("No company selected");
 
-    const period = parseVatPeriodSelection?.();
+    const period = await parseVatPeriodSelection?.();
     if (!period?.start_date || !period?.end_date) {
       alert("Please select a VAT period first.");
       return;
@@ -7062,7 +7399,7 @@ async function downloadVatPack() {
     const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
     if (!cid) throw new Error("No company selected");
 
-    const period = parseVatPeriodSelection?.();
+    const period = await parseVatPeriodSelection?.();
     if (!period?.start_date || !period?.end_date) {
       alert("Please select a VAT period first.");
       return;
@@ -7087,7 +7424,9 @@ async function emailVatPack() {
     const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
     if (!cid) throw new Error("No company selected");
 
-    const period = parseVatPeriodSelection?.();
+    // IMPORTANT: parseVatPeriodSelection() is async
+    const period = await parseVatPeriodSelection?.();
+
     if (!period?.start_date || !period?.end_date) {
       alert("Please select a VAT period first.");
       return;
@@ -7095,7 +7434,9 @@ async function emailVatPack() {
 
     const res = await apiFetch(ENDPOINTS.vatFilingPackEmail(cid), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         from: period.start_date,
         to: period.end_date,
@@ -7107,12 +7448,12 @@ async function emailVatPack() {
     }
 
     alert(res?.message || "VAT Pack email sent.");
+
   } catch (err) {
     console.error("emailVatPack failed:", err);
     alert(err?.message || "Failed to email VAT Pack.");
   }
 }
-
   // ==========================================================
   // 8) UTILITIES (safe anywhere after here)
   // ==========================================================
@@ -7649,28 +7990,66 @@ function bindSessionUnlockForm() {
     e.preventDefault();
 
     const password = input?.value || "";
-    if (msg) msg.textContent = "";
+    // ✅ NEW: Get button reference for state control
+    const unlockBtn = document.getElementById("sessionUnlockBtn");
+    
+    // ✅ CHANGED: Reset message with proper styling
+    if (msg) {
+      msg.textContent = "";
+      msg.className = "text-xs min-h-[18px]";
+    }
 
     if (!password) {
-      if (msg) msg.textContent = "Enter your password.";
+      // ✅ CHANGED: Styled error message
+      if (msg) {
+        msg.textContent = "Enter your password.";
+        msg.className = "text-xs min-h-[18px] text-red-600";
+      }
       return;
     }
 
+    // ✅ NEW: Show "unlocking" feedback
+    if (msg) {
+      msg.textContent = "Verifying credentials...";
+      msg.className = "text-xs min-h-[18px] text-slate-500";
+    }
+    // ✅ NEW: Disable button and change text
+    if (unlockBtn) {
+      unlockBtn.disabled = true;
+      unlockBtn.textContent = "Unlocking...";
+    }
+
     try {
-      await apiFetch(ENDPOINTS.auth.reauth, {
+      const res = await apiFetch(ENDPOINTS.auth.reauth, {
         method: "POST",
         body: JSON.stringify({ password }),
         _allowWhenLocked: true,
       });
 
+      // Show success message from backend (or fallback)
+      if (msg) {
+        msg.textContent = res?.message || "Session restored successfully.";
+        msg.className = "text-xs min-h-[18px] text-green-600 font-medium";
+      }
+      
       input.value = "";
+      
+      // Brief delay so user sees the success message
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
       unlockSession();
     } catch (err) {
-      if (msg) msg.textContent = err.message || "Unlock failed.";
+      if (msg) {
+        msg.textContent = err.message || "Unlock failed. Please try again.";
+        msg.className = "text-xs min-h-[18px] text-red-600";
+      }
+      if (unlockBtn) {
+        unlockBtn.disabled = false;
+        unlockBtn.textContent = "Unlock";
+      }
     }
   });
 }
-
 window.bindSessionUnlockForm = bindSessionUnlockForm;
 
 bindSessionUnlockForm?.();
@@ -9646,7 +10025,7 @@ function renderNavMenu(menu, targetEl, level = 0) {
     }
 
     // ---------------------------
-    // WIZARD LINK
+    // WIUSDD LINK
     // ---------------------------
     else if (item.wizard) {
       link.setAttribute("data-wizard", item.wizard);
@@ -9693,13 +10072,19 @@ function renderNavMenu(menu, targetEl, level = 0) {
   return ul;
 }
 
+let _navBound = false;
+
 function bindNav() {
-  $("#mainNav")?.addEventListener("click", (e) => {
-    const link = e.target.closest(".nav-item-link,[data-nav],[data-wizard]");
+  if (_navBound) return; // Prevents stacking listeners if bindNav() is called repeatedly
+  _navBound = true;
+
+  // Single delegated listener for the entire document / navigation
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest(".nav-item-link, [data-nav], [data-wizard]");
     if (!link) return;
 
     const wizard = link.dataset.wizard;
-    if (wizard && wizardMap[wizard]) {
+    if (wizard && typeof wizardMap !== "undefined" && wizardMap[wizard]) {
       e.preventDefault();
       wizardMap[wizard]();
       return;
@@ -9708,33 +10093,21 @@ function bindNav() {
     const nav = link.dataset.nav;
     if (nav) {
       e.preventDefault();
+      e.stopPropagation(); // Prevents bubbling to outer handlers
       switchScreen(nav);
     }
   });
-
-  // In-content links (if you have any)
-  $$("main [data-nav]").forEach((a) =>
-    a.addEventListener("click", (e) => {
-      const name = e.currentTarget.getAttribute("data-nav");
-      if (name) {
-        e.preventDefault();
-        switchScreen(name);
-      }
-    })
-  );
 
   $("#signinBtn")?.addEventListener("click", handleSigninClick);
 
   $("#logoutBtn")?.addEventListener("click", (e) => {
     e.preventDefault();
-
     clearToken();
     localStorage.removeItem("authToken");
     localStorage.removeItem("userEmail");
     localStorage.removeItem("userRole");
     localStorage.removeItem("companyName");
     window.FS_USER_ROLE = null;
-
     applyLoggedOutUI();
     switchScreen("sign-in");
   });
@@ -9952,6 +10325,17 @@ function shouldShowNavItem(item) {
 
   if (item.companyCapability === "uses_cogs") {
     if (!companyUsesCogs()) return false;
+  }
+
+  // ---- Public School: hide irrelevant nav items ----
+  if (typeof isPublicSchool === "function" && isPublicSchool()) {
+    const _schScreen = item.screen
+      ? (typeof resolveScreenName === "function" ? resolveScreenName(item.screen) || item.screen : item.screen)
+      : null;
+    const _schName = String(item.name || "").trim().toLowerCase();
+    if ((_schScreen && SCHOOL_HIDDEN_SCREENS[_schScreen]) || SCHOOL_HIDDEN_PARENT_NAMES[_schName]) {
+      return false;
+    }
   }
 
   const screen = item.screen
@@ -11546,823 +11930,862 @@ window.esc = window.esc || function esc(s) {
 // =======================================================
 // NAV: switchScreen (FULL SAFE VERSION)
 // =======================================================
+let _switchingPromise = null;
+let _currentScreen = null;
+let _lastSwitchTime = 0;
+
 async function switchScreen(
   name,
   {
-    updateUrl=true,
-    replaceUrl=false,
-  }={}
-){
-  console.log("[switchScreen] ->", name);
-
-  // ─────────────────────────────
-  // Normalise aliases
-  // ─────────────────────────────
-  const isCustApprovals = name === "cust-approvals" || name === "cust";
-  if (isCustApprovals) name = "cust-approvals";
-
-  if (name === "invoices") name = "ar-invoices";
-  if (name === "quotes") name = "ar-quotes";
-  if (name === "receipts") name = "ar-receipts";
-  if (name === "journal-desk") name = "journal";
-
-  console.log("[switchScreen] before resolve:", name);
-  name = resolveScreenName(name);
-  console.log("[switchScreen] after resolve:", name);
-
-  console.log("[switchScreen] canOpenScreen?", canOpenScreen(name));
-  console.log("[switchScreen] access?", guardScreenAccess(name));
-  console.log("[switchScreen] screen-help exists?", !!document.getElementById("screen-help"));
-
-  // normalize names like you already do
-  if (name === "pnl") setActiveStmtType("pnl");
-  if (name === "bs") setActiveStmtType("bs");
-  if (name === "cf") setActiveStmtType("cf");
-  if (name === "tb") setActiveStmtType("tb");
-
-  if (name === "reports") {
-    bindReportsScreen?.();
-  }
-
-  if (name === "pos-launch") {
-    launchPos();
-    return;
-  }
-
-  // ─────────────────────────────
-  // Route grouping
-  // ─────────────────────────────
-  const isARWorkflow =
-    name === "ar" ||
-    name === "ar-invoices" ||
-    name === "ar-quotes" ||
-    name === "ar-receipts";
-
-  const isControlRoom =
-    name === "ar-recon" ||
-    name === "ar-aging" ||
-    name === "ar-statements" ||
-
-    // ✅ AP control room
-    name === "ap-recon" ||
-    name === "ap-aging" ||
-    name === "ap-statements" ||
-
-    name === "period-locks" ||
-    name === "audit-trail" ||
-    name === "approvals" ||
-    name.startsWith("ctrl-");
-
-  const isAPWorkflow =
-    name === "ap" ||
-    name === "ap-bills" ||
-    name === "ap-payments";
-
-  const isRevenueWorkflow =
-    name === "revenue" ||
-    name === "revenue-contracts" ||
-    name === "revenue-runs";
-    
-  const isRevenueSetup =
-    name === "revenue-setup" ||
-    name === "revenue-setup-contract" ||
-    name === "revenue-setup-allocation";
-
-  const isProjectWorkflow =
-    name === "projects" ||
-    name === "project-detail" ||
-    name === "project-budgets" ||
-    name === "project-material-issues" ||
-    name === "project-profitability";
-
-  const isCatalogSubscreen = [
-    "inventory-items",
-    "inventory-movements",
-    "stocktake",
-    "reorder",
-    "inventory-valuation",
-    "service-items",
-    "purchase-orders",
-    "goods-receipts",
-    "pos",
-    "pos-launch",
-  ].includes(name);
-
-  const isTaxRecon =
-    name === "tax-recon";
-
-  const isAccrualDeferralWorkflow =
-    name === "accrual-deferrals";
-
-  const isIFRS9Workflow =
-    name === "ifrs9";
-
-  const isPayrollWorkflow =
-    name === "payroll";
-
-  const isBudgetingWorkflow = 
-    name === "budgeting";
-
-  const isDeferredTaxWorkflow = 
-    name === "deferred-tax";
-
-  const isDataMigrationWorkflow =
-    name === "data-migration";    
-
-  const isIAS41Workflow =
-    name === "ias41";
-
-  const isGroupReportingWorkflow =
-    name === "group-reporting";
-  // 🔐 Auth guard
-  let base = "dashboard";
-
-  // 🔐 Auth guard
-  if (!isLoggedIn() && isAuthRequired(name)) {
-    showSignupPrompt(name);
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (!canOpenScreen(name)) {
-    console.warn("[NAV] blocked by allowlist:", name);
-    alert("This screen is not enabled yet.");
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  const access = guardScreenAccess(name);
-  if (!access.ok) {
-    if (access.reason === "auth") showSignupPrompt(name);
-    else alert(`No access (${access.reason})`);
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (isCustApprovals) base = "cust";
-  else if (isControlRoom) base = "controls";
-  else if (name === "customers") base = "customers";
-  else if (name === "vendors") base = "vendors";
-  else if (name === "lessors") base = "lessors";
-  else if (name === "banking") base = "banking";
-  else if (name === "bank-setup") base = "bank-setup";
-  else if (name === "bank-recon") base = "bank-recon";
-  else if (name === "loans") base = "loans";
-  else if (name.startsWith("lease-")) base = "leases";
-  else if (name === "lessor-subsequent") base = "lessor-subsequent";
-  else if (name === "lease-register" || name.startsWith("lease-")) base = "leases";
-  else if (name === "account-settings") base = "account-settings";
-  else if (name === "users") base = "users";
-  else if (name.startsWith("company")) base = "company";
-  else if (isAPWorkflow) base = "ap";
-  else if (isCatalogSubscreen) base = "inventory";
-  else if (isRevenueWorkflow) base = "revenue";
-  else if (isRevenueSetup) base = "revenue-setup";
-  else if (name === "projects" || name === "project-detail") base = "projects";
-  else if (name === "project-budgets") base = "project-budgets";
-  else if (name === "project-material-issues") base = "project-material-issues";
-  else if (name === "project-profitability") base = "project-profitability";
-  else if (isTaxRecon) base = "tax-recon";
-  else if (isAccrualDeferralWorkflow) base = "accrual-deferrals";
-  else if (isIFRS9Workflow) base = "ifrs9";
-  else if (isPayrollWorkflow) base = "payroll";
-  else if (isBudgetingWorkflow) base = "budgeting";
-  // ✅ ADD THIS (so it doesn't become "fixed")
-  else if (name === "fixed-assets") base = "fixedassets";
-  else if (name === "help") base = "help";
-  else if (isDeferredTaxWorkflow) base = "deferred-tax";
-  else if (isIAS41Workflow) base = "ias41";
-  else if (isDataMigrationWorkflow) base = "data-migration";
-  else if (isGroupReportingWorkflow) base = "group-reporting";
-  else base = name.split("-")[0];
-
-  // Remember current screen
-  store.set(K.CURRENT_SCREEN, name);
-
-  if(updateUrl){
-    updateAppUrl(
-      name,
-      {replace:replaceUrl}
-    );
-  }
-
-  // Highlight nav
-  $$(".nav-item-link").forEach((a) => a.classList.remove("active"));
-  let activeLink = $(`[data-nav="${name}"]`);
-  if (!activeLink && isCustApprovals) activeLink = $(`[data-nav="cust"]`);
-  if (activeLink) activeLink.classList.add("active");
-
-  // Show screen container
-  $$(".screen").forEach((s) => {
-    s.classList.remove("active");
-    s.classList.add("hidden");
-  });
-
-  const screenEl = document.getElementById(`screen-${base}`);
-  screenEl?.classList.add("active");
-  screenEl?.classList.remove("hidden");
-
-  // ✅ IMPORTANT: when entering Control Room, reset controls mount
-  if (isControlRoom) {
-    getControlsMount(); // clears mount safely
-  }
-
-  if (base === "data-migration") {
-    try {
-      await ensureCompanyDataLoaded?.();
-    } catch (e) {
-      console.warn("[DataMigration] company load failed:", e);
-    }
-
-    window.bindDataMigrationScreen?.();
-    return;
-  }
-
-  if (base === "ias41") {
-    try {
-      await ensureCompanyDataLoaded?.();
-    } catch (e) {
-      console.warn("[IAS41] company load failed:", e);
-    }
-
-    await window.bindIAS41Screen?.();
-    return;
-  }
-
-  if (base === "group-reporting") {
-    try {
-      await ensureCompanyDataLoaded?.();
-    } catch (e) {
-      console.warn("[GroupReporting] company load failed:", e);
-    }
-
-    window.bindConsolidationScreen?.();
-    await window.loadConsolidationRuns?.();
-    return;
-  }
-
-  // Customers + Customer Approvals binder
-  if (base === "customers" || base === "cust-approvals" || base === "cust") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      } else {
-        const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-        if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
-      }
-
-      if (window.FS?.control?.syncFromCompany) {
-        FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
-      }
-    } catch (e) {
-      console.warn("[Customers] ensureCompanyDataLoaded failed:", e);
-    }
-
-    bindCustomers?.();
-    bindCustomersKyc?.();
-    bindCustomerCreditWatcher?.();
-    updateCustomerSubmitState?.();
-
-    // ✅ NEW
-    if (base === "cust-approvals" || base === "cust") {
-      renderCustApprovalsScreen?.({ from: "approvals_inbox" });
-    }
-  }
-
-  // ✅ Fixed Assets screen (Option A): show stub screen but auto-open React drawer
-  if (name === "fixedassets") {
-    try {
-      await ensureCompanyDataLoaded?.();
-    } catch (e) {
-      console.warn("[PPE] company load failed", e);
-    }
-
-    await window.bindFixedAssetsScreen?.();
-    return;
-  }
-
-  if (base === "tax-recon") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      }
-    } catch (e) {
-      console.warn("[TaxRecon] ensureCompanyDataLoaded failed:", e);
-    }
-
-    await window.bindTaxReconScreen?.();
-    return;
-  }
-
-  if (base === "accrual-deferrals") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      }
-    } catch (e) {
-      console.warn("[AccrualDeferrals] ensureCompanyDataLoaded failed:", e);
-    }
-
-    await window.bindAccrualDeferralsScreen?.();
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (base === "lessor-subsequent") {
-    try { await ensureCompanyDataLoaded?.(); }
-    catch (e) { console.warn("[Lessor Subsequent] company load failed", e); }
-
-    await window.bindLessorSubsequentScreen?.();
-    return;
-  }
-
-  if (base === "ifrs9") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      }
-    } catch (e) {
-      console.warn("[IFRS9] ensureCompanyDataLoaded failed:", e);
-    }
-
-    await window.bindIFRS9Screen?.();
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (base === "payroll") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      }
-    } catch (e) {
-      console.warn("[Payroll] ensureCompanyDataLoaded failed:", e);
-    }
-
-    await window.bindPayrollScreen?.();
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (base === "budgeting") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      }
-    } catch (e) {
-      console.warn("[Budgeting] ensureCompanyDataLoaded failed:", e);
-    }
-
-    await window.bindBudgetingScreen?.();
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (base === "deferred-tax") {
-    try {
-      await ensureCompanyDataLoaded?.();
-    } catch (e) {
-      console.warn("[DeferredTax] company load failed:", e);
-    }
-
-    await window.bindDeferredTaxScreen?.();
-    return;
-  }
-
-  // Lessors binder
-  if (base === "lessors") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      } else {
-        const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-        if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
-      }
-    } catch (e) {
-      console.warn("[Lessors] ensureCompanyDataLoaded failed:", e);
-    }
-
-    // ✅ This should exist from your Lessors module IIFE:
-    // window.bindLessorsScreen = function () { ... refreshLessors() ... }
-    window.bindLessorsScreen?.();
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (base === "leases") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") await ensureCompanyDataLoaded();
-    } catch (e) {}
-
-    // ✅ bind the delegated click handler once
-    window.bindLeaseTabs?.();
-
-    window.bindLeasesScreen?.(name); // you’ll create this binder
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (isAPWorkflow) {
-    await initPayablesScreen?.();
-    // later: choose pane if you add bill drafts/payments panes
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  // Account settings hydrate
-  if (name === "account-settings") {
-    try {
-      if (!window.currentUser) await window.loadCurrentUser?.();
-      window.hydrateAccountSettings?.();
-    } catch (e) {
-      console.warn("Account settings hydrate failed:", e);
-    }
-  }
-
-  // Screen-specific actions
-  if (name === "users") initUsersScreen?.();
-  if (isCustApprovals) bindCustomerApprovals?.();
-  if (name === "dashboard") loadDashboard?.();
-  if (name === "journal") {
-    initJournalUI?.();
-    setTimeout(() => wireJournalVatRateUI?.(), 0);
-  }
-
-  if (name === "ledger") bindLedger?.();
-  if (name === "trial") bindTrialBalance?.();
-  if (name === "coa") {
-    renderCOATable?.(COA);
-    populateAccountSelects?.();
-    bindCoaScreen?.();
-  }
-
-  if (base === "loans") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      }
-    } catch (e) {
-      console.warn("[Loans] ensureCompanyDataLoaded failed:", e);
-    }
-
-    await window.bindLoansScreen?.();
-    await window.renderLoanRegister?.();
-  }
-
-  if (isARWorkflow) {
-    await initReceivablesScreen?.();
-
-    try { await fetchCustomersFromBackend?.(false); } catch (e) {}
-
-    const isQuotesRoute = (name === "ar-quotes");
-    window.showArPane?.(isQuotesRoute ? "quotes" : "invoices");
-
-    // ✅ consume pending revenue prefill ONLY after invoice pane is shown
-    if (!isQuotesRoute && window._PENDING_REVENUE_INVOICE_PREFILL) {
-    const payload =
-      window._PENDING_REVENUE_INVOICE_PREFILL;
-
-    window._PENDING_REVENUE_INVOICE_PREFILL =
-      null;
-
-    if (
-      payload?.handoff_type ===
-        "lessor_lease_invoice" ||
-      payload?.source ===
-        "lessor_lease_billing" ||
-      payload?.module_name ===
-        "ifrs16_lessor"
-    ) {
-      window._CURRENT_INVOICE_SOURCE =
-        payload;
-    }
-
-    console.log(
-      "🧾 [switchScreen AR] consuming pending invoice prefill",
-      payload
-    );
-      // wait for full invoice UI, not just one element at a time
-      const ready = await window.waitForInvoiceReady?.(4000);
-
-      console.log("🔎 [switchScreen AR] invoice ready?", !!ready);
-      console.log("🔎 [switchScreen AR] invCustomerId ready?", !!document.getElementById("invCustomerId"));
-      console.log("🔎 [switchScreen AR] invRevenueContractId ready?", !!document.getElementById("invRevenueContractId"));
-      console.log("🔎 [switchScreen AR] invLines ready?", !!document.getElementById("invLines"));
-
-      if (!ready) {
-        console.warn("❌ [switchScreen AR] invoice UI not ready; skipping revenue prefill");
-      } else {
-        await window.prefillInvoiceFromRevenuePayload?.(payload);
-      }
-    }
-
-    if (isQuotesRoute) {
-      try { await enterQuotesScreen?.(); }
-      catch (e) { console.warn("[Quotes] enter failed", e); }
-    } else {
-      try { wireInvoiceCustomerPicker?.(); } catch (e) {}
-
-      try { await openInvoiceFromApprovalHandoff?.(); }
-      catch (e) { console.warn("[AR] approval handoff failed:", e); }
-
-      if (typeof updateInvoiceActionButtons === "function") {
-        updateInvoiceActionButtons();
-      }
-    }
-
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (base === "revenue") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      } else {
-        const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-        if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
-      }
-
-      if (window.FS?.control?.syncFromCompany) {
-        FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
-      }
-    } catch (e) {
-      console.warn("[Revenue] ensureCompanyDataLoaded failed:", e);
-    }
-
-    await window.bindRevenueScreen?.(name);
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (base === "revenue-setup") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      } else {
-        const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-        if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
-      }
-
-      if (window.FS?.control?.syncFromCompany) {
-        FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
-      }
-    } catch (e) {
-      console.warn("[RevenueSetup] ensureCompanyDataLoaded failed:", e);
-    }
-
-    await window.bindRevenueSetupScreen?.(name);
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  // ✅ Payables binder
-  if (base === "ap") {
-    try {
-      // ensure company context exists (currency, VAT, etc)
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      } else {
-        const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-        if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
-      }
-    } catch (e) {
-      console.warn("[AP] ensureCompanyDataLoaded failed:", e);
-    }
-
-    await initPayablesScreen?.();
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return; // important: stop switchScreen from continuing
-  }
-
-  // ✅ Control Room screens live in screen-controls
-  if (isControlRoom) {
-    if (name === "ar-recon") return renderARRecon?.();
-    if (name === "ar-aging") return renderARAging?.();
-    if (name === "ar-statements") return renderARStatements?.();
-
-    // ✅ AP
-    if (name === "ap-recon") return renderAPRecon?.();
-    if (name === "ap-aging") return renderAPAging?.();
-    if (name === "ap-statements") return renderAPStatements?.();
-
-    if (name === "period-locks") return renderPeriodLocks?.();
-
-    // ✅ NEW: Approvals + Audit Trail
-    if (name === "approvals") return renderApprovalsScreen?.();
-    if (name === "audit-trail") return renderAuditTrailScreen?.();
-    console.log("[switchScreen] early return at:", name, "base:", base);
-
-    return;
-  }
-
-  if (name === "help") {
-    const companyId = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-    await renderHelpScreen(companyId);
-    console.log("[switchScreen] early return at:", name, "base:", base);
-    return;
-  }
-
-  if (base === "inventory") {
-    const sub =
-      (name === "inventory")
-        ? (store?.get?.("fs_catalog_subscreen", "") || "inventory-items")
-        : name;
-
-    store?.set?.("fs_catalog_subscreen", sub);
-    renderCatalogScreen?.(sub);
-  }
-
-  if (
-    base === "projects" ||
-    base === "project-budgets" ||
-    base === "project-material-issues" ||
-    base === "project-profitability"
-  ) {
-    if (name === "project-budgets") {
-      await window.bindProjectBudgetsScreen?.();
+    updateUrl = true,
+    replaceUrl = false,
+    force = false,
+  } = {}
+) {
+
+  _switchingPromise = (async () => {
+    // 1. Normalise aliases first
+    let target = name;
+    if (target === "cust" || target === "cust-approvals") target = "cust-approvals";
+    if (target === "invoices") target = "ar-invoices";
+    if (target === "quotes") target = "ar-quotes";
+    if (target === "receipts") target = "ar-receipts";
+    if (target === "journal-desk") target = "journal";
+    if (target === "fixed-assets") target = "fixedassets";
+    target = typeof resolveScreenName === "function" ? resolveScreenName(target) : target;
+
+    // 2. Debounce rapid double-clicks (within 250ms) to the exact same screen
+    const now = Date.now();
+    if (!force && _currentScreen === target && (now - _lastSwitchTime < 250)) {
       return;
     }
+    _lastSwitchTime = now;
 
-    if (name === "project-material-issues") {
-      await window.bindProjectMaterialIssuesScreen?.();
-      return;
-    }
+    console.log("[switchScreen] ->", target);
 
-    if (name === "project-profitability") {
-      await window.bindProjectProfitabilityScreen?.();
-      return;
-    }
-
-    await window.bindProjectsScreen?.(name);
-    return;
-  }
-
-  // Banking hooks
-  if (name === "banking") bindBankScreen?.();
-  if (name === "bank-setup") bindBankSetupScreen?.();
-  if (name === "bank-recon") {
-    bindReconScreenControls?.();
-    bindReconActions?.();
-    renderReconItems?.();
-  }
-
-  // Company setup
-  if (name.startsWith("company")) {
-    const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-    if (!cid) return;
-
-    initCompanyProfileUI?.(cid);
-    if (typeof bindVatSettingsForm === "function") bindVatSettingsForm();
-
-    const company = await loadCompanyProfile(cid);
-    hydrateMyCompanyView?.(company);
-    await loadVatSettings(cid);
-
-    const view =
-      name === "company-my" ? "my" :
-      name === "company-update" ? "update" :
-      name === "company-vat" ? "vat" :
-      name === "company-income-tax" ? "income-tax" :
-      name === "company-structure" ? "structure" :
-      name === "company-reporting" ? "reporting" :
-      name === "company-mgmt-packs" ? "mgmt-packs" :
-      "my";
-
-    showCompanyView?.(view);
-
-    if (view === "reporting") {
-      bindReportingPeriodsForm?.(cid);
-      bindYearEndClose(cid);
-    }
-
-    if (view === "structure") {
-      try {
-        bindCorporateStructureScreen?.();
-        await loadCorporateStructure?.(cid);
-      } catch (e) {
-        console.warn("[CorporateStructure] load failed:", e);
+    try {
+      // 3. Auth & Access Guards
+      if (!isLoggedIn() && isAuthRequired(target)) {
+        showSignupPrompt(target);
+        return;
       }
-    }
 
-    // ✅ mgmt packs load + refresh button binding MUST be inside here
-    if (view === "mgmt-packs") {
-      try {
-        await loadManagementPacks?.(cid);
+      if (!canOpenScreen(target)) {
+        console.warn("[NAV] blocked by allowlist:", target);
+        alert("This screen is not enabled yet.");
+        return;
+      }
 
-        const btn = document.getElementById("btnRefreshMgmtPacks");
-        if (btn && btn.dataset.bound !== "1") {
-          btn.dataset.bound = "1";
-          btn.addEventListener("click", async () => {
-            const cid2 = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-            await loadManagementPacks?.(cid2);
-          });
+      const access = guardScreenAccess(target);
+      if (!access.ok) {
+        if (access.reason === "auth") showSignupPrompt(target);
+        else alert(`No access (${access.reason})`);
+        return;
+      }
+
+      _currentScreen = target;
+
+      // Normalize statement types
+      if (target === "pnl") setActiveStmtType?.("pnl");
+      if (target === "bs") setActiveStmtType?.("bs");
+      if (target === "cf") setActiveStmtType?.("cf");
+      if (target === "tb") setActiveStmtType?.("tb");
+
+      if (target === "reports") {
+        bindReportsScreen?.();
+      }
+
+      if (target === "pos-launch") {
+        launchPos?.();
+        return;
+      }
+
+      // ─────────────────────────────
+      // Route grouping
+      // ─────────────────────────────
+      const isCustApprovals =
+        target === "cust" ||
+        target === "cust-approvals";
+
+      const isARWorkflow =
+        target === "ar" ||
+        target === "ar-invoices" ||
+        target === "ar-quotes" ||
+        target === "ar-receipts";
+
+      const isControlRoom =
+        target === "ar-recon" ||
+        target === "ar-aging" ||
+        target === "ar-statements" ||
+        target === "ap-recon" ||
+        target === "ap-aging" ||
+        target === "ap-statements" ||
+        target === "period-locks" ||
+        target === "audit-trail" ||
+        target === "approvals" ||
+        target.startsWith("ctrl-");
+
+      const isAPWorkflow =
+        target === "ap" ||
+        target === "ap-bills" ||
+        target === "ap-payments";
+
+      const isRevenueWorkflow =
+        target === "revenue" ||
+        target === "revenue-contracts" ||
+        target === "revenue-runs";
+        
+      const isRevenueSetup =
+        target === "revenue-setup" ||
+        target === "revenue-setup-contract" ||
+        target === "revenue-setup-allocation";
+
+      const isProjectWorkflow =
+        target === "projects" ||
+        target === "project-detail" ||
+        target === "project-budgets" ||
+        target === "project-material-issues" ||
+        target === "project-profitability";
+
+      const isCatalogSubscreen = [
+        "inventory",
+        "inventory-items",
+        "inventory-movements",
+        "stocktake",
+        "reorder",
+        "inventory-valuation",
+        "service-items",
+        "purchase-orders",
+        "goods-receipts",
+        "pos",
+        "pos-launch",
+      ].includes(target);
+
+      const isTaxRecon = target === "tax-recon";
+      const isAccrualDeferralWorkflow = target === "accrual-deferrals";
+      const isIFRS9Workflow = target === "ifrs9";
+      const isPayrollWorkflow = target === "payroll";
+      const isBudgetingWorkflow = target === "budgeting";
+      const isDeferredTaxWorkflow = target === "deferred-tax";
+      const isDataMigrationWorkflow = target === "data-migration";    
+      const isIAS41Workflow = target === "ias41";
+      const isGroupReportingWorkflow = target === "group-reporting";
+
+      let base = "dashboard";
+
+      if (isCustApprovals) base = "cust";
+      else if (isControlRoom) base = "controls";
+      else if (target === "customers") base = "customers";
+      else if (target === "vendors") base = "vendors";
+      else if (target === "lessors") base = "lessors";
+      else if (target === "banking") base = "banking";
+      else if (target === "bank-setup") base = "bank-setup";
+      else if (target === "bank-recon") base = "bank-recon";
+      else if (target === "loans") base = "loans";
+      else if (target === "lessor-subsequent") base = "lessor-subsequent";
+      else if (target === "lease-register" || target.startsWith("lease-")) base = "leases";
+      else if (target === "account-settings") base = "account-settings";
+      else if (target === "users") base = "users";
+      else if (target.startsWith("company")) base = "company";
+      else if (isAPWorkflow) base = "ap";
+      else if (isCatalogSubscreen) base = "inventory";
+      else if (isRevenueWorkflow) base = "revenue";
+      else if (isRevenueSetup) base = "revenue-setup";
+      else if (isProjectWorkflow) {
+        if (target === "project-budgets") base = "project-budgets";
+        else if (target === "project-material-issues") base = "project-material-issues";
+        else if (target === "project-profitability") base = "project-profitability";
+        else base = "projects";
+      }
+      else if (isTaxRecon) base = "tax-recon";
+      else if (isAccrualDeferralWorkflow) base = "accrual-deferrals";
+      else if (isIFRS9Workflow) base = "ifrs9";
+      else if (isPayrollWorkflow) base = "payroll";
+      else if (isBudgetingWorkflow) base = "budgeting";
+      else if (target === "fixedassets") base = "fixedassets";
+      else if (target === "help") base = "help";
+      else if (isDeferredTaxWorkflow) base = "deferred-tax";
+      else if (isIAS41Workflow) base = "ias41";
+      else if (isDataMigrationWorkflow) base = "data-migration";
+      else if (isGroupReportingWorkflow) base = "group-reporting";
+      else base = target.split("-")[0];
+
+      // Remember current screen
+      store?.set?.(K.CURRENT_SCREEN, target);
+
+      if (updateUrl) {
+        updateAppUrl?.(target, { replace: replaceUrl });
+      }
+
+      // Highlight nav
+      $$(".nav-item-link").forEach((a) => a.classList.remove("active"));
+      let activeLink = $(`[data-nav="${target}"]`) || $(`[data-nav="${name}"]`);
+      if (!activeLink && isCustApprovals) activeLink = $(`[data-nav="cust"]`);
+      if (activeLink) activeLink.classList.add("active");
+
+      // Show screen container (ROBUST VERSION)
+      $$(".screen").forEach((s) => {
+        s.classList.remove("active");
+        s.classList.add("hidden");
+      });
+
+      const screenEl = document.getElementById(`screen-${base}`);
+      if (screenEl) {
+        // Force remove hidden - do it twice to be safe!
+        screenEl.classList.remove("hidden");
+        screenEl.classList.add("active");
+        
+        // Defensive: Ensure inline style doesn't override
+        if (screenEl.style.display === 'none') {
+          screenEl.style.display = '';
         }
-      } catch (e) {
-        console.warn("[MgmtPacks] load failed:", e);
+        
+        // Fallback: Force visibility after a tick (catches race conditions)
+        requestAnimationFrame(() => {
+          if (screenEl.classList.contains('hidden')) {
+            console.warn('[switchScreen] Race detected - forcing screen visible:', base);
+            screenEl.classList.remove('hidden');
+            screenEl.classList.add('active');
+          }
+        });
+        
+        console.log('[switchScreen] Screen shown:', base, screenEl.className);
+      } else {
+        console.error('[switchScreen] Screen element NOT found:', `screen-${base}`);
       }
+
+      // ─────────────────────────────
+      // Titles & Header Setup
+      // ─────────────────────────────
+      const titles = {
+        dashboard: "Command Center",
+        coa: "Chart of Accounts",
+        journal: "General Journal",
+        ledger: "General Ledger",
+        trial: "Trial Balance",
+        reports: "Financial Statements",
+        "group-reporting": "Group Reporting & Consolidation",
+        vat: "VAT & Tax",
+        "tax-recon": "Income Tax Workspace",
+        company: "Company & Setup",
+        "company-my": "Company & Setup",
+        "company-update": "Company & Setup",
+        "company-vat": "Company & Setup",
+        "company-income-tax": "Company & Setup",
+        "company-structure": "Company & Setup",
+        "company-reporting": "Company & Setup",
+        "company-mgmt-packs": "Company & Setup - Management Packs",
+        users: "Users & Roles",
+        banking: "Banking - Cashbook",
+        "bank-setup": "Bank Setup",
+        "bank-recon": "Bank Reconciliation",
+        loans: "Loans & Financing",
+        revenue: "Revenue Desk",
+        "accrual-deferrals": "Accruals & Deferrals",
+        "revenue-setup": "Revenue Setup",
+        ifrs9: "IFRS 9 Financial Instruments",
+        payroll: "Payroll",
+        budgeting: "Planning & Performance",
+        "deferred-tax": "IAS 12 Deferred Tax",
+        ias41: "IAS 41 Agriculture",
+        inventory: "Inventory & Services",
+        customers: "Customers",
+        vendors: "Vendors",
+        ar: "Accounts Receivable",
+        "ar-invoices": "Accounts Receivable - Invoices",
+        "ar-quotes": "Accounts Receivable - Quotes",
+        ap: "Accounts Payable",
+        "sign-in": "Sign In",
+        "change-password": "Change Password",
+        "cust-approvals": "Credit Control - Customer Approvals",
+        "ar-recon": "AR Control Reconciliation",
+        "ar-aging": "AR Aging (30/60/90)",
+        "ar-statements": "Customer Statements",
+        "period-locks": "Period Locking",
+        "ap-recon": "AP Control Reconciliation",
+        "ap-aging": "AP Aging (30/60/90)",
+        "ap-statements": "Vendor Statements",
+        "inventory-items": "Catalog Studio - Inventory Items",
+        "inventory-movements": "Catalog Studio - Stock Movements",
+        stocktake: "Catalog Studio - Stocktake",
+        reorder: "Catalog Studio - Reorder Alerts",
+        "inventory-valuation": "Catalog Studio - Inventory Valuation",
+        "service-items": "Catalog Studio - Service Items",
+        "lease-payments": "IFRS 16 - Lease Payments",
+        "lease-monthly": "IFRS 16 - Monthly Posting",
+        "lease-mods": "IFRS 16 - Modifications",
+        "lease-terms": "IFRS 16 - Terminations",
+        "lease-register": "IFRS 16 - Lease Register",
+        "lessor-subsequent": "IFRS 16 - Lessor Subsequent Measurement",
+        projects: "Project Desk",
+        "project-detail": "Project Desk",
+        "data-migration": "Data Migration Workspace",
+        "project-budgets": "Project Desk - Budgets / BOQ",
+        "project-material-issues": "Project Desk - Material Issues",
+        "project-profitability": "Project Desk - Profitability",
+        fixedassets: "Property, Plant & Equipment (IAS 16)",
+        help: "Help & Support",
+      };
+
+      const screenTitleEl = document.getElementById("screenTitle");
+      if (screenTitleEl) {
+        screenTitleEl.textContent = titles[target] || titles[base] || "FinSage";
+      }
+
+      if (isControlRoom) {
+        getControlsMount?.();
+      }
+
+      if (base === "data-migration") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[DataMigration] company load failed:", e); }
+        window.bindDataMigrationScreen?.();
+        return;
+      }
+
+      if (base === "ias41") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[IAS41] company load failed:", e); }
+        await window.bindIAS41Screen?.();
+        return;
+      }
+
+      if (base === "group-reporting") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[GroupReporting] company load failed:", e); }
+        window.bindConsolidationScreen?.();
+        await window.loadConsolidationRuns?.();
+        return;
+      }
+
+      // Customers + Customer Approvals binder
+      if (base === "customers" || base === "cust-approvals" || base === "cust") {
+        try {
+          if (typeof ensureCompanyDataLoaded === "function") {
+            await ensureCompanyDataLoaded();
+          } else {
+            const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+            if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+          }
+
+          if (window.FS?.control?.syncFromCompany) {
+            FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
+          }
+        } catch (e) {
+          console.warn("[Customers] ensureCompanyDataLoaded failed:", e);
+        }
+
+        bindCustomers?.();
+        bindCustomersKyc?.();
+        bindCustomerCreditWatcher?.();
+        updateCustomerSubmitState?.();
+
+        if (base === "cust-approvals" || base === "cust") {
+          renderCustApprovalsScreen?.({ from: "approvals_inbox" });
+        }
+      }
+
+      if (base === "fixedassets" || target === "fixedassets") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[PPE] company load failed", e); }
+        await window.bindFixedAssetsScreen?.();
+        return;
+      }
+
+      if (base === "tax-recon") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[TaxRecon] ensureCompanyDataLoaded failed:", e); }
+        await window.bindTaxReconScreen?.();
+        return;
+      }
+
+      if (base === "accrual-deferrals") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[AccrualDeferrals] ensureCompanyDataLoaded failed:", e); }
+        await window.bindAccrualDeferralsScreen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "lessor-subsequent") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[Lessor Subsequent] company load failed", e); }
+        await window.bindLessorSubsequentScreen?.();
+        return;
+      }
+
+      if (base === "ifrs9") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[IFRS9] ensureCompanyDataLoaded failed:", e); }
+        await window.bindIFRS9Screen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "payroll") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[Payroll] ensureCompanyDataLoaded failed:", e); }
+        await window.bindPayrollScreen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "budgeting") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[Budgeting] ensureCompanyDataLoaded failed:", e); }
+        await window.bindBudgetingScreen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "deferred-tax") {
+          try { 
+              await ensureCompanyDataLoaded?.(); 
+          } catch (e) { 
+              console.warn("[DeferredTax] company load failed:", e); 
+          }
+          
+          try {
+              // Add timeout protection (10 seconds max)
+              await Promise.race([
+                  window.bindDeferredTaxScreen?.(),
+                  new Promise((_, reject) => 
+                      setTimeout(() => reject(new Error('Deferred tax screen load timeout')), 10000)
+                  )
+              ]);
+          } catch (screenErr) {
+              console.error("[DeferredTax] Screen bind failed:", screenErr);
+              
+              // Show fallback UI instead of blank screen
+              const screenEl = document.getElementById("screen-deferred-tax");
+              if (screenEl) {
+                  const dtPage = screenEl.querySelector(".dt-page");
+                  if (dtPage) {
+                      dtPage.innerHTML = `
+                          <div style="padding: 40px; text-align: center; color: #dc2626;">
+                              <h3>⚠️ Unable to Load Deferred Tax</h3>
+                              <p>${screenErr.message || 'Unknown error occurred'}</p>
+                              <button onclick="location.reload()" class="btn btn-primary mt-4">
+                                  Reload Page
+                              </button>
+                          </div>
+                      `;
+                  }
+              }
+          }
+          return;
+      }
+
+      // Lessors binder
+      if (base === "lessors") {
+        try {
+          if (typeof ensureCompanyDataLoaded === "function") {
+            await ensureCompanyDataLoaded();
+          } else {
+            const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+            if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+          }
+        } catch (e) {
+          console.warn("[Lessors] ensureCompanyDataLoaded failed:", e);
+        }
+
+        window.bindLessorsScreen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "leases") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) {}
+        window.bindLeaseTabs?.();
+        window.bindLeasesScreen?.(target);
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      // Accounts Payable base block
+      if (base === "ap" || isAPWorkflow) {
+        try {
+          if (typeof ensureCompanyDataLoaded === "function") {
+            await ensureCompanyDataLoaded();
+          } else {
+            const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+            if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+          }
+        } catch (e) {
+          console.warn("[AP] ensureCompanyDataLoaded failed:", e);
+        }
+
+        await initPayablesScreen?.();
+
+        const handoff = window.getNexusApHandoffFromUrl?.();
+        if (handoff?.source === "nexus" && handoff?.bill_id) {
+          if (handoff.action === "payment") {
+            await window.openNexusPaymentHandoff?.(handoff);
+          } else {
+            await window.openFinSageBillFromHandoff?.(handoff.bill_id);
+          }
+        }
+
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      // Account settings hydrate
+      if (target === "account-settings") {
+        try {
+          if (!window.currentUser) await window.loadCurrentUser?.();
+          window.hydrateAccountSettings?.();
+        } catch (e) {
+          console.warn("Account settings hydrate failed:", e);
+        }
+      }
+
+      // Screen-specific actions
+      if (target === "users") initUsersScreen?.();
+      if (isCustApprovals) bindCustomerApprovals?.();
+      if (target === "dashboard") loadDashboard?.();
+      if (target === "journal") {
+        initJournalUI?.();
+        setTimeout(() => wireJournalVatRateUI?.(), 0);
+      }
+
+      if (target === "ledger") bindLedger?.();
+      if (target === "trial") bindTrialBalance?.();
+      if (target === "coa") {
+        renderCOATable?.(COA);
+        populateAccountSelects?.();
+        bindCoaScreen?.();
+      }
+
+      if (base === "loans") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[Loans] ensureCompanyDataLoaded failed:", e); }
+        await window.bindLoansScreen?.();
+        await window.renderLoanRegister?.();
+      }
+
+      if (isARWorkflow) {
+        await initReceivablesScreen?.();
+        try { await fetchCustomersFromBackend?.(false); } catch (e) {}
+
+        const isQuotesRoute = (target === "ar-quotes");
+        window.showArPane?.(isQuotesRoute ? "quotes" : "invoices");
+
+        if (!isQuotesRoute && window._PENDING_REVENUE_INVOICE_PREFILL) {
+          const payload = window._PENDING_REVENUE_INVOICE_PREFILL;
+          window._PENDING_REVENUE_INVOICE_PREFILL = null;
+
+          if (
+            payload?.handoff_type === "lessor_lease_invoice" ||
+            payload?.source === "lessor_lease_billing" ||
+            payload?.module_name === "ifrs16_lessor"
+          ) {
+            window._CURRENT_INVOICE_SOURCE = payload;
+          }
+
+          console.log("🧾 [switchScreen AR] consuming pending invoice prefill", payload);
+          const ready = await window.waitForInvoiceReady?.(4000);
+
+          if (!ready) {
+            console.warn("❌ [switchScreen AR] invoice UI not ready; skipping revenue prefill");
+          } else {
+            await window.prefillInvoiceFromRevenuePayload?.(payload);
+          }
+        }
+
+        if (isQuotesRoute) {
+          try { await enterQuotesScreen?.(); } catch (e) { console.warn("[Quotes] enter failed", e); }
+        } else {
+          try { wireInvoiceCustomerPicker?.(); } catch (e) {}
+          try { await openInvoiceFromApprovalHandoff?.(); } catch (e) { console.warn("[AR] approval handoff failed:", e); }
+          if (typeof updateInvoiceActionButtons === "function") {
+            updateInvoiceActionButtons();
+          }
+        }
+
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "revenue") {
+        try {
+          if (typeof ensureCompanyDataLoaded === "function") {
+            await ensureCompanyDataLoaded();
+          } else {
+            const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+            if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+          }
+
+          if (window.FS?.control?.syncFromCompany) {
+            FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
+          }
+        } catch (e) {
+          console.warn("[Revenue] ensureCompanyDataLoaded failed:", e);
+        }
+
+        await window.bindRevenueScreen?.(target);
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "revenue-setup") {
+        try {
+          if (typeof ensureCompanyDataLoaded === "function") {
+            await ensureCompanyDataLoaded();
+          } else {
+            const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+            if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+          }
+
+          if (window.FS?.control?.syncFromCompany) {
+            FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
+          }
+        } catch (e) {
+          console.warn("[RevenueSetup] ensureCompanyDataLoaded failed:", e);
+        }
+
+        await window.bindRevenueSetupScreen?.(target);
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      // Control Room screens
+      if (isControlRoom) {
+        if (target === "ar-recon") return renderARRecon?.();
+        if (target === "ar-aging") return renderARAging?.();
+        if (target === "ar-statements") return renderARStatements?.();
+        if (target === "ap-recon") return renderAPRecon?.();
+        if (target === "ap-aging") return renderAPAging?.();
+        if (target === "ap-statements") return renderAPStatements?.();
+        if (target === "period-locks") return renderPeriodLocks?.();
+        if (target === "approvals") return renderApprovalsScreen?.();
+        if (target === "audit-trail") return renderAuditTrailScreen?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (target === "help") {
+        const companyId = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+        await renderHelpScreen?.(companyId);
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "inventory") {
+        const sub = (target === "inventory")
+          ? (store?.get?.("fs_catalog_subscreen", "") || "inventory-items")
+          : target;
+
+        store?.set?.("fs_catalog_subscreen", sub);
+        renderCatalogScreen?.(sub);
+      }
+
+      if (
+        base === "projects" ||
+        base === "project-budgets" ||
+        base === "project-material-issues" ||
+        base === "project-profitability"
+      ) {
+        if (target === "project-budgets") return await window.bindProjectBudgetsScreen?.();
+        if (target === "project-material-issues") return await window.bindProjectMaterialIssuesScreen?.();
+        if (target === "project-profitability") return await window.bindProjectProfitabilityScreen?.();
+        await window.bindProjectsScreen?.(target);
+        return;
+      }
+
+      // Banking hooks
+      if (target === "banking") bindBankScreen?.();
+      if (target === "bank-setup") bindBankSetupScreen?.();
+      if (target === "bank-recon") {
+        bindReconScreenControls?.();
+        bindReconActions?.();
+        renderReconItems?.();
+      }
+
+      // Company setup
+      if (target.startsWith("company")) {
+        const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+        if (!cid) return;
+
+        initCompanyProfileUI?.(cid);
+        if (typeof bindVatSettingsForm === "function") bindVatSettingsForm();
+
+        const company = await loadCompanyProfile?.(cid);
+        hydrateMyCompanyView?.(company);
+        await loadVatSettings?.(cid);
+
+        const view =
+          target === "company-my" ? "my" :
+          target === "company-update" ? "update" :
+          target === "company-vat" ? "vat" :
+          target === "company-income-tax" ? "income-tax" :
+          target === "company-structure" ? "structure" :
+          target === "company-reporting" ? "reporting" :
+          target === "company-mgmt-packs" ? "mgmt-packs" :
+          "my";
+
+        showCompanyView?.(view);
+
+        if (view === "reporting") {
+          bindReportingPeriodsForm?.(cid);
+          bindYearEndClose?.(cid);
+        }
+
+        if (view === "structure") {
+          try {
+            bindCorporateStructureScreen?.();
+            await loadCorporateStructure?.(cid);
+          } catch (e) {
+            console.warn("[CorporateStructure] load failed:", e);
+          }
+        }
+
+        if (view === "mgmt-packs") {
+          try {
+            await loadManagementPacks?.(cid);
+            const btn = document.getElementById("btnRefreshMgmtPacks");
+            if (btn && btn.dataset.bound !== "1") {
+              btn.dataset.bound = "1";
+              btn.addEventListener("click", async () => {
+                const cid2 = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+                await loadManagementPacks?.(cid2);
+              });
+            }
+          } catch (e) {
+            console.warn("[MgmtPacks] load failed:", e);
+          }
+        }
+
+        bindMgmtPacksUI?.();
+        console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      // Reports
+      if (target === "reports") {
+        renderPnLSummary?.(CURRENT_PERIOD_KEY);
+        renderBSSummary?.(CURRENT_PERIOD_KEY);
+        renderCFSummary?.(CURRENT_PERIOD_KEY);
+        bindReportsScreen?.();
+      }
+
+      // VAT
+      if (target === "vat") {
+        ensureVatScreen?.();
+        bindVatPeriodFilter?.();
+        await renderVatDashboard?.();
+      }
+
+      wireJournalVatRateUI?.();
+
+      setTimeout(() => {
+        if (target === "dashboard" && window.cashChart?.resize) window.cashChart.resize();
+      }, 0);
+
+    } catch (err) {
+      console.error("[switchScreen] Error:", err);
+    } finally {
+      _switchingPromise = null;
     }
-    console.log("[switchScreen] early return at:", name, "base:", base);
+  })();
 
-    return; // ✅ recommended so switchScreen stops here
-  }
-
-  // ✅ bind refresh button when company screen is active
-  bindMgmtPacksUI?.();
-
-  // Reports
-  if (name === "reports") {
-    renderPnLSummary?.(CURRENT_PERIOD_KEY);
-    renderBSSummary?.(CURRENT_PERIOD_KEY);
-    renderCFSummary?.(CURRENT_PERIOD_KEY);
-    bindReportsScreen?.();
-  }
-
-  // Titles
-  const titles = {
-    dashboard: "Command Center",
-    coa: "Chart of Accounts",
-    journal: "General Journal",
-    ledger: "General Ledger",
-    trial: "Trial Balance",
-    reports: "Financial Statements",
-    "group-reporting": "Group Reporting & Consolidation",
-    vat: "VAT & Tax",
-    "tax-recon": "Income Tax Workspace",
-    company: "Company & Setup",
-    "company-my": "Company & Setup",
-    "company-update": "Company & Setup",
-    "company-vat": "Company & Setup",
-    "company-income-tax": "Company & Setup",
-    "company-structure": "Company & Setup",
-    "company-reporting": "Company & Setup",
-    users: "Users & Roles",
-    banking: "Banking - Cashbook",
-    "bank-setup": "Bank Setup",
-    "bank-recon": "Bank Reconciliation",
-    loans: "Loans & Financing",
-    revenue: "Revenue Desk",
-    "accrual-deferrals": "Accruals & Deferrals",
-    "revenue-setup": "Revenue Setup",
-    ifrs9: "IFRS 9 Financial Instruments",
-    payroll: "Payroll",
-    budgeting: "Planning & Performance",
-    "deferred-tax": "IAS 12 Deferred Tax",
-    ias41: "IAS 41 Agriculture",
-    inventory: "Inventory & Services",
-    customers: "Customers",
-    vendors: "Vendors",
-    ar: "Accounts Receivable",
-    "ar-invoices": "Accounts Receivable - Invoices",
-    ap: "Accounts Payable",
-    "sign-in": "Sign In",
-    "change-password": "Change Password",
-    "cust-approvals": "Credit Control - Customer Approvals",
-    "ar-recon": "AR Control Reconciliation",
-    "ar-aging": "AR Aging (30/60/90)",
-    "ar-statements": "Customer Statements",
-    "period-locks": "Period Locking",
-    "ap-recon": "AP Control Reconciliation",
-    "ap-aging": "AP Aging (30/60/90)",
-    "ap-statements": "Vendor Statements",
-    "inventory-items":     "Catalog Studio - Inventory Items",
-    "inventory-movements": "Catalog Studio - Stock Movements",
-    "stocktake":           "Catalog Studio - Stocktake",
-    "reorder":             "Catalog Studio - Reorder Alerts",
-    "inventory-valuation": "Catalog Studio - Inventory Valuation",
-    "service-items":       "Catalog Studio - Service Items",
-    "lease-payments": "IFRS 16 - Lease Payments",
-    "lease-monthly":  "IFRS 16 - Monthly Posting",
-    "lease-mods":    "IFRS 16 - Modifications",
-    "lease-terms":   "IFRS 16 - Terminations",
-    "lease-register": "IFRS 16 - Lease Register",
-    "lessor-subsequent": "IFRS 16 - Lessor Subsequent Measurement",
-    projects: "Project Desk",
-    "project-detail": "Project Desk",
-    "data-migration": "Data Migration Workspace",
-    "project-budgets": "Project Desk - Budgets / BOQ",
-    "project-material-issues": "Project Desk - Material Issues",
-    "project-profitability": "Project Desk - Profitability",
-    help: "Help & Support",
-  };
-
-  $("#screenTitle").textContent = titles[name] || titles[base] || "FinSage";
-
-  // VAT
-  if (name === "vat") {
-    ensureVatScreen();
-    bindVatPeriodFilter();
-    await renderVatDashboard();
-  }
-
-  wireJournalVatRateUI?.();
-
-  // Resize dashboard charts
-  setTimeout(() => {
-    if (name === "dashboard" && window.cashChart?.resize) window.cashChart.resize();
-  }, 0);
+  return _switchingPromise;
 }
+
 window.switchScreen = switchScreen;
+
+// ============================================================
+// 🔒 DEFERRED TAX SCREEN GUARD - Prevents modal hijacking
+// ============================================================
+// ============================================================
+// 🔒 SCREEN GUARD SYSTEM - Prevents Modal Hijacking (LIVE FIX)
+// ============================================================
+(function() {
+    'use strict';
+    
+    const SCREENS_TO_PROTECT = [
+        'screen-deferred-tax',
+        'screen-fixedassets',
+        'screen-ias41', 
+        'screen-ifrs9',
+        'screen-budgeting',
+        'screen-data-migration',
+        'screen-group-reporting'
+    ];
+    
+    const CORRECT_PARENT_ID = 'screensHost';
+    
+    function validateScreenPlacement(screenId) {
+        const screen = document.getElementById(screenId);
+        const correctParent = document.getElementById(CORRECT_PARENT_ID);
+        
+        if (!screen || !correctParent) return false;
+        
+        const currentParent = screen.parentElement;
+        const isInModal = !!screen.closest('.modal');
+        const isInWrongPlace = currentParent !== correctParent || isInModal;
+        
+        if (isInWrongPlace) {
+            console.warn(`🚨 [ScreenGuard] ${screenId} in wrong place - fixing...`);
+            correctParent.appendChild(screen);
+            screen.classList.remove('hidden');
+            screen.classList.add('active');
+            screen.style.display = '';
+            return true;
+        }
+        return false;
+    }
+    
+    function validateAllScreens() {
+        let fixed = 0;
+        SCREENS_TO_PROTECT.forEach(id => {
+            if (validateScreenPlacement(id)) fixed++;
+        });
+        if (fixed > 0) console.log(`✅ [ScreenGuard] Fixed ${fixed} screen(s)`);
+        return fixed;
+    }
+    
+    // Run validation at multiple stages
+    function scheduleValidation() {
+        validateAllScreens();
+        [100, 500, 1000, 2000].forEach(delay => setTimeout(validateAllScreens, delay));
+    }
+    
+    // Initialize
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => setTimeout(scheduleValidation, 0));
+    } else {
+        setTimeout(scheduleValidation, 0);
+    }
+    window.addEventListener('load', scheduleValidation);
+    
+    // Hook into switchScreen
+    if (window.switchScreen) {
+        const _orig = window.switchScreen;
+        window.switchScreen = async function(...args) {
+            try {
+                const result = await _orig.apply(this, args);
+                const target = String(args[0] || '');
+                if (SCREENS_TO_PROTECT.some(s => target.includes(s.replace('screen-', '')))) {
+                    setTimeout(validateAllScreens, 50);
+                    setTimeout(validateAllScreens, 300);
+                }
+                return result;
+            } catch (err) {
+                console.error('[switchScreen]:', err);
+                throw err;
+            }
+        };
+    }
+    
+    // MutationObserver safety net
+    new MutationObserver(() => {
+        requestAnimationFrame(() => {
+            if (SCREENS_TO_PROTECT.some(id => {
+                const el = document.getElementById(id);
+                return el && el.closest('.modal');
+            })) validateAllScreens();
+        });
+    }).observe(document.body, { childList: true, subtree: true });
+    
+    // Expose for debugging
+    window.ScreenGuard = {
+        validate: validateScreenPlacement,
+        validateAll: validateAllScreens,
+        protected: SCREENS_TO_PROTECT
+    };
+    
+    console.log('✅ [ScreenGuard] Active');
+})();
 
 function isInventoryRoute(name) {
   return [
@@ -12545,10 +12968,10 @@ window.showSignupPrompt = showSignupPrompt;
  
 const wizardMap = {
   ifrs16: openLeaseWizard,
-  // future wizards: "vat": openVatWizard, etc.
+  // future wiUSDds: "vat": openVatWiUSDd, etc.
 };
 
-  // Open/close IFRS 16 wizard drawer
+  // Open/close IFRS 16 wiUSDd drawer
 function openLeaseWizard(ctx = {}) {
   const pending = window.__LEASE_WIZARD_PENDING_CONTEXT__ || {};
 
@@ -12576,10 +12999,14 @@ function openLeaseWizard(ctx = {}) {
   }
 
   const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
+
   const url = isLocal
     ? "http://localhost:5173/lease-wizard.html"
-    : `${location.origin}/lease-wizard.html?v=20260805b`;
-  const origin = isLocal ? "http://localhost:5173" : location.origin;
+    : `${location.origin}/app/dist/lease-wizard.html?v=20260814b`;
+
+  const origin = isLocal
+    ? "http://localhost:5173"
+    : location.origin;
 
   const accountCode = String(
     ctx.accountCode ||
@@ -12930,6 +13357,26 @@ function updateHeaderCompanyBadge() {
   badge.classList.remove("hidden");
 }
 
+function ensureFixedAssetsDrawerRoot() {
+  const root = document.getElementById("fs-react-drawer-root");
+
+  if (!root) {
+    console.warn("[PPE] #fs-react-drawer-root not found.");
+    return null;
+  }
+
+  const issueModal = document.getElementById("projectIssueModal");
+
+  if (issueModal && issueModal.contains(root)) {
+    console.log("[PPE] Moving Fixed Assets drawer root outside projectIssueModal.");
+
+    document.body.appendChild(root);
+  }
+
+  return root;
+}
+
+
 async function openFixedAssetsDrawer(ctx = {}) {
   console.log("[PPE] openFixedAssetsDrawer called", ctx);
 
@@ -12956,9 +13403,24 @@ async function openFixedAssetsDrawer(ctx = {}) {
     assetId: Number(ctx.assetId || 0) || null,
     defaults: ctx.defaults || {},
     source: ctx.source || "",
+    journalDate: ctx.journalDate || ctx.defaults?.journalDate || "",
+    journalRef: ctx.journalRef || ctx.defaults?.journalRef || "",
   };
 
+  ensureFixedAssetsDrawerRoot();
+
   const mount = window.FS_MOUNT_FIXED_ASSETS_DRAWER;
+
+  console.log("[PPE] drawer host status", { 
+    mount: typeof mount, 
+    open: typeof window.FS_OPEN_FIXED_ASSETS_DRAWER, 
+    rootParent: document.getElementById("fs-react-drawer-root")?.parentElement?.id, 
+  }); 
+  
+  if (typeof mount === "function") { 
+    await mount(); 
+  }  
+
   const open = window.FS_OPEN_FIXED_ASSETS_DRAWER;
 
   console.log("[PPE] drawer host status", {
@@ -13000,6 +13462,411 @@ window.openFixedAssetsDrawer = openFixedAssetsDrawer;
     // ==============================
   // Tax / VAT – company level
   // ==============================
+
+let vatSetupState = {
+  options: null,
+  context: null,
+};
+
+function vatSetupCid() {
+  return (
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID ||
+    window.CURRENT_COMPANY?.id
+  );
+}
+
+function vatAuthorityChannels(authorityCode) {
+  const code = String(authorityCode || "").toUpperCase();
+
+  if (code === "SARS") {
+    return [
+      ["efiling", "SARS eFiling"],
+      ["manual", "Manual / other channel"],
+    ];
+  }
+
+  if (code === "RSL") {
+    return [
+      ["electronic", "RSL electronic filing"],
+    ];
+  }
+
+  if (code === "BURS") {
+    return [
+      ["electronic", "BURS filing"],
+    ];
+  }
+
+  return [
+    ["electronic", "Electronic"],
+  ];
+}
+
+function renderVatFilingChannels(
+  authorityCode,
+  selectedValue
+) {
+  const el = document.getElementById(
+    "vatFilingChannel"
+  );
+
+  if (!el) return;
+
+  const channels =
+    vatAuthorityChannels(authorityCode);
+
+  el.innerHTML = channels
+    .map(([value, label]) => `
+      <option
+        value="${value}"
+        ${value === selectedValue ? "selected" : ""}
+      >
+        ${label}
+      </option>
+    `)
+    .join("");
+}
+
+function renderVatPeriodCategories(
+  rules,
+  authorityCode,
+  filingChannel,
+  selectedCategory
+) {
+  const el =
+    document.getElementById("vatPeriodCategory");
+
+  if (!el) return;
+
+  const available = (rules || [])
+    .filter((rule) => {
+      if (
+        String(rule.filing_channel || "") !==
+        String(filingChannel || "")
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+
+  el.innerHTML = [
+    `<option value="">Select category</option>`,
+    ...available.map((rule) => `
+      <option
+        value="${rule.category_code}"
+        ${
+          String(rule.category_code) ===
+          String(selectedCategory || "")
+            ? "selected"
+            : ""
+        }
+      >
+        ${rule.category_code} — ${rule.name}
+      </option>
+    `),
+  ].join("");
+
+  renderVatResolvedPeriodRule();
+}
+
+function findSelectedVatPeriodRule() {
+  const category =
+    document.getElementById(
+      "vatPeriodCategory"
+    )?.value;
+
+  const channel =
+    document.getElementById(
+      "vatFilingChannel"
+    )?.value;
+
+  return (
+    vatSetupState.options?.period_rules || []
+  ).find((rule) => (
+    String(rule.category_code) ===
+      String(category || "")
+    &&
+    String(rule.filing_channel) ===
+      String(channel || "")
+  )) || null;
+}
+
+function renderVatResolvedPeriodRule() {
+  const rule = findSelectedVatPeriodRule();
+
+  const box =
+    document.getElementById(
+      "vatResolvedRuleBox"
+    );
+
+  const hint =
+    document.getElementById(
+      "vatPeriodCategoryHint"
+    );
+
+  if (!box) return;
+
+  if (!rule) {
+    box.classList.add("hidden");
+
+    if (hint) {
+      hint.textContent =
+        "Choose the category assigned by your revenue authority.";
+    }
+
+    return;
+  }
+
+  box.classList.remove("hidden");
+
+  const frequencyLabels = {
+    monthly: "Monthly",
+    bi_monthly: "Every 2 months",
+    semi_annual: "Every 6 months",
+    annual: "Annual",
+  };
+
+  const dueLabels = {
+    last_business_day_next_month:
+      "Last business day of the following month",
+
+    day_25_next_month_previous_business_day:
+      "25th of the following month, adjusted to the previous business day",
+
+    day_20_next_month:
+      "20th of the following month",
+
+    days_after_period_end_25:
+      "25 days after the tax period ends",
+  };
+
+  box.innerHTML = `
+    <div class="font-semibold text-slate-700 mb-2">
+      Filing rule
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div>
+        <span class="text-slate-400">Frequency</span><br>
+        ${frequencyLabels[rule.frequency] || rule.frequency}
+      </div>
+
+      <div>
+        <span class="text-slate-400">Period length</span><br>
+        ${Number(rule.period_months || 0)} month(s)
+      </div>
+
+      <div>
+        <span class="text-slate-400">Due date</span><br>
+        ${
+          dueLabels[rule.return_due_rule] ||
+          rule.return_due_rule ||
+          "Authority rule"
+        }
+      </div>
+    </div>
+  `;
+
+  if (hint) {
+    hint.textContent =
+      "This determines the VAT periods shown on the VAT dashboard.";
+  }
+}
+
+async function loadVatSettingsForm() {
+  const cid = vatSetupCid();
+  if (!cid) return;
+
+  const res = await apiFetch(
+    ENDPOINTS.vatSetupOptions(cid),
+    {
+      method: "GET",
+    }
+  );
+
+  const context =
+    res?.context || {};
+
+  const settings =
+    context?.settings || {};
+
+  vatSetupState.options = res || {};
+  vatSetupState.context = context;
+
+  const authorityCode =
+    context.authority_code || "";
+
+  const authoritySelect =
+    document.getElementById(
+      "vatAuthority"
+    );
+
+  if (authoritySelect) {
+    authoritySelect.innerHTML = `
+      <option value="${authorityCode}">
+        ${
+          context?.authority?.name ||
+          authorityCode ||
+          "Not configured"
+        }
+      </option>
+    `;
+
+    authoritySelect.value =
+      authorityCode;
+  }
+
+  const vatNo =
+    document.getElementById(
+      "vatRegistrationNumber"
+    );
+
+  if (vatNo) {
+    vatNo.value =
+      context.vat_registration_number ||
+      settings.vat_registration_number ||
+      "";
+  }
+
+  const customs =
+    document.getElementById(
+      "vatCustomsCode"
+    );
+
+  if (customs) {
+    customs.value =
+      settings.customs_code || "";
+  }
+
+  const reminder =
+    document.getElementById(
+      "vatReminderDays"
+    );
+
+  if (reminder) {
+    reminder.value =
+      Number(
+        settings.reminder_days ?? 7
+      );
+  }
+
+  const defaultChannel =
+    settings.filing_channel ||
+    context?.period_rule?.filing_channel ||
+    (
+      authorityCode === "SARS"
+        ? "efiling"
+        : "electronic"
+    );
+
+  renderVatFilingChannels(
+    authorityCode,
+    defaultChannel
+  );
+
+  renderVatPeriodCategories(
+    res?.period_rules || [],
+    authorityCode,
+    defaultChannel,
+    settings.period_category ||
+      context?.period_rule?.category_code
+  );
+
+  renderVatResolvedPeriodRule();
+}
+
+async function saveVatSettingsForm(e) {
+  e?.preventDefault?.();
+
+  const cid = vatSetupCid();
+  if (!cid) {
+    throw new Error(
+      "No active company selected"
+    );
+  }
+
+  const payload = {
+    enabled: true,
+
+    authority_code:
+      vatSetupState.context?.authority_code,
+
+    vat_registration_number:
+      document.getElementById(
+        "vatRegistrationNumber"
+      )?.value?.trim() || null,
+
+    period_category:
+      document.getElementById(
+        "vatPeriodCategory"
+      )?.value || null,
+
+    filing_channel:
+      document.getElementById(
+        "vatFilingChannel"
+      )?.value || null,
+
+    customs_code:
+      document.getElementById(
+        "vatCustomsCode"
+      )?.value?.trim() || null,
+
+    reminder_days: Number(
+      document.getElementById(
+        "vatReminderDays"
+      )?.value || 7
+    ),
+  };
+
+  if (!payload.period_category) {
+    throw new Error(
+      "Select the VAT filing category assigned by the revenue authority."
+    );
+  }
+
+  const res = await apiFetch(
+    ENDPOINTS.vatSettings(cid),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (res?.ok === false) {
+    throw new Error(
+      res.error ||
+      "Failed to save VAT settings"
+    );
+  }
+
+  if (window.CURRENT_COMPANY) {
+    window.CURRENT_COMPANY.vat_settings =
+      res.settings;
+  }
+
+  await loadVatSettingsForm();
+
+  // Important:
+  // rebuild dashboard periods from backend statutory rules.
+  const periodSelect =
+    document.getElementById(
+      "vatPeriodSelect"
+    );
+
+  if (periodSelect) {
+    periodSelect.dataset.bound = "";
+  }
+
+  await bindVatPeriodFilter();
+  await renderVatDashboard();
+
+  return res;
+}
   function hydrateCompanyTaxUI(company) {
     if (!company) return;
 
@@ -13176,24 +14043,79 @@ async function loadVatSettings(companyId) {
 
 
 function bindVatSettingsForm() {
-  const form = document.getElementById("vatSettingsForm");
-  const reload = document.getElementById("vatSettingsReload");
+  const form =
+    document.getElementById(
+      "vatSettingsForm"
+    );
 
-  if (form && form.dataset.bound !== "1") {
-    form.dataset.bound = "1";
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      await saveVatSettings(); // you already have this
-    });
+  if (
+    !form ||
+    form.dataset.bound === "1"
+  ) {
+    return;
   }
 
-  if (reload && reload.dataset.bound !== "1") {
-    reload.dataset.bound = "1";
-    reload.addEventListener("click", async () => {
-      const cid = getActiveCompanyId?.() || companyId?.() || CURRENT_COMPANY_ID;
-      if (cid) await loadVatSettings(cid);
-    });
-  }
+  form.dataset.bound = "1";
+
+  form.addEventListener(
+    "submit",
+    async (e) => {
+      try {
+        await saveVatSettingsForm(e);
+
+        alert(
+          "VAT settings saved."
+        );
+      } catch (err) {
+        console.error(
+          "Save VAT settings failed:",
+          err
+        );
+
+        alert(
+          err?.message ||
+          "Failed to save VAT settings."
+        );
+      }
+    }
+  );
+
+  document.getElementById(
+    "vatSettingsReload"
+  )?.addEventListener(
+    "click",
+    () => {
+      loadVatSettingsForm()
+        .catch(console.error);
+    }
+  );
+
+  document.getElementById(
+    "vatFilingChannel"
+  )?.addEventListener(
+    "change",
+    () => {
+      const context =
+        vatSetupState.context || {};
+
+      renderVatPeriodCategories(
+        vatSetupState.options
+          ?.period_rules || [],
+        context.authority_code,
+        document.getElementById(
+          "vatFilingChannel"
+        )?.value,
+        null
+      );
+    }
+  );
+
+  document.getElementById(
+    "vatPeriodCategory"
+  )?.addEventListener(
+    "change",
+    renderVatResolvedPeriodRule
+  );
 }
 
 function ensureVatAnchorMonths() {
@@ -13215,10 +14137,77 @@ function ensureVatAnchorMonths() {
   });
 }
 
+// ════════════════════════════════════════════════════════════════════
+// 🛡️ BULLETPROOF showCompanyView() v5.0 - FINAL VERSION
+// Fixes: DOM nesting + proper style reset + VAT hiding
+// ════════════════════════════════════════════════════════════════════
 function showCompanyView(key) {
-  const views = Array.from(document.querySelectorAll("#screen-company .company-view"));
-  views.forEach(v => v.classList.toggle("hidden", v.dataset.view !== key));
+  const screen = document.getElementById("screen-company");
+  if (!screen) return;
+  
+  // ══════════════════════════════════════════════════════════
+  // 🔧 PHASE 0: FIX DOM STRUCTURE (move nested views out)
+  // ══════════════════════════════════════════════════════════
+  const cardContainer = screen.querySelector('.card');
+  if (cardContainer) {
+    const viewsToFix = ['income-tax', 'structure', 'reporting', 'vat', 'my', 'update', 'mgmt-packs'];
+    
+    viewsToFix.forEach(viewKey => {
+      const viewEl = screen.querySelector(`.company-view[data-view="${viewKey}"]`);
+      if (!viewEl) return;
+      
+      let parent = viewEl.parentElement;
+      while (parent && parent !== screen) {
+        if (parent.classList.contains('company-view') && parent.dataset.view !== viewKey) {
+          // Move to correct location (direct child of .card)
+          cardContainer.appendChild(viewEl);
+          break;
+        }
+        parent = parent.parentElement;
+      }
+    });
+  }
+  
+  // ══════════════════════════════════════════════════════════
+  // PHASE 1: HIDE ALL VIEWS with nuclear techniques
+  // ══════════════════════════════════════════════════════════
+  const allViews = screen.querySelectorAll(".company-view");
+  
+  allViews.forEach(v => {
+    v.classList.add("hidden");
+    v.style.setProperty("display", "none", "important");
+    v.style.setProperty("visibility", "hidden", "important");
+    v.style.setProperty("position", "absolute", "important");
+    v.style.setProperty("left", "-9999px", "important");
+    v.style.setProperty("top", "-9999px", "important");
+    v.style.setProperty("width", "0", "important");     // Hide dimensions
+    v.style.setProperty("height", "0", "important");    // Hide dimensions
+    v.style.setProperty("overflow", "hidden", "important");
+    v.style.setProperty("pointer-events", "none", "important");
+    v.setAttribute("data-force-hidden", "true");
+  });
+  
+  // ══════════════════════════════════════════════════════════
+  // PHASE 2: SHOW TARGET - Reset ALL styles completely!
+  // ══════════════════════════════════════════════════════════
+  const target = screen.querySelector(`.company-view[data-view="${key}"]`);
+  if (!target) return;
+  
+  // Remove hidden class
+  target.classList.remove("hidden");
+  target.removeAttribute("data-force-hidden");
+  
+  // 🔑 CRITICAL: Remove ALL inline styles (clean slate)
+  target.setAttribute('style', '');  // This clears EVERYTHING!
+  
+  // Now set ONLY the styles we want
+  target.style.setProperty("display", "block", "important");
+  target.style.setProperty("visibility", "visible", "important");
+  // Don't set position/left/top/width/height - let CSS handle it naturally!
 
+  // ══════════════════════════════════════════════════════════
+  // PHASE 3: Update title
+  // ══════════════════════════════════════════════════════════
   const titles = {
     my: "My company",
     update: "Update company",
@@ -13229,15 +14218,113 @@ function showCompanyView(key) {
     "mgmt-packs": "Management packs",
   };
 
-  // ✅ use `key`
-  if (key === "mgmt-packs") {
-    window.loadManagementPacks?.();
-  }
-
+  if (key === "mgmt-packs") window.loadManagementPacks?.();
+  
   const sub = document.getElementById("companySubTitle");
   if (sub) sub.textContent = titles[key] || "Company & Setup";
+  
+  // Activate guard
+  if (window.__companyActiveView) window.__companyActiveView(key);
 }
 window.showCompanyView = showCompanyView;
+
+// ════════════════════════════════════════════════════════════════════
+// 🛡️ VAT GUARD v3.0 - Enhanced with DOM structure protection
+// ════════════════════════════════════════════════════════════════════
+(function() {
+  let activeViewKey = null;
+  
+  window.__companyActiveView = (key) => { 
+    activeViewKey = key;
+    console.log(`🛡️ [VAT Guard] Active view set to: "${key}"`);
+  };
+  
+  const observer = new MutationObserver((mutations) => {
+    if (!activeViewKey) return;
+    
+    const screen = document.getElementById('screen-company');
+    if (!screen) return;
+    
+    let blockedCount = 0;
+    
+    mutations.forEach((mutation) => {
+      // Check mutated element itself
+      if (mutation.target.classList?.contains('company-view')) {
+        const el = mutation.target;
+        const viewKey = el.dataset.view;
+        
+        if (viewKey && viewKey !== activeViewKey) {
+          const computed = getComputedStyle(el);
+          const isVisible = computed.display !== 'none' && 
+                           computed.visibility !== 'hidden' &&
+                           computed.position !== 'absolute';
+          
+          if (isVisible || computed.left !== '-9999px') {
+            console.warn(`🛡️ [VAT Guard] ⚠️ BLOCKED "${viewKey}" from becoming visible!`);
+            
+            // Nuclear re-hide
+            el.classList.add('hidden');
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('visibility', 'hidden', 'important');
+            el.style.setProperty('position', 'absolute', 'important');
+            el.style.setProperty('left', '-9999px', 'important');
+            el.style.setProperty('top', '-9999px', 'important');
+            el.setAttribute('data-force-hidden', 'true');
+            
+            blockedCount++;
+          }
+        }
+      }
+      
+      // Check children
+      mutation.target.querySelectorAll?.('.company-view')?.forEach(el => {
+        const viewKey = el.dataset.view;
+        if (!viewKey || viewKey === activeViewKey) return;
+        
+        const computed = getComputedStyle(el);
+        const isVisible = computed.display !== 'none' && 
+                         computed.visibility !== 'hidden';
+        
+        if (isVisible) {
+          console.warn(`🛡️ [VAT Guard] ⚠️ RE-HIDDEN "${viewKey}"`);
+          
+          el.classList.add('hidden');
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('position', 'absolute', 'important');
+          el.style.setProperty('left', '-9999px', 'important');
+          
+          blockedCount++;
+        }
+      });
+    });
+    
+    if (blockedCount > 0) {
+      console.warn(`🛡️ [VAT Guard] Total blocked: ${blockedCount}`);
+    }
+  });
+  
+  const startGuard = () => {
+    const screen = document.getElementById('screen-company');
+    if (screen) {
+      observer.observe(screen, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-force-hidden'],
+        subtree: true,
+        childList: true  // Also watch for child additions/removals
+      });
+      console.log('🛡️ [VAT Guard] ✅ ACTIVE - Watching for unauthorized changes');
+    } else {
+      setTimeout(startGuard, 500);
+    }
+  };
+  
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(startGuard, 100), { once: true });
+  } else {
+    setTimeout(startGuard, 100);
+  }
+})();
 
 async function ensureCompanyDataLoaded() {
   const cid = getActiveCompanyId?.() || companyId?.() || CURRENT_COMPANY_ID;
@@ -13250,7 +14337,13 @@ async function ensureCompanyDataLoaded() {
 
   await loadCompanyProfile(cid);
   await loadVatSettings(cid);
-  await restoreAppRoute();
+  bindVatSettingsForm();
+  await loadVatSettingsForm();
+  if (typeof window.restoreAppRoute === "function") {
+    await window.restoreAppRoute();
+  } else {
+    console.warn("[Router] restoreAppRoute not ready yet.");
+  }
   return window.CURRENT_COMPANY || null;
 }
 window.ensureCompanyDataLoaded = ensureCompanyDataLoaded;
@@ -14557,216 +15650,245 @@ window.loadCompanyProfile = loadCompanyProfile;
     `;
   }
 
-const INDUSTRY_CATALOG = {
-  "Agriculture": [
-    "Crop Farming",
-    "Livestock Farming",
-    "Mixed Farming",
-    "Dairy Farming",
-    "Poultry Farming",
-    "Horticulture",
-    "Fruit Farming",
-    "Forestry & Plantations",
-    "Aquaculture",
-    "Beekeeping",
-    "Game & Wildlife Farming",
-    "Agricultural Support Services"
-  ],
+  const INDUSTRY_CATALOG = {
+    "Agriculture": [
+      "Crop Farming",
+      "Livestock Farming",
+      "Mixed Farming",
+      "Dairy Farming",
+      "Poultry Farming",
+      "Horticulture",
+      "Fruit Farming",
+      "Forestry & Plantations",
+      "Aquaculture",
+      "Beekeeping",
+      "Game & Wildlife Farming",
+      "Agricultural Support Services"
+    ],
 
-  "Automotive Services": [
-    "Auto Repair Workshop",
-    "Auto Electrical",
-    "Tyre & Fitment",
-    "Panel Beating",
-    "Spray Painting",
-    "Parts & Spares"
-  ],
+    "Automotive Services": [
+      "Auto Repair Workshop",
+      "Auto Electrical",
+      "Tyre & Fitment",
+      "Panel Beating",
+      "Spray Painting",
+      "Parts & Spares"
+    ],
 
-  "Body Corporate": [],
+    "Body Corporate": [],
 
-  "Call Center": [],
+    "Call Center": [],
 
-  "Car Dealership": [
-    "New Vehicles",
-    "Used Vehicles",
-    "Motorcycle Dealership"
-  ],
+    "Car Dealership": [
+      "New Vehicles",
+      "Used Vehicles",
+      "Motorcycle Dealership"
+    ],
 
-  "Construction": [
-    "Residential Building Contractor",
-    "Civil Engineering",
-    "Electrical & Mechanical",
-    "Plumbing & Drainage",
-    "Roadworks"
-  ],
+    "Construction": [
+      "Residential Building Contractor",
+      "Civil Engineering",
+      "Electrical & Mechanical",
+      "Plumbing & Drainage",
+      "Roadworks"
+    ],
 
-  "Engineering & Technical": [
-    "Mechanical Engineering",
-    "Electrical Engineering",
-    "Industrial Engineering",
-    "Technical Services"
-  ],
+    "Engineering & Technical": [
+      "Mechanical Engineering",
+      "Electrical Engineering",
+      "Industrial Engineering",
+      "Technical Services"
+    ],
 
-  "Hospitality": [
-    "Hotel",
-    "Events & Catering",
-    "Guest House / Lodge"
-  ],
+    "Hospitality": [
+      "Hotel",
+      "Events & Catering",
+      "Guest House / Lodge"
+    ],
 
-  "IT & Technology": [
-    "Software Development",
-    "Managed IT Services",
-    "Networking & Infrastructure",
-    "Cybersecurity"
-  ],
+    "IT & Technology": [
+      "Software Development",
+      "Managed IT Services",
+      "Networking & Infrastructure",
+      "Cybersecurity"
+    ],
 
-  "Logistics & Transport": [
-    "Freight / Logistics",
-    "Courier / Last Mile",
-    "Public Transport",
-    "Fleet Services"
-  ],
+    "Logistics & Transport": [
+      "Freight / Logistics",
+      "Courier / Last Mile",
+      "Public Transport",
+      "Fleet Services"
+    ],
 
-  "Management Services": [],
+    "Management Services": [],
 
-  "Manufacturing": [
-    "Light Manufacturing",
-    "Fabrication",
-    "Food Processing"
-  ],
+    "Manufacturing": [
+      "Light Manufacturing",
+      "Fabrication",
+      "Food Processing"
+    ],
 
-  "Mining": [
-    "Open-Pit Mining",
-    "Underground Mining",
-    "Quarrying & Aggregates",
-    "Coal Mining",
-    "Gold & PGM Mining"
-  ],
+    "Mining": [
+      "Open-Pit Mining",
+      "Underground Mining",
+      "Quarrying & Aggregates",
+      "Coal Mining",
+      "Gold & PGM Mining"
+    ],
 
-  "NPO Education": [
-    "Primary Education",
-    "Higher Education"
-  ],
+    // ══════════════════════════════════════════════════
+    // ✅ UPDATED: NPO Education
+    // ══════════════════════════════════════════════════
+    "NPO Education": [
+      "Primary Education",
+      "Higher Education",
+      "ECD Centre (Early Childhood Development)",
+      "Adult Basic Education"
+    ],
 
-  "Private School": [],
+    // ══════════════════════════════════════════════════
+    // ✅ UPDATED: Private School - now has sub-types!
+    // ══════════════════════════════════════════════════
+    "Private School": [
+      "Independent Primary School",
+      "Independent High School",
+      "Combined Independent School",
+      "Special Needs Private School",
+      "Religious / Church School",
+      "Montessori School",
+      "Waldorf School",
+      "International School (Cambridge/IB)"
+    ],
 
-  "NPO Healthcare": [
-    "Clinic",
-    "Hospital"
-  ],
+    // ══════════════════════════════════════════════════
+    // ✅ NEW: Public School - ADD THIS ENTIRE ENTRY!
+    // ══════════════════════════════════════════════════
+    "Public School": [
+      "Primary School",
+      "High School / Secondary School",
+      "Combined School (Primary + High)",
+      "Special Needs School",
+      "Vocational / Technical College (Public)",
+      "ECD Centre (Early Childhood Development)"
+    ],
 
-  "NPO IT": [],
+    "NPO Healthcare": [
+      "Clinic",
+      "Hospital"
+    ],
 
-  "NPO Transport": [
-    "Fleet Services",
-    "Public Transport"
-  ],
+    "NPO IT": [],
 
-  "Private Healthcare": [
-    "GP Clinic",
-    "Specialist Practice",
-    "Dentistry"
-  ],
+    "NPO Transport": [
+      "Fleet Services",
+      "Public Transport"
+    ],
 
-  "Professional Services": [
-    "Auditing & Accounting",
-    "Architecture",
-    "Legal Services",
-    "Engineering Consulting",
-    "HR & Recruitment",
-    "Business Consulting"
-  ],
+    "Private Healthcare": [
+      "GP Clinic",
+      "Specialist Practice",
+      "Dentistry"
+    ],
 
-  "Property Management": [],
+    "Professional Services": [
+      "Auditing & Accounting",
+      "Architecture",
+      "Legal Services",
+      "Engineering Consulting",
+      "HR & Recruitment",
+      "Business Consulting"
+    ],
 
-  "Restaurant": [
-    "Fast Food",
-    "Casual Dining",
-    "Fine Dining"
-  ],
+    "Property Management": [],
 
-  "Retail & Wholesale": [
-    "Wholesale",
-    "E-commerce Retail",
-    "Brick & Mortar Retail"
-  ],
+    "Restaurant": [
+      "Fast Food",
+      "Casual Dining",
+      "Fine Dining"
+    ],
 
-  "Security Services": [
-    "Guarding",
-    "Alarm Monitoring",
-    "Technical Security Systems"
-  ],
+    "Retail & Wholesale": [
+      "Wholesale",
+      "E-commerce Retail",
+      "Brick & Mortar Retail"
+    ],
 
-  "Design & Creative Services": [
-    "Interior Design",
-    "Architecture",
-    "Graphic Design",
-    "Advertising Agency",
-    "Creative Studio",
-    "Landscape Design"
-  ],
+    "Security Services": [
+      "Guarding",
+      "Alarm Monitoring",
+      "Technical Security Systems"
+    ],
 
-  "Personal Care & Beauty Services": [
-    "Hair Salon",
-    "Barber Shop",
-    "Nail Salon",
-    "Beauty Spa",
-    "Makeup Artist",
-    "Wellness & Massage",
-    "Tattoo Studio"
-  ],
+    "Design & Creative Services": [
+      "Interior Design",
+      "Architecture",
+      "Graphic Design",
+      "Advertising Agency",
+      "Creative Studio",
+      "Landscape Design"
+    ],
 
-  "Health & Fitness": [
-    "Gym",
-    "Personal Trainer",
-    "Fitness Studio",
-    "CrossFit Box",
-    "Sports Academy"
-  ],
+    "Personal Care & Beauty Services": [
+      "Hair Salon",
+      "Barber Shop",
+      "Nail Salon",
+      "Beauty Spa",
+      "Makeup Artist",
+      "Wellness & Massage",
+      "Tattoo Studio"
+    ],
 
-  "Education & Training": [
-    "Training Provider",
-    "Skills Development",
-    "Driving School",
-    "Tutoring Services",
-    "Corporate Training"
-  ],
+    "Health & Fitness": [
+      "Gym",
+      "Personal Trainer",
+      "Fitness Studio",
+      "CrossFit Box",
+      "Sports Academy"
+    ],
 
-  "Cleaning Services": [
-    "Residential Cleaning",
-    "Commercial Cleaning",
-    "Industrial Cleaning",
-    "Pest Control"
-  ],
+    "Education & Training": [
+      "Training Provider",
+      "Skills Development",
+      "Driving School",
+      "Tutoring Services",
+      "Corporate Training"
+    ],
 
-  "Media & Entertainment": [
-    "Content Creator",
-    "Podcast Studio",
-    "Photography",
-    "Videography",
-    "Film Production",
-    "Music Production"
-  ],
+    "Cleaning Services": [
+      "Residential Cleaning",
+      "Commercial Cleaning",
+      "Industrial Cleaning",
+      "Pest Control"
+    ],
 
-  "Telecommunications": [
-    "Internet Service Provider",
-    "Mobile Network Operator",
-    "Pay TV Operator"
-  ],
+    "Media & Entertainment": [
+      "Content Creator",
+      "Podcast Studio",
+      "Photography",
+      "Videography",
+      "Film Production",
+      "Music Production"
+    ],
 
-  "Transport": [
-    "Courier / Last Mile",
-    "Freight / Logistics",
-    "Public Transport"
-  ],
+    "Telecommunications": [
+      "Internet Service Provider",
+      "Mobile Network Operator",
+      "Pay TV Operator"
+    ],
 
-  "Clubs & Associations": [
-    "Sports Club",
-    "Social Club",
-    "Professional Association",
-    "Recreational Association"
-  ]
-};
+    "Transport": [
+      "Courier / Last Mile",
+      "Freight / Logistics",
+      "Public Transport"
+    ],
+
+    "Clubs & Associations": [
+      "Sports Club",
+      "Social Club",
+      "Professional Association",
+      "Recreational Association"
+    ]
+  };
 
   function getSortedIndustries() {
     return Object.keys(INDUSTRY_CATALOG).sort((a, b) => a.localeCompare(b));
@@ -15313,6 +16435,370 @@ const INDUSTRY_CATALOG = {
   window.bindCorporateStructureScreen = bindCorporateStructureScreen;
   window.loadCorporateStructure = loadCorporateStructure;
 })();
+
+const SCHOOL_INDUSTRY_CATALOG_UPDATES = {
+  "Public School": [
+    "Primary School",
+    "High School / Secondary School",
+    "Combined School (Primary + High)",
+    "Special Needs School",
+    "Vocational / Technical College (Public)",
+    "ECD Centre (Early Childhood Development)"
+  ],
+  "Private School": [
+    "Independent Primary School",
+    "Independent High School",
+    "Combined Independent School",
+    "Special Needs Private School",
+    "Religious / Church School",
+    "Montessori School",
+    "Waldorf School",
+    "International School (Cambridge/IB)"
+  ]
+};
+
+function isSchoolCompany(company = window.CURRENT_COMPANY) {
+  if (!company) return false;
+  const isSchool = company.is_school || company.school_type;
+  if (isSchool) return true;
+  const industry = String(company.industry || "").toLowerCase();
+  const subIndustry = String(company.sub_industry || "").toLowerCase();
+  return (
+    industry.includes("school") ||
+    industry.includes("education") ||
+    subIndustry.includes("primary") ||
+    subIndustry.includes("high school") ||
+    subIndustry.includes("secondary") ||
+    subIndustry.includes("combined")
+  );
+}
+
+function getSchoolType(company = window.CURRENT_COMPANY) {
+  return company?.school_type || null;
+}
+
+function isPublicSchool(company = window.CURRENT_COMPANY) {
+  if (!isSchoolCompany(company)) return false;
+  const schoolType = getSchoolType(company);
+  if (schoolType === "public") return true;
+  const industry = String(company.industry || "").toLowerCase();
+  return industry.includes("public");
+}
+
+function isVatExemptSchool(company = window.CURRENT_COMPANY) {
+  return company?.vat_exempt === true;
+}
+
+function getSchoolNavLabelOverrides(company = window.CURRENT_COMPANY) {
+  if (!isSchoolCompany(company)) return null;
+  return {
+    labelOverrides: {
+      "Workflows": "Finance Desk",
+      "Cash & Banking": "Banking & Fees",
+      "Master Records": "Contacts & Lists",
+      "Reports": "Financial Reports",
+      "Standards": "Accounting Setup",
+      "Control Room": "Controls & Audit",
+      "Catalog Studio": "Inventory & Library",
+    },
+    itemOverrides: {}
+  };
+}
+
+
+function getSchoolHelpContext(screenName, company = window.CURRENT_COMPANY) {
+  if (!isSchoolCompany(company)) return null;
+  
+  const schoolType = getSchoolType(company);
+  const isPublic = (schoolType === "public");
+  
+  const helpTexts = {
+    
+    "vat": {
+      title: isPublic ? "VAT for Public Schools" : "VAT for Private Schools",
+      body: isPublic 
+        ? `As a public school, your educational services are VAT EXEMPT.
+        
+This means:
+• You cannot charge VAT on school fees
+• You CANNOT claim input VAT on purchases
+• The VAT you pay on supplies becomes part of your cost
+
+This screen is provided for reporting purposes only.
+If you run taxable activities (e.g., tuck shop, facility hire),
+consult your accountant about partial VAT recovery.`
+        : `As a private school, check your VAT registration status.
+
+If registered as VAT vendor:
+• May need to charge VAT on certain services
+• Can claim input VAT on business purchases
+
+Consult your accountant for specific advice.`,
+      icon: "📚",
+      showWarning: isPublic,
+    },
+    
+    "payroll": {
+      title: "School Payroll",
+      body: `Record teacher salaries, admin staff wages, and contractor payments.
+
+Remember to include:
+• Basic salaries (PED/GDE scales for public schools)
+• Housing allowances (where applicable)
+• Medical aid contributions
+• Pension/UIF contributions
+• Performance bonuses
+• Overtime (extramural supervision)`,
+      icon: "👩‍🏫",
+    },
+    
+    "budgeting": {
+      title: "School Budgeting",
+      body: `Create departmental budgets aligned to your allocation.
+
+Common budget categories:
+• Stationery & teaching materials
+• Utilities (water, electricity, refuse)
+• Maintenance (buildings, grounds, equipment)
+• Extramural activities & sports
+• Transport & trips
+• Staff development & training`,
+      icon: "📊",
+    },
+    
+    "fixedassets": {
+      title: "School Fixed Assets (NCA)",
+      body: `Schools have significant Non-Current Assets that MUST be tracked!
+
+🪑 FURNITURE & FIXTURES (5-10 year life):
+• Learner desks & chairs (need regular replacement!)
+• Teacher tables & chairs
+• Staff room furniture
+• Shelving & storage cabinets
+
+📚 TEACHING EQUIPMENT (5-15 year life):
+• Chalk boards / White boards / Smart boards
+• Projectors & screens
+• Computers, laptops, tablets
+• Printers & photocopiers
+
+🏟️ SPORTS FACILITIES & EQUIPMENT:
+• Sports courts (tennis, netball, basketball surfaces)
+• Basketball hoops, netball posts, volleyball poles
+• Soccer goal posts
+⚠️ These NEED replacement tracking!
+
+🚗 VEHICLES:
+• School buses (major asset!)
+
+NOTE: Buildings may be owned by DOE - check before capitalising.`,
+      icon: "🏫",
+    },
+    
+    "catalog-studio": {
+      title: "Catalogue Studio for Schools",
+      body: `Track items in SERVICE mode (no selling/POS).
+
+📦 STATIONERY & SUPPLIES:
+• Pens, pencils, rulers, paper
+• Printer cartridges & toner
+• Cleaning supplies
+
+📚 TEXTBOOKS & LIBRARY:
+• Subject textbooks (issued to learners)
+• Library books (for loan tracking)
+
+🔧 EQUIPMENT TRACKING:
+• Sports equipment
+• Laboratory apparatus
+• IT accessories`,
+      icon: "📦",
+    },
+    
+    "projects": {
+      title: "School Capital Projects",
+      body: `Use for MAJOR capital works funded by parent contributions.
+
+✅ WHEN TO USE PROJECTS:
+• School hall construction (R100k+)
+• New classroom / toilet block
+• Sports pavilion / change rooms
+• Major fencing / security upgrades
+
+❌ DON'T USE FOR:
+• Minor repairs (< R20k) → Use Journal → Maintenance expense
+• Routine maintenance → Expense directly
+
+💡 BENEFITS:
+• Track actual vs budget per cost category
+• Show parents/governors how money was spent
+• Clear audit trail for Department of Education
+• On completion: transfer total to Fixed Assets
+
+⚠️ Schools are NON-MATERIAL projects (no raw materials).`,
+      icon: "🏗️",
+    },
+    
+    "library": {
+      title: "Library & Book Rentals",
+      body: `Use Catalogue Studio service items to track:
+
+📖 BOOK CATEGORIES:
+• Fiction / Non-fiction
+• Textbooks (per subject per grade)
+• Reference materials
+
+👤 ISSUANCE TRACKING:
+• Issued to (learner name/ID)
+• Issue date / Due date / Return date
+• Overdue notifications
+
+TIP: Run term-end stocktakes for loss identification.`,
+      icon: "📚",
+    },
+  };
+  
+  return helpTexts[screenName] || null;
+}
+
+
+// ============================================================
+// 5. JOURNAL CATEGORIES FOR SCHOOLS
+// ============================================================
+
+/**
+ * Get custom journal entry categories for schools
+ */
+function getSchoolJournalCategories(company = window.CURRENT_COMPANY) {
+  if (!isSchoolCompany(company)) return null;
+  
+  const schoolType = getSchoolType(company);
+  
+  if (schoolType === "public") {
+    return [
+      "School Fees Received",
+      "Government Grant Received",
+      "Donation Received",
+      "Fundraising Income",
+      "Salaries & Wages (Teachers)",
+      "Salaries & Wages (Admin)",
+      "Stationery & Teaching Materials",
+      "Utilities (Water/Electricity)",
+      "Maintenance & Repairs",
+      "Equipment & Furniture",
+      "Transport & Travel",
+      "Professional Fees (Audit/Legal)",
+      "Insurance",
+      "Bank Charges",
+      "Miscellaneous Expenses",
+    ];
+  }
+  
+  // Private school categories
+  return [
+    "Tuition Fees Received",
+    "Registration Fees",
+    "After-Care / Extra-Mural Fees",
+    "Donation Received",
+    "Salaries & Wages",
+    "Stationery & Teaching Materials",
+    "Utilities (Water/Electricity)",
+    "Maintenance & Repairs",
+    "Equipment & Furniture",
+    "Transport (School Buses)",
+    "Professional Fees (Audit/Legal)",
+    "Insurance",
+    "Marketing & Admissions",
+    "Bank Charges",
+    "Lease Rentals (if applicable)",
+    "Miscellaneous Expenses",
+  ];
+}
+
+
+// ============================================================
+// 6. TERM-BASED REPORTING INFO
+// ============================================================
+
+/**
+ * Get school term information for reporting periods
+ */
+function getSchoolTermInfo(company = window.CURRENT_COMPANY) {
+  if (!isSchoolCompany(company)) return null;
+  
+  return {
+    useTermlyReporting: true,
+    terms: [
+      { name: "Term 1", start: "01-15", end: "04-10" },   // Jan-Apr
+      { name: "Term 2", start: "05-02", end: "08-09" },   // May-Aug
+      { name: "Term 3", start: "09-13", end: "12-06" },   // Sep-Dec
+    ],
+    termLabels: {
+      "Q1": "Term 1",
+      "Q2": "Term 2", 
+      "Q3": "Term 3",
+      "Q4": "Term 3 (Extended)",  // Some reports span term 3+
+    }
+  };
+}
+
+
+// ============================================================
+// 7. EXPORTS (Attach to window)
+// ============================================================
+
+window.SCHOOL_INDUSTRY_CATALOG_UPDATES = SCHOOL_INDUSTRY_CATALOG_UPDATES;
+
+// Expose school functions globally
+window.SCHOOL_INDUSTRY_CATALOG_UPDATES = SCHOOL_INDUSTRY_CATALOG_UPDATES;
+window.isSchoolCompany = isSchoolCompany;
+window.getSchoolType = getSchoolType;
+window.isPublicSchool = isPublicSchool;
+window.isVatExemptSchool = isVatExemptSchool;
+window.getSchoolNavLabelOverrides = getSchoolNavLabelOverrides;
+window.getSchoolHelpContext = getSchoolHelpContext;
+window.getSchoolJournalCategories = getSchoolJournalCategories;
+window.getSchoolTermInfo = getSchoolTermInfo;
+
+// ---- Public School nav visibility rules ----
+const SCHOOL_HIDDEN_SCREENS = {
+  // IFRS 16
+  "lease-register": 1, "lease-payments": 1, "lease-monthly": 1, "lessor-subsequent": 1,
+  // Revenue Desk
+  "ar-invoices": 1, "ar-quotes": 1, "revenue": 1,
+  // Project Profitability
+  "project-profitability": 1,
+  // POS screens
+  "pos-launch": 1, "pos": 1,
+  // Loans & Financing
+  "loans": 1,
+  // Master Records
+  "customers": 1, "lessors": 1,
+  // Reports - VAT
+  "vat": 1,
+  // Standards (whole section)
+  "coa": 1, "fixedassets": 1, "revenue-setup": 1, "ifrs9": 1, "deferred-tax": 1, "ias41": 1,
+  // Control Room - AR
+  "ar-recon": 1, "ar-statements": 1, "ar-aging": 1,
+  // Settings - Company & Setup
+  "company-vat": 1, "company-income-tax": 1, "company-structure": 1,
+};
+
+const SCHOOL_HIDDEN_PARENT_NAMES = {
+  "ifrs 16": 1,
+  "revenue desk": 1,
+  "standards": 1,
+  "loans & financing": 1,
+  "ar controls": 1,
+};
+
+window.isSchoolCompany = isSchoolCompany;
+window.getSchoolType = getSchoolType;
+window.isVatExemptSchool = isVatExemptSchool;
+window.getSchoolNavLabelOverrides = getSchoolNavLabelOverrides;
+window.getSchoolHelpContext = getSchoolHelpContext;
+window.getSchoolJournalCategories = getSchoolJournalCategories;
+window.getSchoolTermInfo = getSchoolTermInfo;
 
 ENDPOINTS.invoiceNextNumber = (companyId) =>
   `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/invoices/next_number`;
@@ -17421,253 +18907,6 @@ function buildPeriodParams(periodKey, extra = {}) {
   return params;
 }
 
-// ==============================
-// VAT account discovery
-// ==============================
-function getVatAccounts() {
-  const coa = (window.CURRENT_COA || []);
-
-  const tcode = (a) => String(a.template_code || a.templateCode || a.template_code_scoped || "");
-
-  const input = coa.filter(a => {
-    const code = String(a.code || "");
-    const t = tcode(a);
-    const name = String(a.name || "").toLowerCase();
-    return t.includes("1410") || code === "BS_CA_1410" || name.includes("vat input");
-  });
-
-  const output = coa.filter(a => {
-    const code = String(a.code || "");
-    const t = tcode(a);
-    const name = String(a.name || "").toLowerCase();
-    return t.includes("2310") || code === "BS_CL_2310" || name.includes("vat output");
-  });
-
-  return { input, output };
-}
-
-function buildVatConfigFromCoa() {
-  const companyCfg = CURRENT_COMPANY?.vat_settings || {};
-  const vat = getVatAccounts();
-
-  // Prefer company saved settings if present
-  const vatInput  = companyCfg.vat_input_code  || vat.input?.[0]?.code  || "BS_CA_1410";
-  const vatOutput = companyCfg.vat_output_code || vat.output?.[0]?.code || "BS_CL_2310";
-
-  return {
-    vat_rate: Number(companyCfg.vat_rate || CURRENT_COMPANY?.vat_rate || 15),
-    vat_input_code: vatInput,
-    vat_output_code: vatOutput,
-  };
-}
-
-function coaNameByCode(code) {
-  const coa = window.CURRENT_COA || [];
-  const a = coa.find(x => String(x.code) === String(code));
-  return a?.name || code;
-}
-
-const VAT_DISALLOWED_CODES = new Set([
-  "1000", "1010", "1020", // Cash & bank, petty cash, etc.
-]);
-
-function getVatSideForAccount(account, line) {
-  if (!account) return null;
-
-  const code = String(account.code || "").trim();
-  if (VAT_DISALLOWED_CODES.has(code)) return null;
-
-  // ✅ disposal FIRST (so asset disposals become output VAT)
-  if (
-    String(account.type || "") === "Asset" &&
-    typeof isDisposalLine === "function" &&
-    isDisposalLine(account, line)
-  ) {
-    return "output";
-  }
-
-  const type = String(account.type || "");
-  const category = String(account.category || "").toLowerCase();
-
-  if (type === "Expense" || category === "cost of sales" || type === "Asset") {
-    return "input";
-  }
-
-  if (type === "Income") {
-    return "output";
-  }
-
-  return null;
-}
-
-// 🔹 Build VAT line for a single journal line (if needed)
-// Expects:
-//   line.debit / line.credit
-//   line.vatFlag === "yes" for VATable lines
-//   line.vatCode  (STANDARD / ZERO / EXEMPT etc.)
-//   line.vatBasis ("inclusive" / "exclusive")
-function buildVatLinesForJournalLine(line, vatCfg) {
-  if (!line) return null;
-
-  // Only act on lines explicitly marked as VATable
-  if (line.vatFlag !== "yes") return null;
-
-  const code = String(line.vatCode || "STANDARD").toUpperCase();
-  if (code !== "STANDARD" && code !== "CUSTOM") return null;
-
-  // Avoid re-VATing auto-generated lines
-  if (line.autoVat) return null;
-
-  const dr = +line.debit  || 0;
-  const cr = +line.credit || 0;
-  const amount = dr - cr;          // positive = DR, negative = CR
-
-  if (!amount) return null;
-
-  const basis   = line.vatBasis || "inclusive";
-  const custom = Number(line.vatRatePct || line.vatRate || 0);   // allow per-line
-  const ratePct = (code === "CUSTOM" && custom > 0 && custom <= 100)
-    ? custom
-    : (vatCfg.vat_rate || 15);
-    const rate    = ratePct / 100;
-
-  let base = amount;
-  let vat  = 0;
-
-  if (basis === "inclusive") {
-    const factor = 1 + rate;
-    base = +(amount / factor).toFixed(2);
-    vat  = +(amount - base).toFixed(2);
-  } else {
-    base = +amount.toFixed(2);
-    vat  = +(base * rate).toFixed(2);
-  }
-
-  if (!vat) return null;
-
-  const isDebit = amount > 0; // DR = input VAT, CR = output VAT
-  const account_code = isDebit
-    ? vatCfg.vat_input_code
-    : vatCfg.vat_output_code;
-
-  if (!account_code) return null;
-
-  // Always return positive vatAmount; caller decides DR/CR
-  return {
-    account_code,
-    vatAmount: Math.abs(vat),
-    isDebit,                 // true → DR VAT Input, false → CR VAT Output
-    ratePct,
-  };
-}
-
-/* ==============================
- * VAT & Tax Screen
- * ============================== */
-function parseVatPeriodSelection() {
-  const sel = document.getElementById("vatPeriodSelect");
-  if (!sel?.value) return null;
-
-  try {
-    const parsed = JSON.parse(decodeURIComponent(sel.value));
-    if (!parsed?.start_date || !parsed?.end_date) return null;
-
-    return {
-      label: parsed.label || sel.options[sel.selectedIndex]?.text || "Selected period",
-      start: new Date(parsed.start_date + "T00:00:00"),
-      end: new Date(parsed.end_date + "T00:00:00"),
-      dueDate: parsed.due_date ? new Date(parsed.due_date + "T00:00:00") : null,
-      start_date: parsed.start_date,
-      end_date: parsed.end_date,
-      due_date: parsed.due_date || null,
-    };
-  } catch (e) {
-    console.warn("parseVatPeriodSelection failed:", e);
-    return null;
-  }
-}
-
-function daysBetweenLocal(a, b) {
-  const d1 = new Date(a);
-  const d2 = new Date(b);
-  d1.setHours(0, 0, 0, 0);
-  d2.setHours(0, 0, 0, 0);
-  return Math.round((d2 - d1) / 86400000);
-}
-
-function setVatFilingBadgeState({ filing, period }) {
-  const filingBadge = document.getElementById("vatFilingBadge");
-  const filingText = document.getElementById("vatFilingStatusText");
-  if (!filingBadge || !filingText) return;
-
-  filingBadge.className = "px-2 py-1 rounded bg-slate-100 text-slate-700";
-
-  if (filing?.status === "submitted") {
-    filingBadge.className = "px-2 py-1 rounded bg-emerald-100 text-emerald-700";
-    filingBadge.textContent = "Submitted";
-    filingText.textContent =
-      `Submitted${filing.submitted_at ? ` on ${String(filing.submitted_at).slice(0, 10)}` : ""}` +
-      `${filing.reference ? ` • Ref ${filing.reference}` : ""}`;
-    return;
-  }
-
-  if (filing?.status === "prepared") {
-    filingBadge.className = "px-2 py-1 rounded bg-blue-100 text-blue-700";
-    filingBadge.textContent = "Prepared";
-    filingText.textContent =
-      `Prepared${filing.prepared_at ? ` on ${String(filing.prepared_at).slice(0, 10)}` : ""}` +
-      `${period?.due_date ? ` • Due ${period.due_date}` : ""}`;
-    return;
-  }
-
-  const today = new Date();
-  const due = period?.dueDate || (period?.due_date ? new Date(period.due_date + "T00:00:00") : null);
-
-  if (!due) {
-    filingBadge.textContent = "Open";
-    filingText.textContent = "Open filing period.";
-    return;
-  }
-
-  const diff = daysBetweenLocal(today, due);
-
-  if (diff < 0) {
-    filingBadge.className = "px-2 py-1 rounded bg-red-100 text-red-700";
-    filingBadge.textContent = "Overdue";
-    filingText.textContent = `VAT return overdue. Due ${fmtLocalDate(due)}.`;
-    return;
-  }
-
-  if (diff <= 7) {
-    filingBadge.className = "px-2 py-1 rounded bg-amber-100 text-amber-700";
-    filingBadge.textContent = "Due soon";
-    filingText.textContent = `VAT return due ${fmtLocalDate(due)} (${diff} day${diff === 1 ? "" : "s"} left).`;
-    return;
-  }
-
-  filingBadge.textContent = "Open";
-  filingText.textContent = `Open filing period. Due ${fmtLocalDate(due)}.`;
-}
-
-function fmtLocalDate(d) {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 10);
-}
-
-function computeCurrentVatPeriod(today = new Date(), cfg = {}) {
-  const periods = [
-    ...makeVatPeriodsForYear(today.getFullYear() - 1, cfg),
-    ...makeVatPeriodsForYear(today.getFullYear(), cfg),
-    ...makeVatPeriodsForYear(today.getFullYear() + 1, cfg),
-  ];
-
-  return (
-    periods.find((p) => p.start <= today && p.end >= today) ||
-    null
-  );
-}
-
 async function renderDashboardKPIs(periodKey = "this_month") {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   if (!cid) return;
@@ -17768,6 +19007,425 @@ async function renderDashboardKPIs(periodKey = "this_month") {
   }
 }
 window.renderDashboardKPIs = renderDashboardKPIs;
+
+// ==============================
+// VAT account discovery
+// ==============================
+function getVatAccounts() {
+  const coa = (window.CURRENT_COA || []);
+
+  const tcode = (a) => String(a.template_code || a.templateCode || a.template_code_scoped || "");
+
+  const input = coa.filter(a => {
+    const code = String(a.code || "");
+    const t = tcode(a);
+    const name = String(a.name || "").toLowerCase();
+    return t.includes("1410") || code === "BS_CA_1410" || name.includes("vat input");
+  });
+
+  const output = coa.filter(a => {
+    const code = String(a.code || "");
+    const t = tcode(a);
+    const name = String(a.name || "").toLowerCase();
+    return t.includes("2310") || code === "BS_CL_2310" || name.includes("vat output");
+  });
+
+  return { input, output };
+}
+
+let CURRENT_VAT_RATES = [];
+let CURRENT_VAT_RATE_CONTEXT = null;
+
+async function loadVatRates(transactionDate = null) {
+  const companyId =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID ||
+    window.CURRENT_COMPANY?.id;
+
+  if (!companyId) {
+    throw new Error("No active company selected.");
+  }
+
+  const dateValue =
+    transactionDate ||
+    new Date().toISOString().slice(0, 10);
+
+  const res = await apiFetch(
+    ENDPOINTS.vatRates(
+      companyId,
+      dateValue
+    ),
+    {
+      method: "GET",
+    }
+  );
+
+  if (!res?.ok) {
+    throw new Error(
+      res?.error ||
+      "Could not load VAT rates."
+    );
+  }
+
+  CURRENT_VAT_RATES =
+    Array.isArray(res.rates)
+      ? res.rates
+      : [];
+
+  CURRENT_VAT_RATE_CONTEXT = res;
+
+  return res;
+}
+
+function buildVatConfigFromCoa() {
+  const companyCfg =
+    CURRENT_COMPANY?.vat_settings || {};
+
+  const vat = getVatAccounts();
+
+  const vatInput =
+    companyCfg.vat_input_code ||
+    vat.input?.[0]?.code ||
+    "BS_CA_1410";
+
+  const vatOutput =
+    companyCfg.vat_output_code ||
+    vat.output?.[0]?.code ||
+    "BS_CL_2310";
+
+  const standardRate =
+    CURRENT_VAT_RATES.find(
+      r =>
+        r.treatment === "standard" &&
+        (
+          r.rate_code === "STANDARD" ||
+          r.rate_code === "STANDARD_15"
+        )
+    ) ||
+    CURRENT_VAT_RATES.find(
+      r => r.treatment === "standard"
+    );
+
+  return {
+    vat_rate: standardRate
+      ? Number(standardRate.rate_percent)
+      : 0,
+
+    vat_input_code: vatInput,
+    vat_output_code: vatOutput,
+
+    vat_rates: CURRENT_VAT_RATES,
+
+    authority_code:
+      CURRENT_VAT_RATE_CONTEXT?.authority_code ||
+      companyCfg.authority_code ||
+      null,
+  };
+}
+
+function coaNameByCode(code) {
+  const coa = window.CURRENT_COA || [];
+  const a = coa.find(x => String(x.code) === String(code));
+  return a?.name || code;
+}
+
+const VAT_DISALLOWED_CODES = new Set([
+  "1000", "1010", "1020", // Cash & bank, petty cash, etc.
+]);
+
+function getVatSideForAccount(account, line) {
+  if (!account) return null;
+
+  const code = String(account.code || "").trim();
+  if (VAT_DISALLOWED_CODES.has(code)) return null;
+
+  // ✅ disposal FIRST (so asset disposals become output VAT)
+  if (
+    String(account.type || "") === "Asset" &&
+    typeof isDisposalLine === "function" &&
+    isDisposalLine(account, line)
+  ) {
+    return "output";
+  }
+
+  const type = String(account.type || "");
+  const category = String(account.category || "").toLowerCase();
+
+  if (type === "Expense" || category === "cost of sales" || type === "Asset") {
+    return "input";
+  }
+
+  if (type === "Income") {
+    return "output";
+  }
+
+  return null;
+}
+
+// 🔹 Build VAT line for a single journal line (if needed)
+// Expects:
+//   line.debit / line.credit
+//   line.vatFlag === "yes" for VATable lines
+//   line.vatCode  (STANDARD / ZERO / EXEMPT etc.)
+//   line.vatBasis ("inclusive" / "exclusive")
+async function buildVatLinesForJournalLine(line, vatCfg) {
+  if (!line) return null;
+
+  // Only act on lines explicitly marked as VATable
+  if (line.vatFlag !== "yes") return null;
+
+  const code = String(line.vatCode || "STANDARD").toUpperCase();
+  if (code !== "STANDARD" && code !== "CUSTOM") return null;
+
+  // Avoid re-VATing auto-generated lines
+  if (line.autoVat) return null;
+
+  const dr = +line.debit  || 0;
+  const cr = +line.credit || 0;
+  const amount = dr - cr;          // positive = DR, negative = CR
+
+  if (!amount) return null;
+
+  const basis   = line.vatBasis || "inclusive";
+  
+  const custom =
+    Number(
+      line.vatRatePct ||
+      line.vatRate ||
+      0
+    );
+
+  let ratePct = 0;
+
+  if (
+    code === "CUSTOM" &&
+    custom > 0 &&
+    custom <= 100
+  ) {
+    ratePct = custom;
+
+  } else {
+
+    const rateCode =
+      String(
+        line.vatCode || "STANDARD"
+      ).toUpperCase();
+
+    const selectedRate =
+      (vatCfg.vat_rates || []).find(
+        r =>
+          String(r.rate_code || "")
+            .toUpperCase() === rateCode
+      );
+
+    if (selectedRate) {
+      ratePct =
+        Number(
+          selectedRate.rate_percent
+        );
+    } else {
+      ratePct =
+        Number(vatCfg.vat_rate || 0);
+    }
+  }
+
+  if (!(ratePct > 0)) {
+    return null;
+  }
+
+  const rate = ratePct / 100;
+
+  let base = amount;
+  let vat  = 0;
+
+  if (basis === "inclusive") {
+    const factor = 1 + rate;
+    base = +(amount / factor).toFixed(2);
+    vat  = +(amount - base).toFixed(2);
+  } else {
+    base = +amount.toFixed(2);
+    vat  = +(base * rate).toFixed(2);
+  }
+
+  if (!vat) return null;
+
+  const isDebit = amount > 0; // DR = input VAT, CR = output VAT
+  const account_code = isDebit
+    ? vatCfg.vat_input_code
+    : vatCfg.vat_output_code;
+
+  if (!account_code) return null;
+
+  // Always return positive vatAmount; caller decides DR/CR
+  return {
+    account_code,
+    vatAmount: Math.abs(vat),
+    isDebit,                 // true → DR VAT Input, false → CR VAT Output
+    ratePct,
+  };
+}
+
+/* ==============================
+ * VAT & Tax Screen
+ * ============================== */
+async function parseVatPeriodSelection() {
+  let sel = document.getElementById("vatPeriodSelect");
+
+  // Make sure the VAT period filter exists and is populated.
+  if (!sel || sel.dataset.bound !== "1") {
+    await bindVatPeriodFilter();
+
+    // Re-fetch it after binding.
+    sel = document.getElementById("vatPeriodSelect");
+  }
+
+  if (!sel) {
+    console.warn("parseVatPeriodSelection: #vatPeriodSelect not found");
+    return null;
+  }
+
+  const value = String(sel.value || "").trim();
+
+  if (!value) {
+    console.warn("parseVatPeriodSelection: no VAT period selected");
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value));
+
+    if (!parsed?.start_date || !parsed?.end_date) {
+      console.warn(
+        "parseVatPeriodSelection: invalid period data",
+        parsed
+      );
+      return null;
+    }
+
+    return {
+      label:
+        parsed.label ||
+        sel.options[sel.selectedIndex]?.text ||
+        "Selected period",
+
+      start: new Date(
+        parsed.start_date + "T00:00:00"
+      ),
+
+      end: new Date(
+        parsed.end_date + "T00:00:00"
+      ),
+
+      dueDate: parsed.due_date
+        ? new Date(parsed.due_date + "T00:00:00")
+        : null,
+
+      start_date: parsed.start_date,
+      end_date: parsed.end_date,
+      due_date: parsed.due_date || null,
+    };
+
+  } catch (e) {
+    console.warn(
+      "parseVatPeriodSelection failed:",
+      e,
+      "value:",
+      value
+    );
+
+    return null;
+  }
+}
+
+function daysBetweenLocal(a, b) {
+  const d1 = new Date(a);
+  const d2 = new Date(b);
+  d1.setHours(0, 0, 0, 0);
+  d2.setHours(0, 0, 0, 0);
+  return Math.round((d2 - d1) / 86400000);
+}
+
+function setVatFilingBadgeState({ filing, period }) {
+  const filingBadge = document.getElementById("vatFilingBadge");
+  const filingText = document.getElementById("vatFilingStatusText");
+  if (!filingBadge || !filingText) return;
+
+  filingBadge.className = "px-2 py-1 rounded bg-slate-100 text-slate-700";
+
+  if (filing?.status === "submitted") {
+    filingBadge.className = "px-2 py-1 rounded bg-emerald-100 text-emerald-700";
+    filingBadge.textContent = "Submitted";
+    filingText.textContent =
+      `Submitted${filing.submitted_at ? ` on ${String(filing.submitted_at).slice(0, 10)}` : ""}` +
+      `${filing.reference ? ` • Ref ${filing.reference}` : ""}`;
+    return;
+  }
+
+  if (filing?.status === "prepared") {
+    filingBadge.className = "px-2 py-1 rounded bg-blue-100 text-blue-700";
+    filingBadge.textContent = "Prepared";
+    filingText.textContent =
+      `Prepared${filing.prepared_at ? ` on ${String(filing.prepared_at).slice(0, 10)}` : ""}` +
+      `${period?.due_date ? ` • Due ${period.due_date}` : ""}`;
+    return;
+  }
+
+  const today = new Date();
+  const due = period?.dueDate || (period?.due_date ? new Date(period.due_date + "T00:00:00") : null);
+
+  if (!due) {
+    filingBadge.textContent = "Open";
+    filingText.textContent = "Open filing period.";
+    return;
+  }
+
+  const diff = daysBetweenLocal(today, due);
+
+  if (diff < 0) {
+    filingBadge.className = "px-2 py-1 rounded bg-red-100 text-red-700";
+    filingBadge.textContent = "Overdue";
+    filingText.textContent = `VAT return overdue. Due ${fmtLocalDate(due)}.`;
+    return;
+  }
+
+  if (diff <= 7) {
+    filingBadge.className = "px-2 py-1 rounded bg-amber-100 text-amber-700";
+    filingBadge.textContent = "Due soon";
+    filingText.textContent = `VAT return due ${fmtLocalDate(due)} (${diff} day${diff === 1 ? "" : "s"} left).`;
+    return;
+  }
+
+  filingBadge.textContent = "Open";
+  filingText.textContent = `Open filing period. Due ${fmtLocalDate(due)}.`;
+}
+
+function fmtLocalDate(d) {
+  if (!d) return '';  // Handle null/undefined/empty
+  try {
+    const dt = d instanceof Date ? d : new Date(d);
+    if (isNaN(dt.getTime())) return '';  // Handle invalid dates
+    return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 10);
+  } catch (e) {
+    console.warn('fmtLocalDate: Invalid date input', d, e);
+    return '';
+  }
+}
+
+function computeCurrentVatPeriod(today = new Date(), cfg = {}) {
+  const periods = [
+    ...makeVatPeriodsForYear(today.getFullYear() - 1, cfg),
+    ...makeVatPeriodsForYear(today.getFullYear(), cfg),
+    ...makeVatPeriodsForYear(today.getFullYear() + 1, cfg),
+  ];
+
+  return (
+    periods.find((p) => p.start <= today && p.end >= today) ||
+    null
+  );
+}
+
 
 function showVatPaymentPreviewModal({ cid, period, payload, preview, isRefund }) {
   const old = document.getElementById("vatPaymentPreviewModal");
@@ -17875,7 +19533,7 @@ async function showVatPaymentModal() {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   if (!cid) return alert("No company selected");
 
-  const period = parseVatPeriodSelection?.();
+  const period = await parseVatPeriodSelection?.();
   if (!period?.start_date || !period?.end_date) {
     return alert("Please select a VAT period first.");
   }
@@ -18250,7 +19908,7 @@ function ensureVatScreen() {
       const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
       if (!cid) throw new Error("No company selected");
 
-      const period = parseVatPeriodSelection?.();
+      const period = await parseVatPeriodSelection?.();
       if (!period?.start_date || !period?.end_date) {
         alert("Please select a VAT period first.");
         return;
@@ -18298,15 +19956,37 @@ function ensureVatScreen() {
       const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
       if (!cid) throw new Error("No company selected");
 
-      const period = parseVatPeriodSelection();
-      if (!period?.start_date || !period?.end_date) {
+      const select = document.getElementById("vatPeriodSelect");
+
+      // Make sure we actually have a selected VAT period
+      if (!select || !select.value) {
         alert("Please select a VAT period first.");
         return;
       }
 
+      const period = await parseVatPeriodSelection?.();
+
+      if (!period?.start_date || !period?.end_date) {
+        console.error("Invalid VAT period selection:", {
+          value: select.value,
+          period,
+        });
+
+        alert("Please select a valid VAT period first.");
+        return;
+      }
+
+      console.log("[VAT] Preparing return for:", {
+        company_id: cid,
+        period,
+        select_value: select.value,
+      });
+
       const preview = await apiFetch(ENDPOINTS.vatPrepareFiling(cid), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           from: period.start_date,
           to: period.end_date,
@@ -18317,12 +19997,16 @@ function ensureVatScreen() {
       showVatSettlementPreviewModal({
         cid,
         period,
-        preview: preview.preview,
+        preview: preview?.preview,
       });
 
     } catch (err) {
       console.error("Prepare VAT preview failed:", err);
-      alert(err?.message || "Failed to preview VAT return.");
+
+      alert(
+        err?.message ||
+        "Failed to preview VAT return."
+      );
     }
   });
 
@@ -18422,21 +20106,58 @@ function showVatSettlementPreviewModal({ cid, period, preview }) {
   });
 }
 
+function formatVatFrequency(value) {
+  const labels = {
+    monthly: "Monthly",
+    bi_monthly: "Every 2 months",
+    quarterly: "Quarterly",
+    semi_annual: "Every 6 months",
+    annual: "Annual",
+  };
+
+  return labels[String(value || "").toLowerCase()]
+    || String(value || "").replaceAll("_", " ");
+}
+
 async function bindVatPeriodFilter() {
   const sel = document.getElementById("vatPeriodSelect");
+
   if (!sel || sel.dataset.bound === "1") return;
+
   sel.dataset.bound = "1";
 
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+
   if (!cid) {
     delete sel.dataset.bound;
     return;
   }
 
   try {
-    const res = await apiFetch(ENDPOINTS.vatPeriods(cid), { method: "GET" });
+    const res = await apiFetch(
+      ENDPOINTS.vatPeriods(cid),
+      { method: "GET" }
+    );
+
+    if (res?.ok === false) {
+      throw new Error(res.error || "Failed to load VAT periods");
+    }
+
     const periods = Array.isArray(res?.periods) ? res.periods : [];
     const current = res?.current || null;
+    const ctx = res?.context || {};
+
+    const ctxEl = document.getElementById("vatAuthorityContextText");
+
+    if (ctxEl) {
+      const parts = [
+        ctx.authority_name || ctx.authority_code,
+        ctx.category_code ? `Category ${ctx.category_code}` : "",
+        formatVatFrequency(ctx.frequency),
+      ].filter(Boolean);
+
+      ctxEl.textContent = parts.join(" • ");
+    }
 
     sel.innerHTML = [
       `<option value="">Select VAT period</option>`,
@@ -18447,8 +20168,9 @@ async function bindVatPeriodFilter() {
           end_date: p.end_date,
           due_date: p.due_date || null,
         }));
+
         return `<option value="${payload}">${p.label}</option>`;
-      })
+      }),
     ].join("");
 
     if (current?.start_date && current?.end_date) {
@@ -18459,25 +20181,46 @@ async function bindVatPeriodFilter() {
         due_date: current.due_date || null,
       }));
     } else if (periods.length) {
+      const first = periods[0];
+
       sel.value = encodeURIComponent(JSON.stringify({
-        label: periods[0].label,
-        start_date: periods[0].start_date,
-        end_date: periods[0].end_date,
-        due_date: periods[0].due_date || null,
+        label: first.label,
+        start_date: first.start_date,
+        end_date: first.end_date,
+        due_date: first.due_date || null,
       }));
     } else {
       sel.value = "";
     }
 
-    sel.addEventListener("change", async () => {
-      await renderVatDashboard();
+    sel.addEventListener("change", async (e) => {
+      // ✅ Only respond to user-initiated changes, not programmatic ones
+      if (e.isTrusted) {  // isTrusted = true only for real user interactions
+        console.log('User selected VAT period, refreshing dashboard...');
+        await renderVatDashboard();
+      }
     });
+
   } catch (err) {
     console.error("bindVatPeriodFilter failed:", err);
+
     delete sel.dataset.bound;
+
+    sel.innerHTML = `
+      <option value="">
+        VAT periods unavailable
+      </option>
+    `;
+
+    const ctxEl = document.getElementById("vatAuthorityContextText");
+
+    if (ctxEl) {
+      ctxEl.textContent = err?.message || "Could not load VAT filing rules.";
+    }
   }
 }
 
+let _isRendering = false;
 async function renderVatDashboard() {
   const cur = (typeof window.resolveCurrency === "function")
     ? window.resolveCurrency()
@@ -18498,42 +20241,103 @@ async function renderVatDashboard() {
     ? window.money(n, cur)
     : `${cur} ${Number(n || 0).toFixed(2)}`;
 
-  const cfg = window.CURRENT_COMPANY?.vat_settings || {};
-  const today = new Date();
-
   let period = (typeof parseVatPeriodSelection === "function")
-    ? parseVatPeriodSelection()
+    ? await parseVatPeriodSelection()  // ✅ ADD AWAIT HERE!
     : null;
 
   if (!period) {
     try {
-      period = computeCurrentVatPeriod(today, cfg);
+      const cid = (typeof companyId === "function")
+        ? companyId()
+        : (window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id);
+
+      if (cid) {
+        const periodRes = await apiFetch(
+          ENDPOINTS.vatPeriods(cid),
+          { method: "GET" }
+        );
+
+        const current = periodRes?.current || null;
+
+        if (current?.start_date && current?.end_date) {
+          period = {
+            label: current.label || "Current VAT period",
+            start: new Date(`${current.start_date}T00:00:00`),
+            end: new Date(`${current.end_date}T00:00:00`),
+            dueDate: current.due_date
+              ? new Date(`${current.due_date}T00:00:00`)
+              : null,
+            start_date: current.start_date,
+            end_date: current.end_date,
+            due_date: current.due_date || null,
+          };
+        }
+      }
     } catch (e) {
-      console.warn("computeCurrentVatPeriod error:", e);
+      console.warn("Could not resolve current VAT period:", e);
     }
   }
 
   if (!period) {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    period = {
-      label: "Current month",
-      start,
-      end,
-      dueDate: end,
-      start_date: fmtLocalDate(start),
-      end_date: fmtLocalDate(end),
-      due_date: fmtLocalDate(end),
-    };
-  } else {
-    if (!period.start_date && period.start) period.start_date = fmtLocalDate(period.start);
-    if (!period.end_date && period.end) period.end_date = fmtLocalDate(period.end);
-    if (!period.due_date && period.dueDate) period.due_date = fmtLocalDate(period.dueDate);
+    const inEl = document.getElementById("vatInputAmount");
+    const outEl = document.getElementById("vatOutputAmount");
+    const netEl = document.getElementById("vatNetAmount");
+    const netLbl = document.getElementById("vatNetLabel");
+    const filingBadge = document.getElementById("vatFilingBadge");
+    const filingText = document.getElementById("vatFilingStatusText");
+
+    if (inEl) inEl.textContent = fmt(0);
+    if (outEl) outEl.textContent = fmt(0);
+    if (netEl) netEl.textContent = fmt(0);
+
+    if (netLbl) {
+      netLbl.textContent = "VAT filing setup required.";
+    }
+
+    if (filingBadge) {
+      filingBadge.className = "px-2 py-1 rounded bg-amber-100 text-amber-700";
+      filingBadge.textContent = "Setup required";
+    }
+
+    if (filingText) {
+      filingText.textContent =
+        "Configure the VAT filing category before preparing returns.";
+    }
+
+    return;
+  }
+
+  if (!period.start_date && period.start) {
+    period.start_date = fmtLocalDate(period.start);
+  }
+
+  if (!period.end_date && period.end) {
+    period.end_date = fmtLocalDate(period.end);
+  }
+
+  if (!period.due_date && period.dueDate) {
+    period.due_date = fmtLocalDate(period.dueDate);
   }
 
   const fromStr = period.start_date || fmtLocalDate(period.start);
   const toStr = period.end_date || fmtLocalDate(period.end);
 
+  // ✅ ADD THIS BLOCK RIGHT AFTER:
+  if (!fromStr || !toStr) {
+    console.warn('renderVatDashboard: Missing period dates', { 
+      period, fromStr, toStr,
+      start_date: period?.start_date, 
+      end_date: period?.end_date,
+      start: period?.start,
+      end: period?.end
+    });
+    
+    // Show user-friendly message instead of crashing
+    const rangeEl = document.getElementById("vatPeriodRange");
+    if (rangeEl) rangeEl.textContent = 'Please select a VAT period';
+    
+    return;  // ✅ Exit gracefully - don't make API calls
+  }
   const lblEl = document.getElementById("vatPeriodLabel");
   const rangeEl = document.getElementById("vatPeriodRange");
   const inEl = document.getElementById("vatInputAmount");
@@ -18581,11 +20385,18 @@ async function renderVatDashboard() {
 
     if (!cid) throw new Error("No company selected");
 
-    const [linesRes, summary, filingRes] = await Promise.all([
-      apiFetch(ENDPOINTS.vatLines(cid, fromStr, toStr), { method: "GET" }),
-      apiFetch(ENDPOINTS.vatSummary(cid, fromStr, toStr), { method: "GET" }),
-      apiFetch(ENDPOINTS.vatFilings(cid, fromStr, toStr), { method: "GET" }),
-    ]);
+    let linesRes = [], summary = {}, filingRes = [];
+
+    try {
+      [linesRes, summary, filingRes] = await Promise.all([
+        apiFetch(ENDPOINTS.vatLines(cid, fromStr, toStr), { method: "GET" }),
+        apiFetch(ENDPOINTS.vatSummary(cid, fromStr, toStr), { method: "GET" }),
+        apiFetch(ENDPOINTS.vatFilings(cid, fromStr, toStr), { method: "GET" }),
+      ]);
+    } catch (apiErr) {
+      console.error('VAT API error:', apiErr);
+      // Don't rethrow - show empty state instead of crashing
+    }
 
     const rows = Array.isArray(linesRes) ? linesRes : (linesRes?.lines || []);
 
@@ -18756,16 +20567,30 @@ async function renderVatDashboard() {
   }
 }
 
-// Generic VAT expansion for *batch lines* (invoice, POS, IFRS wizards)
+// Generic VAT expansion for *batch lines* (invoice, POS, IFRS wiUSDds)
 function expandVatForBatch(lines, cfg) {
-  const vatCfg = cfg || (typeof buildVatConfigFromCoa === "function"
-    ? buildVatConfigFromCoa()
-    : { vat_rate: 15, vat_input_code: "BS_CA_1410", vat_output_code: "BS_CL_2310" });
 
-  const defaultVatRate = Number(vatCfg.vat_rate || 15);
+  const vatCfg =
+    cfg ||
+    (
+      typeof buildVatConfigFromCoa === "function"
+        ? buildVatConfigFromCoa()
+        : {
+            vat_rate: 0,
+            vat_input_code: null,
+            vat_output_code: null,
+            vat_rates: [],
+          }
+    );
 
-  const vatOutputAccount = vatCfg.vat_output_code || "BS_CL_2310";
-  const vatInputAccount  = vatCfg.vat_input_code  || "BS_CA_1410";
+  const defaultVatRate =
+    Number(vatCfg.vat_rate || 0);
+
+  const vatOutputAccount =
+    vatCfg.vat_output_code || null;
+
+  const vatInputAccount =
+    vatCfg.vat_input_code || null;
 
   const expanded = [];
   let vatTotal = 0;
@@ -18775,7 +20600,28 @@ function expandVatForBatch(lines, cfg) {
 
     const vatEnabled = !!base.vatEnabled;
     const vatMode    = base.vatMode || "none";   // exclusive | inclusive | none
-    const vatRatePct = Number(base.vatRate || defaultVatRate);
+    const lineRate =
+      Number(base.vatRate || 0);
+
+    const lineVatCode =
+      String(
+        base.vatCode ||
+        "STANDARD"
+      ).toUpperCase();
+
+    const configuredRate =
+      (vatCfg.vat_rates || []).find(
+        r =>
+          String(r.rate_code || "")
+            .toUpperCase() === lineVatCode
+      );
+
+    const vatRatePct =
+      lineRate > 0
+        ? lineRate
+        : configuredRate
+          ? Number(configuredRate.rate_percent)
+          : defaultVatRate;
 
     if (!vatEnabled || vatMode === "none" || !vatRatePct) {
       expanded.push(base);
@@ -18933,6 +20779,19 @@ async function postJournalEntry(entryPayload, opts = {}) {
 
     const jid = data?.journal_id ?? data?.id ?? null;
 
+    if (!jid) {
+      return {
+        ok: false,
+        ambiguous: true,
+        error: new Error("Journal posted but server did not return a journal ID."),
+      };
+    }
+
+    return {
+      ok: true,
+      journal_id: jid,
+    };
+
     const jobs = [];
     if (typeof renderLedgerTable === "function") jobs.push(Promise.resolve().then(renderLedgerTable));
     if (typeof renderTB === "function") jobs.push(Promise.resolve().then(renderTB));
@@ -18944,18 +20803,58 @@ async function postJournalEntry(entryPayload, opts = {}) {
 
     return jid;
   } catch (e) {
-    if (e?.status === 409 || String(e?.message || "").toLowerCase().includes("period is locked")) {
-      if (showAlerts) alert(`This period is locked for GL on ${txDate}.`);
-      return null;
+    const status = e?.status;
+    const message = String(e?.message || "").toLowerCase();
+
+    // Definite period-lock rejection
+    if (
+      status === 409 ||
+      message.includes("period is locked") ||
+      message.includes("period_locked")
+    ) {
+      if (showAlerts) {
+        alert(`This period is locked for GL on ${txDate}.`);
+      }
+
+      return {
+        ok: false,
+        ambiguous: false,
+        error: e,
+      };
     }
 
     console.error("postJournalEntry failed", e);
 
-    if (showAlerts) {
-      alert(`Journal post failed: ${e?.message || "Unknown error"}`);
+    // Definite HTTP rejection from the backend.
+    // The backend explicitly responded, so the transaction did not
+    // silently disappear after a successful commit.
+    if (status >= 400 && status < 500) {
+      if (showAlerts) {
+        alert(`Journal post failed: ${e?.message || "Unknown error"}`);
+      }
+
+      return {
+        ok: false,
+        ambiguous: false,
+        error: e,
+      };
     }
 
-    return null;
+    // Network error / connection dropped / response could not be
+    // received or interpreted. The backend MAY have committed.
+    if (showAlerts) {
+      alert(
+        `The journal submission could not be confirmed.\n\n` +
+        `The server may have posted it already. ` +
+        `Your journal lines have been kept.`
+      );
+    }
+
+    return {
+      ok: false,
+      ambiguous: true,
+      error: e,
+    };
   }
 }
 
@@ -19146,6 +21045,10 @@ async function requirePostingDateModal(initialDate = "") {
 // Add journal entry from input fields
 function addJournalFromInput() {
   console.log("[JRNL] addJournalFromInput fired");
+
+  // ✅ ADD THIS:
+  validateVatForSchoolBeforePost();  // Force VAT=no for schools
+
   const elVatBasisDr = document.getElementById("jrnlVatBasisDr");
   const elVatBasisCr = document.getElementById("jrnlVatBasisCr");
   const elDate       = document.getElementById("jrnlDate");
@@ -19562,6 +21465,235 @@ function enforceVatNotOnBank(side) {
   setVatFlagState(side, false);
 }
 
+function enforceVatDisabledForSchools(side) {
+  // Check if this is a VAT-exempt school
+  // (uses global function from school-industry-profile.js)
+  const isExempt = typeof isVatExemptSchool === 'function' 
+    ? isVatExemptSchool() 
+    : false;
+  
+  // Also check generic school detection
+  const isSchool = typeof isSchoolCompany === 'function'
+    ? isSchoolCompany()
+    : false;
+  
+  // If not a VAT-exempt school, don't disable anything
+  if (!isExempt) return;
+  
+  // Get VAT control elements
+  const flagEl = document.getElementById(side === "dr" ? "jrnlVatFlag" : "jrnlVatFlagCr");
+  const codeEl = document.getElementById(side === "dr" ? "jrnlVatCode" : "jrnlVatCodeCr");
+  
+  if (!flagEl) return;
+  
+  // ──────────────────────────────────────────
+  // DISABLE VAT FLAG - Force to "No"
+  // ──────────────────────────────────────────
+  flagEl.value = "no";
+  flagEl.disabled = true;
+  flagEl.title = "VAT EXEMPT: Schools cannot claim or charge VAT. All amounts are VAT-free.";
+  flagEl.classList.add("opacity-60", "cursor-not-allowed");
+  
+  // Also disable VAT code selector if exists
+  if (codeEl) {
+    codeEl.disabled = true;
+    codeEl.title = "VAT options disabled - School is VAT exempt";
+    codeEl.classList.add("opacity-60", "cursor-not-allowed");
+  }
+  
+  console.log(`[JRNL-VAT] VAT disabled for ${side} side - School is VAT exempt`);
+}
+
+function enableVatForNonExempt(side) {
+  const flagEl = document.getElementById(side === "dr" ? "jrnlVatFlag" : "jrnlVatFlagCr");
+  const codeEl = document.getElementById(side === "dr" ? "jrnlVatCode" : "jrnlVatCodeCr");
+  
+  if (!flagEl) return;
+  
+  // Re-enable VAT flag
+  flagEl.disabled = false;
+  flagEl.title = "";
+  flagEl.classList.remove("opacity-60", "cursor-not-allowed");
+  
+  // Re-enable VAT code selector
+  if (codeEl) {
+    codeEl.disabled = false;
+    codeEl.title = "";
+    codeEl.classList.remove("opacity-60", "cursor-not-allowed");
+  }
+}
+
+// ============================================================
+// 2. MASTER CONTROL: Apply school VAT rules to both sides
+// ============================================================
+
+function applySchoolVatRulesToJournal() {
+  // Check if VAT-exempt school
+  const isExempt = typeof isVatExemptSchool === 'function' 
+    ? isVatExemptSchool() 
+    : false;
+  
+  if (!isExempt) {
+    // Not exempt - ensure VAT is enabled
+    enableVatForNonExempt("dr");
+    enableVatForNonExempt("cr");
+    
+    // Also ensure main VAT controls are enabled
+    enableMainVatControls(false);
+    return;
+  }
+  
+  // IS exempt - disable VAT on both sides
+  enforceVatDisabledForSchools("dr");
+  enforceVatDisabledForSchools("cr");
+  
+  // Also disable main VAT controls (code selector + custom rate)
+  enableMainVatControls(true);  // true = disable them
+  
+  // Show info message to user
+  showSchoolVatInfoMessage();
+  
+  console.log("[JRNL-VAT] School VAT exemption applied - all VAT options disabled");
+}
+
+// ============================================================
+// 3. MAIN VAT CONTROLS (Code selector + Custom Rate)
+// ============================================================
+
+function enableMainVatControls(disable) {
+  // Main VAT code selector (used by both sides)
+  const vatCodeSel = document.getElementById("jrnlVatCode");
+  const vatCodeCrSel = document.getElementById("jrnlVatCodeCr");
+  const vatRatePct = document.getElementById("jrnlVatRatePct");
+  const vatBasisDr = document.getElementById("jrnlVatBasisDr");
+  const vatBasisCr = document.getElementById("jrnlVatBasisCr");
+  
+  const elements = [vatCodeSel, vatCodeCrSel, vatRatePct, vatBasisDr, vatBasisCr];
+  
+  elements.forEach(el => {
+    if (!el) return;
+    
+    if (disable) {
+      el.disabled = true;
+      el.title = "VAT EXEMPT: School cannot use VAT options";
+      el.classList.add("opacity-60", "cursor-not-allowed");
+      
+      // For select elements, reset to safe default
+      if (el.tagName === "SELECT") {
+        // Keep current value but prevent changes
+      }
+    } else {
+      el.disabled = false;
+      el.title = "";
+      el.classList.remove("opacity-60", "cursor-not-allowed");
+    }
+  });
+}
+
+// ============================================================
+// 4. INFO MESSAGE DISPLAY
+// ============================================================
+
+function showSchoolVatInfoMessage() {
+  // Check if message already shown
+  if (document.getElementById("jrnlVatExemptNotice")) return;
+  
+  // Find the journal form area to insert message
+  const journalForm = document.getElementById("jrnlForm");
+  const vatArea = document.querySelector(".journal-vat-controls") || journalForm;
+  
+  if (!vatArea) {
+    // Fallback: show as console warning
+    console.warn("[JRNL-VAT] ⚠️ SCHOOL VAT NOTICE: This school is VAT EXEMPT.");
+    console.warn("[JRNL-VAT] All journal entries will be recorded WITHOUT VAT.");
+    console.warn("[JRNL-VAT] Input VAT paid on purchases becomes part of your cost (trapped VAT).");
+    return;
+  }
+  
+  // Create notice element
+  const notice = document.createElement("div");
+  notice.id = "jrnlVatExemptNotice";
+  notice.className = "mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm";
+  notice.innerHTML = `
+    <div class="flex items-start gap-2">
+      <span class="text-blue-500 text-lg">📚</span>
+      <div>
+        <div class="font-semibold text-blue-800 text-sm">VAT Exemption Notice</div>
+        <div class="text-blue-700 text-xs mt-1">
+          <strong>This school is VAT EXEMPT.</strong> All journal entries are recorded without VAT.
+          <ul class="list-disc list-inside mt-1 space-y-0.5 text-xs">
+            <li>VAT options have been disabled</li>
+            <li>Input VAT on purchases becomes part of your cost</li>
+            <li>No VAT can be charged on school fees</li>
+            <li>If you run taxable activities (tuck shop), consult your accountant</li>
+          </ul>
+        </div>
+      </div>
+      <button type="button" onclick="this.parentElement.remove()" 
+              class="text-blue-400 hover:text-blue-600 text-sm">✕</button>
+    </div>
+  `;
+  
+  // Insert at beginning of form
+  vatArea.insertBefore(notice, vatArea.firstChild);
+}
+
+// ============================================================
+// 5. VALIDATION HOOK: Prevent VAT selection in addJournalFromInput
+// ============================================================
+
+function validateVatForSchoolBeforePost() {
+  const isExempt = typeof isVatExemptSchool === 'function' 
+    ? isVatExemptSchool() 
+    : false;
+  
+  if (!isExempt) return true;  // Not exempt, allow normal flow
+  
+  // Force VAT flags to "no" regardless of what user tried to select
+  const flagDr = document.getElementById("jrnlVatFlag");
+  const flagCr = document.getElementById("jrnlVatFlagCr");
+  
+  if (flagDr) flagDr.value = "no";
+  if (flagCr) flagCr.value = "no";
+  
+  return true;  // Allow post to continue, but with VAT forced off
+}
+
+// ============================================================
+// 6. BINDING: Wire up school VAT rules
+// ============================================================
+
+function bindSchoolVatRules() {
+  // Prevent double-binding
+  if (window._schoolVatRulesBound) return;
+  window._schoolVatRulesBound = true;
+  
+  // Apply rules immediately
+  applySchoolVatRulesToJournal();
+  
+  // Re-apply when account changes (in case logic depends on account type)
+  document.getElementById("jrnlAccount")
+    ?.addEventListener("change", () => applySchoolVatRulesToJournal());
+  
+  document.getElementById("jrnlAccountCr")
+    ?.addEventListener("change", () => applySchoolVatRulesToJournal());
+  
+  console.log("[JRNL-VAT] School VAT rules bound successfully");
+}
+
+
+// ============================================================
+// 7. EXPORTS
+// ============================================================
+
+window.enforceVatDisabledForSchools = enforceVatDisabledForSchools;
+window.enableVatForNonExempt = enableVatForNonExempt;
+window.applySchoolVatRulesToJournal = applySchoolVatRulesToJournal;
+window.enableMainVatControls = enableMainVatControls;
+window.showSchoolVatInfoMessage = showSchoolVatInfoMessage;
+window.validateVatForSchoolBeforePost = validateVatForSchoolBeforePost;
+window.bindSchoolVatRules = bindSchoolVatRules;
+
 function bindJournalVatGuards() {
   // ✅ bind once
   if (window._jrnlVatGuardsBound) return;
@@ -19763,29 +21895,139 @@ async function postJournalBatch() {
     return;
   }
 
-  // Basic validation
-  for (const [idx, ln] of JRNL_LINES.entries()) {
-    const hasAmount = (+ln.debit || 0) || (+ln.credit || 0);
-    if (hasAmount && !ln.account) {
-      alert(`Line ${idx + 1} has a debit/credit but no account.`);
+  // ------------------------------------------------------------
+  // Posting UI helpers
+  // ------------------------------------------------------------
+  const postBtn = document.getElementById("postBatch");
+  const postStatus = document.getElementById("jrnlPostStatus");
+
+  const setPostingState = (posting, message = "") => {
+    if (postBtn) {
+      postBtn.disabled = posting;
+
+      if (posting) {
+        postBtn.dataset.originalText =
+          postBtn.dataset.originalText || postBtn.textContent;
+
+        postBtn.textContent = "Posting journal...";
+        postBtn.classList.add("opacity-60", "cursor-wait");
+      } else {
+        postBtn.textContent =
+          postBtn.dataset.originalText || "Post Batch (Ctrl+Enter)";
+
+        postBtn.classList.remove("opacity-60", "cursor-wait");
+      }
+    }
+
+    if (postStatus) {
+      if (message) {
+        postStatus.textContent = message;
+        postStatus.classList.remove("hidden");
+      } else {
+        postStatus.textContent = "";
+        postStatus.classList.add("hidden");
+      }
+    }
+  };
+
+  // ------------------------------------------------------------
+  // Basic validation / clean journal lines
+  // ------------------------------------------------------------
+  const cleanedLines = [];
+
+  for (const [idx, ln] of JRNL_LINES.entries()) { 
+    // FIX: Read 'accountCode' instead of 'account' to match your state objects
+    const account = String(ln?.accountCode || ln?.account || "").trim();
+    const debit = Number(ln?.debit || 0);
+    const credit = Number(ln?.credit || 0);
+
+    // Completely empty/stale line: ignore it
+    if (!account && debit === 0 && credit === 0) {
+
+      console.warn(
+        "[JRNL] Ignoring empty/stale line",
+        idx + 1,
+        ln
+      );
+      continue;
+    }
+
+    // Invalid account with an amount
+    if (
+      !account ||
+      account === "undefined" ||
+      account === "null"
+    ) {
+      alert(
+        `Line ${idx + 1} has an amount but no valid account.`
+      );
+
+      console.error("[JRNL] Invalid journal line", {
+        index: idx,
+        line: ln,
+      });
+
       return;
     }
+
+    // No amount
+    if (debit === 0 && credit === 0) {
+      console.warn(
+        "[JRNL] Ignoring zero-value line",
+        idx + 1,
+        ln
+      );
+      continue;
+    }
+
+    // Never allow both debit and credit
+    if (debit > 0 && credit > 0) {
+      alert(
+        `Line ${idx + 1} cannot have both debit and credit.`
+      );
+      return;
+    }
+
+    cleanedLines.push({
+      ...ln,
+      account,
+      debit,
+      credit,
+    });
   }
 
-  // Header fields (need date early for lock check)
+  if (!cleanedLines.length) {
+    alert("No valid journal lines to post.");
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // Header fields
+  // ------------------------------------------------------------
   const dateEl =
     document.getElementById("jrnlDate") ||
     document.querySelector("#jrnl-date");
+
   const refEl = document.getElementById("jrnlRef");
   const narrEl = document.getElementById("jrnlNarr");
 
   const uiDate = safeIsoDate(
-    (dateEl && dateEl.value) || new Date().toISOString().slice(0, 10)
+    (dateEl && dateEl.value) ||
+      new Date().toISOString().slice(0, 10)
   );
-  const ref = refEl ? refEl.value.trim() : "";
-  const narr = narrEl ? narrEl.value.trim() : "Journal batch";
 
-  // ✅ PERIOD LOCK CHECK (manual journals = GL)
+  const ref = refEl
+    ? refEl.value.trim()
+    : "";
+
+  const narr = narrEl
+    ? narrEl.value.trim()
+    : "Journal batch";
+
+  // ------------------------------------------------------------
+  // PERIOD LOCK CHECK
+  // Manual journals = GL
+  // ------------------------------------------------------------
   try {
     await assertNotLocked(uiDate, "gl");
   } catch (e) {
@@ -19793,94 +22035,242 @@ async function postJournalBatch() {
     return;
   }
 
-  // VAT config
-  const vatCfg =
-    typeof buildVatConfigFromCoa === "function"
-      ? buildVatConfigFromCoa()
-      : { vat_rate: 15, vat_input_code: "BS_CA_1410", vat_output_code: "BS_CL_2310" };
-
+  // ------------------------------------------------------------
+  // Build journal payload
+  // ------------------------------------------------------------
   let totalDr = 0;
   let totalCr = 0;
   let vatTotal = 0;
 
-  // Manual lines
-  const manualLines = JRNL_LINES.map((ln) => {
-    const dr = +ln.debit || 0;
-    const cr = +ln.credit || 0;
+  const journalLines = [];
+
+  // IMPORTANT:
+  // Use cleanedLines here rather than JRNL_LINES again.
+  for (const [idx, ln] of cleanedLines.entries()) {
+    const accountCode = String(
+      ln.account || ""
+    ).trim();
+
+    const dr = Number(ln.debit) || 0;
+    const cr = Number(ln.credit) || 0;
+
+    // Never allow an empty/undefined account
+    // into the payload
+    if ((dr > 0 || cr > 0) && !accountCode) {
+      alert(
+        `Line ${idx + 1} has an amount but no account.`
+      );
+      return;
+    }
+
+    // Skip zero-value lines
+    if (dr === 0 && cr === 0) {
+      continue;
+    }
+
     totalDr += dr;
     totalCr += cr;
 
-    return {
-      account_code: String(ln.account),
+    journalLines.push({
+      account_code: accountCode,
       debit: dr,
       credit: cr,
-      description: ln.memo || ln.narr || "",
-    };
-  });
-
-  // Auto VAT lines
-  const vatLines = [];
-  JRNL_LINES.forEach((ln) => {
-    if (typeof buildVatLinesForJournalLine !== "function") return;
-
-    const v = buildVatLinesForJournalLine(ln, vatCfg);
-    if (!v) return;
-
-    const debit = v.isDebit ? v.vatAmount : 0;
-    const credit = v.isDebit ? 0 : v.vatAmount;
-
-    vatLines.push({
-      account_code: String(v.account_code),
-      debit,
-      credit,
       description:
         ln.memo ||
         ln.narr ||
-        (v.isDebit
-          ? `VAT Input ${v.ratePct || vatCfg.vat_rate || 15}%`
-          : `VAT Output ${v.ratePct || vatCfg.vat_rate || 15}%`),
+        ln.description ||
+        "",
     });
+  }
 
-    totalDr += debit;
-    totalCr += credit;
-    vatTotal += v.vatAmount;
-  });
-
+  // ------------------------------------------------------------
   // Balanced?
+  // ------------------------------------------------------------
   if (Math.abs(totalDr - totalCr) > 0.01) {
-    alert(`Batch not balanced.\nDr: ${fmt(totalDr)} Cr: ${fmt(totalCr)}`);
+    alert(
+      `Batch not balanced.\nDr: ${fmt(totalDr)} Cr: ${fmt(totalCr)}`
+    );
     return;
   }
 
+  if (!journalLines.length) {
+    alert("No valid journal lines to post.");
+    return;
+  }
+
+  // ------------------------------------------------------------
   // Payload
+  // ------------------------------------------------------------
   const payload = {
     date: uiDate,
     ref,
     description: narr || "Journal batch",
+
     gross_amount: totalDr,
-    net_amount: +(totalDr - vatTotal).toFixed(2),
-    vat_amount: +vatTotal.toFixed(2),
-    source: window.__JRNL_SOURCE || undefined,
-    source_id: window.__JRNL_SOURCE_ID || undefined,
-    lines: manualLines.concat(vatLines),
+
+    net_amount: +(
+      totalDr - vatTotal
+    ).toFixed(2),
+
+    vat_amount: +(
+      vatTotal
+    ).toFixed(2),
+
+    source:
+      window.__JRNL_SOURCE ||
+      undefined,
+
+    source_id:
+      window.__JRNL_SOURCE_ID ||
+      undefined,
+
+    lines: journalLines,
   };
 
-  // ✅ Post
-const jid = await postJournalEntry(payload);
-if (!jid) return; // postJournalEntry already alerted error
+  // ------------------------------------------------------------
+  // START POSTING
+  // ------------------------------------------------------------
+  setPostingState(
+    true,
+    "Posting journal to the server..."
+  );
 
-// ✅ refresh the Posted Journals list so the Reverse buttons appear
-if (typeof renderRecentJournals === "function") {
-  try { await renderRecentJournals(); }
-  catch (e) { console.warn("renderRecentJournals failed", e); }
-}
+  try {
+    console.log("[JRNL] Posting journal...", {
+      ref,
+      date: uiDate,
+      lines: journalLines.length,
+      debit: totalDr,
+      credit: totalCr,
+    });
 
-JRNL_LINES.length = 0;
-//clearJournalBatch();
-renderJournalTable();
-recalcJournalSummary();
-clearJournalForm();
-alert(`Journal batch posted. (ID: ${jid})`);
+    // ----------------------------------------------------------
+    // REAL POST
+    // ----------------------------------------------------------
+    const result = await postJournalEntry(payload);
+
+    console.log("[JRNL] Post result:", result);
+
+    // ----------------------------------------------------------
+    // Backend rejected / ambiguous result
+    // ----------------------------------------------------------
+    if (!result?.ok) {
+      setPostingState(false);
+
+      if (result?.ambiguous) {
+        setPostingState(
+          false,
+          "Posting could not be confirmed."
+        );
+
+        alert(
+          `The journal submission could not be confirmed.\n\n` +
+          `Reference: ${ref || "(none)"}\n\n` +
+          `Your journal lines have NOT been cleared.\n\n` +
+          `Please check Posted Journals before retrying.`
+        );
+      } else {
+        // FIX: Fallback to the specific error message sent back by your server
+        const serverMessage = result?.message || result?.error || "Journal was not posted.";
+        setPostingState(false, serverMessage);
+        alert(`Failed to post batch: ${serverMessage}`);
+      }
+
+
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // SUCCESS
+    // ----------------------------------------------------------
+    const jid = result.journal_id;
+
+    setPostingState(
+      true,
+      "Journal posted. Refreshing journals..."
+    );
+
+    // ----------------------------------------------------------
+    // Refresh Posted Journals
+    // ----------------------------------------------------------
+    if (typeof renderRecentJournals === "function") {
+      try {
+        await renderRecentJournals();
+      } catch (e) {
+        console.warn(
+          "renderRecentJournals failed",
+          e
+        );
+      }
+    }
+
+    // ----------------------------------------------------------
+    // NOW it is safe to clear the batch
+    // ----------------------------------------------------------
+    JRNL_LINES.length = 0;
+
+    renderJournalTable();
+    recalcJournalSummary();
+    clearJournalForm();
+
+    // ----------------------------------------------------------
+    // Restore button
+    // ----------------------------------------------------------
+    setPostingState(
+      false,
+      `Journal posted successfully${jid ? ` (ID: ${jid})` : ""}.`
+    );
+
+    // ----------------------------------------------------------
+    // Final confirmation
+    // ----------------------------------------------------------
+    alert(
+      `Journal batch posted successfully.` +
+      (jid ? `\n\nJournal ID: ${jid}` : "")
+    );
+
+  } catch (e) {
+    console.error(
+      "[JRNL] postJournalBatch failed:",
+      e
+    );
+
+    setPostingState(
+      false,
+      "Journal posting failed."
+    );
+
+    // IMPORTANT:
+    // Do NOT clear JRNL_LINES here.
+    // If the request was ambiguous, the user can
+    // check Posted Journals before retrying.
+
+    if (e?.status === 409) {
+      alert(
+        e?.message ||
+        "This journal could not be posted because the reference already exists."
+      );
+      return;
+    }
+
+    if (
+      String(e?.message || "")
+        .toLowerCase()
+        .includes("period is locked")
+    ) {
+      alert(
+        e?.message ||
+        `This period is locked for GL on ${uiDate}.`
+      );
+      return;
+    }
+
+    alert(
+      `Journal posting failed.\n\n` +
+      `${e?.message || "Unknown error"}\n\n` +
+      `Your journal lines have NOT been cleared.`
+    );
+  }
 }
 
 function isARAccountBtn(btn) {
@@ -20943,18 +23333,259 @@ function detectFutureModuleHint(acct) {
 
   const code = String(acct.code || acct.account_code || "").toUpperCase();
   const category = String(acct.category || "").trim().toLowerCase();
-  const role = String(acct.role || "").trim().toUpperCase();
+  const role = String(acct.role || "").trim().toLowerCase();
   const standard = String(acct.standard || "").trim().toUpperCase();
 
+  // ════════════════════════════════════════════════════
+  // EXCLUSIONS (check BEFORE positive matches)
+  // ════════════════════════════════════════════════════
+  
+  const isMaintenanceOrRepair =
+    role === "maintenance_expense" ||
+    role === "repair_expense" ||
+    txt.includes("repair") ||
+    txt.includes("maintenance") ||
+    txt.includes("upkeep");
+
+  const isExpenseCategory =
+    category === "expense" ||
+    code.startsWith("PL_");
+
+  // ════════════════════════════════════════════════════
+  // LOAN SUBLEDGER DETECTION (MUST come before IFRS 9!)
+  // 
+  // These are DISTINCT from IFRS 9 financial instruments.
+  // Loan accounts have their own register/screen.
+  // Based on _coa_role_from_text() lines 1342-1478
+  // ════════════════════════════════════════════════════
+  
+  const loanSubledgerRoles = [
+    "loan_payable_current",
+    "loan_payable_noncurrent",
+    "loan_interest_expense",
+    "loan_fees_asset",
+    "accrued_loan_interest",
+    "loan_fee_expense",
+    "loan_fees_expense",
+  ];
+
+  const isLoanAccount = 
+    loanSubledgerRoles.includes(role) ||
+    // Additional text-based detection for loan-specific accounts
+    (txt.includes("loan payable") && !role.startsWith("ifrs9")) ||
+    (txt.includes("loan interest") && !role.startsWith("ifrs9")) ||
+    (txt.includes("borrowing") && (
+      role.includes("loan_") || 
+      txt.includes("loan fee") || 
+      txt.includes("deferred loan")
+    ));
+
+  if (isLoanAccount) {
+    console.log("[AD DETECT] → loan", { code: acct.code, name: acct.name, role: acct.role });
+    return "loan";
+  }
+
+  // ════════════════════════════════════════════════════
+  // IFRS 9 FINANCIAL INSTRUMENTS DETECTION
+  //
+  // These come AFTER loan roles have been caught.
+  // Only true IFRS 9 financial instrument accounts here.
+  // Based on _coa_role_from_text() lines 1480-1640+
+  // ════════════════════════════════════════════════════
+  
+  const ifrs9InstrumentRoles = [
+    // ECL / Impairment
+    "ifrs9_ecl_allowance_trade_receivables",
+    "ifrs9_ecl_impairment_loss",
+    "ifrs9_bad_debt_writeoff",
+    
+    // Financial Assets - FVOCI
+    "ifrs9_fair_value_oci_reserve",
+    "ifrs9_financial_asset_fvoci",
+    "deferred_tax_fvoci_reserve",  // OCI reserve from FVOCI reclass
+    
+    // Financial Assets - FVPL
+    "ifrs9_financial_asset_fvpl",
+    "ifrs9_fair_value_loss_fvpl",
+    
+    // Interest Income (investment securities, NOT loan interest)
+    "ifrs9_interest_income_amortised_cost",
+    
+    // Interest Expense (generic only - excludes "loan" keyword per Python fn)
+    "ifrs9_interest_expense_amortised_cost",
+    
+    // Modification / Derecognition
+    "ifrs9_modification_gain",
+    "ifrs9_modification_loss",
+    "ifrs9_derecognition_gain",
+    "ifrs9_derecognition_loss",
+    
+    // Financial Liabilities (amortised cost, excluding loans)
+    "ifrs9_financial_liability_amortised_cost",
+  ];
+
+  const isIFRS9Instrument = 
+    ifrs9InstrumentRoles.some(r => role === r || role.startsWith(r.replace("_gain", "").replace("_loss", ""))) ||
+    (standard === "IFRS 9" && !isLoanAccount) ||
+    (role.startsWith("ifrs9_") && !isLoanAccount);
+
+  if (isIFRS9Instrument) {
+    console.log("[AD DETECT] → ifrs9", { code: acct.code, name: acct.name, role: acct.role });
+    return "ifrs9";
+  }
+
+  // ════════════════════════════════════════════════════
+  // PAYROLL DETECTION (IAS 19)
+  // ════════════════════════════════════════════════════
+  
+  const payrollRoles = [
+    // Payables
+    "payroll_bonus_payable",
+    "payroll_leave_provision",
+    "payroll_net_salary_payable",
+    "payroll_pension_payable",
+    "payroll_medical_aid_payable",
+    "payroll_other_deductions_payable",
+    "payroll_termination_benefit_liability",
+    "payroll_defined_benefit_liability",
+    "payroll_long_term_benefit_liability",
+    
+    // Assets
+    "payroll_defined_benefit_asset",
+    
+    // OCI
+    "payroll_defined_benefit_oci",
+    
+    // Expenses
+    "payroll_salary_expense",
+    "payroll_employer_contribution_expense",
+    "payroll_bonus_expense",
+    "payroll_commission_expense",
+    "payroll_leave_expense",
+    "payroll_defined_benefit_expense",
+    "payroll_long_term_benefit_expense",
+    "payroll_termination_benefit_expense",
+    
+    // Employee receivables (advance from employee)
+    "employee_salary_advance_receivable",
+    "employee_loans_receivable",
+  ];
+
+  const isPayrollAccount = 
+    payrollRoles.includes(role) ||
+    role.startsWith("payroll_") ||
+    standard === "IAS 19" ||
+    (txt.includes("payroll") && !txt.includes("loan"));
+
+  if (isPayrollAccount) {
+    console.log("[AD DETECT] → payroll", { code: acct.code, name: acct.name, role: acct.role });
+    return "payroll";
+  }
+
+  // ════════════════════════════════════════════════════
+  // DEFERRED TAX DETECTION (IAS 12)
+  // ════════════════════════════════════════════════════
+  
+  const deferredTaxRoles = [
+    "deferred_tax_fvoci_reserve",
+    "deferred_tax_revaluation_reserve",
+    // Add more deferred tax roles as needed from your COA
+  ];
+
+  const isDeferredTax = 
+    deferredTaxRoles.includes(role) ||
+    role.startsWith("deferred_tax") ||
+    standard === "IAS 12" ||
+    txt.includes("deferred tax");
+
+  if (isDeferredTax) {
+    console.log("[AD DETECT] → deferred_tax", { code: acct.code, name: acct.name, role: acct.role });
+    return "deferred_tax";
+  }
+
+  // ════════════════════════════════════════════════════
+  // IAS 41 AGRICULTURE DETECTION
+  //
+  // Must run before generic inventory, sales, fair-value and PPE rules
+  // Based on _coa_role_from_text() lines 42-270+
+  // ════════════════════════════════════════════════════
+  
+  const isIAS41 = standard === "IAS 41";
+  
+  const ias41BiologicalAssetRoles = [
+    "ias41_biological_asset_noncurrent",
+    "ias41_biological_asset_current",
+    "ias41_biological_asset_crops",
+    "ias41_biological_asset_dairy",
+    "ias41_biological_asset_poultry",
+    "ias41_biological_asset_forestry",
+    "ias41_biological_asset_aquaculture",
+    "ias41_biological_asset_beekeeping",
+    "ias41_biological_asset_wildlife",
+    "ias41_biological_asset_livestock",
+  ];
+
+  const ias41ProduceInventoryRoles = [
+    "ias41_agricultural_produce_inventory",
+    "ias41_produce_inventory_dairy",
+    "ias41_produce_inventory_poultry",
+    "ias41_produce_inventory_fruit",
+    "ias41_produce_inventory_forestry",
+    "ias41_produce_inventory_aquaculture",
+    "ias41_produce_inventory_beekeeping",
+    "ias41_produce_inventory_crops",
+  ];
+
+  const ias41IncomeRoles = [
+    "ias41_fair_value_gain",
+    "ias41_government_grant_income",
+    "ias41_government_grant_receivable",
+    "ias41_crop_sales",
+    "ias41_livestock_sales",
+    "ias41_dairy_produce_sales",
+    "ias41_poultry_sales",
+    "ias41_horticulture_sales",
+    "ias41_fruit_sales",
+    "ias41_forestry_sales",
+    "ias41_aquaculture_sales",
+    "ias41_beekeeping_sales",
+    "ias41_wildlife_sales",
+    "ias41_support_service_revenue",
+  ];
+
+  const isIAS41Account = 
+    isIAS41 ||
+    ias41BiologicalAssetRoles.includes(role) ||
+    ias41ProduceInventoryRoles.includes(role) ||
+    ias41IncomeRoles.includes(role) ||
+    role.startsWith("ias41_") ||
+    // Text-based detection matching Python function
+    (txt.includes("biological asset") && !txt.includes("non-current")) ||
+    (txt.includes("growing crops") || txt.includes("growing crop")) ||
+    (txt.includes("livestock") && txt.includes("biological")) ||
+    (txt.includes("agricultural produce")) ||
+    (txt.includes("fair value gain") && txt.includes("biological"));
+
+  if (isIAS41Account) {
+    console.log("[AD DETECT] → ias41", { code: acct.code, name: acct.name, role: acct.role, standard: acct.standard });
+    return "ias41";
+  }
+
+  // ════════════════════════════════════════════════════
+  // PPE DETECTION (with exclusions)
+  // ════════════════════════════════════════════════════
+  
   const isPPE =
-    txt.includes("property plant") ||
-    txt.includes("equipment") ||
-    txt.includes("ppe") ||
-    txt.includes("motor vehicle") ||
-    txt.includes("vehicles") ||
-    txt.includes("computer equipment") ||
-    txt.includes("furniture") ||
-    txt.includes("machinery");
+    (txt.includes("property plant") ||
+     txt.includes("equipment") ||
+     txt.includes("ppe") ||
+     txt.includes("motor vehicle") ||
+     txt.includes("vehicles") ||
+     txt.includes("computer equipment") ||
+     txt.includes("furniture") ||
+     txt.includes("machinery")) &&
+    !isMaintenanceOrRepair &&
+    !isExpenseCategory;
 
   const isLease =
     txt.includes("lease") ||
@@ -20978,11 +23609,13 @@ function detectFutureModuleHint(acct) {
     code: acct.code,
     name: acct.name,
     role: acct.role,
-    roleLower: String(acct.role || "").trim().toLowerCase(),
+    roleLower: role,
   });
 
-  const roleLower = String(acct.role || "").trim().toLowerCase();
-
+  // ════════════════════════════════════════════════════
+  // ACCRUALS & DEFERRALS DETECTION
+  // ════════════════════════════════════════════════════
+  
   const adRoles = [
     "prepaid_expense",
     "deferred_expense",
@@ -21001,7 +23634,7 @@ function detectFutureModuleHint(acct) {
   ];
 
   const isAccrualDeferralAccount =
-    adRoles.includes(roleLower) ||
+    adRoles.includes(role) ||
     txt.includes("prepaid") ||
     txt.includes("prepayment") ||
     txt.includes("deferred income") ||
@@ -21014,6 +23647,7 @@ function detectFutureModuleHint(acct) {
     return "accrual_deferral";
   }
 
+  // Return detections in priority order
   if (isPPE) return "ppe";
   if (isLease) return "lease";
   if (isAmort) return "amort";
@@ -21021,6 +23655,7 @@ function detectFutureModuleHint(acct) {
 
   return null;
 }
+
 
 function getPostingMode(moduleKey, ctx = {}) {
   const companyId =
@@ -21031,6 +23666,7 @@ function getPostingMode(moduleKey, ctx = {}) {
     null;
 
   const defaults = {
+    // Existing modes
     ar: "enforced",
     ap: "enforced",
     ppe: "guided",
@@ -21041,6 +23677,13 @@ function getPostingMode(moduleKey, ctx = {}) {
     advertising_schedule: "guided",
     tax: "guided",
     accrual_deferral: "guided",
+    
+    // NEW modes
+    loan: "guided",          // Loan subledger
+    ifrs9: "guided",         // IFRS 9 Financial Instruments
+    payroll: "guided",       // Payroll (IAS 19)
+    deferred_tax: "guided",  // Deferred Tax (IAS 12)
+    ias41: "guided",         // IAS 41 Agriculture
   };
 
   // company-level overrides if you later inject them from backend
@@ -21058,6 +23701,8 @@ window.getPostingMode = getPostingMode;
 function getJournalGuardMessage(hint, acct) {
   const name = acct?.name || "This account";
 
+  // ─── Existing Cases ──────────────────────────────────────
+  
   if (hint === "ppe") {
     return {
       title: "Use Asset Register instead?",
@@ -21123,6 +23768,116 @@ function getJournalGuardMessage(hint, acct) {
       reasonPrefix: "accrual_deferral",
     };
   }
+
+  // ─── NEW CASES ──────────────────────────────────────────
+
+  // 📗 LOAN SUBLEDGER
+  if (hint === "loan") {
+    return {
+      title: "Use Loan Register instead?",
+      body:
+        `${name} is managed through the Loan subledger.\n\n` +
+        `If you continue in Journal, loan schedules, interest calculations, repayment tracking, ` +
+        `and loan note disclosures will need to be maintained manually.\n\n` +
+        `The Loan module handles:\n` +
+        `• Amortisation schedules (effective interest method)\n` +
+        `• Automatic interest accruals\n` +
+        `• Repayment allocation (interest vs principal)\n` +
+        `• Current/non-current classification\n` +
+        `• Deferred financing costs`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open Loan Register",
+      screen: "loans",
+      reasonPrefix: "loan",
+    };
+  }
+
+  // 💎 IFRS 9 FINANCIAL INSTRUMENTS
+  if (hint === "ifrs9") {
+    return {
+      title: "Use IFRS 9 workflow?",
+      body:
+        `${name} involves financial instrument accounting under IFRS 9.\n\n` +
+        `If you continue in Journal, the following may need manual maintenance:\n\n` +
+        `• Classification (FVPL/FVOCI/Amortised Cost)\n` +
+        `• Expected Credit Loss (ECL) calculations\n` +
+        `• Fair value measurements and OCI movements\n` +
+        `• Modification/derecognition accounting\n` +
+        `• Effective interest amortisation\n` +
+        `• IFRS 9 disclosure notes`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open IFRS 9 Instruments",
+      screen: "ifrs9",
+      reasonPrefix: "ifrs9",
+    };
+  }
+
+  // 💼 PAYROLL (IAS 19)
+  if (hint === "payroll") {
+    return {
+      title: "Use Payroll module instead?",
+      body:
+        `${name} is typically posted through Payroll runs.\n\n` +
+        `If you continue in Journal, the following may not update automatically:\n\n` +
+        `• Employee payslips and YTD balances\n` +
+        `• Statutory deductions (PAYE, SDL, UIF)\n` +
+        `• Pension and medical aid contributions\n` +
+        `• Leave provisions and accruals\n` +
+        `• Defined benefit obligation calculations\n` +
+        `• Termination benefit liabilities\n` +
+        `• Payroll tax filings and certificates`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open Payroll",
+      screen: "payroll",
+      reasonPrefix: "payroll",
+    };
+  }
+
+  // 🏛️ DEFERRED TAX (IAS 12)
+  if (hint === "deferred_tax") {
+    return {
+      title: "Use Deferred Tax workflow?",
+      body:
+        `${name} relates to deferred tax accounting under IAS 12.\n\n` +
+        `This account typically does not accept direct journal entries because:\n\n` +
+        `• Deferred tax is calculated from temporary differences\n` +
+        `• Tax rates and tax bases must be maintained\n` +
+        `• Movements flow to OCI or P&L automatically\n` +
+        `• Reconciliation to tax returns is required\n\n` +
+        `Use the Deferred Tax screen for:\n` +
+        `• Tax rate configuration\n` +
+        `• Temporary difference tracking\n` +
+        `• Manual adjustments (with audit trail)\n` +
+        `• Deferred tax note generation`,
+      continueLabel: "Continue in Journal (Manual Adjustment)",
+      moduleLabel: "Open Deferred Tax Screen",
+      screen: "deferred-tax",
+      reasonPrefix: "deferred_tax",
+    };
+  }
+
+  // 🌾 IAS 41 AGRICULTURE
+  if (hint === "ias41") {
+    return {
+      title: "Use IAS 41 Agriculture module?",
+      body:
+        `${name} involves biological asset accounting under IAS 41.\n\n` +
+        `Agricultural accounts require special treatment:\n\n` +
+        `• Fair value less costs to sell (FVLCS) measurement\n` +
+        `• Biological transformation (growth, degeneration, procreation)\n` -
+        `• Point of harvest determination (transition to IAS 2)\n` +
+        `• Government grant recognition (IAS 41 vs IAS 20)\n` +
+        `• Physical changes (quality, quantity, volume)\n` +
+        `• Agricultural activity documentation`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open IAS 41 Agriculture",
+      screen: "ias41",
+      reasonPrefix: "ias41",
+    };
+  }
+
+  // ─── Default Fallback ──────────────────────────────────
+  
   return {
     title: "Use workflow instead?",
     body:
@@ -21157,6 +23912,8 @@ async function openJournalModulePrompt({ hint, acct }) {
 window.openJournalModulePrompt = openJournalModulePrompt;
 
 async function redirectJournalGuardToModule({ hint, acct, side }) {
+  // ─── Existing Handlers ──────────────────────────────────
+  
   if (hint === "ppe") {
     await window.switchScreen?.("fixed-assets-register");
     window.openFixedAssetModal?.({
@@ -21189,6 +23946,107 @@ async function redirectJournalGuardToModule({ hint, acct, side }) {
 
   if (hint === "amort") {
     await window.switchScreen?.("fixed-assets-register");
+    return;
+  }
+
+  if (hint === "accrual_deferral") {
+    await window.switchScreen?.("accrual-deferrals");
+    
+    // Open new accrual/deferral modal pre-filled with account info
+    setTimeout(() => {
+      window.openNewAccrualDeferralModal?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+      });
+    }, 300);
+    
+    return;
+  }
+
+  // ─── NEW Handlers ──────────────────────────────────────
+
+  // 📗 LOAN SUBLEDGER
+  if (hint === "loan") {
+    await window.switchScreen?.("loans");
+    
+    setTimeout(() => {
+      // If there's a loan modal/function, open it with context
+      window.openLoanModal?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+        accountCode: acct?.code || "",
+        accountName: acct?.name || "",
+      });
+    }, 300);
+    
+    return;
+  }
+
+  // 💎 IFRS 9 FINANCIAL INSTRUMENTS
+  if (hint === "ifrs9") {
+    await window.switchScreen?.("ifrs9");
+    
+    setTimeout(() => {
+      window.openIFRS9Modal?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+        accountCode: acct?.code || "",
+        accountName: acct?.name || "",
+      });
+    }, 300);
+    
+    return;
+  }
+
+  // 💼 PAYROLL
+  if (hint === "payroll") {
+    await window.switchScreen?.("payroll");
+    
+    setTimeout(() => {
+      window.openPayrollRun?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+      });
+    }, 300);
+    
+    return;
+  }
+
+  // 🏛️ DEFERRED TAX
+  if (hint === "deferred_tax") {
+    await window.switchScreen?.("deferred-tax");
+    
+    setTimeout(() => {
+      window.openDeferredTaxAdjustment?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+        accountCode: acct?.code || "",
+        accountName: acct?.name || "",
+      });
+    }, 300);
+    
+    return;
+  }
+
+  // 🌾 IAS 41 AGRICULTURE
+  if (hint === "ias41") {
+    await window.switchScreen?.("ias41");
+    
+    setTimeout(() => {
+      window.openIAS41Event?.({
+        source: "journal_guard",
+        account: acct,
+        side: side,
+        accountCode: acct?.code || "",
+        accountName: acct?.name || "",
+      });
+    }, 300);
+    
     return;
   }
 }
@@ -21461,8 +24319,11 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
     return await window.openFixedAssetsDrawer?.({
       mode: "acquire",
       companyName,
-      accountCode: account?.code,
-      accountName: account?.name,
+      accountCode: account?.code || "",
+      accountName: account?.name || "",
+      source: "journal_guard",
+      journalDate,
+      journalRef,
       defaults: {
         acquisitionDate: journalDate || null,
         openingAsAt: journalDate || null,
@@ -21470,6 +24331,8 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
         reference: journalRef || null,
         source: "journal_guard",
         journalSide: side,
+        journalDate,
+        journalRef,
       },
     });
   }
@@ -21559,14 +24422,20 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
     return await window.openFixedAssetsDrawer?.({
       mode: "acquire",
       companyName,
-      accountCode: account?.code,
-      accountName: account?.name,
+      accountCode: account?.code || "",
+      accountName: account?.name || "",
+      source: "journal_guard",
+      journalDate,
+      journalRef,
       defaults: {
         acquisitionDate: journalDate || null,
         openingAsAt: journalDate || null,
         postingDate: journalDate || null,
+        reference: journalRef || null,
         source: "journal_guard",
         journalSide: side,
+        journalDate,
+        journalRef,
       },
     });
   }
@@ -21970,6 +24839,12 @@ function initJournalUI() {
   // ✅ If already wired once, just refresh visuals + ensure guards
   if (window._journalUIBound) {
     ensureGuards();
+
+    // ✅ ADD THIS:
+    try { bindSchoolVatRules?.(); } catch (e) {
+      console.warn("[JRNL] bindSchoolVatRules failed:", e);
+    }
+
     renderJournalTable?.();
     recalcJournalSummary?.();
     renderRecentJournals?.().catch(e => console.warn("renderRecentJournals failed", e));
@@ -23449,7 +26324,11 @@ function renderLedgerTable(rows, meta) {
     return;
   }
 
-  const currency = (window.CURRENT_CURRENCY || "USD").toUpperCase();
+  const currency = resolveCurrency(
+    window.CURRENT_CURRENCY ||
+    window.CURRENT_COMPANY?.currency ||
+    ""
+);
   const fmtMoney = (val) => {
     const num = Number(val || 0).toFixed(2);
     const [intPart, dec] = num.split(".");
@@ -33985,7 +36864,7 @@ function bindInterpretationToolbar() {
 }
 
 // ==============================
-// IFRS wizard posting placeholders
+// IFRS wiUSDd posting placeholders
 // ==============================
 function bindLeaseWizard() {
   const form = document.getElementById("leaseWizardForm");
@@ -38633,7 +41512,7 @@ window.postTerm = async function postTerm() {
 })();
 
 // ===============================
-// IFRS 16 Lease Wizard drawer open/close
+// IFRS 16 Lease WiUSDd drawer open/close
 // ===============================
 (function bindLeaseWizardDrawer() {
   const navBtn = document.getElementById("openLeaseWizardNav");
@@ -40573,7 +43452,7 @@ window.postTerm = async function postTerm() {
 ========================================================= */
 
 
-// IFRS 16 Lease wizard → initial recognition
+// IFRS 16 Lease wiUSDd → initial recognition
 async function postLeaseJournal(lease) {
   // lease: { startDate, ref, rightOfUseAccount, leaseLiabilityAccount, pvOfLease, initialDirectCosts, etc. }
   const date = lease.startDate;
@@ -49234,6 +52113,123 @@ async function saveEditModal() {
     `);
   }
 
+  async function showDeferredTaxSettings() {
+    const companyId = cid();
+
+    const [settingsRes, authoritiesRes] = await Promise.all([
+      apiFetch(ENDPOINTS.deferredTax.settings(companyId)),
+      apiFetch(ENDPOINTS.deferredTax.authorities(companyId))
+    ]);
+
+    const settings = settingsRes.data || {};
+    const config = settings.deferred_tax_settings || {};
+    const authorities = authoritiesRes.data || [];
+
+    openModal("Deferred Tax Settings", `
+      <form id="dtSettingsForm">
+        <div class="dt-form-grid">
+          <div class="dt-field">
+            <label>Tax authority</label>
+            <select name="tax_authority_id" required>
+              <option value="">Select authority</option>
+              ${authorities.map(row => `
+                <option
+                  value="${row.id}"
+                  ${Number(settings.tax_authority_id) === Number(row.id) ? "selected" : ""}
+                >
+                  ${row.code} — ${row.name}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="dt-field">
+            <label>Corporate income tax rate (%)</label>
+            <input
+              type="number"
+              name="income_tax_rate"
+              min="0"
+              max="100"
+              step="0.0001"
+              value="${settings.income_tax_rate || 0}"
+              required
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Default recovery method</label>
+            <select name="default_recovery_method">
+              <option value="use"
+                ${config.default_recovery_method === "use" ? "selected" : ""}>
+                Through use
+              </option>
+              <option value="sale"
+                ${config.default_recovery_method === "sale" ? "selected" : ""}>
+                Through sale
+              </option>
+            </select>
+          </div>
+
+          <div class="dt-field">
+            <label>Reconciliation tolerance</label>
+            <input
+              type="number"
+              name="reconciliation_tolerance"
+              step="0.01"
+              value="${config.reconciliation_tolerance ?? 0.05}"
+            >
+          </div>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="deferred_tax_enabled"
+              ${settings.deferred_tax_enabled ? "checked" : ""}
+            >
+            Enable deferred tax
+          </label>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="auto_scan_assets"
+              ${config.auto_scan_assets !== false ? "checked" : ""}
+            >
+            Automatically scan assets
+          </label>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="auto_scan_accrual_deferrals"
+              ${config.auto_scan_accrual_deferrals !== false ? "checked" : ""}
+            >
+            Automatically scan accruals and deferrals
+          </label>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="require_dta_recoverability_review"
+              ${config.require_dta_recoverability_review !== false ? "checked" : ""}
+            >
+            Require DTA recoverability assessment
+          </label>
+        </div>
+
+        <div class="dt-form-actions">
+          <button type="button" class="btn btn-secondary" data-dt-close>
+            Cancel
+          </button>
+
+          <button type="submit" class="btn btn-primary">
+            Save Settings
+          </button>
+        </div>
+      </form>
+    `);
+  }
+  
   async function saveAssetTaxProfile(form) {
     const data = Object.fromEntries(new FormData(form).entries());
     const [source, ruleId] = String(data.selected_rule || "").split(":");
@@ -49738,26 +52734,57 @@ async function saveEditModal() {
 
   async function loadRuns() {
     const mount = document.getElementById("dtRunList");
+    if (!mount) {
+        console.error("[DeferredTax] dtRunList element NOT FOUND!");
+        return;
+    }
 
-    if (!mount) return;
+    const companyId = cid();
+    console.log("[DeferredTax] loadRuns() called, companyId:", companyId);
+    
+    if (!companyId) {
+        console.error("[DeferredTax] No company ID available!");
+        mount.innerHTML = `
+            <div class="dt-error" style="color: #dc2626; padding: 20px;">
+                ⚠️ Error: No company selected. Please select a company first.
+            </div>
+        `;
+        return;
+    }
 
     mount.innerHTML = `
-      <div class="dt-loading">
-        Loading deferred tax runs...
-      </div>
+        <div class="dt-loading">Loading deferred tax runs...</div>
     `;
 
     try {
-      const res = await apiFetch(
-        ENDPOINTS.deferredTax.runs(cid())
-      );
+        const url = ENDPOINTS.deferredTax.runs(companyId);
+        console.log("[DeferredTax] Fetching:", url);
+        
+        const res = await apiFetch(url);
+        console.log("[DeferredTax] API Response:", res);
 
-      const rows = Array.isArray(res?.data)
-        ? res.data
-        : [];
-
-      renderDeferredTaxRunList(rows);
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        renderDeferredTaxRunList(rows);
+        
     } catch (error) {
+        console.error("[DeferredTax] loadRuns() error:", error);
+      // If the backend says settings are missing or not enabled
+      const isUnconfigured = error.status === 400 || (error.message && error.message.toLowerCase().includes("setting"));
+
+      if (isUnconfigured) {
+        mount.innerHTML = `
+          <div class="dt-empty-state">
+            <div class="dt-empty-state-icon">⚙️</div>
+            <h3>Deferred Tax Setup Required</h3>
+            <p>Configure statutory income tax rates and tax authority rules for Company #${cid()} to begin.</p>
+            <button type="button" class="btn btn-primary" id="dtSettingsBtn">
+              Configure Deferred Tax Settings
+            </button>
+          </div>
+        `;
+        return;
+      }
+
       mount.innerHTML = `
         <div class="dt-error">
           ${dtEscape(
@@ -64864,6 +67891,16 @@ async function saveEditModal() {
       showPayrollStatus("Bonus scheme saved.","success");
   }
 
+  function payrollEmployeeName(employee = {}) {
+    return [
+      employee.first_name,
+      employee.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || "Unnamed employee";
+  }
+
   async function openPayrollBonusAssignment(item = {}) {
     const employees = payrollState.employees || [];
     const schemes = payrollState.employeeBenefits.bonusSchemes || [];
@@ -64879,7 +67916,9 @@ async function saveEditModal() {
         required: true,
         options: employees.map(e => ({
           value: e.id,
-          label: [e.employee_no, e.first_name, e.last_name].filter(Boolean).join(" "),
+          label: [e.first_name, e.last_name]
+            .filter(Boolean)
+            .join(" "),
         })),
       },
       {
@@ -67788,9 +70827,7 @@ async function saveEditModal() {
       <option value="">All employees</option>
       ${employees.map(employee=>`
         <option value="${employee.id}">
-          ${esc(employee.employee_no||"")} —
-          ${esc(employee.first_name||"")}
-          ${esc(employee.last_name||"")}
+          ${`${employee.first_name || ""} ${employee.last_name || ""}`.trim()}
         </option>
       `).join("")}`;
 
@@ -70832,12 +73869,12 @@ async function saveEditModal() {
         const name = [
           employee.first_name,
           employee.last_name,
-        ].filter(Boolean).join(" ");
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
 
-        return (
-          `${employee.employee_no || "No number"} — ` +
-          `${name || "Unnamed employee"}`
-        );
+        return name || "Unnamed employee";
       }
     );
 
@@ -71799,7 +74836,7 @@ async function saveEditModal() {
     const currency =
       payrollState.settings?.default_currency ||
       window.CURRENT_COMPANY?.currency ||
-      "ZAR";
+      "USD";
 
     return new Intl.NumberFormat("en-ZA", {
       style: "currency",
@@ -77645,74 +80682,192 @@ async function saveEditModal() {
       returns?.items||[];
 
     renderPayrollStatutoryReturns();
+
+    if (window.__taxFiling && typeof window.__taxFiling.init === 'function') {
+        // This ensures the PAYE Export panel is ready
+        window.__taxFiling.init();
+    }
+
+    // ✅ ADD THIS: Initialize your PAYE Tax Filing module
+    if (typeof initPayeTaxFiling === 'function') {
+      initPayeTaxFiling({
+        companyId: cid(),
+        containerId: 'payeTaxFilingContainer',  // New div ID
+        endpointBase: '/api/companies/' + cid() + '/tax-filing'
+      });
+    }
   }
 
-  function renderPayrollStatutoryReturns(){
-    const el=$("payrollStatutoryReturnsList");
-    const items=payrollState.statutory.returns||[];
-    if(!el)return;
+  /**
+   * Render Statutory Returns Tab with Integrated PAYE Tax Filing
+   * ==============================================================
+   * This function renders BOTH:
+   * 1. The existing statutory returns table (other returns like UIF, SDL, etc.)
+   * 2. The NEW PAYE Tax Filing export section (SARS/RSL/BURS)
+   */
+  function renderPayrollStatutoryReturns() {
+    // ─── EXISTING: Original Statutory Returns Table ───
+    const el = $("payrollStatutoryReturnsList");
+    const items = payrollState.statutory.returns || [];
 
-    el.innerHTML=items.length?`
-      <div class="payroll-table-wrap">
-        <table class="payroll-preview-table">
-          <thead>
-            <tr>
-              <th>Return</th>
-              <th>Authority</th>
-              <th>Type</th>
-              <th>Period</th>
-              <th>Employees</th>
-              <th>Employee Amount</th>
-              <th>Employer Amount</th>
-              <th>Total Payable</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${items.map(item=>`
+    if (!el) return;
+
+    el.innerHTML = items.length ? `
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
               <tr>
-                <td><strong>${esc(item.return_no)}</strong></td>
-                <td>${esc(item.authority_code)}</td>
-                <td>
-                  ${esc(cap(
-                    String(item.return_type||"")
-                      .replaceAll("_"," ")
-                  ))}
-                </td>
-                <td>
-                  ${esc(String(item.period_start||"").slice(0,10))}
-                  –
-                  ${esc(String(item.period_end||"").slice(0,10))}
-                </td>
-                <td>${Number(item.employee_count||0)}</td>
-                <td class="num">${money(item.employee_amount)}</td>
-                <td class="num">${money(item.employer_amount)}</td>
-                <td class="num"><strong>${money(item.total_payable)}</strong></td>
-                <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
-                <td>
-                  <button class="payroll-link"
-                    data-open-statutory-return="${item.id}">
-                    Open
-                  </button>
-                </td>
+                <th>Return</th>
+                <th>Authority</th>
+                <th>Type</th>
+                <th>Period</th>
+                <th>Employees</th>
+                <th>Employee Amount</th>
+                <th>Employer Amount</th>
+                <th>Total Payable</th>
+                <th>Status</th>
+                <th></th>
               </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    `:`<p class="payroll-muted">No statutory returns found.</p>`;
+            </thead>
+            <tbody>
+              ${items.map(item => `
+                <tr>
+                  <td><strong>${esc(item.return_no)}</strong></td>
+                  <td>${esc(item.authority_code)}</td>
+                  <td>${esc(cap(String(item.return_type || "").replaceAll("_", " ")))}</td>
+                  <td>
+                    ${esc(String(item.period_start || "").slice(0, 10))}
+                    –
+                    ${esc(String(item.period_end || "").slice(0, 10))}
+                  </td>
+                  <td>${Number(item.employee_count || 0)}</td>
+                  <td class="num">${money(item.employee_amount)}</td>
+                  <td class="num">${money(item.employer_amount)}</td>
+                  <td class="num"><strong>${money(item.total_payable)}</strong></td>
+                  <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
+                  <td>
+                    <button class="payroll-link" data-open-statutory-return="${item.id}">Open</button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : `<p class="payroll-muted">No statutory returns found.</p>`;
 
-    el.querySelectorAll(
-      "[data-open-statutory-return]"
-    ).forEach(btn=>{
-      btn.addEventListener("click",()=>{
-        openPayrollStatutoryReturn(
-          Number(btn.dataset.openStatutoryReturn)
-        );
+    el.querySelectorAll("[data-open-statutory-return]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        openPayrollStatutoryReturn(Number(btn.dataset.openStatutoryReturn));
       });
     });
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🆕 UPDATED: PAYE TAX FILING SECTION
+    // ═══════════════════════════════════════════════════════════════
+
+    let payeContainer = document.getElementById('payeTaxFilingSection');
+    if (!payeContainer) {
+      payeContainer = document.createElement('div');
+      payeContainer.id = 'payeTaxFilingSection';
+      payeContainer.className = 'paye-tax-filing-section';
+      el.parentNode.appendChild(payeContainer);
+    }
+
+    // 1. Dynamic Authority Selection (Auto-detect company setting)
+    const companyAuthority = payrollState.settings?.tax_authority_code || 'SARS';
+    
+    // 2. Dynamic Year Generation (Last 3 years)
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+    // Tax years in Southern Africa usually span two calendar years (e.g., 2024/2025)
+    // If we are before March (for SARS), we are still in the previous tax year cycle
+    const baseYear = currentMonth < 3 ? currentYear - 1 : currentYear;
+    
+    let yearOptions = '';
+    for (let i = 0; i < 3; i++) {
+      const yr = baseYear - i;
+      const label = `${yr}/${yr + 1}`;
+      yearOptions += `<option value="${label}">${label}</option>`;
+    }
+
+    payeContainer.innerHTML = `
+        <div style="margin: 28px 0 20px 0; padding: 16px 20px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #3b82f6;">
+          <h3 style="margin: 0 0 6px 0; font-size: 15px; font-weight: 600; color: #334155; display: flex; align-items: center; gap: 8px;">
+            📋 PAYE Tax Filing Export
+          </h3>
+          <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
+            Generate compliant export files including **Employee Benefits** for SARS (South Africa), RSL (Lesotho), or BURS (Botswana).
+          </p>
+        </div>
+
+        <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; padding: 18px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+          
+          <!-- Authority Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Tax Authority</label>
+            <select id="payeAuthoritySelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 200px; color: #334155;">
+              <option value="SARS" ${companyAuthority === 'SARS' ? 'selected' : ''}>🇿🇦 SARS — South Africa</option>
+              <option value="RSL" ${companyAuthority === 'RSL' ? 'selected' : ''}>🇱🇸 RSL — Lesotho</option>
+              <option value="BURS" ${companyAuthority === 'BURS' ? 'selected' : ''}>🇧🇼 BURS — Botswana</option>
+            </select>
+          </div>
+
+          <!-- Period Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Tax Year</label>
+            <select id="payePeriodSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 140px; color: #334155;">
+              ${yearOptions}
+            </select>
+          </div>
+
+          <!-- Format Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Export Format</label>
+            <select id="payeFormatSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 130px; color: #334155;">
+              <option value="csv">📄 CSV (Standard)</option>
+              <option value="xlsx">📊 Excel (.xlsx)</option>
+              <option value="xml">🔧 SARS XML (e-Filing)</option>
+            </select>
+          </div>
+
+          <!-- Action Buttons -->
+          <div style="display: flex; gap: 10px; align-items: flex-end; margin-left: auto;">
+            <button id="payePreviewBtn" style="padding: 9px 18px; background: #ffffff; color: #475569; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
+              👁️ Preview Data
+            </button>
+            
+            <button id="payeExportBtn" style="padding: 9px 18px; background: #1e293b; color: #ffffff; border: 1px solid #0f172a; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
+              📥 Export Filing
+            </button>
+          </div>
+        </div>
+
+        <div id="payePreviewArea" style="margin-top: 16px; min-height: 120px; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <div style="text-align: center; color: #94a3b8; padding: 30px;">
+            <p style="margin: 0 0 8px 0; font-size: 32px;">📊</p>
+            <p style="margin: 0; font-size: 14px;">Select parameters and click Preview to verify tax data</p>
+          </div>
+        </div>
+      `;
+
+    // Attach event listeners using the proper "FinSage" pattern
+    $("payePreviewBtn")?.addEventListener("click", () => {
+      if (typeof window.previewPayeData === 'function') {
+        window.previewPayeData();
+      } else {
+        showPayrollStatus("Tax Filing module not fully loaded.", "error");
+      }
+    });
+
+    $("payeExportBtn")?.addEventListener("click", (e) => {
+      if (typeof window.exportPayeFiling === 'function') {
+        window.exportPayeFiling(e);
+      } else {
+        showPayrollStatus("Tax Filing module not fully loaded.", "error");
+      }
+    });
   }
+
   async function editPayrollStatutoryReturn(item={}){
     const values=await payrollForm(
       item.id?"Edit Statutory Return":"New Statutory Return",
@@ -83040,6 +86195,7 @@ async function saveEditModal() {
         readiness,
         writeoffs,
         generalModels,
+        generalEclRuns,
       ]=await Promise.all([
         apiFetch(ENDPOINTS.ifrs9.instruments(companyId)),
         apiFetch(ENDPOINTS.ifrs9.eclRuns(companyId)),
@@ -83048,6 +86204,7 @@ async function saveEditModal() {
         apiFetch(ENDPOINTS.ifrs9.coaReadiness(companyId)),
         apiFetch(ENDPOINTS.ifrs9.writeoffs(companyId)),
         apiFetch(ENDPOINTS.ifrs9.generalEclModels(companyId)),
+        apiFetch(ENDPOINTS.ifrs9.generalEclRuns(companyId)), 
       ]);
 
       IFRS9.instruments=inst.items||[];
@@ -83058,7 +86215,7 @@ async function saveEditModal() {
       IFRS9.writeoffs=writeoffs.items||[];
       IFRS9.generalEclModels=generalModels.items||[];
       IFRS9.generalEclModels=generalModels.items||[];
-      IFRS9.generalEclRuns=generalRuns.items||[];
+      IFRS9.generalEclRuns = generalEclRuns.items||[]; 
 
       renderInstruments();
       renderRuns();
@@ -83075,6 +86232,7 @@ async function saveEditModal() {
 
       setMsg("");
     } catch(error) {
+      console.error('[IFRS9] loadAll error:', error);  // ✅ ADDED: Better error logging
       setMsg(error.message||"Failed to load IFRS 9 data.");
     }
   }
@@ -87951,44 +91109,85 @@ async function saveEditModal() {
     }
   }
 
-  async function previewRun(runId) {
-    try {
-      IFRS9.previewRunId = Number(runId);
-      const result = await apiFetch(ENDPOINTS.ifrs9.eclRunPreview(cid(), runId));
-      const preview = result.preview || {};
+  async function previewRun() {
+    const cid = state.cid;
+    if (!cid) throw new Error("Missing company id");
 
-      $("ifrs9PreviewBody").innerHTML = `
-        <div class="journal-preview-header">
-          <p><b>Date:</b> ${dateText(preview.date)}</p>
-          <p><b>Reference:</b> ${preview.ref || "—"}</p>
-          <p><b>Description:</b> ${preview.description || "—"}</p>
-        </div>
-
-        <div class="table-responsive">
-          <table>
-            <thead><tr><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
-            <tbody>
-              ${(preview.lines || []).map(line => `
-                <tr>
-                  <td>${line.account_name || "—"}</td>
-                  <td>${line.description || "—"}</td>
-                  <td>${money(line.debit)}</td>
-                  <td>${money(line.credit)}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-            <tfoot>
-              <tr><th colspan="2">Total</th><th>${money(preview.dr_total)}</th><th>${money(preview.cr_total)}</th></tr>
-            </tfoot>
-          </table>
-        </div>
-      `;
-
-      $("ifrs9JournalPreviewModal").classList.remove("hidden");
-    } catch (error) {
-      IFRS9.previewRunId = null;
-      setMsg(error.message || "Failed to preview ECL journal.");
+    // Auto-select first contract if none selected
+    let contractId = Number($("revContractId")?.value || 0) || null;
+    if (!contractId && (state.contracts || []).length > 0) {
+      const firstContract = state.contracts[0];
+      contractId = firstContract.id;
+      if ($("revContractId")) $("revContractId").value = String(contractId);
+      state.selectedContract = firstContract;
+      renderContractKpis(firstContract);
+      console.log("[Revenue] Auto-selected first contract for preview:", contractId);
     }
+
+    const payload = runPayloadFromUI();
+    const periodStart = payload.period_start || "";
+    const periodEnd = payload.period_end || "";
+
+    // First, ensure runs are loaded
+    if (!state.runs || !state.runs.length) {
+      await loadRuns();
+    }
+
+    // Check for existing DRAFT run with same period + contract
+    const existingDraftRun = (state.runs || []).find(r => {
+      const rStart = String(r.period_start || "").slice(0, 10);
+      const rEnd = String(r.period_end || "").slice(0, 10);
+      const rContractId = Number(r.contract_id || 0) || null;
+      const matchPeriod = rStart === periodStart.slice(0, 10) && rEnd === periodEnd.slice(0, 10);
+      const matchContract = (rContractId === contractId) || (!rContractId && !contractId);
+      return String(r.status || "").toLowerCase() === "draft" && matchPeriod && matchContract;
+    });
+
+    let data;
+
+    if (existingDraftRun) {
+      // Reuse existing draft run - fetch its details with entries
+      console.log("[Revenue] Reusing existing draft run:", existingDraftRun.id);
+
+      try {
+        // Try to get run detail with entries
+        const runDetailUrl = ENDPOINTS.revenue.runDetail(cid, existingDraftRun.id);
+        const runRes = await apiFetch(runDetailUrl, { method: "GET" });
+        
+        data = runRes?.data || runRes;
+        
+        // If we got entries from the existing run, use them
+        if (data?.entries && data.entries.length > 0) {
+          state.preview = data;
+          // Set the run ID in UI
+          if ($("revRunId")) $("revRunId").value = String(existingDraftRun.id);
+          renderRunPreview(data);
+          refreshRunActionState(data);
+          setRunMsg(`Preview loaded from existing Run #${existingDraftRun.id}.`);
+          return data;
+        }
+      } catch (e) {
+        console.warn("[Revenue] Could not fetch existing run details, falling back to preview API:", e);
+      }
+    }
+
+    // No existing draft run or fetch failed - call preview API
+    const out = await apiFetch(ENDPOINTS.revenue.previewRun(cid), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    data = out?.data || out;
+    state.preview = data;
+    renderRunPreview(data);
+    refreshRunActionState(out);
+    
+    if (existingDraftRun) {
+      setRunMsg(`Preview refreshed (Run #${existingDraftRun.id} exists).`);
+    } else {
+      setRunMsg("Preview loaded (no existing draft run for this period).");
+    }
+    return data;
   }
 
   function closePreview() {
@@ -90150,6 +93349,12 @@ async function saveEditModal() {
       });
 
       document.addEventListener("click", async event => {
+        // 🛡️ Safety guard - prevent crash if event is undefined
+        if (!event || typeof event.target === 'undefined') {
+          console.warn('[IFRS9] Click event missing - skipping');
+          return;
+        }
+        
         const tab = event.target.closest("[data-ifrs9-tab]");
         if (tab) return showTab(tab.dataset.ifrs9Tab);
 
@@ -90833,19 +94038,35 @@ async function saveEditModal() {
       return;
     }
 
-    const tasks = await apiFetch(
-      ENDPOINTS.projects.tasksList(cid, projectId)
-    );
+    // ✅ NEW: Try cached tasks from contract data first (no extra API call!)
+    let rows = [];
+    
+    const cachedTasks = state.selectedContract?.project_tasks || 
+                        state.selectedContract?.payload_json?.project_tasks;
+    
+    if (Array.isArray(cachedTasks) && cachedTasks.length > 0) {
+      console.log("[Revenue] Using cached project tasks from contract:", cachedTasks.length);
+      rows = cachedTasks;
+    } else {
+      // Fallback: Fetch from API if not cached
+      console.log("[Revenue] Fetching project tasks from API...");
+      try {
+        const apiResponse = await apiFetch(
+          ENDPOINTS.projects.tasksList(cid, projectId)
+        );
+        rows = Array.isArray(apiResponse) ? apiResponse : (apiResponse?.data || apiResponse?.rows || []);
+      } catch (err) {
+        console.error("[Revenue] Failed to fetch tasks:", err);
+        rows = [];
+      }
+    }
 
-    const rows = Array.isArray(tasks)
-      ? tasks
-      : (tasks?.data || tasks?.rows || []);
-
+    // Populate dropdown
     sel.innerHTML =
       `<option value="">No linked task</option>` +
       rows.map(t => `
         <option value="${t.id}">
-          ${esc(t.task_code || t.code || "")} — ${esc(t.task_name || t.name || "")}
+          ${esc(t.task_name || t.name || "Unnamed Task")}
         </option>
       `).join("");
 
@@ -93016,8 +96237,7 @@ async function renderContractPreview(c = {}) {
         <option value="">None</option>
         ${items.map(p => `
           <option value="${esc(String(p.id))}">
-            ${esc(p.project_code || "")}
-            ${p.project_name ? ` — ${esc(p.project_name)}` : ""}
+            ${esc(p.project_name || p.project_code || "Unnamed Project")}
           </option>
         `).join("")}
       `;
@@ -95169,40 +98389,149 @@ async function renderContractPreview(c = {}) {
     }
   }
 
+  // Helper for safe HTML escaping in error messages
+  function dtEscape(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   async function loadRuns() {
-    const mount = $id("dtRunList");
-    if (!mount) return;
+    const cid = state.cid || activeCid();
+    
+    if (!cid) {
+      console.warn("[Revenue] loadRuns: No company ID");
+      return;
+    }
 
-    mount.innerHTML = `
-      <div class="dt-loading">
-        Loading deferred tax runs...
-      </div>
-    `;
-
-    try {
-      const res = await apiFetch(
-        ENDPOINTS.deferredTax.runs(cid())
-      );
-
-      const rows =
-        res?.data?.runs ||
-        res?.data ||
-        res?.items ||
-        res?.runs ||
-        [];
-
-      renderDeferredTaxRunList(rows);
-    } catch (error) {
-      mount.innerHTML = `
-        <div class="dt-error">
-          ${dtEscape(
-            error.message ||
-            "Deferred-tax runs could not be loaded."
-          )}
+    // Show loading state in Saved Runs area
+    const savedRunsEl = $("revRunList");
+    if (savedRunsEl) {
+      savedRunsEl.innerHTML = `
+        <div class="text-xs text-slate-400 p-2 text-center animate-pulse">
+          Loading recognition runs...
         </div>
       `;
     }
+
+    try {
+      // ✅ Use REVENUE runs endpoint (NOT deferred tax!)
+      const res = await apiFetch(ENDPOINTS.revenue.runs(cid));
+      
+      // Extract runs from various response formats
+      const runs = Array.isArray(res?.data) 
+        ? res.data 
+        : (Array.isArray(res?.items) ? res.items : (Array.isArray(res) ? res : []));
+      
+      // ✅ CRITICAL: Store in state so postRun()/reverseRun() can find them!
+      state.runs = runs;
+      
+      console.log(`[Revenue] ✓ Loaded ${runs.length} recognition run(s)`);
+
+      // Render to YOUR actual HTML element: revRunList
+      if (savedRunsEl) {
+        if (!runs.length) {
+          savedRunsEl.innerHTML = `
+            <div class="text-xs text-slate-400 p-3 text-center">
+              No recognition runs yet.<br>
+              <span class="text-[10px]">Create a run using "Create Run" button above.</span>
+            </div>
+          `;
+        } else {
+          savedRunsEl.innerHTML = runs.map(r => `
+            <div class="flex items-center justify-between p-2 border rounded text-xs hover:bg-blue-50 cursor-pointer transition-colors"
+                onclick="selectRevenueRun(${r.id})"
+                data-run-id="${r.id}"
+                title="Click to select this run">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full ${
+                  r.status === 'posted' ? 'bg-green-500' : 
+                  r.status === 'reversed' ? 'bg-red-400' : 'bg-amber-400'
+                }"></span>
+                <div>
+                  <div class="font-medium text-slate-700">
+                    ${esc(r.run_number || r.description || `Recognition Run #${r.id}`)}
+                  </div>
+                  <div class="text-slate-400 text-[10px]">
+                    ${esc(r.period_start || 'N/A')} → ${esc(r.period_end || 'N/A')}
+                    ${r.created_at ? `· Created ${new Date(r.created_at).toLocaleDateString()}` : ''}
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-medium ${
+                  r.status === 'posted' ? 'bg-green-100 text-green-700' : 
+                  r.status === 'reversed' ? 'bg-red-100 text-red-700' :
+                  'bg-amber-100 text-amber-700'
+                }">
+                  ${esc((r.status || 'draft').toUpperCase())}
+                </span>
+              </div>
+            </div>
+          `).join("");
+        }
+      }
+      
+    } catch (error) {
+      console.error("[Revenue] loadRuns failed:", error);
+      state.runs = []; // Reset on error
+      
+      // Show error in UI
+      if (savedRunsEl) {
+        savedRunsEl.innerHTML = `
+          <div class="text-xs text-red-600 p-3 text-center bg-red-50 rounded">
+            ❌ Failed to load runs<br>
+            <span class="text-[10px]">${esc(error.message)}</span>
+          </div>
+        `;
+      }
+    }
   }
+
+  /**
+   * Select a run from the Saved Runs list
+   * Updates form fields and highlights selection
+   */
+  function selectRevenueRun(runId) {
+    if (!runId) return;
+    
+    // Set hidden field (used by postRun/reverseRun)
+    const runIdField = $("revRunId");
+    if (runIdField) runIdField.value = String(runId);
+    
+    // Find run in state
+    const run = (state.runs || []).find(r => Number(r.id) === Number(runId));
+    
+    if (!run) {
+      setRunMsg(`⚠️ Run #${runId} not found in loaded runs`);
+      return;
+    }
+    
+    console.log("[Revenue] Selected run:", run);
+    
+    // Update form fields with run data
+    if ($("revRunStart")) $("revRunStart").value = run.period_start || "";
+    if ($("revRunEnd")) $("revRunEnd").value = run.period_end || "";
+    if ($("revRunReason") && run.reason) $("revRunReason").value = run.reason;
+    
+    // Visual feedback - highlight selected row
+    document.querySelectorAll('[data-run-id]').forEach(el => {
+      el.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-100');
+    });
+    const selectedRow = document.querySelector(`[data-run-id="${runId}"]`);
+    if (selectedRow) {
+      selectedRow.classList.add('ring-2', 'ring-blue-500', 'bg-blue-100');
+    }
+    
+    setRunMsg(`✅ Selected: ${run.run_number || `Run #${run.id}`}`);
+  }
+
+  // Make selectRevenueRun globally available
+  window.selectRevenueRun = selectRevenueRun;
 
   async function loadBillingOverview(contractId) {
     const cid = activeCid();
@@ -96153,7 +99482,8 @@ async function renderContractPreview(c = {}) {
       setContractViewMode("form");
     });
 
-    $("revAddObligation")?.addEventListener("click", () => {
+    // ✅ FIXED CODE:
+    $("revAddObligation")?.addEventListener("click", async () => {
       if (!state.selectedContract?.id) {
         setMsg("Select a contract first. Obligations belong to a specific contract.", "error");
         setActiveTab("contracts");
@@ -96165,8 +99495,14 @@ async function renderContractPreview(c = {}) {
 
       hydrateObligationForm({});
 
-      // 🔥 banner always uses actual selected contract
+      // banner always uses actual selected contract
       renderObligationContractBanner(state.selectedContract);
+
+      // ✅ NEW: Load project tasks into dropdown when contract has a project!
+      await loadRevenueProjectTaskOptions(
+        "",  // No task pre-selected for new obligation
+        state.selectedContract?.project_id || null  // Use contract's project ID
+      );
 
       setObligationViewMode("form");
       setActiveTab("obligations");
@@ -96220,12 +99556,13 @@ async function renderContractPreview(c = {}) {
       }
     });
 
-    $("revEditObligationBtn")?.addEventListener("click", () => {
+    $("revEditObligationBtn")?.addEventListener("click", async () => {
       if (!state.selectedObligation) return;
 
-      hydrateObligationForm(state.selectedObligation);
+      // ✅ Use openRevenueObligationForEdit - it loads tasks AND hydrates form!
+      await openRevenueObligationForEdit(state.selectedObligation);
+      
       renderObligationContractBanner(state.selectedContract);
-      setObligationViewMode("form");
     });
 
     $("revCreateBillingInvoice")?.addEventListener("click", async () => {
@@ -96453,6 +99790,125 @@ async function renderContractPreview(c = {}) {
     toggleRevenueProgressDriverFields
   }
 
+  async function openRevenueProjectHandoff() {
+    const ctx =
+      window._PENDING_REVENUE_PROJECT_CTX;
+
+    if (!ctx?.project_id) return;
+
+    window._PENDING_REVENUE_PROJECT_CTX =
+      null;
+
+    const projectId =
+      Number(ctx.project_id);
+
+    const customerId =
+      Number(ctx.customer_id || 0)
+      || null;
+
+    const contractId =
+      Number(ctx.contract_id || 0)
+      || null;
+
+    if (customerId && $("revCustomerId")) {
+      $("revCustomerId").value =
+        String(customerId);
+    }
+
+    await populateRevenueProjectDropdown(
+      customerId
+    );
+
+    if ($("revProjectId")) {
+      $("revProjectId").value =
+        String(projectId);
+    }
+
+    if (contractId) {
+      let contract =
+        (state.contracts || []).find(
+          x =>
+            Number(x.id) === contractId
+        );
+
+      if (!contract) {
+        const out = await apiFetch(
+          ENDPOINTS.revenue.contract(
+            state.cid,
+            contractId
+          ),
+          {
+            method: "GET",
+          }
+        );
+
+        contract =
+          out?.data ||
+          out ||
+          null;
+      }
+
+      if (!contract) return;
+
+      state.selectedContract = contract;
+
+      hydrateContractForm(contract);
+      renderContractPreview(contract);
+      renderContractKpis(contract);
+
+      setContractViewMode("preview");
+
+      await loadObligations(contract.id);
+      await loadBillingOverview(contract.id);
+      await loadCashOverview(contract.id);
+
+      return;
+    }
+
+    state.selectedContract = null;
+    state.selectedObligation = null;
+
+    hydrateContractForm({
+      customer_id: customerId,
+      project_id: projectId,
+
+      contract_title:
+        ctx.project_name ||
+        ctx.project_code ||
+        "",
+
+      transaction_price:
+        Number(
+          ctx.contract_value || 0
+        ),
+
+      billing_method:
+        ctx.billing_method ||
+        "milestone",
+
+      start_date:
+        ctx.start_date ||
+        null,
+
+      end_date:
+        ctx.end_date ||
+        null,
+
+      status: "draft",
+    });
+
+    setContractViewMode("form");
+
+    $("revSaveContract")
+      ?.classList.remove("hidden");
+
+    $("revUpdateContract")
+      ?.classList.add("hidden");
+
+    $("revContractNumber")
+      ?.focus();
+  }
+
   let bound = false;
 
   window.bindRevenueScreen = async function bindRevenueScreen(name = "revenue") {
@@ -96498,6 +99954,7 @@ async function renderContractPreview(c = {}) {
     await populateRevenueProjectDropdown?.();
     await loadRevenueObligationCatalog?.();   // <-- add this
     bindRevenueObligationCatalogPicker?.();   // <-- add this
+    await openRevenueProjectHandoff?.();
     await loadRuns();
     await openRevenueFromApprovalHandoff();
     await loadRevenueCashBankAccounts();
@@ -96756,6 +100213,49 @@ async function renderContractPreview(c = {}) {
 
     setMsg("Revenue contract approval review loaded.");
   };
+
+  window.openRevenueForProject =
+    async function openRevenueForProject(
+      project,
+      contractId = null
+    ) {
+      if (!project?.id) return;
+
+      window._PENDING_REVENUE_PROJECT_CTX = {
+        project_id: Number(project.id),
+        customer_id:
+          Number(project.customer_id || 0)
+          || null,
+
+        contract_id:
+          Number(contractId || 0)
+          || null,
+
+        project_code:
+          project.project_code || "",
+
+        project_name:
+          project.project_name || "",
+
+        contract_value:
+          Number(
+            project.contract_value || 0
+          ),
+
+        billing_method:
+          project.billing_method ||
+          "milestone",
+
+        start_date:
+          project.start_date || null,
+
+        end_date:
+          project.expected_end_date ||
+          null,
+      };
+
+      await switchScreen("revenue");
+    };
 })();
 
 async function waitForInvoiceReady(timeoutMs = 4000) {
@@ -99055,7 +102555,7 @@ async function openInvoiceIntoForm(invoiceId, { mode = "view" } = {}) {
   $("invDate") && ($("invDate").value = toIsoDateOnly(inv.invoice_date));
   $("invDueDate") && ($("invDueDate").value = toIsoDateOnly(inv.due_date));
   $("invTerms") && ($("invTerms").value = inv.terms || "Due on receipt");
-  $("invCurrency") && ($("invCurrency").value = inv.currency || "USD");
+  $("invCurrency") && ($("invCurrency").value = inv.currency || window.resolveCurrency?.() || "USD");
 
   $("invDefaultVat") && ($("invDefaultVat").value = inv.default_vat_code || "STANDARD");
 
@@ -99468,7 +102968,7 @@ async function loadInvoiceIntoForm(invoiceId) {
   const dueISO = toISODateInput(inv.due_date);
   $("invDueDate") && ($("invDueDate").value = dueISO);
 
-  $("invCurrency") && ($("invCurrency").value = inv.currency || "USD");
+  $("invCurrency") && ($("invCurrency").value = inv.currency || window.resolveCurrency?.() || "USD");
   $("invTerms") && ($("invTerms").value = inv.terms || $("invTerms").value || "Due on receipt");
 
   const headerRevSel =
@@ -106272,7 +109772,7 @@ function bindAR() {
         if ($("invNumber")) $("invNumber").value = "";
         if ($("invDate")) $("invDate").value = new Date().toISOString().slice(0, 10);
         if ($("invDueDate")) $("invDueDate").value = "";
-        if ($("invCurrency")) $("invCurrency").value = "USD";
+        if ($("invCurrency")) $("invCurrency").value = window.resolveCurrency?.() || "USD";
         if ($("invMemo")) $("invMemo").value = "";
         if ($("invRevenueContractId")) $("invRevenueContractId").value = "";
 
@@ -110133,123 +113633,6 @@ async function renderARStatements() {
       if (status && p.config_status !== status) return false;
       return true;
     });
-  }
-
-  async function showDeferredTaxSettings() {
-    const companyId = cid();
-
-    const [settingsRes, authoritiesRes] = await Promise.all([
-      apiFetch(ENDPOINTS.deferredTax.settings(companyId)),
-      apiFetch(ENDPOINTS.deferredTax.authorities(companyId))
-    ]);
-
-    const settings = settingsRes.data || {};
-    const config = settings.deferred_tax_settings || {};
-    const authorities = authoritiesRes.data || [];
-
-    openModal("Deferred Tax Settings", `
-      <form id="dtSettingsForm">
-        <div class="dt-form-grid">
-          <div class="dt-field">
-            <label>Tax authority</label>
-            <select name="tax_authority_id" required>
-              <option value="">Select authority</option>
-              ${authorities.map(row => `
-                <option
-                  value="${row.id}"
-                  ${Number(settings.tax_authority_id) === Number(row.id) ? "selected" : ""}
-                >
-                  ${row.code} — ${row.name}
-                </option>
-              `).join("")}
-            </select>
-          </div>
-
-          <div class="dt-field">
-            <label>Corporate income tax rate (%)</label>
-            <input
-              type="number"
-              name="income_tax_rate"
-              min="0"
-              max="100"
-              step="0.0001"
-              value="${settings.income_tax_rate || 0}"
-              required
-            >
-          </div>
-
-          <div class="dt-field">
-            <label>Default recovery method</label>
-            <select name="default_recovery_method">
-              <option value="use"
-                ${config.default_recovery_method === "use" ? "selected" : ""}>
-                Through use
-              </option>
-              <option value="sale"
-                ${config.default_recovery_method === "sale" ? "selected" : ""}>
-                Through sale
-              </option>
-            </select>
-          </div>
-
-          <div class="dt-field">
-            <label>Reconciliation tolerance</label>
-            <input
-              type="number"
-              name="reconciliation_tolerance"
-              step="0.01"
-              value="${config.reconciliation_tolerance ?? 0.05}"
-            >
-          </div>
-
-          <label class="dt-check">
-            <input
-              type="checkbox"
-              name="deferred_tax_enabled"
-              ${settings.deferred_tax_enabled ? "checked" : ""}
-            >
-            Enable deferred tax
-          </label>
-
-          <label class="dt-check">
-            <input
-              type="checkbox"
-              name="auto_scan_assets"
-              ${config.auto_scan_assets !== false ? "checked" : ""}
-            >
-            Automatically scan assets
-          </label>
-
-          <label class="dt-check">
-            <input
-              type="checkbox"
-              name="auto_scan_accrual_deferrals"
-              ${config.auto_scan_accrual_deferrals !== false ? "checked" : ""}
-            >
-            Automatically scan accruals and deferrals
-          </label>
-
-          <label class="dt-check">
-            <input
-              type="checkbox"
-              name="require_dta_recoverability_review"
-              ${config.require_dta_recoverability_review !== false ? "checked" : ""}
-            >
-            Require DTA recoverability assessment
-          </label>
-        </div>
-
-        <div class="dt-form-actions">
-          <button type="button" class="btn btn-secondary" data-dt-close>
-            Cancel
-          </button>
-
-          <button type="submit" class="btn btn-primary">
-            Save Settings
-          </button>
-        </div>
-      </form>
-    `);
   }
 
   function renderProfiles() {
@@ -117754,6 +121137,142 @@ function bindAP() {
   }
   window.writeBillForm = writeBillForm;
 
+  async function openFinSageBillFromHandoff(billId){
+    const cid=window.getActiveCompanyId?.()||window.CURRENT_COMPANY_ID||window.cid;
+
+    billId=Number(billId||0);
+
+    if(!cid||!billId) return false;
+
+    try{
+      const res=await window.apiFetch(
+        window.ENDPOINTS.bill(cid,billId),
+        {method:"GET"}
+      );
+
+      const bill=res?.data||res;
+
+      if(!bill?.id){
+        throw new Error("FinSage bill not found.");
+      }
+
+      window.clearBillForm?.({keepCurrency:true});
+
+      if(
+        !Array.isArray(window.BILL_ACCOUNTS_CACHE)||
+        !window.BILL_ACCOUNTS_CACHE.length
+      ){
+        await window.loadBillAccountsForLines?.();
+      }
+
+      window.refreshBillAccountDropdowns?.();
+
+      window.writeBillForm?.(bill);
+
+      const root=window.getBillRoot?.()||document;
+      const body=root.querySelector("#billLines");
+
+      if(body) body.innerHTML="";
+
+      for(const line of bill.lines||[]){
+        window.addBillLine?.({
+          item_name:line.item_name||"",
+          description:line.description||"",
+          account_code:line.account_code||"",
+          quantity:Number(line.quantity||0),
+          unit_price:Number(line.unit_price||0),
+          discount_amount:Number(line.discount_amount||0),
+          vat_rate:Number(line.vat_rate||0),
+          vat_code:
+            Number(line.vat_rate||0)<=0
+              ?"ZERO"
+              :Number(line.vat_rate||0)===15
+                ?"STANDARD"
+                :"CUSTOM"
+        });
+      }
+
+      const memo=root.querySelector("#billMemo");
+      if(memo) memo.value=bill.notes||"";
+
+      const status=root.querySelector("#billStatus");
+      if(status){
+        status.textContent=
+          String(bill.status||"draft")
+            .replaceAll("_"," ");
+      }
+
+      const vatEnabled=root.querySelector("#apBillVatEnabled");
+
+      if(vatEnabled){
+        vatEnabled.checked=(bill.lines||[])
+          .some(x=>Number(x.vat_rate||0)>0);
+      }
+
+      const vatMode=root.querySelector("#apBillVatMode");
+
+      if(vatMode){
+        vatMode.value=bill.vat_mode||"exclusive";
+      }
+
+      window.recalcBill?.({force:true});
+
+      console.log(
+        "[NEXUS → AP] opened FinSage bill",
+        bill
+      );
+
+      return true;
+
+    }catch(err){
+      console.error(
+        "[NEXUS → AP] could not open bill",
+        err
+      );
+
+      alert(
+        err?.message||
+        "Could not open the FinSage bill."
+      );
+
+      return false;
+    }
+  }
+
+  window.openFinSageBillFromHandoff=
+    openFinSageBillFromHandoff;
+
+  function getNexusApHandoffFromUrl(){
+    try{
+      const p=new URLSearchParams(window.location.search||"");
+
+      const billId=Number(p.get("bill_id")||0);
+      if(!billId) return null;
+
+      return {
+        source:"nexus",
+        screen:p.get("screen")||"ap",
+        action:p.get("action")||"bill",
+        bill_id:billId,
+        voucher_id:Number(p.get("voucher_id")||0)||null,
+        amount:p.get("amount")||"",
+        payment_date:p.get("payment_date")||"",
+        reference:p.get("reference")||"",
+        description:p.get("description")||"",
+        wht:p.get("wht")==="1",
+        wht_rate:p.get("wht_rate")||"",
+        wht_amount:p.get("wht_amount")||"",
+        wht_ledger_code:p.get("wht_ledger_code")||"",
+        wht_reason:p.get("wht_reason")||""
+      };
+    }catch(e){
+      console.warn("[NEXUS → AP] invalid handoff URL",e);
+      return null;
+    }
+  }
+
+  window.getNexusApHandoffFromUrl=getNexusApHandoffFromUrl;
+  
   function getLeaseApPrefillFromUrl() {
     try {
       const hash = window.location.hash || "";
@@ -119077,6 +122596,58 @@ window.loadDraftBillsPane = async function loadDraftBillsPane() {
     }, { passive: false });
   });
 };
+
+async function openNexusPaymentHandoff(handoff){
+  if(!handoff?.bill_id) return false;
+
+  await window.openBillViewer?.(
+    handoff.bill_id
+  );
+
+  const modal=document.getElementById("billViewerModal");
+  if(!modal) return false;
+
+  const openBtn=modal.querySelector("#billViewAllocatePayment");
+
+  openBtn?.click();
+
+  await new Promise(resolve=>setTimeout(resolve,50));
+
+  const set=(id,value)=>{
+    if(value===null||value===undefined||value==="") return;
+    const el=modal.querySelector(`#${id}`);
+    if(el) el.value=String(value);
+  };
+
+  set("billViewPayDate",handoff.payment_date);
+  set("billViewPayAmount",handoff.amount);
+  set("billViewPayRef",handoff.reference);
+  set("billViewPayDesc",handoff.description);
+
+  if(handoff.wht){
+    const enabled=modal.querySelector("#billViewWhtEnabled");
+    if(enabled){
+      enabled.checked=true;
+      enabled.dispatchEvent(
+        new Event("change",{bubbles:true})
+      );
+    }
+
+    set("billViewWhtRate",handoff.wht_rate);
+    set("billViewWhtAmount",handoff.wht_amount);
+    set("billViewWhtLedger",handoff.wht_ledger_code);
+    set("billViewWhtReason",handoff.wht_reason);
+  }
+
+  console.log(
+    "[NEXUS → AP PAYMENT] payment voucher loaded",
+    handoff
+  );
+
+  return true;
+}
+
+window.openNexusPaymentHandoff=openNexusPaymentHandoff;
 
 async function openApVendorPicker({ closeOnPick = true, reason = "" } = {}) {
   if (reason) window.showToast?.(reason, "warning");
@@ -123506,6 +127077,728 @@ function getWorkUnitLabel() {
 
 window.getWorkUnitLabel = getWorkUnitLabel;
 
+const projectLookupState = {
+  employees: [],
+  departments: [],
+};
+
+async function loadProjectPeopleAndDepartments() {
+  const companyId =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  if (!companyId) {
+    projectLookupState.employees = [];
+    projectLookupState.departments = [];
+    return;
+  }
+
+  try {
+    const response = await apiFetch(
+      ENDPOINTS.payroll.bootstrap(companyId)
+    );
+
+    const data =
+      response?.data ||
+      response ||
+      {};
+
+    const employees =
+      Array.isArray(data.employees)
+        ? data.employees
+        : [];
+
+    const departments =
+      Array.isArray(data.setup?.departments)
+        ? data.setup.departments
+        : [];
+
+    projectLookupState.employees =
+      employees;
+
+    projectLookupState.departments =
+      departments;
+
+    console.log(
+      "[Projects] employee lookups loaded:",
+      {
+        employees:
+          projectLookupState.employees.length,
+
+        departments:
+          projectLookupState.departments.length,
+      }
+    );
+
+  } catch (err) {
+    console.error(
+      "[Projects] failed to load employee lookups:",
+      err
+    );
+
+    projectLookupState.employees = [];
+    projectLookupState.departments = [];
+  }
+}
+
+function fillProjectDepartmentSelect(
+  selectedId = ""
+) {
+  const el =
+    document.getElementById(
+      "projectDepartmentId"
+    );
+
+  if (!el) return;
+
+  const departments =
+    projectLookupState.departments
+      .filter(department =>
+        department &&
+        department.id &&
+        department.is_active !== false
+      )
+      .sort((a, b) =>
+        String(
+          a.name ||
+          a.department_name ||
+          ""
+        ).localeCompare(
+          String(
+            b.name ||
+            b.department_name ||
+            ""
+          )
+        )
+      );
+
+  el.innerHTML = `
+    <option value="">
+      Select department…
+    </option>
+
+    ${departments.map(department => {
+      const name =
+        department.name ||
+        department.department_name ||
+        `Department ${department.id}`;
+
+      return `
+        <option
+          value="${esc(
+            String(department.id)
+          )}"
+          ${
+            String(department.id) ===
+            String(selectedId)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(name)}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
+function projectEmployeeUserId(employee = {}) {
+  return Number(employee.id || 0) || null;
+}
+
+/**
+ * Auto-generate role code from role name
+ * Format: XXX-NNN (3 letters + 3 numbers)
+ * Examples: "Foreman" -> "FRM-001", "Site Supervisor" -> "SSP-002"
+ */
+function autoGenerateRoleCode(roleName) {
+  const codeInput = document.getElementById("projectRoleCodeInput");
+  if (!codeInput) return;
+  
+  if (!roleName || !roleName.trim()) {
+    codeInput.value = "";
+    return;
+  }
+  
+  // Generate 3-letter prefix from role name
+  const words = roleName.trim().split(/\s+/);
+  let prefix = "";
+  
+  if (words.length >= 3) {
+    // If 3+ words, take first letter of first 3 words
+    prefix = words.slice(0, 3).map(w => w.charAt(0).toUpperCase()).join("");
+  } else if (words.length === 2) {
+    // If 2 words, take first 2 letters of first word + first letter of second
+    prefix = (words[0].substring(0, 2) + words[1].charAt(0)).toUpperCase();
+  } else {
+    // If 1 word, take first 3 letters (pad with X if needed)
+    prefix = (words[0].substring(0, 3) + "XXX").substring(0, 3).toUpperCase();
+  }
+  
+  // Generate sequential number (001, 002, etc.)
+  const existingRoles = Array.isArray(window._projectRolesCache) ? window._projectRolesCache : [];
+  const existingCodes = existingRoles
+    .map(r => r.code || "")
+    .filter(c => c.startsWith(prefix + "-"));
+  
+  let nextNum = 1;
+  if (existingCodes.length > 0) {
+    const numbers = existingCodes
+      .map(c => parseInt(c.split("-")[1]) || 0)
+      .filter(n => n > 0);
+    
+    if (numbers.length > 0) {
+      nextNum = Math.max(...numbers) + 1;
+    }
+  }
+  
+  // Format: FRM-001
+  const code = `${prefix}-${String(nextNum).padStart(3, "0")}`;
+  codeInput.value = code;
+}
+
+// Make globally available for HTML oninput handler
+window.autoGenerateRoleCode = autoGenerateRoleCode;
+
+/**
+ * Open the Project Roles management modal
+ */
+async function openProjectRolesModal(projectId) {
+  bindProjectRolesModalOnce();
+  
+  // Set project ID
+  const projectIdInput = document.getElementById("projectRolesProjectId");
+  if (projectIdInput) projectIdInput.value = String(projectId);
+  
+  // Reset form fields
+  const typeInput = document.getElementById("projectRoleTypeInput");
+  const nameInput = document.getElementById("projectRoleNameInput");
+  const codeInput = document.getElementById("projectRoleCodeInput");
+  const descInput = document.getElementById("projectRoleDescInput");
+  
+  if (typeInput) typeInput.value = "";
+  if (nameInput) nameInput.value = "";
+  if (codeInput) codeInput.value = "";
+  if (descInput) descInput.value = "";
+  
+  setElText("projectRoleMsg", "");
+  
+  // Show modal with higher z-index than team member modal
+  const modal = document.getElementById("projectRolesModal");
+  if (modal) modal.classList.remove("hidden");
+  
+  // Load existing roles for this project
+  await loadProjectRoles(projectId);
+}
+
+/**
+ * Close the Project Roles management modal
+ */
+function closeProjectRolesModal() {
+  const modal = document.getElementById("projectRolesModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+async function loadProjectRoles(projectId) {
+  const listContainer = document.getElementById("projectRolesList");
+  if (!listContainer) return;
+  
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  
+  if (!cid || !projectId) {
+    renderProjectRolesList([]);
+    return;
+  }
+  
+  try {
+    listContainer.innerHTML = `
+      <div class="text-slate-400 p-3 text-center">
+        Loading roles...
+      </div>
+    `;
+    
+    const url = ENDPOINTS.projects.rolesList(cid, projectId);
+    console.log("[ProjectRoles] Fetching from:", url);
+    
+    const data = await apiFetch(url);
+    const roles = data?.data || data?.items || [];
+    
+    // Call the render function
+    renderProjectRolesList(roles);
+    
+    // Cache roles for use in team member dropdown
+    window._projectRolesCache = roles;
+    
+    // Update team member role type select if it exists
+    populateTeamMemberRoleTypeSelect();
+    
+  } catch (err) {
+    console.error("[ProjectRoles] Failed to load:", err);
+    listContainer.innerHTML = `
+      <div class="text-red-400 p-3 text-center text-xs">
+        ❌ Failed to load roles<br>
+        <span class="text-slate-500">${escapeHtml(err.message)}</span>
+      </div>
+    `;
+  }
+}
+
+
+function renderProjectRolesList(roles) {
+  const container = document.getElementById("projectRolesList");
+  if (!container) return;
+
+  if (!roles || !roles.length) {
+    container.innerHTML = `
+      <div class="text-slate-400 p-3 text-center text-xs">
+        No custom roles yet.<br>Create one above!
+      </div>`;
+    return;
+  }
+
+  let html = '';
+  roles.forEach(role => {
+    const name = esc(role.name || role.role_name || 'Unnamed');
+    const code = esc(role.code || role.role_code || '');
+    const desc = esc(role.description || role.desc || '');
+    const roleId = role.id || role.role_id;
+    const projId = document.getElementById("projectRolesProjectId")?.value || '';
+
+    html += `
+      <div class="flex items-center justify-between bg-white border rounded p-2 hover:bg-gray-50">
+        <div class="flex-1">
+          <div class="font-medium">${name}</div>
+          ${code ? `<span class="text-slate-400">[${code}]</span>` : ''}
+          ${desc ? `<div class="text-slate-500 text-xs">${desc}</div>` : ''}
+        </div>
+        <button onclick="deleteProjectRole('${projId}', ${roleId})"
+                class="ml-2 px-2 py-1 text-red-600 hover:bg-red-50 rounded text-xs"
+                title="Delete this role">
+          🗑 Delete
+        </button>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+
+async function saveProjectRole() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(document.getElementById("projectRolesProjectId")?.value || 0);
+  
+  if (!cid || !projectId) {
+    setElText("projectRoleMsg", "Missing company or project ID.", true);
+    return;
+  }
+  
+  // Get form values
+  const type = document.getElementById("projectRoleTypeInput")?.value?.trim();
+  const name = document.getElementById("projectRoleNameInput")?.value?.trim();
+  const code = document.getElementById("projectRoleCodeInput")?.value?.trim();
+  const description = document.getElementById("projectRoleDescInput")?.value?.trim();
+  
+  // Validation
+  if (!type) {
+    setElText("projectRoleMsg", "Please select a role type.", true);
+    return;
+  }
+  
+  if (!name) {
+    setElText("projectRoleMsg", "Please enter a role name.", true);
+    return;
+  }
+  
+  if (!code) {
+    setElText("projectRoleMsg", "Role code is required.", true);
+    return;
+  }
+  
+  const msgEl = document.getElementById("projectRoleMsg");
+  const saveBtn = document.getElementById("projectRoleSaveBtn");
+  
+  try {
+    // UI state: loading
+    if (msgEl) { msgEl.textContent = "Saving..."; msgEl.className = "text-xs mt-2 min-h-[16px] text-blue-600"; }
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving..."; }
+    
+    const payload = { type, name, code, description };
+    const url = ENDPOINTS.projects.rolesCreate(cid, projectId);
+    
+    const result = await apiFetch(url, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    
+    // Check for error in response
+    if (result?.error || result?.ok === false) {
+      throw new Error(result?.error || result?.details || "Failed to create role");
+    }
+    
+    // Success!
+    if (msgEl) { msgEl.textContent = "✅ Role created successfully!"; msgEl.className = "text-xs mt-2 min-h-[16px] text-green-600"; }
+    
+    // Reset form
+    document.getElementById("projectRoleTypeInput").value = "";
+    document.getElementById("projectRoleNameInput").value = "";
+    document.getElementById("projectRoleCodeInput").value = "";
+    document.getElementById("projectRoleDescInput").value = "";
+    
+    // Reload roles list
+    await loadProjectRoles(projectId);
+    
+    // ✅ NEW: If Team Modal is currently open, refresh its dropdown
+    const teamModal = document.getElementById("projectTeamModal");
+    if (teamModal && !teamModal.classList.contains('hidden')) {
+      console.log("[ProjectRoles] ↻ Refreshing Team Modal dropdown with new role");
+      populateTeamMemberRoleTypeSelect();
+      
+      // Remove warning styling if it was there
+      const roleSelect = document.getElementById("projectTeamRole");
+      if (roleSelect) {
+        roleSelect.style.borderColor = "";
+        roleSelect.style.backgroundColor = "";
+      }
+    }
+    setElText("projectRoleMsg", "✅ Role created successfully!", false);
+    // Clear success message after 2 seconds
+    setTimeout(() => { setElText("projectRoleMsg", ""); }, 2000);
+    
+  } catch (err) {
+    console.error("[ProjectRoles] Failed to save:", err);
+    setElText("projectRoleMsg", err.message || "Failed to create role.", true);
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Add Role"; }
+  }
+}
+
+/**
+ * Delete a project role
+ */
+async function deleteProjectRole(projectId, roleId) {
+  if (!confirm("Are you sure you want to delete this role?\n\nTeam members assigned to this role will be unassigned.")) {
+    return;
+  }
+  
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  
+  if (!cid || !projectId || !roleId) {
+    alert("Cannot delete: Missing required IDs");
+    return;
+  }
+  
+  try {
+    const url = ENDPOINTS.projects.rolesDelete(cid, projectId, roleId);
+    const result = await apiFetch(url, { method: "DELETE" });
+    
+    if (result?.error || result?.ok === false) {
+      throw new Error(result?.error || "Failed to delete role");
+    }
+    
+    // Reload roles list
+    await loadProjectRoles(projectId);
+    
+  } catch (err) {
+    console.error("[ProjectRoles] Failed to delete:", err);
+    alert(`Failed to delete role: ${err.message}`);
+  }
+}
+
+function populateTeamMemberRoleTypeSelect() {
+  const select = document.getElementById("projectTeamRole");
+  
+  // ✅ Check if element exists AND is a SELECT
+  if (!select) {
+    console.log("[ProjectRoles] projectTeamRole not found (team modal may not be open yet)");
+    return;
+  }
+  
+  if (select.tagName !== 'SELECT') {
+    console.warn("[ProjectRoles] projectTeamRole is not a SELECT element - check HTML");
+    return;
+  }
+  
+  // Get cached roles (from Roles Modal)
+  const cachedRoles = Array.isArray(window._projectRolesCache) 
+    ? window._projectRolesCache 
+    : [];
+  
+  // ✅ CLEAR existing options first (except default)
+  select.innerHTML = '<option value="">-- Select Role --</option>';
+  
+  // ✅ NO roles yet? Show helpful option (don't auto-create!)
+  if (!cachedRoles.length) {
+    const option = document.createElement('option');
+    option.value = "";
+    option.textContent = "⚠️ No custom roles defined yet";
+    option.disabled = true;
+    option.style.color = "#9ca3af";
+    option.style.fontStyle = "italic";
+    select.add(option);
+    
+    console.log("[ProjectRoles] ℹ️ No custom roles yet - create them in Roles Modal first");
+    return;
+  }
+  
+  // ✅ Add REAL roles that user created
+  cachedRoles.forEach(role => {
+    const roleName = role.name || role.role_name || role.title || 'Unnamed Role';
+    const roleId = role.id || role.role_id || role.code || '';
+    
+    const option = document.createElement('option');
+    option.value = roleName;  // Store role name as value
+    option.textContent = `📋 ${roleName}`;
+    option.dataset.roleId = roleId;
+    option.style.color = "#0369a1";
+    select.add(option);
+  });
+  
+  console.log(`[ProjectRoles] ✓ Loaded ${cachedRoles.length} custom roles from Roles Modal`);
+}
+
+function debugBindAllProjectModals() {
+  console.log('[DEBUG] Binding all project modals...');
+  
+  try {
+    // Bind team modal
+    if (typeof bindProjectTeamModalOnce === 'function') {
+      bindProjectTeamModalOnce();
+      console.log('[DEBUG] ✓ Team modal bound');
+    } else {
+      console.error('[DEBUG] ✗ bindProjectTeamModalOnce NOT found');
+    }
+    
+    // Bind dependency modal
+    if (typeof bindProjectDependencyModalOnce === 'function') {
+      bindProjectDependencyModalOnce();
+      console.log('[DEBUG] ✓ Dependency modal bound');
+    } else {
+      console.error('[DEBUG] ✗ bindProjectDependencyModalOnce NOT found');
+    }
+    
+    // Bind roles modal
+    if (typeof bindProjectRolesModalOnce === 'function') {
+      bindProjectRolesModalOnce();
+      console.log('[DEBUG] ✓ Roles modal bound');
+    }
+    
+    // Check if modal elements exist
+    const teamModal = document.getElementById('projectTeamModal');
+    const depModal = document.getElementById('projectDependencyModal');
+    const rolesModal = document.getElementById('projectRolesModal');
+    
+    console.log('[DEBUG] Modal elements:', {
+      teamModal: !!teamModal,
+      dependencyModal: !!depModal,
+      rolesModal: !!rolesModal
+    });
+    
+    // Check if trigger buttons exist
+    const teamBtn = document.querySelector('[data-project-team-new]');
+    const depBtn = document.querySelector('[data-project-dependency-new]');
+    
+    console.log('[DEBUG] Trigger buttons:', {
+      teamButton: !!teamBtn,
+      dependencyButton: !!depBtn
+    });
+    
+    return { success: true };
+    
+  } catch (err) {
+    console.error('[DEBUG] Error binding modals:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// Auto-run when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(debugBindAllProjectModals, 500);
+});
+
+function bindProjectRolesModalOnce() {
+  const modal = document.getElementById("projectRolesModal");
+  if (!modal || modal.dataset.bound === "1") return;
+  
+  modal.dataset.bound = "1";
+
+  // Close buttons
+  document.getElementById("projectRolesOverlay")?.addEventListener("click", closeProjectRolesModal);
+  document.getElementById("projectRolesCloseBtn")?.addEventListener("click", closeProjectRolesModal);
+
+  // Save button
+  document.getElementById("projectRoleSaveBtn")?.addEventListener("click", saveProjectRole);
+
+  // Manage Roles button in Team Member modal - opens this modal
+  document.getElementById("manageProjectRolesBtn")?.addEventListener("click", () => {
+    const projectId = document.getElementById("projectTeamProjectId")?.value;
+    if (projectId) openProjectRolesModal(projectId);
+  });
+
+  console.log("[Roles] Modal event listeners bound");
+}
+
+function fillProjectManagerSelect(
+  selectedEmployeeId = ""
+) {
+  const el =
+    document.getElementById(
+      "projectManagerUserId"
+    );
+
+  if (!el) return;
+
+  const employees =
+    (projectLookupState.employees || [])
+      .filter(employee => {
+        const status = String(
+          employee.employment_status ||
+          "active"
+        ).toLowerCase();
+
+        return (
+          status !== "inactive" &&
+          Number(employee.id || 0) > 0
+        );
+      })
+      .sort((a, b) => {
+        const aName = [
+          a.first_name,
+          a.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        const bName = [
+          b.first_name,
+          b.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        return aName.localeCompare(bName);
+      });
+
+  el.innerHTML = `
+    <option value="">
+      Select project manager…
+    </option>
+
+    ${employees.map(employee => {
+      const name = [
+        employee.first_name,
+        employee.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return `
+        <option
+          value="${esc(String(employee.id))}"
+          ${
+            String(employee.id) ===
+            String(selectedEmployeeId)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(name)}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
+function fillProjectSponsorSelect(
+  selectedEmployeeId = ""
+) {
+  const el =
+    document.getElementById(
+      "projectSponsorUserId"
+    );
+
+  if (!el) return;
+
+  const employees =
+    (projectLookupState.employees || [])
+      .filter(employee => {
+        const status = String(
+          employee.employment_status ||
+          "active"
+        ).toLowerCase();
+
+        return (
+          status !== "inactive" &&
+          Number(employee.id || 0) > 0
+        );
+      })
+      .sort((a, b) => {
+        const aName = [
+          a.first_name,
+          a.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        const bName = [
+          b.first_name,
+          b.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        return aName.localeCompare(bName);
+      });
+
+  el.innerHTML = `
+    <option value="">
+      Select sponsor / owner…
+    </option>
+
+    ${employees.map(employee => {
+      const name = [
+        employee.first_name,
+        employee.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return `
+        <option
+          value="${esc(String(employee.id))}"
+          ${
+            String(employee.id) ===
+            String(selectedEmployeeId)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(name)}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
+async function loadProjectLookupDropdowns(
+  project = null
+) {
+  await loadProjectPeopleAndDepartments();
+
+  fillProjectManagerSelect(
+    project?.project_manager_user_id || ""
+  );
+
+  fillProjectSponsorSelect(
+    project?.sponsor_user_id ||
+    project?.owner_user_id ||
+    ""
+  );
+
+  fillProjectDepartmentSelect(
+    project?.department_id || ""
+  );
+}
+
 async function loadProjectInventoryItems() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
 
@@ -123565,7 +127858,7 @@ async function getProjectInventoryItems() {
   }
 }
 
-async function populateProjectTaskSelect(selectId, projectId, blank = "None") {
+async function populateProjectTaskSelect(selectId, projectId, blank = "None", nameOnly = false) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
 
@@ -123573,13 +127866,36 @@ async function populateProjectTaskSelect(selectId, projectId, blank = "None") {
 
   sel.innerHTML = `
     <option value="">${blank}</option>
-    ${tasks.map(t => `
+    ${tasks.map(t => {
+      const label = nameOnly
+        ? (t.task_name || t.name || t.task_code || `Task #${t.id}`)
+        : `${t.task_code || ""} — ${t.task_name || ""}`;
+      return `
       <option value="${esc(String(t.id))}">
-        ${esc(t.task_code || "")} — ${esc(t.task_name || "")}
-      </option>
-    `).join("")}
+        ${esc(label)}
+      </option>`;
+    }).join("")}
   `;
 }
+
+function showProjectDashboard() {
+  const dashboard = document.getElementById("projectDashboardView");
+  const detail = document.getElementById("projectDetailView");
+
+  dashboard?.classList.remove("hidden");
+  detail?.classList.add("hidden");
+}
+
+function showProjectDetailView() {
+  const dashboard = document.getElementById("projectDashboardView");
+  const detail = document.getElementById("projectDetailView");
+
+  dashboard?.classList.add("hidden");
+  detail?.classList.remove("hidden");
+}
+
+window.showProjectDashboard = showProjectDashboard;
+window.showProjectDetailView = showProjectDetailView;
 
 async function populateProjectCostCodeSelect(selectId, blank = "None") {
   const sel = document.getElementById(selectId);
@@ -123595,6 +127911,416 @@ async function populateProjectCostCodeSelect(selectId, blank = "None") {
       </option>
     `).join("")}
   `;
+}
+
+// Store employees globally for search
+window._projectTeamEmployeesCache = [];
+
+// 1. Helper: Match typed name to an employee in projectLookupState.employees
+// Helper to extract a clean full name from any employee object format
+function getEmpFullName(emp) {
+  if (!emp) return "";
+  if (emp.name) return emp.name.trim();
+  if (emp.full_name) return emp.full_name.trim();
+  if (emp.employee_name) return emp.employee_name.trim();
+  return `${emp.first_name || ""} ${emp.last_name || ""}`.trim();
+}
+
+// 1. Resolver helper for exact/fallback matching
+function resolveEmployeeFromSearch(query, exactOnly = false) {
+  if (!query || !Array.isArray(projectLookupState?.employees)) return null;
+  const q = query.trim().toLowerCase();
+  if (!q) return null;
+
+  const employees = projectLookupState.employees;
+
+  // Exact Match
+  const exactMatch = employees.find((emp) => {
+    const fullName = getEmpFullName(emp).toLowerCase();
+    const empNo = (emp.employee_no || emp.code || "").toLowerCase();
+    const email = (emp.email || "").toLowerCase();
+    return fullName === q || empNo === q || email === q;
+  });
+
+  if (exactMatch || exactOnly) return exactMatch || null;
+
+  // Fuzzy / Starts-with match
+  return employees.find((emp) => {
+    const fullName = getEmpFullName(emp).toLowerCase();
+    return fullName.startsWith(q) || fullName.includes(q);
+  }) || null;
+}
+
+// 2. Helper: Filter and render the dropdown list
+function fillProjectTeamMemberSelect(selectedId = "") {
+  // Get all three elements of the searchable combobox
+  const searchInput = document.getElementById("projectTeamUserSearch");
+  const hiddenInput = document.getElementById("projectTeamUserId");
+  const dropdownList = document.getElementById("projectTeamUserList");
+  
+  if (!searchInput || !hiddenInput || !dropdownList) {
+    console.error("[TeamMember] Missing elements:", !!searchInput, !!hiddenInput, !!dropdownList);
+    return;
+  }
+
+  let allEmployees = [];
+  let debounceTimer = null;
+
+  // --- RENDER FILTERED DROPDOWN ---
+  const renderDropdown = (filterText = "") => {
+    const query = filterText.toLowerCase().trim();
+    
+    // FILTER: Only show matching employees
+    const filtered = allEmployees.filter(emp => {
+      const searchText = [emp.first_name, emp.last_name].filter(Boolean).join(" ").toLowerCase();
+      return !query || searchText.includes(query);
+    });
+
+    // Clear and render
+    if (filtered.length === 0) {
+      dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">No matches found</li>';
+    } else {
+      dropdownList.innerHTML = filtered.map(emp => {
+        // Show ONLY name, no codes/emails
+        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || ('Employee #' + emp.id);
+        const isSelected = String(emp.id) === String(selectedId);
+        return '<li class="px-2 py-1.5 cursor-pointer hover:bg-blue-50' + (isSelected ? ' bg-blue-100 font-semibold' : '') + '" data-id="' + esc(String(emp.id)) + '" data-name="' + esc(name) + '">' + esc(name) + '</li>';
+      }).join("");
+
+      // Click handler - sets BOTH fields
+      const items = dropdownList.querySelectorAll("li[data-id]");
+      items.forEach(item => {
+        item.onclick = () => {
+          searchInput.value = item.dataset.name;
+          hiddenInput.value = item.dataset.id;
+          dropdownList.classList.add("hidden");
+          console.log("[TeamMember] Selected:", item.dataset.name, "ID:", item.dataset.id);
+        };
+      });
+    }
+  };
+
+  // --- LOAD EMPLOYEES FROM PAYROLL API ---
+  const loadEmployees = () => {
+    // Check cache first
+    const cached = projectLookupState?.employees;
+    if (Array.isArray(cached) && cached.length) {
+      allEmployees = cached;
+      renderDropdown(searchInput.value);
+      return;
+    }
+
+    // Show loading
+    dropdownList.classList.remove("hidden");
+    dropdownList.innerHTML = '<li class="px-2 py-1.5 text-slate-400">Loading...</li>';
+
+    // Get endpoint
+    const cid = window.COMPANY_ID || window.currentCompanyId || "";
+    const endpoint = (typeof ENDPOINTS !== 'undefined' && ENDPOINTS.payroll?.employees)
+      ? ENDPOINTS.payroll.employees(cid)
+      : `/api/payroll/employees?company_id=${encodeURIComponent(cid)}`;
+
+    apiFetch(endpoint)
+      .then(res => {
+        const employees = res?.data || res?.employees || res?.items || res || [];
+        allEmployees = Array.isArray(employees) ? employees : [];
+        
+        // Cache it
+        window._projectTeamEmployeesCache = allEmployees;
+        if (projectLookupState) projectLookupState.employees = allEmployees;
+        
+        renderDropdown(searchInput.value);
+      })
+      .catch(err => {
+        console.warn("[TeamMember] Load error:", err);
+        dropdownList.innerHTML = '<li class="px-2 py-1.5 text-red-500">Failed to load</li>';
+      });
+  };
+
+  // --- EVENT LISTENERS ---
+  
+  // Focus: show dropdown
+  searchInput.addEventListener("focus", () => {
+    if (!allEmployees.length) loadEmployees();
+    else { dropdownList.classList.remove("hidden"); renderDropdown(searchInput.value); }
+  });
+
+  // Input: LIVE FILTER with debounce
+  searchInput.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      renderDropdown(searchInput.value);  // THIS IS THE FILTERING!
+      dropdownList.classList.remove("hidden");
+    }, 150);
+  });
+
+  // Click outside: close
+  document.addEventListener("click", (e) => {
+    if (!searchInput.contains(e.target) && !dropdownList.contains(e.target)) {
+      dropdownList.classList.add("hidden");
+    }
+  });
+
+  // Keyboard
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { dropdownList.classList.add("hidden"); searchInput.blur(); }
+    else if (e.key === "Enter") { e.preventDefault(); dropdownList.querySelector("li[data-id]")?.click(); }
+  });
+
+  // Pre-select if editing existing member
+  if (selectedId) {
+    const tryPreselect = () => {
+      const found = allEmployees.find(e => String(e.id) === String(selectedId));
+      if (found) {
+        searchInput.value = [found.first_name, found.last_name].filter(Boolean).join(" ");
+        hiddenInput.value = selectedId;
+      }
+    };
+    if (allEmployees.length > 0) tryPreselect();
+    else { let c=0; const iv=setInterval(()=>{c++;if(allEmployees.length>0){clearInterval(iv);tryPreselect();}else if(c>20)clearInterval(iv);},100); }
+  }
+
+  // Initial load
+  loadEmployees();
+}
+
+// 3. Event Binder (Run once on modal setup)
+let _teamModalBound = false;
+function bindProjectTeamModalOnce() {
+  const searchInput = document.getElementById("projectTeamUserSearch");
+  const hiddenIdInput = document.getElementById("projectTeamUserId");
+  const listEl = document.getElementById("projectTeamUserList");
+
+  if (!searchInput || searchInput.dataset.bound === "true") return;
+  searchInput.dataset.bound = "true";
+
+  // ════════════════════════════════════════
+  // 🔍 SEARCH & DROPDOWN FUNCTIONALITY
+  // ════════════════════════════════════════
+
+  // Filter on every keystroke
+  searchInput.addEventListener("input", (e) => {
+    const val = e.target.value;
+    fillProjectTeamMemberSelect(val);
+
+    const match = resolveEmployeeFromSearch(val, true);
+    hiddenIdInput.value = match ? String(match.id || match.user_id) : "";
+  });
+
+  // Open dropdown on focus
+  searchInput.addEventListener("focus", () => {
+    fillProjectTeamMemberSelect(searchInput.value);
+  });
+
+  // On blur, auto-resolve if typed manually
+  searchInput.addEventListener("blur", () => {
+    setTimeout(() => {
+      if (listEl) listEl.classList.add("hidden");
+
+      if (!hiddenIdInput.value && searchInput.value.trim()) {
+        const match = resolveEmployeeFromSearch(searchInput.value);
+        if (match) {
+          hiddenIdInput.value = String(match.id || match.user_id);
+          searchInput.value = getEmpFullName(match);
+        }
+      }
+    }, 200);
+  });
+
+  // Handle Enter key
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const match = resolveEmployeeFromSearch(searchInput.value);
+      if (match) {
+        hiddenIdInput.value = String(match.id || match.user_id);
+        searchInput.value = getEmpFullName(match);
+        listEl?.classList.add("hidden");
+      }
+    }
+  });
+
+  // Close dropdown if clicking outside
+  document.addEventListener("click", (e) => {
+    if (!searchInput.contains(e.target) && !listEl?.contains(e.target)) {
+      listEl?.classList.add("hidden");
+    }
+  });
+
+  // ════════════════════════════════════════
+  // 🔘 MODAL CONTROL BUTTONS (from overwritten function)
+  // ════════════════════════════════════════
+
+  // Close on overlay click
+  document.getElementById("projectTeamOverlay")
+    ?.addEventListener("click", closeProjectTeamModal);
+
+  // Close on X button
+  document.getElementById("projectTeamCloseBtn")
+    ?.addEventListener("click", closeProjectTeamModal);
+
+  // Cancel button
+  document.getElementById("projectTeamCancelBtn")
+    ?.addEventListener("click", closeProjectTeamModal);
+
+  // Save button
+  document.getElementById("projectTeamSaveBtn")
+    ?.addEventListener("click", submitProjectTeamMember);
+
+  // Manage Roles button - opens roles modal ON TOP of team member modal
+  document.getElementById("manageProjectRolesBtn")
+    ?.addEventListener("click", () => {
+      const projectId = Number(document.getElementById("projectTeamProjectId")?.value || 0);
+      if (projectId) openProjectRolesModal(projectId);
+    });
+
+  console.log("[TeamModal] ✓ Full binding complete (search + buttons + roles)");
+}
+
+function populateExpenseAccountSelect(selectedCode = "") {
+  const sel = document.getElementById("projectExpenseAccount");
+  if (!sel) return;
+
+  const rawRows =
+    window.COA ||
+    window.CURRENT_COA ||
+    window.COA_CACHE ||
+    window.COMPANY_COA ||
+    window.CHART_OF_ACCOUNTS ||
+    [];
+
+  const accounts = (Array.isArray(rawRows) ? rawRows : [])
+    .map(a => ({
+      ...a,
+      code: String(a.code || a.account_code || a.template_code || "").trim(),
+      name: String(a.name || a.account_name || a.description || "").trim(),
+      section: String(a.section || a.account_section || "").toLowerCase(),
+      category: String(a.category || a.account_category || "").toLowerCase(),
+      type: String(a.account_type || a.type || "").toLowerCase(),
+    }))
+    .filter(a => a.code && a.name);
+
+  const isExpense = a => {
+    const hay = [a.section, a.category, a.type, a.name.toLowerCase()].join(" ");
+    return /expense|cost|cost of sales|materials|labour|subcontract/.test(hay);
+  };
+
+  const expense = accounts.filter(isExpense).sort(
+    (a, b) => a.name.localeCompare(b.name) || a.code.localeCompare(b.code)
+  );
+
+  const list = expense.length ? expense : accounts;
+
+  sel.innerHTML = `
+    <option value="">Select expense account…</option>
+    ${list.map(a => {
+      const selected = String(a.code) === String(selectedCode) ? " selected" : "";
+      return `
+      <option value="${esc(a.code)}"${selected}>${esc(a.name)}</option>`;
+    }).join("")}
+  `;
+
+  // Preserve a previously saved code even if it no longer matches.
+  if (
+    selectedCode &&
+    !list.some(a => String(a.code) === String(selectedCode))
+  ) {
+    const saved = accounts.find(a => String(a.code) === String(selectedCode));
+    const savedName = saved?.name || selectedCode;
+    sel.insertAdjacentHTML(
+      "beforeend",
+      `<option value="${esc(selectedCode)}" selected>${esc(savedName)}</option>`
+    );
+  }
+}
+
+async function autoSetExpenseCostCodeFromTask(taskId) {
+  const sel = document.getElementById("projectExpenseCostCodeId");
+  if (!sel) return;
+
+  sel.disabled = true;
+  sel.innerHTML = `<option value="">Resolving cost code…</option>`;
+  sel.value = "";
+
+  if (!taskId) {
+    sel.innerHTML = `<option value="">No cost code</option>`;
+    sel.disabled = false;
+    return;
+  }
+
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) {
+    sel.innerHTML = `<option value="">No cost code</option>`;
+    sel.disabled = false;
+    return;
+  }
+
+  try {
+    const projectId = Number(
+      document.getElementById("projectExpenseProjectId")?.value || 0
+    );
+
+    // Look up the task so we can derive cost_code / cost_name if we need
+    // to auto-create a cost code.
+    let task = null;
+    if (projectId) {
+      try {
+        const tasks = await getProjectTasks(projectId);
+        task = tasks.find(t => String(t.id) === String(taskId));
+      } catch (_) {}
+    }
+
+    let codes = await getProjectCostCodes();
+
+    const matchByTaskId = c =>
+      String(c.task_id || "") === String(taskId);
+
+    const matchByCode = c =>
+      task?.task_code &&
+      String(c.cost_code || c.code || "") === String(task.task_code);
+
+    let match = codes.find(matchByTaskId) || codes.find(matchByCode);
+
+    if (!match && task) {
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.costCodesCreate(cid),
+          {
+            method: "POST",
+            body: JSON.stringify({
+              task_id: Number(taskId),
+              cost_code: task.task_code || `TASK-${taskId}`,
+              cost_name: task.task_name || `Task ${taskId}`,
+              description: `Auto-created from task #${taskId}`,
+            })
+          }
+        );
+        codes = await getProjectCostCodes();
+        match = codes.find(matchByTaskId) || codes.find(matchByCode);
+      } catch (err) {
+        console.warn("[Projects] auto-create cost code failed", err);
+      }
+    }
+
+    sel.innerHTML =
+      `<option value="">No cost code</option>` +
+      codes.map(c => {
+        const code = c.cost_code || c.code || "";
+        const name = c.cost_name || c.name || c.description || "";
+        const selected = match && String(c.id) === String(match.id) ? " selected" : "";
+        return `<option value="${esc(String(c.id))}"${selected}>${esc(code)} — ${esc(name)}</option>`;
+      }).join("");
+
+    if (match) {
+      sel.value = String(match.id);
+    }
+
+    sel.disabled = false;
+  } catch (err) {
+    console.warn("[Projects] auto-set cost code failed", err);
+    sel.innerHTML = `<option value="">No cost code</option>`;
+    sel.disabled = false;
+  }
 }
 
 async function buildInventoryItemOptions(selectedId = "") {
@@ -123626,6 +128352,248 @@ async function populateProjectCustomerDropdown() {
   `;
 }
 
+function projectPostingAccounts(kind = "all") {
+  const rows =
+    window.COA_CACHE ||
+    window.COMPANY_COA ||
+    window.CHART_OF_ACCOUNTS ||
+    [];
+
+  const accounts = (Array.isArray(rows) ? rows : [])
+    .map(account => {
+      const code = String(
+        account.code ||
+        account.account_code ||
+        account.template_code ||
+        ""
+      ).trim();
+
+      const name = String(
+        account.name ||
+        account.account_name ||
+        account.description ||
+        ""
+      ).trim();
+
+      const posting =
+        account.posting === undefined ||
+        account.posting === null
+          ? true
+          : !["false", "0", "no"].includes(
+              String(account.posting).toLowerCase()
+            );
+
+      const active =
+        account.is_active === undefined ||
+        account.is_active === null
+          ? true
+          : !["false", "0", "no"].includes(
+              String(account.is_active).toLowerCase()
+            );
+
+      return {
+        ...account,
+        code,
+        name,
+        posting,
+        active,
+      };
+    })
+    .filter(account =>
+      account.code &&
+      account.name &&
+      account.posting &&
+      account.active
+    );
+
+  const filtered = accounts.filter(account => {
+    const section = String(
+      account.section ||
+      account.account_section ||
+      ""
+    ).toLowerCase();
+
+    const category = String(
+      account.category ||
+      account.account_category ||
+      ""
+    ).toLowerCase();
+
+    const type = String(
+      account.account_type ||
+      account.type ||
+      ""
+    ).toLowerCase();
+
+    const role = String(
+      account.role || ""
+    ).toLowerCase();
+
+    const name = String(
+      account.name || ""
+    ).toLowerCase();
+
+    const text = [
+      section,
+      category,
+      type,
+      role,
+      name,
+    ].join(" ");
+
+    if (kind === "all") {
+      return true;
+    }
+
+    if (kind === "asset") {
+      return (
+        section.includes("asset") ||
+        category.includes("asset") ||
+        type.includes("asset") ||
+        /asset|work in progress|\bwip\b|construction in progress|\bcip\b|inventory/.test(text)
+      );
+    }
+
+    if (kind === "revenue") {
+      return (
+        section.includes("revenue") ||
+        category.includes("revenue") ||
+        type.includes("revenue") ||
+        /revenue|income|sales|contract revenue/.test(text)
+      );
+    }
+
+    if (kind === "expense") {
+      return (
+        section.includes("expense") ||
+        category.includes("expense") ||
+        type.includes("expense") ||
+        /expense|cost|cost of sales|materials|labour|subcontract/.test(text)
+      );
+    }
+
+    return true;
+  });
+
+  return (filtered.length ? filtered : accounts)
+    .sort((a, b) => {
+      const nameCompare = a.name.localeCompare(b.name);
+
+      if (nameCompare !== 0) {
+        return nameCompare;
+      }
+
+      return a.code.localeCompare(b.code);
+    });
+}
+
+function fillProjectAccountSelect(
+  selectId,
+  kind = "all",
+  selectedCode = ""
+) {
+  const el = document.getElementById(selectId);
+  if (!el) return;
+
+  const accounts = projectPostingAccounts(kind);
+
+  const placeholderMap = {
+    asset: "Select WIP / CIP account…",
+    revenue: "Select revenue account…",
+    expense: "Select cost / expense account…",
+    all: "Select account…",
+  };
+
+  el.innerHTML = `
+    <option value="">
+      ${esc(
+        placeholderMap[kind] ||
+        placeholderMap.all
+      )}
+    </option>
+
+    ${accounts.map(account => `
+      <option
+        value="${esc(account.code)}"
+        ${
+          String(account.code) === String(selectedCode)
+            ? "selected"
+            : ""
+        }
+      >
+        ${esc(account.name)}
+      </option>
+    `).join("")}
+  `;
+
+  // Preserve a saved account even if it no longer matches
+  // the current filter or has been made inactive.
+  if (
+    selectedCode &&
+    !accounts.some(
+      account =>
+        String(account.code) === String(selectedCode)
+    )
+  ) {
+    const allRows =
+      window.COA_CACHE ||
+      window.COMPANY_COA ||
+      window.CHART_OF_ACCOUNTS ||
+      [];
+
+    const savedAccount = (
+      Array.isArray(allRows) ? allRows : []
+    ).find(account => {
+      const code = String(
+        account.code ||
+        account.account_code ||
+        account.template_code ||
+        ""
+      ).trim();
+
+      return code === String(selectedCode);
+    });
+
+    const savedName =
+      savedAccount?.name ||
+      savedAccount?.account_name ||
+      savedAccount?.description ||
+      selectedCode;
+
+    el.insertAdjacentHTML(
+      "beforeend",
+      `
+        <option
+          value="${esc(String(selectedCode))}"
+          selected
+        >
+          ${esc(String(savedName))}
+        </option>
+      `
+    );
+  }
+}
+
+function loadProjectAccountDropdowns(project = null) {
+  fillProjectAccountSelect(
+    "projectWipAccountCode",
+    "asset",
+    project?.wip_account_code || ""
+  );
+
+  fillProjectAccountSelect(
+    "projectRevenueAccountCode",
+    "revenue",
+    project?.revenue_account_code || ""
+  );
+
+  fillProjectAccountSelect(
+    "projectCostAccountCode",
+    "expense",
+    project?.cost_account_code || ""
+  );
+}
+
 function applyProjectTypeBehaviour() {
   const type = document.getElementById("projectType")?.value || "customer_project";
   const mode = document.getElementById("projectAccountingMode");
@@ -123647,9 +128615,315 @@ function applyProjectTypeBehaviour() {
 }
 window.applyProjectTypeBehaviour = applyProjectTypeBehaviour;
 
+function renderProjectDashboard(items = []) {
+  const rows = Array.isArray(items) ? items : [];
+
+  const total = rows.length;
+
+  const active = rows.filter(p =>
+    ["active", "approved"].includes(
+      String(p.status || "").toLowerCase()
+    )
+  ).length;
+
+  const contract = rows.reduce(
+    (sum, p) =>
+      sum + Number(p.contract_value || 0),
+    0
+  );
+
+  const budget = rows.reduce(
+    (sum, p) =>
+      sum + Number(
+        p.budget_lines_total ||
+        p.budget_value ||
+        0
+      ),
+    0
+  );
+
+  const tasks = rows.reduce(
+    (sum, p) =>
+      sum + Number(p.task_count || 0),
+    0
+  );
+
+  const avgProgress = total
+    ? rows.reduce(
+        (sum, p) =>
+          sum + Number(p.progress_percent || 0),
+        0
+      ) / total
+    : 0;
+
+  const set = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+
+  set("projectKpiTotal", String(total));
+  set("projectKpiActive", String(active));
+  set("projectKpiContract", fmtMoney(contract));
+  set("projectKpiBudget", fmtMoney(budget));
+  set("projectKpiTasks", String(tasks));
+  set(
+    "projectKpiProgress",
+    `${avgProgress.toFixed(0)}%`
+  );
+
+  set(
+    "projectPortfolioCount",
+    `${total} project${total === 1 ? "" : "s"}`
+  );
+
+  renderProjectStatusSummary(rows);
+  renderProjectProgressSummary(rows);
+  renderProjectValueSummary(
+    contract,
+    budget
+  );
+}
+
+window.renderProjectDashboard =
+  renderProjectDashboard;
+
+function renderProjectStatusSummary(items = []) {
+  const mount =
+    document.getElementById(
+      "projectStatusSummary"
+    );
+
+  if (!mount) return;
+
+  const statuses = [
+    ["active", "Active"],
+    ["approved", "Approved"],
+    ["draft", "Draft"],
+    ["on_hold", "On Hold"],
+    ["completed", "Completed"],
+    ["closed", "Closed"],
+  ];
+
+  const counts = {};
+
+  items.forEach(p => {
+    const key = String(
+      p.status || "unknown"
+    ).toLowerCase();
+
+    counts[key] =
+      Number(counts[key] || 0) + 1;
+  });
+
+  mount.innerHTML = statuses
+    .map(([key, label]) => {
+      const count =
+        Number(counts[key] || 0);
+
+      return `
+        <div
+          class="flex items-center justify-between border-b last:border-b-0 pb-2 last:pb-0">
+
+          <div class="text-slate-600">
+            ${label}
+          </div>
+
+          <div class="font-semibold">
+            ${count}
+          </div>
+
+        </div>
+      `;
+    })
+    .join("");
+}
+
+
+function renderProjectProgressSummary(items = []) {
+  const mount =
+    document.getElementById(
+      "projectProgressSummary"
+    );
+
+  if (!mount) return;
+
+  const total = items.length;
+
+  const avg = total
+    ? items.reduce(
+        (sum, p) =>
+          sum + Number(
+            p.progress_percent || 0
+          ),
+        0
+      ) / total
+    : 0;
+
+  const notStarted = items.filter(
+    p =>
+      Number(
+        p.progress_percent || 0
+      ) <= 0
+  ).length;
+
+  const inProgress = items.filter(p => {
+    const v = Number(
+      p.progress_percent || 0
+    );
+
+    return v > 0 && v < 100;
+  }).length;
+
+  const complete = items.filter(
+    p =>
+      Number(
+        p.progress_percent || 0
+      ) >= 100
+  ).length;
+
+  mount.innerHTML = `
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-slate-500">
+          Average progress
+        </span>
+
+        <span class="font-semibold">
+          ${avg.toFixed(0)}%
+        </span>
+      </div>
+
+      <div
+        class="w-full h-2 bg-slate-100 rounded overflow-hidden">
+
+        <div
+          class="h-full bg-[var(--fs-navy)]"
+          style="width:${Math.max(
+            0,
+            Math.min(100, avg)
+          )}%">
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-2">
+      <div class="border rounded p-2 text-center">
+        <div class="text-slate-500">
+          Not Started
+        </div>
+
+        <div class="font-semibold mt-1">
+          ${notStarted}
+        </div>
+      </div>
+
+      <div class="border rounded p-2 text-center">
+        <div class="text-slate-500">
+          In Progress
+        </div>
+
+        <div class="font-semibold mt-1">
+          ${inProgress}
+        </div>
+      </div>
+
+      <div class="border rounded p-2 text-center">
+        <div class="text-slate-500">
+          Complete
+        </div>
+
+        <div class="font-semibold mt-1">
+          ${complete}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+
+function renderProjectValueSummary(
+  contract = 0,
+  budget = 0
+) {
+  const mount =
+    document.getElementById(
+      "projectValueSummary"
+    );
+
+  if (!mount) return;
+
+  const variance =
+    Number(contract || 0) -
+    Number(budget || 0);
+
+  const budgetPct =
+    contract > 0
+      ? (budget / contract) * 100
+      : 0;
+
+  mount.innerHTML = `
+    <div>
+      <div class="text-slate-500">
+        Contract Value
+      </div>
+
+      <div class="font-semibold mt-1">
+        ${fmtMoney(contract)}
+      </div>
+    </div>
+
+    <div>
+      <div class="text-slate-500">
+        Budget
+      </div>
+
+      <div class="font-semibold mt-1">
+        ${fmtMoney(budget)}
+      </div>
+    </div>
+
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-slate-500">
+          Budget / Contract
+        </span>
+
+        <span class="font-semibold">
+          ${budgetPct.toFixed(1)}%
+        </span>
+      </div>
+
+      <div
+        class="w-full h-2 bg-slate-100 rounded overflow-hidden">
+
+        <div
+          class="h-full bg-[var(--fs-navy)]"
+          style="width:${Math.max(
+            0,
+            Math.min(100, budgetPct)
+          )}%">
+        </div>
+      </div>
+    </div>
+
+    <div class="border-t pt-2">
+      <div class="flex items-center justify-between">
+        <span class="text-slate-500">
+          Contract less Budget
+        </span>
+
+        <span class="font-semibold">
+          ${fmtMoney(variance)}
+        </span>
+      </div>
+    </div>
+  `;
+}
 async function bindProjectsScreen(name = "projects") {
+  showProjectLanding();
   applyProjectNamingLabels?.();
   bindProjectOperationalModalsOnce?.();
+  bindProjectRolesModalOnce?.();
   const btnNew = document.getElementById("projectNewBtn");
   const btnRefresh = document.getElementById("projectRefreshBtn");
   const q = document.getElementById("projectSearch");
@@ -123699,108 +128973,705 @@ async function loadProjects({ limit = 50, offset = 0 } = {}) {
   const q = (document.getElementById("projectSearch")?.value || "").trim();
   const status = (document.getElementById("projectStatus")?.value || "").trim();
   const projectType = document.getElementById("projectTypeFilter")?.value || "";
-  const accountingMode = document.getElementById("projectAccountingModeFilter")?.value || "";
+  const accountingMode =
+    document.getElementById("projectAccountingModeFilter")?.value || "";
+
   const params = new URLSearchParams();
+
   if (q) params.set("q", q);
   if (status) params.set("status", status);
   if (projectType) params.set("project_type", projectType);
   if (accountingMode) params.set("accounting_mode", accountingMode);
+
   params.set("limit", String(limit));
   params.set("offset", String(offset));
 
   const mount = document.getElementById("projectsTable");
+
   if (mount) {
-    mount.innerHTML = `<div class="text-xs text-slate-500">Loading projects…</div>`;
+    mount.innerHTML =
+      `<div class="text-xs text-slate-500">Loading projects…</div>`;
   }
 
   try {
-    const data = await apiFetch(ENDPOINTS.projects.list(cid, params.toString()));
-    renderProjectsTable(data?.items || []);
+    const data = await apiFetch(
+      ENDPOINTS.projects.list(cid, params.toString())
+    );
+
+    const items = data?.items || [];
+
+    renderProjectDashboard(items);
+    renderProjectsTable(items);
+
   } catch (err) {
-    if (mount) mount.innerHTML = renderApiError(err);
+    if (mount) {
+      mount.innerHTML = renderApiError(err);
+    }
   }
 }
 
 window.loadProjects = loadProjects;
 
-function renderProjectsTable(items) {
-  const mount = document.getElementById("projectsTable");
+function renderProjectsTable(items = []) {
+  const mount =
+    document.getElementById(
+      "projectsTable"
+    );
+
   if (!mount) return;
 
   if (!items.length) {
-    mount.innerHTML = `<div class="text-xs text-slate-500">No projects found.</div>`;
+    mount.innerHTML = `
+      <div class="border rounded-lg p-6 text-center text-xs text-slate-500">
+        No projects found.
+      </div>
+    `;
     return;
   }
 
-  const row = p => `
-    <tr class="border-b hover:bg-slate-50 cursor-pointer" data-project-id="${esc(String(p.id))}">
-      <td class="px-2 py-2">${esc(p.project_code || "")}</td>
-      <td class="px-2 py-2">
-        <div class="font-medium">${esc(p.project_name || "")}</div>
-        <div class="text-[10px] text-slate-400">${esc((p.project_type || "").replaceAll("_", " "))}</div>
-      </td>
-      <td class="px-2 py-2">${esc(p.customer_name || "Internal")}</td>
-      <td class="px-2 py-2">${esc((p.accounting_mode || "contract").replaceAll("_", " "))}</td>
-      <td class="px-2 py-2">${esc(p.status || "")}</td>
-      <td class="px-2 py-2 text-right">${Number(p.progress_percent || 0).toFixed(0)}%</td>
-      <td class="px-2 py-2 text-right">${fmtMoney(p.contract_value || 0)}</td>
-      <td class="px-2 py-2 text-right">${fmtMoney(p.budget_lines_total || 0)}</td>
-      <td class="px-2 py-2 text-right">${esc(String(p.task_count || 0))}</td>
-    </tr>
-  `;
+  const statusLabel = value =>
+    String(value || "")
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, c =>
+        c.toUpperCase()
+      );
+
+  const rows = items.map(p => {
+    const progress = Number(
+      p.progress_percent || 0
+    );
+
+    return `
+      <tr
+        class="border-b last:border-b-0 hover:bg-slate-50 cursor-pointer"
+        data-project-id="${esc(String(p.id))}">
+
+        <td class="px-3 py-3">
+          <div class="font-semibold">
+            ${esc(p.project_code || "")}
+          </div>
+        </td>
+
+        <td class="px-3 py-3">
+          <div class="font-medium text-slate-800">
+            ${esc(p.project_name || "")}
+          </div>
+
+          <div class="text-[10px] text-slate-400 mt-0.5">
+            ${esc(
+              String(
+                p.project_type || ""
+              ).replaceAll("_", " ")
+            )}
+          </div>
+        </td>
+
+        <td class="px-3 py-3">
+          ${esc(
+            p.customer_name ||
+            "Internal"
+          )}
+        </td>
+
+        <td class="px-3 py-3 capitalize">
+          ${esc(
+            String(
+              p.accounting_mode ||
+              "contract"
+            ).replaceAll("_", " ")
+          )}
+        </td>
+
+        <td class="px-3 py-3">
+          <span
+            class="inline-flex px-2 py-1 rounded border text-[10px]">
+            ${esc(
+              statusLabel(p.status)
+            )}
+          </span>
+        </td>
+
+        <td class="px-3 py-3 min-w-[140px]">
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <span>
+              ${progress.toFixed(0)}%
+            </span>
+          </div>
+
+          <div
+            class="w-full h-1.5 bg-slate-100 rounded overflow-hidden">
+
+            <div
+              class="h-full bg-[var(--fs-navy)]"
+              style="width:${Math.max(
+                0,
+                Math.min(
+                  100,
+                  progress
+                )
+              )}%">
+            </div>
+          </div>
+        </td>
+
+        <td class="px-3 py-3 text-right whitespace-nowrap">
+          ${fmtMoney(
+            p.contract_value || 0
+          )}
+        </td>
+
+        <td class="px-3 py-3 text-right whitespace-nowrap">
+          ${fmtMoney(
+            p.budget_lines_total ||
+            p.budget_value ||
+            0
+          )}
+        </td>
+
+        <td class="px-3 py-3 text-right">
+          ${esc(
+            String(
+              p.task_count || 0
+            )
+          )}
+        </td>
+
+        <td class="px-3 py-3 text-right">
+          <span class="text-[11px] font-medium">
+            Open →
+          </span>
+        </td>
+
+      </tr>
+    `;
+  }).join("");
 
   mount.innerHTML = `
-    <div class="overflow-auto border rounded">
+    <div class="border rounded-lg overflow-auto bg-white">
+
       <table class="w-full text-xs">
+
         <thead class="bg-slate-50 border-b">
           <tr class="text-slate-600">
-            <th class="text-left px-2 py-2">Code</th>
-            <th class="text-left px-2 py-2">Project</th>
-            <th class="text-left px-2 py-2">Customer / Owner</th>
-            <th class="text-left px-2 py-2">Accounting</th>
-            <th class="text-left px-2 py-2">Status</th>
-            <th class="text-right px-2 py-2">Progress</th>
-            <th class="text-right px-2 py-2">Contract</th>
-            <th class="text-right px-2 py-2">Budget</th>
-            <th class="text-right px-2 py-2">Tasks</th>
+
+            <th class="text-left px-3 py-2">
+              Code
+            </th>
+
+            <th class="text-left px-3 py-2">
+              Project
+            </th>
+
+            <th class="text-left px-3 py-2">
+              Customer / Owner
+            </th>
+
+            <th class="text-left px-3 py-2">
+              Accounting
+            </th>
+
+            <th class="text-left px-3 py-2">
+              Status
+            </th>
+
+            <th class="text-left px-3 py-2">
+              Progress
+            </th>
+
+            <th class="text-right px-3 py-2">
+              Contract
+            </th>
+
+            <th class="text-right px-3 py-2">
+              Budget
+            </th>
+
+            <th class="text-right px-3 py-2">
+              Tasks
+            </th>
+
+            <th class="text-right px-3 py-2">
+            </th>
+
           </tr>
         </thead>
-        <tbody>${items.map(row).join("")}</tbody>
+
+        <tbody>
+          ${rows}
+        </tbody>
+
       </table>
+
     </div>
   `;
 
-  mount.querySelectorAll("[data-project-id]").forEach(tr => {
-    tr.addEventListener("click", () => loadProjectDetail(Number(tr.dataset.projectId)));
-  });
+  mount
+    .querySelectorAll(
+      "[data-project-id]"
+    )
+    .forEach(row => {
+      row.addEventListener(
+        "click",
+        () => {
+          loadProjectDetail(
+            Number(
+              row.dataset.projectId
+            )
+          );
+        }
+      );
+    });
 }
-window.renderProjectsTable = renderProjectsTable;
+
+window.renderProjectsTable =
+  renderProjectsTable;
 
 async function loadProjectDetail(projectId) {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid || !projectId) return;
 
   const mount = document.getElementById("projectDetailMount");
+  showProjectDetailView();
+  showProjectDetail();
+
   if (mount) {
-    mount.innerHTML = `<div class="mt-3 text-xs text-slate-500">Loading project...</div>`;
+    mount.innerHTML = '<div class="mt-3 text-xs text-slate-500">Loading project...</div>';
   }
 
   try {
+    // ✅ PRELOAD EMPLOYEES so names are available for table
+    if (!Array.isArray(projectLookupState?.employees) || !projectLookupState.employees.length) {
+      try { 
+        await loadProjectPeopleAndDepartments(); 
+      } catch (e) {
+        console.warn("[Projects] Failed to preload employees", e);
+      }
+    }
+
     const p = await apiFetch(ENDPOINTS.projects.one(cid, projectId));
     renderProjectDetail(p);
+
   } catch (err) {
-    if (mount) mount.innerHTML = renderApiError(err);
+    if (mount) {
+      mount.innerHTML = renderApiError(err);
+    }
   }
 }
-
 window.loadProjectDetail = loadProjectDetail;
+
+function renderProjectActivityMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No activity recorded yet.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="space-y-2">
+      ${items.slice(0, 20).map(x => `
+        <div class="border-b pb-2">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <span class="font-medium">
+                ${esc(x.action || "")}
+              </span>
+
+              <span class="text-slate-500">
+                • ${esc(x.entity_type || "")}
+              </span>
+            </div>
+
+            <div class="text-[10px] text-slate-400">
+              ${esc(String(x.created_at || ""))}
+            </div>
+          </div>
+
+          ${x.description ? `
+            <div class="text-slate-500 mt-1">
+              ${esc(x.description)}
+            </div>
+          ` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderProjectRevenueContractsMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No Revenue contract linked.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">
+              Contract
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Status
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Value
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Recognised
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Billed
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Action
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+
+              <td class="px-2 py-1">
+                <div class="font-medium">
+                  ${esc(
+                    x.contract_number ||
+                    ""
+                  )}
+                </div>
+
+                <div class="text-slate-500">
+                  ${esc(
+                    x.contract_title ||
+                    ""
+                  )}
+                </div>
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.transaction_price || 0
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.recognized_revenue_to_date
+                  || 0
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.billed_to_date || 0
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                <button
+                  class="underline"
+                  data-project-revenue-open=
+                    "${esc(String(x.id))}">
+                  Open
+                </button>
+              </td>
+
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectRevenueObligationsMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No performance obligations.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">
+              Obligation
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Project Task
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Method
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Progress
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Revenue
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+
+              <td class="px-2 py-1">
+                ${esc(
+                  x.obligation_name ||
+                  x.obligation_code ||
+                  ""
+                )}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(
+                  x.project_task_name ||
+                  "—"
+                )}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(
+                  x.progress_method ||
+                  x.recognition_timing ||
+                  ""
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${Number(
+                  x.progress_percent || 0
+                ).toFixed(0)}%
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.revenue_to_date || 0
+                )}
+              </td>
+
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadProjectPerformance(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return {};
+
+  const out = await apiFetch(
+    ENDPOINTS.projects.performance(cid, projectId)
+  );
+
+  return out?.data || out || {};
+}
+
+function renderProjectPerformance(perf = {}) {
+  return `
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Actual Cost</div>
+        <div class="font-semibold">${fmtMoney(perf.actual_cost || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">ETC</div>
+        <div class="font-semibold">${fmtMoney(perf.estimate_to_complete || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">EAC</div>
+        <div class="font-semibold">${fmtMoney(perf.estimate_at_completion || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Budget Variance</div>
+        <div class="font-semibold">${fmtMoney(perf.budget_variance || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Forecast Margin</div>
+        <div class="font-semibold">${fmtMoney(perf.forecast_margin || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Margin %</div>
+        <div class="font-semibold">
+          ${Number(perf.forecast_margin_percent || 0).toFixed(1)}%
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+function renderProjectForecastsMini(items = []) {
+  if (!items.length) {
+    return `<div class="text-slate-500">No forecast snapshots yet.</div>`;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Date</th>
+            <th class="text-right px-2 py-1">Progress</th>
+            <th class="text-right px-2 py-1">EAC</th>
+            <th class="text-right px-2 py-1">Margin</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(toDateInputValue?.(x.forecast_date) || x.forecast_date || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${Number(x.progress_percent || 0).toFixed(0)}%
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.estimate_at_completion || 0)}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.forecast_margin || 0)}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectCapitalPosition(pos = {}) {
+  return `
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Materials</div>
+        <div class="font-semibold">${fmtMoney(pos.material_cost || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Labour</div>
+        <div class="font-semibold">${fmtMoney(pos.capitalizable_labour || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Expenses</div>
+        <div class="font-semibold">${fmtMoney(pos.capitalizable_expenses || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Borrowing Costs</div>
+        <div class="font-semibold">${fmtMoney(pos.capitalized_borrowing_costs || 0)}</div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Total CIP</div>
+        <div class="font-semibold">${fmtMoney(pos.cip_total || 0)}</div>
+      </div>
+
+    </div>
+  `;
+}
+
+function showProjectLanding() {
+  document
+    .getElementById("projectLandingView")
+    ?.classList.remove("hidden");
+
+  document
+    .getElementById("projectDetailView")
+    ?.classList.add("hidden");
+}
+
+function showProjectDetail() {
+  document
+    .getElementById("projectLandingView")
+    ?.classList.add("hidden");
+
+  document
+    .getElementById("projectDetailView")
+    ?.classList.remove("hidden");
+}
+
+window.showProjectLanding = showProjectLanding;
+window.showProjectDetail = showProjectDetail;
 
 function renderProjectDetail(p) {
   const mount = document.getElementById("projectDetailMount");
   if (!mount) return;
+  const team =
+    p.team || [];
+
+  const dependencies =
+    p.task_dependencies || [];
 
   const tasks = p.tasks || [];
   const budget = p.budget_lines || [];
+  const timeEntries = p.time_entries || [];
+  const expenses = p.expenses || [];
+  const commitments = p.commitments || [];
+  const costSummary = p.cost_summary || {};
+  const changes = p.changes || [];
+  const risks = p.risks || [];
+  const issues = p.issues || [];
+  const documents = p.documents || [];
+  const activity = p.activity || [];
+  const revenueContracts =
+    p.revenue_contracts || [];
+
+  const revenueObligations =
+    p.revenue_obligations || [];
+
+  const revenueSummary =
+    p.revenue_summary || {};
+  const forecasts = p.forecasts || [];
+  const capitalisations = p.capitalisations || [];
+  const assetLinks = p.asset_links || [];
+  const borrowingLinks = p.borrowing_links || [];
+  const closeout = p.closeout || {};
+  const projectClosed = p.is_locked || closeout.status === "closed";
   const projectType = String(p.project_type || "customer_project").replaceAll("_", " ");
   const accountingMode = String(p.accounting_mode || "contract").replaceAll("_", " ");
   const progress = Number(p.progress_percent || 0);
@@ -123815,170 +129686,1068 @@ function renderProjectDetail(p) {
   mount.innerHTML = `
     <div class="mt-4 border rounded p-3 text-xs">
 
-      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-3">
-        <div>
-          <div class="font-bold text-sm">
-            ${esc(p.project_code || "")} — ${esc(p.project_name || "")}
-          </div>
-
-          <div class="text-slate-500 mt-1">
-            ${esc(p.customer_name || (internal ? "Internal Project" : "No customer"))}
-            • ${esc(projectType)}
-            • ${esc(p.status || "")}
-          </div>
-        </div>
+      <!-- ==================================================
+          PROJECT HEADER
+      ================================================== -->
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <button
+          type="button"
+          class="px-3 py-1.5 text-xs border rounded"
+          data-project-back>
+          ← Back to Projects
+        </button>
 
         <div class="flex flex-wrap items-center gap-2">
-          <button class="px-3 py-1 text-xs border rounded"
-                  data-project-edit="${esc(String(p.id))}">
+          <button
+            class="px-3 py-1 text-xs border rounded"
+            data-project-edit="${esc(String(p.id))}">
             Edit Project
           </button>
 
-          <button class="px-3 py-1 text-xs border rounded"
-                  data-project-task-new="${esc(String(p.id))}">
+          <button
+            class="px-3 py-1 text-xs border rounded"
+            data-project-task-new="${esc(String(p.id))}">
             + Task
           </button>
 
-          <button class="px-3 py-1 text-xs border rounded"
-                  data-project-budget-new="${esc(String(p.id))}">
+          <button
+            class="px-3 py-1 text-xs border rounded"
+            data-project-budget-new="${esc(String(p.id))}">
             + Budget Line
           </button>
 
-          ${p.inventory_enabled !== false ? `
-            <button class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded"
-                    data-project-issue="${esc(String(p.id))}">
+          ${!projectClosed && p.inventory_enabled !== false ? `
+            <button
+              class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded"
+              data-project-issue="${esc(String(p.id))}">
               Issue Materials
             </button>
           ` : ""}
         </div>
       </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
+      <div class="mb-3">
+        <div class="font-bold text-sm">
+          ${esc(p.project_code || "")} — ${esc(p.project_name || "")}
+        </div>
 
+        <div class="text-slate-500 mt-1">
+          ${esc(
+            p.customer_name ||
+            (internal ? "Internal Project" : "No customer")
+          )}
+          • ${esc(projectType)}
+          • ${esc(p.status || "")}
+        </div>
+      </div>
+
+      <!-- ==================================================
+          PROJECT DETAIL NAVIGATION
+      ================================================== -->
+      <div class="project-detail-tabs">
+        <button
+          class="project-detail-tab active"
+          data-project-tab="planning">
+          Planning
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="costs">
+          Costs & Time
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="revenue">
+          Revenue
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="forecast">
+          Forecasts
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="controls">
+          Risks & Controls
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="closeout">
+          Documents & Closeout
+        </button>
+      </div>
+
+      <!-- ==================================================
+          PROJECT OVERVIEW
+          Always visible
+      ================================================== -->
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
         <div class="border rounded p-2">
           <div class="text-slate-500">Project Type</div>
-          <div class="font-semibold capitalize">${esc(projectType)}</div>
+          <div class="font-semibold capitalize">
+            ${esc(projectType)}
+          </div>
         </div>
 
         <div class="border rounded p-2">
           <div class="text-slate-500">Accounting</div>
-          <div class="font-semibold capitalize">${esc(accountingMode)}</div>
+          <div class="font-semibold capitalize">
+            ${esc(accountingMode)}
+          </div>
         </div>
 
         <div class="border rounded p-2">
           <div class="text-slate-500">Priority</div>
-          <div class="font-semibold capitalize">${esc(p.priority || "normal")}</div>
+          <div class="font-semibold capitalize">
+            ${esc(p.priority || "normal")}
+          </div>
         </div>
 
         <div class="border rounded p-2">
           <div class="text-slate-500">Progress</div>
-          <div class="font-semibold">${progress.toFixed(0)}%</div>
+          <div class="font-semibold">
+            ${progress.toFixed(0)}%
+          </div>
+
           <div class="w-full h-1.5 bg-slate-100 rounded mt-1 overflow-hidden">
-            <div class="h-full bg-[var(--fs-navy)]"
-                 style="width:${Math.max(0, Math.min(100, progress))}%"></div>
+            <div
+              class="h-full bg-[var(--fs-navy)]"
+              style="width:${Math.max(
+                0,
+                Math.min(100, progress)
+              )}%">
+            </div>
           </div>
         </div>
 
         <div class="border rounded p-2">
           <div class="text-slate-500">Contract Value</div>
-          <div class="font-semibold">${fmtMoney(p.contract_value || 0)}</div>
+          <div class="font-semibold">
+            ${fmtMoney(p.contract_value || 0)}
+          </div>
         </div>
 
         <div class="border rounded p-2">
           <div class="text-slate-500">Budget</div>
-          <div class="font-semibold">${fmtMoney(p?.totals?.budget_total || p.budget_value || 0)}</div>
+          <div class="font-semibold">
+            ${fmtMoney(
+              p?.totals?.budget_total ||
+              p.budget_value ||
+              0
+            )}
+          </div>
         </div>
-
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
-
         <div class="border rounded p-2">
-          <div class="text-slate-500 mb-1">Ownership</div>
-          <div><span class="text-slate-500">Manager:</span> ${esc(String(p.project_manager_user_id || "—"))}</div>
-          <div><span class="text-slate-500">Sponsor:</span> ${esc(String(p.sponsor_user_id || p.owner_user_id || "—"))}</div>
-          <div><span class="text-slate-500">Department:</span> ${esc(String(p.department_id || "—"))}</div>
-          <div><span class="text-slate-500">Business Unit:</span> ${esc(p.business_unit || "—")}</div>
+          <div class="text-slate-500 mb-1">
+            Ownership
+          </div>
+
+          <div>
+            <span class="text-slate-500">Manager:</span>
+            ${esc(String(
+              p.project_manager_user_id || "—"
+            ))}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Sponsor:</span>
+            ${esc(String(
+              p.sponsor_user_id ||
+              p.owner_user_id ||
+              "—"
+            ))}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Department:</span>
+            ${esc(String(p.department_id || "—"))}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Business Unit:</span>
+            ${esc(p.business_unit || "—")}
+          </div>
         </div>
 
         <div class="border rounded p-2">
-          <div class="text-slate-500 mb-1">Current Schedule</div>
-          <div><span class="text-slate-500">Start:</span> ${esc(toDateInputValue?.(p.start_date) || p.start_date || "—")}</div>
-          <div><span class="text-slate-500">Expected End:</span> ${esc(toDateInputValue?.(p.expected_end_date) || p.expected_end_date || "—")}</div>
-          <div><span class="text-slate-500">Actual End:</span> ${esc(toDateInputValue?.(p.actual_end_date) || p.actual_end_date || "—")}</div>
+          <div class="text-slate-500 mb-1">
+            Current Schedule
+          </div>
+
+          <div>
+            <span class="text-slate-500">Start:</span>
+            ${esc(
+              toDateInputValue?.(p.start_date) ||
+              p.start_date ||
+              "—"
+            )}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Expected End:</span>
+            ${esc(
+              toDateInputValue?.(p.expected_end_date) ||
+              p.expected_end_date ||
+              "—"
+            )}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Actual End:</span>
+            ${esc(
+              toDateInputValue?.(p.actual_end_date) ||
+              p.actual_end_date ||
+              "—"
+            )}
+          </div>
         </div>
 
         <div class="border rounded p-2">
-          <div class="text-slate-500 mb-1">Baseline</div>
-          <div><span class="text-slate-500">Start:</span> ${esc(toDateInputValue?.(p.baseline_start_date) || p.baseline_start_date || "—")}</div>
-          <div><span class="text-slate-500">End:</span> ${esc(toDateInputValue?.(p.baseline_end_date) || p.baseline_end_date || "—")}</div>
-          <div><span class="text-slate-500">Budget:</span> ${fmtMoney(p.baseline_budget_value || 0)}</div>
+          <div class="text-slate-500 mb-1">
+            Baseline
+          </div>
+
+          <div>
+            <span class="text-slate-500">Start:</span>
+            ${esc(
+              toDateInputValue?.(
+                p.baseline_start_date
+              ) ||
+              p.baseline_start_date ||
+              "—"
+            )}
+          </div>
+
+          <div>
+            <span class="text-slate-500">End:</span>
+            ${esc(
+              toDateInputValue?.(
+                p.baseline_end_date
+              ) ||
+              p.baseline_end_date ||
+              "—"
+            )}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Budget:</span>
+            ${fmtMoney(
+              p.baseline_budget_value || 0
+            )}
+          </div>
         </div>
 
         <div class="border rounded p-2">
-          <div class="text-slate-500 mb-1">Accounting Setup</div>
-          <div><span class="text-slate-500">WIP / CIP:</span> ${esc(p.wip_account_code || "—")}</div>
-          <div><span class="text-slate-500">Revenue:</span> ${esc(p.revenue_account_code || "—")}</div>
-          <div><span class="text-slate-500">Cost:</span> ${esc(p.cost_account_code || "—")}</div>
-          <div><span class="text-slate-500">Billing:</span> ${esc(p.billing_method || "—")}</div>
-        </div>
+          <div class="text-slate-500 mb-1">
+            Accounting Setup
+          </div>
 
+          <div>
+            <span class="text-slate-500">WIP / CIP:</span>
+            ${esc(p.wip_account_code || "—")}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Revenue:</span>
+            ${esc(p.revenue_account_code || "—")}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Cost:</span>
+            ${esc(p.cost_account_code || "—")}
+          </div>
+
+          <div>
+            <span class="text-slate-500">Billing:</span>
+            ${esc(p.billing_method || "—")}
+          </div>
+        </div>
       </div>
 
       <div class="border rounded p-2 mb-3">
-        <div class="text-slate-500 mb-2">Enabled Project Features</div>
+        <div class="text-slate-500 mb-2">
+          Enabled Project Features
+        </div>
 
         <div class="flex flex-wrap gap-2">
-          ${feature(p.billing_enabled !== false, "Billing")}
-          ${feature(p.revenue_enabled !== false, "Revenue")}
-          ${feature(p.inventory_enabled !== false, "Inventory")}
-          ${feature(p.allow_time_entries !== false, "Timesheets")}
-          ${feature(p.allow_expenses !== false, "Expenses")}
+          ${feature(
+            p.billing_enabled !== false,
+            "Billing"
+          )}
+          ${feature(
+            p.revenue_enabled !== false,
+            "Revenue"
+          )}
+          ${feature(
+            p.inventory_enabled !== false,
+            "Inventory"
+          )}
+          ${feature(
+            p.allow_time_entries !== false,
+            "Timesheets"
+          )}
+          ${feature(
+            p.allow_expenses !== false,
+            "Expenses"
+          )}
         </div>
       </div>
 
       ${p.description || p.location || p.notes ? `
         <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
           <div class="border rounded p-2">
-            <div class="text-slate-500">Location</div>
-            <div>${esc(p.location || "—")}</div>
+            <div class="text-slate-500">
+              Location
+            </div>
+
+            <div>
+              ${esc(p.location || "—")}
+            </div>
           </div>
 
           <div class="border rounded p-2">
-            <div class="text-slate-500">Description</div>
-            <div class="whitespace-pre-wrap">${esc(p.description || "—")}</div>
+            <div class="text-slate-500">
+              Description
+            </div>
+
+            <div class="whitespace-pre-wrap">
+              ${esc(p.description || "—")}
+            </div>
           </div>
 
           <div class="border rounded p-2">
-            <div class="text-slate-500">Notes</div>
-            <div class="whitespace-pre-wrap">${esc(p.notes || "—")}</div>
+            <div class="text-slate-500">
+              Notes
+            </div>
+
+            <div class="whitespace-pre-wrap">
+              ${esc(p.notes || "—")}
+            </div>
           </div>
         </div>
       ` : ""}
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <!-- ==================================================
+          PLANNING
+      ================================================== -->
+      <div data-project-panel="planning">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-semibold">
+                Tasks
+              </div>
 
-        <div class="border rounded p-2">
-          <div class="flex items-center justify-between mb-2">
-            <div class="font-semibold">Tasks</div>
-            <div class="text-slate-500">${tasks.length} task${tasks.length === 1 ? "" : "s"}</div>
+              <div class="text-slate-500">
+                ${tasks.length}
+                task${tasks.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            ${renderProjectTasksMini(tasks)}
           </div>
 
-          ${renderProjectTasksMini(tasks)}
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-semibold">
+                Budget Lines
+              </div>
+
+              <div class="text-slate-500">
+                ${fmtMoney(
+                  p?.totals?.budget_total || 0
+                )}
+              </div>
+            </div>
+
+            ${renderProjectBudgetMini(budget)}
+          </div>
         </div>
 
-        <div class="border rounded p-2">
-          <div class="flex items-center justify-between mb-2">
-            <div class="font-semibold">Budget Lines</div>
-            <div class="text-slate-500">${fmtMoney(p?.totals?.budget_total || 0)}</div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-semibold">
+                Project Team
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-team-new="${esc(String(p.id))}">
+                + Team Member
+              </button>
+            </div>
+
+            ${renderProjectTeamMini(team)}
           </div>
 
-          ${renderProjectBudgetMini(budget)}
-        </div>
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-semibold">
+                Dependencies
+              </div>
 
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-dependency-new="${esc(String(p.id))}">
+                + Dependency
+              </button>
+            </div>
+
+            ${renderProjectDependenciesMini(
+              dependencies
+            )}
+          </div>
+        </div>
       </div>
+
+      <!-- ==================================================
+          COSTS & TIME
+      ================================================== -->
+      <div data-project-panel="costs">
+        ${p.allow_time_entries !== false ? `
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  Time & Labour
+                </div>
+
+                <div class="text-slate-500">
+                  ${Number(
+                    p?.totals?.labour_hours || 0
+                  ).toFixed(2)} hrs
+                  •
+                  ${fmtMoney(
+                    p?.totals?.labour_cost || 0
+                  )} cost
+                  •
+                  ${fmtMoney(
+                    p?.totals?.billable_time_value || 0
+                  )} billable
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-time-new="${esc(String(p.id))}">
+                + Time Entry
+              </button>
+            </div>
+
+            ${renderProjectTimeMini(timeEntries)}
+          </div>
+        ` : ""}
+
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3">
+          <div class="border rounded p-2">
+            <div class="text-slate-500">
+              Materials
+            </div>
+
+            <div class="font-semibold">
+              ${fmtMoney(
+                costSummary.material_cost || 0
+              )}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">
+              Labour
+            </div>
+
+            <div class="font-semibold">
+              ${fmtMoney(
+                costSummary.labour_cost || 0
+              )}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">
+              Expenses
+            </div>
+
+            <div class="font-semibold">
+              ${fmtMoney(
+                costSummary.expense_cost || 0
+              )}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">
+              Actual Cost
+            </div>
+
+            <div class="font-semibold">
+              ${fmtMoney(
+                costSummary.actual_cost || 0
+              )}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">
+              Committed
+            </div>
+
+            <div class="font-semibold">
+              ${fmtMoney(
+                costSummary.committed_cost || 0
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+          ${p.allow_expenses !== false ? `
+            <div class="border rounded p-2">
+              <div class="flex items-center justify-between mb-2">
+                <div class="font-semibold">
+                  Project Expenses
+                </div>
+
+                <button
+                  class="px-2 py-1 text-[11px] border rounded"
+                  data-project-expense-new="${esc(String(p.id))}">
+                  + Expense
+                </button>
+              </div>
+
+              ${renderProjectExpensesMini(expenses)}
+            </div>
+          ` : ""}
+
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-semibold">
+                Commitments
+              </div>
+
+              <div class="text-slate-500">
+                ${fmtMoney(
+                  costSummary.committed_cost || 0
+                )}
+              </div>
+            </div>
+
+            ${renderProjectCommitmentsMini(
+              commitments
+            )}
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================================================
+          REVENUE
+      ================================================== -->
+      <div data-project-panel="revenue">
+        ${p.revenue_enabled !== false &&
+          p.accounting_mode === "contract" ? `
+
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <div class="font-semibold">
+                  Billing & Revenue
+                </div>
+
+                <div class="text-slate-500">
+                  ${revenueContracts.length}
+                  contract${revenueContracts.length === 1 ? "" : "s"}
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button
+                  class="px-2 py-1 text-[11px] border rounded"
+                  data-project-revenue-desk="${esc(String(p.id))}">
+                  Revenue Desk
+                </button>
+
+                ${p.customer_id ? `
+                  <button
+                    class="px-2 py-1 text-[11px] bg-[var(--fs-navy)] text-white rounded"
+                    data-project-revenue-new="${esc(String(p.id))}">
+                    + Revenue Contract
+                  </button>
+                ` : ""}
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Contract Value
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.transaction_price || 0
+                  )}
+                </div>
+              </div>
+
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Recognised
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.recognized_revenue || 0
+                  )}
+                </div>
+              </div>
+
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Billed
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.billed_to_date || 0
+                  )}
+                </div>
+              </div>
+
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Collected
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.cash_collected || 0
+                  )}
+                </div>
+              </div>
+
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Contract Asset
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.contract_asset || 0
+                  )}
+                </div>
+              </div>
+
+              <div class="border rounded p-2">
+                <div class="text-slate-500">
+                  Contract Liability
+                </div>
+
+                <div class="font-semibold">
+                  ${fmtMoney(
+                    revenueSummary.contract_liability || 0
+                  )}
+                </div>
+              </div>
+            </div>
+
+            ${renderProjectRevenueContractsMini(
+              revenueContracts
+            )}
+
+            ${revenueObligations.length ? `
+              <div class="mt-3">
+                <div class="font-semibold mb-2">
+                  Performance Obligations
+                </div>
+
+                ${renderProjectRevenueObligationsMini(
+                  revenueObligations
+                )}
+              </div>
+            ` : ""}
+          </div>
+
+        ` : `
+          <div class="border rounded p-3 text-slate-500">
+            Revenue management is not enabled for this project.
+          </div>
+        `}
+      </div>
+
+      <!-- ==================================================
+          FORECASTS
+      ================================================== -->
+      <div data-project-panel="forecast">
+        <div class="border rounded p-2">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">
+                Forecast & Performance
+              </div>
+
+              <div class="text-slate-500">
+                Budget vs actual vs forecast
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-project-forecast-save="${esc(String(p.id))}">
+              Save Forecast
+            </button>
+          </div>
+
+          <div id="projectPerformanceMount-${esc(String(p.id))}">
+            <div class="text-slate-500">
+              Loading performance...
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <div class="font-semibold mb-2">
+              Forecast History
+            </div>
+
+            ${renderProjectForecastsMini(
+              forecasts
+            )}
+          </div>
+
+          <div class="border-t mt-3 pt-3">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  IAS 23 Borrowing Costs
+                </div>
+
+                <div class="text-slate-500">
+                  Borrowings linked to qualifying CIP assets
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-borrowing-new="${esc(String(p.id))}">
+                + Link Borrowing
+              </button>
+            </div>
+
+            ${renderProjectBorrowingsMini(
+              borrowingLinks
+            )}
+          </div>
+        </div>
+
+        ${p.accounting_mode === "capital" ? `
+          <div class="border rounded p-2 mt-3">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  Capital Project
+                </div>
+
+                <div class="text-slate-500">
+                  CIP accumulation and asset capitalisation
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-capitalise="${esc(String(p.id))}">
+                + Capitalise
+              </button>
+            </div>
+
+            ${renderProjectCapitalisationsMini(
+              capitalisations
+            )}
+          </div>
+
+          <div class="border rounded p-2 mt-3">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  Capital Project / CIP
+                </div>
+
+                <div class="text-slate-500">
+                  Assets under construction and capitalisable project costs
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-cip-new="${esc(String(p.id))}">
+                + CIP Asset
+              </button>
+            </div>
+
+            <div
+              id="projectCapitalPosition-${esc(String(p.id))}"
+              class="mb-3">
+              <div class="text-slate-500">
+                Loading CIP position...
+              </div>
+            </div>
+
+            ${renderProjectAssetsMini(assetLinks)}
+          </div>
+        ` : ""}
+      </div>
+
+      <!-- ==================================================
+          RISKS & CONTROLS
+      ================================================== -->
+      <div data-project-panel="controls">
+        <div class="border rounded p-2">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">
+                Change Control
+              </div>
+
+              <div class="text-slate-500">
+                ${changes.length}
+                change${changes.length === 1 ? "" : "s"}
+                • Pending
+                ${fmtMoney(
+                  p?.totals?.pending_change_value || 0
+                )}
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-project-change-new="${esc(String(p.id))}">
+              + Change
+            </button>
+          </div>
+
+          ${renderProjectChangesMini(changes)}
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  Risks
+                </div>
+
+                <div class="text-slate-500">
+                  ${p?.totals?.open_risk_count || 0}
+                  open
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-risk-new="${esc(String(p.id))}">
+                + Risk
+              </button>
+            </div>
+
+            ${renderProjectRisksMini(risks)}
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="font-semibold">
+                  Issues
+                </div>
+
+                <div class="text-slate-500">
+                  ${p?.totals?.open_issue_count || 0}
+                  open
+                </div>
+              </div>
+
+              <button
+                class="px-2 py-1 text-[11px] border rounded"
+                data-project-issue-register-new="${esc(String(p.id))}">
+                + Issue
+              </button>
+            </div>
+
+            ${renderProjectIssuesMini(issues)}
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================================================
+          DOCUMENTS & CLOSEOUT
+      ================================================== -->
+      <div data-project-panel="closeout">
+        <div class="border rounded p-2">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">
+                Project Documents
+              </div>
+
+              <div class="text-slate-500">
+                ${documents.length}
+                document${documents.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-project-document-new="${esc(String(p.id))}">
+              + Document
+            </button>
+          </div>
+
+          ${renderProjectDocumentsMini(documents)}
+        </div>
+
+        <div class="border rounded p-2 mt-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-semibold">
+                Project Closeout
+              </div>
+
+              <div class="text-slate-500">
+                ${projectClosed
+                  ? `Closed ${esc(
+                      toDateInputValue?.(
+                        closeout.closeout_date
+                      ) ||
+                      closeout.closeout_date ||
+                      ""
+                    )}`
+                  : "Project remains open"
+                }
+              </div>
+            </div>
+
+            <div class="flex gap-2">
+              ${p.accounting_mode === "capital" &&
+                !closeout.commissioning_journal_id &&
+                !projectClosed ? `
+
+                <button
+                  class="px-2 py-1 text-[11px] border rounded"
+                  data-project-commission="${esc(String(p.id))}">
+                  Commission Asset
+                </button>
+
+              ` : ""}
+
+              ${!projectClosed ? `
+                <button
+                  class="px-2 py-1 text-[11px] bg-[var(--fs-navy)] text-white rounded"
+                  data-project-close="${esc(String(p.id))}">
+                  Close Project
+                </button>
+              ` : `
+                <button
+                  class="px-2 py-1 text-[11px] border rounded"
+                  data-project-reopen="${esc(String(p.id))}">
+                  Reopen
+                </button>
+              `}
+            </div>
+          </div>
+        </div>
+
+        <div class="border rounded p-2 mt-3">
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-semibold">
+              Project Activity
+            </div>
+
+            <div class="text-slate-500">
+              Latest ${Math.min(
+                activity.length,
+                20
+              )}
+            </div>
+          </div>
+
+          ${renderProjectActivityMini(activity)}
+        </div>
+      </div>
+
     </div>
   `;
+
+  mount
+    .querySelector("[data-project-back]")
+    ?.addEventListener("click", () => {
+      showProjectLanding();
+    });
+
+  const tabs = mount.querySelectorAll("[data-project-tab]");
+  const panels = mount.querySelectorAll("[data-project-panel]");
+
+  function showProjectTab(key) {
+    tabs.forEach(tab => {
+      tab.classList.toggle(
+        "active",
+        tab.dataset.projectTab === key
+      );
+    });
+
+    panels.forEach(panel => {
+      panel.style.display =
+        panel.dataset.projectPanel === key
+          ? ""
+          : "none";
+    });
+  }
+
+  tabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      showProjectTab(tab.dataset.projectTab);
+    });
+  });
+
+  showProjectTab("planning");
+
+  if (p.accounting_mode === "capital") {
+    loadProjectCapitalPosition(p.id)
+      .then(pos => {
+        const el = document.getElementById(
+          `projectCapitalPosition-${p.id}`
+        );
+
+        if (el) {
+          el.innerHTML = renderProjectCapitalPosition(pos);
+        }
+      })
+      .catch(err => {
+        console.error("[Projects] capital position failed", err);
+      });
+  }
+
+  loadProjectPerformance(p.id)
+    .then(perf => {
+      const el = document.getElementById(
+        `projectPerformanceMount-${p.id}`
+      );
+
+      if (el) {
+        el.innerHTML = renderProjectPerformance(perf);
+      }
+    })
+    .catch(err => {
+      console.error(
+        "[Projects] performance load failed",
+        err
+      );
+    });
 
   mount.querySelector("[data-project-task-new]")?.addEventListener("click", () => {
     openProjectTaskModal?.(p.id);
@@ -123992,8 +130761,22 @@ function renderProjectDetail(p) {
     openProjectIssueModal?.(p.id);
   });
 
+  mount.querySelector("[data-project-return]")?.addEventListener("click", () => {
+    openProjectReturnModal?.(p.id);
+  });
+
   mount.querySelector("[data-project-edit]")?.addEventListener("click", () => {
     openProjectCreateModal?.(p);
+  });
+
+  bindProjectPlanningModalsOnce?.();
+
+  mount.querySelector("[data-project-team-new]")?.addEventListener("click", () => {
+    openProjectTeamModal?.(p.id);
+  });
+
+  mount.querySelector("[data-project-dependency-new]")?.addEventListener("click", () => {
+    openProjectDependencyModal?.(p.id, tasks);
   });
 
   mount.querySelectorAll("[data-task-edit]").forEach(btn => {
@@ -124007,6 +130790,19 @@ function renderProjectDetail(p) {
     });
   });
 
+  mount.querySelectorAll("[data-task-assign]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+
+      const id = Number(btn.dataset.taskAssign);
+      const task = tasks.find(x => Number(x.id) === id);
+
+      if (task) {
+        openProjectAssignModal?.(p.id, task);
+      }
+    });
+  });
+
   mount.querySelectorAll("[data-budget-edit]").forEach(btn => {
     btn.addEventListener("click", e => {
       e.stopPropagation();
@@ -124017,45 +130813,599 @@ function renderProjectDetail(p) {
       if (line) openProjectBudgetModal(p.id, line);
     });
   });
+
+  mount.querySelectorAll("[data-team-remove]").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.stopPropagation();
+
+      const memberId = Number(btn.dataset.teamRemove);
+      if (!memberId) return;
+
+      const cid =
+        getActiveCompanyId?.() ||
+        CURRENT_COMPANY_ID;
+
+      if (!confirm("Remove this project team member?")) return;
+
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.teamDelete(
+            cid,
+            p.id,
+            memberId
+          ),
+          { method: "DELETE" }
+        );
+
+        await loadProjectDetail(p.id);
+
+      } catch (err) {
+        alert(
+          err?.message ||
+          "Failed to remove team member."
+        );
+      }
+    });
+  });
+
+  mount.querySelector("[data-project-time-new]")
+    ?.addEventListener("click", () => {
+      openProjectTimeModal?.(p.id);
+    });
+
+  mount.querySelectorAll("[data-time-edit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.timeEdit);
+
+      const entry = timeEntries.find(
+        x => Number(x.id) === id
+      );
+
+      if (entry) {
+        openProjectTimeModal?.(
+          p.id,
+          entry
+        );
+      }
+    });
+  });
+
+  mount.querySelectorAll("[data-time-submit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      runProjectTimeAction(
+        p.id,
+        Number(btn.dataset.timeSubmit),
+        "submit"
+      );
+    });
+  });
+
+  mount.querySelectorAll("[data-time-approve]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      runProjectTimeAction(
+        p.id,
+        Number(btn.dataset.timeApprove),
+        "approve"
+      );
+    });
+  });
+
+  mount.querySelectorAll("[data-time-reject]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const reason = prompt(
+        "Reason for rejection:"
+      );
+
+      if (reason === null) return;
+
+      runProjectTimeAction(
+        p.id,
+        Number(btn.dataset.timeReject),
+        "reject",
+        reason
+      );
+    });
+  });
+
+  mount.querySelector("[data-project-expense-new]")
+    ?.addEventListener("click", () => {
+      openProjectExpenseModal?.(p.id);
+    });
+
+  mount.querySelectorAll("[data-expense-approve]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const cid =
+        getActiveCompanyId?.() ||
+        CURRENT_COMPANY_ID;
+
+      const expenseId = Number(
+        btn.dataset.expenseApprove
+      );
+
+      if (!expenseId) return;
+
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.expenseApprove(
+            cid,
+            p.id,
+            expenseId
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify({}),
+          }
+        );
+
+        await loadProjectDetail(p.id);
+
+      } catch (err) {
+        alert(
+          err?.message ||
+          "Failed to approve expense."
+        );
+      }
+    });
+  });
+
+  mount.querySelector("[data-project-change-new]")
+    ?.addEventListener("click", () => {
+      openProjectChangeModal?.(p.id);
+    });
+
+  mount.querySelectorAll("[data-change-submit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      runProjectChangeAction(
+        p.id,
+        Number(btn.dataset.changeSubmit),
+        "submit"
+      );
+    });
+  });
+
+  mount.querySelectorAll("[data-change-approve]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      runProjectChangeAction(
+        p.id,
+        Number(btn.dataset.changeApprove),
+        "approve"
+      );
+    });
+  });
+
+  mount.querySelectorAll("[data-change-reject]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const reason = prompt(
+        "Reason for rejection:"
+      );
+
+      if (reason === null) return;
+
+      runProjectChangeAction(
+        p.id,
+        Number(btn.dataset.changeReject),
+        "reject",
+        reason
+      );
+    });
+  });
+
+  mount.querySelectorAll("[data-change-apply]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (!confirm(
+        "Apply this approved change to the project?"
+      )) {
+        return;
+      }
+
+      runProjectChangeAction(
+        p.id,
+        Number(btn.dataset.changeApply),
+        "apply"
+      );
+    });
+  });
+
+  bindProjectControlModalsOnce?.();
+
+  mount.querySelector("[data-project-risk-new]")
+    ?.addEventListener("click", () => {
+      openProjectRiskModal?.(p.id);
+    });
+
+  mount.querySelector("[data-project-issue-register-new]")
+    ?.addEventListener("click", () => {
+      openProjectIssueRegisterModal?.(p.id);
+    });
+
+  mount.querySelector("[data-project-document-new]")
+    ?.addEventListener("click", () => {
+      openProjectDocumentModal?.(p.id);
+    });
+
+  mount.querySelectorAll("[data-risk-edit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.riskEdit);
+
+      const risk = risks.find(
+        x => Number(x.id) === id
+      );
+
+      if (risk) {
+        openProjectRiskModal?.(
+          p.id,
+          risk
+        );
+      }
+    });
+  });
+
+  mount.querySelectorAll("[data-issue-edit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.issueEdit);
+
+      const issue = issues.find(
+        x => Number(x.id) === id
+      );
+
+      if (issue) {
+        openProjectIssueRegisterModal?.(
+          p.id,
+          issue
+        );
+      }
+    });
+  });
+
+  mount.querySelector("[data-project-revenue-new]")
+    ?.addEventListener("click", async () => {
+      if (!p.customer_id) {
+        alert(
+          "A customer is required before creating a revenue contract."
+        );
+        return;
+      }
+
+      await window.openRevenueForProject?.(
+        p
+      );
+    });
+
+  mount.querySelector("[data-project-revenue-desk]")
+    ?.addEventListener("click", async () => {
+      const first =
+        revenueContracts[0] ||
+        null;
+
+      await window.openRevenueForProject?.(
+        p,
+        first?.id || null
+      );
+    });
+
+  mount.querySelectorAll(
+    "[data-project-revenue-open]"
+  ).forEach(btn => {
+    btn.addEventListener(
+      "click",
+      async () => {
+        const contractId = Number(
+          btn.dataset.projectRevenueOpen
+        );
+
+        if (!contractId) return;
+
+        await window.openRevenueForProject?.(
+          p,
+          contractId
+        );
+      }
+    );
+  });
+
+  mount.querySelector("[data-project-forecast-save]")?.addEventListener("click", async () => {
+    const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+    if (!cid) return;
+
+    try {
+      await apiFetch(
+        ENDPOINTS.projects.forecastsCreate(cid, p.id),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            forecast_date: new Date().toISOString().slice(0, 10),
+          }),
+        }
+      );
+
+      await loadProjectDetail(p.id);
+    } catch (err) {
+      alert(
+        err?.message ||
+        "Failed to save forecast."
+      );
+    }
+  });
+
+  mount.querySelector("[data-project-capitalise]")
+    ?.addEventListener("click", () => {
+      openProjectCapitaliseModal?.(p);
+    });
+
+  mount.querySelectorAll("[data-capitalisation-submit]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+      const id = Number(btn.dataset.capitalisationSubmit);
+
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.capitalisationAction(cid, p.id, id, "submit"),
+          { method: "POST", body: "{}" }
+        );
+
+        await loadProjectDetail(p.id);
+      } catch (err) {
+        alert(err?.message || "Failed to submit capitalisation.");
+      }
+    });
+  });
+
+  mount.querySelectorAll("[data-capitalisation-approve]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+      const id = Number(btn.dataset.capitalisationApprove);
+
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.capitalisationAction(cid, p.id, id, "approve"),
+          { method: "POST", body: "{}" }
+        );
+
+        await loadProjectDetail(p.id);
+      } catch (err) {
+        alert(err?.message || "Failed to approve capitalisation.");
+      }
+    });
+  });
+
+  mount.querySelector("[data-project-cip-new]")
+    ?.addEventListener("click", () => {
+      openProjectCipAssetModal?.(p);
+    });
+
+  mount.querySelectorAll("[data-project-asset-open]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const assetId = Number(btn.dataset.projectAssetOpen);
+      if (!assetId) return;
+
+      await window.openFixedAssetsDrawer?.({
+        mode: "acquire",
+        assetId,
+      });
+    });
+  });
+
+  mount.querySelector(
+    "[data-project-borrowing-new]"
+  )?.addEventListener("click", () => {
+    openProjectBorrowingModal?.(p);
+  });
+
+  mount.querySelectorAll(
+    "[data-project-borrow-stop]"
+  ).forEach(btn => {
+
+    btn.addEventListener(
+      "click",
+      async () => {
+
+        const cid =
+          getActiveCompanyId?.() ||
+          CURRENT_COMPANY_ID;
+
+        const linkId = Number(
+          btn.dataset.projectBorrowStop
+        );
+
+        if (!cid || !linkId) return;
+
+        const endDate = prompt(
+          "Capitalisation end date (YYYY-MM-DD):",
+          new Date().toISOString().slice(0, 10)
+        );
+
+        if (!endDate) return;
+
+        try {
+          await apiFetch(
+            ENDPOINTS.projects.borrowingLinkStop(
+              cid,
+              p.id,
+              linkId
+            ),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                end_date: endDate,
+              }),
+            }
+          );
+
+          await loadProjectDetail(
+            p.id
+          );
+
+        } catch (err) {
+          alert(
+            err?.message ||
+            "Failed to stop capitalisation."
+          );
+        }
+      }
+    );
+  });
+
+  mount.querySelector("[data-project-commission]")
+    ?.addEventListener("click", () => {
+      openProjectCommissionModal?.(p);
+    });
+
+  mount.querySelector("[data-project-close]")
+    ?.addEventListener("click", () => {
+      openProjectCloseoutModal?.(p);
+    });
+
+  mount.querySelector("[data-project-reopen]")
+    ?.addEventListener("click", async () => {
+      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+      const reason = prompt("Reason for reopening project:");
+
+      if (!reason?.trim()) return;
+
+      try {
+        await apiFetch(
+          ENDPOINTS.projects.reopen(cid, p.id),
+          {
+            method: "POST",
+            body: JSON.stringify({
+              reason: reason.trim(),
+            }),
+          }
+        );
+
+        await loadProjectDetail(p.id);
+      } catch (err) {
+        alert(err?.message || "Failed to reopen project."
+
+      );
+    }
+  });
 }
 
 window.renderProjectDetail = renderProjectDetail;
 
 function renderProjectTasksMini(tasks) {
   if (!tasks.length) {
-    return `<div class="text-slate-500">No tasks yet.</div>`;
+    return `<div class="text-slate-500">No project plan yet.</div>`;
   }
 
-  return `
-    <table class="w-full text-xs">
-      <thead class="bg-slate-50 border-b">
-        <tr>
-          <th class="text-left px-2 py-1">Code</th>
-          <th class="text-left px-2 py-1">Task</th>
-          <th class="text-left px-2 py-1">Status</th>
-          <th class="text-right px-2 py-1">Progress</th>
-          <th class="text-right px-2 py-1">Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${tasks.map(t => `
-          <tr class="border-b hover:bg-slate-50">
-            <td class="px-2 py-1">${esc(t.task_code || "")}</td>
-            <td class="px-2 py-1">${esc(t.task_name || "")}</td>
-            <td class="px-2 py-1">${esc(t.status || "")}</td>
-            <td class="px-2 py-1 text-right">${esc(String(t.progress_percent || 0))}%</td>
-            <td class="px-2 py-1 text-right">
+  const byParent = new Map();
+
+  tasks.forEach(t => {
+    const parent = Number(t.parent_task_id || 0);
+
+    if (!byParent.has(parent)) {
+      byParent.set(parent, []);
+    }
+
+    byParent.get(parent).push(t);
+  });
+
+  byParent.forEach(items => {
+    items.sort((a, b) =>
+      Number(a.sequence_no || 0) -
+      Number(b.sequence_no || 0)
+    );
+  });
+
+  const icon = type => ({
+    phase: "▾",
+    milestone: "◆",
+    task: "•",
+  }[type] || "•");
+
+  const rows = [];
+
+  function walk(parentId = 0, depth = 0) {
+    const children = byParent.get(Number(parentId)) || [];
+
+    children.forEach(t => {
+      rows.push(`
+        <tr class="border-b hover:bg-slate-50">
+          <td class="px-2 py-1">
+            ${esc(t.wbs_code || t.task_code || "")}
+          </td>
+
+          <td class="px-2 py-1">
+            <div style="padding-left:${depth * 18}px">
+              ${icon(t.task_type)}
+              <span class="${t.task_type === "phase" ? "font-semibold" : ""}">
+                ${esc(t.task_name || "")}
+              </span>
+            </div>
+          </td>
+
+          <td class="px-2 py-1 capitalize">
+            ${esc(t.task_type || "task")}
+          </td>
+
+          <td class="px-2 py-1">
+            ${esc(t.status || "")}
+          </td>
+
+          <td class="px-2 py-1">
+            ${esc(t.priority || "normal")}
+          </td>
+
+          <td class="px-2 py-1 text-right">
+            ${Number(t.progress_percent || 0).toFixed(0)}%
+          </td>
+
+          <td class="px-2 py-1 text-right">
+            ${esc(String(t.assignment_count || 0))}
+          </td>
+
+          <td class="px-2 py-1 text-right">
+            <div class="flex justify-end gap-1">
+
               <button
-                class="px-2 py-1 border rounded text-[11px]"
-                data-task-edit="${esc(String(t.id))}"
-              >
+                class="px-2 py-1
+                      border rounded text-[11px]"
+                data-task-assign=
+                  "${esc(String(t.id))}">
+                Assign
+              </button>
+
+              <button
+                class="px-2 py-1
+                      border rounded text-[11px]"
+                data-task-edit=
+                  "${esc(String(t.id))}">
                 Edit
               </button>
-            </td>
+
+            </div>
+          </td>
+        </tr>
+      `);
+
+      walk(t.id, depth + 1);
+    });
+  }
+
+  walk();
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">WBS</th>
+            <th class="text-left px-2 py-1">Work Item</th>
+            <th class="text-left px-2 py-1">Type</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-left px-2 py-1">Priority</th>
+            <th class="text-right px-2 py-1">Progress</th>
+            <th class="text-right px-2 py-1">Assigned</th>
+            <th class="text-right px-2 py-1">Action</th>
           </tr>
-        `).join("")}
-      </tbody>
-    </table>
+        </thead>
+
+        <tbody>
+          ${rows.join("")}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
@@ -124099,31 +131449,113 @@ function renderProjectBudgetMini(lines) {
   `;
 }
 
-function openProjectTaskModal(projectId, task = null) {
+async function populateProjectTaskParentDropdown(
+  projectId,
+  selectedId = "",
+  excludeTaskId = ""
+) {
+  const sel = document.getElementById("projectTaskParentId");
+  if (!sel) return;
+
+  const tasks = await getProjectTasks(projectId);
+
+  const allowed = tasks.filter(t =>
+    String(t.id) !== String(excludeTaskId || "")
+  );
+
+  sel.innerHTML = `
+    <option value="">Top level</option>
+    ${allowed.map(t => `
+      <option value="${esc(String(t.id))}"
+        ${String(t.id) === String(selectedId || "") ? "selected" : ""}>
+        ${esc(t.wbs_code || t.task_code || "")}
+        — ${esc(t.task_name || "")}
+      </option>
+    `).join("")}
+  `;
+}
+
+async function openProjectTaskModal(projectId, task = null) {
   bindProjectTaskModalOnce();
   ACTIVE_PROJECT_ID = Number(projectId);
 
   const isEdit = !!task?.id;
 
-  document.getElementById("projectTaskProjectId").value = String(projectId);
-  document.getElementById("projectTaskId").value = isEdit ? String(task.id) : "";
+  document.getElementById("projectTaskProjectId").value =
+    String(projectId);
 
-  document.getElementById("projectTaskCode").value = task?.task_code || "";
-  document.getElementById("projectTaskName").value = task?.task_name || "";
-  document.getElementById("projectTaskStatus").value = task?.status || "open";
-  document.getElementById("projectTaskBudgetValue").value = task?.budget_value || "";
-  document.getElementById("projectTaskStartDate").value = task?.start_date || "";
-  document.getElementById("projectTaskExpectedEndDate").value = task?.expected_end_date || "";
-  document.getElementById("projectTaskNotes").value = task?.notes || "";
+  document.getElementById("projectTaskId").value =
+    isEdit ? String(task.id) : "";
+
+  document.getElementById("projectTaskCode").value =
+    task?.task_code || "";
+
+  document.getElementById("projectTaskName").value =
+    task?.task_name || "";
+
+  document.getElementById("projectTaskType").value =
+    task?.task_type || "task";
+
+  document.getElementById("projectTaskWbsCode").value =
+    task?.wbs_code || "";
+
+  document.getElementById("projectTaskPriority").value =
+    task?.priority || "normal";
+
+  document.getElementById("projectTaskSequence").value =
+    task?.sequence_no || 0;
+
+  document.getElementById("projectTaskStatus").value =
+    task?.status || "open";
+
+  document.getElementById("projectTaskProgress").value =
+    task?.progress_percent || 0;
+
+  document.getElementById("projectTaskBudgetValue").value =
+    task?.budget_value || "";
+
+  document.getElementById("projectTaskStartDate").value =
+    task?.start_date || "";
+
+  document.getElementById("projectTaskExpectedEndDate").value =
+    task?.expected_end_date || "";
+
+  document.getElementById("projectTaskBaselineStart").value =
+    task?.baseline_start_date || task?.start_date || "";
+
+  document.getElementById("projectTaskBaselineEnd").value =
+    task?.baseline_end_date || task?.expected_end_date || "";
+
+  document.getElementById("projectTaskDeliverable").value =
+    task?.deliverable || "";
+
+  document.getElementById("projectTaskNotes").value =
+    task?.notes || "";
+
+  await populateProjectTaskParentDropdown(
+    projectId,
+    task?.parent_task_id || "",
+    task?.id || ""
+  );
 
   const saveBtn = document.getElementById("projectTaskSaveBtn");
-  if (saveBtn) saveBtn.textContent = isEdit ? "Update Task" : "Save Task";
+  if (saveBtn) {
+    saveBtn.textContent =
+      isEdit ? "Update Work Item" : "Save Work Item";
+  }
 
-  const archiveBtn = document.getElementById("projectTaskArchiveBtn");
-  if (archiveBtn) archiveBtn.classList.toggle("hidden", !isEdit);
+  const archiveBtn =
+    document.getElementById("projectTaskArchiveBtn");
+
+  if (archiveBtn) {
+    archiveBtn.classList.toggle("hidden", !isEdit);
+  }
 
   setElText("projectTaskMsg", "");
-  document.getElementById("projectTaskModal")?.classList.remove("hidden");
+
+  document
+    .getElementById("projectTaskModal")
+    ?.classList.remove("hidden");
 }
 
 function bindProjectCreateModalOnce() {
@@ -124138,9 +131570,17 @@ function bindProjectCreateModalOnce() {
   document.getElementById("projectType")?.addEventListener("change", applyProjectTypeBehaviour);
 }
 
-async function openProjectCreateModal(project = null) {
+async function openProjectCreateModal(
+  project = null
+) {
   bindProjectCreateModalOnce();
-  await populateProjectCustomerDropdown?.();
+
+  await Promise.all([
+    populateProjectCustomerDropdown?.(),
+    loadProjectLookupDropdowns(project),
+  ]);
+
+  loadProjectAccountDropdowns(project);
 
   const isEdit = !!project?.id;
   const today = new Date().toISOString().slice(0, 10);
@@ -124315,12 +131755,3884 @@ window.submitProjectCreate = submitProjectCreate;
 
 let ACTIVE_PROJECT_ID = null;
 
+function bindProjectPlanningModalsOnce() {
+  bindProjectTeamModalOnce();
+  bindProjectAssignModalOnce();
+  bindProjectDependencyModalOnce();
+}
+
+function bindProjectAssignModalOnce() {
+  const m =
+    document.getElementById("projectAssignModal");
+
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document
+    .getElementById("projectAssignOverlay")
+    ?.addEventListener(
+      "click",
+      closeProjectAssignModal
+    );
+
+  document
+    .getElementById("projectAssignCloseBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectAssignModal
+    );
+
+  document
+    .getElementById("projectAssignCancelBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectAssignModal
+    );
+
+  document
+    .getElementById("projectAssignSaveBtn")
+    ?.addEventListener(
+      "click",
+      submitProjectTaskAssignment
+    );
+}
+
+function bindProjectDependencyModalOnce() {
+  const m =
+    document.getElementById(
+      "projectDependencyModal"
+    );
+
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document
+    .getElementById(
+      "projectDependencyOverlay"
+    )
+    ?.addEventListener(
+      "click",
+      closeProjectDependencyModal
+    );
+
+  document
+    .getElementById(
+      "projectDependencyCloseBtn"
+    )
+    ?.addEventListener(
+      "click",
+      closeProjectDependencyModal
+    );
+
+  document
+    .getElementById(
+      "projectDependencyCancelBtn"
+    )
+    ?.addEventListener(
+      "click",
+      closeProjectDependencyModal
+    );
+
+  document
+    .getElementById(
+      "projectDependencySaveBtn"
+    )
+    ?.addEventListener(
+      "click",
+      submitProjectDependency
+    );
+}
+
+function bindProjectExpenseModalOnce() {
+  const m =
+    document.getElementById(
+      "projectExpenseModal"
+    );
+
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("projectExpenseOverlay")
+    ?.addEventListener(
+      "click",
+      closeProjectExpenseModal
+    );
+
+  document.getElementById("projectExpenseCloseBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectExpenseModal
+    );
+
+  document.getElementById("projectExpenseCancelBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectExpenseModal
+    );
+
+  document.getElementById("projectExpenseSaveBtn")
+    ?.addEventListener(
+      "click",
+      submitProjectExpense
+    );
+
+  // "Task becomes cost": when a task is selected, resolve (or auto-create)
+  // the matching cost code and auto-select it.
+  document.getElementById("projectExpenseTaskId")
+    ?.addEventListener("change", e => {
+      const v = Number(e?.target?.value || 0);
+      autoSetExpenseCostCodeFromTask(v)
+        .catch(err => console.warn("[Projects] auto cost-code lookup failed", err));
+    });
+}
+
+function bindProjectControlModalsOnce() {
+  bindProjectRiskModalOnce();
+  bindProjectIssueRegisterModalOnce();
+  bindProjectDocumentModalOnce();
+}
+
+function bindProjectRiskModalOnce() {
+  const m = document.getElementById("projectRiskModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document.getElementById("projectRiskOverlay")
+    ?.addEventListener("click", closeProjectRiskModal);
+
+  document.getElementById("projectRiskCloseBtn")
+    ?.addEventListener("click", closeProjectRiskModal);
+
+  document.getElementById("projectRiskCancelBtn")
+    ?.addEventListener("click", closeProjectRiskModal);
+
+  document.getElementById("projectRiskSaveBtn")
+    ?.addEventListener("click", submitProjectRisk);
+}
+
+function bindProjectIssueRegisterModalOnce() {
+  const m = document.getElementById("projectIssueRegisterModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document.getElementById("projectIssueRegisterOverlay")
+    ?.addEventListener("click", closeProjectIssueRegisterModal);
+
+  document.getElementById("projectIssueRegisterCloseBtn")
+    ?.addEventListener("click", closeProjectIssueRegisterModal);
+
+  document.getElementById("projectIssueRegisterCancelBtn")
+    ?.addEventListener("click", closeProjectIssueRegisterModal);
+
+  document.getElementById("projectIssueRegisterSaveBtn")
+    ?.addEventListener("click", submitProjectIssueRegister);
+}
+
+function bindProjectDocumentModalOnce() {
+  const m = document.getElementById("projectDocumentModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document.getElementById("projectDocumentOverlay")
+    ?.addEventListener("click", closeProjectDocumentModal);
+
+  document.getElementById("projectDocumentCloseBtn")
+    ?.addEventListener("click", closeProjectDocumentModal);
+
+  document.getElementById("projectDocumentCancelBtn")
+    ?.addEventListener("click", closeProjectDocumentModal);
+
+  document.getElementById("projectDocumentSaveBtn")
+    ?.addEventListener("click", submitProjectDocument);
+}
+
+function bindProjectBorrowingModalOnce() {
+  const m = document.getElementById(
+    "projectBorrowingModal"
+  );
+
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  [
+    "projectBorrowingOverlay",
+    "projectBorrowingCloseBtn",
+    "projectBorrowingCancelBtn",
+  ].forEach(id => {
+    document.getElementById(id)
+      ?.addEventListener(
+        "click",
+        closeProjectBorrowingModal
+      );
+  });
+
+  document.getElementById(
+    "projectBorrowingSaveBtn"
+  )?.addEventListener(
+    "click",
+    submitProjectBorrowingLink
+  );
+}
+
+function bindProjectCommissionModalOnce() {
+  const m = document.getElementById("projectCommissionModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  [
+    "projectCommissionOverlay",
+    "projectCommissionCloseBtn",
+    "projectCommissionCancelBtn",
+  ].forEach(id => {
+    document.getElementById(id)
+      ?.addEventListener("click", closeProjectCommissionModal);
+  });
+
+  document.getElementById("projectCommissionSaveBtn")
+    ?.addEventListener("click", submitProjectCommissioning);
+}
+
+function closeProjectCommissionModal() {
+  document.getElementById("projectCommissionModal")
+    ?.classList.add("hidden");
+}
+
+async function openProjectCommissionModal(p) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !p?.id) return;
+
+  bindProjectCommissionModalOnce();
+
+  const cipAsset = (p.asset_links || []).find(
+    x => x.link_type === "cip"
+  );
+
+  if (!cipAsset) {
+    alert("No CIP asset is linked to this project.");
+    return;
+  }
+
+  const activeBorrowing = (p.borrowing_links || []).some(
+    x => x.status === "active"
+  );
+
+  if (activeBorrowing) {
+    alert("Stop IAS 23 borrowing-cost capitalisation before commissioning.");
+    return;
+  }
+
+  const posOut = await apiFetch(
+    ENDPOINTS.projects.capitalPosition(cid, p.id)
+  );
+
+  const pos = posOut?.data || posOut || {};
+
+  document.getElementById("projectCommissionProjectId").value = p.id;
+  document.getElementById("projectCommissionAssetId").value = cipAsset.asset_id;
+  document.getElementById("projectCommissionDate").value =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("projectCommissionClass").value = "";
+  document.getElementById("projectCommissionClassGroup").value = "";
+  document.getElementById("projectCommissionAssetAccount").value = "";
+  document.getElementById("projectCommissionAccumDep").value = "";
+  document.getElementById("projectCommissionDepExpense").value = "";
+  document.getElementById("projectCommissionMethod").value = "SL";
+  document.getElementById("projectCommissionLife").value = "";
+  document.getElementById("projectCommissionResidual").value = "0";
+  document.getElementById("projectCommissionRbRate").value = "";
+  document.getElementById("projectCommissionUopUnits").value = "";
+
+  setElText(
+    "projectCommissionMsg",
+    `CIP to commission: ${fmtMoney(pos.cip_total || 0)}`
+  );
+
+  window._PROJECT_COMMISSION_POSITION = pos;
+
+  document.getElementById("projectCommissionModal")
+    ?.classList.remove("hidden");
+}
+
+async function submitProjectCommissioning() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectCommissionProjectId")?.value || 0
+  );
+
+  const assetId = Number(
+    document.getElementById("projectCommissionAssetId")?.value || 0
+  );
+
+  const readyDate =
+    document.getElementById("projectCommissionDate")?.value || null;
+
+  const assetClass =
+    document.getElementById("projectCommissionClass")?.value?.trim();
+
+  const classGroup =
+    document.getElementById("projectCommissionClassGroup")?.value?.trim();
+
+  const assetAccount =
+    document.getElementById("projectCommissionAssetAccount")?.value?.trim();
+
+  const accumDep =
+    document.getElementById("projectCommissionAccumDep")?.value?.trim();
+
+  const depExpense =
+    document.getElementById("projectCommissionDepExpense")?.value?.trim();
+
+  const method =
+    document.getElementById("projectCommissionMethod")?.value || "SL";
+
+  const usefulLife = Number(
+    document.getElementById("projectCommissionLife")?.value || 0
+  );
+
+  const residual = Number(
+    document.getElementById("projectCommissionResidual")?.value || 0
+  );
+
+  const rbRate = Number(
+    document.getElementById("projectCommissionRbRate")?.value || 0
+  );
+
+  const uopUnits = Number(
+    document.getElementById("projectCommissionUopUnits")?.value || 0
+  );
+
+  const pos = window._PROJECT_COMMISSION_POSITION || {};
+  const amount = Number(pos.cip_total || 0);
+  const cipAccount = pos.cip_account_code;
+
+  if (!cid || !projectId || !assetId) return;
+
+  if (!readyDate || !assetClass || !classGroup || !assetAccount) {
+    setElText(
+      "projectCommissionMsg",
+      "Date, asset class, class group and asset account are required."
+    );
+    return;
+  }
+
+  if (!cipAccount || amount <= 0) {
+    setElText(
+      "projectCommissionMsg",
+      "No valid CIP balance is available for commissioning."
+    );
+    return;
+  }
+
+  if (method === "SL" && usefulLife <= 0) {
+    setElText(
+      "projectCommissionMsg",
+      "Useful life is required for straight-line depreciation."
+    );
+    return;
+  }
+
+  if (method === "RB" && rbRate <= 0) {
+    setElText(
+      "projectCommissionMsg",
+      "Reducing-balance rate is required."
+    );
+    return;
+  }
+
+  if (method === "UOP" && uopUnits <= 0) {
+    setElText(
+      "projectCommissionMsg",
+      "Total production units are required."
+    );
+    return;
+  }
+
+  setElText(
+    "projectCommissionMsg",
+    "Commissioning asset..."
+  );
+
+  try {
+    const assetPatch = {
+      asset_class: assetClass,
+      asset_class_group: classGroup,
+      asset_account_code: assetAccount,
+      accum_dep_account_code: accumDep || null,
+      dep_expense_account_code: depExpense || null,
+      available_for_use_date: readyDate,
+      ready_for_use_date: readyDate,
+      residual_value: residual,
+      depreciation_method: method,
+      useful_life_months: method === "SL" ? usefulLife : 0,
+      rb_rate_percent: method === "RB" ? rbRate : null,
+      uop_total_units: method === "UOP" ? uopUnits : null,
+      status: "active",
+    };
+
+    await apiFetch(
+      ENDPOINTS.projects.assetUpdate(cid, assetId),
+      {
+        method: "PUT",
+        body: JSON.stringify(assetPatch),
+      }
+    );
+
+    const acqOut = await apiFetch(
+      ENDPOINTS.projects.assetAcquisitionCreate(cid, assetId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          acquisition_date: readyDate,
+          posting_date: readyDate,
+          amount,
+          net_amount: amount,
+          gross_amount: amount,
+          vat_amount: 0,
+          vat_treatment: "no_vat",
+          vat_input_claimable: false,
+          funding_source: "other",
+          credit_account_code: cipAccount,
+          reference: `PROJECT-CAP-${projectId}`,
+          notes: "Capital project commissioning from CIP",
+          status: "draft",
+        }),
+      }
+    );
+
+    const acquisitionId = Number(
+      acqOut?.id ||
+      acqOut?.data?.id ||
+      0
+    );
+
+    if (!acquisitionId) {
+      throw new Error(
+        "Asset acquisition created but no acquisition ID was returned."
+      );
+    }
+
+    const postOut = await apiFetch(
+      ENDPOINTS.projects.assetAcquisitionPost(
+        cid,
+        acquisitionId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      }
+    );
+
+    const journalId = Number(
+      postOut?.posted_journal_id ||
+      postOut?.journal_id ||
+      postOut?.id ||
+      postOut?.data?.posted_journal_id ||
+      postOut?.data?.journal_id ||
+      0
+    );
+
+    if (!journalId) {
+      throw new Error(
+        "Commissioning posted but no journal ID was returned."
+      );
+    }
+
+    await apiFetch(
+      ENDPOINTS.projects.commissioningComplete(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          asset_id: assetId,
+          acquisition_id: acquisitionId,
+          journal_id: journalId,
+        }),
+      }
+    );
+
+    closeProjectCommissionModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectCommissionMsg",
+      err?.message ||
+      "Failed to commission asset."
+    );
+  }
+}
+
+function renderProjectCloseoutAssessment(a = {}) {
+  const blockers = a.blockers || [];
+  const warnings = a.warnings || [];
+
+  return `
+    <div class="border rounded p-3">
+
+      <div class="font-semibold mb-2">
+        Closeout Assessment
+      </div>
+
+      <div class="mb-2">
+        ${a.can_close
+          ? `<span class="font-semibold">✓ Ready to close</span>`
+          : `<span class="font-semibold text-red-600">
+               ${blockers.length} blocker${blockers.length === 1 ? "" : "s"}
+             </span>`
+        }
+      </div>
+
+      ${blockers.length ? `
+        <div class="mb-2">
+          ${blockers.map(x => `
+            <div class="text-red-600">• ${esc(x)}</div>
+          `).join("")}
+        </div>
+      ` : ""}
+
+      ${warnings.length ? `
+        <div>
+          ${warnings.map(x => `
+            <div class="text-amber-700">• ${esc(x)}</div>
+          `).join("")}
+        </div>
+      ` : ""}
+
+    </div>
+  `;
+}
+
+function bindProjectCloseoutModalOnce() {
+  const m = document.getElementById("projectCloseoutModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  [
+    "projectCloseoutOverlay",
+    "projectCloseoutCloseBtn",
+    "projectCloseoutCancelBtn",
+  ].forEach(id => {
+    document.getElementById(id)
+      ?.addEventListener("click", closeProjectCloseoutModal);
+  });
+
+  document.getElementById("projectCloseoutSaveBtn")
+    ?.addEventListener("click", submitProjectCloseout);
+}
+
+async function openProjectCloseoutModal(p) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !p?.id) return;
+
+  bindProjectCloseoutModalOnce();
+
+  document.getElementById("projectCloseoutProjectId").value = p.id;
+  document.getElementById("projectCloseoutDate").value =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("projectCloseoutFinalBilling").checked =
+    p.billing_enabled === false;
+
+  document.getElementById("projectCloseoutNotes").value = "";
+
+  const out = await apiFetch(
+    ENDPOINTS.projects.closeoutAssessment(cid, p.id)
+  );
+
+  const assessment = out?.data || out || {};
+
+  window._PROJECT_CLOSEOUT_ASSESSMENT = assessment;
+
+  document.getElementById("projectCloseoutAssessment").innerHTML =
+    renderProjectCloseoutAssessment(assessment);
+
+  document.getElementById("projectCloseoutSaveBtn").disabled =
+    !assessment.can_close;
+
+  setElText("projectCloseoutMsg", "");
+
+  document.getElementById("projectCloseoutModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectCloseoutModal() {
+  document.getElementById("projectCloseoutModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectCloseout() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectCloseoutProjectId")?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    closeout_date:
+      document.getElementById("projectCloseoutDate")?.value || null,
+
+    final_billing_confirmed:
+      !!document.getElementById("projectCloseoutFinalBilling")?.checked,
+
+    notes:
+      document.getElementById("projectCloseoutNotes")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.closeout_date) {
+    setElText("projectCloseoutMsg", "Closeout date is required.");
+    return;
+  }
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.close(cid, projectId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectCloseoutModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectCloseoutMsg",
+      err?.message || "Failed to close project."
+    );
+  }
+}
+
+async function openProjectBorrowingModal(p) {
+  bindProjectBorrowingModalOnce();
+
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  if (!cid || !p?.id) return;
+
+  const assets = (p.asset_links || []).filter(
+    x =>
+      x.link_type === "cip" &&
+      x.is_qualifying_asset
+  );
+
+  if (!assets.length) {
+    alert(
+      "Create a qualifying CIP asset first."
+    );
+    return;
+  }
+
+  const out = await apiFetch(
+    ENDPOINTS.projects.borrowingOptions(
+      cid,
+      p.id
+    )
+  );
+
+  const loans = out?.items || [];
+
+  const assetSel = document.getElementById(
+    "projectBorrowingAssetId"
+  );
+
+  const loanSel = document.getElementById(
+    "projectBorrowingLoanId"
+  );
+
+  assetSel.innerHTML = assets.map(x => `
+    <option value="${x.asset_id}">
+      ${esc(x.asset_code || "")}
+      — ${esc(x.asset_name || "")}
+    </option>
+  `).join("");
+
+  loanSel.innerHTML =
+    `<option value="">Select loan</option>` +
+    loans.map(x => `
+      <option value="${x.id}">
+        ${esc(x.loan_name || "")}
+        ${x.lender_name
+          ? `— ${esc(x.lender_name)}`
+          : ""}
+      </option>
+    `).join("");
+
+  document.getElementById(
+    "projectBorrowingProjectId"
+  ).value = p.id;
+
+  document.getElementById(
+    "projectBorrowingStartDate"
+  ).value =
+    toDateInputValue?.(p.start_date) ||
+    p.start_date ||
+    "";
+
+  document.getElementById(
+    "projectBorrowingEndDate"
+  ).value = "";
+
+  document.getElementById(
+    "projectBorrowingRatio"
+  ).value = "100";
+
+  document.getElementById(
+    "projectBorrowingNotes"
+  ).value = "";
+
+  setElText(
+    "projectBorrowingMsg",
+    ""
+  );
+
+  document.getElementById(
+    "projectBorrowingModal"
+  )?.classList.remove("hidden");
+}
+
+function closeProjectBorrowingModal() {
+  document.getElementById(
+    "projectBorrowingModal"
+  )?.classList.add("hidden");
+}
+
+async function submitProjectBorrowingLink() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById(
+      "projectBorrowingProjectId"
+    )?.value || 0
+  );
+
+  const loanId = Number(
+    document.getElementById(
+      "projectBorrowingLoanId"
+    )?.value || 0
+  );
+
+  const assetId = Number(
+    document.getElementById(
+      "projectBorrowingAssetId"
+    )?.value || 0
+  );
+
+  const ratioPct = Number(
+    document.getElementById(
+      "projectBorrowingRatio"
+    )?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  if (!loanId || !assetId) {
+    setElText(
+      "projectBorrowingMsg",
+      "Select a CIP asset and loan."
+    );
+    return;
+  }
+
+  if (ratioPct < 0 || ratioPct > 100) {
+    setElText(
+      "projectBorrowingMsg",
+      "Capitalisation must be between 0% and 100%."
+    );
+    return;
+  }
+
+  const payload = {
+    loan_id: loanId,
+    asset_id: assetId,
+
+    capitalization_start_date:
+      document.getElementById(
+        "projectBorrowingStartDate"
+      )?.value || null,
+
+    capitalization_end_date:
+      document.getElementById(
+        "projectBorrowingEndDate"
+      )?.value || null,
+
+    capitalization_ratio:
+      ratioPct / 100,
+
+    notes:
+      document.getElementById(
+        "projectBorrowingNotes"
+      )?.value?.trim() || null,
+  };
+
+  setElText(
+    "projectBorrowingMsg",
+    "Linking borrowing..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.borrowingLinkCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectBorrowingModal();
+
+    await loadProjectDetail(
+      projectId
+    );
+
+  } catch (err) {
+    setElText(
+      "projectBorrowingMsg",
+      err?.message ||
+      "Failed to link borrowing."
+    );
+  }
+}
+
+function renderProjectBorrowingsMini(items = []) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No borrowing linked to this project.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">
+              Borrowing
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Period
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Rate
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Capitalised
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Expensed
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Action
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+
+              <td class="px-2 py-1">
+                <div class="font-medium">
+                  ${esc(x.loan_name || "")}
+                </div>
+
+                <div class="text-slate-500">
+                  ${esc(x.lender_name || "")}
+                </div>
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(
+                  toDateInputValue?.(
+                    x.capitalization_start_date
+                  ) ||
+                  x.capitalization_start_date ||
+                  "—"
+                )}
+                →
+                ${esc(
+                  toDateInputValue?.(
+                    x.capitalization_end_date
+                  ) ||
+                  x.capitalization_end_date ||
+                  "Open"
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${(
+                  Number(
+                    x.capitalization_ratio || 0
+                  ) * 100
+                ).toFixed(2)}%
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.capitalized_amount || 0
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(
+                  x.expensed_amount || 0
+                )}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${
+                  x.status === "active"
+                    ? `
+                      <button
+                        class="underline"
+                        data-project-borrow-stop="${x.id}">
+                        Stop
+                      </button>
+                    `
+                    : esc(x.status || "ended")
+                }
+              </td>
+
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function openProjectRiskModal(
+  projectId,
+  risk = null
+) {
+  bindProjectRiskModalOnce();
+
+  document.getElementById("projectRiskProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectRiskId").value =
+    risk?.id || "";
+
+  document.getElementById("projectRiskTitle").value =
+    risk?.title || "";
+
+  document.getElementById("projectRiskCategory").value =
+    risk?.category || "";
+
+  document.getElementById("projectRiskOwnerId").value =
+    risk?.owner_user_id || "";
+
+  document.getElementById("projectRiskStatus").value =
+    risk?.status || "open";
+
+  document.getElementById("projectRiskProbability").value =
+    risk?.probability || 1;
+
+  document.getElementById("projectRiskImpact").value =
+    risk?.impact || 1;
+
+  document.getElementById("projectRiskDueDate").value =
+    risk?.due_date || "";
+
+  document.getElementById("projectRiskDescription").value =
+    risk?.description || "";
+
+  document.getElementById("projectRiskMitigation").value =
+    risk?.mitigation_plan || "";
+
+  document.getElementById("projectRiskContingency").value =
+    risk?.contingency_plan || "";
+
+  document.getElementById("projectRiskSaveBtn").textContent =
+    risk?.id ? "Update Risk" : "Save Risk";
+
+  setElText("projectRiskMsg", "");
+
+  document.getElementById("projectRiskModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectRiskModal() {
+  document.getElementById("projectRiskModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectRisk() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectRiskProjectId")
+      ?.value || 0
+  );
+
+  const riskId = Number(
+    document.getElementById("projectRiskId")
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    title:
+      document.getElementById("projectRiskTitle")
+        ?.value?.trim(),
+
+    category:
+      document.getElementById("projectRiskCategory")
+        ?.value?.trim() || null,
+
+    owner_user_id: Number(
+      document.getElementById("projectRiskOwnerId")
+        ?.value || 0
+    ) || null,
+
+    status:
+      document.getElementById("projectRiskStatus")
+        ?.value || "open",
+
+    probability: Number(
+      document.getElementById("projectRiskProbability")
+        ?.value || 1
+    ),
+
+    impact: Number(
+      document.getElementById("projectRiskImpact")
+        ?.value || 1
+    ),
+
+    due_date:
+      document.getElementById("projectRiskDueDate")
+        ?.value || null,
+
+    description:
+      document.getElementById("projectRiskDescription")
+        ?.value?.trim() || null,
+
+    mitigation_plan:
+      document.getElementById("projectRiskMitigation")
+        ?.value?.trim() || null,
+
+    contingency_plan:
+      document.getElementById("projectRiskContingency")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.title) {
+    setElText(
+      "projectRiskMsg",
+      "Risk title is required."
+    );
+    return;
+  }
+
+  setElText(
+    "projectRiskMsg",
+    riskId
+      ? "Updating risk..."
+      : "Saving risk..."
+  );
+
+  try {
+    await apiFetch(
+      riskId
+        ? ENDPOINTS.projects.riskUpdate(
+            cid,
+            projectId,
+            riskId
+          )
+        : ENDPOINTS.projects.risksCreate(
+            cid,
+            projectId
+          ),
+      {
+        method: riskId ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectRiskModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectRiskMsg",
+      err?.message ||
+      "Failed to save risk."
+    );
+  }
+}
+
+async function openProjectIssueRegisterModal(
+  projectId,
+  issue = null
+) {
+  bindProjectIssueRegisterModalOnce();
+
+  document.getElementById("projectIssueRegisterProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectIssueRegisterId").value =
+    issue?.id || "";
+
+  document.getElementById("projectIssueRegisterTitle").value =
+    issue?.title || "";
+
+  document.getElementById("projectIssueRegisterCategory").value =
+    issue?.category || "";
+
+  document.getElementById("projectIssueRegisterPriority").value =
+    issue?.priority || "normal";
+
+  document.getElementById("projectIssueRegisterOwnerId").value =
+    issue?.owner_user_id || "";
+
+  document.getElementById("projectIssueRegisterStatus").value =
+    issue?.status || "open";
+
+  document.getElementById("projectIssueRegisterDueDate").value =
+    issue?.due_date || "";
+
+  document.getElementById("projectIssueRegisterDescription").value =
+    issue?.description || "";
+
+  document.getElementById("projectIssueRegisterResolution").value =
+    issue?.resolution || "";
+
+  await populateProjectTaskSelect(
+    "projectIssueRegisterTaskId",
+    projectId,
+    "No task"
+  );
+
+  document.getElementById("projectIssueRegisterTaskId").value =
+    issue?.task_id || "";
+
+  document.getElementById("projectIssueRegisterSaveBtn").textContent =
+    issue?.id ? "Update Issue" : "Save Issue";
+
+  setElText("projectIssueRegisterMsg", "");
+
+  document.getElementById("projectIssueRegisterModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectIssueRegisterModal() {
+  document.getElementById("projectIssueRegisterModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectIssueRegister() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectIssueRegisterProjectId")
+      ?.value || 0
+  );
+
+  const issueId = Number(
+    document.getElementById("projectIssueRegisterId")
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    title:
+      document.getElementById("projectIssueRegisterTitle")
+        ?.value?.trim(),
+
+    task_id: Number(
+      document.getElementById("projectIssueRegisterTaskId")
+        ?.value || 0
+    ) || null,
+
+    category:
+      document.getElementById("projectIssueRegisterCategory")
+        ?.value?.trim() || null,
+
+    priority:
+      document.getElementById("projectIssueRegisterPriority")
+        ?.value || "normal",
+
+    owner_user_id: Number(
+      document.getElementById("projectIssueRegisterOwnerId")
+        ?.value || 0
+    ) || null,
+
+    status:
+      document.getElementById("projectIssueRegisterStatus")
+        ?.value || "open",
+
+    due_date:
+      document.getElementById("projectIssueRegisterDueDate")
+        ?.value || null,
+
+    description:
+      document.getElementById("projectIssueRegisterDescription")
+        ?.value?.trim() || null,
+
+    resolution:
+      document.getElementById("projectIssueRegisterResolution")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.title) {
+    setElText(
+      "projectIssueRegisterMsg",
+      "Issue title is required."
+    );
+    return;
+  }
+
+  setElText(
+    "projectIssueRegisterMsg",
+    issueId
+      ? "Updating issue..."
+      : "Saving issue..."
+  );
+
+  try {
+    await apiFetch(
+      issueId
+        ? ENDPOINTS.projects.issueUpdate(
+            cid,
+            projectId,
+            issueId
+          )
+        : ENDPOINTS.projects.issuesCreate(
+            cid,
+            projectId
+          ),
+      {
+        method: issueId ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectIssueRegisterModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectIssueRegisterMsg",
+      err?.message ||
+      "Failed to save issue."
+    );
+  }
+}
+
+async function openProjectDocumentModal(
+  projectId
+) {
+  bindProjectDocumentModalOnce();
+
+  document.getElementById("projectDocumentProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectDocumentTitle").value =
+    "";
+
+  document.getElementById("projectDocumentType").value =
+    "other";
+
+  document.getElementById("projectDocumentVersion").value =
+    "";
+
+  document.getElementById("projectDocumentReference").value =
+    "";
+
+  document.getElementById("projectDocumentFileName").value =
+    "";
+
+  document.getElementById("projectDocumentFileUrl").value =
+    "";
+
+  document.getElementById("projectDocumentNotes").value =
+    "";
+
+  await populateProjectTaskSelect(
+    "projectDocumentTaskId",
+    projectId,
+    "No task"
+  );
+
+  setElText("projectDocumentMsg", "");
+
+  document.getElementById("projectDocumentModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectDocumentModal() {
+  document.getElementById("projectDocumentModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectDocument() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectDocumentProjectId")
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    title:
+      document.getElementById("projectDocumentTitle")
+        ?.value?.trim(),
+
+    document_type:
+      document.getElementById("projectDocumentType")
+        ?.value || "other",
+
+    task_id: Number(
+      document.getElementById("projectDocumentTaskId")
+        ?.value || 0
+    ) || null,
+
+    version_no:
+      document.getElementById("projectDocumentVersion")
+        ?.value?.trim() || null,
+
+    reference:
+      document.getElementById("projectDocumentReference")
+        ?.value?.trim() || null,
+
+    file_name:
+      document.getElementById("projectDocumentFileName")
+        ?.value?.trim() || null,
+
+    file_url:
+      document.getElementById("projectDocumentFileUrl")
+        ?.value?.trim() || null,
+
+    notes:
+      document.getElementById("projectDocumentNotes")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.title) {
+    setElText(
+      "projectDocumentMsg",
+      "Document title is required."
+    );
+    return;
+  }
+
+  setElText(
+    "projectDocumentMsg",
+    "Saving document..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.documentsCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectDocumentModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectDocumentMsg",
+      err?.message ||
+      "Failed to save document."
+    );
+  }
+}
+
+/**
+ * Reset Team Member form to default values
+ */
+function resetProjectTeamForm() {
+  // Clear user search
+  const searchInput = document.getElementById("projectTeamUserSearch");
+  const hiddenIdInput = document.getElementById("projectTeamUserId");
+  const userList = document.getElementById("projectTeamUserList");
+  
+  if (searchInput) searchInput.value = "";
+  if (hiddenIdInput) hiddenIdInput.value = "";
+  if (userList) {
+    userList.classList.add("hidden");
+    userList.innerHTML = "";
+  }
+  
+  // Reset role type to default
+  const roleTypeSelect = document.getElementById("projectTeamRoleType");
+  if (roleTypeSelect) roleTypeSelect.value = "member";
+  
+  // Reset project role
+  const roleSelect = document.getElementById("projectTeamRole");
+  if (roleSelect) roleSelect.value = "";
+  
+  // Reset allocation
+  const allocation = document.getElementById("projectTeamAllocation");
+  if (allocation) allocation.value = "100";
+  
+  // Reset dates
+  const startDate = document.getElementById("projectTeamStartDate");
+  const endDate = document.getElementById("projectTeamEndDate");
+  if (startDate) startDate.value = "";
+  if (endDate) endDate.value = "";
+  
+  // Reset notes
+  const notes = document.getElementById("projectTeamNotes");
+  if (notes) notes.value = "";
+  
+  // Clear message
+  setElText("projectTeamMsg", "");
+  
+  console.log("[TeamModal] Form reset to defaults");
+}
+
+/**
+ * Load and display existing team members for a project
+ * Called when Team Modal opens
+ */
+async function loadProjectTeamMembers(projectId) {
+  const listContainer = document.getElementById("projectTeamExistingList");
+  if (!listContainer) {
+    console.log("[TeamModal] No existing team list container found (optional)");
+    return;  // Optional - modal may not have this element
+  }
+  
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  
+  if (!cid || !projectId) {
+    listContainer.innerHTML = `
+      <div class="text-slate-400 text-xs p-2 text-center">
+        No project selected
+      </div>
+    `;
+    return;
+  }
+  
+  try {
+    // Show loading state
+    listContainer.innerHTML = `
+      <div class="text-slate-400 text-xs p-2 text-center animate-pulse">
+        Loading team members...
+      </div>
+    `;
+    
+    // Fetch team members from API
+    const url = ENDPOINTS.projects.teamList(cid, projectId);
+    console.log("[TeamModal] Fetching team from:", url);
+    
+    const data = await apiFetch(url);
+    const members = data?.data || data?.items || data?.members || [];
+    
+    // Render team members list
+    if (!members.length) {
+      listContainer.innerHTML = `
+        <div class="text-slate-400 text-xs p-3 text-center">
+          No team members yet<br>
+          <span class="text-[10px]">Add your first team member above</span>
+        </div>
+      `;
+      return;
+    }
+    
+    // Build HTML for each member
+    let html = '<div class="space-y-2 max-h-40 overflow-auto">';
+    
+    members.forEach(member => {
+      const name = member.user_name || member.name || member.employee_name || 'Unknown';
+      const roleType = member.role_type || 'member';
+      const role = member.project_role || '-';
+      const allocation = member.allocation_percent || 100;
+      
+      html += `
+        <div class="flex items-center justify-between bg-slate-50 rounded p-2 text-xs">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-medium">
+              ${name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div class="font-medium text-slate-700">${escapeHtml(name)}</div>
+              <div class="text-slate-400">${roleType} ${role ? '• ' + role : ''}</div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-slate-600">${allocation}%</div>
+            ${member.id ? `
+              <button onclick="deleteProjectTeamMember(${projectId}, ${member.id})" 
+                      class="text-red-500 hover:text-red-700 text-[10px]">
+                Remove
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    });
+    
+    html += '</div>';
+    listContainer.innerHTML = html;
+    
+    console.log(`[TeamModal] ✓ Loaded ${members.length} team members`);
+    
+  } catch (err) {
+    console.error("[TeamModal] Failed to load team:", err);
+    listContainer.innerHTML = `
+      <div class="text-red-400 text-xs p-2 text-center">
+        ❌ Failed to load: ${escapeHtml(err.message)}
+      </div>
+    `;
+  }
+}
+
+/**
+ * Delete a team member from project
+ */
+async function deleteProjectTeamMember(projectId, memberId) {
+  if (!confirm('Remove this team member from the project?')) return;
+  
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  
+  try {
+    await apiFetch(ENDPOINTS.projects.teamDelete(cid, projectId, memberId), {
+      method: 'DELETE'
+    });
+    
+    console.log('[TeamModal] ✓ Member removed');
+    
+    // Refresh the list
+    await loadProjectTeamMembers(projectId);
+    
+    // Also refresh project detail if function exists
+    if (typeof loadProjectDetail === 'function') {
+      await loadProjectDetail(projectId);
+    }
+    
+  } catch (err) {
+    console.error('[TeamModal] Failed to delete member:', err);
+    alert('Failed to remove member: ' + err.message);
+  }
+}
+
+async function openProjectTeamModal(projectId) {
+  bindProjectTeamModalOnce();
+  
+  // Set project ID
+  const projectIdInput = document.getElementById("projectTeamProjectId");
+  if (projectIdInput) projectIdInput.value = String(projectId);
+  
+  // Reset form fields
+  resetProjectTeamForm();
+  
+
+  // ✅ CHECK: Do roles exist?
+  const hasRoles = Array.isArray(window._projectRolesCache) && window._projectRolesCache.length > 0;
+  
+  if (!hasRoles) {
+    console.log("[TeamModal] ⚠️ No roles defined - showing warning");
+    
+    // Optional: Show visual warning in the modal
+    const roleSelect = document.getElementById("projectTeamRole");
+    if (roleSelect) {
+      roleSelect.innerHTML = `
+        <option value="">🔴 Define roles first (click "Manage Roles")</option>
+      `;
+      roleSelect.style.borderColor = "#f59e0b";
+      roleSelect.style.backgroundColor = "#fffbeb";
+    }
+  } else {
+    // ✅ Populate with actual roles
+    populateTeamMemberRoleTypeSelect();
+  }
+  
+  // Load existing team members
+  await loadProjectTeamMembers(projectId);
+  
+  // Show modal
+  setElText("projectTeamMsg", "");
+  document.getElementById("projectTeamModal")?.classList.remove("hidden");
+  
+  console.log(`[TeamModal] Opened for Project ${projectId} | Roles available: ${hasRoles ? 'YES' : 'NO'}`);
+}
+
+function closeProjectTeamModal() {
+  document
+    .getElementById("projectTeamModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectTeamMember() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(document.getElementById("projectTeamProjectId")?.value || 0);
+
+  if (!cid || !projectId) return;
+
+  let userId = Number(document.getElementById("projectTeamUserId")?.value || 0);
+  const searchName = document.getElementById("projectTeamUserSearch")?.value?.trim();
+
+  // Fallback: If user typed name without selecting from dropdown, resolve it now
+  if (!userId && searchName) {
+    const matched = resolveEmployeeFromSearch(searchName);
+    if (matched) {
+      userId = Number(matched.id);
+      document.getElementById("projectTeamUserId").value = String(userId);
+    }
+  }
+
+  if (!userId) {
+    setElText("projectTeamMsg", "Please select or type a valid employee name.");
+    return;
+  }
+
+  const payload = {
+    user_id: userId,
+    role_type: document.getElementById("projectTeamRoleType")?.value || "member",
+    project_role: document.getElementById("projectTeamRole")?.value?.trim() || null,
+    allocation_percent: Number(document.getElementById("projectTeamAllocation")?.value || 100),
+    start_date: document.getElementById("projectTeamStartDate")?.value || null,
+    end_date: document.getElementById("projectTeamEndDate")?.value || null,
+    notes: document.getElementById("projectTeamNotes")?.value?.trim() || null,
+  };
+
+  if (payload.allocation_percent < 0 || payload.allocation_percent > 100) {
+    setElText("projectTeamMsg", "Allocation must be 0–100%.");
+    return;
+  }
+
+  setElText("projectTeamMsg", "Saving team member...");
+
+  try {
+    await apiFetch(ENDPOINTS.projects.teamCreate(cid, projectId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    closeProjectTeamModal();
+    populateTeamMemberRoleTypeSelect();   // Refresh roles in case changed
+    await loadProjectDetail(projectId);
+  } catch (err) {
+    setElText("projectTeamMsg", err?.message || "Failed to save team member.");
+  }
+}
+
+async function openProjectCapitaliseModal(project) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !project?.id) return;
+
+  bindProjectCapitaliseModalOnce();
+
+  try {
+    const out = await apiFetch(
+      ENDPOINTS.projects.capitalPosition(cid, project.id)
+    );
+
+    const pos = out?.data || out || {};
+
+    document.getElementById("projectCapitaliseProjectId").value = project.id;
+    document.getElementById("projectCapitaliseAssetName").value = project.project_name || "";
+    document.getElementById("projectCapitaliseDate").value = new Date().toISOString().slice(0, 10);
+    document.getElementById("projectCapitaliseAmount").value = pos.available_to_capitalise || 0;
+    document.getElementById("projectCapitaliseAssetClassId").value = "";
+    document.getElementById("projectCapitaliseAssetAccount").value = "";
+    document.getElementById("projectCapitaliseLife").value = "";
+    document.getElementById("projectCapitaliseResidual").value = "0";
+    document.getElementById("projectCapitaliseMethod").value = "straight_line";
+    document.getElementById("projectCapitaliseLocation").value = project.location || "";
+    document.getElementById("projectCapitaliseNotes").value = "";
+
+    setElText(
+      "projectCapitaliseMsg",
+      `Available CIP: ${fmtMoney(pos.available_to_capitalise || 0)}`
+    );
+
+    document.getElementById("projectCapitaliseModal")
+      ?.classList.remove("hidden");
+  } catch (err) {
+    alert(err?.message || "Failed to load capital position.");
+  }
+}
+
+function closeProjectCapitaliseModal() {
+  document.getElementById("projectCapitaliseModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectCapitalisation() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(
+    document.getElementById("projectCapitaliseProjectId")?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    asset_name: document.getElementById("projectCapitaliseAssetName")?.value?.trim(),
+    capitalisation_date: document.getElementById("projectCapitaliseDate")?.value || null,
+    asset_class_id: Number(document.getElementById("projectCapitaliseAssetClassId")?.value || 0) || null,
+    capitalise_amount: Number(document.getElementById("projectCapitaliseAmount")?.value || 0),
+    asset_account_code: document.getElementById("projectCapitaliseAssetAccount")?.value?.trim() || null,
+    useful_life_months: Number(document.getElementById("projectCapitaliseLife")?.value || 0) || null,
+    residual_value: Number(document.getElementById("projectCapitaliseResidual")?.value || 0),
+    depreciation_method: document.getElementById("projectCapitaliseMethod")?.value || null,
+    location: document.getElementById("projectCapitaliseLocation")?.value?.trim() || null,
+    notes: document.getElementById("projectCapitaliseNotes")?.value?.trim() || null,
+  };
+
+  if (!payload.asset_name) {
+    setElText("projectCapitaliseMsg", "Asset name is required.");
+    return;
+  }
+
+  if (payload.capitalise_amount <= 0) {
+    setElText("projectCapitaliseMsg", "Capitalisation amount must be greater than 0.");
+    return;
+  }
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.capitalisationsCreate(cid, projectId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectCapitaliseModal();
+    await loadProjectDetail(projectId);
+  } catch (err) {
+    setElText(
+      "projectCapitaliseMsg",
+      err?.message || "Failed to create capitalisation request."
+    );
+  }
+}
+
+function renderProjectCapitalisationsMini(items = []) {
+  if (!items.length) {
+    return `<div class="text-slate-500">No capitalisation requests yet.</div>`;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Asset</th>
+            <th class="text-right px-2 py-1">Amount</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">${esc(x.asset_name || "")}</td>
+              <td class="px-2 py-1 text-right">${fmtMoney(x.capitalise_amount || 0)}</td>
+              <td class="px-2 py-1">${esc(x.status || "")}</td>
+              <td class="px-2 py-1 text-right">${renderProjectCapitalisationActions(x)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectCapitalisationActions(x) {
+  if (x.status === "draft") {
+    return `
+      <button class="underline"
+              data-capitalisation-submit="${esc(String(x.id))}">
+        Submit
+      </button>
+    `;
+  }
+
+  if (x.status === "submitted") {
+    return `
+      <button class="underline"
+              data-capitalisation-approve="${esc(String(x.id))}">
+        Approve
+      </button>
+    `;
+  }
+
+  if (x.status === "approved") {
+    return `<span class="text-slate-500">Ready for Fixed Assets</span>`;
+  }
+
+  return "—";
+}
+
+function fillProjectTaskAssigneeSelect(
+  selectedEmployeeId = ""
+) {
+  const el =
+    document.getElementById(
+      "projectAssignUserId"
+    );
+
+  if (!el) return;
+
+  const employees =
+    (projectLookupState.employees || [])
+      .filter(employee => {
+        const status = String(
+          employee.employment_status ||
+          "active"
+        ).toLowerCase();
+
+        return (
+          status !== "inactive" &&
+          Number(employee.id || 0) > 0
+        );
+      })
+      .sort((a, b) => {
+        const aName = [
+          a.first_name,
+          a.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        const bName = [
+          b.first_name,
+          b.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        return aName.localeCompare(bName);
+      });
+
+  el.innerHTML = `
+    <option value="">
+      Select employee…
+    </option>
+
+    ${employees.map(employee => {
+      const name = [
+        employee.first_name,
+        employee.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return `
+        <option
+          value="${esc(String(employee.id))}"
+          ${
+            String(employee.id) ===
+            String(selectedEmployeeId)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(name)}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
+async function openProjectAssignModal(
+  projectId,
+  task
+) {
+  bindProjectAssignModalOnce();
+
+  document
+    .getElementById("projectAssignProjectId")
+    .value = String(projectId);
+
+  document
+    .getElementById("projectAssignTaskId")
+    .value = String(task.id);
+
+  setElText(
+    "projectAssignTaskName",
+    `${task.wbs_code || task.task_code || ""} ` +
+    `— ${task.task_name || ""}`
+  );
+
+  if (
+    !projectLookupState.employees?.length
+  ) {
+    await loadProjectPeopleAndDepartments();
+  }
+
+  fillProjectTaskAssigneeSelect();
+
+  document
+    .getElementById("projectAssignRole")
+    .value = "";
+
+  document
+    .getElementById("projectAssignAllocation")
+    .value = "100";
+
+  document
+    .getElementById("projectAssignNotes")
+    .value = "";
+
+  setElText(
+    "projectAssignMsg",
+    ""
+  );
+
+  document
+    .getElementById("projectAssignModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectAssignModal() {
+  document
+    .getElementById("projectAssignModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectTaskAssignment() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document
+      .getElementById(
+        "projectAssignProjectId"
+      )
+      ?.value || 0
+  );
+
+  const taskId = Number(
+    document
+      .getElementById(
+        "projectAssignTaskId"
+      )
+      ?.value || 0
+  );
+
+  if (!cid || !projectId || !taskId) {
+    return;
+  }
+
+  const payload = {
+    user_id: Number(
+      document
+        .getElementById(
+          "projectAssignUserId"
+        )
+        ?.value || 0
+    ),
+
+    assignment_role:
+      document
+        .getElementById(
+          "projectAssignRole"
+        )
+        ?.value?.trim() || null,
+
+    allocation_percent: Number(
+      document
+        .getElementById(
+          "projectAssignAllocation"
+        )
+        ?.value || 100
+    ),
+
+    notes:
+      document
+        .getElementById(
+          "projectAssignNotes"
+        )
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.user_id) {
+    setElText(
+      "projectAssignMsg",
+      "User is required."
+    );
+    return;
+  }
+
+  if (
+    payload.allocation_percent < 0 ||
+    payload.allocation_percent > 100
+  ) {
+    setElText(
+      "projectAssignMsg",
+      "Allocation must be 0–100%."
+    );
+    return;
+  }
+
+  setElText(
+    "projectAssignMsg",
+    "Assigning task..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.taskAssign(
+        cid,
+        projectId,
+        taskId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectAssignModal();
+
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectAssignMsg",
+      err?.message ||
+      "Failed to assign task."
+    );
+  }
+}
+
+function openProjectDependencyModal(
+  projectId,
+  tasks = []
+) {
+  bindProjectDependencyModalOnce();
+
+  document
+    .getElementById(
+      "projectDependencyProjectId"
+    )
+    .value = String(projectId);
+
+  const options = `
+    <option value="">
+      Select task...
+    </option>
+
+    ${tasks.map(t => `
+      <option value="${esc(String(t.id))}">
+        ${esc(
+          t.wbs_code ||
+          t.task_code ||
+          ""
+        )}
+        — ${esc(t.task_name || "")}
+      </option>
+    `).join("")}
+  `;
+
+  document
+    .getElementById(
+      "projectDependencyPredecessor"
+    )
+    .innerHTML = options;
+
+  document
+    .getElementById(
+      "projectDependencySuccessor"
+    )
+    .innerHTML = options;
+
+  document
+    .getElementById(
+      "projectDependencyType"
+    )
+    .value = "finish_to_start";
+
+  document
+    .getElementById(
+      "projectDependencyLagDays"
+    )
+    .value = "0";
+
+  document
+    .getElementById(
+      "projectDependencyNotes"
+    )
+    .value = "";
+
+  setElText(
+    "projectDependencyMsg",
+    ""
+  );
+
+  document
+    .getElementById(
+      "projectDependencyModal"
+    )
+    ?.classList.remove("hidden");
+}
+
+function closeProjectDependencyModal() {
+  document
+    .getElementById(
+      "projectDependencyModal"
+    )
+    ?.classList.add("hidden");
+}
+
+async function submitProjectDependency() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document
+      .getElementById(
+        "projectDependencyProjectId"
+      )
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    predecessor_task_id: Number(
+      document
+        .getElementById(
+          "projectDependencyPredecessor"
+        )
+        ?.value || 0
+    ),
+
+    successor_task_id: Number(
+      document
+        .getElementById(
+          "projectDependencySuccessor"
+        )
+        ?.value || 0
+    ),
+
+    dependency_type:
+      document
+        .getElementById(
+          "projectDependencyType"
+        )
+        ?.value ||
+      "finish_to_start",
+
+    lag_days: Number(
+      document
+        .getElementById(
+          "projectDependencyLagDays"
+        )
+        ?.value || 0
+    ),
+
+    notes:
+      document
+        .getElementById(
+          "projectDependencyNotes"
+        )
+        ?.value?.trim() || null,
+  };
+
+  if (
+    !payload.predecessor_task_id ||
+    !payload.successor_task_id
+  ) {
+    setElText(
+      "projectDependencyMsg",
+      "Select both tasks."
+    );
+    return;
+  }
+
+  if (
+    payload.predecessor_task_id ===
+    payload.successor_task_id
+  ) {
+    setElText(
+      "projectDependencyMsg",
+      "A task cannot depend on itself."
+    );
+    return;
+  }
+
+  setElText(
+    "projectDependencyMsg",
+    "Saving dependency..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.dependenciesCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectDependencyModal();
+
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectDependencyMsg",
+      err?.message ||
+      "Failed to save dependency."
+    );
+  }
+}
+
+function getEmployeeNameById(employeeId) {
+  const id = Number(employeeId);
+  if (!id) return String(employeeId || "");
+  
+  console.log("[EMP LOOKUP] ID:", id);
+  console.log("[EMP LOOKUP] Cache count:", projectLookupState?.employees?.length || 0);
+  console.log("[EMP LOOKUP] Global store:", (window._projectTeamEmployeesCache || window._projectTeamEmployees)?.length || 0);
+  
+  // Check cache first (from loadProjectPeopleAndDepartments)
+  const cached = projectLookupState?.employees;
+  if (Array.isArray(cached)) {
+    const emp = cached.find(e => Number(e.id) === id);
+    if (emp) {
+      return [emp.first_name, emp.last_name].filter(Boolean).join(" ") || "Employee #" + id;
+    }
+  }
+  
+  // Check global store from team modal search (BOTH names!)
+  const stored = window._projectTeamEmployeesCache || window._projectTeamEmployees;
+  if (Array.isArray(stored)) {
+    const emp = stored.find(e => Number(e.id) === id);
+    if (emp) {
+      return [emp.first_name, emp.last_name].filter(Boolean).join(" ") || "Employee #" + id;
+    }
+  }
+  
+  return "ID: " + id; // Fallback
+}
+
+function renderProjectTeamMini(team = []) {
+  if (!team.length) {
+    return `
+      <div class="text-slate-500">
+        No project team yet.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-3 py-1.5 w-[28%]">
+              Employee
+            </th>
+
+            <th class="text-left px-2 py-1.5 w-[25%]">
+              Role
+            </th>
+
+            <th class="text-left px-2 py-1.5 w-[18%]">
+              Type
+            </th>
+
+            <th class="text-right px-2 py-1.5 w-[15%]">
+              Allocation
+            </th>
+
+            <th class="text-right px-2 py-1.5 w-[14%]">
+              Action
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${team.map(m => `
+            <tr class="border-b">
+
+              <td class="px-3 py-1.5 font-medium text-slate-800">
+                ${esc(getEmployeeNameById(m.user_id))}
+              </td>
+
+              <td class="px-2 py-1.5">
+                ${esc(m.project_role || "")}
+              </td>
+
+              <td class="px-2 py-1.5">
+                ${esc(m.role_type || "")}
+              </td>
+
+              <td class="px-2 py-1.5 text-right">
+                ${Number(
+                  m.allocation_percent || 0
+                ).toFixed(0)}%
+              </td>
+
+              <td class="px-2 py-1.5 text-right">
+
+                <button
+                  class="text-red-600 underline"
+                  data-team-remove=
+                    "${esc(String(m.id))}">
+                  Remove
+                </button>
+
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectDependenciesMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No dependencies yet.
+      </div>
+    `;
+  }
+
+  const typeLabel = type => ({
+    finish_to_start: "FS",
+    start_to_start: "SS",
+    finish_to_finish: "FF",
+    start_to_finish: "SF",
+  }[type] || type);
+
+  return `
+    <div class="overflow-auto">
+
+      <table class="w-full text-xs">
+
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-3 py-1.5 w-[35%]">
+              Predecessor
+            </th>
+
+            <th class="text-left px-2 py-1.5 w-[10%]">
+              Type
+            </th>
+
+            <th class="text-left px-3 py-1.5 w-[35%]">
+              Successor
+            </th>
+
+            <th class="text-right px-2 py-1.5 w-[10%]">
+              Lag
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(d => `
+            <tr class="border-b">
+
+              <td class="px-3 py-1.5 font-medium text-slate-800">
+                ${esc(
+                  d.predecessor_name ||
+                  d.predecessor_code ||
+                  ""
+                )}
+              </td>
+
+              <td class="px-2 py-1.5">
+                ${esc(
+                  typeLabel(
+                    d.dependency_type
+                  )
+                )}
+              </td>
+
+              <td class="px-3 py-1.5 font-medium text-slate-800">
+                ${esc(
+                  d.successor_name ||
+                  d.successor_code ||
+                  ""
+                )}
+              </td>
+
+              <td class="px-2 py-1.5 text-right">
+                ${esc(
+                  String(d.lag_days || 0)
+                )}
+              </td>
+
+            </tr>
+          `).join("")}
+        </tbody>
+
+      </table>
+    </div>
+  `;
+}
+
+function bindProjectTimeModalOnce() {
+  const m = document.getElementById("projectTimeModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document.getElementById("projectTimeOverlay")
+    ?.addEventListener("click", closeProjectTimeModal);
+
+  document.getElementById("projectTimeCloseBtn")
+    ?.addEventListener("click", closeProjectTimeModal);
+
+  document.getElementById("projectTimeCancelBtn")
+    ?.addEventListener("click", closeProjectTimeModal);
+
+  document.getElementById("projectTimeSaveBtn")
+    ?.addEventListener("click", submitProjectTime);
+}
+
+function bindProjectChangeModalOnce() {
+  const m =
+    document.getElementById(
+      "projectChangeModal"
+    );
+
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("projectChangeOverlay")
+    ?.addEventListener(
+      "click",
+      closeProjectChangeModal
+    );
+
+  document.getElementById("projectChangeCloseBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectChangeModal
+    );
+
+  document.getElementById("projectChangeCancelBtn")
+    ?.addEventListener(
+      "click",
+      closeProjectChangeModal
+    );
+
+  document.getElementById("projectChangeSaveBtn")
+    ?.addEventListener(
+      "click",
+      submitProjectChange
+    );
+}
+
+function fillProjectTimeEmployeeSelect(selectedId = "") {
+  const el = document.getElementById("projectTimeUserId");
+  if (!el) return;
+
+  const renderOptions = (employees) => {
+    const rows = (Array.isArray(employees) ? employees : [])
+      .filter(emp => {
+        const status = String(emp?.employment_status || emp?.status || "active").toLowerCase();
+        return status !== "inactive" && Number(emp?.id || 0) > 0;
+      })
+      .sort((a, b) => {
+        const aName = [a.first_name, a.last_name].filter(Boolean).join(" ");
+        const bName = [b.first_name, b.last_name].filter(Boolean).join(" ");
+        return aName.localeCompare(bName);
+      });
+
+    el.innerHTML = `
+      <option value="">Select employee…</option>
+      ${rows.map(emp => {
+        const name = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || `Employee #${emp.id}`;
+        const selected = String(emp.id) === String(selectedId) ? " selected" : "";
+        return `
+        <option value="${esc(String(emp.id))}"${selected}>${esc(name)}</option>`;
+      }).join("")}
+    `;
+  };
+
+  // Use cached project lookup employees if available
+  const cached = projectLookupState?.employees;
+  if (Array.isArray(cached) && cached.length) {
+    renderOptions(cached);
+    return;
+  }
+
+  // Fetch from payroll employees endpoint
+  el.innerHTML = `<option value="">Loading employees…</option>`;
+
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) {
+    el.innerHTML = `<option value="">No company selected</option>`;
+    return;
+  }
+
+  apiFetch(ENDPOINTS.payroll.employees(cid))
+    .then(res => {
+      const employees = res?.data || res?.employees || res?.items || res || [];
+      renderOptions(Array.isArray(employees) ? employees : []);
+    })
+    .catch(err => {
+      console.warn("[Time Entry] failed to load payroll employees", err);
+      el.innerHTML = `<option value="">No employees available</option>`;
+    });
+}
+
+async function openProjectTimeModal(
+  projectId,
+  entry = null
+) {
+  bindProjectTimeModalOnce();
+
+  const today =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("projectTimeId").value =
+    entry?.id || "";
+
+  document.getElementById("projectTimeProjectId").value =
+    String(projectId);
+
+  // Populate employee dropdown
+  fillProjectTimeEmployeeSelect(entry?.user_id || "");  // ← Already done! ✅
+
+  document.getElementById("projectTimeDate").value =
+    entry?.work_date || today;
+
+  document.getElementById("projectTimeHours").value =
+    entry?.hours || "";
+
+  document.getElementById("projectTimeCostRate").value =
+    entry?.hourly_cost_rate || "";
+
+  document.getElementById("projectTimeBillRate").value =
+    entry?.hourly_bill_rate || "";
+
+  document.getElementById("projectTimeBillable").checked =
+    !!entry?.billable;
+
+  const project = window.ACTIVE_PROJECT_DETAIL || null;
+
+  document.getElementById("projectTimeCapitalizable").checked =
+    !!entry?.capitalizable;
+
+  document.getElementById("projectTimeCapitalizableWrap")
+    ?.classList.toggle(
+      "hidden",
+      project?.accounting_mode !== "capital"
+    );
+
+  document.getElementById("projectTimeDescription").value =
+    entry?.description || "";
+
+  await populateProjectTaskSelect(
+    "projectTimeTaskId",
+    projectId,
+    "No task"
+  );
+
+  document.getElementById("projectTimeTaskId").value =
+    entry?.task_id || "";
+
+  setElText("projectTimeMsg", "");
+
+  document.getElementById("projectTimeModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectTimeModal() {
+  document.getElementById("projectTimeModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectTime() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectTimeProjectId")
+      ?.value || 0
+  );
+
+  const entryId = Number(
+    document.getElementById("projectTimeId")
+      ?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    user_id: Number(
+      document.getElementById("projectTimeUserId")
+        ?.value || 0
+    ),
+
+    task_id: Number(
+      document.getElementById("projectTimeTaskId")
+        ?.value || 0
+    ) || null,
+
+    work_date:
+      document.getElementById("projectTimeDate")
+        ?.value || null,
+
+    hours: Number(
+      document.getElementById("projectTimeHours")
+        ?.value || 0
+    ),
+
+    hourly_cost_rate: Number(
+      document.getElementById("projectTimeCostRate")
+        ?.value || 0
+    ),
+
+    hourly_bill_rate: Number(
+      document.getElementById("projectTimeBillRate")
+        ?.value || 0
+    ),
+
+    billable:
+      !!document.getElementById("projectTimeBillable")
+        ?.checked,
+
+    capitalizable:
+      !!document.getElementById("projectTimeCapitalizable")?.checked,
+
+    description:
+      document.getElementById("projectTimeDescription")
+        ?.value?.trim() || null,
+  };
+
+  if (!payload.user_id) {
+    setElText(
+      "projectTimeMsg",
+      "User is required."
+    );
+    return;
+  }
+
+  if (payload.hours <= 0 || payload.hours > 24) {
+    setElText(
+      "projectTimeMsg",
+      "Hours must be between 0 and 24."
+    );
+    return;
+  }
+
+  setElText(
+    "projectTimeMsg",
+    entryId
+      ? "Updating time..."
+      : "Saving time..."
+  );
+
+  try {
+    await apiFetch(
+      entryId
+        ? ENDPOINTS.projects.timeUpdate(
+            cid,
+            projectId,
+            entryId
+          )
+        : ENDPOINTS.projects.timeCreate(
+            cid,
+            projectId
+          ),
+      {
+        method: entryId ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectTimeModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectTimeMsg",
+      err?.message ||
+      "Failed to save time."
+    );
+  }
+}
+
+function renderProjectTimeMini(items = []) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No time recorded yet.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Date</th>
+            <th class="text-left px-2 py-1">User</th>
+            <th class="text-left px-2 py-1">Task</th>
+            <th class="text-right px-2 py-1">Hours</th>
+            <th class="text-right px-2 py-1">Cost</th>
+            <th class="text-right px-2 py-1">Billable</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(toDateInputValue?.(x.work_date) || x.work_date || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(String(x.user_id || ""))}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.task_name || "—")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${Number(x.hours || 0).toFixed(2)}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.labour_cost || 0)}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.billable_amount || 0)}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${renderProjectTimeActions(x)}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectTimeActions(x) {
+  if (["draft", "rejected"].includes(x.status)) {
+    return `
+      <div class="flex justify-end gap-1">
+        <button
+          class="underline"
+          data-time-edit="${esc(String(x.id))}">
+          Edit
+        </button>
+
+        <button
+          class="underline"
+          data-time-submit="${esc(String(x.id))}">
+          Submit
+        </button>
+      </div>
+    `;
+  }
+
+  if (x.status === "submitted") {
+    return `
+      <div class="flex justify-end gap-1">
+        <button
+          class="underline"
+          data-time-approve="${esc(String(x.id))}">
+          Approve
+        </button>
+
+        <button
+          class="underline text-red-600"
+          data-time-reject="${esc(String(x.id))}">
+          Reject
+        </button>
+      </div>
+    `;
+  }
+
+  return "—";
+}
+
+async function runProjectTimeAction(
+  projectId,
+  entryId,
+  action,
+  reason = null
+) {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  if (!cid || !projectId || !entryId) {
+    return;
+  }
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.timeAction(
+        cid,
+        projectId,
+        entryId,
+        action
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          reason,
+        }),
+      }
+    );
+
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    alert(
+      err?.message ||
+      `Failed to ${action} time entry.`
+    );
+  }
+}
+
+async function openProjectExpenseModal(
+  projectId
+) {
+  bindProjectExpenseModalOnce();
+
+  const today =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("projectExpenseProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectExpenseDate").value =
+    today;
+
+  document.getElementById("projectExpenseSupplier").value =
+    "";
+
+  document.getElementById("projectExpenseReference").value =
+    "";
+
+  // Account Name <select> (formerly the free-text "Account Code" input).
+  // Populated from GL expense accounts; existing payload key stays the
+  // same because the <option> value is the account CODE.
+  populateExpenseAccountSelect("");
+
+  document.getElementById("projectExpenseCapitalizable").checked = false;
+
+  document.getElementById("projectExpenseAmount").value =
+    "";
+
+  document.getElementById("projectExpenseTax").value =
+    "";
+
+  document.getElementById("projectExpenseDescription").value =
+    "";
+
+  // Task dropdown: name only (no task code) per project-expense UX.
+  await populateProjectTaskSelect(
+    "projectExpenseTaskId",
+    projectId,
+    "No task",
+    true
+  );
+
+  // Cost code dropdown: cleared; will be auto-populated when a task is
+  // picked. We keep it disabled-looking (placeholder only) until then.
+  const ccSel = document.getElementById("projectExpenseCostCodeId");
+  if (ccSel) {
+    ccSel.innerHTML = `<option value="">No cost code</option>`;
+    ccSel.value = "";
+    ccSel.disabled = false;
+  }
+
+  setElText(
+    "projectExpenseMsg",
+    ""
+  );
+
+  document.getElementById("projectExpenseModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectExpenseModal() {
+  document.getElementById("projectExpenseModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectExpense() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById(
+      "projectExpenseProjectId"
+    )?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    expense_date:
+      document.getElementById(
+        "projectExpenseDate"
+      )?.value || null,
+
+    task_id: Number(
+      document.getElementById(
+        "projectExpenseTaskId"
+      )?.value || 0
+    ) || null,
+
+    cost_code_id: Number(
+      document.getElementById(
+        "projectExpenseCostCodeId"
+      )?.value || 0
+    ) || null,
+
+    supplier_name:
+      document.getElementById(
+        "projectExpenseSupplier"
+      )?.value?.trim() || null,
+
+    reference:
+      document.getElementById(
+        "projectExpenseReference"
+      )?.value?.trim() || null,
+
+    account_code:
+      document.getElementById(
+        "projectExpenseAccount"
+      )?.value?.trim() || null,
+
+    amount: Number(
+      document.getElementById(
+        "projectExpenseAmount"
+      )?.value || 0
+    ),
+
+    tax_amount: Number(
+      document.getElementById(
+        "projectExpenseTax"
+      )?.value || 0
+    ),
+
+    capitalizable:
+      !!document.getElementById("projectExpenseCapitalizable")?.checked,
+
+    description:
+      document.getElementById(
+        "projectExpenseDescription"
+      )?.value?.trim(),
+  };
+
+  if (!payload.description) {
+    setElText(
+      "projectExpenseMsg",
+      "Description is required."
+    );
+    return;
+  }
+
+  if (payload.amount < 0) {
+    setElText(
+      "projectExpenseMsg",
+      "Amount cannot be negative."
+    );
+    return;
+  }
+
+  setElText(
+    "projectExpenseMsg",
+    "Saving expense..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.expensesCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectExpenseModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectExpenseMsg",
+      err?.message ||
+      "Failed to save expense."
+    );
+  }
+}
+
+function renderProjectExpensesMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No direct expenses yet.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Date</th>
+            <th class="text-left px-2 py-1">Description</th>
+            <th class="text-left px-2 py-1">Task</th>
+            <th class="text-right px-2 py-1">Amount</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(
+                  toDateInputValue?.(
+                    x.expense_date
+                  ) ||
+                  x.expense_date ||
+                  ""
+                )}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.description || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.task_name || "—")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.total_amount || 0)}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${x.status === "draft" ? `
+                  <button
+                    class="underline"
+                    data-expense-approve="${esc(String(x.id))}">
+                    Approve
+                  </button>
+                ` : "—"}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectCommitmentsMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No open commitments.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">PO</th>
+            <th class="text-left px-2 py-1">Description</th>
+            <th class="text-left px-2 py-1">Task</th>
+            <th class="text-left px-2 py-1">Cost Code</th>
+            <th class="text-right px-2 py-1">Committed</th>
+            <th class="text-left px-2 py-1">Status</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(x.po_number || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.description || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.task_name || "—")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.cost_code || "—")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.ordered_amount || 0)}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.po_status || "")}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function openProjectChangeModal(projectId) {
+  bindProjectChangeModalOnce();
+
+  document.getElementById("projectChangeProjectId").value =
+    String(projectId);
+
+  document.getElementById("projectChangeType").value =
+    "change_request";
+
+  document.getElementById("projectChangeTitle").value =
+    "";
+
+  document.getElementById("projectChangeCostImpact").value =
+    "0";
+
+  document.getElementById("projectChangeRevenueImpact").value =
+    "0";
+
+  document.getElementById("projectChangeScheduleDays").value =
+    "0";
+
+  document.getElementById("projectChangeEndDate").value =
+    "";
+
+  document.getElementById("projectChangeReason").value =
+    "";
+
+  document.getElementById("projectChangeDescription").value =
+    "";
+
+  setElText(
+    "projectChangeMsg",
+    ""
+  );
+
+  document.getElementById("projectChangeModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectChangeModal() {
+  document.getElementById("projectChangeModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectChange() {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById(
+      "projectChangeProjectId"
+    )?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const payload = {
+    change_type:
+      document.getElementById(
+        "projectChangeType"
+      )?.value || "change_request",
+
+    title:
+      document.getElementById(
+        "projectChangeTitle"
+      )?.value?.trim(),
+
+    cost_impact: Number(
+      document.getElementById(
+        "projectChangeCostImpact"
+      )?.value || 0
+    ),
+
+    revenue_impact: Number(
+      document.getElementById(
+        "projectChangeRevenueImpact"
+      )?.value || 0
+    ),
+
+    schedule_impact_days: Number(
+      document.getElementById(
+        "projectChangeScheduleDays"
+      )?.value || 0
+    ),
+
+    proposed_end_date:
+      document.getElementById(
+        "projectChangeEndDate"
+      )?.value || null,
+
+    reason:
+      document.getElementById(
+        "projectChangeReason"
+      )?.value?.trim() || null,
+
+    description:
+      document.getElementById(
+        "projectChangeDescription"
+      )?.value?.trim() || null,
+  };
+
+  if (!payload.title) {
+    setElText(
+      "projectChangeMsg",
+      "Title is required."
+    );
+    return;
+  }
+
+  setElText(
+    "projectChangeMsg",
+    "Saving change..."
+  );
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.changesCreate(
+        cid,
+        projectId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    closeProjectChangeModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectChangeMsg",
+      err?.message ||
+      "Failed to save change."
+    );
+  }
+}
+
 function bindProjectOperationalModalsOnce() {
   bindProjectTaskModalOnce();
   bindProjectBudgetModalOnce();
   bindProjectIssueModalOnce();
 }
 
+function bindProjectCipAssetModalOnce() {
+  const m = document.getElementById("projectCipAssetModal");
+  if (!m || m.dataset.bound === "1") return;
+
+  m.dataset.bound = "1";
+
+  document.getElementById("projectCipAssetOverlay")
+    ?.addEventListener("click", closeProjectCipAssetModal);
+
+  document.getElementById("projectCipAssetCloseBtn")
+    ?.addEventListener("click", closeProjectCipAssetModal);
+
+  document.getElementById("projectCipAssetCancelBtn")
+    ?.addEventListener("click", closeProjectCipAssetModal);
+
+  document.getElementById("projectCipAssetSaveBtn")
+    ?.addEventListener("click", submitProjectCipAsset);
+}
+
+function openProjectCipAssetModal(project) {
+  bindProjectCipAssetModalOnce();
+
+  document.getElementById("projectCipProjectId").value = project.id;
+  document.getElementById("projectCipAssetCode").value =
+    `${project.project_code || "PROJECT"}-CIP`;
+
+  document.getElementById("projectCipAssetName").value =
+    `${project.project_name || "Project"} - CIP`;
+
+  document.getElementById("projectCipAccount").value =
+    project.wip_account_code || "";
+
+  document.getElementById("projectCipStartDate").value =
+    toDateInputValue?.(project.start_date) || project.start_date || "";
+
+  document.getElementById("projectCipQualifying").checked = false;
+  document.getElementById("projectCipNotes").value = "";
+
+  setElText("projectCipAssetMsg", "");
+
+  document.getElementById("projectCipAssetModal")
+    ?.classList.remove("hidden");
+}
+
+function closeProjectCipAssetModal() {
+  document.getElementById("projectCipAssetModal")
+    ?.classList.add("hidden");
+}
+
+async function submitProjectCipAsset() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(
+    document.getElementById("projectCipProjectId")?.value || 0
+  );
+
+  if (!cid || !projectId) return;
+
+  const assetCode =
+    document.getElementById("projectCipAssetCode")?.value?.trim();
+
+  const assetName =
+    document.getElementById("projectCipAssetName")?.value?.trim();
+
+  const cipAccount =
+    document.getElementById("projectCipAccount")?.value?.trim();
+
+  const startDate =
+    document.getElementById("projectCipStartDate")?.value || null;
+
+  if (!assetCode || !assetName || !cipAccount || !startDate) {
+    setElText(
+      "projectCipAssetMsg",
+      "Asset code, name, CIP account and start date are required."
+    );
+    return;
+  }
+
+  const payload = {
+    entry_mode: "acquisition",
+    asset_code: assetCode,
+    asset_name: assetName,
+    asset_class: "Assets under construction",
+    asset_class_group: "Assets under construction",
+    category: "Capital project",
+    acquisition_date: startDate,
+    available_for_use_date: null,
+    ready_for_use_date: null,
+    cost: 0,
+    residual_value: 0,
+    depreciation_method: "APP",
+    useful_life_months: 0,
+    accounting_standard: "ias16",
+    measurement_basis: "cost",
+    asset_account_code: cipAccount,
+    is_qualifying_asset:
+      !!document.getElementById("projectCipQualifying")?.checked,
+    notes:
+      document.getElementById("projectCipNotes")?.value?.trim() || null,
+  };
+
+  setElText("projectCipAssetMsg", "Creating CIP asset...");
+
+  try {
+    const out = await apiFetch(
+      ENDPOINTS.projects.assetCreate(cid),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const assetId = Number(
+      out?.id ||
+      out?.asset_id ||
+      out?.data?.id ||
+      out?.data?.asset_id ||
+      0
+    );
+
+    if (!assetId) {
+      throw new Error("Asset created but no asset ID was returned.");
+    }
+
+    await apiFetch(
+      ENDPOINTS.projects.assetLinkCreate(cid, projectId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          asset_id: assetId,
+          link_type: "cip",
+          is_primary: true,
+        }),
+      }
+    );
+
+    closeProjectCipAssetModal();
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    setElText(
+      "projectCipAssetMsg",
+      err?.message || "Failed to create CIP asset."
+    );
+  }
+}
+
+async function loadProjectCapitalPosition(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return {};
+
+  const out = await apiFetch(
+    ENDPOINTS.projects.capitalPosition(cid, projectId)
+  );
+
+  return out?.data || out || {};
+}
+
+function renderProjectAssetsMini(items = []) {
+  if (!items.length) {
+    return `<div class="text-slate-500">No CIP asset linked yet.</div>`;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Asset</th>
+            <th class="text-left px-2 py-1">Class</th>
+            <th class="text-left px-2 py-1">CIP Account</th>
+            <th class="text-left px-2 py-1">IAS 23</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                <div class="font-medium">${esc(x.asset_code || "")}</div>
+                <div class="text-slate-500">${esc(x.asset_name || "")}</div>
+              </td>
+
+              <td class="px-2 py-1">${esc(x.asset_class || "")}</td>
+              <td class="px-2 py-1">${esc(x.asset_account_code || "—")}</td>
+
+              <td class="px-2 py-1">
+                ${x.is_qualifying_asset ? "Qualifying" : "No"}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                <button
+                  class="underline"
+                  data-project-asset-open="${esc(String(x.asset_id))}">
+                  Open
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function runProjectChangeAction(
+  projectId,
+  changeId,
+  action,
+  reason = null
+) {
+  const cid =
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  if (!cid || !changeId) return;
+
+  try {
+    await apiFetch(
+      ENDPOINTS.projects.changeAction(
+        cid,
+        projectId,
+        changeId,
+        action
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          reason,
+        }),
+      }
+    );
+
+    await loadProjectDetail(projectId);
+
+  } catch (err) {
+    alert(
+      err?.message ||
+      `Failed to ${action} change.`
+    );
+  }
+}
+
+function renderProjectChangesMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No project changes yet.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">No.</th>
+            <th class="text-left px-2 py-1">Change</th>
+            <th class="text-right px-2 py-1">Cost</th>
+            <th class="text-right px-2 py-1">Revenue</th>
+            <th class="text-right px-2 py-1">Days</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+
+              <td class="px-2 py-1">
+                ${esc(x.change_no || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.title || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.cost_impact || 0)}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${fmtMoney(x.revenue_impact || 0)}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${esc(String(
+                  x.schedule_impact_days || 0
+                ))}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${renderProjectChangeActions(x)}
+              </td>
+
+            </tr>
+          `).join("")}
+        </tbody>
+
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectChangeActions(x) {
+  if (["draft", "rejected"].includes(x.status)) {
+    return `
+      <button
+        class="underline"
+        data-change-submit="${esc(String(x.id))}">
+        Submit
+      </button>
+    `;
+  }
+
+  if (x.status === "submitted") {
+    return `
+      <div class="flex justify-end gap-1">
+        <button
+          class="underline"
+          data-change-approve="${esc(String(x.id))}">
+          Approve
+        </button>
+
+        <button
+          class="underline text-red-600"
+          data-change-reject="${esc(String(x.id))}">
+          Reject
+        </button>
+      </div>
+    `;
+  }
+
+  if (x.status === "approved") {
+    return `
+      <button
+        class="underline"
+        data-change-apply="${esc(String(x.id))}">
+        Apply
+      </button>
+    `;
+  }
+
+  return "—";
+}
+
+function renderProjectRisksMini(items = []) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No risks recorded.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Risk</th>
+            <th class="text-right px-2 py-1">P</th>
+            <th class="text-right px-2 py-1">I</th>
+            <th class="text-right px-2 py-1">Score</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(x.title || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${esc(String(x.probability || 0))}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${esc(String(x.impact || 0))}
+              </td>
+
+              <td class="px-2 py-1 text-right font-semibold">
+                ${esc(String(x.risk_score || 0))}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                <button
+                  class="underline"
+                  data-risk-edit="${esc(String(x.id))}">
+                  Edit
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectIssuesMini(items = []) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No issues recorded.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Issue</th>
+            <th class="text-left px-2 py-1">Task</th>
+            <th class="text-left px-2 py-1">Priority</th>
+            <th class="text-left px-2 py-1">Status</th>
+            <th class="text-right px-2 py-1">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(x.title || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.task_name || "—")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.priority || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.status || "")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                <button
+                  class="underline"
+                  data-issue-edit="${esc(String(x.id))}">
+                  Edit
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProjectDocumentsMini(
+  items = []
+) {
+  if (!items.length) {
+    return `
+      <div class="text-slate-500">
+        No documents attached.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-1">Document</th>
+            <th class="text-left px-2 py-1">Type</th>
+            <th class="text-left px-2 py-1">Version</th>
+            <th class="text-right px-2 py-1">Open</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b">
+              <td class="px-2 py-1">
+                ${esc(x.title || x.file_name || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.document_type || "")}
+              </td>
+
+              <td class="px-2 py-1">
+                ${esc(x.version_no || "—")}
+              </td>
+
+              <td class="px-2 py-1 text-right">
+                ${x.file_url ? `
+                  <a
+                    href="${esc(x.file_url)}"
+                    target="_blank"
+                    class="underline">
+                    Open
+                  </a>
+                ` : "—"}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
 function bindProjectTaskModalOnce() {
   const m = document.getElementById("projectTaskModal");
   if (!m || m.dataset.bound === "1") return;
@@ -124358,49 +135670,241 @@ function closeProjectTaskModal() {
   document.getElementById("projectTaskModal")?.classList.add("hidden");
 }
 
+function clearProjectTaskModal() {
+  const fields = [
+    "projectTaskId",
+    "projectTaskCode",
+    "projectTaskName",
+    "projectTaskType",
+    "projectTaskWbsCode",
+    "projectTaskParentId",
+    "projectTaskPriority",
+    "projectTaskSequence",
+    "projectTaskProgress",
+    "projectTaskBudgetValue",
+    "projectTaskStartDate",
+    "projectTaskExpectedEndDate",
+    "projectTaskBaselineStart",
+    "projectTaskBaselineEnd",
+    "projectTaskDeliverable",
+    "projectTaskNotes",
+  ];
+
+  fields.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    if (el.tagName === "SELECT") {
+      el.selectedIndex = 0;
+    } else {
+      el.value = "";
+    }
+  });
+
+  // Keep the current project
+  const projectIdEl = document.getElementById("projectTaskProjectId");
+  if (projectIdEl) {
+    projectIdEl.value = String(ACTIVE_PROJECT_ID || "");
+  }
+
+  // Restore sensible defaults
+  const typeEl = document.getElementById("projectTaskType");
+  if (typeEl) typeEl.value = "task";
+
+  const priorityEl = document.getElementById("projectTaskPriority");
+  if (priorityEl) priorityEl.value = "normal";
+
+  const sequenceEl = document.getElementById("projectTaskSequence");
+  if (sequenceEl) sequenceEl.value = "0";
+
+  const statusEl = document.getElementById("projectTaskStatus");
+  if (statusEl) statusEl.value = "open";
+
+  const progressEl = document.getElementById("projectTaskProgress");
+  if (progressEl) progressEl.value = "0";
+
+  const budgetEl = document.getElementById("projectTaskBudgetValue");
+  if (budgetEl) budgetEl.value = "0";
+
+  // New task mode
+  const saveBtn = document.getElementById("projectTaskSaveBtn");
+  if (saveBtn) {
+    saveBtn.textContent = "Save Task";
+  }
+
+  const archiveBtn = document.getElementById("projectTaskArchiveBtn");
+  if (archiveBtn) {
+    archiveBtn.classList.add("hidden");
+  }
+
+  setElText("projectTaskMsg", "");
+
+  // Keep modal open
+  const modal = document.getElementById("projectTaskModal");
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+}
+
 async function submitProjectTask() {
-  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
-  const projectId = Number(document.getElementById("projectTaskProjectId")?.value || ACTIVE_PROJECT_ID || 0);
+  const cid =
+    getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("projectTaskProjectId")?.value
+    || ACTIVE_PROJECT_ID
+    || 0
+  );
+
   if (!cid || !projectId) return;
 
-  const taskId = Number(document.getElementById("projectTaskId")?.value || 0);
+  const taskId = Number(
+    document.getElementById("projectTaskId")?.value || 0
+  );
+
   const isEdit = !!taskId;
 
   const payload = {
-    task_code: document.getElementById("projectTaskCode")?.value?.trim(),
-    task_name: document.getElementById("projectTaskName")?.value?.trim(),
-    status: document.getElementById("projectTaskStatus")?.value || "open",
-    budget_value: Number(document.getElementById("projectTaskBudgetValue")?.value || 0),
-    start_date: document.getElementById("projectTaskStartDate")?.value || null,
-    expected_end_date: document.getElementById("projectTaskExpectedEndDate")?.value || null,
-    notes: document.getElementById("projectTaskNotes")?.value?.trim(),
+    task_code:
+      document.getElementById("projectTaskCode")
+        ?.value?.trim() || null,
+
+    task_name:
+      document.getElementById("projectTaskName")
+        ?.value?.trim(),
+
+    task_type:
+      document.getElementById("projectTaskType")
+        ?.value || "task",
+
+    wbs_code:
+      document.getElementById("projectTaskWbsCode")
+        ?.value?.trim() || null,
+
+    parent_task_id:
+      Number(
+        document.getElementById("projectTaskParentId")
+          ?.value || 0
+      ) || null,
+
+    priority:
+      document.getElementById("projectTaskPriority")
+        ?.value || "normal",
+
+    sequence_no:
+      Number(
+        document.getElementById("projectTaskSequence")
+          ?.value || 0
+      ),
+
+    status:
+      document.getElementById("projectTaskStatus")
+        ?.value || "open",
+
+    progress_percent:
+      Number(
+        document.getElementById("projectTaskProgress")
+          ?.value || 0
+      ),
+
+    budget_value:
+      Number(
+        document.getElementById("projectTaskBudgetValue")
+          ?.value || 0
+      ),
+
+    start_date:
+      document.getElementById("projectTaskStartDate")
+        ?.value || null,
+
+    expected_end_date:
+      document.getElementById("projectTaskExpectedEndDate")
+        ?.value || null,
+
+    baseline_start_date:
+      document.getElementById("projectTaskBaselineStart")
+        ?.value || null,
+
+    baseline_end_date:
+      document.getElementById("projectTaskBaselineEnd")
+        ?.value || null,
+
+    deliverable:
+      document.getElementById("projectTaskDeliverable")
+        ?.value?.trim() || null,
+
+    notes:
+      document.getElementById("projectTaskNotes")
+        ?.value?.trim() || null,
   };
 
   if (!payload.task_name) {
-    setElText("projectTaskMsg", "Task name is required.");
+    setElText(
+      "projectTaskMsg",
+      "Task / phase / milestone name is required."
+    );
     return;
   }
 
-  setElText("projectTaskMsg", isEdit ? "Updating task..." : "Saving task...");
+  if (
+    payload.progress_percent < 0 ||
+    payload.progress_percent > 100
+  ) {
+    setElText(
+      "projectTaskMsg",
+      "Progress must be between 0% and 100%."
+    );
+    return;
+  }
+
+  if (
+    taskId &&
+    Number(payload.parent_task_id) === Number(taskId)
+  ) {
+    setElText(
+      "projectTaskMsg",
+      "A work item cannot be its own parent."
+    );
+    return;
+  }
+
+  setElText(
+    "projectTaskMsg",
+    isEdit
+      ? "Updating work item..."
+      : "Saving work item..."
+  );
 
   try {
     await apiFetch(
       isEdit
-        ? ENDPOINTS.projects.tasksUpdate(cid, projectId, taskId)
-        : ENDPOINTS.projects.tasksCreate(cid, projectId),
+        ? ENDPOINTS.projects.tasksUpdate(
+            cid,
+            projectId,
+            taskId
+          )
+        : ENDPOINTS.projects.tasksCreate(
+            cid,
+            projectId
+          ),
       {
         method: isEdit ? "PATCH" : "POST",
         body: JSON.stringify(payload),
       }
     );
 
-    closeProjectTaskModal();
     await loadProjects?.();
     await loadProjectDetail(projectId);
+
+    clearProjectTaskModal();
+
   } catch (err) {
     setElText(
       "projectTaskMsg",
-      err?.message || (isEdit ? "Failed to update task." : "Failed to create task.")
+      err?.message ||
+      (isEdit
+        ? "Failed to update work item."
+        : "Failed to create work item.")
     );
   }
 }
@@ -124621,75 +136125,495 @@ async function submitProjectBudgetLine() {
 }
 
 function bindProjectIssueModalOnce() {
-  const m = document.getElementById("projectIssueModal");
-  if (!m || m.dataset.bound === "1") return;
-  m.dataset.bound = "1";
+  if (window._projectIssueModalBound) return;
+  window._projectIssueModalBound = true;
 
-  document.getElementById("projectIssueOverlay")?.addEventListener("click", closeProjectIssueModal);
+  // Close/overlay/cancel buttons
   document.getElementById("projectIssueCloseBtn")?.addEventListener("click", closeProjectIssueModal);
+  document.getElementById("projectIssueOverlay")?.addEventListener("click", closeProjectIssueModal);
   document.getElementById("projectIssueCancelBtn")?.addEventListener("click", closeProjectIssueModal);
-  document.getElementById("projectIssueSaveBtn")?.addEventListener("click", submitProjectIssue);
+
+  // Add line button
   document.getElementById("projectIssueAddLineBtn")?.addEventListener("click", async () => {
     await addProjectIssueLine();
   });
-}
 
-async function openProjectIssueModal(projectId) {
-  bindProjectIssueModalOnce();
-  ACTIVE_PROJECT_ID = Number(projectId);
+  // PREVIEW BUTTON - Main action, triggers journal preview
+  const previewBtn = document.getElementById("projectIssuePreviewBtn");
+  if (previewBtn) {
+    // Use both addEventListener AND onclick for reliability
+    previewBtn.addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      previewProjectIssueJournal();
+    });
+    previewBtn.onclick = function(e) {
+      e.preventDefault();
+      previewProjectIssueJournal();
+    };
+  }
 
-  document.getElementById("projectIssueProjectId").value = String(projectId);
-  document.getElementById("projectIssueDate").value = new Date().toISOString().slice(0, 10);
-  document.getElementById("projectIssueUsageType").value = "consumed";
-
-  await populateProjectTaskSelect("projectIssueTaskId", projectId, "Select task...");
-  await populateProjectCostCodeSelect("projectIssueCostCodeId", "Select cost code...");
-
-  const tbody = document.getElementById("projectIssueLines");
-  if (tbody) tbody.innerHTML = "";
-
-  await addProjectIssueLine();
-
-  setElText("projectIssueMsg", "");
-  document.getElementById("projectIssueModal")?.classList.remove("hidden");
+  // POST BUTTON - Only visible after preview
+  document.getElementById("projectIssueSaveBtn")?.addEventListener("click", submitProjectIssue);
 }
 
 function closeProjectIssueModal() {
   document.getElementById("projectIssueModal")?.classList.add("hidden");
+  hideIssueJournalPreview();
+  resetIssueModalState();
+  ACTIVE_PROJECT_ID = null;
+  window._currentProjectForIssue = null;
+}
+
+function resetIssueModalState() {
+  // Hide post button, show preview button
+  const previewBtn = document.getElementById("projectIssuePreviewBtn");
+  const saveBtn = document.getElementById("projectIssueSaveBtn");
+  
+  if (previewBtn) {
+    previewBtn.classList.remove("hidden");
+    previewBtn.disabled = false;
+    previewBtn.innerHTML = `
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+      </svg>
+      Preview & Review Journal
+    `;
+  }
+  
+  if (saveBtn) {
+    saveBtn.classList.add("hidden");
+  }
+  
+  clearIssueMessage();
+}
+
+function hideIssueJournalPreview() {
+  document.getElementById("projectIssueJournalPreview")?.classList.add("hidden");
+}
+
+function showIssueMessage(msg, isError = false) {
+  const el = document.getElementById("projectIssueMsg");
+
+  if (!el) return;
+
+  el.textContent = msg;
+
+  el.classList.remove(
+    "hidden",
+    "bg-red-50",
+    "text-red-700",
+    "bg-green-50",
+    "text-green-700",
+    "bg-blue-50",
+    "text-blue-700",
+    "bg-amber-50",
+    "text-amber-700"
+  );
+
+  if (msg) {
+    el.classList.remove("hidden");
+
+    if (isError) {
+      el.classList.add("bg-red-50", "text-red-700");
+    } else {
+      el.classList.add("bg-amber-50", "text-amber-700");
+    }
+  } else {
+    el.classList.add("hidden");
+  }
+}
+
+function clearIssueMessage() {
+  showIssueMessage("");
 }
 
 async function addProjectIssueLine(line = {}) {
   const tbody = document.getElementById("projectIssueLines");
   if (!tbody) return;
 
+  const lineNum = tbody.children.length + 1;
   const tr = document.createElement("tr");
-  tr.className = "border-b";
+  tr.className = "border-b hover:bg-slate-50/50 transition-colors";
 
+  // Build the 6 columns matching the colgroup / thead
   tr.innerHTML = `
-    <td class="px-2 py-2">
-      <select data-pi-item-id class="w-full border rounded px-2 py-1">
+    <!-- 1. # (5%) -->
+    <td class="px-2 py-2 text-center text-slate-400 font-mono text-xs">
+      <span data-pi-linenum>${lineNum}</span>
+    </td>
+
+    <!-- 2. Item (38%) -->
+    <td class="px-3 py-2">
+      <select data-pi-item-id class="w-full border border-slate-300 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--fs-navy)]/20 truncate">
         ${await buildInventoryItemOptions(line.item_id || "")}
       </select>
     </td>
+
+    <!-- 3. Qty (12%) -->
     <td class="px-2 py-2">
-      <input data-pi-qty type="number" step="0.0001" class="w-full border rounded px-2 py-1 text-right" value="${esc(line.qty || "")}">
+      <input data-pi-qty type="number" step="0.0001" min="0.0001" 
+             class="w-full border border-slate-300 rounded px-2 py-1.5 text-right text-xs focus:outline-none focus:ring-2 focus:ring-[var(--fs-navy)]/20" 
+             value="${typeof esc === 'function' ? esc(line.qty || "") : (line.qty || "")}" placeholder="0.00">
     </td>
-    <td class="px-2 py-2">
-      <input data-pi-memo class="w-full border rounded px-2 py-1" value="${esc(line.memo || "")}" placeholder="Memo">
+
+    <!-- 4. Est Cost (14%) -->
+    <td class="px-2 py-2 text-right text-xs font-mono text-slate-600">
+      <span data-pi-est-cost>0.00</span>
     </td>
+
+    <!-- 5. Memo (21%) -->
+    <td class="px-3 py-2">
+      <input data-pi-memo type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--fs-navy)]/20" 
+             value="${typeof esc === 'function' ? esc(line.memo || "") : (line.memo || "")}" placeholder="Memo (optional)">
+    </td>
+
+    <!-- 6. Action (10%) -->
     <td class="px-2 py-2 text-right">
-      <button type="button" class="text-rose-600 underline" data-pi-remove>Remove</button>
+      <button type="button" class="text-rose-600 hover:text-rose-800 text-xs font-medium hover:underline" data-pi-remove>Remove</button>
     </td>
   `;
 
-  tr.querySelector("[data-pi-remove]")?.addEventListener("click", () => tr.remove());
+  // --- Event Handlers ---
+
+  // 1. Remove Row
+  tr.querySelector("[data-pi-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    renumberIssueLines();
+    updateIssueEstimates();
+  });
+
+  // 2. Item Changed -> Update Estimate
+  tr.querySelector("[data-pi-item-id]")?.addEventListener("change", async () => {
+    if (typeof updateLineEstimate === "function") await updateLineEstimate(tr);
+    if (typeof updateIssueEstimates === "function") updateIssueEstimates();
+  });
+
+  // 3. Qty Changed (both on typing 'input' and 'change') -> Update Estimate
+  const qtyInput = tr.querySelector("[data-pi-qty]");
+  const handleQtyChange = async () => {
+    if (typeof updateLineEstimate === "function") await updateLineEstimate(tr);
+    if (typeof updateIssueEstimates === "function") updateIssueEstimates();
+  };
+  qtyInput?.addEventListener("input", handleQtyChange);
+  qtyInput?.addEventListener("change", handleQtyChange);
+
   tbody.appendChild(tr);
+
+  // If initial line data was passed, calculate estimate immediately
+  if (line.item_id && typeof updateLineEstimate === "function") {
+    await updateLineEstimate(tr);
+  }
+
+  if (typeof updateIssueEstimates === "function") {
+    updateIssueEstimates();
+  }
+}
+
+function renumberIssueLines() {
+  const rows = document.querySelectorAll("#projectIssueLines tr");
+  rows.forEach((row, idx) => {
+    const firstCell = row.querySelector("td:first-child");
+    if (firstCell) {
+      firstCell.textContent = idx + 1;
+    }
+  });
+}
+
+async function updateLineEstimate(tr) {
+  const itemId = tr.querySelector("[data-pi-item-id]")?.value;
+  const qty = parseFloat(tr.querySelector("[data-pi-qty]")?.value) || 0;
+  const costEl = tr.querySelector("[data-pi-est-cost]");
+  if (!costEl) return;
+
+  const currency = resolveCurrency();
+
+  if (!itemId || qty <= 0) {
+    costEl.textContent = "—";
+    return;
+  }
+
+  // Fetch or retrieve unit cost for the item
+  const unitCost = typeof getItemUnitCost === "function" 
+    ? await getItemUnitCost(itemId) 
+    : 0;
+
+  const lineTotal = qty * unitCost;
+
+  const formattedLineTotal = lineTotal.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+
+  costEl.textContent = `${currency} ${formattedLineTotal}`;
+}
+
+function updateIssueEstimates() {
+  const rows = document.querySelectorAll("#projectIssueLines tr");
+  let count = 0;
+  let total = 0;
+  const currency = resolveCurrency();
+  
+  rows.forEach(row => {
+    const costText = row.querySelector("[data-pi-est-cost]")?.textContent || "";
+    // Strip everything except digits and decimal point
+    const cost = parseFloat(costText.replace(/[^\d.-]/g, "")) || 0;
+    if (cost > 0) {
+      count++;
+      total += cost;
+    }
+  });
+  
+  const countEl = document.getElementById("projectIssueLineCount");
+  const totalEl = document.getElementById("projectIssueEstTotal");
+  
+  // Format total with commas (e.g. 54,900.00)
+  const formattedTotal = total.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+
+  if (countEl) countEl.textContent = count;
+  if (totalEl) totalEl.textContent = `${currency} ${formattedTotal}`;
+}
+
+async function previewProjectIssueJournal() {
+  console.log("[Preview] Button clicked!"); // Debug log
+  
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(document.getElementById("projectIssueProjectId")?.value || ACTIVE_PROJECT_ID || 0);
+  
+  console.log("[Preview] cid:", cid, "projectId:", projectId); // Debug
+  
+  if (!cid || !projectId) {
+    showIssueMessage("Missing company or project ID.", true);
+    return;
+  }
+
+  const lines = Array.from(document.querySelectorAll("#projectIssueLines tr"))
+    .map(tr => ({
+      item_id: Number(tr.querySelector("[data-pi-item-id]")?.value || 0),
+      qty: Number(tr.querySelector("[data-pi-qty]")?.value || 0),
+      memo: tr.querySelector("[data-pi-memo]")?.value?.trim() || "",
+    }))
+    .filter(x => x.item_id > 0 && x.qty > 0);
+
+  console.log("[Preview] Lines:", lines); // Debug
+
+  if (!lines.length) {
+    showIssueMessage("⚠️ Add at least one material line before previewing.", true);
+    return;
+  }
+
+  clearIssueMessage();
+  
+  const previewBtn = document.getElementById("projectIssuePreviewBtn");
+  if (previewBtn) {
+    previewBtn.disabled = true;
+    previewBtn.innerHTML = `
+      <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg>
+      Loading Preview...
+    `;
+  }
+
+  try {
+    const payload = {
+      tx_date: document.getElementById("projectIssueDate")?.value,
+      task_id: Number(document.getElementById("projectIssueTaskId")?.value || 0) || null,
+      cost_code_id: Number(document.getElementById("projectIssueCostCodeId")?.value || 0) || null,
+      usage_type: document.getElementById("projectIssueUsageType")?.value || "consumed",
+      lines,
+    };
+
+    console.log("[Preview] Sending payload:", payload); // Debug
+
+    const preview = await apiFetch(
+      ENDPOINTS.projects.previewIssueJournal(cid, projectId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    console.log("[Preview] Response:", preview); // Debug
+
+    renderIssueJournalPreview(preview);
+    
+    // ✅ SUCCESS: Show the Post Issue button now!
+    const saveBtn = document.getElementById("projectIssueSaveBtn");
+    if (saveBtn) {
+      saveBtn.classList.remove("hidden");
+      // Scroll to make it visible
+      setTimeout(() => {
+        saveBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        saveBtn.classList.add('ring-2', 'ring-green-400', 'ring-offset-2');
+        setTimeout(() => {
+          saveBtn.classList.remove('ring-2', 'ring-green-400', 'ring-offset-2');
+        }, 2000);
+      }, 100);
+    }
+    
+    // Update preview button to show "Refresh Preview"
+    if (previewBtn) {
+      previewBtn.disabled = false;
+      previewBtn.innerHTML = `
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        Refresh Preview
+      `;
+    }
+
+  } catch (err) {
+    console.error("[Preview] Error:", err); // Debug
+    showIssueMessage(`❌ Preview failed: ${err?.message || "Unknown error"}`, true);
+    
+    if (previewBtn) {
+      previewBtn.disabled = false;
+      previewBtn.innerHTML = `
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+        </svg>
+        Retry Preview
+      `;
+    }
+  }
+}
+
+function renderIssueJournalPreview(preview) {
+  if (!preview) return;
+
+  const container = document.getElementById("projectIssueJournalPreview");
+  if (!container) return;
+
+  const currency = resolveCurrency();
+  const totalDebit = Number(preview.totals?.total_debit || 0);
+  const totalCredit = Number(preview.totals?.total_credit || 0);
+
+  // Header info
+  setElText("journalPreviewDate", preview.journal_header?.date || "");
+  setElText("journalPreviewDesc", preview.journal_header?.description || "");
+  setElText(
+    "journalPreviewTotal", 
+    `${currency} ${totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  );
+  setElText("projectIssueJournalRef", preview.journal_header?.ref || "");
+
+  // Journal lines - 4 columns: Account Name | Debit | Credit | Memo
+  const tbody = document.getElementById("projectIssueJournalLines");
+  if (tbody) {
+    if (!preview.journal_lines || preview.journal_lines.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" class="px-3 py-4 text-center text-amber-600">No journal lines generated</td></tr>`;
+    } else {
+      tbody.innerHTML = preview.journal_lines.map(line => {
+        const dr = Number(line.debit || 0);
+        const cr = Number(line.credit || 0);
+        return `
+          <tr class="border-b hover:bg-amber-50/50 transition-colors">
+            <td class="px-3 py-2.5 text-xs font-medium text-slate-800">${esc(line.account_name || "Unnamed Account")}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-xs ${dr > 0 ? 'font-bold text-green-700 bg-green-50' : ''}">${dr > 0 ? dr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-xs ${cr > 0 ? 'font-bold text-red-700 bg-red-50' : ''}">${cr > 0 ? cr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
+            <td class="px-3 py-2.5 text-xs text-slate-500 italic">${esc(line.memo || "")}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+
+  // Totals
+  setElText("journalPreviewTotalDr", totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  setElText("journalPreviewTotalCr", totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+
+  container.classList.remove("hidden");
+  container.style.animation = "slideDown 0.3s ease-out";
+  
+  // Update line estimates from server response
+  if (preview.line_details) {
+    const rows = document.querySelectorAll("#projectIssueLines tr");
+    rows.forEach((row, idx) => {
+      const detail = preview.line_details[idx];
+      if (detail) {
+        const cost = Number(detail.total_cost || 0);
+        const estSpan = row.querySelector("[data-pi-est-cost]");
+        if (estSpan) estSpan.textContent = `${currency} ${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+    });
+    updateIssueEstimates();
+  }
+
+  showIssueMessage("✅ Journal preview ready! Review entries above, then click 'Confirm & Post Issue'.", false);
+}
+
+async function openProjectIssueModal(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return;
+
+  bindProjectIssueModalOnce();
+  ACTIVE_PROJECT_ID = Number(projectId);
+
+  try {
+    const project = await apiFetch(
+      ENDPOINTS.projects.one(cid, projectId)
+    );
+
+    if (!project) {
+      alert("Project not found.");
+      return;
+    }
+
+    if (project.inventory_enabled === false) {
+      alert("Inventory usage is disabled for this project.");
+      return;
+    }
+
+    if (["closed", "cancelled"].includes(
+      String(project.status || "").toLowerCase()
+    )) {
+      alert("Materials cannot be issued to a closed or cancelled project.");
+      return;
+    }
+
+    // Store project info for preview
+    window._currentProjectForIssue = project;
+
+    document.getElementById("projectIssueProjectId").value = String(projectId);
+    document.getElementById("projectIssueDate").value = new Date().toISOString().slice(0, 10);
+    document.getElementById("projectIssueUsageType").value = "consumed";
+
+    await populateProjectTaskSelect("projectIssueTaskId", projectId, "Select task...");
+    await populateProjectCostCodeSelect("projectIssueCostCodeId", "Select cost code...");
+
+    // Clear lines and add first empty line
+    const tbody = document.getElementById("projectIssueLines");
+    if (tbody) tbody.innerHTML = "";
+    await addProjectIssueLine();
+
+    // Hide journal preview on open
+    hideIssueJournalPreview();
+    clearIssueMessage();
+
+    document.getElementById("projectIssueModal")?.classList.remove("hidden");
+
+  } catch (err) {
+    console.error("[Projects] open material issue failed", err);
+    alert(err?.message || "Failed to prepare material issue.");
+  }
 }
 
 async function submitProjectIssue() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   const projectId = Number(document.getElementById("projectIssueProjectId")?.value || ACTIVE_PROJECT_ID || 0);
-  if (!cid || !projectId) return;
+  const currency = resolveCurrency();
+
+  if (!cid || !projectId) {
+    showIssueMessage("Missing company or project ID.", true);
+    return;
+  }
 
   const lines = Array.from(document.querySelectorAll("#projectIssueLines tr"))
     .map(tr => ({
@@ -124700,7 +136624,7 @@ async function submitProjectIssue() {
     .filter(x => x.item_id > 0 && x.qty > 0);
 
   if (!lines.length) {
-    setElText("projectIssueMsg", "Add at least one valid material line.");
+    showIssueMessage("Add at least one valid material line.", true);
     return;
   }
 
@@ -124713,7 +136637,20 @@ async function submitProjectIssue() {
     post_now: true,
   };
 
-  setElText("projectIssueMsg", "Posting material issue...");
+  showIssueMessage("Posting material issue...", false);
+
+  // Disable button during post
+  const saveBtn = document.getElementById("projectIssueSaveBtn");
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `
+      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg> 
+      Posting...
+    `;
+  }
 
   try {
     const out = await apiFetch(ENDPOINTS.projects.issueMaterials(cid, projectId), {
@@ -124722,10 +136659,30 @@ async function submitProjectIssue() {
     });
 
     closeProjectIssueModal();
-    await loadProjectDetail(projectId);
-    alert(`Material issue posted. Journal: ${out?.journal_id || "—"}`);
+    
+    if (typeof loadProjectDetail === 'function') {
+      await loadProjectDetail(projectId);
+    }
+
+    const formattedCost = Number(out?.total_cost || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    alert(`✅ Material issue posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: ${currency} ${formattedCost}`);
+
   } catch (err) {
-    setElText("projectIssueMsg", err?.message || "Failed to post material issue.");
+    showIssueMessage(`Failed to post: ${err?.message || "Unknown error"}`, true);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg> 
+        Confirm & Post Issue
+      `;
+    }
   }
 }
 
@@ -124733,6 +136690,451 @@ window.openProjectTaskModal = openProjectTaskModal;
 window.openProjectBudgetModal = openProjectBudgetModal;
 window.openProjectIssueModal = openProjectIssueModal;
 window.bindProjectOperationalModalsOnce = bindProjectOperationalModalsOnce;
+
+// ============================================
+// RETURN MATERIALS TO STORAGE - COMPLETE FUNCTIONS
+// ============================================
+
+let ACTIVE_RETURN_PROJECT_ID = null;
+
+function bindProjectReturnModalOnce() {
+  if (window._projectReturnModalBound) return;
+  window._projectReturnModalBound = true;
+
+  // 1. Add Line Button
+  document.getElementById("projectReturnAddLineBtn")?.addEventListener("click", async () => {
+    if (typeof addProjectReturnLine === "function") {
+      await addProjectReturnLine();
+    }
+  });
+
+  // 2. Preview Journal Button
+  document.getElementById("projectReturnPreviewBtn")?.addEventListener("click", async () => {
+    if (typeof previewProjectReturnJournal === "function") {
+      await previewProjectReturnJournal();
+    }
+  });
+
+  // 3. Post Return Button (Submit)
+  document.getElementById("projectReturnSubmitBtn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    if (typeof submitProjectReturn === "function") {
+      await submitProjectReturn();
+    }
+  });
+}
+async function openProjectReturnModal(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return;
+
+  bindProjectReturnModalOnce();
+  ACTIVE_RETURN_PROJECT_ID = Number(projectId);
+
+  try {
+    const project = await apiFetch(ENDPOINTS.projects.one(cid, projectId));
+
+    if (!project) {
+      alert("Project not found.");
+      return;
+    }
+
+    // Store for preview
+    window._currentProjectForReturn = project;
+
+    setElText("returnProjectInfo", `${project.project_code || project.id} — ${project.project_name || ""}`);
+    
+    const mode = String(project.accounting_mode || "contract").toLowerCase();
+    const account = ["contract", "wip", "capital"].includes(mode) 
+      ? project.wip_account_code 
+      : project.cost_account_code;
+    
+    const modeLabel = {
+      contract: "Contract / WIP",
+      wip: "Work in Progress",
+      capital: "Capital / CIP",
+      expense: "Project Expense",
+      none: "Operational Expense"
+    }[mode] || mode;
+
+    setElText("returnAccountingMsg", `Accounting: ${modeLabel} • Reversal account: ${account}`);
+    document.getElementById("projectReturnDate").value = new Date().toISOString().slice(0, 10);
+    document.getElementById("projectReturnRef").value = `PMR-${projectId}-${new Date().toISOString().slice(0, 10)}`;
+    document.getElementById("projectReturnNotes").value = "";
+    document.getElementById("projectReturnLinkOriginal").checked = false;
+    document.getElementById("projectReturnOriginalTxId").value = "";
+
+    await populateProjectTaskSelect("projectReturnTaskId", projectId, "Select task...");
+    await populateProjectCostCodeSelect("projectReturnCostCodeId", "Select cost code...");
+
+    const tbody = document.getElementById("projectReturnLines");
+    if (tbody) tbody.innerHTML = "";
+
+    await addProjectReturnLine();
+    
+    // Hide journal preview on open
+    hideReturnJournalPreview();
+    clearReturnMessage();
+
+    document.getElementById("projectReturnModal")?.classList.remove("hidden");
+
+  } catch (err) {
+    console.error("[Projects] open material return failed", err);
+    alert(err?.message || "Failed to prepare material return.");
+  }
+}
+
+function closeProjectReturnModal() {
+  document.getElementById("projectReturnModal")?.classList.add("hidden");
+  hideReturnJournalPreview();
+  ACTIVE_RETURN_PROJECT_ID = null;
+  window._currentProjectForReturn = null;
+}
+
+function hideReturnJournalPreview() {
+  document.getElementById("projectReturnJournalPreview")?.classList.add("hidden");
+}
+
+function showReturnMessage(msg, isError = false) {
+  const el = document.getElementById("projectReturnMsg");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove("hidden", "bg-red-50", "text-red-700", "bg-green-50", "text-green-700", "bg-blue-50", "text-blue-700");
+  if (msg) {
+    el.classList.remove("hidden");
+    el.classList.add(isError ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700");
+  } else {
+    el.classList.add("hidden");
+  }
+}
+
+function clearReturnMessage() {
+  showReturnMessage("");
+}
+
+async function addProjectReturnLine(line = {}) {
+  const tbody = document.getElementById("projectReturnLines");
+  if (!tbody) return;
+
+  const lineNum = tbody.children.length + 1;
+  const tr = document.createElement("tr");
+  tr.className = "border-b hover:bg-green-50/30";
+
+  tr.innerHTML = `
+    <td class="px-3 py-2 text-slate-400 font-mono text-xs">${lineNum}</td>
+    <td class="px-3 py-2">
+      <select data-pr-item-id class="w-full border rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-green-500/20">
+        ${await buildInventoryItemOptions(line.item_id || "")}
+      </select>
+    </td>
+    <td class="px-3 py-2">
+      <input data-pr-qty type="number" step="0.0001" min="0.0001" 
+             class="w-full border rounded px-2 py-1.5 text-right text-xs focus:ring-2 focus:ring-green-500/20" 
+             value="${esc(line.qty || "")}" placeholder="Qty to return">
+    </td>
+    <td class="px-3 py-2 text-right text-xs font-mono text-slate-500">
+      <span data-pr-est-value>${line.qty ? '—' : ''}</span>
+    </td>
+    <td class="px-3 py-2">
+      <input data-pr-memo class="w-full border rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-green-500/20" 
+             value="${esc(line.memo || "")}" placeholder="Reason for return">
+    </td>
+    <td class="px-3 py-2 text-right">
+      <button type="button" class="text-rose-600 hover:text-rose-800 underline text-xs" data-pr-remove>Remove</button>
+    </td>
+  `;
+
+  tr.querySelector("[data-pr-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    renumberReturnLines();
+    updateReturnEstimates();
+  });
+
+  // Auto-update estimate
+  tr.querySelector("[data-pr-qty]")?.addEventListener("change", async () => {
+    await updateReturnLineEstimate(tr);
+  });
+
+  tbody.appendChild(tr);
+  updateReturnEstimates();
+}
+
+function renumberReturnLines() {
+  const rows = document.querySelectorAll("#projectReturnLines tr");
+  rows.forEach((row, idx) => {
+    const firstCell = row.querySelector("td:first-child");
+    if (firstCell) firstCell.textContent = idx + 1;
+  });
+}
+
+async function updateReturnLineEstimate(tr) {
+  const itemId = tr.querySelector("[data-pr-item-id]")?.value;
+  const qty = parseFloat(tr.querySelector("[data-pr-qty]")?.value || 0);
+  const estSpan = tr.querySelector("[data-pr-est-value]");
+  
+  if (estSpan && itemId && qty > 0) {
+    estSpan.textContent = "Calculating...";
+    try {
+      const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+      const preview = await apiFetch(ENDPOINTS.projects.previewReturnJournal(cid, ACTIVE_RETURN_PROJECT_ID), {
+        method: "POST",
+        body: JSON.stringify({
+          tx_date: document.getElementById("projectReturnDate")?.value,
+          lines: [{ item_id: parseInt(itemId), qty }],
+        }),
+      });
+      
+      const detail = preview?.line_details?.[0];
+      if (detail) {
+        estSpan.textContent = `USD ${detail.total_cost?.toFixed(2) || '0.00'}`;
+      }
+    } catch (e) {
+      estSpan.textContent = "—";
+    }
+  } else if (estSpan) {
+    estSpan.textContent = qty > 0 ? "—" : "";
+  }
+  
+  updateReturnEstimates();
+}
+
+function updateReturnEstimates() {
+  const rows = document.querySelectorAll("#projectReturnLines tr");
+  let count = 0;
+  let total = 0;
+  const currency = resolveCurrency();
+
+  rows.forEach(row => {
+    const costText = row.querySelector("[data-pr-est-value]")?.textContent || "";
+    const cost = parseFloat(costText.replace(/[^\d.-]/g, "")) || 0;
+    if (cost > 0) {
+      count++;
+      total += cost;
+    }
+  });
+
+  const countEl = document.getElementById("projectReturnLineCount");
+  const totalEl = document.getElementById("projectReturnEstTotal");
+
+  const formattedTotal = total.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  if (countEl) countEl.textContent = count;
+  if (totalEl) totalEl.textContent = `${currency} ${formattedTotal}`;
+}
+
+async function previewProjectReturnJournal() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(ACTIVE_RETURN_PROJECT_ID || 0);
+  
+  if (!cid || !projectId) {
+    showReturnMessage("Missing company or project ID.", true);
+    return;
+  }
+
+  const lines = Array.from(document.querySelectorAll("#projectReturnLines tr"))
+    .map(tr => ({
+      item_id: Number(tr.querySelector("[data-pr-item-id]")?.value || 0),
+      qty: Number(tr.querySelector("[data-pr-qty]")?.value || 0),
+      memo: tr.querySelector("[data-pr-memo]")?.value?.trim() || "",
+    }))
+    .filter(x => x.item_id > 0 && x.qty > 0);
+
+  if (!lines.length) {
+    showReturnMessage("Add at least one return line before previewing.", true);
+    return;
+  }
+
+  clearReturnMessage();
+  const previewBtn = document.getElementById("projectReturnPreviewBtn");
+  if (previewBtn) {
+    previewBtn.disabled = true;
+    previewBtn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Loading...`;
+  }
+
+  try {
+    const payload = {
+      tx_date: document.getElementById("projectReturnDate")?.value,
+      task_id: Number(document.getElementById("projectReturnTaskId")?.value || 0) || null,
+      cost_code_id: Number(document.getElementById("projectReturnCostCodeId")?.value || 0) || null,
+      lines,
+    };
+
+    const preview = await apiFetch(
+      ENDPOINTS.projects.previewReturnJournal(cid, projectId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    renderReturnJournalPreview(preview);
+
+  } catch (err) {
+    showReturnMessage(`Preview failed: ${err?.message || "Unknown error"}`, true);
+  } finally {
+    if (previewBtn) {
+      previewBtn.disabled = false;
+      previewBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg> Preview Reversal`;
+    }
+  }
+}
+
+function renderReturnJournalPreview(preview) {
+  if (!preview) return;
+
+  const container = document.getElementById("projectReturnJournalPreview");
+  if (!container) return;
+
+  const currency = resolveCurrency();
+  const totalDebit = Number(preview.totals?.total_debit || 0);
+  const totalCredit = Number(preview.totals?.total_credit || 0);
+
+  // Header info
+  setElText("returnJournalPreviewDate", preview.journal_header?.date || "");
+  setElText("returnJournalPreviewDesc", preview.journal_header?.description || "");
+  setElText(
+    "returnJournalPreviewTotal", 
+    `${currency} ${totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  );
+  setElText("projectReturnJournalRef", preview.journal_header?.ref || "");
+
+  // Journal lines - 4 columns: Account Name | Debit | Credit | Memo
+  const tbody = document.getElementById("projectReturnJournalLines");
+  if (tbody) {
+    if (!preview.journal_lines || preview.journal_lines.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" class="px-3 py-4 text-center text-emerald-600">No journal lines generated</td></tr>`;
+    } else {
+      tbody.innerHTML = preview.journal_lines.map(line => {
+        const dr = Number(line.debit || 0);
+        const cr = Number(line.credit || 0);
+        return `
+          <tr class="border-b hover:bg-emerald-50/30">
+            <td class="px-3 py-2.5 text-xs font-medium text-slate-800">${esc(line.account_name || "Unnamed Account")}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-xs ${dr > 0 ? 'font-semibold text-green-700' : ''}">${dr > 0 ? dr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-xs ${cr > 0 ? 'font-semibold text-red-700' : ''}">${cr > 0 ? cr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
+            <td class="px-3 py-2.5 text-xs text-slate-500">${esc(line.memo || "")}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+
+  // Totals
+  setElText("returnJournalPreviewTotalDr", totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  setElText("returnJournalPreviewTotalCr", totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+
+  container.classList.remove("hidden");
+
+  // Update return line estimates from server response
+  if (preview.line_details) {
+    const rows = document.querySelectorAll("#projectReturnLines tr");
+    rows.forEach((row, idx) => {
+      const detail = preview.line_details[idx];
+      if (detail) {
+        const cost = Number(detail.total_cost || 0);
+        const estSpan = row.querySelector("[data-pr-est-value]");
+        if (estSpan) estSpan.textContent = `${currency} ${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+    });
+    updateReturnEstimates();
+  }
+
+  showReturnMessage("✅ Reversal journal ready! Review before posting return.", false);
+}
+
+async function submitProjectReturn() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(ACTIVE_RETURN_PROJECT_ID || 0);
+  const currency = resolveCurrency();
+  
+  if (!cid || !projectId) {
+    showReturnMessage("Missing company or project ID.", true);
+    return;
+  }
+
+  const lines = Array.from(document.querySelectorAll("#projectReturnLines tr"))
+    .map(tr => ({
+      item_id: Number(tr.querySelector("[data-pr-item-id]")?.value || 0),
+      qty: Number(tr.querySelector("[data-pr-qty]")?.value || 0),
+      memo: tr.querySelector("[data-pr-memo]")?.value?.trim() || "",
+    }))
+    .filter(x => x.item_id > 0 && x.qty > 0);
+
+  if (!lines.length) {
+    showReturnMessage("Add at least one valid return line.", true);
+    return;
+  }
+
+  const payload = {
+    tx_date: document.getElementById("projectReturnDate")?.value,
+    task_id: Number(document.getElementById("projectReturnTaskId")?.value || 0) || null,
+    cost_code_id: Number(document.getElementById("projectReturnCostCodeId")?.value || 0) || null,
+    ref: document.getElementById("projectReturnRef")?.value || undefined,
+    notes: document.getElementById("projectReturnNotes")?.value || undefined,
+    original_tx_id: document.getElementById("projectReturnLinkOriginal")?.checked 
+      ? (Number(document.getElementById("projectReturnOriginalTxId")?.value) || null)
+      : null,
+    lines,
+    post_now: true,
+  };
+
+  showReturnMessage("Posting material return...", false);
+
+  // Target by ID directly
+  const postBtn = document.getElementById("projectReturnSubmitBtn");
+  if (postBtn) {
+    postBtn.disabled = true;
+    postBtn.innerHTML = `
+      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg> 
+      Posting...
+    `;
+  }
+
+  try {
+    const out = await apiFetch(ENDPOINTS.projects.returnMaterials(cid, projectId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    closeProjectReturnModal();
+    
+    if (typeof loadProjectDetail === 'function') {
+      await loadProjectDetail(projectId);
+    }
+
+    const formattedCost = Number(out?.total_return_cost || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    alert(`✅ Material return posted successfully!\n\nTransaction: ${out?.ref || '—'}\nJournal ID: ${out?.journal_id || '—'}\nTotal Value: ${currency} ${formattedCost}`);
+
+  } catch (err) {
+    showReturnMessage(`Failed to post return: ${err?.message || "Unknown error"}`, true);
+  } finally {
+    if (postBtn) {
+      postBtn.disabled = false;
+      postBtn.innerHTML = `
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg> 
+        Post Return
+      `;
+    }
+  }
+}
+
+// Expose globally
+window.openProjectIssueModal = openProjectIssueModal;
+window.openProjectReturnModal = openProjectReturnModal;
+window.closeProjectIssueModal = closeProjectIssueModal;
+window.closeProjectReturnModal = closeProjectReturnModal;
+window.bindProjectOperationalModalsOnce = bindProjectIssueModalOnce;
 
 async function populateProjectDeskDropdown(selectId) {
   const sel = document.getElementById(selectId);
@@ -126065,7 +138467,7 @@ window.addEventListener("popstate",async()=>{
   );
 });
 
-window.addEventListener("DOMContentLoaded", () => {
+function startDashboardApp() {
   init().catch((e) => console.error("🔥 init crashed", e));
    bindSmartHeader();
   // ✅ TRACE modal closers
@@ -126122,7 +138524,20 @@ window.addEventListener("DOMContentLoaded", () => {
       APP_RESTORING_ROUTE=false;
     }
   }
-});
-})(); // ✅ ONLY THIS ONE closing for the main IIFE
+  window.restoreAppRoute = restoreAppRoute; 
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    startDashboardApp,
+    { once: true }
+  );
+} else {
+  startDashboardApp();
+}
+
+})(); // ✅ ONLY THIS ONE closing for the main IIFE// ✅ ONLY THIS ONE closing for the main IIFE
 
 

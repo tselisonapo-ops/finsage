@@ -987,7 +987,7 @@ html, body {
     color: var(--fs-navy);
   }
 
-  /* 🔥 Left accent bar for active */
+ 🔥 Left accent bar for active */
   .nav-item-link.active::before {
     content: "";
     position: absolute;
@@ -9851,6 +9851,107 @@ tbody tr:hover {
   min-width: 0;
   box-sizing: border-box;
 }
+
+.project-detail-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 14px 0 10px;
+  padding: 5px;
+  overflow-x: auto;
+  border: 1px solid #dbe5ec;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.project-detail-tab {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.project-detail-tab.active {
+  background: #fff;
+  color: #0f2742;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .10);
+}
+
+.project-detail-tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  width: 100%;
+  margin: 14px 0;
+  border: 1px solid #dbe5ec;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.project-detail-tab {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 0;
+  border-right: 1px solid #dbe5ec;
+  border-radius: 0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.project-detail-tab:last-child {
+  border-right: 0;
+}
+
+.project-detail-tab:hover {
+  background: #f1f5f9;
+}
+
+.project-detail-tab.active {
+  background: #fff;
+  color: #0f2742;
+  font-weight: 700;
+  box-shadow: inset 0 -3px 0 var(--fs-navy);
+}
+
+@media (max-width: 1100px) {
+  .project-detail-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .project-detail-tab:nth-child(3) {
+    border-right: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .project-detail-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Searchable Employee Dropdown Styles */
+#projectTeamUserList li:hover,
+#projectTeamUserList li:focus {
+  background-color: #e0f2fe;
+  color: var(--fs-navy);
+}
+
+#projectTeamUserList li.bg-blue-100 {
+  background-color: #dbeafe;
+}
+
+label:has(#projectTeamUserSearch) {
+  position: relative;
+}
   </style>
 
 </head>
@@ -9871,7 +9972,7 @@ tbody tr:hover {
 
       <nav id="mainNav" class="flex-1 px-2 py-2 overflow-y-auto"></nav>
 
-      <!-- 🔹 Reporting & Compliance: Lease wizard entry -->
+      <!-- 🔹 Reporting & Compliance: Lease wizardd entry -->
       <div class="px-3 pb-4 border-t border-[var(--fs-border)]">
         <div class="text-[11px] uppercase tracking-wide text-[var(--fs-muted)] mt-2 mb-1">
           Reporting &amp; Compliance
@@ -10799,6 +10900,9 @@ tbody tr:hover {
                           class="px-3 py-2 bg-[var(--fs-navy)] text-white rounded">
                     Post Batch (Ctrl+Enter)
                   </button>
+                  <span id="jrnlPostStatus"
+                        class="text-xs text-slate-500 hidden">
+                  </span>
                 </div>
               </form>
 
@@ -17536,55 +17640,308 @@ tbody tr:hover {
         <section id="screen-projects" class="screen hidden">
           <div class="card p-4 flex flex-col gap-4">
 
-            <div class="flex items-center justify-between">
-              <div>
-                <h3 id="projectScreenTitle" class="font-bold text-base">Projects</h3>
-                <div class="text-xs text-slate-500">
-                  Job costing, material issues, budgets, and project profitability
+            <div id="projectLandingView">
+
+              <!-- ==================================================
+                  HEADER
+              ================================================== -->
+              <div class="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3
+                    id="projectScreenTitle"
+                    class="font-bold text-base">
+                    Projects
+                  </h3>
+
+                  <div class="text-xs text-slate-500">
+                    Portfolio performance, delivery, costs and project activity
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <button
+                    id="projectNewBtn"
+                    class="px-3 py-1.5 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    + New Project
+                  </button>
+
+                  <button
+                    id="projectRefreshBtn"
+                    class="px-3 py-1.5 text-xs border rounded">
+                    Refresh
+                  </button>
                 </div>
               </div>
 
-              <div class="flex items-center gap-2">
-                <button id="projectNewBtn"
-                        class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded">
-                  + New Project
-                </button>
-                <button id="projectRefreshBtn"
-                        class="px-3 py-1 text-xs border rounded">
-                  Refresh
-                </button>
+
+              <!-- ==================================================
+                  KPI CARDS
+              ================================================== -->
+              <div
+                id="projectDashboardKpis"
+                class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Total Projects
+                  </div>
+
+                  <div
+                    id="projectKpiTotal"
+                    class="text-lg font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Active / Approved
+                  </div>
+
+                  <div
+                    id="projectKpiActive"
+                    class="text-lg font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Contract Value
+                  </div>
+
+                  <div
+                    id="projectKpiContract"
+                    class="text-sm font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Total Budget
+                  </div>
+
+                  <div
+                    id="projectKpiBudget"
+                    class="text-sm font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Open Tasks
+                  </div>
+
+                  <div
+                    id="projectKpiTasks"
+                    class="text-lg font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="text-[11px] text-slate-500">
+                    Avg. Progress
+                  </div>
+
+                  <div
+                    id="projectKpiProgress"
+                    class="text-lg font-bold mt-1">
+                    —
+                  </div>
+                </div>
+
               </div>
-            </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-4 gap-3">
-              <div class="border rounded p-3 text-xs">
-                <div class="font-semibold mb-2">Filters</div>
 
-                <label class="block text-[11px] text-slate-500 mb-1">Search</label>
-                <input id="projectSearch"
-                      class="w-full border rounded px-2 py-1 text-xs"
-                      placeholder="Project code, name, location">
+              <!-- ==================================================
+                  PORTFOLIO SUMMARY
+              ================================================== -->
+              <div class="grid grid-cols-1 xl:grid-cols-3 gap-3 mb-4">
 
-                <label class="block text-[11px] text-slate-500 mt-2 mb-1">Status</label>
-                <select id="projectStatus"
-                        class="w-full border rounded px-2 py-1 text-xs">
-                  <option value="">All</option>
-                  <option value="draft">Draft</option>
-                  <option value="approved">Approved</option>
-                  <option value="active">Active</option>
-                  <option value="on_hold">On Hold</option>
-                  <option value="completed">Completed</option>
-                  <option value="closed">Closed</option>
-                </select>
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <div class="font-semibold text-xs">
+                        Portfolio Status
+                      </div>
+
+                      <div class="text-[11px] text-slate-500">
+                        Projects by current status
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    id="projectStatusSummary"
+                    class="space-y-2 text-xs">
+                    Loading...
+                  </div>
+                </div>
+
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <div class="font-semibold text-xs">
+                        Delivery Progress
+                      </div>
+
+                      <div class="text-[11px] text-slate-500">
+                        Portfolio completion
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    id="projectProgressSummary"
+                    class="space-y-3 text-xs">
+                    Loading...
+                  </div>
+                </div>
+
+
+                <div class="border rounded-lg p-3 bg-white">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <div class="font-semibold text-xs">
+                        Portfolio Value
+                      </div>
+
+                      <div class="text-[11px] text-slate-500">
+                        Contract value against budget
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    id="projectValueSummary"
+                    class="space-y-3 text-xs">
+                    Loading...
+                  </div>
+                </div>
+
               </div>
 
-              <div id="projectsTable"
-                  class="lg:col-span-3 border rounded p-2 text-xs text-slate-500">
+
+              <!-- ==================================================
+                  FILTERS
+              ================================================== -->
+              <div class="border rounded-lg p-3 bg-white mb-3">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-semibold text-xs">
+                      Project Portfolio
+                    </div>
+
+                    <div class="text-[11px] text-slate-500">
+                      Search, filter and open a project
+                    </div>
+                  </div>
+
+                  <div
+                    id="projectPortfolioCount"
+                    class="text-[11px] text-slate-500">
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
+
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">
+                      Search
+                    </label>
+
+                    <input
+                      id="projectSearch"
+                      class="w-full border rounded px-2 py-1.5 text-xs"
+                      placeholder="Project code, name, customer or location">
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">
+                      Status
+                    </label>
+
+                    <select
+                      id="projectStatus"
+                      class="w-full border rounded px-2 py-1.5 text-xs">
+
+                      <option value="">All statuses</option>
+                      <option value="draft">Draft</option>
+                      <option value="approved">Approved</option>
+                      <option value="active">Active</option>
+                      <option value="on_hold">On Hold</option>
+                      <option value="completed">Completed</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">
+                      Project Type
+                    </label>
+
+                    <select
+                      id="projectTypeFilter"
+                      class="w-full border rounded px-2 py-1.5 text-xs">
+
+                      <option value="">All types</option>
+                      <option value="customer_project">Customer Project</option>
+                      <option value="construction">Construction</option>
+                      <option value="implementation">Implementation</option>
+                      <option value="internal_project">Internal Project</option>
+                      <option value="capital_project">Capital Project</option>
+                      <option value="maintenance">Maintenance</option>
+                      <option value="research">Research</option>
+                      <option value="marketing">Marketing</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">
+                      Accounting
+                    </label>
+
+                    <select
+                      id="projectAccountingModeFilter"
+                      class="w-full border rounded px-2 py-1.5 text-xs">
+
+                      <option value="">All accounting</option>
+                      <option value="contract">Contract</option>
+                      <option value="wip">WIP</option>
+                      <option value="capital">Capital</option>
+                      <option value="expense">Expense</option>
+                      <option value="none">None</option>
+                    </select>
+                  </div>
+
+                </div>
+              </div>
+
+
+              <!-- ==================================================
+                  PROJECT TABLE
+              ================================================== -->
+              <div
+                id="projectsTable"
+                class="text-xs text-slate-500">
                 Loading projects...
               </div>
+
             </div>
 
-            <div id="projectDetailMount"></div>
+
+            <div
+              id="projectDetailView"
+              class="hidden">
+
+              <div id="projectDetailMount"></div>
+
+            </div>
           </div>
 
           <div id="projectCreateModal" class="fixed inset-0 z-50 hidden">
@@ -17659,18 +18016,48 @@ tbody tr:hover {
                   </label>
 
                   <label>
-                    <div class="text-slate-500 mb-1">Project Manager User ID</div>
-                    <input id="projectManagerUserId" type="number" class="w-full border rounded px-2 py-2">
+                    <div class="text-slate-500 mb-1">
+                      Project Manager
+                    </div>
+
+                    <select
+                      id="projectManagerUserId"
+                      class="w-full border rounded px-2 py-2"
+                    >
+                      <option value="">
+                        Select project manager…
+                      </option>
+                    </select>
                   </label>
 
                   <label>
-                    <div class="text-slate-500 mb-1">Sponsor / Owner User ID</div>
-                    <input id="projectSponsorUserId" type="number" class="w-full border rounded px-2 py-2">
+                    <div class="text-slate-500 mb-1">
+                      Sponsor / Owner
+                    </div>
+
+                    <select
+                      id="projectSponsorUserId"
+                      class="w-full border rounded px-2 py-2"
+                    >
+                      <option value="">
+                        Select sponsor / owner…
+                      </option>
+                    </select>
                   </label>
 
                   <label>
-                    <div class="text-slate-500 mb-1">Department ID</div>
-                    <input id="projectDepartmentId" type="number" class="w-full border rounded px-2 py-2">
+                    <div class="text-slate-500 mb-1">
+                      Department
+                    </div>
+
+                    <select
+                      id="projectDepartmentId"
+                      class="w-full border rounded px-2 py-2"
+                    >
+                      <option value="">
+                        Select department…
+                      </option>
+                    </select>
                   </label>
 
                   <label>
@@ -17768,17 +18155,32 @@ tbody tr:hover {
 
                   <label>
                     <div class="text-slate-500 mb-1">WIP / CIP Account</div>
-                    <input id="projectWipAccountCode" class="w-full border rounded px-2 py-2">
+                    <select
+                      id="projectWipAccountCode"
+                      class="w-full border rounded px-2 py-2"
+                    >
+                      <option value="">Select WIP / CIP account…</option>
+                    </select>
                   </label>
 
                   <label>
                     <div class="text-slate-500 mb-1">Revenue Account</div>
-                    <input id="projectRevenueAccountCode" class="w-full border rounded px-2 py-2">
+                    <select
+                      id="projectRevenueAccountCode"
+                      class="w-full border rounded px-2 py-2"
+                    >
+                      <option value="">Select revenue account…</option>
+                    </select>
                   </label>
 
                   <label>
                     <div class="text-slate-500 mb-1">Cost / Expense Account</div>
-                    <input id="projectCostAccountCode" class="w-full border rounded px-2 py-2">
+                    <select
+                      id="projectCostAccountCode"
+                      class="w-full border rounded px-2 py-2"
+                    >
+                      <option value="">Select cost / expense account…</option>
+                    </select>
                   </label>
 
                   <label class="md:col-span-3">
@@ -17834,6 +18236,1680 @@ tbody tr:hover {
                     Save Project
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== PROJECT ROLES MODAL ==================== -->
+          <div id="projectRolesModal"
+              class="fixed inset-0 z-[60] hidden">
+
+            <div id="projectRolesOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5">
+                
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-4">
+                  <div>
+                    <div class="font-bold text-base">Project Roles</div>
+                    <div class="text-xs text-slate-500">Create and manage custom role types</div>
+                  </div>
+                  <button id="projectRolesCloseBtn" class="px-2 py-1 border rounded">✕</button>
+                </div>
+
+                <input id="projectRolesProjectId" type="hidden">
+
+                <!-- Create New Role Form -->
+                <div class="bg-gray-50 rounded-lg p-3 mb-4">
+                  <div class="font-semibold text-sm mb-2">Create New Role</div>
+                  
+                  <div class="grid grid-cols-1 gap-3 text-xs">
+                    
+                    <!-- ✅ Row 1: Role Name (was missing!) -->
+                    <div>
+                      <label class="block text-slate-600 mb-1">Role Name *</label>
+                      <input id="projectRoleNameInput"
+                            type="text"
+                            class="w-full border rounded px-2 py-2"
+                            placeholder="e.g., Site Engineer, Project Manager"
+                            required
+                            oninput="autoGenerateRoleCode(this.value)">
+                      <div class="text-[10px] text-slate-400 mt-1">Type name to auto-generate code below</div>
+                    </div>
+
+                    <!-- ✅ Row 2: Role Type + Role Code side by side -->
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-slate-600 mb-1">Role Type *</label>
+                        <select id="projectRoleTypeInput"
+                                class="w-full border rounded px-2 py-2">
+                          <option value="">Select type...</option>
+                          <option value="leadership">Leadership</option>
+                          <option value="technical">Technical</option>
+                          <option value="management">Management</option>
+                          <option value="support">Support</option>
+                          <option value="operational">Operational</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label class="block text-slate-600 mb-1">Role Code * <span class="text-slate-400 font-normal">(auto)</span></label>
+                        <input id="projectRoleCodeInput"
+                              type="text"
+                              class="w-full border rounded px-2 py-2 bg-slate-50"
+                              placeholder="e.g., PM-001"
+                              maxlength="10"
+                              readonly>
+                        <div class="text-[10px] text-slate-400 mt-1">Auto-generated from initials</div>
+                      </div>
+                    </div>
+
+                    <!-- ✅ Row 3: Description (full width) -->
+                    <div>
+                      <label class="block text-slate-600 mb-1">Description</label>
+                      <input id="projectRoleDescInput"
+                            type="text"
+                            class="w-full border rounded px-2 py-2"
+                            placeholder="Optional description">
+                    </div>
+                  </div>
+
+                  <div id="projectRolesMsg" class="text-xs mt-2 min-h-[16px]"></div>
+
+                  <button id="projectRoleSaveBtn"
+                          class="mt-2 w-full bg-blue-600 text-white py-2 rounded text-sm font-medium hover:bg-blue-700">
+                    Add Role
+                  </button>
+                </div>
+
+                <!-- Existing Roles List -->
+                <div>
+                  <div class="font-semibold text-sm mb-2">Existing Roles</div>
+                  <div id="projectRolesList"
+                      class="max-h-48 overflow-auto space-y-2 text-xs">
+                    <div class="text-slate-400 p-3 text-center">Loading roles...</div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+          <!-- END PROJECT ROLES MODAL -->
+
+          <!-- ==================== TEAM MEMBER MODAL ==================== -->
+          <div id="projectTeamModal"
+              class="fixed inset-0 z-50 hidden">
+
+            <div id="projectTeamOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-4">
+                
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Project Team Member</div>
+                    <div class="text-xs text-slate-500">Add or update a project resource</div>
+                  </div>
+                  <button id="projectTeamCloseBtn" class="px-2 py-1 border rounded">✕</button>
+                </div>
+
+                <input id="projectTeamProjectId" type="hidden">
+
+                <!-- Existing Team Members Section (add inside modal, before the form grid) -->
+                <div id="projectTeamExistingList" class="mb-3 max-h-48 overflow-auto">
+                  <!-- Populated by loadProjectTeamMembers() -->
+                </div>
+
+                <hr class="my-3 border-slate-200">
+
+                <div class="font-semibold text-sm mb-2 text-slate-700">Add New Member</div>
+
+                <!-- Form Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  
+                  <!-- Row 1: Team Member Search -->
+                  <label class="relative block">
+                    <div class="text-slate-500 mb-1">Team Member</div>
+                    <input id="projectTeamUserSearch" 
+                          type="text" 
+                          class="w-full border rounded px-2 py-2" 
+                          placeholder="Type to search employees..." 
+                          autocomplete="off">
+                    <input id="projectTeamUserId" type="hidden" value="">
+                    <ul id="projectTeamUserList" 
+                        class="hidden absolute z-50 w-full bg-white border rounded shadow-lg mt-1 max-h-48 overflow-auto text-xs left-0"></ul>
+                  </label>
+
+                  <!-- Row 1: Role Type with Manage Button -->
+                  <label class="relative block">
+                    <div class="flex justify-between items-center mb-1">
+                      <span class="text-slate-500">Role Type</span>
+                      <!-- ✅ UNIQUE ID now -->
+                      <button type="button"
+                              id="manageProjectRolesBtn"
+                              class="text-blue-600 text-xs hover:text-blue-800 hover:underline">
+                        ⚙ Manage Roles
+                      </button>
+                    </div>
+                    <select id="projectTeamRoleType"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="member">Member</option>
+                      <option value="lead">Lead</option>
+                      <option value="manager">Manager</option>
+                      <option value="reviewer">Reviewer</option>
+                      <option value="approver">Approver</option>
+                      <option value="observer">Observer</option>
+                    </select>
+                  </label>
+
+                  <!-- Row 2: Project Role (full width) - ✅ Fixed col-span-2 -->
+                  <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">
+                      Project Role 
+                      <span id="rolesWarning" class="text-amber-500 text-xs ml-2 hidden">
+                        ⚠️ Define roles first
+                      </span>
+                    </label>
+                    
+                    <select id="projectTeamRole"
+                            class="w-full border rounded px-2 py-2 text-sm"
+                            onchange="onTeamRoleChange(this)">
+                      <option value="">-- Select Role --</option>
+                    </select>
+                    
+                    <!-- ✅ REMOVED duplicate button - use the one above instead -->
+                    <div class="mt-1 text-[10px] text-slate-400">
+                      💡 Create custom roles via "⚙ Manage Roles" button above
+                    </div>
+                  </div>
+
+                  <!-- Row 3: Allocation -->
+                  <label>
+                    <div class="text-slate-500 mb-1">Allocation %</div>
+                    <input id="projectTeamAllocation"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value="100"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <!-- Row 3: Start Date -->
+                  <label>
+                    <div class="text-slate-500 mb-1">Start Date</div>
+                    <input id="projectTeamStartDate"
+                          type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <!-- Row 4: End Date -->
+                  <label>
+                    <div class="text-slate-500 mb-1">End Date</div>
+                    <input id="projectTeamEndDate"
+                          type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <!-- Row 5: Notes (full width) -->
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Notes</div>
+                    <textarea id="projectTeamNotes"
+                              rows="3"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+                </div>
+
+                <div id="projectTeamMsg" class="mt-3 text-xs text-slate-500"></div>
+
+                <!-- Buttons -->
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectTeamCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+                  <button id="projectTeamSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Save Member
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Helper Scripts (place at end of body or in main JS file) -->
+          <script>
+          /**
+          * Open Roles Modal from within Team Modal
+          */
+          function openManageRolesFromTeam() {
+            const projectId = document.getElementById("projectTeamProjectId")?.value;
+            if (projectId) {
+              console.log("[TeamModal] → Opening Roles Modal to define roles");
+              openProjectRolesModal(projectId);
+            }
+          }
+
+          /**
+          * Handle role selection change
+          */
+          function onTeamRoleChange(select) {
+            const warning = document.getElementById("rolesWarning");
+            if (warning) {
+              warning.classList.toggle('hidden', !!select.value);
+            }
+          }
+          </script>
+
+          <div id="projectAssignModal"
+              class="fixed inset-0 z-50 hidden">
+
+            <div id="projectAssignOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex
+                        items-center justify-center p-4">
+
+              <div class="bg-white rounded-2xl
+                          shadow-xl w-full max-w-lg p-4">
+
+                <div class="flex items-center
+                            justify-between mb-3">
+
+                  <div>
+                    <div class="font-bold text-base">
+                      Assign Task
+                    </div>
+
+                    <div id="projectAssignTaskName"
+                        class="text-xs text-slate-500">
+                    </div>
+                  </div>
+
+                  <button id="projectAssignCloseBtn"
+                          class="px-2 py-1 border rounded">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectAssignProjectId"
+                      type="hidden">
+
+                <input id="projectAssignTaskId"
+                      type="hidden">
+
+                <div class="grid grid-cols-1
+                            md:grid-cols-2 gap-3 text-xs">
+
+                  <label>
+                    <div class="text-slate-500 mb-1">
+                      Employee
+                    </div>
+
+                    <select
+                      id="projectAssignUserId"
+                      class="w-full border rounded px-2 py-2"
+                    >
+                      <option value="">
+                        Select employee…
+                      </option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">
+                      Allocation %
+                    </div>
+
+                    <input id="projectAssignAllocation"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value="100"
+                          class="w-full border
+                                  rounded px-2 py-2">
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">
+                      Assignment Role
+                    </div>
+
+                    <input id="projectAssignRole"
+                          class="w-full border
+                                  rounded px-2 py-2"
+                          placeholder="Responsible">
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">
+                      Notes
+                    </div>
+
+                    <textarea id="projectAssignNotes"
+                              rows="3"
+                              class="w-full border
+                                    rounded px-2 py-2"></textarea>
+                  </label>
+                </div>
+
+                <div id="projectAssignMsg"
+                    class="mt-3 text-xs text-slate-500">
+                </div>
+
+                <div class="flex justify-end
+                            gap-2 mt-4">
+
+                  <button id="projectAssignCancelBtn"
+                          class="px-3 py-2
+                                text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectAssignSaveBtn"
+                          class="px-3 py-2 text-xs
+                                bg-[var(--fs-navy)]
+                                text-white rounded">
+                    Assign
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== DEPENDENCY MODAL ==================== -->
+          <div id="projectDependencyModal"
+              class="fixed inset-0 z-50 hidden">
+
+            <div id="projectDependencyOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-4">
+                
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Task Dependency</div>
+                    <div class="text-xs text-slate-500">Link predecessor and successor tasks</div>
+                  </div>
+                  <button id="projectDependencyCloseBtn" 
+                          class="px-2 py-1 border rounded hover:bg-gray-100">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectDependencyProjectId" type="hidden">
+
+                <!-- Form -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  
+                  <!-- Predecessor Task -->
+                  <label>
+                    <div class="text-slate-500 mb-1">
+                      Predecessor 
+                      <span class="text-slate-400 font-normal">(must finish first)</span>
+                    </div>
+                    <select id="projectDependencyPredecessor"
+                            class="w-full border rounded px-2 py-2"
+                            required>
+                      <option value="">-- Select task --</option>
+                    </select>
+                  </label>
+
+                  <!-- Successor Task -->
+                  <label>
+                    <div class="text-slate-500 mb-1">
+                      Successor 
+                      <span class="text-slate-400 font-normal">(depends on predecessor)</span>
+                    </div>
+                    <select id="projectDependencySuccessor"
+                            class="w-full border rounded px-2 py-2"
+                            required>
+                      <option value="">-- Select task --</option>
+                    </select>
+                  </label>
+
+                  <!-- Dependency Type -->
+                  <label>
+                    <div class="text-slate-500 mb-1">Dependency Type</div>
+                    <select id="projectDependencyType"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="finish_to_start" selected>🔗 Finish → Start (FS)</option>
+                      <option value="start_to_start">⏯️ Start → Start (SS)</option>
+                      <option value="finish_to_finish">🎯 Finish → Finish (FF)</option>
+                      <option value="start_to_finish">⬅️ Start → Finish (SF)</option>
+                    </select>
+                    <div class="text-[10px] text-slate-400 mt-1">Most common: Finish → Start</div>
+                  </label>
+
+                  <!-- Lag Days -->
+                  <label>
+                    <div class="text-slate-500 mb-1">
+                      Lag Days 
+                      <span class="text-slate-400 font-normal">(delay/overlap)</span>
+                    </div>
+                    <input id="projectDependencyLagDays"
+                          type="number"
+                          value="0"
+                          min="-30"
+                          max="365"
+                          class="w-full border rounded px-2 py-2">
+                    <div class="text-[10px] text-slate-400 mt-1">Negative = overlap, Positive = delay</div>
+                  </label>
+
+                  <!-- Notes (full width) -->
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Notes</div>
+                    <textarea id="projectDependencyNotes"
+                              rows="3"
+                              class="w-full border rounded px-2 py-2"
+                              placeholder="Optional: Add context about this dependency..."></textarea>
+                  </label>
+                </div>
+
+                <!-- Message Area -->
+                <div id="projectDependencyMsg"
+                    class="mt-3 text-xs text-slate-500 min-h-[16px]"></div>
+
+                <!-- Buttons -->
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectDependencyCancelBtn"
+                          class="px-3 py-2 text-xs border rounded hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button id="projectDependencySaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded hover:opacity-90">
+                    Save Dependency
+                  </button>
+                </div>
+                
+              </div>
+            </div>
+          </div>
+          <!-- END DEPENDENCY MODAL -->
+
+          <div id="projectTimeModal"
+              class="fixed inset-0 z-50 hidden">
+
+            <div id="projectTimeOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Time Entry</div>
+                    <div class="text-xs text-slate-500">
+                      Record project labour
+                    </div>
+                  </div>
+
+                  <button id="projectTimeCloseBtn"
+                          class="px-2 py-1 border rounded">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectTimeId" type="hidden">
+                <input id="projectTimeProjectId" type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Employee</div>
+                    <select id="projectTimeUserId"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="">Select employee…</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Task</div>
+                    <select id="projectTimeTaskId"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="">No task</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Work Date</div>
+                    <input id="projectTimeDate"
+                          type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Hours</div>
+                    <input id="projectTimeHours"
+                          type="number"
+                          min="0.01"
+                          max="24"
+                          step="0.25"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Cost Rate / Hour</div>
+                    <input id="projectTimeCostRate"
+                          type="number"
+                          step="0.01"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Bill Rate / Hour</div>
+                    <input id="projectTimeBillRate"
+                          type="number"
+                          step="0.01"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="flex items-center gap-2">
+                    <input id="projectTimeBillable"
+                          type="checkbox">
+                    <span>Billable time</span>
+                  </label>
+
+                  <label id="projectTimeCapitalizableWrap" class="flex items-center gap-2">
+                    <input id="projectTimeCapitalizable" type="checkbox">
+                    <span>Capitalisable to CIP</span>
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Description</div>
+                    <textarea id="projectTimeDescription"
+                              rows="3"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+                </div>
+
+                <div id="projectTimeMsg"
+                    class="mt-3 text-xs text-slate-500"></div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectTimeCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectTimeSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Save Time
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div id="projectExpenseModal"
+              class="fixed inset-0 z-50 hidden">
+
+            <div id="projectExpenseOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Project Expense</div>
+                    <div class="text-xs text-slate-500">
+                      Record a direct project cost
+                    </div>
+                  </div>
+
+                  <button id="projectExpenseCloseBtn"
+                          class="px-2 py-1 border rounded">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectExpenseProjectId"
+                      type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Date</div>
+                    <input id="projectExpenseDate"
+                          type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Task</div>
+                    <select id="projectExpenseTaskId"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="">No task</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Cost Code</div>
+                    <select id="projectExpenseCostCodeId"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="">No cost code</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Supplier</div>
+                    <input id="projectExpenseSupplier"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Reference</div>
+                    <input id="projectExpenseReference"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Account Code</div>
+                    <input id="projectExpenseAccount"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Amount</div>
+                    <input id="projectExpenseAmount"
+                          type="number"
+                          step="0.01"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Tax</div>
+                    <input id="projectExpenseTax"
+                          type="number"
+                          step="0.01"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label id="projectExpenseCapitalizableWrap"
+                        class="flex items-center gap-2 md:col-span-2">
+                    <input id="projectExpenseCapitalizable" type="checkbox">
+                    <span>Capitalisable to CIP</span>
+                  </label>
+                
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Description</div>
+                    <textarea id="projectExpenseDescription"
+                              rows="3"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+                </div>
+
+                <div id="projectExpenseMsg"
+                    class="mt-3 text-xs text-slate-500"></div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectExpenseCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectExpenseSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Save Expense
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div id="projectChangeModal"
+              class="fixed inset-0 z-50 hidden">
+
+            <div id="projectChangeOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Project Change</div>
+                    <div class="text-xs text-slate-500">
+                      Scope, budget or schedule change
+                    </div>
+                  </div>
+
+                  <button id="projectChangeCloseBtn"
+                          class="px-2 py-1 border rounded">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectChangeProjectId"
+                      type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Type</div>
+                    <select id="projectChangeType"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="change_request">Change Request</option>
+                      <option value="variation_order">Variation Order</option>
+                      <option value="scope_change">Scope Change</option>
+                      <option value="budget_change">Budget Change</option>
+                      <option value="schedule_change">Schedule Change</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Title</div>
+                    <input id="projectChangeTitle"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Cost Impact</div>
+                    <input id="projectChangeCostImpact"
+                          type="number"
+                          step="0.01"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Revenue Impact</div>
+                    <input id="projectChangeRevenueImpact"
+                          type="number"
+                          step="0.01"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Schedule Impact Days</div>
+                    <input id="projectChangeScheduleDays"
+                          type="number"
+                          value="0"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Proposed End Date</div>
+                    <input id="projectChangeEndDate"
+                          type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Reason</div>
+                    <input id="projectChangeReason"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Description</div>
+                    <textarea id="projectChangeDescription"
+                              rows="3"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+                </div>
+
+                <div id="projectChangeMsg"
+                    class="mt-3 text-xs text-slate-500"></div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectChangeCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectChangeSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Save Change
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div id="projectRiskModal" class="fixed inset-0 z-50 hidden">
+            <div id="projectRiskOverlay" class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Project Risk</div>
+                    <div class="text-xs text-slate-500">Record and monitor project risk</div>
+                  </div>
+
+                  <button id="projectRiskCloseBtn"
+                          class="px-2 py-1 border rounded">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectRiskProjectId" type="hidden">
+                <input id="projectRiskId" type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Title</div>
+                    <input id="projectRiskTitle"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Category</div>
+                    <input id="projectRiskCategory"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Owner User ID</div>
+                    <input id="projectRiskOwnerId"
+                          type="number"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Status</div>
+                    <select id="projectRiskStatus"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="open">Open</option>
+                      <option value="monitoring">Monitoring</option>
+                      <option value="mitigated">Mitigated</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Probability</div>
+                    <select id="projectRiskProbability"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="1">1 - Rare</option>
+                      <option value="2">2 - Unlikely</option>
+                      <option value="3">3 - Possible</option>
+                      <option value="4">4 - Likely</option>
+                      <option value="5">5 - Almost Certain</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Impact</div>
+                    <select id="projectRiskImpact"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="1">1 - Insignificant</option>
+                      <option value="2">2 - Minor</option>
+                      <option value="3">3 - Moderate</option>
+                      <option value="4">4 - Major</option>
+                      <option value="5">5 - Severe</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Due Date</div>
+                    <input id="projectRiskDueDate"
+                          type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Description</div>
+                    <textarea id="projectRiskDescription"
+                              rows="2"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Mitigation Plan</div>
+                    <textarea id="projectRiskMitigation"
+                              rows="2"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Contingency Plan</div>
+                    <textarea id="projectRiskContingency"
+                              rows="2"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+                </div>
+
+                <div id="projectRiskMsg" class="mt-3 text-xs text-slate-500"></div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectRiskCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectRiskSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Save Risk
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div id="projectIssueRegisterModal" class="fixed inset-0 z-50 hidden">
+            <div id="projectIssueRegisterOverlay" class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Project Issue</div>
+                    <div class="text-xs text-slate-500">Record and resolve a project issue</div>
+                  </div>
+
+                  <button id="projectIssueRegisterCloseBtn"
+                          class="px-2 py-1 border rounded">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectIssueRegisterProjectId" type="hidden">
+                <input id="projectIssueRegisterId" type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Title</div>
+                    <input id="projectIssueRegisterTitle"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Task</div>
+                    <select id="projectIssueRegisterTaskId"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="">No task</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Category</div>
+                    <input id="projectIssueRegisterCategory"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Priority</div>
+                    <select id="projectIssueRegisterPriority"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="low">Low</option>
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Owner User ID</div>
+                    <input id="projectIssueRegisterOwnerId"
+                          type="number"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Status</div>
+                    <select id="projectIssueRegisterStatus"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="open">Open</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="blocked">Blocked</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Due Date</div>
+                    <input id="projectIssueRegisterDueDate"
+                          type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Description</div>
+                    <textarea id="projectIssueRegisterDescription"
+                              rows="3"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Resolution</div>
+                    <textarea id="projectIssueRegisterResolution"
+                              rows="2"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+                </div>
+
+                <div id="projectIssueRegisterMsg"
+                    class="mt-3 text-xs text-slate-500"></div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectIssueRegisterCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectIssueRegisterSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Save Issue
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div id="projectDocumentModal" class="fixed inset-0 z-50 hidden">
+            <div id="projectDocumentOverlay" class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Project Document</div>
+                    <div class="text-xs text-slate-500">Register a project document or file link</div>
+                  </div>
+
+                  <button id="projectDocumentCloseBtn"
+                          class="px-2 py-1 border rounded">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectDocumentProjectId" type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Title</div>
+                    <input id="projectDocumentTitle"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Document Type</div>
+                    <select id="projectDocumentType"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="contract">Contract</option>
+                      <option value="drawing">Drawing</option>
+                      <option value="report">Report</option>
+                      <option value="invoice">Invoice</option>
+                      <option value="certificate">Certificate</option>
+                      <option value="change_order">Change Order</option>
+                      <option value="correspondence">Correspondence</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Task</div>
+                    <select id="projectDocumentTaskId"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="">No task</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Version</div>
+                    <input id="projectDocumentVersion"
+                          class="w-full border rounded px-2 py-2"
+                          placeholder="1.0">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Reference</div>
+                    <input id="projectDocumentReference"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">File Name</div>
+                    <input id="projectDocumentFileName"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">File URL</div>
+                    <input id="projectDocumentFileUrl"
+                          class="w-full border rounded px-2 py-2"
+                          placeholder="/uploads/projects/...">
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Notes</div>
+                    <textarea id="projectDocumentNotes"
+                              rows="3"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+                </div>
+
+                <div id="projectDocumentMsg"
+                    class="mt-3 text-xs text-slate-500"></div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectDocumentCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectDocumentSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Save Document
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div id="projectCapitaliseModal" class="fixed inset-0 z-50 hidden">
+            <div id="projectCapitaliseOverlay" class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Capitalise Project</div>
+                    <div class="text-xs text-slate-500">Transfer completed CIP into Fixed Assets</div>
+                  </div>
+
+                  <button id="projectCapitaliseCloseBtn"
+                          class="px-2 py-1 border rounded">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectCapitaliseProjectId" type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Asset Name</div>
+                    <input id="projectCapitaliseAssetName"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Capitalisation Date</div>
+                    <input id="projectCapitaliseDate"
+                          type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Asset Class ID</div>
+                    <input id="projectCapitaliseAssetClassId"
+                          type="number"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Amount</div>
+                    <input id="projectCapitaliseAmount"
+                          type="number"
+                          step="0.01"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Asset Account</div>
+                    <input id="projectCapitaliseAssetAccount"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Useful Life (Months)</div>
+                    <input id="projectCapitaliseLife"
+                          type="number"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Residual Value</div>
+                    <input id="projectCapitaliseResidual"
+                          type="number"
+                          step="0.01"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Depreciation Method</div>
+                    <select id="projectCapitaliseMethod"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="straight_line">Straight Line</option>
+                      <option value="reducing_balance">Reducing Balance</option>
+                      <option value="units_of_production">Units of Production</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Location</div>
+                    <input id="projectCapitaliseLocation"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Notes</div>
+                    <textarea id="projectCapitaliseNotes"
+                              rows="3"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+
+                </div>
+
+                <div id="projectCapitaliseMsg"
+                    class="mt-3 text-xs text-slate-500"></div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectCapitaliseCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectCapitaliseSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Create Request
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div id="projectCipAssetModal" class="fixed inset-0 z-50 hidden">
+            <div id="projectCipAssetOverlay" class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Create CIP Asset</div>
+                    <div class="text-xs text-slate-500">Create an asset-under-construction record</div>
+                  </div>
+
+                  <button id="projectCipAssetCloseBtn" class="px-2 py-1 border rounded">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectCipProjectId" type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Asset Code</div>
+                    <input id="projectCipAssetCode" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Asset Name</div>
+                    <input id="projectCipAssetName" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">CIP Account</div>
+                    <input id="projectCipAccount" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Start Date</div>
+                    <input id="projectCipStartDate" type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="flex items-center gap-2 md:col-span-2">
+                    <input id="projectCipQualifying" type="checkbox">
+                    <span>Qualifying asset for IAS 23 borrowing costs</span>
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Notes</div>
+                    <textarea id="projectCipNotes" rows="2"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+
+                </div>
+
+                <div id="projectCipAssetMsg" class="mt-3 text-xs text-slate-500"></div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectCipAssetCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectCipAssetSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Create CIP Asset
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div id="projectBorrowingModal"
+              class="fixed inset-0 z-50 hidden">
+
+            <div id="projectBorrowingOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center
+                        justify-center p-4">
+
+              <div class="bg-white rounded-2xl shadow-xl
+                          w-full max-w-xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">
+                      IAS 23 Borrowing Cost
+                    </div>
+
+                    <div class="text-xs text-slate-500">
+                      Link a borrowing to a qualifying CIP asset
+                    </div>
+                  </div>
+
+                  <button id="projectBorrowingCloseBtn"
+                          class="px-2 py-1 border rounded">
+                    ✕
+                  </button>
+                </div>
+
+                <input id="projectBorrowingProjectId"
+                      type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-2
+                            gap-3 text-xs">
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">
+                      CIP Asset
+                    </div>
+
+                    <select id="projectBorrowingAssetId"
+                            class="w-full border rounded px-2 py-2">
+                    </select>
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">
+                      Loan
+                    </div>
+
+                    <select id="projectBorrowingLoanId"
+                            class="w-full border rounded px-2 py-2">
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">
+                      Capitalisation Start
+                    </div>
+
+                    <input id="projectBorrowingStartDate"
+                          type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">
+                      Capitalisation End
+                    </div>
+
+                    <input id="projectBorrowingEndDate"
+                          type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">
+                      Capitalisation %
+                    </div>
+
+                    <input id="projectBorrowingRatio"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value="100"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">
+                      Notes
+                    </div>
+
+                    <textarea id="projectBorrowingNotes"
+                              rows="2"
+                              class="w-full border rounded px-2 py-2">
+                    </textarea>
+                  </label>
+
+                </div>
+
+                <div id="projectBorrowingMsg"
+                    class="mt-3 text-xs text-slate-500">
+                </div>
+
+                <div class="flex justify-end gap-2 mt-4">
+
+                  <button id="projectBorrowingCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectBorrowingSaveBtn"
+                          class="px-3 py-2 text-xs
+                                bg-[var(--fs-navy)]
+                                text-white rounded">
+                    Link Borrowing
+                  </button>
+
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="projectCommissionModal" class="fixed inset-0 z-50 hidden">
+            <div id="projectCommissionOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Commission Capital Asset</div>
+                    <div class="text-xs text-slate-500">
+                      Transfer CIP into the final asset class
+                    </div>
+                  </div>
+
+                  <button id="projectCommissionCloseBtn"
+                          class="px-2 py-1 border rounded">✕</button>
+                </div>
+
+                <input id="projectCommissionProjectId" type="hidden">
+                <input id="projectCommissionAssetId" type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Ready for Use Date</div>
+                    <input id="projectCommissionDate" type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Final Asset Class</div>
+                    <input id="projectCommissionClass"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Asset Class Group</div>
+                    <input id="projectCommissionClassGroup"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Final Asset Account</div>
+                    <input id="projectCommissionAssetAccount"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Accumulated Depreciation Account</div>
+                    <input id="projectCommissionAccumDep"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Depreciation Expense Account</div>
+                    <input id="projectCommissionDepExpense"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Depreciation Method</div>
+                    <select id="projectCommissionMethod"
+                            class="w-full border rounded px-2 py-2">
+                      <option value="SL">Straight Line</option>
+                      <option value="RB">Reducing Balance</option>
+                      <option value="UOP">Units of Production</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Useful Life (Months)</div>
+                    <input id="projectCommissionLife" type="number"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Residual Value</div>
+                    <input id="projectCommissionResidual" type="number"
+                          step="0.01" value="0"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">RB Rate %</div>
+                    <input id="projectCommissionRbRate" type="number"
+                          step="0.01"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">UOP Total Units</div>
+                    <input id="projectCommissionUopUnits" type="number"
+                          step="0.01"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                </div>
+
+                <div id="projectCommissionMsg"
+                    class="mt-3 text-xs text-slate-500"></div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectCommissionCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectCommissionSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Commission Asset
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div id="projectCloseoutModal" class="fixed inset-0 z-50 hidden">
+            <div id="projectCloseoutOverlay"
+                class="absolute inset-0 bg-black/40"></div>
+
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-bold text-base">Project Closeout</div>
+                    <div class="text-xs text-slate-500">
+                      Validate and close the project
+                    </div>
+                  </div>
+
+                  <button id="projectCloseoutCloseBtn"
+                          class="px-2 py-1 border rounded">✕</button>
+                </div>
+
+                <input id="projectCloseoutProjectId" type="hidden">
+
+                <div id="projectCloseoutAssessment"
+                    class="text-xs mb-3">
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Closeout Date</div>
+                    <input id="projectCloseoutDate" type="date"
+                          class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="flex items-center gap-2">
+                    <input id="projectCloseoutFinalBilling" type="checkbox">
+                    <span>Final billing reviewed / completed</span>
+                  </label>
+
+                  <label class="md:col-span-2">
+                    <div class="text-slate-500 mb-1">Closeout Notes</div>
+                    <textarea id="projectCloseoutNotes" rows="3"
+                              class="w-full border rounded px-2 py-2"></textarea>
+                  </label>
+
+                </div>
+
+                <div id="projectCloseoutMsg"
+                    class="mt-3 text-xs text-slate-500"></div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                  <button id="projectCloseoutCancelBtn"
+                          class="px-3 py-2 text-xs border rounded">
+                    Cancel
+                  </button>
+
+                  <button id="projectCloseoutSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                    Close Project
+                  </button>
+                </div>
+
               </div>
             </div>
           </div>
@@ -17897,8 +19973,15 @@ tbody tr:hover {
 
               <div class="flex items-center gap-2">
                 <button id="projectIssueDeskNewBtn"
+                        data-project-issue
                         class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded">
                   + Issue Materials
+                </button>
+
+                <button id="projectReturnDeskNewBtn"
+                        data-project-return
+                        class="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
+                  ← Return Materials
                 </button>
 
                 <button id="projectIssueDeskRefreshBtn" class="px-3 py-1 text-xs border rounded">
@@ -18458,42 +20541,146 @@ tbody tr:hover {
 
               <!-- VAT filing setup (your existing IDs) -->
               <div class="mt-4 border rounded-lg p-4 bg-white" id="vatSettingsCard">
+                <div class="mb-4">
+                  <div class="text-sm font-semibold text-slate-800">
+                    VAT Registration & Filing
+                  </div>
+                  <div class="text-[11px] text-slate-500 mt-1">
+                    Filing periods and due dates are determined from the selected revenue authority rules.
+                  </div>
+                </div>
+
                 <form id="vatSettingsForm" class="space-y-3">
+
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
                     <div>
-                      <label class="block text-[11px] text-slate-500 mb-1" for="vatFrequency">Filing frequency</label>
-                      <select id="vatFrequency" class="w-full border rounded px-2 py-2 text-sm">
-                        <option value="monthly">Monthly</option>
-                        <option value="bi_monthly">Every 2 months</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="semi_annual">Every 6 months</option>
-                        <option value="annual">Annual</option>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatAuthority"
+                      >
+                        Revenue authority
+                      </label>
+
+                      <select
+                        id="vatAuthority"
+                        class="w-full border rounded px-2 py-2 text-sm bg-slate-50"
+                        disabled
+                      >
+                        <option value="">Detecting...</option>
                       </select>
                     </div>
 
                     <div>
-                      <label class="block text-[11px] text-slate-500 mb-1" for="vatAnchorMonth">Anchor month (cycle start)</label>
-                      <select id="vatAnchorMonth" class="w-full border rounded px-2 py-2 text-sm"></select>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatRegistrationNumber"
+                      >
+                        VAT registration number
+                      </label>
+
+                      <input
+                        id="vatRegistrationNumber"
+                        type="text"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="VAT registration number"
+                      />
                     </div>
 
                     <div>
-                      <label class="block text-[11px] text-slate-500 mb-1" for="vatFilingLag">Filing lag (days after period end)</label>
-                      <input id="vatFilingLag" type="number" min="0" class="w-full border rounded px-2 py-2 text-sm"/>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatPeriodCategory"
+                      >
+                        VAT filing category
+                      </label>
+
+                      <select
+                        id="vatPeriodCategory"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                      >
+                        <option value="">Select category</option>
+                      </select>
+
+                      <div
+                        id="vatPeriodCategoryHint"
+                        class="text-[10px] text-slate-400 mt-1"
+                      ></div>
                     </div>
 
                     <div>
-                      <label class="block text-[11px] text-slate-500 mb-1" for="vatReminderDays">Reminder days before due date</label>
-                      <input id="vatReminderDays" type="number" min="0" class="w-full border rounded px-2 py-2 text-sm"/>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatFilingChannel"
+                      >
+                        Filing channel
+                      </label>
+
+                      <select
+                        id="vatFilingChannel"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                      ></select>
                     </div>
+
+                    <div>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatCustomsCode"
+                      >
+                        Customs code
+                      </label>
+
+                      <input
+                        id="vatCustomsCode"
+                        type="text"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="Optional"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        class="block text-[11px] text-slate-500 mb-1"
+                        for="vatReminderDays"
+                      >
+                        Reminder days before due date
+                      </label>
+
+                      <input
+                        id="vatReminderDays"
+                        type="number"
+                        min="0"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                        value="7"
+                      />
+                    </div>
+
                   </div>
+
+                  <div
+                    id="vatResolvedRuleBox"
+                    class="rounded-lg border bg-slate-50 p-3 text-xs text-slate-600 hidden"
+                  ></div>
 
                   <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" id="vatSettingsReload" class="border rounded px-3 py-1 text-xs">Reset</button>
-                    <button type="submit" class="bg-emerald-600 text-white rounded px-3 py-1 text-xs">Save VAT settings</button>
+                    <button
+                      type="button"
+                      id="vatSettingsReload"
+                      class="border rounded px-3 py-1 text-xs"
+                    >
+                      Reset
+                    </button>
+
+                    <button
+                      type="submit"
+                      class="bg-emerald-600 text-white rounded px-3 py-1 text-xs"
+                    >
+                      Save VAT settings
+                    </button>
                   </div>
+
                 </form>
               </div>
-            </div>
 
             <!-- 4) INCOME TAX SETTINGS (global best-practice settings, reusable) -->
             <div class="company-view mt-4 hidden" data-view="income-tax">
@@ -22389,6 +24576,128 @@ tbody tr:hover {
             </div>
           </div>
 
+          <!-- ═══════════════════════════════════════════════════════════════
+              STATUTORY RETURNS TAB PANEL - ADD THIS!
+              ═══════════════════════════════════════════════════════════════ -->
+          <div id="payrollTabStatutory" class="payroll-panel hidden">
+            
+            <!-- Filters Section -->
+            <div style="
+              display: flex;
+              gap: 16px;
+              margin-bottom: 20px;
+              padding: 18px;
+              background: #f8fafc;
+              border-radius: 10px;
+              border: 1px solid #e2e8f0;
+              flex-wrap: wrap;
+              align-items: flex-end;
+            ">
+              <div style="display: flex; flex-direction: column; gap: 6px; min-width: 180px;">
+                <label for="payrollStatutoryAuthorityFilter" style="
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #64748b;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                ">Authority</label>
+                <select id="payrollStatutoryAuthorityFilter" style="
+                  padding: 9px 12px;
+                  border: 1px solid #cbd5e1;
+                  border-radius: 6px;
+                  font-size: 13px;
+                  background: white;
+                ">
+                  <option value="">All Authorities</option>
+                  <option value="SARS">SARS</option>
+                  <option value="RSL">RSL</option>
+                  <option value="BURS">BURS</option>
+                  <option value="UIF">UIF</option>
+                  <option value="SDL">SDL</option>
+                </select>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 6px; min-width: 180px;">
+                <label for="payrollStatutoryTypeFilter" style="
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #64748b;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                ">Return Type</label>
+                <select id="payrollStatutoryTypeFilter" style="
+                  padding: 9px 12px;
+                  border: 1px solid #cbd5e1;
+                  border-radius: 6px;
+                  font-size: 13px;
+                  background: white;
+                ">
+                  <option value="">All Types</option>
+                  <option value="PAYE">PAYE</option>
+                  <option value="UIF">UIF</option>
+                  <option value="SDL">SDL</option>
+                  <option value="WCF">WCF</option>
+                </select>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 6px; min-width: 160px;">
+                <label for="payrollStatutoryStatusFilter" style="
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #64748b;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                ">Status</label>
+                <select id="payrollStatutoryStatusFilter" style="
+                  padding: 9px 12px;
+                  border: 1px solid #cbd5e1;
+                  border-radius: 6px;
+                  font-size: 13px;
+                  background: white;
+                ">
+                  <option value="">All Statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="accepted">Accepted</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+
+              <button 
+                onclick="loadPayrollStatutoryWorkspace()" 
+                style="
+                  padding: 9px 20px;
+                  background: #3b82f6;
+                  color: white;
+                  border: none;
+                  border-radius: 6px;
+                  font-size: 13px;
+                  font-weight: 500;
+                  cursor: pointer;
+                  height: fit-content;
+                "
+              >
+                🔍 Refresh Returns
+              </button>
+            </div>
+
+            <!-- Existing Statutory Returns List Container -->
+            <div id="payrollStatutoryReturnsList">
+              <p class="payroll-muted" style="text-align:center; padding:40px; color:#94a3b8;">
+                Loading statutory returns...
+              </p>
+            </div>
+
+            <!-- 
+              ══════════════════════════════════════════════════════════
+              PAYE TAX FILING SECTION - Will be populated by JavaScript
+              ══════════════════════════════════════════════════════════
+            -->
+            <div id="payeTaxFilingSection"></div>
+
+          </div>
+
           <div id="payrollTabSettings" class="payroll-panel hidden">
             <div class="payroll-section-navigation">
               <button
@@ -26009,6 +28318,81 @@ tbody tr:hover {
         </label>
 
         <label>
+          <div class="text-slate-500 mb-1">Type</div>
+          <select id="projectTaskType"
+                  class="w-full border rounded px-2 py-2">
+            <option value="task">Task</option>
+            <option value="phase">Phase / WBS</option>
+            <option value="milestone">Milestone</option>
+          </select>
+        </label>
+
+        <label>
+          <div class="text-slate-500 mb-1">WBS Code</div>
+          <input id="projectTaskWbsCode"
+                class="w-full border rounded px-2 py-2"
+                placeholder="1.2.1">
+        </label>
+
+        <label>
+          <div class="text-slate-500 mb-1">Parent / Phase</div>
+          <select id="projectTaskParentId"
+                  class="w-full border rounded px-2 py-2">
+            <option value="">Top level</option>
+          </select>
+        </label>
+
+        <label>
+          <div class="text-slate-500 mb-1">Priority</div>
+          <select id="projectTaskPriority"
+                  class="w-full border rounded px-2 py-2">
+            <option value="low">Low</option>
+            <option value="normal">Normal</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </label>
+
+        <label>
+          <div class="text-slate-500 mb-1">Sequence</div>
+          <input id="projectTaskSequence"
+                type="number"
+                class="w-full border rounded px-2 py-2"
+                value="0">
+        </label>
+
+        <label>
+          <div class="text-slate-500 mb-1">Progress %</div>
+          <input id="projectTaskProgress"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                class="w-full border rounded px-2 py-2">
+        </label>
+
+        <label>
+          <div class="text-slate-500 mb-1">Baseline Start</div>
+          <input id="projectTaskBaselineStart"
+                type="date"
+                class="w-full border rounded px-2 py-2">
+        </label>
+
+        <label>
+          <div class="text-slate-500 mb-1">Baseline End</div>
+          <input id="projectTaskBaselineEnd"
+                type="date"
+                class="w-full border rounded px-2 py-2">
+        </label>
+
+        <label class="md:col-span-2">
+          <div class="text-slate-500 mb-1">Deliverable</div>
+          <input id="projectTaskDeliverable"
+                class="w-full border rounded px-2 py-2"
+                placeholder="Expected output / deliverable">
+        </label>
+
+        <label>
           <div class="text-slate-500 mb-1">Status</div>
           <select id="projectTaskStatus" class="w-full border rounded px-2 py-2">
             <option value="open">Open</option>
@@ -26148,69 +28532,376 @@ tbody tr:hover {
   </div>
 </div>
 
+<!-- ============================================ -->
+<!-- ISSUE MATERIALS TO PROJECT MODAL (WITH JOURNAL PREVIEW) -->
+<!-- ============================================ -->
 <div id="projectIssueModal" class="fixed inset-0 z-50 hidden">
   <div id="projectIssueOverlay" class="absolute inset-0 bg-black/40"></div>
 
-  <div class="absolute inset-0 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl p-4">
-      <div class="flex items-center justify-between mb-3">
+  <div class="absolute inset-0 flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl my-8 flex flex-col max-h-[90vh]">
+      <!-- Header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b shrink-0">
         <div>
-          <div class="font-bold text-base">Issue Materials to Project</div>
-          <div class="text-xs text-slate-500">Consumes inventory and posts the cost according to the project's accounting mode</div>
+          <div class="font-bold text-base flex items-center gap-2">
+            <svg class="w-5 h-5 text-[var(--fs-navy)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+            </svg>
+            Issue Materials to Project
+          </div>
+          <div class="text-xs text-slate-500 mt-1">
+            Issues tracked inventory to project • Preview journal before posting
+          </div>
         </div>
-        <button id="projectIssueCloseBtn" class="text-sm px-2 py-1 border rounded">✕</button>
+        <button id="projectIssueCloseBtn" class="text-slate-400 hover:text-slate-600 p-1">✕</button>
       </div>
 
       <input id="projectIssueProjectId" type="hidden">
 
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs mb-3">
-        <label>
-          <div class="text-slate-500 mb-1">Date</div>
-          <input id="projectIssueDate" type="date" class="w-full border rounded px-2 py-2">
-        </label>
+      <!-- Scrollable Content -->
+      <div class="flex-1 overflow-auto px-6 py-4 space-y-4">
+        <!-- Form Fields -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          <label>
+            <div class="text-slate-500 mb-1 font-medium">Date *</div>
+            <input id="projectIssueDate" type="date" class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-[var(--fs-navy)]/20 focus:border-[var(--fs-navy)]">
+          </label>
 
-        <label>
-          <div class="text-slate-500 mb-1">Task ID</div>
-          <input id="projectIssueTaskId" type="number" class="w-full border rounded px-2 py-2">
-        </label>
+          <label>
+            <div class="text-slate-500 mb-1 font-medium">Task</div>
+            <select id="projectIssueTaskId" class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-[var(--fs-navy)]/20">
+              <option value="">Select task...</option>
+            </select>
+          </label>
 
-        <label>
-          <div class="text-slate-500 mb-1">Cost Code ID</div>
-          <input id="projectIssueCostCodeId" type="number" class="w-full border rounded px-2 py-2">
-        </label>
+          <label>
+            <div class="text-slate-500 mb-1 font-medium">Cost Code</div>
+            <select id="projectIssueCostCodeId" class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-[var(--fs-navy)]/20">
+              <option value="">Select cost code...</option>
+            </select>
+          </label>
 
+          <label>
+            <div class="text-slate-500 mb-1 font-medium">Usage Type</div>
+            <select id="projectIssueUsageType" class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-[var(--fs-navy)]/20">
+              <optgroup label="Material Usage">
+                <option value="consumed">Consumed (used up)</option>
+                <option value="installed">Installed (embedded)</option>
+              </optgroup>
+              <optgroup label="Site Status">
+                <option value="allocated">Allocated (at site, not used)</option>
+                <option value="returned">Returned (to storage)</option>
+              </optgroup>
+              <optgroup label="Loss">
+                <option value="waste">Waste (damaged)</option>
+                <option value="scrap">Scrap (written off)</option>
+              </optgroup>
+            </select>
+          </label>
+        </div>
+
+        <!-- Material Lines Table -->
+        <div class="border rounded-lg overflow-hidden">
+          <div class="bg-slate-50 px-4 py-2 border-b flex items-center justify-between">
+            <span class="font-medium text-xs text-slate-700">Material Lines</span>
+            <button id="projectIssueAddLineBtn" class="text-xs text-[var(--fs-navy)] hover:underline font-medium">+ Add Line</button>
+          </div>
+          <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
+            <colgroup>
+              <col style="width: 5%">   <!-- # (just numbers 1-9) -->
+              <col style="width: 38%">  <!-- Item (needs room for "MAT-CEM-50KG — Cement 50kg") -->
+              <col style="width: 12%">  <!-- Qty -->
+              <col style="width: 14%">  <!-- Est Cost -->
+              <col style="width: 21%">  <!-- Memo -->
+              <col style="width: 10%">  <!-- Action -->
+            </colgroup>
+            <thead class="bg-slate-50/50 border-b">
+              <tr>
+                <th class="text-center px-2 py-2 font-medium text-slate-600">#</th>
+                <th class="text-left px-3 py-2 font-medium text-slate-600">Item</th>
+                <th class="text-right px-2 py-2 font-medium text-slate-600">Qty</th>
+                <th class="text-right px-2 py-2 font-medium text-slate-600">Est. Cost</th>
+                <th class="text-left px-3 py-2 font-medium text-slate-600">Memo</th>
+                <th class="text-right px-2 py-2 font-medium text-slate-600">Action</th>
+              </tr>
+            </thead>
+            <tbody id="projectIssueLines"></tbody>
+          </table>
+        </div>
+
+        <!-- Journal Preview Section (Hidden until preview clicked) -->
+        <div id="projectIssueJournalPreview" class="hidden border-2 border-amber-200 rounded-lg overflow-hidden bg-amber-50/30">
+          <div class="bg-amber-100 px-4 py-2 border-b flex items-center justify-between">
+            <span class="font-medium text-xs text-amber-800 flex items-center gap-1">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              Journal Entry Preview
+            </span>
+            <span id="projectIssueJournalRef" class="text-xs text-amber-700 font-mono"></span>
+          </div>
+          
+          <!-- Journal Header Info -->
+          <div class="px-4 py-2 bg-white border-b grid grid-cols-3 gap-4 text-xs">
+            <div>
+              <span class="text-slate-500">Date:</span>
+              <span id="journalPreviewDate" class="ml-1 font-medium"></span>
+            </div>
+            <div>
+              <span class="text-slate-500">Description:</span>
+              <span id="journalPreviewDesc" class="ml-1 font-medium"></span>
+            </div>
+            <div>
+              <span class="text-slate-500">Total Value:</span>
+              <span id="journalPreviewTotal" class="ml-1 font-bold text-amber-700"></span>
+            </div>
+          </div>
+
+          <!-- Journal Lines Table (4 Aligned Columns) -->
+          <div class="overflow-auto max-h-48">
+            <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
+              <colgroup>
+                <col style="width: 35%;">  <!-- Account Name -->
+                <col style="width: 18%;">  <!-- Debit -->
+                <col style="width: 18%;">  <!-- Credit -->                
+                <col style="width: 29%;">  <!-- Memo -->
+              </colgroup>
+              <thead class="bg-amber-50/50 border-b sticky top-0 z-10">
+                <tr>
+                  <th class="text-left px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Account Name</th>
+                  <th class="text-right px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Debit</th>
+                  <th class="text-right px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Credit</th>
+                  <th class="text-left px-3 py-2.5 font-semibold text-amber-900 border-b border-amber-200">Memo</th>
+                </tr>
+              </thead>
+              <tbody id="projectIssueJournalLines" class="bg-white"></tbody>
+              <tfoot class="bg-amber-100 font-bold border-t-2 border-amber-300">
+                <tr>
+                  <td class="px-3 py-2.5 text-right text-amber-900 font-bold">TOTALS:</td>
+                  <td id="journalPreviewTotalDr" class="px-3 py-2.5 text-right font-mono text-amber-900 font-bold"></td>
+                  <td id="journalPreviewTotalCr" class="px-3 py-2.5 text-right font-mono text-amber-900 font-bold"></td>
+                  <td class="px-3 py-2.5"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- Message Area -->
+        <div id="projectIssueMsg" class="text-xs p-3 rounded-lg hidden"></div>
+
+        <!-- Footer Actions -->
+        <div class="flex justify-between items-center px-6 py-4 border-t bg-slate-50/50 shrink-0">
+          <div class="text-xs text-slate-500">
+            <span id="projectIssueLineCount">0</span> lines • 
+            <span id="projectIssueEstTotal">0.00</span> estimated
+          </div>
+          <div class="flex gap-2" id="projectIssueFooterButtons">
+            <!-- STEP 1: Preview Button -->
+            <button type="button" id="projectIssuePreviewBtn" 
+                    class="px-6 py-2.5 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors font-semibold flex items-center gap-2 shadow-md hover:shadow-lg">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+              Preview & Review Journal
+            </button>
+            
+            <!-- STEP 2: Post Button (Hidden initially) -->
+            <button type="button" id="projectIssueSaveBtn" 
+                    class="hidden px-6 py-2.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-semibold flex items-center gap-2 shadow-md hover:shadow-lg">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              Confirm & Post Issue
+            </button>
+            
+            <button type="button" id="projectIssueCancelBtn" class="px-4 py-2.5 text-xs border rounded-lg hover:bg-slate-100 transition-colors">Cancel</button>
+          </div>
+        </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- RETURN MATERIALS TO STORAGE MODAL (WITH JOURNAL PREVIEW) -->
+<!-- ============================================ -->
+<div id="projectReturnModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl my-8 flex flex-col max-h-[90vh]">
+    <!-- Header -->
+    <div class="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-start z-10 rounded-t-2xl">
+      <div>
+        <h3 class="font-semibold text-sm flex items-center gap-2 text-green-800">
+          <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+          </svg>
+          Return Materials to Storage
+        </h3>
+        <p class="text-xs text-slate-500 mt-1">Return unused materials from project back to inventory • Preview reversal journal</p>
+      </div>
+      <button onclick="closeProjectReturnModal()" class="text-slate-400 hover:text-slate-600 text-xl p-1">&times;</button>
+    </div>
+
+    <!-- Scrollable Content -->
+    <div class="flex-1 overflow-auto p-6 space-y-4">
+      <!-- Project Info Banner -->
+      <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="font-medium text-green-800 text-sm">Project: <span id="returnProjectInfo" class="font-normal">Loading...</span></div>
+            <div id="returnAccountingMsg" class="text-green-600 text-xs mt-1"></div>
+          </div>
+          <button type="button" id="projectReturnPreviewBtn" 
+                  class="bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg px-4 py-2 text-xs font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+            Preview Reversal
+          </button>
+        </div>
+      </div>
+
+      <!-- Form Fields -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <label>
-          <div class="text-slate-500 mb-1">Usage Type</div>
-          <select id="projectIssueUsageType" class="w-full border rounded px-2 py-2">
-            <option value="consumed">Consumed</option>
-            <option value="installed">Installed</option>
-            <option value="waste">Waste</option>
-            <option value="scrap">Scrap</option>
+          <div class="text-slate-500 mb-1 text-xs font-medium">Date *</div>
+          <input type="date" id="projectReturnDate" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500">
+        </label>
+        <label>
+          <div class="text-slate-500 mb-1 text-xs font-medium">Task</div>
+          <select id="projectReturnTaskId" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20">
+            <option value="">Select task...</option>
           </select>
+        </label>
+        <label>
+          <div class="text-slate-500 mb-1 text-xs font-medium">Cost Code</div>
+          <select id="projectReturnCostCodeId" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20">
+            <option value="">Select cost code...</option>
+          </select>
+        </label>
+        <label>
+          <div class="text-slate-500 mb-1 text-xs font-medium">Reference</div>
+          <input type="text" id="projectReturnRef" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20" placeholder="Auto-generated if blank">
         </label>
       </div>
 
-      <div class="border rounded overflow-auto">
-        <table class="w-full text-xs">
-          <thead class="bg-slate-50 border-b">
+      <label>
+        <div class="text-slate-500 mb-1 text-xs font-medium">Notes / Reason for Return</div>
+        <textarea id="projectReturnNotes" rows="2" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20" placeholder="Explain why materials are being returned..."></textarea>
+      </label>
+
+      <label class="flex items-center gap-2 bg-slate-50 p-3 rounded-lg cursor-pointer hover:bg-slate-100 transition-colors">
+        <input type="checkbox" id="projectReturnLinkOriginal" class="rounded text-green-600 focus:ring-green-500">
+        <span class="text-xs text-slate-600">Link to original issue transaction (for full traceability)</span>
+      </label>
+      <input type="hidden" id="projectReturnOriginalTxId">
+
+      <!-- Return Lines Table -->
+      <div class="border rounded-lg overflow-hidden">
+        <div class="bg-green-50 px-4 py-2 border-b flex items-center justify-between">
+          <span class="font-medium text-xs text-green-800">Return Lines</span>
+          <button id="projectReturnAddLineBtn" class="text-xs text-green-700 hover:underline font-medium">+ Add Return Line</button>
+        </div>
+        <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
+          <colgroup>
+            <col style="width: 5%">   <!-- # -->
+            <col style="width: 38%">  <!-- Item -->
+            <col style="width: 12%">  <!-- Qty -->
+            <col style="width: 14%">  <!-- Est Value -->
+            <col style="width: 21%">  <!-- Reason -->
+            <col style="width: 10%">  <!-- Action -->
+          </colgroup>
+          <thead class="bg-green-50/50 border-b">
             <tr>
-              <th class="text-left px-2 py-2">Item ID</th>
-              <th class="text-right px-2 py-2">Qty</th>
-              <th class="text-left px-2 py-2">Memo</th>
-              <th class="text-right px-2 py-2">Action</th>
+              <th class="text-center px-2 py-2 font-medium text-green-800">#</th>
+              <th class="text-left px-3 py-2 font-medium text-green-800">Item</th>
+              <th class="text-right px-2 py-2 font-medium text-green-800">Qty to Return</th>
+              <th class="text-right px-2 py-2 font-medium text-green-800">Est. Value</th>
+              <th class="text-left px-3 py-2 font-medium text-green-800">Reason</th>
+              <th class="text-right px-2 py-2 font-medium text-green-800">Action</th>
             </tr>
           </thead>
-          <tbody id="projectIssueLines"></tbody>
+          <tbody id="projectReturnLines"></tbody>
         </table>
       </div>
 
-      <button id="projectIssueAddLineBtn" class="mt-2 px-3 py-1 text-xs border rounded">+ Add Line</button>
+      <!-- Journal Preview Section -->
+      <div id="projectReturnJournalPreview" class="hidden border-2 border-emerald-200 rounded-lg overflow-hidden bg-emerald-50/30">
+        <div class="bg-emerald-100 px-4 py-2 border-b flex items-center justify-between">
+          <span class="font-medium text-xs text-emerald-800 flex items-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            Reversal Journal Preview (Dr Inventory / Cr WIP)
+          </span>
+          <span id="projectReturnJournalRef" class="text-xs text-emerald-700 font-mono"></span>
+        </div>
+        
+        <!-- Journal Header Info -->
+        <div class="px-4 py-2 bg-white border-b grid grid-cols-3 gap-4 text-xs">
+          <div>
+            <span class="text-slate-500">Date:</span>
+            <span id="returnJournalPreviewDate" class="ml-1 font-medium"></span>
+          </div>
+          <div>
+            <span class="text-slate-500">Description:</span>
+            <span id="returnJournalPreviewDesc" class="ml-1 font-medium"></span>
+          </div>
+          <div>
+            <span class="text-slate-500">Total Reversal:</span>
+            <span id="returnJournalPreviewTotal" class="ml-1 font-bold text-emerald-700"></span>
+          </div>
+        </div>
 
-      <div id="projectIssueMsg" class="mt-3 text-xs text-slate-500"></div>
+        <!-- Journal Lines Table (Aligned 4 Columns) -->
+        <div class="overflow-auto max-h-48">
+          <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
+            <colgroup>
+              <col style="width: 35%">  <!-- Account Name -->
+              <col style="width: 18%">  <!-- Debit -->
+              <col style="width: 18%">  <!-- Credit -->              
+              <col style="width: 29%">  <!-- Memo -->
+            </colgroup>
+            <thead class="bg-emerald-50/50 border-b sticky top-0 z-10">
+              <tr>
+                <th class="text-left px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Account Name</th>
+                <th class="text-right px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Debit</th>
+                <th class="text-right px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Credit</th>
+                <th class="text-left px-3 py-2.5 font-semibold text-emerald-900 border-b border-emerald-200">Memo</th>
+              </tr>
+            </thead>
+            <tbody id="projectReturnJournalLines" class="bg-white"></tbody>
+            <tfoot class="bg-emerald-100 font-bold border-t-2 border-emerald-300">
+              <tr>
+                <td class="px-3 py-2.5 text-right text-emerald-900 font-bold">TOTALS:</td>
+                <td id="returnJournalPreviewTotalDr" class="px-3 py-2.5 text-right font-mono text-emerald-900 font-bold"></td>
+                <td id="returnJournalPreviewTotalCr" class="px-3 py-2.5 text-right font-mono text-emerald-900 font-bold"></td>
+                <td class="px-3 py-2.5"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
 
-      <div class="flex justify-end gap-2 mt-4">
-        <button id="projectIssueCancelBtn" class="px-3 py-2 text-xs border rounded">Cancel</button>
-        <button id="projectIssueSaveBtn" class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">Post Issue</button>
+      <!-- Message Area -->
+      <div id="projectReturnMsg" class="text-xs p-3 rounded-lg hidden"></div>
+    </div>
+
+    <!-- Footer Actions -->
+    <div class="flex justify-between items-center px-6 py-4 border-t bg-slate-50/50 shrink-0 rounded-b-2xl">
+      <div class="text-xs text-slate-500">
+        <span id="projectReturnLineCount">0</span> lines • 
+        <span id="projectReturnEstTotal">0.00</span> estimated reversal
+      </div>
+      <div class="flex gap-2">
+        <button type="button" onclick="closeProjectReturnModal()" class="px-4 py-2 text-xs border rounded-lg hover:bg-slate-100 transition-colors">Cancel</button>
+        <button type="button" id="projectReturnSubmitBtn" class="px-4 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+          </svg>
+          Post Return
+        </button>
       </div>
     </div>
   </div>
@@ -26883,13 +29574,15 @@ tbody tr:hover {
         placeholder="Enter your password"
       />
 
-      <p id="sessionUnlockMsg" class="text-xs text-red-600"></p>
+      <!-- ✅ CHANGED: Added min-h-[18px] for stable message area, removed fixed red color -->
+      <p id="sessionUnlockMsg" class="text-xs min-h-[18px]"></p>
 
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" id="sessionLockSignOutBtn" class="btn">
           Sign out
         </button>
-        <button type="submit" class="btn btn-highlight">
+        <!-- ✅ CHANGED: Added ID for JS control -->
+        <button type="submit" id="sessionUnlockBtn" class="btn btn-highlight">
           Unlock
         </button>
       </div>
@@ -26919,16 +29612,60 @@ tbody tr:hover {
   </div>
 </div>
 <div id="fs-react-drawer-root"></div>
-<script src="/app/config.js"></script>
 
-<link rel="stylesheet" href="/app/dist/assets/hostMount.css?v=20260811b" />
-<script type="module" src="/app/dist/assets/hostMount.js?v=20260811b"></script>
+<script>
+    window.FS_APP_BASE =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1"
+            ? ""
+            : "/app";
+</script>
 
-<script src="/app/dashboard.js?v=20260812a" defer></script>
-<script src="/app/js/corporate-structure.js?v=20260807a" defer></script>
-<script src="/app/js/consolidation.js?v=20260807a" defer></script>
-<script src="/app/ias41.js"></script>
-<script src="/app/js/data-migration.js"></script>
+<script>
+    const FS_APP_BASE = window.FS_APP_BASE || "";
+
+    function loadScript(src, options = {}) {
+        const script = document.createElement("script");
+        script.src = `${FS_APP_BASE}${src}`;
+        if (options.module) {
+            script.type = "module";
+        } else {
+            // Critical for dynamically-inserted classic scripts:
+            // preserve insertion/execution order.
+            script.async = false;
+        }
+        document.head.appendChild(script);
+        return script;
+    }
+
+    function loadStylesheet(href) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = `${FS_APP_BASE}${href}`;
+        document.head.appendChild(link);
+    }
+
+    loadScript("/config.js");
+
+    loadStylesheet("/dist/assets/hostMount.css?v=20260811b");
+
+    loadScript("/dist/assets/hostMount.js?v=20260811b", { module: true });
+
+    loadScript("/dashboard.js?v=20260824a");
+
+    /* ==================================================================
+     * 🎯 PAYE TAX FILING MODULE - Add AFTER dashboard.js
+     * ================================================================== */
+    loadScript("/tax-filing-dashboard-integration.js?v=20260818a");
+
+    loadScript("/js/corporate-structure.js?v=20260807a");
+    
+    loadScript("/js/consolidation.js?v=20260807a");
+    
+    loadScript("/ias41.js");
+    
+    loadScript("/js/data-migration.js");
+</script>
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {

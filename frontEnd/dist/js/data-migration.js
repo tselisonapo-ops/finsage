@@ -304,6 +304,76 @@
     inventoryMigrationSaving:false,
     inventoryLocationSaving:false,
     inventoryLocationPreviewLoading:false,
+
+    inventoryOpening:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      preview:null,
+      reconciliation:null,
+    },
+    inventoryOpeningLoaded:false,
+    inventoryOpeningSaving:false,
+    inventoryOpeningPreviewLoading:false,
+    inventoryOpeningReconciling:false,
+
+    inventoryMovements:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      typeMapping:null,
+      preview:null,
+      reconciliation:null,
+    },
+    inventoryMovementsLoaded:false,
+    inventoryMovementsSaving:false,
+    inventoryMovementTypesSaving:false,
+    inventoryMovementPreviewLoading:false,
+    inventoryMovementReconciling:false,
+
+    posMigration:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      terminals:null,
+      paymentMethods:null,
+      catalogue:null,
+      preview:null,
+      reconciliation:null,
+    },
+    posMigrationLoaded:false,
+    posMigrationSaving:false,
+    posMappingSaving:false,
+    posPreviewLoading:false,
+    posReconciling:false,
+
+    posMenuMigration:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      menuItems:null,
+      components:null,
+      addons:null,
+      preview:null,
+      reconciliation:null,
+    },
+    posMenuMigrationLoaded:false,
+    posMenuMigrationSaving:false,
+    posMenuMappingSaving:false,
+    posMenuPreviewLoading:false,
+    posMenuReconciling:false,
+
+    posHistoryMigration:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      preview:null,
+      reconciliation:null,
+    },
+    posHistoryMigrationLoaded:false,
+    posHistorySaving:false,
+    posHistoryPreviewLoading:false,
+    posHistoryReconciling:false,
   };
 
   function defaultProject() {
@@ -724,6 +794,12 @@
       await loadProducts(state.project.id,{renderAfter:false});
       await loadProducts(state.project.id,{renderAfter:false});
       await loadInventoryMigration(state.project.id,{renderAfter:false});
+      await loadInventoryOpening(state.project.id,{renderAfter:false});
+      await loadInventoryMovements(state.project.id,{renderAfter:false});
+      await loadPosMigration(state.project.id,{renderAfter:false});
+      await loadPosMigration(state.project.id,{renderAfter:false});
+      await loadPosMenuMigration(state.project.id,{renderAfter:false});
+      await loadPosHistoryMigration(state.project.id,{renderAfter:false});
       state.dirty = false;
       state.scopeDirty = false;
 
@@ -998,6 +1074,12 @@
       await loadProducts(state.project.id,{renderAfter:false});
       await loadProducts(state.project.id,{renderAfter:false});
       await loadInventoryMigration(state.project.id,{renderAfter:false});
+      await loadInventoryOpening(state.project.id,{renderAfter:false});
+      await loadInventoryMovements(state.project.id,{renderAfter:false});
+      await loadPosMigration(state.project.id,{renderAfter:false});
+      await loadPosMigration(state.project.id,{renderAfter:false});
+      await loadPosMenuMigration(state.project.id,{renderAfter:false});
+      await loadPosHistoryMigration(state.project.id,{renderAfter:false});
       log(`Configured dataset ${dataset.dataset_name}`);
       notify("Dataset configuration saved.");
 
@@ -1685,6 +1767,33 @@
       "save-inventory-settings":saveInventoryMigrationSettings,
       "save-inventory-locations":saveInventoryLocationMappings,
       "preview-inventory-locations":previewInventoryLocations,
+
+      "save-inventory-opening-settings":saveInventoryOpeningSettings,
+      "preview-inventory-opening":previewInventoryOpening,
+      "reconcile-inventory-opening":reconcileInventoryOpening,
+
+      "save-inventory-movement-settings":saveInventoryMovementSettings,
+      "save-inventory-movement-types":saveInventoryMovementTypes,
+      "preview-inventory-movements":previewInventoryMovements,
+      "reconcile-inventory-movements":reconcileInventoryMovements,
+
+      "save-pos-settings":savePosSettings,
+      "save-pos-terminals":savePosTerminals,
+      "save-pos-payment-methods":savePosPaymentMethods,
+      "save-pos-catalogue":savePosCatalogue,
+      "preview-pos":previewPosMigration,
+      "reconcile-pos":reconcilePosMigration,
+
+      "save-pos-menu-settings":savePosMenuSettings,
+      "save-pos-menu-items":savePosMenuItems,
+      "save-pos-menu-components":savePosMenuComponents,
+      "save-pos-menu-addons":savePosMenuAddons,
+      "preview-pos-menu":previewPosMenu,
+      "reconcile-pos-menu":reconcilePosMenu,
+
+      "save-pos-history-settings":savePosHistorySettings,
+      "preview-pos-history":previewPosHistory,
+      "reconcile-pos-history":reconcilePosHistory,
       previous,
       next,
     };
@@ -2245,6 +2354,163 @@
       return;
     }
 
+    if(element.id==="mwInventoryOpeningDataset"){
+      loadInventoryOpeningDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-inventory-opening-setting]")){
+      const field=element.dataset.mwInventoryOpeningSetting;
+
+      if(state.inventoryOpening.settings){
+        state.inventoryOpening.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      return;
+    }
+
+    if(element.id==="mwInventoryMovementDataset"){
+      loadInventoryMovementDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-inventory-movement-setting]")){
+      const field=element.dataset.mwInventoryMovementSetting;
+
+      if(state.inventoryMovements.settings){
+        state.inventoryMovements.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      return;
+    }
+
+    if(element.matches("[data-mw-inventory-movement-type]")){
+      const index=Number(element.dataset.mwInventoryMovementType);
+      const row=state.inventoryMovements.typeMapping?.items?.[index];
+
+      if(row){
+        row.target_movement_type=element.value||null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.id==="mwPosDataset"){
+      loadPosDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-pos-setting]")){
+      const field=element.dataset.mwPosSetting;
+
+      if(state.posMigration.settings){
+        state.posMigration.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      return;
+    }
+
+    if(element.matches("[data-mw-pos-payment]")){
+      const index=Number(element.dataset.mwPosPayment);
+      const row=state.posMigration.paymentMethods?.items?.[index];
+
+      if(row){
+        row.target_payment_method=element.value||null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-pos-terminal-action]")){
+      const index=Number(element.dataset.mwPosTerminalAction);
+      const row=state.posMigration.terminals?.items?.[index];
+
+      if(row){
+        row.mapping_action=element.value;
+        if(element.value!=="map")row.target_terminal_id=null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-pos-terminal-target]")){
+      const index=Number(element.dataset.mwPosTerminalTarget);
+      const row=state.posMigration.terminals?.items?.[index];
+
+      if(row){
+        const target=(state.posMigration.terminals?.targets||[])
+          .find(item=>Number(item.id)===Number(element.value));
+
+        row.target_terminal_id=target?.id||null;
+        row.target_terminal_code=target?.code||null;
+        row.target_terminal_name=target?.name||null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.id==="mwPosMenuDataset"){
+      loadPosMenuDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-pos-menu-setting]")){
+      const field=element.dataset.mwPosMenuSetting;
+
+      if(state.posMenuMigration.settings){
+        state.posMenuMigration.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      return;
+    }
+
+    if(element.matches("[data-mw-pos-menu-action]")){
+      const index=Number(element.dataset.mwPosMenuAction);
+      const row=state.posMenuMigration.menuItems?.items?.[index];
+
+      if(row){
+        row.mapping_action=element.value;
+        if(element.value!=="map")row.target_menu_item_id=null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.id==="mwPosHistoryDataset"){
+      loadPosHistoryDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-pos-history-setting]")){
+      const field=element.dataset.mwPosHistorySetting;
+
+      if(state.posHistoryMigration.settings){
+        state.posHistoryMigration.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      return;
+    }
+
     if (
       element.matches(
         "[data-mw-dataset-field]"
@@ -2627,6 +2893,76 @@
     state.inventoryMigrationSaving=false;
     state.inventoryLocationSaving=false;
     state.inventoryLocationPreviewLoading=false;
+
+    state.inventoryOpening={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      preview:null,
+      reconciliation:null,
+    };
+    state.inventoryOpeningLoaded=false;
+    state.inventoryOpeningSaving=false;
+    state.inventoryOpeningPreviewLoading=false;
+    state.inventoryOpeningReconciling=false;
+
+    state.inventoryMovements={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      typeMapping:null,
+      preview:null,
+      reconciliation:null,
+    };
+    state.inventoryMovementsLoaded=false;
+    state.inventoryMovementsSaving=false;
+    state.inventoryMovementTypesSaving=false;
+    state.inventoryMovementPreviewLoading=false;
+    state.inventoryMovementReconciling=false;
+
+    state.posMigration={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      terminals:null,
+      paymentMethods:null,
+      catalogue:null,
+      preview:null,
+      reconciliation:null,
+    };
+    state.posMigrationLoaded=false;
+    state.posMigrationSaving=false;
+    state.posMappingSaving=false;
+    state.posPreviewLoading=false;
+    state.posReconciling=false;
+
+    state.posMenuMigration={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      menuItems:null,
+      components:null,
+      addons:null,
+      preview:null,
+      reconciliation:null,
+    };
+    state.posMenuMigrationLoaded=false;
+    state.posMenuMigrationSaving=false;
+    state.posMenuMappingSaving=false;
+    state.posMenuPreviewLoading=false;
+    state.posMenuReconciling=false;
+
+    state.posHistoryMigration={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      preview:null,
+      reconciliation:null,
+    };
+    state.posHistoryMigrationLoaded=false;
+    state.posHistorySaving=false;
+    state.posHistoryPreviewLoading=false;
+    state.posHistoryReconciling=false;
     log("New migration project prepared");
     render();
   }
@@ -7050,6 +7386,13 @@
         ].includes(entity.code)
       )
     );
+    const hasInventoryOpening=Boolean(
+      state.inventoryOpening.datasets?.length
+    );
+    const hasInventoryMovements=Boolean(state.inventoryMovements.datasets?.length);
+    const hasPos=Boolean(state.posMigration.datasets?.length);
+    const hasPosMenu=Boolean(state.posMenuMigration.datasets?.length);
+    const hasPosHistory=Boolean(state.posHistoryMigration.datasets?.length);
 
     return `
       <div>
@@ -7062,6 +7405,11 @@
           ${hasPayroll?`<span class="mw-badge info">Payroll</span>`:""}
           ${hasProducts?`<span class="mw-badge info">Products & Services</span>`:""}
           ${hasInventory?`<span class="mw-badge info">Inventory</span>`:""}
+          ${hasInventoryOpening?`<span class="mw-badge info">Opening Inventory</span>`:""}
+          ${hasInventoryMovements?`<span class="mw-badge info">Inventory History</span>`:""}
+          ${hasPos?`<span class="mw-badge info">POS</span>`:""}
+          ${hasPosMenu?`<span class="mw-badge info">POS Menu</span>`:""}
+          ${hasPosHistory?`<span class="mw-badge info">POS History</span>`:""}
         </div>
 
         ${hasPpe?ppeMappingView():""}
@@ -7072,8 +7420,16 @@
         ${hasPayroll?payrollMigrationView():""}
         ${hasProducts?productMigrationView():""}
         ${hasInventory?inventoryMigrationView():""}
+        ${hasInventoryOpening?inventoryOpeningMigrationView():""}
+        ${hasInventoryMovements?inventoryMovementMigrationView():""}
+        ${hasPos?posMigrationView():""}
+        ${hasPosMenu?posMenuMigrationView():""}
+        ${hasPosMenu?posMenuMigrationView():""}
+        ${hasPosHistory?posHistoryMigrationView():""}
 
-        ${!hasPpe&&!hasLeases&&!hasLoans&&!hasRevenue&&!hasAccruals&&!hasPayroll&&!hasProducts&&!hasInventory
+        ${!hasPpe&&!hasLeases&&!hasLoans&&!hasRevenue&&!hasAccruals&&!hasPayroll
+          &&!hasProducts&&!hasInventory&&!hasInventoryOpening&&!hasInventoryMovements&&!hasPos
+          &&!hasPosMenu&&!hasPosHistory
           ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
           :""
         }
@@ -11055,6 +11411,2756 @@
     `;
   }
 
+  async function loadInventoryOpening(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.inventoryOpening={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        preview:null,
+        reconciliation:null,
+      };
+      state.inventoryOpeningLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.inventoryOpening(companyId(),projectId)
+      );
+
+      state.inventoryOpening.datasets=response?.datasets||[];
+
+      if(!state.inventoryOpening.datasets.some(
+        row=>Number(row.dataset_id)===Number(state.inventoryOpening.datasetId)
+      )){
+        state.inventoryOpening.datasetId=
+          state.inventoryOpening.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.inventoryOpening.datasetId){
+        await loadInventoryOpeningDataset(
+          state.inventoryOpening.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.inventoryOpeningLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadInventoryOpening failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function loadInventoryOpeningDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,reconResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.inventoryOpeningSettings(
+          companyId(),state.project.id,id
+        )
+      ),
+
+      apiFetch(
+        ENDPOINTS.migrations.inventoryOpeningReconcile(
+          companyId(),state.project.id,id
+        )
+      ),
+    ]);
+
+    state.inventoryOpening.datasetId=id;
+    state.inventoryOpening.settings=settingsResponse?.settings||null;
+    state.inventoryOpening.reconciliation=reconResponse?.reconciliation||null;
+    state.inventoryOpening.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function saveInventoryOpeningSettings(){
+    const settings=state.inventoryOpening.settings;
+    if(!settings)return;
+
+    state.inventoryOpeningSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.inventoryOpeningSettings(
+          companyId(),
+          state.project.id,
+          state.inventoryOpening.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(settings),
+        }
+      );
+
+      state.inventoryOpening.settings=response?.settings||settings;
+      state.inventoryOpening.preview=null;
+      state.inventoryOpening.reconciliation=null;
+
+      notify("Opening inventory settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.inventoryOpeningSaving=false;
+      render();
+    }
+  }
+
+  async function previewInventoryOpening(){
+    if(!state.inventoryOpening.datasetId)return;
+
+    state.inventoryOpeningPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.inventoryOpeningPreview(
+          companyId(),
+          state.project.id,
+          state.inventoryOpening.datasetId
+        )
+      );
+
+      state.inventoryOpening.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.inventoryOpeningPreviewLoading=false;
+      render();
+    }
+  }
+
+  async function reconcileInventoryOpening(){
+    if(!state.inventoryOpening.datasetId)return;
+
+    state.inventoryOpeningReconciling=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.inventoryOpeningReconcile(
+          companyId(),
+          state.project.id,
+          state.inventoryOpening.datasetId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({}),
+        }
+      );
+
+      state.inventoryOpening.reconciliation=
+        response?.reconciliation||null;
+
+      state.inventoryOpening.preview=
+        response?.reconciliation?.preview||
+        state.inventoryOpening.preview;
+
+      if(state.inventoryOpening.reconciliation?.is_ready){
+        notify("Opening inventory reconciled and ready.");
+      }else{
+        notify(
+          `${state.inventoryOpening.reconciliation?.error_count||0} opening inventory issue(s) require attention.`
+        );
+      }
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.inventoryOpeningReconciling=false;
+      render();
+    }
+  }
+
+  function inventoryOpeningCheck(label,field){
+    const checked=Boolean(state.inventoryOpening.settings?.[field]);
+
+    return `
+      <label class="mw-check">
+        <input type="checkbox"
+          ${checked?"checked":""}
+          data-mw-inventory-opening-setting="${esc(field)}">
+        <span>${esc(label)}</span>
+      </label>
+    `;
+  }
+
+  function inventoryOpeningSelect(label,field,options){
+    const value=state.inventoryOpening.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select"
+          data-mw-inventory-opening-setting="${esc(field)}">
+
+          ${options.map(([id,name])=>`
+            <option value="${esc(id)}" ${String(value)===String(id)?"selected":""}>
+              ${esc(name)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function inventoryOpeningInput(label,field,type="text"){
+    const value=state.inventoryOpening.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <input class="mw-input"
+          type="${esc(type)}"
+          value="${esc(value)}"
+          data-mw-inventory-opening-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+  function inventoryOpeningMigrationView(){
+    const datasets=state.inventoryOpening.datasets||[];
+    const settings=state.inventoryOpening.settings;
+
+    if(!datasets.length)return "";
+    if(!settings)return `<div class="mw-empty">Loading opening inventory…</div>`;
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Opening Inventory",
+          "Reconstruct stock quantities and carrying values at the FinSage cutover date.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-inventory-opening-settings"
+              ${state.inventoryOpeningSaving?"disabled":""}>
+              ${state.inventoryOpeningSaving?"Saving…":"Save settings"}
+            </button>
+
+            <button class="mw-btn"
+              data-mw-action="preview-inventory-opening"
+              ${state.inventoryOpeningPreviewLoading?"disabled":""}>
+              ${state.inventoryOpeningPreviewLoading?"Validating…":"Validate opening stock"}
+            </button>
+
+            <button class="mw-btn primary"
+              data-mw-action="reconcile-inventory-opening"
+              ${state.inventoryOpeningReconciling?"disabled":""}>
+              ${state.inventoryOpeningReconciling?"Reconciling…":"Reconcile inventory"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Opening Stock Dataset</label>
+
+            <select id="mwInventoryOpeningDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.inventoryOpening.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${inventoryOpeningInput("Opening Date","opening_date","date")}
+
+          ${inventoryOpeningSelect(
+            "Quantity Basis",
+            "quantity_basis",
+            [
+              ["quantity_on_hand","Quantity On Hand"],
+              ["available_quantity","Available Quantity"],
+            ]
+          )}
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${inventoryOpeningSelect(
+            "Cost Basis",
+            "cost_basis",
+            [
+              ["unit_cost","Unit Cost"],
+              ["average_cost","Average Cost"],
+              ["total_value","Source Total Value"],
+            ]
+          )}
+
+          ${inventoryOpeningInput("Value Tolerance","value_tolerance","number")}
+
+          <div class="mw-field">
+            <label>Validation</label>
+
+            <div class="mw-list">
+              ${inventoryOpeningCheck("Require inventory cost","require_cost")}
+              ${inventoryOpeningCheck("Validate source inventory value","validate_source_value")}
+            </div>
+          </div>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${inventoryOpeningCheck("Allow zero quantity","allow_zero_quantity")}
+          ${inventoryOpeningCheck("Allow zero cost","allow_zero_cost")}
+          ${inventoryOpeningCheck("Allow negative quantity","allow_negative_quantity")}
+        </div>
+
+        ${inventoryOpeningPreviewView()}
+        ${inventoryOpeningReconciliationView()}
+      </div>
+    `;
+  }
+
+  function inventoryOpeningPreviewView(){
+    const preview=state.inventoryOpening.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Opening Inventory Preview</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Records</span>
+            <strong>${preview.record_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Items</span>
+            <strong>${preview.item_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Total Quantity</span>
+            <strong>${Number(preview.total_quantity||0).toLocaleString()}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Inventory Value</span>
+            <strong>${money(preview.calculated_inventory_value||0)}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+        </div>
+
+        ${inventoryOpeningPreviewTable(preview.items||[])}
+      </div>
+    `;
+  }
+
+  function inventoryOpeningPreviewTable(rows){
+    return `
+      <div style="margin-top:14px">
+        ${table(
+          [
+            "Item",
+            "Location",
+            "Quantity",
+            "Unit Cost",
+            "Calculated Value",
+            "Source Value",
+            "Batch / Serial",
+            "Status",
+          ],
+
+          rows.map(row=>[
+            `
+              <strong>${esc(row.item?.code||"—")}</strong>
+              <div class="mw-muted mw-small">${esc(row.item?.name||"")}</div>
+            `,
+
+            esc(
+              row.location
+                ?`${row.location.code||""}${row.location.name?` — ${row.location.name}`:""}`
+                :"—"
+            ),
+
+            Number(row.quantity||0).toLocaleString(),
+
+            money(row.unit_cost||0),
+
+            money(row.calculated_value||0),
+
+            money(row.source_value||0),
+
+            `
+              ${row.batch_no?`Batch: ${esc(row.batch_no)}<br>`:""}
+              ${row.serial_number?`Serial: ${esc(row.serial_number)}`:""}
+              ${row.expiry_date?`<span class="mw-muted mw-small">Expiry: ${esc(row.expiry_date)}</span>`:""}
+            `||"—",
+
+            row.valid
+              ?`<span class="mw-badge ok">Ready</span>`
+              :`<span class="mw-badge error" title="${esc((row.issues||[]).join(" • "))}">
+                  ${row.issues?.length||1} issue(s)
+                </span>`,
+          ]),
+
+          "No opening inventory rows available."
+        )}
+      </div>
+    `;
+  }
+
+  function inventoryOpeningReconciliationView(){
+    const recon=state.inventoryOpening.reconciliation;
+    if(!recon)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Inventory Reconciliation</h3>
+
+        <div class="mw-alert ${recon.is_ready?"ok":"error"}">
+          <div class="mw-inline" style="justify-content:space-between">
+            <div>
+              <strong>
+                ${recon.is_ready
+                  ?"Opening inventory is reconciled"
+                  :"Opening inventory requires attention"
+                }
+              </strong>
+
+              <div class="mw-muted mw-small" style="margin-top:4px">
+                ${recon.is_ready
+                  ?"The opening quantity and carrying value are ready for the later migration commit."
+                  :`${recon.error_count||0} blocking issue(s) remain.`
+                }
+              </div>
+            </div>
+
+            <span class="mw-badge ${recon.is_ready?"ok":"error"}">
+              ${recon.is_ready?"Ready":"Blocked"}
+            </span>
+          </div>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Calculated Inventory</div>
+            <strong>${money(recon.calculated_inventory_value||0)}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Source Inventory</div>
+            <strong>${money(recon.source_inventory_value||0)}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Difference</div>
+            <strong>${money(recon.reconciliation_difference||0)}</strong>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadInventoryMovements(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.inventoryMovements={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        typeMapping:null,
+        preview:null,
+        reconciliation:null,
+      };
+      state.inventoryMovementsLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.inventoryMovements(companyId(),projectId)
+      );
+
+      state.inventoryMovements.datasets=response?.datasets||[];
+
+      if(!state.inventoryMovements.datasets.some(
+        row=>Number(row.dataset_id)===Number(state.inventoryMovements.datasetId)
+      )){
+        state.inventoryMovements.datasetId=
+          state.inventoryMovements.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.inventoryMovements.datasetId){
+        await loadInventoryMovementDataset(
+          state.inventoryMovements.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.inventoryMovementsLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadInventoryMovements failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function loadInventoryMovementDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,typeResponse,reconResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.inventoryMovementSettings(
+          companyId(),state.project.id,id
+        )
+      ),
+      apiFetch(
+        ENDPOINTS.migrations.inventoryMovementTypes(
+          companyId(),state.project.id,id
+        )
+      ),
+      apiFetch(
+        ENDPOINTS.migrations.inventoryMovementReconcile(
+          companyId(),state.project.id,id
+        )
+      ),
+    ]);
+
+    state.inventoryMovements.datasetId=id;
+    state.inventoryMovements.settings=settingsResponse?.settings||null;
+    state.inventoryMovements.typeMapping=typeResponse?.mapping||null;
+    state.inventoryMovements.reconciliation=reconResponse?.reconciliation||null;
+    state.inventoryMovements.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function saveInventoryMovementSettings(){
+    const settings=state.inventoryMovements.settings;
+    if(!settings)return;
+
+    state.inventoryMovementsSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.inventoryMovementSettings(
+          companyId(),
+          state.project.id,
+          state.inventoryMovements.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(settings),
+        }
+      );
+
+      state.inventoryMovements.settings=response?.settings||settings;
+      state.inventoryMovements.preview=null;
+      state.inventoryMovements.reconciliation=null;
+
+      notify("Inventory movement settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.inventoryMovementsSaving=false;
+      render();
+    }
+  }
+
+  async function saveInventoryMovementTypes(){
+    const rows=state.inventoryMovements.typeMapping?.items||[];
+    if(!rows.length)return notify("No inventory movement types require mapping.");
+
+    const invalid=rows.find(row=>!row.target_movement_type);
+    if(invalid)return notify(`Select a movement type for "${invalid.source_value}".`);
+
+    state.inventoryMovementTypesSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.inventoryMovementTypes(
+          companyId(),
+          state.project.id,
+          state.inventoryMovements.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({
+            mappings:rows.map(row=>({
+              source_value:row.source_value,
+              source_label:row.source_label,
+              target_movement_type:row.target_movement_type,
+            })),
+          }),
+        }
+      );
+
+      state.inventoryMovements.typeMapping=response?.mapping||state.inventoryMovements.typeMapping;
+
+      notify("Inventory movement types saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.inventoryMovementTypesSaving=false;
+      render();
+    }
+  }
+
+  async function previewInventoryMovements(){
+    if(!state.inventoryMovements.datasetId)return;
+
+    state.inventoryMovementPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.inventoryMovementPreview(
+          companyId(),
+          state.project.id,
+          state.inventoryMovements.datasetId
+        )
+      );
+
+      state.inventoryMovements.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.inventoryMovementPreviewLoading=false;
+      render();
+    }
+  }
+
+  async function reconcileInventoryMovements(){
+    if(!state.inventoryMovements.datasetId)return;
+
+    state.inventoryMovementReconciling=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.inventoryMovementReconcile(
+          companyId(),
+          state.project.id,
+          state.inventoryMovements.datasetId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({}),
+        }
+      );
+
+      state.inventoryMovements.reconciliation=response?.reconciliation||null;
+      state.inventoryMovements.preview=
+        response?.reconciliation?.preview||state.inventoryMovements.preview;
+
+      if(state.inventoryMovements.reconciliation?.is_ready){
+        notify("Inventory movement history is reconciled.");
+      }else{
+        notify(
+          `${state.inventoryMovements.reconciliation?.error_count||0} inventory history issue(s) require attention.`
+        );
+      }
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.inventoryMovementReconciling=false;
+      render();
+    }
+  }
+
+  function inventoryMovementCheck(label,field){
+    const checked=Boolean(state.inventoryMovements.settings?.[field]);
+
+    return `
+      <label class="mw-check">
+        <input type="checkbox"
+          ${checked?"checked":""}
+          data-mw-inventory-movement-setting="${esc(field)}">
+        <span>${esc(label)}</span>
+      </label>
+    `;
+  }
+
+  function inventoryMovementInput(label,field,type="text"){
+    const value=state.inventoryMovements.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+        <input class="mw-input"
+          type="${esc(type)}"
+          value="${esc(value)}"
+          data-mw-inventory-movement-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+  function inventoryMovementSelect(label,field,options){
+    const value=state.inventoryMovements.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select" data-mw-inventory-movement-setting="${esc(field)}">
+          ${options.map(([id,name])=>`
+            <option value="${esc(id)}" ${String(value)===String(id)?"selected":""}>
+              ${esc(name)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function inventoryMovementMigrationView(){
+    const datasets=state.inventoryMovements.datasets||[];
+    const settings=state.inventoryMovements.settings;
+
+    if(!datasets.length)return "";
+    if(!settings)return `<div class="mw-empty">Loading inventory movement history…</div>`;
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Inventory Movement History",
+          "Reconstruct historical receipts, issues, adjustments, transfers and returns before migration commit.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-inventory-movement-settings"
+              ${state.inventoryMovementsSaving?"disabled":""}>
+              ${state.inventoryMovementsSaving?"Saving…":"Save settings"}
+            </button>
+
+            <button class="mw-btn"
+              data-mw-action="save-inventory-movement-types"
+              ${state.inventoryMovementTypesSaving?"disabled":""}>
+              ${state.inventoryMovementTypesSaving?"Saving…":"Save movement types"}
+            </button>
+
+            <button class="mw-btn"
+              data-mw-action="preview-inventory-movements"
+              ${state.inventoryMovementPreviewLoading?"disabled":""}>
+              ${state.inventoryMovementPreviewLoading?"Validating…":"Validate movements"}
+            </button>
+
+            <button class="mw-btn primary"
+              data-mw-action="reconcile-inventory-movements"
+              ${state.inventoryMovementReconciling?"disabled":""}>
+              ${state.inventoryMovementReconciling?"Reconciling…":"Reconcile history"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Movement Dataset</label>
+
+            <select id="mwInventoryMovementDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.inventoryMovements.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${inventoryMovementInput("History From","history_from","date")}
+          ${inventoryMovementInput("History To","history_to","date")}
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${inventoryMovementSelect(
+            "Source Layout",
+            "source_layout",
+            [
+              ["movement_rows","Movement Rows"],
+              ["transaction_lines","Transaction + Line Rows"],
+            ]
+          )}
+
+          ${inventoryMovementSelect(
+            "Reference Scope",
+            "movement_reference_scope",
+            [
+              ["transaction","One Reference Per Transaction"],
+              ["line","Reference Per Line"],
+            ]
+          )}
+
+          <div class="mw-field">
+            <label>Validation</label>
+
+            <div class="mw-list">
+              ${inventoryMovementCheck("Require item resolution","require_item_resolution")}
+              ${inventoryMovementCheck("Require location resolution","require_location_resolution")}
+              ${inventoryMovementCheck("Validate movement value","validate_movement_value")}
+            </div>
+          </div>
+        </div>
+
+        ${inventoryMovementTypeMappingView()}
+        ${inventoryMovementPreviewView()}
+        ${inventoryMovementReconciliationView()}
+      </div>
+    `;
+  }
+
+  function inventoryMovementTypeMappingView(){
+    const rows=state.inventoryMovements.typeMapping?.items||[];
+    if(!rows.length)return "";
+
+    const types=[
+      ["opening","Opening"],
+      ["purchase","Purchase / Receipt"],
+      ["sale","Sale"],
+      ["issue","Issue / Consumption"],
+      ["adjustment_in","Positive Adjustment"],
+      ["adjustment_out","Negative Adjustment"],
+      ["transfer","Transfer"],
+      ["stocktake","Stocktake Adjustment"],
+      ["purchase_return","Purchase Return"],
+      ["sales_return","Sales Return"],
+    ];
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Movement Type Mapping</h3>
+
+        ${table(
+          ["Source Type","Records","FinSage Movement","Status"],
+          rows.map((row,index)=>[
+            `<strong>${esc(row.source_value)}</strong>`,
+
+            Number(row.sample_count||0).toLocaleString(),
+
+            `
+              <select class="mw-select" data-mw-inventory-movement-type="${index}">
+                <option value="">Select movement</option>
+
+                ${types.map(([value,label])=>`
+                  <option value="${value}" ${row.target_movement_type===value?"selected":""}>
+                    ${label}
+                  </option>
+                `).join("")}
+              </select>
+            `,
+
+            row.is_approved
+              ?`<span class="mw-badge ok">Mapped</span>`
+              :row.target_movement_type
+                ?`<span class="mw-badge info">Review</span>`
+                :`<span class="mw-badge warn">Unmapped</span>`,
+          ]),
+          "No inventory movement types detected."
+        )}
+      </div>
+    `;
+  }
+
+  function inventoryMovementPreviewView(){
+    const preview=state.inventoryMovements.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Movement Preview</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Transactions</span>
+            <strong>${preview.transaction_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Lines</span>
+            <strong>${preview.line_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Quantity In</span>
+            <strong>${Number(preview.quantity_in||0).toLocaleString()}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Quantity Out</span>
+            <strong>${Number(preview.quantity_out||0).toLocaleString()}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+        </div>
+
+        ${inventoryMovementPreviewTable(preview.items||[])}
+      </div>
+    `;
+  }
+
+  function inventoryMovementPreviewTable(rows){
+    return `
+      <div style="margin-top:14px">
+        ${table(
+          [
+            "Date",
+            "Reference",
+            "Type",
+            "Item",
+            "From",
+            "To",
+            "Quantity",
+            "Value",
+            "Status",
+          ],
+
+          rows.map(row=>[
+            esc(row.movement_date||"—"),
+
+            `<strong>${esc(row.reference||"—")}</strong>`,
+
+            esc(titleCase(row.movement_type||"unmapped")),
+
+            `
+              <strong>${esc(row.item?.code||"—")}</strong>
+              <div class="mw-muted mw-small">${esc(row.item?.name||"")}</div>
+            `,
+
+            esc(row.location?.name||row.location?.code||"—"),
+
+            esc(row.destination_location?.name||row.destination_location?.code||"—"),
+
+            Number(row.quantity||0).toLocaleString(),
+
+            money(row.movement_value||0),
+
+            row.valid
+              ?`<span class="mw-badge ok">Ready</span>`
+              :`<span class="mw-badge error" title="${esc((row.issues||[]).join(" • "))}">
+                  ${row.issues?.length||1} issue(s)
+                </span>`,
+          ]),
+
+          "No inventory movement rows available."
+        )}
+      </div>
+    `;
+  }
+
+  function inventoryMovementReconciliationView(){
+    const recon=state.inventoryMovements.reconciliation;
+    if(!recon)return "";
+
+    const summary=recon.summary_json||{};
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Inventory History Reconciliation</h3>
+
+        <div class="mw-alert ${recon.is_ready?"ok":"error"}">
+          <strong>
+            ${recon.is_ready
+              ?"Inventory movement history is reconciled"
+              :"Inventory movement history requires attention"
+            }
+          </strong>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Opening Quantity</div>
+            <strong>${Number(summary.opening_quantity||0).toLocaleString()}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Net Movement</div>
+            <strong>${Number(summary.net_movement_quantity||0).toLocaleString()}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Derived Quantity</div>
+            <strong>${Number(summary.derived_quantity_after_movements||0).toLocaleString()}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Opening Value</div>
+            <strong>${money(summary.opening_value||0)}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Net Movement Value</div>
+            <strong>${money(summary.net_movement_value||0)}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Derived Inventory Value</div>
+            <strong>${money(summary.derived_value_after_movements||0)}</strong>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadPosMigration(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.posMigration={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        terminals:null,
+        paymentMethods:null,
+        catalogue:null,
+        preview:null,
+        reconciliation:null,
+      };
+      state.posMigrationLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posConfiguration(companyId(),projectId)
+      );
+
+      state.posMigration.datasets=response?.datasets||[];
+      state.posMigration.settings=response?.settings||null;
+      state.posMigration.reconciliation=response?.reconciliation||null;
+
+      if(!state.posMigration.datasets.some(
+        row=>Number(row.dataset_id)===Number(state.posMigration.datasetId)
+      )){
+        state.posMigration.datasetId=
+          state.posMigration.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.posMigration.datasetId){
+        await loadPosDataset(
+          state.posMigration.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.posMigrationLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadPosMigration failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function loadPosDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [terminalResponse,paymentResponse,catalogueResponse]=await Promise.all([
+      apiFetch(ENDPOINTS.migrations.posTerminals(companyId(),state.project.id,id)),
+      apiFetch(ENDPOINTS.migrations.posPaymentMethods(companyId(),state.project.id,id)),
+      apiFetch(ENDPOINTS.migrations.posCatalogue(companyId(),state.project.id,id)),
+    ]);
+
+    state.posMigration.datasetId=id;
+    state.posMigration.terminals=terminalResponse?.mapping||null;
+    state.posMigration.paymentMethods=paymentResponse?.mapping||null;
+    state.posMigration.catalogue=catalogueResponse?.mapping||null;
+    state.posMigration.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function savePosSettings(){
+    if(!state.posMigration.settings)return;
+
+    state.posMigrationSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posConfiguration(
+          companyId(),state.project.id
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(state.posMigration.settings),
+        }
+      );
+
+      state.posMigration.settings=
+        response?.settings||state.posMigration.settings;
+
+      notify("POS migration configuration saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posMigrationSaving=false;
+      render();
+    }
+  }
+
+  async function savePosTerminals(){
+    const rows=state.posMigration.terminals?.items||[];
+    if(!rows.length)return;
+
+    const invalid=rows.find(row=>
+      row.mapping_action==="map"&&!row.target_terminal_id
+    );
+
+    if(invalid)return notify(`Select a terminal for "${invalid.source_name}".`);
+
+    state.posMappingSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posTerminals(
+          companyId(),state.project.id,state.posMigration.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings:rows}),
+        }
+      );
+
+      state.posMigration.terminals=
+        response?.mapping||state.posMigration.terminals;
+
+      notify("POS terminal mappings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posMappingSaving=false;
+      render();
+    }
+  }
+
+  async function savePosPaymentMethods(){
+    const rows=state.posMigration.paymentMethods?.items||[];
+    if(!rows.length)return;
+
+    const invalid=rows.find(row=>!row.target_payment_method);
+    if(invalid)return notify(`Select a payment method for "${invalid.source_value}".`);
+
+    state.posMappingSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posPaymentMethods(
+          companyId(),state.project.id,state.posMigration.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings:rows}),
+        }
+      );
+
+      state.posMigration.paymentMethods=
+        response?.mapping||state.posMigration.paymentMethods;
+
+      notify("POS payment methods saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posMappingSaving=false;
+      render();
+    }
+  }
+
+  async function savePosCatalogue(){
+    const rows=state.posMigration.catalogue?.items||[];
+    if(!rows.length)return;
+
+    const invalid=rows.find(row=>!row.target_kind);
+    if(invalid)return notify(`Resolve product type for "${invalid.source_name}".`);
+
+    state.posMappingSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posCatalogue(
+          companyId(),state.project.id,state.posMigration.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings:rows}),
+        }
+      );
+
+      state.posMigration.catalogue=
+        response?.mapping||state.posMigration.catalogue;
+
+      notify("POS catalogue mappings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posMappingSaving=false;
+      render();
+    }
+  }
+
+  async function previewPosMigration(){
+    if(!state.posMigration.datasetId)return;
+
+    state.posPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posPreview(
+          companyId(),state.project.id,state.posMigration.datasetId
+        )
+      );
+
+      state.posMigration.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posPreviewLoading=false;
+      render();
+    }
+  }
+
+  async function reconcilePosMigration(){
+    state.posReconciling=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posReconcile(
+          companyId(),state.project.id
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({}),
+        }
+      );
+
+      state.posMigration.reconciliation=
+        response?.reconciliation||null;
+
+      if(state.posMigration.reconciliation?.is_ready){
+        notify("POS configuration is ready.");
+      }else{
+        notify(
+          `${state.posMigration.reconciliation?.blocking_error_count||0} POS issue(s) require attention.`
+        );
+      }
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posReconciling=false;
+      render();
+    }
+  }
+
+  function posMigrationCheck(label,field){
+    const checked=Boolean(state.posMigration.settings?.[field]);
+
+    return `
+      <label class="mw-check">
+        <input type="checkbox"
+          ${checked?"checked":""}
+          data-mw-pos-setting="${esc(field)}">
+        <span>${esc(label)}</span>
+      </label>
+    `;
+  }
+
+  function posMigrationView(){
+    const datasets=state.posMigration.datasets||[];
+    const settings=state.posMigration.settings;
+
+    if(!datasets.length)return "";
+    if(!settings)return `<div class="mw-empty">Loading POS migration…</div>`;
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "POS Configuration & Catalogue",
+          "Map tills, payment methods and saleable products before importing POS transaction history.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-pos-settings"
+              ${state.posMigrationSaving?"disabled":""}>
+              ${state.posMigrationSaving?"Saving…":"Save configuration"}
+            </button>
+
+            <button class="mw-btn"
+              data-mw-action="preview-pos"
+              ${state.posPreviewLoading?"disabled":""}>
+              ${state.posPreviewLoading?"Validating…":"Validate POS"}
+            </button>
+
+            <button class="mw-btn primary"
+              data-mw-action="reconcile-pos"
+              ${state.posReconciling?"disabled":""}>
+              ${state.posReconciling?"Reconciling…":"Reconcile POS"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>POS Dataset</label>
+
+            <select id="mwPosDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.posMigration.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Migration Content</label>
+
+            <div class="mw-list">
+              ${posMigrationCheck("Migrate terminals","migrate_terminals")}
+              ${posMigrationCheck("Migrate payment methods","migrate_payment_methods")}
+              ${posMigrationCheck("Migrate POS catalogue","migrate_catalogue")}
+            </div>
+          </div>
+
+          <div class="mw-field">
+            <label>Allowed Item Types</label>
+
+            <div class="mw-list">
+              ${posMigrationCheck("Services","allow_services")}
+              ${posMigrationCheck("Non-stock products","allow_non_stock")}
+              ${posMigrationCheck("Menu items","allow_menu_items")}
+            </div>
+          </div>
+        </div>
+
+        ${posTerminalMappingView()}
+        ${posPaymentMethodMappingView()}
+        ${posCatalogueMappingView()}
+        ${posPreviewView()}
+        ${posReconciliationView()}
+      </div>
+    `;
+  }
+
+  function posTerminalMappingView(){
+    const rows=state.posMigration.terminals?.items||[];
+    if(!rows.length)return "";
+
+    return `
+      <div style="margin-top:20px">
+        ${heading(
+          "POS Terminals",
+          "Map source tills/registers or mark them for creation.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-pos-terminals"
+              ${state.posMappingSaving?"disabled":""}>
+              Save terminals
+            </button>
+          `
+        )}
+
+        ${table(
+          ["Code","Terminal","Location","Action","FinSage Terminal","Status"],
+          rows.map((row,index)=>[
+            esc(row.source_code||"—"),
+            `<strong>${esc(row.source_name)}</strong>`,
+            esc(row.source_location_name||row.source_location_code||"—"),
+
+            `
+              <select class="mw-select" data-mw-pos-terminal-action="${index}">
+                ${[
+                  ["map","Map Existing"],
+                  ["create","Create New"],
+                  ["ignore","Ignore"],
+                ].map(([value,label])=>`
+                  <option value="${value}" ${row.mapping_action===value?"selected":""}>
+                    ${label}
+                  </option>
+                `).join("")}
+              </select>
+            `,
+
+            row.mapping_action==="map"
+              ?`
+                <select class="mw-select" data-mw-pos-terminal-target="${index}">
+                  <option value="">Select terminal</option>
+
+                  ${(state.posMigration.terminals?.targets||[]).map(target=>`
+                    <option value="${target.id}"
+                      ${Number(row.target_terminal_id)===Number(target.id)?"selected":""}>
+                      ${esc(`${target.code||""} — ${target.name}`)}
+                    </option>
+                  `).join("")}
+                </select>
+              `
+              :`<span class="mw-muted">${row.mapping_action==="create"?"New terminal":"Ignored"}</span>`,
+
+            row.is_approved
+              ?`<span class="mw-badge ok">Approved</span>`
+              :`<span class="mw-badge info">Review</span>`,
+          ]),
+          "No POS terminals detected."
+        )}
+      </div>
+    `;
+  }
+
+  function posPaymentMethodMappingView(){
+    const rows=state.posMigration.paymentMethods?.items||[];
+    if(!rows.length)return "";
+
+    const methods=[
+      ["cash","Cash"],
+      ["card","Card"],
+      ["eft","EFT / Bank Transfer"],
+      ["mobile_money","Mobile Money"],
+      ["voucher","Voucher"],
+      ["credit","Customer Credit"],
+      ["other","Other"],
+    ];
+
+    return `
+      <div style="margin-top:20px">
+        ${heading(
+          "POS Payment Methods",
+          "Map source tender types to FinSage payment methods.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-pos-payment-methods"
+              ${state.posMappingSaving?"disabled":""}>
+              Save payment methods
+            </button>
+          `
+        )}
+
+        ${table(
+          ["Source Payment","Records","FinSage Method","Status"],
+          rows.map((row,index)=>[
+            `<strong>${esc(row.source_value)}</strong>`,
+
+            Number(row.sample_count||0).toLocaleString(),
+
+            `
+              <select class="mw-select" data-mw-pos-payment="${index}">
+                ${methods.map(([value,label])=>`
+                  <option value="${value}"
+                    ${row.target_payment_method===value?"selected":""}>
+                    ${label}
+                  </option>
+                `).join("")}
+              </select>
+            `,
+
+            row.is_approved
+              ?`<span class="mw-badge ok">Mapped</span>`
+              :`<span class="mw-badge info">Review</span>`,
+          ]),
+          "No POS payment methods detected."
+        )}
+      </div>
+    `;
+  }
+
+  function posCatalogueMappingView(){
+    const rows=state.posMigration.catalogue?.items||[];
+    if(!rows.length)return "";
+
+    return `
+      <div style="margin-top:20px">
+        ${heading(
+          "Saleable Catalogue",
+          "Confirm the inventory items, services and menu items available through POS.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-pos-catalogue"
+              ${state.posMappingSaving?"disabled":""}>
+              Save catalogue
+            </button>
+          `
+        )}
+
+        ${table(
+          ["Code","Item","Type","Barcode","Price","Target","Status"],
+          rows.map(row=>[
+            `<strong>${esc(row.source_code||"—")}</strong>`,
+
+            esc(row.source_name||"—"),
+
+            productKindBadge(row.target_kind),
+
+            esc(row.source_barcode||"—"),
+
+            money(row.sale_price||0),
+
+            esc(row.target_item_name||row.target_item_code||(
+              row.mapping_action==="create"?"Create at commit":"—"
+            )),
+
+            row.is_approved
+              ?`<span class="mw-badge ok">Approved</span>`
+              :row.target_kind
+                ?`<span class="mw-badge info">Review</span>`
+                :`<span class="mw-badge warn">Unresolved</span>`,
+          ]),
+          "No POS catalogue items detected."
+        )}
+      </div>
+    `;
+  }
+
+  function posPreviewView(){
+    const preview=state.posMigration.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>POS Validation</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Terminals</span>
+            <strong>${preview.terminal_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Payment Methods</span>
+            <strong>${preview.payment_method_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Saleable Items</span>
+            <strong>${preview.catalogue_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Warnings</span>
+            <strong>${preview.warning_count||0}</strong>
+          </div>
+        </div>
+
+        ${preview.error_count
+          ?`
+            <div class="mw-alert error" style="margin-top:14px">
+              ${(preview.issues||[]).map(issue=>`<div>${esc(issue)}</div>`).join("")}
+            </div>
+          `
+          :`
+            <div class="mw-alert ok" style="margin-top:14px">
+              POS configuration passed validation.
+            </div>
+          `
+        }
+      </div>
+    `;
+  }
+
+  function posReconciliationView(){
+    const recon=state.posMigration.reconciliation;
+    if(!recon)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>POS Migration Readiness</h3>
+
+        <div class="mw-alert ${recon.is_ready?"ok":"error"}">
+          <strong>
+            ${recon.is_ready
+              ?"POS configuration is ready"
+              :"POS configuration is blocked"
+            }
+          </strong>
+
+          ${!recon.is_ready
+            ?`<div class="mw-muted mw-small" style="margin-top:4px">
+                ${recon.blocking_error_count||0} blocking issue(s) remain.
+              </div>`
+            :""
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadPosMenuMigration(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.posMenuMigration={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        menuItems:null,
+        components:null,
+        addons:null,
+        preview:null,
+        reconciliation:null,
+      };
+      state.posMenuMigrationLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posMenu(companyId(),projectId)
+      );
+
+      state.posMenuMigration.datasets=response?.datasets||[];
+
+      if(!state.posMenuMigration.datasets.some(
+        row=>Number(row.dataset_id)===Number(state.posMenuMigration.datasetId)
+      )){
+        state.posMenuMigration.datasetId=
+          state.posMenuMigration.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.posMenuMigration.datasetId){
+        await loadPosMenuDataset(
+          state.posMenuMigration.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.posMenuMigrationLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadPosMenuMigration failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function loadPosMenuDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [
+      settingsResponse,
+      menuResponse,
+      componentResponse,
+      addonResponse,
+      reconResponse
+    ]=await Promise.all([
+      apiFetch(ENDPOINTS.migrations.posMenuSettings(companyId(),state.project.id,id)),
+      apiFetch(ENDPOINTS.migrations.posMenuItems(companyId(),state.project.id,id)),
+      apiFetch(ENDPOINTS.migrations.posMenuComponents(companyId(),state.project.id,id)),
+      apiFetch(ENDPOINTS.migrations.posMenuAddons(companyId(),state.project.id,id)),
+      apiFetch(ENDPOINTS.migrations.posMenuReconcile(companyId(),state.project.id,id)),
+    ]);
+
+    state.posMenuMigration.datasetId=id;
+    state.posMenuMigration.settings=settingsResponse?.settings||null;
+    state.posMenuMigration.menuItems=menuResponse?.mapping||null;
+    state.posMenuMigration.components=componentResponse?.mapping||null;
+    state.posMenuMigration.addons=addonResponse?.mapping||null;
+    state.posMenuMigration.reconciliation=reconResponse?.reconciliation||null;
+    state.posMenuMigration.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function savePosMenuSettings(){
+    if(!state.posMenuMigration.settings)return;
+
+    state.posMenuMigrationSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posMenuSettings(
+          companyId(),state.project.id,state.posMenuMigration.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(state.posMenuMigration.settings),
+        }
+      );
+
+      state.posMenuMigration.settings=
+        response?.settings||state.posMenuMigration.settings;
+
+      state.posMenuMigration.preview=null;
+      state.posMenuMigration.reconciliation=null;
+
+      notify("POS menu settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posMenuMigrationSaving=false;
+      render();
+    }
+  }
+
+  async function savePosMenuItems(){
+    const rows=state.posMenuMigration.menuItems?.items||[];
+    if(!rows.length)return;
+
+    const invalid=rows.find(row=>
+      row.mapping_action==="map"&&!row.target_menu_item_id
+    );
+
+    if(invalid)return notify(`Select a FinSage menu item for "${invalid.source_menu_name}".`);
+
+    state.posMenuMappingSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posMenuItems(
+          companyId(),state.project.id,state.posMenuMigration.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings:rows}),
+        }
+      );
+
+      state.posMenuMigration.menuItems=
+        response?.mapping||state.posMenuMigration.menuItems;
+
+      notify("POS menu items saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posMenuMappingSaving=false;
+      render();
+    }
+  }
+
+  async function savePosMenuComponents(){
+    const rows=state.posMenuMigration.components?.items||[];
+    if(!rows.length)return;
+
+    const invalid=rows.find(row=>
+      row.mapping_action==="map"&&!row.target_item_id&&!row.target_item_code
+    );
+
+    if(invalid)return notify(`Resolve component "${invalid.source_component_name}".`);
+
+    state.posMenuMappingSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posMenuComponents(
+          companyId(),state.project.id,state.posMenuMigration.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings:rows}),
+        }
+      );
+
+      state.posMenuMigration.components=
+        response?.mapping||state.posMenuMigration.components;
+
+      notify("POS recipe components saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posMenuMappingSaving=false;
+      render();
+    }
+  }
+
+  async function savePosMenuAddons(){
+    const rows=state.posMenuMigration.addons?.items||[];
+    if(!rows.length)return;
+
+    state.posMenuMappingSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posMenuAddons(
+          companyId(),state.project.id,state.posMenuMigration.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings:rows}),
+        }
+      );
+
+      state.posMenuMigration.addons=
+        response?.mapping||state.posMenuMigration.addons;
+
+      notify("POS menu add-ons saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posMenuMappingSaving=false;
+      render();
+    }
+  }
+
+  async function previewPosMenu(){
+    if(!state.posMenuMigration.datasetId)return;
+
+    state.posMenuPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posMenuPreview(
+          companyId(),state.project.id,state.posMenuMigration.datasetId
+        )
+      );
+
+      state.posMenuMigration.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posMenuPreviewLoading=false;
+      render();
+    }
+  }
+
+  async function reconcilePosMenu(){
+    if(!state.posMenuMigration.datasetId)return;
+
+    state.posMenuReconciling=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posMenuReconcile(
+          companyId(),state.project.id,state.posMenuMigration.datasetId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({}),
+        }
+      );
+
+      state.posMenuMigration.reconciliation=
+        response?.reconciliation||null;
+
+      state.posMenuMigration.preview=
+        response?.reconciliation?.preview||
+        state.posMenuMigration.preview;
+
+      if(state.posMenuMigration.reconciliation?.is_ready){
+        notify("POS menu and recipe migration is ready.");
+      }else{
+        notify(
+          `${state.posMenuMigration.reconciliation?.blocking_error_count||0} POS menu issue(s) require attention.`
+        );
+      }
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posMenuReconciling=false;
+      render();
+    }
+  }
+
+  function posMenuCheck(label,field){
+    const checked=Boolean(state.posMenuMigration.settings?.[field]);
+
+    return `
+      <label class="mw-check">
+        <input type="checkbox"
+          ${checked?"checked":""}
+          data-mw-pos-menu-setting="${esc(field)}">
+        <span>${esc(label)}</span>
+      </label>
+    `;
+  }
+
+  function posMenuMigrationView(){
+    const datasets=state.posMenuMigration.datasets||[];
+    const settings=state.posMenuMigration.settings;
+
+    if(!datasets.length)return "";
+    if(!settings)return `<div class="mw-empty">Loading POS menu migration…</div>`;
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "POS Menu, Recipes & Components",
+          "Map menu items to their inventory ingredients, recipe quantities and optional add-ons before importing POS sales history.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-pos-menu-settings"
+              ${state.posMenuMigrationSaving?"disabled":""}>
+              ${state.posMenuMigrationSaving?"Saving…":"Save settings"}
+            </button>
+
+            <button class="mw-btn"
+              data-mw-action="preview-pos-menu"
+              ${state.posMenuPreviewLoading?"disabled":""}>
+              ${state.posMenuPreviewLoading?"Validating…":"Validate menu"}
+            </button>
+
+            <button class="mw-btn primary"
+              data-mw-action="reconcile-pos-menu"
+              ${state.posMenuReconciling?"disabled":""}>
+              ${state.posMenuReconciling?"Reconciling…":"Reconcile menu"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Menu Dataset</label>
+
+            <select id="mwPosMenuDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.posMenuMigration.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Recipe Controls</label>
+
+            <div class="mw-list">
+              ${posMenuCheck("Require menu code","require_menu_code")}
+              ${posMenuCheck("Require component resolution","require_component_resolution")}
+              ${posMenuCheck("Validate recipe cost","validate_recipe_cost")}
+            </div>
+          </div>
+
+          <div class="mw-field">
+            <label>Component Types</label>
+
+            <div class="mw-list">
+              ${posMenuCheck("Allow service components","allow_service_components")}
+              ${posMenuCheck("Allow non-stock components","allow_non_stock_components")}
+            </div>
+          </div>
+        </div>
+
+        ${posMenuItemMappingView()}
+        ${posMenuComponentMappingView()}
+        ${posMenuAddonMappingView()}
+        ${posMenuPreviewView()}
+        ${posMenuReconciliationView()}
+      </div>
+    `;
+  }
+
+  function posMenuItemMappingView(){
+    const rows=state.posMenuMigration.menuItems?.items||[];
+    if(!rows.length)return "";
+
+    return `
+      <div style="margin-top:20px">
+        ${heading(
+          "Menu Items",
+          "Match existing FinSage menu items or mark legacy menu items for creation.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-pos-menu-items"
+              ${state.posMenuMappingSaving?"disabled":""}>
+              Save menu items
+            </button>
+          `
+        )}
+
+        ${table(
+          ["Code","Menu Item","Category","Price","Recipe Cost","Action","Status"],
+          rows.map((row,index)=>[
+            esc(row.source_menu_code||"—"),
+
+            `<strong>${esc(row.source_menu_name)}</strong>`,
+
+            esc(row.source_category||"—"),
+
+            money(row.sale_price||0),
+
+            money(row.source_recipe_cost||0),
+
+            `
+              <select class="mw-select" data-mw-pos-menu-action="${index}">
+                ${[
+                  ["map","Map Existing"],
+                  ["create","Create New"],
+                  ["ignore","Ignore"],
+                ].map(([value,label])=>`
+                  <option value="${value}" ${row.mapping_action===value?"selected":""}>
+                    ${label}
+                  </option>
+                `).join("")}
+              </select>
+            `,
+
+            row.is_approved
+              ?`<span class="mw-badge ok">Approved</span>`
+              :`<span class="mw-badge info">Review</span>`,
+          ]),
+          "No menu items detected."
+        )}
+      </div>
+    `;
+  }
+
+  function posMenuComponentMappingView(){
+    const rows=state.posMenuMigration.components?.items||[];
+    if(!rows.length)return "";
+
+    return `
+      <div style="margin-top:20px">
+        ${heading(
+          "Recipe Components",
+          "Confirm which inventory items are consumed when each POS menu item is sold.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-pos-menu-components"
+              ${state.posMenuMappingSaving?"disabled":""}>
+              Save components
+            </button>
+          `
+        )}
+
+        ${table(
+          [
+            "Menu",
+            "Component",
+            "Type",
+            "Quantity",
+            "UOM",
+            "Unit Cost",
+            "Component Cost",
+            "Target",
+            "Status",
+          ],
+
+          rows.map(row=>[
+            `<strong>${esc(row.source_menu_name)}</strong>`,
+
+            `
+              ${esc(row.source_component_code||"—")}
+              <div class="mw-muted mw-small">${esc(row.source_component_name)}</div>
+            `,
+
+            productKindBadge(row.component_kind),
+
+            Number(row.quantity||0).toLocaleString(),
+
+            esc(row.uom||"—"),
+
+            money(row.source_unit_cost||0),
+
+            money(row.calculated_component_cost||0),
+
+            esc(
+              row.target_item_name||
+              row.target_item_code||
+              (row.mapping_action==="create"?"Create at commit":"—")
+            ),
+
+            row.is_approved
+              ?`<span class="mw-badge ok">Approved</span>`
+              :row.target_item_code
+                ?`<span class="mw-badge info">Review</span>`
+                :`<span class="mw-badge warn">Unresolved</span>`,
+          ]),
+
+          "No recipe components detected."
+        )}
+      </div>
+    `;
+  }
+
+  function posMenuAddonMappingView(){
+    const rows=state.posMenuMigration.addons?.items||[];
+    if(!rows.length)return "";
+
+    return `
+      <div style="margin-top:20px">
+        ${heading(
+          "Menu Add-ons",
+          "Map optional extras and modifiers offered with menu items.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-pos-menu-addons"
+              ${state.posMenuMappingSaving?"disabled":""}>
+              Save add-ons
+            </button>
+          `
+        )}
+
+        ${table(
+          ["Menu","Add-on","Price","Cost","Target","Default","Status"],
+          rows.map(row=>[
+            `<strong>${esc(row.source_menu_name)}</strong>`,
+
+            esc(row.addon_name||"—"),
+
+            money(row.additional_price||0),
+
+            money(row.additional_cost||0),
+
+            esc(
+              row.target_item_name||
+              row.target_item_code||
+              (row.mapping_action==="create"?"Create at commit":"—")
+            ),
+
+            row.is_default
+              ?`<span class="mw-badge info">Default</span>`
+              :"—",
+
+            row.is_approved
+              ?`<span class="mw-badge ok">Approved</span>`
+              :`<span class="mw-badge info">Review</span>`,
+          ]),
+          "No menu add-ons detected."
+        )}
+      </div>
+    `;
+  }
+
+  function posMenuPreviewView(){
+    const preview=state.posMenuMigration.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Menu & Recipe Validation</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Menu Items</span>
+            <strong>${preview.menu_item_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Components</span>
+            <strong>${preview.component_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Add-ons</span>
+            <strong>${preview.addon_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Recipe Cost</span>
+            <strong>${money(preview.total_recipe_cost||0)}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+        </div>
+
+        ${table(
+          ["Menu Item","Components","Selling Price","Recipe Cost","Gross Margin","Status"],
+          (preview.menu_items||[]).map(row=>{
+            const price=Number(row.sale_price||0);
+            const cost=Number(row.calculated_recipe_cost||0);
+
+            return [
+              `
+                <strong>${esc(row.source_menu_code||"—")}</strong>
+                <div class="mw-muted mw-small">${esc(row.source_menu_name)}</div>
+              `,
+
+              Number(row.component_count||0).toLocaleString(),
+
+              money(price),
+
+              money(cost),
+
+              money(price-cost),
+
+              Math.abs(Number(row.recipe_cost_difference||0))<=Number(
+                state.posMenuMigration.settings?.cost_tolerance||0
+              )
+                ?`<span class="mw-badge ok">Ready</span>`
+                :`<span class="mw-badge warn">Review cost</span>`,
+            ];
+          }),
+          "No menu preview available."
+        )}
+
+        ${preview.error_count
+          ?`
+            <div class="mw-alert error" style="margin-top:14px">
+              ${(preview.issues||[]).map(issue=>`<div>${esc(issue)}</div>`).join("")}
+            </div>
+          `
+          :""
+        }
+      </div>
+    `;
+  }
+
+  function posMenuReconciliationView(){
+    const recon=state.posMenuMigration.reconciliation;
+    if(!recon)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Menu Migration Readiness</h3>
+
+        <div class="mw-alert ${recon.is_ready?"ok":"error"}">
+          <strong>
+            ${recon.is_ready
+              ?"POS menu and recipes are ready"
+              :"POS menu migration is blocked"
+            }
+          </strong>
+
+          ${!recon.is_ready
+            ?`<div class="mw-muted mw-small" style="margin-top:4px">
+                ${recon.blocking_error_count||0} blocking issue(s) remain.
+              </div>`
+            :""
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadPosHistoryMigration(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.posHistoryMigration={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        preview:null,
+        reconciliation:null,
+      };
+      state.posHistoryMigrationLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posHistory(companyId(),projectId)
+      );
+
+      state.posHistoryMigration.datasets=response?.datasets||[];
+
+      if(!state.posHistoryMigration.datasets.some(
+        row=>Number(row.dataset_id)===Number(state.posHistoryMigration.datasetId)
+      )){
+        state.posHistoryMigration.datasetId=
+          state.posHistoryMigration.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.posHistoryMigration.datasetId){
+        await loadPosHistoryDataset(
+          state.posHistoryMigration.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.posHistoryMigrationLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadPosHistoryMigration failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function loadPosHistoryDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,reconResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.posHistorySettings(
+          companyId(),state.project.id,id
+        )
+      ),
+      apiFetch(
+        ENDPOINTS.migrations.posHistoryReconcile(
+          companyId(),state.project.id,id
+        )
+      ),
+    ]);
+
+    state.posHistoryMigration.datasetId=id;
+    state.posHistoryMigration.settings=settingsResponse?.settings||null;
+    state.posHistoryMigration.reconciliation=reconResponse?.reconciliation||null;
+    state.posHistoryMigration.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function savePosHistorySettings(){
+    const settings=state.posHistoryMigration.settings;
+    if(!settings)return;
+
+    state.posHistorySaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posHistorySettings(
+          companyId(),
+          state.project.id,
+          state.posHistoryMigration.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(settings),
+        }
+      );
+
+      state.posHistoryMigration.settings=response?.settings||settings;
+      state.posHistoryMigration.preview=null;
+      state.posHistoryMigration.reconciliation=null;
+
+      notify("POS history settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posHistorySaving=false;
+      render();
+    }
+  }
+
+  async function previewPosHistory(){
+    if(!state.posHistoryMigration.datasetId)return;
+
+    state.posHistoryPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posHistoryPreview(
+          companyId(),
+          state.project.id,
+          state.posHistoryMigration.datasetId
+        )
+      );
+
+      state.posHistoryMigration.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posHistoryPreviewLoading=false;
+      render();
+    }
+  }
+
+  async function reconcilePosHistory(){
+    if(!state.posHistoryMigration.datasetId)return;
+
+    state.posHistoryReconciling=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.posHistoryReconcile(
+          companyId(),
+          state.project.id,
+          state.posHistoryMigration.datasetId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({}),
+        }
+      );
+
+      state.posHistoryMigration.reconciliation=response?.reconciliation||null;
+      state.posHistoryMigration.preview=
+        response?.reconciliation?.preview||
+        state.posHistoryMigration.preview;
+
+      if(state.posHistoryMigration.reconciliation?.is_ready){
+        notify("POS sales and payment history is reconciled.");
+      }else{
+        notify(
+          `${state.posHistoryMigration.reconciliation?.blocking_error_count||0} POS history issue(s) require attention.`
+        );
+      }
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.posHistoryReconciling=false;
+      render();
+    }
+  }
+
+  function posHistoryCheck(label,field){
+    const checked=Boolean(state.posHistoryMigration.settings?.[field]);
+
+    return `
+      <label class="mw-check">
+        <input type="checkbox"
+          ${checked?"checked":""}
+          data-mw-pos-history-setting="${esc(field)}">
+        <span>${esc(label)}</span>
+      </label>
+    `;
+  }
+
+  function posHistoryInput(label,field,type="text"){
+    const value=state.posHistoryMigration.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+        <input class="mw-input"
+          type="${esc(type)}"
+          value="${esc(value)}"
+          data-mw-pos-history-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+  function posHistoryInput(label,field,type="text"){
+    const value=state.posHistoryMigration.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+        <input class="mw-input"
+          type="${esc(type)}"
+          value="${esc(value)}"
+          data-mw-pos-history-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+  function posHistoryMigrationView(){
+    const datasets=state.posHistoryMigration.datasets||[];
+    const settings=state.posHistoryMigration.settings;
+
+    if(!datasets.length)return "";
+    if(!settings)return `<div class="mw-empty">Loading POS history…</div>`;
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "POS Sales & Payment History",
+          "Validate historical POS receipts, item lines, discounts, VAT, payments, refunds and voids.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-pos-history-settings"
+              ${state.posHistorySaving?"disabled":""}>
+              ${state.posHistorySaving?"Saving…":"Save settings"}
+            </button>
+
+            <button class="mw-btn"
+              data-mw-action="preview-pos-history"
+              ${state.posHistoryPreviewLoading?"disabled":""}>
+              ${state.posHistoryPreviewLoading?"Validating…":"Validate POS history"}
+            </button>
+
+            <button class="mw-btn primary"
+              data-mw-action="reconcile-pos-history"
+              ${state.posHistoryReconciling?"disabled":""}>
+              ${state.posHistoryReconciling?"Reconciling…":"Reconcile POS history"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>POS History Dataset</label>
+
+            <select id="mwPosHistoryDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.posHistoryMigration.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${posHistoryInput("History From","history_from","date")}
+          ${posHistoryInput("History To","history_to","date")}
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${posHistorySelect(
+            "Source Layout",
+            "source_layout",
+            [
+              ["combined","Combined Sales + Lines + Payments"],
+              ["sales_only","Sales Headers Only"],
+              ["lines_only","Sale Lines Only"],
+              ["payments_only","Payments Only"],
+            ]
+          )}
+
+          <div class="mw-field">
+            <label>Resolution</label>
+
+            <div class="mw-list">
+              ${posHistoryCheck("Require POS terminal","require_terminal")}
+              ${posHistoryCheck("Require product resolution","require_product_resolution")}
+              ${posHistoryCheck("Require payment resolution","require_payment_resolution")}
+            </div>
+          </div>
+
+          <div class="mw-field">
+            <label>Validation</label>
+
+            <div class="mw-list">
+              ${posHistoryCheck("Validate sale totals","validate_sale_totals")}
+              ${posHistoryCheck("Validate payment totals","validate_payment_totals")}
+              ${posHistoryCheck("Allow unpaid sales","allow_unpaid_sales")}
+            </div>
+          </div>
+        </div>
+
+        ${posHistoryPreviewView()}
+        ${posHistoryReconciliationView()}
+      </div>
+    `;
+  }
+
+  function posHistoryPreviewView(){
+    const preview=state.posHistoryMigration.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>POS History Preview</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Sales</span>
+            <strong>${preview.sale_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Lines</span>
+            <strong>${preview.sale_line_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Net Sales</span>
+            <strong>${money(preview.net_sales||0)}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Payments</span>
+            <strong>${money(preview.payment_total||0)}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+        </div>
+
+        ${posHistorySalesTable(preview.sales||[])}
+      </div>
+    `;
+  }
+
+  function posHistorySalesTable(rows){
+    return `
+      <div style="margin-top:14px">
+        ${table(
+          [
+            "Date",
+            "Receipt",
+            "Terminal",
+            "Lines",
+            "Gross",
+            "Discount",
+            "VAT",
+            "Total",
+            "Payments",
+            "Status",
+          ],
+
+          rows.map(row=>[
+            esc(row.sale_date||"—"),
+
+            `<strong>${esc(row.reference||"—")}</strong>`,
+
+            esc(
+              row.terminal?.name||
+              row.terminal?.code||
+              "—"
+            ),
+
+            Number(row.lines?.length||0).toLocaleString(),
+
+            money(row.calculated_subtotal||0),
+
+            money(row.calculated_discount||0),
+
+            money(row.calculated_tax||0),
+
+            money(row.calculated_total||0),
+
+            money(row.payment_total||0),
+
+            row.valid
+              ?`<span class="mw-badge ok">${esc(titleCase(row.status||"completed"))}</span>`
+              :`<span class="mw-badge error" title="${esc((row.issues||[]).join(" • "))}">
+                  ${row.issues?.length||1} issue(s)
+                </span>`,
+          ]),
+
+          "No POS sales available."
+        )}
+      </div>
+    `;
+  }
+
+  function posHistoryReconciliationView(){
+    const recon=state.posHistoryMigration.reconciliation;
+    if(!recon)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>POS History Reconciliation</h3>
+
+        <div class="mw-alert ${recon.is_ready?"ok":"error"}">
+          <strong>
+            ${recon.is_ready
+              ?"POS sales and payments are reconciled"
+              :"POS sales history is blocked"
+            }
+          </strong>
+
+          ${!recon.is_ready
+            ?`<div class="mw-muted mw-small" style="margin-top:4px">
+                ${recon.blocking_error_count||0} blocking issue(s) remain.
+              </div>`
+            :""
+          }
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Gross Sales</div>
+            <strong>${money(recon.gross_sales||0)}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Net Sales</div>
+            <strong>${money(recon.net_sales||0)}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Payments</div>
+            <strong>${money(recon.payment_total||0)}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Refunds</div>
+            <strong>${money(recon.refund_total||0)}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">VAT</div>
+            <strong>${money(recon.tax_total||0)}</strong>
+          </div>
+
+          <div class="mw-card">
+            <div class="mw-muted mw-small">Payment Difference</div>
+            <strong>${money(recon.payment_difference||0)}</strong>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function toggleScopeEntity(
     code,
     selected
@@ -12759,6 +15865,20 @@
       !inventorySelected||
       (inventoryConfigurationReady&&inventoryLocationReady); 
 
+    const inventoryOpeningSelected=Boolean(state.inventoryOpening.datasets?.length);
+
+    const inventoryOpeningReady=!inventoryOpeningSelected||Boolean(
+      state.inventoryOpening.reconciliation?.is_ready
+    );
+    const inventoryMovementsSelected=Boolean(state.inventoryMovements.datasets?.length);
+    const inventoryMovementsReady=!inventoryMovementsSelected||Boolean(state.inventoryMovements.reconciliation?.is_ready);
+    const posSelected=Boolean(state.posMigration.datasets?.length);
+    const posReady=!posSelected||Boolean(state.posMigration.reconciliation?.is_ready);
+    const posMenuSelected=Boolean(state.posMenuMigration.datasets?.length);
+    const posMenuReady=!posMenuSelected||Boolean(state.posMenuMigration.reconciliation?.is_ready);
+    const posHistorySelected=Boolean(state.posHistoryMigration.datasets?.length);
+    const posHistoryReady=!posHistorySelected||Boolean(state.posHistoryMigration.reconciliation?.is_ready);
+
     const checks=[
       projectSaved,
       projectConfigured,
@@ -12772,6 +15892,11 @@
       ...(payrollSelected?[payrollReady]:[]),
       ...(productsSelected?[productsReady]:[]),
       ...(inventorySelected?[inventoryReady]:[]),
+      ...(inventoryOpeningSelected?[inventoryOpeningReady]:[]),
+      ...(inventoryMovementsSelected?[inventoryMovementsReady]:[]),
+      ...(posSelected?[posReady]:[]),
+      ...(posMenuSelected?[posMenuReady]:[]),
+      ...(posHistorySelected?[posHistoryReady]:[]),
     ];
 
     const percentage = Math.round(
@@ -12813,6 +15938,11 @@
         ...(productsSelected?[control("Product accounting & VAT validated",productAccountingReady)]:[]),
         ...(inventorySelected?[control("Inventory configuration completed",inventoryConfigurationReady)]:[]),
         ...(warehouseDatasetSelected?[control("Warehouses and locations validated",inventoryLocationReady)]:[]),
+        ...(inventoryOpeningSelected?[control("Opening inventory reconciled",inventoryOpeningReady)]:[]),
+        ...(inventoryMovementsSelected?[control("Inventory movement history reconciled",inventoryMovementsReady)]:[]),
+        ...(posSelected?[control("POS configuration reconciled",posReady)]:[]),
+        ...(posMenuSelected?[control("POS menu and recipes reconciled",posMenuReady)]:[]),
+        ...(posHistorySelected?[control("POS sales history reconciled",posHistoryReady)]:[]),
       ].join("");
     }
 

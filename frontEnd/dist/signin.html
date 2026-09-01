@@ -138,6 +138,15 @@
     return s || null;
   }
 
+  function isSchoolUser(user) {
+    // ✅ NEW: School accounts (user_type "School") always route to the enterprise dashboard
+    return String(
+      user?.user_type ||
+      localStorage.getItem("userType") ||
+      ""
+    ).trim().toLowerCase() === "school";
+  }
+
   function normalizeRole(raw) {
     if (!raw) return "viewer";
     let r = String(raw).toLowerCase().trim();
@@ -172,6 +181,25 @@
       "readonly": "viewer",
       "other": "viewer",
       "other professional role": "viewer",
+
+      // ✅ NEW: school roles (mirrors backend normalize_role → frontend vocab)
+      "principal": "cfo",
+      "headmaster": "cfo",
+      "deputy principal": "admin",
+      "bursar": "manager",
+      "finance officer": "manager",
+      "sgb treasurer": "manager",
+      "hod": "senior",
+      "head of department": "senior",
+      "grade head": "senior",
+      "school secretary": "clerk",
+      "finance clerk": "clerk",
+      "admin staff": "clerk",
+      "administrative staff": "clerk",
+      "sgb member": "viewer",
+      "educator": "viewer",
+      "teacher": "viewer",
+      "other school role": "viewer",
     };
 
     return MAP[r] || r || "viewer";
@@ -182,6 +210,12 @@
     const canPractitioner = !!user?.dashboards?.practitioner;
     const canEnterprise = !!user?.dashboards?.enterprise;
     const defaultDashboard = String(user?.default_dashboard || "").trim().toLowerCase();
+
+    // ✅ NEW: School accounts always land on the enterprise dashboard,
+    // regardless of role, dashboards flags, or assignment scope.
+    if (isSchoolUser(user)) {
+      return "dashboard.html";
+    }
 
     if (defaultDashboard === "enterprise" && canEnterprise) {
       return "dashboard.html";
@@ -223,9 +257,34 @@
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type") || "";
+      let data;
+
+      if (contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+
+        console.error("Non-JSON signin response:", {
+          status: res.status,
+          statusText: res.statusText,
+          contentType,
+          body: text
+        });
+
+        statusEl.textContent = `Server error (${res.status}).`;
+        statusEl.style.color = "#b91c1c";
+        return;
+      }
+
       if (!res.ok) {
-        statusEl.textContent = data.detail || data.error || "Sign in failed.";
+        console.error("Signin API error:", res.status, data);
+
+        statusEl.textContent =
+          data.detail ||
+          data.error ||
+          "Sign in failed.";
+
         statusEl.style.color = "#b91c1c";
         return;
       }
@@ -332,3 +391,150 @@
 </script>
 </body>
 </html>
+<script>
+window.__STOP_REDIRECTS__ = true;
+
+window.safeRedirect = function (url, mode = "href") {
+  if (window.__STOP_REDIRECTS__) {
+    console.warn("[REDIRECT BLOCKED]", url, mode);
+    return;
+  }
+  if (mode === "replace") window.location.replace(url);
+  else window.location.href = url;
+};
+
+(function () {
+  const TOKEN_KEY = "fs_user_token";
+
+  const token =
+    sessionStorage.getItem(TOKEN_KEY) ||
+    localStorage.getItem(TOKEN_KEY) ||
+    sessionStorage.getItem("authToken") ||
+    localStorage.getItem("authToken") ||
+    "";
+
+  if (!token) {
+    if (!window.location.pathname.includes("signin")) {
+      window.safeRedirect("/signin.html", "replace");
+    }
+    return;
+  }
+
+  let payload = null;
+  try {
+    const parts = String(token).split(".");
+    if (parts.length >= 2) {
+      payload = JSON.parse(atob(parts[1]));
+    }
+  } catch (e) {
+    console.warn("signin bootstrap: token decode failed", e);
+  }
+
+  let user = null;
+  try {
+    user = JSON.parse(localStorage.getItem("fs_user") || "null");
+  } catch (_) {
+    user = null;
+  }
+
+  const accessScope = String(
+    payload?.access_scope ||
+    user?.access_scope ||
+    ""
+  ).toLowerCase();
+
+  const isDelegated =
+    !!payload?.is_delegated_company_access ||
+    accessScope === "delegated_workspace";
+
+  // ✅ NEW: School accounts (user_type "School") always route to the
+  // enterprise dashboard when revisiting signin while already signed in.
+  const schoolUserType = String(
+    payload?.user_type ||
+    user?.user_type ||
+    localStorage.getItem("userType") ||
+    ""
+  ).trim().toLowerCase();
+  const isSchool = schoolUserType === "school";
+
+  const canEnterprise =
+    isDelegated ||
+    isSchool ||
+    !!payload?.permissions?.can_access_enterprise_dashboard ||
+    !!user?.dashboards?.enterprise ||
+    localStorage.getItem("can_access_enterprise_dashboard") === "true";
+
+  if (isDelegated || canEnterprise) {
+    if (!window.location.pathname.includes("dashboard.html")) {
+      window.safeRedirect("/dashboard.html", "replace");
+    }
+    return;
+  }
+
+  if (!window.location.pathname.includes("practitionerdashboard.html")) {
+    window.safeRedirect("/practitionerdashboard.html", "replace");
+  }
+})();
+</script>
+
+<script>
+  window.initCustomerAddressAutocomplete = function () {
+    const configs = [
+      { inputId: "custBillSearch", mode: "billing" },
+      { inputId: "custShipSearch", mode: "shipping" },
+    ];
+
+    configs.forEach(({ inputId, mode }) => {
+      const input = document.getElementById(inputId);
+      if (!input || !window.google || !google.maps || !google.maps.places) return;
+
+      const ac = new google.maps.places.Autocomplete(input, {
+        types: ["geocode"],
+        componentRestrictions: { country: "za" },
+      });
+
+      ac.addListener("place_changed", () => {
+        const place = ac.getPlace();
+        if (!place || !place.address_components) return;
+
+        let street = "", suburb = "", city = "", postal = "", country = "";
+
+        place.address_components.forEach((c) => {
+          if (c.types.includes("street_number")) street = c.long_name + " " + street;
+          if (c.types.includes("route")) street += c.long_name;
+          if (c.types.includes("sublocality") || c.types.includes("neighborhood")) suburb = c.long_name;
+          if (c.types.includes("locality")) city = c.long_name;
+          if (c.types.includes("postal_code")) postal = c.long_name;
+          if (c.types.includes("country")) country = c.short_name;
+        });
+
+        const addrEl =
+          mode === "billing"
+            ? document.getElementById("custBillAddr")
+            : document.getElementById("custShipAddr");
+
+        if (addrEl) addrEl.value = [street, suburb, city, postal].filter(Boolean).join("\n");
+
+        if (mode === "billing") {
+          const countryEl = document.getElementById("custBillCountry");
+          if (countryEl && country) countryEl.value = country;
+        }
+      });
+    });
+  };
+
+  window.onMapsLoaded = function () {
+    console.log("Google Maps loaded");
+
+    window.initCustomerAddressAutocomplete?.();
+
+    if (window.CURRENT_COMPANY && window.initCompanyMapFromAddress) {
+      const addr =
+        window.CURRENT_COMPANY.registered_address ||
+        window.CURRENT_COMPANY.billing_address ||
+        window.CURRENT_COMPANY.address ||
+        "";
+      if (addr) window.initCompanyMapFromAddress(addr);
+    }
+  };
+</script>

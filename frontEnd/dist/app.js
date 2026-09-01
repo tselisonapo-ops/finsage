@@ -59,217 +59,245 @@ function updateCountryFieldHints(countryCode) {
 /* =========================================================
  * Static Industry Catalog  (front-end only)
  * =======================================================*/
-const INDUSTRY_CATALOG = {
-  "Agriculture": [
-    "Crop Farming",
-    "Livestock Farming",
-    "Mixed Farming",
-    "Dairy Farming",
-    "Poultry Farming",
-    "Horticulture",
-    "Fruit Farming",
-    "Forestry & Plantations",
-    "Aquaculture",
-    "Beekeeping",
-    "Game & Wildlife Farming",
-    "Agricultural Support Services"
-  ],
+  const INDUSTRY_CATALOG = {
+    "Agriculture": [
+      "Crop Farming",
+      "Livestock Farming",
+      "Mixed Farming",
+      "Dairy Farming",
+      "Poultry Farming",
+      "Horticulture",
+      "Fruit Farming",
+      "Forestry & Plantations",
+      "Aquaculture",
+      "Beekeeping",
+      "Game & Wildlife Farming",
+      "Agricultural Support Services"
+    ],
 
-  "Automotive Services": [
-    "Auto Repair Workshop",
-    "Auto Electrical",
-    "Tyre & Fitment",
-    "Panel Beating",
-    "Spray Painting",
-    "Parts & Spares"
-  ],
+    "Automotive Services": [
+      "Auto Repair Workshop",
+      "Auto Electrical",
+      "Tyre & Fitment",
+      "Panel Beating",
+      "Spray Painting",
+      "Parts & Spares"
+    ],
 
-  "Body Corporate": [],
+    "Body Corporate": [],
 
-  "Call Center": [],
+    "Call Center": [],
 
-  "Car Dealership": [
-    "New Vehicles",
-    "Used Vehicles",
-    "Motorcycle Dealership"
-  ],
+    "Car Dealership": [
+      "New Vehicles",
+      "Used Vehicles",
+      "Motorcycle Dealership"
+    ],
 
-  "Construction": [
-    "Residential Building Contractor",
-    "Civil Engineering",
-    "Electrical & Mechanical",
-    "Plumbing & Drainage",
-    "Roadworks"
-  ],
+    "Construction": [
+      "Residential Building Contractor",
+      "Civil Engineering",
+      "Electrical & Mechanical",
+      "Plumbing & Drainage",
+      "Roadworks"
+    ],
 
-  "Engineering & Technical": [
-    "Mechanical Engineering",
-    "Electrical Engineering",
-    "Industrial Engineering",
-    "Technical Services"
-  ],
+    "Engineering & Technical": [
+      "Mechanical Engineering",
+      "Electrical Engineering",
+      "Industrial Engineering",
+      "Technical Services"
+    ],
 
-  "Hospitality": [
-    "Hotel",
-    "Events & Catering",
-    "Guest House / Lodge"
-  ],
+    "Hospitality": [
+      "Hotel",
+      "Events & Catering",
+      "Guest House / Lodge"
+    ],
 
-  "IT & Technology": [
-    "Software Development",
-    "Managed IT Services",
-    "Networking & Infrastructure",
-    "Cybersecurity"
-  ],
+    "IT & Technology": [
+      "Software Development",
+      "Managed IT Services",
+      "Networking & Infrastructure",
+      "Cybersecurity"
+    ],
 
-  "Logistics & Transport": [
-    "Freight / Logistics",
-    "Courier / Last Mile",
-    "Public Transport",
-    "Fleet Services"
-  ],
+    "Logistics & Transport": [
+      "Freight / Logistics",
+      "Courier / Last Mile",
+      "Public Transport",
+      "Fleet Services"
+    ],
 
-  "Management Services": [],
+    "Management Services": [],
 
-  "Manufacturing": [
-    "Light Manufacturing",
-    "Fabrication",
-    "Food Processing"
-  ],
+    "Manufacturing": [
+      "Light Manufacturing",
+      "Fabrication",
+      "Food Processing"
+    ],
 
-  "Mining": [
-    "Open-Pit Mining",
-    "Underground Mining",
-    "Quarrying & Aggregates",
-    "Coal Mining",
-    "Gold & PGM Mining"
-  ],
+    "Mining": [
+      "Open-Pit Mining",
+      "Underground Mining",
+      "Quarrying & Aggregates",
+      "Coal Mining",
+      "Gold & PGM Mining"
+    ],
 
-  "NPO Education": [
-    "Primary Education",
-    "Higher Education"
-  ],
+    // ══════════════════════════════════════════════════
+    // ✅ UPDATED: NPO Education
+    // ══════════════════════════════════════════════════
+    "NPO Education": [
+      "Primary Education",
+      "Higher Education",
+      "ECD Centre (Early Childhood Development)",
+      "Adult Basic Education"
+    ],
 
-  "Private School": [],
+    // ══════════════════════════════════════════════════
+    // ✅ UPDATED: Private School - now has sub-types!
+    // ══════════════════════════════════════════════════
+    "Private School": [
+      "Independent Primary School",
+      "Independent High School",
+      "Combined Independent School",
+      "Special Needs Private School",
+      "Religious / Church School",
+      "Montessori School",
+      "Waldorf School",
+      "International School (Cambridge/IB)"
+    ],
 
-  "NPO Healthcare": [
-    "Clinic",
-    "Hospital"
-  ],
+    // ══════════════════════════════════════════════════
+    // ✅ NEW: Public School - ADD THIS ENTIRE ENTRY!
+    // ══════════════════════════════════════════════════
+    "Public School": [
+      "Primary School",
+      "High School / Secondary School",
+      "Combined School (Primary + High)",
+      "Special Needs School",
+      "Vocational / Technical College (Public)",
+      "ECD Centre (Early Childhood Development)"
+    ],
 
-  "NPO IT": [],
+    "NPO Healthcare": [
+      "Clinic",
+      "Hospital"
+    ],
 
-  "NPO Transport": [
-    "Fleet Services",
-    "Public Transport"
-  ],
+    "NPO IT": [],
 
-  "Private Healthcare": [
-    "GP Clinic",
-    "Specialist Practice",
-    "Dentistry"
-  ],
+    "NPO Transport": [
+      "Fleet Services",
+      "Public Transport"
+    ],
 
-  "Professional Services": [
-    "Auditing & Accounting",
-    "Architecture",
-    "Legal Services",
-    "Engineering Consulting",
-    "HR & Recruitment",
-    "Business Consulting"
-  ],
+    "Private Healthcare": [
+      "GP Clinic",
+      "Specialist Practice",
+      "Dentistry"
+    ],
 
-  "Property Management": [],
+    "Professional Services": [
+      "Auditing & Accounting",
+      "Architecture",
+      "Legal Services",
+      "Engineering Consulting",
+      "HR & Recruitment",
+      "Business Consulting"
+    ],
 
-  "Restaurant": [
-    "Fast Food",
-    "Casual Dining",
-    "Fine Dining"
-  ],
+    "Property Management": [],
 
-  "Retail & Wholesale": [
-    "Wholesale",
-    "E-commerce Retail",
-    "Brick & Mortar Retail"
-  ],
+    "Restaurant": [
+      "Fast Food",
+      "Casual Dining",
+      "Fine Dining"
+    ],
 
-  "Security Services": [
-    "Guarding",
-    "Alarm Monitoring",
-    "Technical Security Systems"
-  ],
+    "Retail & Wholesale": [
+      "Wholesale",
+      "E-commerce Retail",
+      "Brick & Mortar Retail"
+    ],
 
-  "Design & Creative Services": [
-    "Interior Design",
-    "Architecture",
-    "Graphic Design",
-    "Advertising Agency",
-    "Creative Studio",
-    "Landscape Design"
-  ],
+    "Security Services": [
+      "Guarding",
+      "Alarm Monitoring",
+      "Technical Security Systems"
+    ],
 
-  "Personal Care & Beauty Services": [
-    "Hair Salon",
-    "Barber Shop",
-    "Nail Salon",
-    "Beauty Spa",
-    "Makeup Artist",
-    "Wellness & Massage",
-    "Tattoo Studio"
-  ],
+    "Design & Creative Services": [
+      "Interior Design",
+      "Architecture",
+      "Graphic Design",
+      "Advertising Agency",
+      "Creative Studio",
+      "Landscape Design"
+    ],
 
-  "Health & Fitness": [
-    "Gym",
-    "Personal Trainer",
-    "Fitness Studio",
-    "CrossFit Box",
-    "Sports Academy"
-  ],
+    "Personal Care & Beauty Services": [
+      "Hair Salon",
+      "Barber Shop",
+      "Nail Salon",
+      "Beauty Spa",
+      "Makeup Artist",
+      "Wellness & Massage",
+      "Tattoo Studio"
+    ],
 
-  "Education & Training": [
-    "Training Provider",
-    "Skills Development",
-    "Driving School",
-    "Tutoring Services",
-    "Corporate Training"
-  ],
+    "Health & Fitness": [
+      "Gym",
+      "Personal Trainer",
+      "Fitness Studio",
+      "CrossFit Box",
+      "Sports Academy"
+    ],
 
-  "Cleaning Services": [
-    "Residential Cleaning",
-    "Commercial Cleaning",
-    "Industrial Cleaning",
-    "Pest Control"
-  ],
+    "Education & Training": [
+      "Training Provider",
+      "Skills Development",
+      "Driving School",
+      "Tutoring Services",
+      "Corporate Training"
+    ],
 
-  "Media & Entertainment": [
-    "Content Creator",
-    "Podcast Studio",
-    "Photography",
-    "Videography",
-    "Film Production",
-    "Music Production"
-  ],
+    "Cleaning Services": [
+      "Residential Cleaning",
+      "Commercial Cleaning",
+      "Industrial Cleaning",
+      "Pest Control"
+    ],
 
-  "Telecommunications": [
-    "Internet Service Provider",
-    "Mobile Network Operator",
-    "Pay TV Operator"
-  ],
+    "Media & Entertainment": [
+      "Content Creator",
+      "Podcast Studio",
+      "Photography",
+      "Videography",
+      "Film Production",
+      "Music Production"
+    ],
 
-  "Transport": [
-    "Courier / Last Mile",
-    "Freight / Logistics",
-    "Public Transport"
-  ],
+    "Telecommunications": [
+      "Internet Service Provider",
+      "Mobile Network Operator",
+      "Pay TV Operator"
+    ],
 
-  "Clubs & Associations": [
-    "Sports Club",
-    "Social Club",
-    "Professional Association",
-    "Recreational Association"
-  ]
-};
+    "Transport": [
+      "Courier / Last Mile",
+      "Freight / Logistics",
+      "Public Transport"
+    ],
 
+    "Clubs & Associations": [
+      "Sports Club",
+      "Social Club",
+      "Professional Association",
+      "Recreational Association"
+    ]
+  };
   /* =========================================================
    * Tiny helpers
    * =======================================================*/
@@ -297,6 +325,7 @@ const INDUSTRY_CATALOG = {
       { value: "accountant", label: "Accountant" },
       { value: "other", label: "Other Professional Role" }
     ],
+    
     practitioner: [
       { value: "owner", label: "Practice Owner / Founding Partner" },
       { value: "audit_partner", label: "Audit Partner" },
@@ -308,6 +337,24 @@ const INDUSTRY_CATALOG = {
       { value: "bookkeeper", label: "Bookkeeper" },
       { value: "reviewer", label: "Reviewer" },
       { value: "other", label: "Other Professional Role" }
+    ],
+
+    // ══════════════════════════════════════════════════
+    // ✅ NEW: School-specific roles
+    // ══════════════════════════════════════════════════
+    school: [
+      { value: "principal", label: "Principal / Headmaster" },
+      { value: "deputy_principal", label: "Deputy Principal" },
+      { value: "bursar", label: "Bursar / Finance Officer" },
+      { value: "school_secretary", label: "School Secretary" },
+      { value: "finance_clerk", label: "Finance Clerk" },
+      { value: "hod", label: "Head of Department (HOD)" },
+      { value: "grade_head", label: "Grade Head" },
+      { value: "sgb_treasurer", label: "SGB Treasurer" },
+      { value: "sgb_member", label: "SGB Member" },
+      { value: "educator", label: "Educator / Teacher" },
+      { value: "admin_staff", label: "Administrative Staff" },
+      { value: "other", label: "Other School Role" }
     ]
   };
 
@@ -333,8 +380,56 @@ const INDUSTRY_CATALOG = {
       roleEl.appendChild(opt);
     });
 
-    const stillExists = roleSet.some(r => r.value === currentValue);
-    roleEl.value = stillExists ? currentValue : "";
+    // Apply a deferred (saved) role if present, otherwise keep current selection
+    const pending     = roleEl.dataset.pendingRole;
+    const effective   = pending || currentValue;
+    const stillExists = roleSet.some(r => r.value === effective);
+    roleEl.value = stillExists ? effective : "";
+    if (pending && stillExists) delete roleEl.dataset.pendingRole;
+
+    // Keep owner-invite UI and persistence listeners in sync after programmatic change
+    roleEl.dispatchEvent(new Event("change"));
+  }
+
+  // Original Organisation Type options captured from HTML (restored for non-school types)
+  let ORG_TYPE_ORIGINAL = null;
+
+  function adaptOrgTypeByAccountType(type) {
+    const orgSel = document.getElementById("organizationType");
+    if (!orgSel) return;
+
+    // Capture the original HTML options once, so we can always restore them
+    if (!ORG_TYPE_ORIGINAL) {
+      ORG_TYPE_ORIGINAL = Array.from(orgSel.options).map(function (o) {
+        return { value: o.value, text: o.textContent, disabled: o.disabled, selected: o.selected };
+      });
+    }
+
+    const isSchool = String(type || "").toLowerCase() === "school";
+    const list = isSchool
+      ? [
+          { value: "",                   text: "Select type...",                disabled: true  },
+          { value: "public_school",      text: "Public School",                disabled: false },
+          { value: "independent_school", text: "Independent / Private School", disabled: false },
+          { value: "ecd_centre",         text: "ECD / Pre-Primary Centre",     disabled: false },
+          { value: "other",              text: "Other",                        disabled: false }
+        ]
+      : ORG_TYPE_ORIGINAL;
+
+    const current = orgSel.value || "";
+    orgSel.innerHTML = "";
+    list.forEach(function (o) {
+      const opt = document.createElement("option");
+      opt.value = o.value;
+      opt.textContent = o.text;
+      if (o.disabled) opt.disabled = true;
+      if (o.selected) opt.selected = true;
+      orgSel.appendChild(opt);
+    });
+
+    // Preserve selection if it is still valid in the new list
+    const stillValid = Array.from(orgSel.options).some(o => o.value === current && !o.disabled);
+    if (stillValid) orgSel.value = current;
   }
 
   function adaptLabelsByAccountType() {
@@ -347,11 +442,15 @@ const INDUSTRY_CATALOG = {
     if (type === "practitioner") {
       companyNameLabel.textContent = "Practice Name";
       regNoLabel.textContent       = "Practice Registration Number";
+    } else if (type === "school") {
+      companyNameLabel.textContent = "School / Institution Name";
+      regNoLabel.textContent       = "School Registration Number (e.g., EMIS No.)";
     } else {
       companyNameLabel.textContent = "Company/Entity Name";
       regNoLabel.textContent       = "Company Registration Number";
     }
 
+    adaptOrgTypeByAccountType(type);
     populateRoleOptions();
   }
 
@@ -522,11 +621,16 @@ const INDUSTRY_CATALOG = {
     const saved = sessionStorage.getItem("fs_reg_step1_data");
     if (!saved) return false;
     const data = JSON.parse(saved || "{}");
-    ["firstName","lastName","email","userRole","accountType","phone"].forEach(function (id) {
+    // NOTE: userRole is NOT restored here directly — its <option> elements are
+    // (re)built by populateRoleOptions(), so we defer the restore via data-*
+    // and let populateRoleOptions() apply it once the options exist.
+    ["firstName","lastName","email","accountType","phone"].forEach(function (id) {
       const el = document.getElementById(id);
       if (!el || data[id] == null) return;
       el.value = data[id];
     });
+    const roleEl = document.getElementById("userRole");
+    if (roleEl && data.userRole) roleEl.dataset.pendingRole = data.userRole;
     return true;
   }
 
@@ -539,7 +643,8 @@ function initTeamInviteToggle() {
   if (!needTeam || !teamInviteBlock) return;
 
   function isOwnerRole() {
-    return String(userRole?.value || "").trim().toLowerCase() === "owner";
+    // "principal" is the equivalent of Owner for School accounts
+    return ["owner", "principal"].includes(String(userRole?.value || "").trim().toLowerCase());
   }
 
   function syncInviteUI() {
@@ -1154,7 +1259,9 @@ function handleRegistration(event) {
   const ownerEmail = (val("ownerEmail") || "").trim().toLowerCase();
 
   // ✅ If user is not owner, strongly encourage owner email
-  if (chosenRole && chosenRole !== "owner" && !ownerEmail) {
+  // ("principal" counts as the Owner for School accounts)
+  const OWNER_EQUIVALENT_ROLES = ["owner", "principal"];
+  if (chosenRole && !OWNER_EQUIVALENT_ROLES.includes(chosenRole) && !ownerEmail) {
     alert("You selected a non-owner role. Please add the Owner's email (recommended).");
     return;
   }
@@ -1173,7 +1280,9 @@ function handleRegistration(event) {
   }
 
   const rawType  = (step1.accountType || val("accountType") || "enterprise").toLowerCase();
-  const userType = rawType === "practitioner" ? "Practitioner" : "Enterprise";
+  const userType = rawType === "practitioner" ? "Practitioner"
+                 : rawType === "school"       ? "School"
+                 : "Enterprise";
 
   // --- Build structured registered + postal addresses ---
   const reg = {
@@ -1301,92 +1410,395 @@ function handleRegistration(event) {
     return;
   }
 
+  // --- Show progress overlay ---
+  var progressOverlay = showSignupProgress();
+  var completedSteps = {};
+
   fetch(AUTH_SIGNUP_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   })
-    .then(function (res) {
-      return res.json().then(function (p) {
-        return { ok: res.ok, status: res.status, payload: p };
-      });
-    })
-    .then(function (result) {
-      if (!result.ok) {
+  .then(function (response) {
+    // Read the SSE stream
+    return readSSEStream(response, function (stepKey, label) {
+      // Mark previous steps complete
+      var stepOrder = [
+        "validating", "creating_user", "validating_company",
+        "matching_industry", "creating_company", "seeding_accounts",
+        "finalizing", "sending_email"
+      ];
+      var currentIdx = stepOrder.indexOf(stepKey);
+      for (var i = 0; i < currentIdx; i++) {
+        if (!completedSteps[stepOrder[i]]) {
+          completedSteps[stepOrder[i]] = true;
+          // We might not have seen the label for earlier steps,
+          // so just mark them complete silently
+          updateProgressStep(stepOrder[i], stepOrder[i].replace(/_/g, " ") + "...", true);
+        }
+      }
+      completedSteps[stepKey] = true;
+      updateProgressStep(stepKey, label, true);
+    });
+  })
+  .then(function (result) {
+    // result is the terminal SSE event data (result or error)
+    if (!result || !result.success) {
+      // --- ERROR PATH ---
+      var errMsg = "Registration failed.";
+      if (result) {
+
         if (result.status === 409) {
-          const msg =
-            (result.payload && result.payload.error) ||
-            "A user with this email already exists. Please sign in instead.";
-
-          const box = document.getElementById("formMessage");
-          if (box) {
-            box.innerHTML = `
-              <div style="margin-bottom:6px;">${msg}</div>
-              <button id="goSignInBtn"
-                style="
-                  background:#0d9488;
-                  padding:6px 16px;
-                  border-radius:6px;
-                  color:white;
-                  border:none;
-                  cursor:pointer;
-                  font-size:0.9rem;
-                ">
-                OK
-              </button>
-            `;
-            box.classList.remove("hidden");
-            box.style.background = "#fee2e2";
-            box.style.color = "#b91c1c";
-            box.style.border = "1px solid #fecaca";
-
-            const btn = document.getElementById("goSignInBtn");
-            if (btn) btn.onclick = () => (window.location.href = "signin.html");
-          } else {
-            if (confirm(msg + "\n\nClick OK to go to the Sign In page.")) {
-              window.location.href = "signin.html";
-            }
-          }
+          errMsg = result.error || "A user with this email already exists. Please sign in instead.";
+          showProgressError(errMsg, function () {
+            window.location.href = "signin.html";
+          });
           return;
         }
-
-        let msg = "Registration failed.";
-        if (result.payload && result.payload.errors) {
-          msg = JSON.stringify(result.payload.errors, null, 2);
-        } else if (result.payload && result.payload.error) {
-          msg = result.payload.error;
+        if (result.errors) {
+          errMsg = Object.values(result.errors).join("\n");
+        } else if (result.error) {
+          errMsg = result.error;
         }
-        alert(msg);
+      }
+
+      showProgressError(errMsg, null);
+      return;
+    }
+
+    // --- SUCCESS PATH ---
+    hideSignupProgress();
+
+    sessionStorage.removeItem("fs_reg_step1_data");
+    sessionStorage.removeItem("fs_reg_step2_data");
+
+    var email =
+      result.user_email ||
+      result.email ||
+      result.userEmail ||
+      (step1.email || val("email") || "");
+
+    var query = email ? "?email=" + encodeURIComponent(email) : "";
+
+    if (result.email_sent === false || result.status_text === "confirmation_email_failed") {
+      alert("Your account was created, but we could not send the confirmation email right now.");
+      window.location.href = "check-email.html" + query + "&email_failed=1";
+    } else {
+      alert("Registration successful! Please check your email to confirm your account.");
+      window.location.href = "check-email.html" + query;
+    }
+  })
+  .catch(function (err) {
+    hideSignupProgress();
+    alert("Error: " + (err && err.message ? err.message : "Unexpected error"));
+    console.error(err);
+  });
+}
+
+const PROGRESS_CONTAINER_ID = "signupProgress";
+
+// Step icons for each phase (cycles through as steps progress)
+const STEP_ICONS = {
+  validating:         "\u2705",  // ✅
+  creating_user:      "\u2705",  // ✅
+  validating_company: "\u2705",  // ✅
+  matching_industry:  "\u2705",  // ✅
+  creating_company:   "\u2705",  // ✅
+  seeding_accounts:   "\u2705",  // ✅
+  finalizing:         "\u2705",  // ✅
+  sending_email:      "\u2705",  // ✅
+};
+
+const SPINNER_ICON = "\u23F3";  // ⏳
+
+/**
+ * Create or update the progress overlay inside the form.
+ */
+function showSignupProgress() {
+  let container = document.getElementById(PROGRESS_CONTAINER_ID);
+  if (!container) {
+    container = document.createElement("div");
+    container.id = PROGRESS_CONTAINER_ID;
+    // Insert at top of form or body
+    const form = document.getElementById("registrationForm")
+                 || document.querySelector("form")
+                 || document.body;
+    form.prepend(container);
+  }
+  container.style.cssText = `
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  `;
+
+  container.innerHTML = `
+    <div style="
+      background: white;
+      border-radius: 16px;
+      padding: 32px 36px 24px;
+      max-width: 420px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    ">
+      <div style="text-align:center; margin-bottom:20px;">
+        <div style="
+          width:48px; height:48px;
+          border: 4px solid #e5e7eb;
+          border-top-color: #0d9488;
+          border-radius: 50%;
+          animation: fs-spin 0.8s linear infinite;
+          margin: 0 auto 12px;
+        "></div>
+        <style>
+          @keyframes fs-spin { to { transform: rotate(360deg); } }
+        </style>
+        <h3 style="margin:0; font-size:1.15rem; color:#111827;">
+          Creating your account
+        </h3>
+        <p style="margin:6px 0 0; font-size:0.85rem; color:#6b7280;">
+          This may take a few seconds, please don't close this page.
+        </p>
+      </div>
+      <ul id="${PROGRESS_CONTAINER_ID}_steps"
+          style="
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            font-size: 0.875rem;
+            color: #374151;
+          ">
+      </ul>
+      <div id="${PROGRESS_CONTAINER_ID}_error"
+           style="display:none; margin-top:16px; padding:10px 14px;
+                  background:#fee2e2; border:1px solid #fecaca;
+                  border-radius:8px; color:#b91c1c; font-size:0.85rem;">
+      </div>
+    </div>
+  `;
+
+  return container;
+}
+
+/**
+ * Add / update a step row in the progress list.
+ */
+function updateProgressStep(stepKey, label, isComplete) {
+  const list = document.getElementById(PROGRESS_CONTAINER_ID + "_steps");
+  if (!list) return;
+
+  // Find existing or create new
+  let row = list.querySelector(`[data-step="${stepKey}"]`);
+  if (!row) {
+    row = document.createElement("li");
+    row.dataset.step = stepKey;
+    row.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid #f3f4f6;
+    `;
+    row.innerHTML = `
+      <span class="fs-step-icon" style="font-size:1rem; width:24px; text-align:center; flex-shrink:0;">${SPINNER_ICON}</span>
+      <span class="fs-step-label" style="flex:1;">${label}</span>
+    `;
+    list.appendChild(row);
+    // Auto-scroll to latest
+    row.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  // Update icon when complete
+  if (isComplete) {
+    const icon = row.querySelector(".fs-step-icon");
+    if (icon) {
+      icon.textContent = STEP_ICONS[stepKey] || "\u2705";
+      icon.style.animation = "none";
+    }
+    const lbl = row.querySelector(".fs-step-label");
+    if (lbl) {
+      lbl.style.color = "#059669";
+      lbl.style.fontWeight = "500";
+    }
+  }
+}
+
+/**
+ * Show error inside the progress modal.
+ */
+function showProgressError(message, onDismiss) {
+  const errBox = document.getElementById(PROGRESS_CONTAINER_ID + "_error");
+  if (!errBox) return;
+  errBox.style.display = "block";
+  errBox.textContent = message;
+  if (onDismiss) {
+    const btn = document.createElement("button");
+    btn.textContent = "OK";
+    btn.style.cssText = `
+      margin-top:10px; background:#b91c1c; color:white; border:none;
+      padding:6px 18px; border-radius:6px; cursor:pointer; font-size:0.85rem;
+    `;
+    btn.onclick = function () {
+      hideSignupProgress();
+      onDismiss();
+    };
+    errBox.appendChild(btn);
+  }
+}
+
+/**
+ * Remove the progress overlay.
+ */
+function hideSignupProgress() {
+  const container = document.getElementById(PROGRESS_CONTAINER_ID);
+  if (container) container.remove();
+}
+
+/**
+ * Parse SSE events from a ReadableStream.
+ * Calls onProgress(stepKey, label) for each progress event.
+ * Calls onResult(data) or onError(data) for the terminal event.
+ * Returns a Promise that resolves with the terminal event data.
+ */
+function readSSEStream(response, onProgress) {
+  // Fallback: if the backend returned plain JSON (not SSE yet), parse it directly
+  var contentType = (response.headers.get("Content-Type") || "").toLowerCase();
+  if (contentType.indexOf("text/event-stream") === -1) {
+    return response.text().then(function (text) {
+      try {
+        var data = JSON.parse(text);
+        if (data.success) {
+          return data;
+        }
+        return {
+          status: response.status,
+          success: false,
+          error: data.error || "Registration failed.",
+          errors: data.errors || null
+        };
+      } catch (e) {
+        return {
+          status: response.status,
+          success: false,
+          error: "Unexpected response from server. Please try again."
+        };
+      }
+    });
+  }
+
+  var reader = response.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = "";
+  var aborted = false;
+  var terminalReceived = false;
+
+  // Safety timeout — 90s with no data = fail
+  var timeoutId = setTimeout(function () {
+    aborted = true;
+    try { reader.cancel(); } catch (e) {}
+  }, 90000);
+
+  function cleanupTimeout() {
+    if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+  }
+
+  return new Promise(function (resolve, reject) {
+    function pump() {
+      if (aborted) {
+        cleanupTimeout();
+        resolve({
+          status: 504,
+          success: false,
+          error: "Request timed out. The server took too long to respond. Please try again."
+        });
         return;
       }
 
-      const resp = result.payload || {};
-      sessionStorage.removeItem("fs_reg_step1_data");
-      sessionStorage.removeItem("fs_reg_step2_data");
+      reader.read().then(function (chunk) {
+        if (chunk.done) {
+            cleanupTimeout();
 
-      const email =
-        resp.user_email ||
-        resp.email ||
-        resp.userEmail ||
-        (step1.email || val("email") || "");
+            if (terminalReceived) {
+                return;
+            }
 
-      const query = email ? `?email=${encodeURIComponent(email)}` : "";
+            resolve({
+                status: 502,
+                success: false,
+                error: "Connection closed unexpectedly. Please check your internet and try again."
+            });
+            return;
+        }
 
-      if (resp.email_sent === false || resp.status === "confirmation_email_failed") {
-        alert("Your account was created, but we could not send the confirmation email right now.");
-        window.location.href = `check-email.html${query}&email_failed=1`;
-      } else {
-        alert("Registration successful! Please check your email to confirm your account.");
-        window.location.href = `check-email.html${query}`;
-      }
-    })
-    .catch(function (err) {
-      alert("Error: " + (err && err.message ? err.message : "Unexpected error"));
-      console.error(err);
-    });
+        // Got data — reset the idle timeout
+        cleanupTimeout();
+        timeoutId = setTimeout(function () {
+          aborted = true;
+          try { reader.cancel(); } catch (e) {}
+        }, 90000);
+
+        buffer += decoder.decode(chunk.value, { stream: true });
+
+        // SSE events are separated by \n\n
+        var parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+
+        for (var i = 0; i < parts.length; i++) {
+          var block = parts[i].trim();
+          if (!block) continue;
+
+          var eventType = "";
+          var dataLine = "";
+
+          var lines = block.split("\n");
+          for (var j = 0; j < lines.length; j++) {
+            var line = lines[j];
+            if (line.indexOf("event: ") === 0) {
+              eventType = line.substring(7).trim();
+            } else if (line.indexOf("data: ") === 0) {
+              dataLine = line.substring(6);
+            }
+          }
+
+          if (!dataLine) continue;
+
+          try {
+            var data = JSON.parse(dataLine);
+          } catch (e) {
+            continue;
+          }
+
+          if (eventType === "progress" && onProgress) {
+              onProgress(data.step, data.label);
+
+          } else if (eventType === "result") {
+              terminalReceived = true;
+              cleanupTimeout();
+              resolve(data);
+              return;
+
+          } else if (eventType === "error") {
+              terminalReceived = true;
+              cleanupTimeout();
+              resolve(data);
+              return;
+          }
+        }
+
+        pump();
+      }).catch(function (err) {
+        cleanupTimeout();
+        reject(err);
+      });
+    }
+
+    pump();
+  });
 }
-
-
 // =======================
 // UPDATED: DOMContentLoaded block (only the parts that changed)
 // =======================
@@ -1434,7 +1846,10 @@ document.addEventListener("DOMContentLoaded", function () {
   bindStep1Persistence();
   bindStep2Persistence();
 
-  // Rehydrate step 1
+  // Rehydrate step 1 — order matters:
+  //   1) loadStep1Data restores accountType (and stages the saved role as pending)
+  //   2) populateRoleOptions builds the role options for that accountType and applies the pending role
+  //   3) adaptLabelsByAccountType fixes labels/org-type (and re-runs populate, preserving selection)
   loadStep1Data();
 
   populateRoleOptions();

@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import {getCompanyId,getToken} from "../api/api";
-import "./CompanyEmailSettingsPage.css";
+import "../components/settings/CompanyEmailSettings.css";
 
 const emptyForm={
   sender_name:"",
