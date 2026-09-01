@@ -120892,6 +120892,36 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 or ""
             ).strip().lower()
 
+            if settlement_pattern in {"billing_before_revenue", "cash_before_service", "cash_before_revenue"}:
+                # Update billed_to_date normally
+                cur.execute("""
+                    UPDATE {schema}.revenue_contracts
+                    SET billed_to_date = COALESCE((
+                            SELECT SUM(amount)
+                            FROM {schema}.revenue_billing_events
+                            WHERE contract_id = %s
+                        ), 0),
+                        ...
+                    WHERE id = %s
+                    RETURNING *;
+                """, (contract_id, contract_id))
+            else:
+                # For revenue-before-billing, billed_to_date should not exceed recognized revenue
+                cur.execute("""
+                    UPDATE {schema}.revenue_contracts
+                    SET billed_to_date = LEAST(
+                            COALESCE((
+                                SELECT SUM(amount)
+                                FROM {schema}.revenue_billing_events
+                                WHERE contract_id = %s
+                            ), 0),
+                            recognized_revenue_to_date
+                        ),
+                        ...
+                    WHERE id = %s
+                    RETURNING *;
+                """, (contract_id, contract_id))
+
             milestone_basis = (
                 billing_cfg.get("milestone_basis")
                 or ""
