@@ -29831,6 +29831,16 @@ window.safeRedirect = function (url, mode = "href") {
   });
 </script>
 
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const leasePayModal = document.getElementById("leasePayModal");
+    if (leasePayModal && leasePayModal.parentNode !== document.body) {
+      document.body.appendChild(leasePayModal);
+      console.log("[LeasePayModal] moved to <body> root");
+    }
+  });
+</script>
+
 <script
   src="https://maps.googleapis.com/maps/api/js?key=YOUR_REAL_KEY_HERE&libraries=places&callback=onMapsLoaded"
   async
