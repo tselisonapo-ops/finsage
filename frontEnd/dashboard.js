@@ -1693,31 +1693,6 @@ const ENDPOINTS = {
     run: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}`,
 
-    runEligibility:(companyId,runId)=>
-      `${API_BASE}/api/companies/`+
-      `${encodeURIComponent(companyId)}/payroll/runs/`+
-      `${encodeURIComponent(runId)}/eligibility`,
-
-    runValidation:(companyId,runId)=>
-      `${API_BASE}/api/companies/`+
-      `${encodeURIComponent(companyId)}/payroll/runs/`+
-      `${encodeURIComponent(runId)}/validation`,
-
-    runEmployeeValidation:(
-      companyId,
-      runId,
-      employeeId
-    )=>
-      `${API_BASE}/api/companies/`+
-      `${encodeURIComponent(companyId)}/payroll/runs/`+
-      `${encodeURIComponent(runId)}/employees/`+
-      `${encodeURIComponent(employeeId)}/validation`,
-      
-    runAudit:(companyId,runId)=>
-      `${API_BASE}/api/companies/`+
-      `${encodeURIComponent(companyId)}/payroll/runs/`+
-      `${encodeURIComponent(runId)}/audit`,
-
     initialPreview: (companyId, itemId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/initial-preview`,
 
@@ -2503,6 +2478,31 @@ const ENDPOINTS = {
         `${qs?`?${qs}`:""}`
       );
     },
+
+    runEligibility:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/eligibility`,
+
+    runValidation:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/validation`,
+
+    runEmployeeValidation:(
+      companyId,
+      runId,
+      employeeId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/employees/`+
+      `${encodeURIComponent(employeeId)}/validation`,
+      
+    runAudit:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/audit`,
 
     runAttendanceBulk:(companyId,runId)=>
       `${API_BASE}/api/companies/`+
