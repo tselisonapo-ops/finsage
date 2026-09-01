@@ -515,6 +515,13 @@ window.addEventListener("unhandledrejection", (e) => {
     }
 
     if (!res.ok) {
+      // ✅ Handle server-returned 423 SESSION_LOCKED
+      if (res.status === 423) {
+        sessionStorage.setItem("fs_session_locked", "1");
+        sessionStorage.setItem("fs_session_lock_reason", (data && (data.error || data.message || data.reason)) || "server_423");
+        showSessionLockModal?.();
+      }
+
       const msg = (data && (data.error || data.message || data.detail)) || `HTTP ${res.status}`;
       const err = new Error(msg);
       err.status = res.status;
@@ -13416,7 +13423,7 @@ async function openFixedAssetsDrawer(ctx = {}) {
     open: typeof window.FS_OPEN_FIXED_ASSETS_DRAWER, 
     rootParent: document.getElementById("fs-react-drawer-root")?.parentElement?.id, 
   }); 
-  
+
   if (typeof mount === "function") { 
     await mount(); 
   }  
@@ -138381,7 +138388,6 @@ async function enforceAuth() {
   try {
     const me = await window.apiFetch(window.ENDPOINTS.auth.me, { method: "GET" });
 
-    // ✅ expose all aliases used by guards/screens
     window.currentUser = me;
     window.CURRENT_USER = me;
     window.AUTH_USER = me;
@@ -138390,6 +138396,12 @@ async function enforceAuth() {
     return me;
   } catch (err) {
     console.warn("enforceAuth: /me failed", err?.status, err?.message, err?.url);
+
+    // ✅ Session locked — show modal and return sentinel so init() stops
+    if (err?.status === 423) {
+      showSessionLockModal?.();
+      return "SESSION_LOCKED";
+    }
 
     if (err?.status === 401 || err?.status === 403) {
       window.clearToken?.();
@@ -138414,6 +138426,12 @@ async function init() {
   }
 
   const me = await window.enforceAuth?.();
+
+  // ✅ Session locked — stop init, modal is already shown by enforceAuth/apiFetch
+  if (me === "SESSION_LOCKED") {
+    return;
+  }
+
   if (!me) {
     window.applyLoggedOutUI?.();
     window.switchScreen?.("sign-in");
