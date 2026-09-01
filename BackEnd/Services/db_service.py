@@ -58486,6 +58486,16 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_revenue_billing_events_contract_date_idx
         ON {schema}.revenue_billing_events(contract_id, event_date DESC);
 
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_billing_events_invoice_unique_idx
+        ON {schema}.revenue_billing_events (
+            contract_id,
+            (EXTRACT(YEAR FROM event_date)::int),
+            (EXTRACT(MONTH FROM event_date)::int),
+            (payload_json->>'invoice_number')
+        )
+        WHERE event_type = 'invoice'
+        AND payload_json->>'invoice_number' IS NOT NULL;
+
         CREATE TABLE IF NOT EXISTS {schema}.revenue_cash_events (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},

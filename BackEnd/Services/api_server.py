@@ -1088,6 +1088,45 @@ def record_invoice_revenue_billing_and_allocation(
         ))
         billing_obligation_id = None
 
+    invoice_number = str(inv.get("number") or invoice_id).strip()
+    invoice_date = inv.get("invoice_date")
+
+    if invoice_number and invoice_date:
+        existing_event = db_service.fetch_one(
+            f"""
+            SELECT id
+            FROM company_{company_id}.revenue_billing_events
+            WHERE contract_id = %s
+            AND event_type = 'invoice'
+            AND event_date >= DATE_TRUNC('month', %s::date)::date
+            AND event_date < (
+                DATE_TRUNC('month', %s::date) + INTERVAL '1 month'
+            )::date
+            AND payload_json->>'invoice_number' = %s
+            ORDER BY id
+            LIMIT 1
+            """,
+            (
+                int(revenue_contract_id),
+                invoice_date,
+                invoice_date,
+                invoice_number,
+            ),
+        )
+
+        if existing_event:
+            current_app.logger.warning(
+                "Duplicate revenue billing prevented | "
+                "contract_id=%s invoice_number=%s billing_period=%s "
+                "existing_event_id=%s invoice_id=%s",
+                int(revenue_contract_id),
+                invoice_number,
+                str(invoice_date)[:7],
+                existing_event.get("id"),
+                int(invoice_id),
+            )
+            return True
+    
     db_service.record_revenue_billing_event(
         company_id=company_id,
         contract_id=int(revenue_contract_id),
@@ -1102,7 +1141,7 @@ def record_invoice_revenue_billing_and_allocation(
             "payload_json": {
                 "customer_id": int(inv.get("customer_id") or 0),
                 "source": "ar_invoice_post",
-                "invoice_number": inv.get("number"),
+                "invoice_number": invoice_number,
                 "auto_allocate": True,
                 "settlement_pattern": settlement_pattern,
                 "journal_id": int(journal_id),

@@ -29557,7 +29557,9 @@ label:has(#projectTeamUserSearch) {
 
 <div id="modalsMount"></div>
 
-<div id="sessionLockModal" class="fixed inset-0 z-[9999] hidden items-center justify-center bg-black/50">
+<div id="sessionLockModal" 
+     class="fixed inset-0 hidden items-center justify-center bg-black/50"
+     style="z-index: 2147483647;">
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
     <h2 class="text-xl font-bold text-slate-900">Session locked</h2>
     <p class="text-sm text-slate-600 mt-2">
@@ -29817,6 +29819,16 @@ window.safeRedirect = function (url, mode = "href") {
       if (addr) window.initCompanyMapFromAddress(addr);
     }
   };
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const lockModal = document.getElementById("sessionLockModal");
+    if (lockModal && lockModal.parentNode !== document.body) {
+      document.body.appendChild(lockModal);
+      console.log("[Lock Modal] moved to <body> root");
+    }
+  });
 </script>
 
 <script

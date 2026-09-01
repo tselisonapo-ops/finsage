@@ -7946,11 +7946,14 @@ function showSessionLockModal() {
   const modal = document.getElementById("sessionLockModal");
   const input = document.getElementById("sessionUnlockPassword");
 
-  modal?.classList.remove("hidden");
-  modal?.classList.add("flex");
+  // Force visibility regardless of other scripts
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+  modal.style.display = "flex";
 
   setTimeout(() => input?.focus(), 50);
 }
+
 
 function hideSessionLockModal() {
   const modal = document.getElementById("sessionLockModal");
