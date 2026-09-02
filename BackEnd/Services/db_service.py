@@ -84101,11 +84101,27 @@ class DatabaseService:
         item_type = (item_type or "").lower()
 
         if item_type in {"menu", "recipe", "food"}:
-            inventory_roles = ["inventory_food", "inventory_raw_materials", "inventory"]
-            cogs_roles = ["cogs_food", "direct_materials_cost", "cogs"]
+            inventory_roles = [
+                "inventory_food",
+                "inventory_raw_materials",
+                "inventory",
+            ]
+            cogs_roles = [
+                "cogs_food",
+                "direct_materials_cost",
+                "cogs",
+            ]
+
         elif item_type in {"bar", "beverage", "drink"}:
-            inventory_roles = ["inventory_beverage", "inventory"]
-            cogs_roles = ["cogs_beverage", "cogs"]
+            inventory_roles = [
+                "inventory_beverage",
+                "inventory",
+            ]
+            cogs_roles = [
+                "cogs_beverage",
+                "cogs",
+            ]
+
         else:
             inventory_roles = [
                 "inventory",
@@ -84113,31 +84129,68 @@ class DatabaseService:
                 "inventory_raw_materials",
                 "inventory_spares_consumables",
             ]
-            cogs_roles = ["cogs", "direct_materials_cost"]
+            cogs_roles = [
+                "cogs",
+                "direct_materials_cost",
+            ]
+
+        def resolve(roles):
+            for role in roles:
+                row = self.ensure_coa_role_for_posting(
+                    company_id,
+                    role,
+                    cur=cur,
+                    required=False,
+                )
+
+                if row:
+                    return str(row.get("code") or "").strip()
+
+            return None
 
         accounts = {
-            "sales": self._resolve_account_by_roles(
-                company_id,
-                [
-                    "sales",
-                    "contract_revenue",
-                    "CONTRACT_REVENUE",
-                ],
-                cur=cur,
-            ),
-            "sales_returns": self._resolve_account_by_roles(company_id, ["sales_returns"], cur=cur),
-            "sales_discounts": self._resolve_account_by_roles(company_id, ["sales_discounts"], cur=cur),
-            "vat_output": self._resolve_account_by_roles(company_id, ["vat_output"], cur=cur),
-            "inventory": self._resolve_account_by_roles(company_id, inventory_roles, cur=cur),
-            "cost_of_sales": self._resolve_account_by_roles(company_id, cogs_roles, cur=cur),
-            "receivable": self._resolve_account_by_roles(company_id, ["ar"], cur=cur),
-            "cash_bank": self._resolve_account_by_roles(company_id, ["cash_bank", "cash"], cur=cur),
+            "sales": resolve([
+                "sales",
+                "contract_revenue",
+            ]),
+
+            "sales_returns": resolve([
+                "sales_returns",
+            ]),
+
+            "sales_discounts": resolve([
+                "sales_discounts",
+            ]),
+
+            "vat_output": resolve([
+                "vat_output",
+            ]),
+
+            "inventory": resolve(inventory_roles),
+
+            "cost_of_sales": resolve(cogs_roles),
+
+            "receivable": resolve([
+                "ar",
+            ]),
+
+            "cash_bank": resolve([
+                "cash_bank",
+                "cash",
+            ]),
         }
 
         if required_roles:
-            missing = [k for k in required_roles if not accounts.get(k)]
+            missing = [
+                role
+                for role in required_roles
+                if not accounts.get(role)
+            ]
+
             if missing:
-                raise ValueError(f"Missing POS GL account roles: {', '.join(missing)}")
+                raise ValueError(
+                    f"Missing POS GL account roles: {', '.join(missing)}"
+                )
 
         return accounts
 
