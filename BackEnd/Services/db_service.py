@@ -152339,14 +152339,49 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
     def payroll_mapping(self, company_id: int) -> dict:
         schema = self.company_schema(company_id)
+
         rows = self.fetch_all(f"""
             SELECT mapping_key, gl_account_code
             FROM {schema}.payroll_account_mappings
             WHERE company_id=%s;
         """, (int(company_id),))
 
-        return {r["mapping_key"]: r["gl_account_code"] for r in rows}
+        mappings = {
+            r["mapping_key"]: r["gl_account_code"]
+            for r in rows
+        }
 
+        role_map = {
+            "salary_expense": "payroll_salary_expense",
+            "net_salary_payable": "payroll_net_salary_payable",
+            "paye_payable": "payroll_paye_payable",
+            "other_deductions_payable":
+                "payroll_other_deductions_payable",
+            "employer_contribution_expense":
+                "payroll_employer_contribution_expense",
+        }
+
+        for mapping_key, role in role_map.items():
+            if mappings.get(mapping_key):
+                continue
+
+            account = self.fetch_one(f"""
+                SELECT code
+                FROM {schema}.coa
+                WHERE company_id=%s
+                AND role=%s
+                AND posting=TRUE
+                ORDER BY code
+                LIMIT 1;
+            """, (
+                int(company_id),
+                role,
+            ))
+
+            if account:
+                mappings[mapping_key] = account["code"]
+
+        return mappings
 
     def payroll_run_create(
         self,
