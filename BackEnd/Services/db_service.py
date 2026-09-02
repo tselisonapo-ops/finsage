@@ -84118,7 +84118,7 @@ class DatabaseService:
                 "inventory",
             ]
             cogs_roles = [
-                "cogs_beverage",
+                "cost_of_sales",
                 "cogs",
             ]
 
@@ -84409,6 +84409,12 @@ class DatabaseService:
             } and paid + 0.01 < gross
 
             required_roles = ["sales"]
+
+            if total_cost > 0:
+                required_roles.extend([
+                    "cost_of_sales",
+                    "inventory",
+                ])
 
             if is_account_sale or is_restaurant_unpaid:
                 required_roles.append("receivable")
