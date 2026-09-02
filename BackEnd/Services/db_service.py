@@ -36250,6 +36250,21 @@ class DatabaseService:
                 CHECK (period_end >= period_start)
         );
 
+        ALTER TABLE {schema}.payroll_pay_calendars
+        DROP CONSTRAINT IF EXISTS payroll_pay_calendars_status_check;
+
+        ALTER TABLE {schema}.payroll_pay_calendars
+        ADD CONSTRAINT payroll_pay_calendars_status_check
+        CHECK (
+            status IN (
+                'open',
+                'locked',
+                'processed',
+                'closed',
+                'superseded'
+            )
+        );
+
         CREATE INDEX IF NOT EXISTS {schema}_payroll_cal_company_idx
             ON {schema}.payroll_pay_calendars(company_id);
 
@@ -162153,7 +162168,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ps.tax_authority_id
             FROM public.companies c
             LEFT JOIN company_{company_id}.payroll_settings ps
-            ON ps.company_id = c.id
+                ON ps.company_id = c.id
             WHERE c.id = %s
             LIMIT 1;
         """.format(
@@ -162162,18 +162177,19 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             company_id,
         )) or {}
 
-        resolved_date = (
-            payment_date
-            or company.get("payroll_start_date")
-            or date.today()
-        )
+        # The payroll run supplies the actual salary payment date.
+        # Do not fall back to payroll_start_date or today's date.
+        if payment_date in (None, "", "None"):
+            raise ValueError(
+                "Payroll salary payment date is required"
+            )
 
-        if isinstance(resolved_date, datetime):
-            resolved_date = resolved_date.date()
+        if isinstance(payment_date, datetime):
+            payment_date = payment_date.date()
 
-        elif not isinstance(resolved_date, date):
-            resolved_date = date.fromisoformat(
-                str(resolved_date)[:10]
+        elif not isinstance(payment_date, date):
+            payment_date = date.fromisoformat(
+                str(payment_date)[:10]
             )
 
         country = str(
@@ -162200,17 +162216,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 f"{company.get('country') or 'not configured'}"
             )
 
-        if payment_date in (None, "", "None"):
-            payment_date = date.today()
-
-        elif isinstance(payment_date, datetime):
-            payment_date = payment_date.date()
-
-        elif not isinstance(payment_date, date):
-            payment_date = date.fromisoformat(
-                str(payment_date)[:10]
-            )
-
         row = self.fetch_one("""
             SELECT
                 r.authority_code,
@@ -162223,11 +162228,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 y.effective_to
             FROM public.payroll_tax_regimes r
             JOIN public.payroll_tax_years y
-            ON y.regime_id = r.id
-            AND y.is_active = TRUE
+                ON y.regime_id = r.id
+                AND y.is_active = TRUE
             LEFT JOIN public.tax_authorities ta
-            ON UPPER(ta.code) = UPPER(r.authority_code)
+                ON UPPER(ta.code) = UPPER(r.authority_code)
             WHERE r.is_active = TRUE
+            AND UPPER(r.country_code) = UPPER(%s)
             AND (
                 ta.id = %s
                 OR %s IS NULL
@@ -162237,9 +162243,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ORDER BY y.effective_from DESC
             LIMIT 1;
         """, (
+            country_code,
             company.get("tax_authority_id"),
             company.get("tax_authority_id"),
-            resolved_date,
+            payment_date,
         ))
 
         if not row:
@@ -162836,11 +162843,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         start_day = settings.get("period_start_day")
         end_day = settings.get("period_end_day")
+
         end_offset = int(
             settings.get("period_end_month_offset") or 0
         )
 
         payment_rule = settings.get("payment_day_rule")
+
         payment_offset = int(
             settings.get("payment_month_offset") or 0
         )
@@ -162855,8 +162864,23 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "first"
             )
 
-        # ── FIX 1: Auto-correct impossible offset ──
-        if int(end_day) < int(start_day) and end_offset == 0:
+        start_day = int(start_day)
+        end_day = int(end_day)
+
+        if start_day < 1 or start_day > 31:
+            raise ValueError(
+                "period_start_day must be between 1 and 31"
+            )
+
+        if end_day < 1 or end_day > 31:
+            raise ValueError(
+                "period_end_day must be between 1 and 31"
+            )
+
+        # If the configured end day is earlier than the
+        # start day, the period must end in the following
+        # month unless the user explicitly configured that.
+        if end_day < start_day and end_offset == 0:
             end_offset = 1
 
         periods = int(
@@ -162870,130 +162894,247 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "periods must be between 1 and 60"
             )
 
-        # Determine the anchor month
+        # --------------------------------------------------
+        # Determine first period anchor
+        # --------------------------------------------------
+
         if from_month:
             if isinstance(from_month, str):
-                raw = from_month[:10]
-                anchor = date.fromisoformat(raw)
+                anchor = date.fromisoformat(
+                    from_month[:10]
+                )
             else:
                 anchor = from_month
+
         elif settings.get("payroll_start_date"):
             value = settings["payroll_start_date"]
+
             if isinstance(value, str):
-                anchor = date.fromisoformat(value[:10])
+                anchor = date.fromisoformat(
+                    value[:10]
+                )
             else:
                 anchor = value
+
         else:
             today = date.today()
-            anchor = date(today.year, today.month, 1)
+            anchor = date(
+                today.year,
+                today.month,
+                1,
+            )
 
-        anchor = date(anchor.year, anchor.month, 1)
-
-        # Check if holiday-aware adjustment is requested
-        holiday_aware = (
-            adjustment == "next_workday"
-            or adjustment == "previous_workday"
-            or adjustment == "nearest_workday"
+        anchor = date(
+            anchor.year,
+            anchor.month,
+            1,
         )
 
-        # Determine adjustment direction for holidays
+        # --------------------------------------------------
+        # Holiday adjustment configuration
+        # --------------------------------------------------
+
+        holiday_aware = adjustment in {
+            "next_workday",
+            "previous_workday",
+            "nearest_workday",
+        }
+
         h_direction = "forward"
+
         if adjustment == "previous_workday":
             h_direction = "backward"
+
         elif adjustment == "nearest_workday":
             h_direction = "nearest"
 
+        # --------------------------------------------------
+        # Supersede future OPEN calendars
+        #
+        # Never touch locked/processed/closed calendars.
+        # --------------------------------------------------
+
+        self.execute_sql(
+            f"""
+            UPDATE {schema}.payroll_pay_calendars
+            SET status = 'superseded'
+            WHERE company_id = %s
+            AND status = 'open'
+            AND period_end >= %s;
+            """,
+            (
+                company_id,
+                anchor,
+            ),
+        )
+
         generated = []
 
-        for index in range(periods):
-            start_month = self._payroll_add_months(
-                anchor, index,
-            )
+        # --------------------------------------------------
+        # IMPORTANT:
+        #
+        # The first period uses the configured start day.
+        # Every following period starts immediately after
+        # the previous period ends.
+        # --------------------------------------------------
 
-            raw_start = self._payroll_safe_month_day(
-                start_month.year,
-                start_month.month,
-                int(start_day),
-            )
+        raw_period_start = self._payroll_safe_month_day(
+            anchor.year,
+            anchor.month,
+            start_day,
+        )
+
+        for index in range(periods):
+
+            # --------------------------------------------------
+            # Calculate raw period end
+            # --------------------------------------------------
 
             end_month = self._payroll_add_months(
-                start_month, end_offset,
+                date(
+                    raw_period_start.year,
+                    raw_period_start.month,
+                    1,
+                ),
+                end_offset,
             )
 
-            raw_end = self._payroll_safe_month_day(
+            raw_period_end = self._payroll_safe_month_day(
                 end_month.year,
                 end_month.month,
-                int(end_day),
+                end_day,
             )
 
-            if raw_end < raw_start:
+            if raw_period_end < raw_period_start:
                 raise ValueError(
                     "Generated period end cannot be before "
                     "period start"
                 )
 
-            # ── FIX 2 & 3: Weekend + holiday adjustment ──
+            # --------------------------------------------------
             # Adjust period start
+            # --------------------------------------------------
+
             if holiday_aware:
                 period_start = self._payroll_next_workday(
-                    raw_start, schema, company_id, h_direction
+                    raw_period_start,
+                    schema,
+                    company_id,
+                    h_direction,
                 )
             else:
-                period_start = raw_start
+                period_start = raw_period_start
 
+            # --------------------------------------------------
             # Adjust period end
+            # --------------------------------------------------
+
             if holiday_aware:
                 period_end = self._payroll_next_workday(
-                    raw_end, schema, company_id, "backward"
+                    raw_period_end,
+                    schema,
+                    company_id,
+                    "backward",
                 )
             else:
-                period_end = raw_end
+                period_end = raw_period_end
 
-            # Payment date
+            # --------------------------------------------------
+            # Calculate payment date
+            # --------------------------------------------------
+
             payment_month = self._payroll_add_months(
-                date(period_end.year, period_end.month, 1),
+                date(
+                    period_end.year,
+                    period_end.month,
+                    1,
+                ),
                 payment_offset,
             )
 
             payment_date = self._payroll_payment_date(
-                payment_month, payment_rule,
+                payment_month,
+                payment_rule,
             )
 
-            # Adjust payment date for weekends
-            if adjustment in (
-                "next_workday", "nearest_workday"
-            ) or adjustment == "none":
-                # Default: move weekend pay dates forward
-                # to Monday
+            # --------------------------------------------------
+            # Weekend adjustment
+            #
+            # "none" means do not alter the payment date.
+            # --------------------------------------------------
+
+            if adjustment in {
+                "next_workday",
+                "previous_workday",
+                "nearest_workday",
+            }:
+
                 if payment_date.weekday() >= 5:
-                    payment_date = (
-                        self._payroll_adjust_to_workday(
-                            payment_date, "forward"
+
+                    if adjustment == "previous_workday":
+                        payment_date = (
+                            self._payroll_adjust_to_workday(
+                                payment_date,
+                                "backward",
+                            )
                         )
-                    )
+
+                    elif adjustment == "nearest_workday":
+                        payment_date = (
+                            self._payroll_adjust_to_workday(
+                                payment_date,
+                                "nearest",
+                            )
+                        )
+
+                    else:
+                        payment_date = (
+                            self._payroll_adjust_to_workday(
+                                payment_date,
+                                "forward",
+                            )
+                        )
+
+            # --------------------------------------------------
+            # Holiday adjustment
+            # --------------------------------------------------
 
             if holiday_aware:
                 payment_date = self._payroll_next_workday(
-                    payment_date, schema, company_id,
-                    h_direction
+                    payment_date,
+                    schema,
+                    company_id,
+                    h_direction,
                 )
 
-            # Build adjustment notes for the frontend
+            # --------------------------------------------------
+            # Frontend adjustment notes
+            # --------------------------------------------------
+
             notes = []
-            if period_start != raw_start:
+
+            if period_start != raw_period_start:
                 notes.append(
                     f"start adjusted from "
-                    f"{raw_start.strftime('%d %b')} to "
+                    f"{raw_period_start.strftime('%d %b')} "
+                    f"to "
                     f"{period_start.strftime('%d %b')}"
                 )
-            if period_end != raw_end:
+
+            if period_end != raw_period_end:
                 notes.append(
                     f"end adjusted from "
-                    f"{raw_end.strftime('%d %b')} to "
+                    f"{raw_period_end.strftime('%d %b')} "
+                    f"to "
                     f"{period_end.strftime('%d %b')}"
                 )
 
-            row = self.fetch_one(f"""
+            # --------------------------------------------------
+            # Insert calendar
+            # --------------------------------------------------
+
+            row = self.fetch_one(
+                f"""
                 INSERT INTO {schema}.payroll_pay_calendars (
                     company_id,
                     frequency,
@@ -163002,7 +163143,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     payment_date,
                     status
                 )
-                VALUES (%s,%s,%s,%s,%s,'open')
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    'open'
+                )
                 ON CONFLICT (
                     company_id,
                     period_start,
@@ -163010,21 +163158,39 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 )
                 DO UPDATE SET
                     frequency = EXCLUDED.frequency,
-                    payment_date = EXCLUDED.payment_date
+                    payment_date = EXCLUDED.payment_date,
+                    status = 'open'
                 RETURNING *;
-            """, (
-                company_id,
-                frequency,
-                period_start,
-                period_end,
-                payment_date,
-            ))
+                """,
+                (
+                    company_id,
+                    frequency,
+                    period_start,
+                    period_end,
+                    payment_date,
+                ),
+            )
 
-            if row and notes:
+            if row:
                 row = dict(row)
-                row["_adjustment_notes"] = "; ".join(notes)
+
+                if notes:
+                    row["_adjustment_notes"] = (
+                        "; ".join(notes)
+                    )
 
             generated.append(row)
+
+            # --------------------------------------------------
+            # NEXT PERIOD:
+            #
+            # The next period starts the day after the
+            # previous RAW period ends.
+            # --------------------------------------------------
+
+            raw_period_start = (
+                raw_period_end + timedelta(days=1)
+            )
 
         return generated
 
