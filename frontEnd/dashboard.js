@@ -69963,6 +69963,36 @@ async function saveEditModal() {
       false
     );
 
+    setButton(
+      "payrollCalculateRunOverviewBtn",
+      isDraft||isCalculated,
+      isSubmitted||isPosted||isReversed
+    );
+
+    setButton(
+      "payrollSubmitRunOverviewBtn",
+      isCalculated&&!isSubmitted,
+      !validation.ready_to_approve
+    );
+
+    setButton(
+      "payrollApproveRunOverviewBtn",
+      isSubmitted,
+      !validation.ready_to_approve
+    );
+
+    setButton(
+      "payrollReturnRunOverviewBtn",
+      isCalculated||isApproved,
+      false
+    );
+
+    setButton(
+      "payrollPostRunOverviewBtn",
+      isApproved,
+      !validation.ready_to_post
+    );
+
     let message="";
 
     if(isDraft){
@@ -69998,6 +70028,16 @@ async function saveEditModal() {
 
     setTxt(
       "payrollPostingMessage",
+      message
+    );
+
+    setTxt(
+      "payrollPostingMessage",
+      message
+    );
+
+    setTxt(
+      "payrollRunOverviewMessage",
       message
     );
   }
@@ -71642,6 +71682,17 @@ async function saveEditModal() {
       );
     }
 
+    const calculateOverview=$(
+      "payrollCalculateRunOverviewBtn"
+    );
+
+    if(calculateOverview){
+      calculateOverview.disabled=(
+        ["posted","cancelled"].includes(status)
+        ||!summary.ready_to_calculate
+      );
+    }
+
     if(post){
       post.disabled=!summary.ready_to_post;
     }
@@ -72488,7 +72539,11 @@ async function saveEditModal() {
   async function calculateSelectedPayrollRun(){
     const companyId=cid();
     const runId=payrollState.selectedRun?.id;
-    const button=$("payrollCalculateRunBtn");
+      // Top of function — was: const button=$("payrollCalculateRunBtn");
+      const buttons=[
+        $("payrollCalculateRunBtn"),
+        $("payrollCalculateRunOverviewBtn"),
+      ].filter(Boolean);
 
     if(!runId){
       throw new Error(
@@ -72497,12 +72552,21 @@ async function saveEditModal() {
     }
 
     try{
-      if(button){
-        button.disabled=true;
-        button.dataset.originalText||=
-          button.textContent;
-        button.textContent="Calculating…";
-      }
+      // Inside try{ — was: if(button){ button.disabled=true; ... }
+      buttons.forEach(btn=>{
+        btn.disabled=true;
+        btn.dataset.originalText||=
+          btn.textContent;
+        btn.textContent="Calculating…";
+      });
+
+      // Inside finally{ — was: if(button){ button.disabled=false; ... }
+      buttons.forEach(btn=>{
+        btn.disabled=false;
+        btn.textContent=
+          btn.dataset.originalText||
+          "Calculate";
+      });
 
       showPayrollStatus(
         "Calculating payroll…",
@@ -80974,6 +81038,12 @@ async function saveEditModal() {
     const item=res?.data||null;
     payrollState.statutory.selectedReturn=item;
     renderPayrollStatutoryReturnDetail();
+
+  $("payrollStatutoryReturnDetail")
+    ?.scrollIntoView({
+      behavior:"smooth",
+      block:"start",
+    });
   }
 
   function renderPayrollStatutoryReturnDetail(){
@@ -81046,6 +81116,13 @@ async function saveEditModal() {
 
     el.innerHTML=`
       <div class="payroll-card mt-4">
+        <div class="payroll-section-navigation">
+          <button type="button"
+            class="payroll-back-btn"
+            data-statutory-back>
+            ← Back to Returns
+          </button>
+        </div>
         <div class="payroll-card-head">
           <div>
             <h3>
@@ -81138,6 +81215,24 @@ async function saveEditModal() {
         actions[Number(btn.dataset.statutoryAction)]?.[1]?.();
       });
     });
+
+  el.querySelector("[data-statutory-back]")
+    ?.addEventListener("click",()=>{
+      closePayrollStatutoryReturn();
+    });
+  }
+
+  function closePayrollStatutoryReturn(){
+    payrollState.statutory.selectedReturn=null;
+
+    const el=$("payrollStatutoryReturnDetail");
+    if(el)el.innerHTML="";
+
+    $("payrollStatutoryReturnsList")
+      ?.scrollIntoView({
+        behavior:"smooth",
+        block:"start",
+      });
   }
 
   async function calculatePayrollStatutoryReturn(returnId){
@@ -83302,6 +83397,31 @@ async function saveEditModal() {
 
     $("payrollCalculateRunBtn")?.addEventListener("click", async () => {
       try { await calculateSelectedPayrollRun(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollCalculateRunOverviewBtn")?.addEventListener("click", async () => {
+      try { await calculateSelectedPayrollRun(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollSubmitRunOverviewBtn")?.addEventListener("click", async () => {
+      try { await submitSelectedPayrollRun(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollApproveRunOverviewBtn")?.addEventListener("click", async () => {
+      try { await approveSelectedPayrollRun(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollReturnRunOverviewBtn")?.addEventListener("click", async () => {
+      try { await returnSelectedPayrollRun(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollPostRunOverviewBtn")?.addEventListener("click", async () => {
+      try { await previewSelectedPayrollJournal(); }
       catch (e) { showPayrollStatus(e.message, "error"); }
     });
 

@@ -23566,6 +23566,56 @@ label:has(#projectTeamUserSearch) {
                     <div id="payrollRunChecks"></div>
                   </div>
                 </div>
+                
+                <div class="payroll-run-info-card payroll-run-actionbar"
+                  style="margin-top:16px">
+                  <h4>Run actions</h4>
+                  <p id="payrollRunOverviewMessage" class="payroll-muted">
+                    Complete attendance and inputs, then calculate payroll.
+                  </p>
+
+                  <div class="payroll-run-actions">
+                    <button
+                      id="payrollCalculateRunOverviewBtn"
+                      type="button"
+                      class="payroll-primary hidden"
+                    >
+                      Calculate Payroll
+                    </button>
+
+                    <button
+                      id="payrollSubmitRunOverviewBtn"
+                      type="button"
+                      class="payroll-secondary dark hidden"
+                    >
+                      Submit for Approval
+                    </button>
+
+                    <button
+                      id="payrollApproveRunOverviewBtn"
+                      type="button"
+                      class="payroll-primary hidden"
+                    >
+                      Approve Payroll
+                    </button>
+
+                    <button
+                      id="payrollReturnRunOverviewBtn"
+                      type="button"
+                      class="payroll-secondary hidden"
+                    >
+                      Return to Draft
+                    </button>
+
+                    <button
+                      id="payrollPostRunOverviewBtn"
+                      type="button"
+                      class="payroll-primary hidden"
+                    >
+                      Post Payroll
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div
@@ -24580,7 +24630,20 @@ label:has(#projectTeamUserSearch) {
               STATUTORY RETURNS TAB PANEL - ADD THIS!
               ═══════════════════════════════════════════════════════════════ -->
           <div id="payrollTabStatutory" class="payroll-panel hidden">
-            
+            <div class="payroll-section-navigation">
+              <button
+                type="button"
+                class="payroll-back-btn"
+                data-payroll-back-dashboard
+              >
+                ← Back to Payroll Dashboard
+              </button>
+
+              <div>
+                <h3>Statutory Returns</h3>
+                <p class="payroll-muted">File and track authority returns (PAYE, UIF, SDL, WCF).</p>
+              </div>
+            </div>
             <!-- Filters Section -->
             <div style="
               display: flex;
@@ -24688,6 +24751,9 @@ label:has(#projectTeamUserSearch) {
                 Loading statutory returns...
               </p>
             </div>
+
+              <!-- Statutory Return Detail (renders when a return is opened) -->
+              <div id="payrollStatutoryReturnDetail"></div>
 
             <!-- 
               ══════════════════════════════════════════════════════════
