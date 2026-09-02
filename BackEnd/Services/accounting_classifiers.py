@@ -1961,6 +1961,25 @@ def _coa_role_from_text(
             return "licence_income"
 
     # ----------------------------
+    # POS / inventory cost of sales
+    # ----------------------------
+    if (
+        "cost of sales" in sec
+        or "cost of sales" in cat
+        or "cogs" in sec
+        or "cogs" in cat
+        or has_any(
+            "cost of goods sold",
+            "cost of sales",
+            "cogs",
+            "merchandise cost",
+            "inventory cost",
+            "goods sold",
+        )
+    ):
+        return "cost_of_sales"
+
+    # ----------------------------
     # POS / ordinary sales revenue
     # ----------------------------
     if (
