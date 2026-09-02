@@ -6845,6 +6845,16 @@ body.payroll-modal-open{
   transform: scale(0.97);
 }
 
+.payroll-primary:disabled,
+.payroll-secondary:disabled,
+.payroll-primary:disabled:hover,
+.payroll-secondary:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
 .payroll-muted {
   color: #94a3b8;
   font-size: 0.875rem;

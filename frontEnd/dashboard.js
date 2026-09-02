@@ -71682,10 +71682,7 @@ async function saveEditModal() {
       );
     }
 
-    const calculateOverview=$(
-      "payrollCalculateRunOverviewBtn"
-    );
-
+    const calculateOverview=$("payrollCalculateRunOverviewBtn");
     if(calculateOverview){
       calculateOverview.disabled=(
         ["posted","cancelled"].includes(status)
@@ -71696,6 +71693,27 @@ async function saveEditModal() {
     if(post){
       post.disabled=!summary.ready_to_post;
     }
+
+    const postOverview=$("payrollPostRunOverviewBtn");
+    if(postOverview){
+      postOverview.disabled=!summary.ready_to_post;
+    }
+
+    /* Re-evaluate Submit/Approve now that fresh validation data is
+      available. renderPayrollPostingControls runs BEFORE
+      loadPayrollRunValidation, so these were left disabled against
+      stale/empty data. */
+    const canApprove=Boolean(summary.ready_to_approve);
+
+    [
+      "payrollSubmitRunBtn",
+      "payrollSubmitRunOverviewBtn",
+      "payrollApproveRunBtn",
+      "payrollApproveRunOverviewBtn",
+    ].forEach(id=>{
+      const button=$(id);
+      if(button)button.disabled=!canApprove;
+    });
   }
 
   async function loadPayrollRunAudit(){
