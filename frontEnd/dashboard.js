@@ -83449,18 +83449,27 @@ async function saveEditModal() {
     });
 
     $("payrollPostRunOverviewBtn")?.addEventListener("click", async () => {
-      try { await previewSelectedPayrollJournal(); }
-      catch (e) { showPayrollStatus(e.message, "error"); }
+      try {
+        await postSelectedPayrollRun();
+      } catch (e) {
+        showPayrollStatus(e.message, "error");
+      }
     });
 
     $("payrollPreviewJournalBtn")?.addEventListener("click", async () => {
-      try { await previewSelectedPayrollJournal(); }
-      catch (e) { showPayrollStatus(e.message, "error"); }
+      try {
+        await previewSelectedPayrollJournal();
+      } catch (e) {
+        showPayrollStatus(e.message, "error");
+      }
     });
 
     $("payrollPostRunBtn")?.addEventListener("click", async () => {
-      try { await previewSelectedPayrollJournal(); }
-      catch (e) { showPayrollStatus(e.message, "error"); }
+      try {
+        await postSelectedPayrollRun();
+      } catch (e) {
+        showPayrollStatus(e.message, "error");
+      }
     });
 
     $("payrollJournalPreviewPostBtn")?.addEventListener("click", async () => {
