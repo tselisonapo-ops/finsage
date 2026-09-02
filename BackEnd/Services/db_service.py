@@ -84130,8 +84130,8 @@ class DatabaseService:
                 "inventory_spares_consumables",
             ]
             cogs_roles = [
+                "cost_of_sales",
                 "cogs",
-                "direct_materials_cost",
             ]
 
         def resolve(roles):
