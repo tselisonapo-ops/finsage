@@ -55350,6 +55350,9 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
+        ALTER TABLE {schema}.invoices
+        ADD COLUMN IF NOT EXISTS meta_json JSONB;
+
         CREATE INDEX IF NOT EXISTS {schema}_invoices_source_idx
         ON {schema}.invoices(company_id, source, source_id);
 
@@ -98304,8 +98307,8 @@ class DatabaseService:
                 # 1) Lock invoice row
                 cur.execute(
                     f"""
-                    SELECT id, number, status, posted_journal_id, reversed_journal_id, customer_id
-                    source_company_id, engagement_company_id, engagement_id
+                    SELECT id, number, status, posted_journal_id, reversed_journal_id,
+                        customer_id, meta_json
                     FROM {schema}.invoices
                     WHERE id=%s
                     FOR UPDATE;

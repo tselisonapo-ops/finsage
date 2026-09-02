@@ -4394,20 +4394,39 @@ def create_company_for_user():
         **result,
     }), 201
 
-@app.route("/api/companies/<int:parent_company_id>/related-companies", methods=["POST"])
+@app.route(
+    "/api/companies/<int:parent_company_id>/related-companies",
+    methods=["POST"]
+)
 @require_auth
 def create_related_company(parent_company_id: int):
+
     data = request.get_json(silent=True) or {}
     current_user = getattr(g, "current_user", None)
+
     if not current_user:
         return jsonify({"message": "Not authenticated"}), 401
 
     if current_user.get("company_id") != parent_company_id:
-        return jsonify({"message": "Not authorised for this company"}), 403
+        return jsonify({
+            "message": "Not authorised for this company"
+        }), 403
 
-    relationship_type = (data.get("relationship_type") or "").strip().lower()
-    if relationship_type not in {"subsidiary", "associate", "joint_venture", "branch"}:
-        return jsonify({"message": "Invalid relationship_type"}), 400
+    relationship_type = (
+        data.get("relationship_type") or ""
+    ).strip().lower()
+
+    allowed_relationships = {
+        "subsidiary",
+        "associate",
+        "joint_venture",
+        "branch",
+    }
+
+    if relationship_type not in allowed_relationships:
+        return jsonify({
+            "message": "Invalid relationship_type"
+        }), 400
 
     ownership_percent = data.get("ownership_percent")
     voting_percent = data.get("voting_percent")
@@ -4418,71 +4437,150 @@ def create_related_company(parent_company_id: int):
         try:
             date.fromisoformat(effective_from)
         except ValueError:
-            return jsonify({"message": "Invalid 'effective_from'. Expected YYYY-MM-DD."}), 400
+            return jsonify({
+                "message": "Invalid 'effective_from'. Expected YYYY-MM-DD."
+            }), 400
+
+    # ---------------------------------------------------------
+    # Set corporate-structure defaults
+    # ---------------------------------------------------------
 
     if relationship_type == "subsidiary":
         data.setdefault("entity_kind", "company")
         data.setdefault("consolidation_method", "full")
         data.setdefault("control_basis", "control")
+
     elif relationship_type == "associate":
         data.setdefault("entity_kind", "company")
         data.setdefault("consolidation_method", "equity")
         data.setdefault("control_basis", "significant_influence")
+
     elif relationship_type == "joint_venture":
         data.setdefault("entity_kind", "company")
         data.setdefault("consolidation_method", "equity")
         data.setdefault("control_basis", "joint_control")
+
     elif relationship_type == "branch":
         data.setdefault("entity_kind", "branch_entity")
         data.setdefault("consolidation_method", "full")
         data.setdefault("control_basis", "direct_branch")
 
     data.setdefault("created_via", "related_company")
-    data.setdefault("source_customer_company_id", parent_company_id)
-    data.setdefault("provisioning_context", f"related_company:{relationship_type}")
+    data.setdefault(
+        "source_customer_company_id",
+        parent_company_id
+    )
+    data.setdefault(
+        "provisioning_context",
+        f"related_company:{relationship_type}"
+    )
 
-    # ✅ access them AFTER defaults are applied
+    data.setdefault(
+        "organizationType",
+        data.get("organisationType")
+        or data.get("organization_type")
+        or data.get("organisation_type")
+        or "private_company"
+    )
+
     control_basis = data.get("control_basis")
     consolidation_method = data.get("consolidation_method")
 
-    auto_membership = relationship_type in {"subsidiary", "branch"}
+    # ---------------------------------------------------------
+    # IMPORTANT:
+    # Related companies are NEVER primary companies.
+    # ---------------------------------------------------------
+
+    auto_membership = relationship_type in {
+        "subsidiary",
+        "branch",
+    }
 
     try:
+
         current_app.logger.warning(
-            "[CREATE RELATED COMPANY] parent=%s type=%s payload=%s",
+            "[CREATE RELATED COMPANY] "
+            "parent=%s type=%s payload=%s",
             parent_company_id,
             relationship_type,
             data,
         )
 
-        data.setdefault(
-            "organizationType",
-            data.get("organisationType")
-            or data.get("organization_type")
-            or data.get("organisation_type")
-            or "private_company"
-        )
-
-        if relationship_type == "branch":
-            data.setdefault("entity_kind", "branch_entity")
-            data.setdefault("organizationType", "private_company")
-        else:
-            data.setdefault("organizationType", "private_company")
+        # -----------------------------------------------------
+        # 1. Create child company
+        # -----------------------------------------------------
 
         company_result = create_company_record_from_payload(
             data=data,
-            owner_user_id=current_user["id"] if auto_membership else None,
+
+            # Only pass owner if you actually need one.
+            # Membership is explicitly controlled below.
+            owner_user_id=(
+                current_user["id"]
+                if auto_membership
+                else None
+            ),
+
+            # NEVER create a primary membership here.
             make_primary_membership=False,
+
             membership_kind="secondary",
         )
 
+        child_company_id = int(company_result["company_id"])
+
         current_app.logger.warning(
-            "[COMPANY CREATED] result=%s",
-            company_result,
+            "[RELATED COMPANY CREATED] "
+            "parent=%s child=%s type=%s",
+            parent_company_id,
+            child_company_id,
+            relationship_type,
         )
 
+        # -----------------------------------------------------
+        # 2. Create relationship ALWAYS
+        # -----------------------------------------------------
+
+        relationship = db_service.create_company_relationship(
+            parent_company_id=parent_company_id,
+            child_company_id=child_company_id,
+            relationship_type=relationship_type,
+            ownership_percent=ownership_percent,
+            voting_percent=voting_percent,
+            control_basis=control_basis,
+            consolidation_method=consolidation_method,
+            effective_from=effective_from,
+            acquisition_date=data.get("acquisition_date"),
+            functional_currency=(
+                data.get("functional_currency")
+                or data.get("currency")
+            ),
+            reporting_currency=data.get("reporting_currency"),
+            include_in_group_reporting=bool(
+                data.get("include_in_group_reporting", True)
+            ),
+            notes=notes,
+        )
+
+        rel_id = relationship["id"]
+
+        current_app.logger.warning(
+            "[RELATIONSHIP CREATED] "
+            "rel_id=%s parent=%s child=%s type=%s",
+            rel_id,
+            parent_company_id,
+            child_company_id,
+            relationship_type,
+        )
+
+        # -----------------------------------------------------
+        # 3. Add secondary membership only where required
+        # -----------------------------------------------------
+
         if auto_membership:
-            db_service.fetch_one("""
+
+            db_service.fetch_one(
+                """
                 INSERT INTO public.company_users (
                     company_id,
                     user_id,
@@ -4493,67 +4591,67 @@ def create_related_company(parent_company_id: int):
                     is_active,
                     joined_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, TRUE, NOW())
-                ON CONFLICT (company_id, user_id) DO UPDATE
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    FALSE,
+                    TRUE,
+                    NOW()
+                )
+                ON CONFLICT (company_id, user_id)
+                DO UPDATE
                 SET
                     role = EXCLUDED.role,
                     access_scope = EXCLUDED.access_scope,
                     membership_kind = EXCLUDED.membership_kind,
-                    is_primary = EXCLUDED.is_primary,
+                    is_primary = FALSE,
                     is_active = TRUE
                 RETURNING id;
-            """, (
-                int(company_result["company_id"]),
-                int(current_user["id"]),
-                "owner",
-                "core",
-                "secondary",
-                False,
-            ))
+                """,
+                (
+                    child_company_id,
+                    int(current_user["id"]),
+                    "owner",
+                    "core",
+                    "secondary",
+                ),
+            )
 
             current_app.logger.warning(
-                "[RELATED COMPANY MEMBERSHIP CREATED] company=%s user=%s kind=secondary",
-                company_result["company_id"],
+                "[SECONDARY MEMBERSHIP CREATED] "
+                "company=%s user=%s",
+                child_company_id,
                 current_user["id"],
             )
 
-            relationship = db_service.create_company_relationship(
-                parent_company_id=parent_company_id,
-                child_company_id=company_result["company_id"],
-                relationship_type=relationship_type,
-                ownership_percent=ownership_percent,
-                voting_percent=voting_percent,
-                control_basis=control_basis,
-                consolidation_method=consolidation_method,
-                effective_from=effective_from,
-                acquisition_date=data.get("acquisition_date"),
-                functional_currency=data.get("functional_currency") or data.get("currency"),
-                reporting_currency=data.get("reporting_currency"),
-                include_in_group_reporting=bool(data.get("include_in_group_reporting", True)),
-                notes=notes,
-            )
-
-            rel_id = relationship["id"]
-
-        current_app.logger.warning(
-            "[RELATIONSHIP CREATED] rel_id=%s parent=%s child=%s type=%s",
-            rel_id,
-            parent_company_id,
-            company_result["company_id"],
-            relationship_type,
-        )
-
     except ValueError as e:
+
         msg = e.args[0]
+
         if isinstance(msg, dict):
             return jsonify(msg), 400
-        return jsonify({"message": str(msg)}), 400
+
+        return jsonify({
+            "message": str(msg)
+        }), 400
+
     except Exception as e:
-        current_app.logger.exception("create_related_company failed")
-        return jsonify({"message": str(e)}), 500
+
+        current_app.logger.exception(
+            "create_related_company failed"
+        )
+
+        return jsonify({
+            "message": str(e)
+        }), 500
 
     return jsonify({
-        "message": f"{relationship_type.replace('_', ' ').title()} created",
+        "message": (
+            f"{relationship_type.replace('_', ' ').title()} created"
+        ),
         "parent_company_id": parent_company_id,
         "relationship_id": rel_id,
         **company_result,
