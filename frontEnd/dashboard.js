@@ -71703,7 +71703,8 @@ async function saveEditModal() {
       available. renderPayrollPostingControls runs BEFORE
       loadPayrollRunValidation, so these were left disabled against
       stale/empty data. */
-    const canApprove=Boolean(summary.ready_to_approve);
+      const canApprove = Boolean(summary.ready_to_approve);
+      console.log("[payroll] validation summary:", summary);   // ← temporary debug
 
     [
       "payrollSubmitRunBtn",
