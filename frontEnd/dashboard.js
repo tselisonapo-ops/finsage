@@ -83405,10 +83405,19 @@ async function saveEditModal() {
       catch (e) { showPayrollStatus(e.message, "error"); }
     });
 
-    $("payrollSubmitRunOverviewBtn")?.addEventListener("click", async () => {
-      try { await submitSelectedPayrollRun(); }
-      catch (e) { showPayrollStatus(e.message, "error"); }
-    });
+    $("payrollSubmitRunOverviewBtn")?.addEventListener(
+      "click",
+      async (event) => {
+        console.log("SUBMIT FOR APPROVAL CLICKED", event);
+
+        try {
+          await submitSelectedPayrollRun();
+        } catch (e) {
+          console.error("SUBMIT FOR APPROVAL FAILED", e);
+          showPayrollStatus(e.message, "error");
+        }
+      }
+    );
 
     $("payrollApproveRunOverviewBtn")?.addEventListener("click", async () => {
       try { await approveSelectedPayrollRun(); }
