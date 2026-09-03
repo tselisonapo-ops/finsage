@@ -29917,6 +29917,96 @@ window.safeRedirect = function (url, mode = "href") {
   });
 </script>
 
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const modal = document.getElementById("invReceiveModal");
+
+    if (modal && modal.parentNode !== document.body) {
+      document.body.appendChild(modal);
+      console.log("[invReceiveModal] moved to <body> root");
+    }
+  });
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const modal = document.getElementById("invItemModal");
+
+    if (modal && modal.parentNode !== document.body) {
+      document.body.appendChild(modal);
+      console.log("[invItemModal] moved to <body> root");
+    }
+  });
+</script>
+
+<script>
+(() => {
+  const protectedModals = [
+    "faSettingsModal"
+  ];
+
+  function protectModals() {
+    protectedModals.forEach(id => {
+      const modal = document.getElementById(id);
+
+      if (!modal) return;
+
+      if (modal.parentNode !== document.body) {
+        document.body.appendChild(modal);
+        console.log(`[Modal Guard] ${id} moved to <body> root`);
+      }
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    protectModals();
+
+    const observer = new MutationObserver(() => {
+      protectModals();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    console.log("[Modal Guard] watching protected modals");
+  });
+})();
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const modal = document.getElementById("movCostModal");
+
+    if (modal && modal.parentNode !== document.body) {
+      document.body.appendChild(modal);
+      console.log("[movCostModal] moved to <body> root");
+    }
+  });
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const modal = document.getElementById("reverseJournalModal");
+
+    if (modal && modal.parentNode !== document.body) {
+      document.body.appendChild(modal);
+      console.log("[reverseJournalModal] moved to <body> root");
+    }
+  });
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const mount = document.getElementById("modalsMount");
+
+    if (mount && mount.parentNode !== document.body) {
+      document.body.appendChild(mount);
+      console.log("[modalsMount] moved to <body> root");
+    }
+  });
+</script>
 <script
   src="https://maps.googleapis.com/maps/api/js?key=YOUR_REAL_KEY_HERE&libraries=places&callback=onMapsLoaded"
   async
