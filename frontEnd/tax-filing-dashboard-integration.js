@@ -656,11 +656,20 @@
         /**
          * Inject the tax filing panel into the DOM
          */
+        /**
+         * Inject the tax filing panel into the DOM
+         */
         injectPanel() {
             // Find the statutory tab content area
             const statutoryPanel = document.getElementById('payrollTabStatutory');
             
             if (statutoryPanel) {
+                // 🟩 FIXED: Clean up any pre-existing panel to stop duplication
+                const oldPanel = document.getElementById('taxFilingPanel');
+                if (oldPanel) {
+                    oldPanel.parentElement.remove(); // Removes the wrapper div container too
+                }
+
                 // Insert our panel before the existing content or append
                 const existingContent = statutoryPanel.querySelector('.payroll-statutory-content');
                 const panelDiv = document.createElement('div');
@@ -677,6 +686,7 @@
                 console.warn('[Tax Filing] Could not find payrollTabStatutory element');
             }
         },
+
         
         /**
          * Bind event listeners
