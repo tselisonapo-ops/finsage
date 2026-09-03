@@ -80857,14 +80857,20 @@ async function saveEditModal() {
     // ═══════════════════════════════════════════════════════════════
     // 🆕 UPDATED: PAYE TAX FILING SECTION
     // ═══════════════════════════════════════════════════════════════
-
-    let payeContainer = document.getElementById('payeTaxFilingSection');
-    if (!payeContainer) {
-      payeContainer = document.createElement('div');
-      payeContainer.id = 'payeTaxFilingSection';
-      payeContainer.className = 'paye-tax-filing-section';
-      el.parentNode.appendChild(payeContainer);
+    // Clean up any pre-existing section to completely prevent duplication
+    const existingSection = document.getElementById('payeTaxFilingSection');
+    if (existingSection) {
+      existingSection.remove();
     }
+
+    // Create the container cleanly
+    let payeContainer = document.createElement('div');
+    payeContainer.id = 'payeTaxFilingSection';
+    payeContainer.className = 'paye-tax-filing-section';
+    
+    // Append it inside the element wrapper instead of the parent node
+    el.appendChild(payeContainer);
+
 
     // 1. Dynamic Authority Selection (Auto-detect company setting)
     const companyAuthority = payrollState.settings?.tax_authority_code || 'SARS';
