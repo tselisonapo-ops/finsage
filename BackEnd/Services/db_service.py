@@ -162426,7 +162426,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
 
         raise ValueError(
-            f"No PAYE calculator exists for {authority}"
+            f"No PAYE calclator exists for {authority}"
         )
 
     def payroll_calculate_sars_paye(
@@ -164425,6 +164425,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             employee_id_values,
             employee_id_values,
         )
+
+        print("=== PAYROLL FILING QUERY PARAMS ===")
+        print("company_id:", company_id)
+        print("period_start:", period_start)
+        print("period_end:", period_end)
+        print("authority_code:", repr(authority_code))
+        print("employee_ids:", employee_ids)
+        print("params:", params)
 
         return self._payroll_query(query, params)
 

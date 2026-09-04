@@ -749,12 +749,22 @@ def preview_tax_filing_data(company_id: int):
             }), 400
         
         # 3. Fetch company data payload 
+        print("=== TAX FILING PREVIEW INPUT ===")
+        print("company_id:", company_id)
+        print("authority_code:", repr(authority_code))
+        print("period:", repr(period))
+        print("period_start:", repr(period_start))
+        print("period_end:", repr(period_end))
+
         records = db_service.get_payroll_records_for_filing(
             company_id=company_id,
             period_start=period_start,
             period_end=period_end,
             authority_code=authority_code
         ) or []
+
+        print("=== TAX FILING PREVIEW RESULT ===")
+        print("record_count:", len(records))
         
         # 4. Process calculations and structural transformations
         total_employees = len(records)
