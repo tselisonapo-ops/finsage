@@ -80813,8 +80813,7 @@ async function saveEditModal() {
     try {
       authority =
         window.__taxFiling?.getSelectedAuthority?.() ||
-        window.TaxFilingAPI?.getSelectedAuthority?.() ||
-        "SARS";
+        window.__taxFiling?.getSelectedAuthority?.() || "SARS";
     } catch (e) {
       console.warn("[Payroll] getSelectedAuthority() failed, falling back to SARS:", e?.message || e);
       authority = "SARS";
@@ -80882,12 +80881,6 @@ async function saveEditModal() {
                 </p>
             </div>
         `;
-
-        const actions = $("taxFilingActions");
-
-        if (actions) {
-            actions.style.display = "none";
-        }
 
         return;
     }
