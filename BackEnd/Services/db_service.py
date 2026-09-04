@@ -164201,11 +164201,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payroll_run_employees
             payroll_run_lines
         """
+        print("### PAYROLL FILING HELPER ENTERED ###", flush=True)
+        import logging
+        logger = logging.getLogger(__name__)
+
         schema = self.company_schema(company_id)
 
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.warning(
             "=== PAYROLL FILING DEBUG === company_id=%r schema=%r period_start=%r period_end=%r authority=%r",
             company_id,
