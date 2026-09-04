@@ -1128,7 +1128,7 @@
             this.setLoading(true);
             
             try {
-                const companyId = getCompanyId();
+                const companyId = getActiveCompanyId();
                 const {
                     periodStart,
                     periodEnd
@@ -1167,7 +1167,11 @@
             this.setLoading(true);
             
             try {
-                const companyId = getCompanyId();
+                const companyId = getActiveCompanyId();
+
+                if (!companyId) {
+                    throw new Error('No active company selected');
+                }
                 const {
                     periodStart,
                     periodEnd
