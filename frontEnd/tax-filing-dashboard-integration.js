@@ -1305,14 +1305,20 @@
         renderValidationResults(results) {
             const container = document.getElementById('taxFilingValidationResults');
             if (!container) return;
-            
+
             container.style.display = '';
-            
+
             const isValid = results.is_valid;
-            const summary = results.summary;
-            
+
+            const summary = results.summary || {
+                total_records: 0,
+                valid_records: 0,
+                error_count: results.errors?.length || 0,
+                warning_count: results.warnings?.length || 0
+            };
+
             container.className = `tax-filing-validation ${isValid ? 'success' : summary.error_count > 0 ? 'error' : 'warning'}`;
-            
+
             container.innerHTML = `
                 <div class="validation-summary">
                     <strong>${isValid ? '✅ All Checks Passed' : summary.error_count > 0 ? '❌ Issues Found' : '⚠️ Warnings Present'}</strong>
