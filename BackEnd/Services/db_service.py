@@ -164446,12 +164446,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         result = self._payroll_query(query, params)
 
-        logger.warning("=== PAYROLL FILING QUERY RESULT === row_count=%d", len(result))
+        result = self._payroll_query(query, params)
+
         logger.warning(
             "=== PAYROLL FILING DEBUG RESULT === company_id=%r rows=%d",
             company_id,
             len(result)
         )
+
         return result
 
     def get_tax_year_dates(self, authority_code: str, tax_year_label: str) -> tuple:
