@@ -752,12 +752,12 @@ def preview_tax_filing_data(company_id: int):
             }), 400
         
         # 3. Fetch company data payload 
-        logger.warning("=== TAX FILING PREVIEW INPUT ===")
-        logger.warning("company_id=%r", company_id)
-        logger.warning("authority_code=%r", authority_code)
-        logger.warning("period=%r", period)
-        logger.warning("period_start=%r", period_start)
-        logger.warning("period_end=%r", period_end)
+        current_app.logger.warning("=== TAX FILING PREVIEW INPUT ===")
+        current_app.logger.warning("company_id: %s", company_id)
+        current_app.logger.warning("authority_code: %r", authority_code)
+        current_app.logger.warning("period: %r", period)
+        current_app.logger.warning("period_start: %r", period_start)
+        current_app.logger.warning("period_end: %r", period_end)
 
         records = db_service.get_payroll_records_for_filing(
             company_id=company_id,
@@ -766,8 +766,8 @@ def preview_tax_filing_data(company_id: int):
             authority_code=authority_code
         ) or []
 
-        print("=== TAX FILING PREVIEW RESULT ===")
-        print("record_count:", len(records))
+        current_app.logger.warning("=== TAX FILING PREVIEW RESULT ===")
+        current_app.logger.warning("record_count: %s", len(records))
         
         # 4. Process calculations and structural transformations
         total_employees = len(records)
