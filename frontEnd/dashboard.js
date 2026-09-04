@@ -80962,7 +80962,8 @@ async function saveEditModal() {
                 ? "inline-flex"
                 : "none";
     }
-}
+  }
+  window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
 
   async function editPayrollStatutoryReturn(item={}){
     const values=await payrollForm(

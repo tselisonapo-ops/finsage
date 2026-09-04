@@ -1011,7 +1011,12 @@
         bindEvents() {
             document.querySelectorAll('.tax-filing-authority-card').forEach(card => {
                 card.addEventListener('click', () => {
-                    this.selectAuthority(card.dataset.authority);
+                    // Read BOTH attribute variants — never undefined
+                    const code =
+                        card.dataset.taxAuthority ||
+                        card.dataset.authority;
+
+                    this.selectAuthority(code);
                 });
             });
 
@@ -1056,10 +1061,17 @@
          * Handle authority selection
          */
         selectAuthority(authorityCode) {
-            state.selectedAuthority = authorityCode;
+            // Never store undefined/null — fall back to current, then SARS
+            const code = authorityCode
+                || state.selectedAuthority
+                || 'SARS';
+
+            state.selectedAuthority = code;
 
             document.querySelectorAll('.tax-filing-authority-card').forEach(card => {
-                card.classList.toggle('selected', card.dataset.authority === authorityCode);
+                const cardCode =
+                    card.dataset.taxAuthority || card.dataset.authority;
+                card.classList.toggle('selected', cardCode === code);
             });
 
             const periodSection = document.getElementById('taxFilingPeriodSection');
@@ -1088,11 +1100,13 @@
             }
 
             this.onPeriodChange();
-            // FIX: renderPayrollStatutoryReturns lives inside dashboard.js's payroll
-            // IIFE and is only reachable via window (dashboard.js now exports it).
-            window.renderPayrollStatutoryReturns?.();
 
-            console.log(`[Tax Filing] Selected authority: ${authorityCode}`);
+            // Call via window — bare call threw ReferenceError here
+            if (typeof window.renderPayrollStatutoryReturns === 'function') {
+                window.renderPayrollStatutoryReturns();
+            }
+
+            console.log(`[Tax Filing] Selected authority: ${code}`);
         },
         
         getSelectedAuthority() {

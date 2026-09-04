@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* ── FinSage Control Theme ── */
+@theme {
+  --color-surface-900: #0a0c10;
+  --color-surface-800: #111318;
+  --color-surface-700: #1a1d25;
+  --color-surface-600: #23272f;
+  --color-surface-500: #2e333c;
+  --color-surface-400: #3d434e;
+  --color-surface-300: #565d6a;
+  --color-surface-200: #8b929e;
+  --color-surface-100: #c5c9d0;
+
+  --color-accent: #6366f1;
+  --color-accent-hover: #818cf8;
+  --color-accent-muted: rgba(99, 102, 241, 0.15);
+
+  --color-p1: #ef4444;
+  --color-p2: #f97316;
+  --color-p3: #eab308;
+  --color-p4: #22c55e;
+
+  --color-success: #22c55e;
+  --color-warning: #eab308;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-surface-500) transparent;
+}
+
+body {
+  margin: 0;
+  background: var(--color-surface-900);
+  color: var(--color-surface-100);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
