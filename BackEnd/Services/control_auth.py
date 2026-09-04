@@ -1,8 +1,15 @@
 # FinSage Control — Auth Decorator
 """
-Adds require_control_auth to the existing auth_middleware pattern.
+Adds require_control_auth / require_control_admin to the existing auth_middleware pattern.
 Control agents must have a valid JWT AND be in control.support_agents.
 No company context required — Control is cross-company.
+
+BUGFIX vs. the previous version:
+  The old `require_control_admin` ran the wrapped view FIRST and only checked
+  the role afterwards, which meant a non-admin could still trigger the side
+  effect (create team / agent / SLA) and just receive a 403. Now the role
+  check happens BEFORE the view executes, so admin endpoints are actually
+  admin-only.
 """
 from functools import wraps
 
@@ -22,6 +29,77 @@ def _corsify(resp):
     return resp
 
 
+def _check_control_auth(require_admin: bool = False):
+    """
+    Shared auth-check used by both require_control_auth and require_control_admin.
+
+    Returns:
+      - None on success (sets g.user_id, g.control_agent, g.control_service,
+        request.jwt_payload).
+      - A Flask response object on failure (401/403). The caller should
+        return that response immediately.
+
+    If `require_admin` is True, also enforces agent.role == 'admin'.
+    The check runs BEFORE the wrapped view executes, so admin endpoints
+    cannot have side effects performed by non-admin users.
+    """
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return _corsify(make_response(
+            jsonify({"error": "Missing or invalid Authorization header"}), 401
+        ))
+
+    token = auth_header.split(" ", 1)[1].strip()
+
+    # Decode JWT using the same method as the main app
+    try:
+        from BackEnd.Services.auth_service import decode_jwt
+        payload = decode_jwt(token)
+    except Exception:
+        return _corsify(make_response(
+            jsonify({"error": "Invalid or expired token"}), 401
+        ))
+
+    user_id = payload.get("sub") or payload.get("user_id")
+    if not user_id:
+        return _corsify(make_response(
+            jsonify({"error": "Invalid token payload"}), 401
+        ))
+
+    try:
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        return _corsify(make_response(
+            jsonify({"error": "Invalid user id in token"}), 401
+        ))
+
+    # ── Check Control access ──
+    from BackEnd.Services.db_service import db_service
+    from backend.services.control_service import ControlService
+
+    cs = ControlService(db_service)
+    agent = cs.get_agent_by_user_id(user_id)
+
+    if not agent:
+        return _corsify(make_response(
+            jsonify({"error": "No Control access — user is not a support agent"}), 403
+        ))
+
+    if require_admin and agent.get("role") != "admin":
+        return _corsify(make_response(
+            jsonify({"error": "Admin access required"}), 403
+        ))
+
+    g.user_id = user_id
+    g.control_agent = agent
+    g.control_service = cs
+    request.jwt_payload = payload
+    return None
+
+
 def require_control_auth(f):
     """
     Decorator for FinSage Control routes.
@@ -33,81 +111,26 @@ def require_control_auth(f):
     """
     @wraps(f)
     def wrapper(*args, **kwargs):
-        if request.method == "OPTIONS":
-            return _corsify(make_response("", 204))
-
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return _corsify(make_response(
-                jsonify({"error": "Missing or invalid Authorization header"}), 401
-            ))
-
-        token = auth_header.split(" ", 1)[1].strip()
-
-        # Decode JWT using the same method as the main app
-        try:
-            from BackEnd.Services.auth_service import decode_jwt
-            payload = decode_jwt(token)
-        except Exception:
-            return _corsify(make_response(
-                jsonify({"error": "Invalid or expired token"}), 401
-            ))
-
-        user_id = payload.get("sub") or payload.get("user_id")
-        if not user_id:
-            return _corsify(make_response(
-                jsonify({"error": "Invalid token payload"}), 401
-            ))
-
-        try:
-            user_id = int(user_id)
-        except (ValueError, TypeError):
-            return _corsify(make_response(
-                jsonify({"error": "Invalid user id in token"}), 401
-            ))
-
-        # ── Check Control access ──
-        from BackEnd.Services.db_service import db_service
-        from backend.services.control_service import ControlService
-
-        cs = ControlService(db_service)
-        agent = cs.get_agent_by_user_id(user_id)
-
-        if not agent:
-            return _corsify(make_response(
-                jsonify({"error": "No Control access — user is not a support agent"}), 403
-            ))
-
-        g.user_id = user_id
-        g.control_agent = agent
-        g.control_service = cs
-        request.jwt_payload = payload
-
+        err = _check_control_auth(require_admin=False)
+        if err is not None:
+            return err
         return f(*args, **kwargs)
-
     return wrapper
 
 
 def require_control_admin(f):
     """
-    Like require_control_auth, but also requires agent.role = 'admin'.
+    Like require_control_auth, but also requires agent.role == 'admin'.
     Use for settings/admin endpoints.
+
+    The role check runs BEFORE the wrapped view, so a non-admin user
+    cannot trigger the side effect of an admin endpoint even if they
+    can reach the URL.
     """
     @wraps(f)
     def wrapper(*args, **kwargs):
-        # First run the standard control auth
-        result = require_control_auth(f)(*args, **kwargs)
-
-        # Check if we got a response (error) or the function returned
-        if hasattr(result, 'status_code') and result.status_code != 200:
-            return result
-
-        agent = getattr(g, 'control_agent', None)
-        if not agent or agent.get('role') != 'admin':
-            return _corsify(make_response(
-                jsonify({"error": "Admin access required"}), 403
-            ))
-
-        return result
-
+        err = _check_control_auth(require_admin=True)
+        if err is not None:
+            return err
+        return f(*args, **kwargs)
     return wrapper

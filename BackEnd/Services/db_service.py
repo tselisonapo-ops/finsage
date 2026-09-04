@@ -164203,6 +164203,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         """
         schema = self.company_schema(company_id)
 
+        logger.warning(
+            "=== PAYROLL FILING DEBUG === company_id=%r schema=%r period_start=%r period_end=%r authority=%r",
+            company_id,
+            schema,
+            period_start,
+            period_end,
+            authority_code
+        )
         import logging
 
         logger = logging.getLogger(__name__)
@@ -164439,7 +164447,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         result = self._payroll_query(query, params)
 
         logger.warning("=== PAYROLL FILING QUERY RESULT === row_count=%d", len(result))
-
+        logger.warning(
+            "=== PAYROLL FILING DEBUG RESULT === company_id=%r rows=%d",
+            company_id,
+            len(result)
+        )
         return result
 
     def get_tax_year_dates(self, authority_code: str, tax_year_label: str) -> tuple:

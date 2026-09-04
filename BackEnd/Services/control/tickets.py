@@ -129,13 +129,19 @@ def add_note(ticket_id):
 @tickets_bp.route('/tickets/<int:ticket_id>/notes/<int:note_id>', methods=['PUT'])
 @require_control_auth
 def update_note(ticket_id, note_id):
+    """
+    NOTE: ticket_id from the URL is now passed through to the service call
+    so the service can verify the note actually belongs to this ticket
+    (previous version ignored it, which let a caller supply a note_id from
+    ticket B while PUTting ticket A's URL).
+    """
     data = request.get_json(silent=True) or {}
     if not data.get('body'):
         return jsonify({"error": "body is required"}), 400
 
     agent = g.control_agent
     note = g.control_service.update_ticket_note(
-        note_id, data['body'], agent_id=agent['id']
+        ticket_id, note_id, data['body'], agent_id=agent['id']
     )
     if not note:
         return jsonify({"error": "Note not found"}), 404
@@ -145,8 +151,11 @@ def update_note(ticket_id, note_id):
 @tickets_bp.route('/tickets/<int:ticket_id>/notes/<int:note_id>', methods=['DELETE'])
 @require_control_auth
 def delete_note(ticket_id, note_id):
+    """See update_note — ticket_id is now passed to the service call."""
     agent = g.control_agent
-    g.control_service.delete_ticket_note(note_id, agent_id=agent['id'])
+    g.control_service.delete_ticket_note(
+        ticket_id, note_id, agent_id=agent['id']
+    )
     return jsonify({"ok": True})
 
 

@@ -3,6 +3,19 @@
 All database operations for the Control module.
 Reads from FinSage/Nexus operational tables (READ-ONLY).
 Writes only to the control.* schema.
+
+BUGFIXES vs. the previous version:
+  B. add_ticket_note() now returns agent_name as a string, not a dict.
+  C. update_ticket_note / delete_ticket_note now take ticket_id and
+     include it in the WHERE clause, so a note can't be moved between
+     tickets by passing a mismatched note_id.
+  D. generate_ticket_number() raises if the SQL returns no row, instead
+     of silently returning "FS-2026-000000" which would collide.
+  E. get_ticket_history() uses LEFT JOIN to support future system-side
+     changes (changed_by = NULL).
+  F. update_ticket() now serialises list/dict field values (tags,
+     support_context) with json.dumps instead of str() — history rows
+     are now parseable.
 """
 from __future__ import annotations
 
@@ -22,8 +35,23 @@ class ControlService:
     # ────────────────────────────────────────
 
     def generate_ticket_number(self) -> str:
+        """
+        Generate a new ticket number via the SQL function
+        control.generate_ticket_number().
+
+        Raises RuntimeError if the function returns no row or a NULL value —
+        a silent fallback like "FS-2026-000000" would violate the
+        UNIQUE(ticket_number) constraint on the tickets table if multiple
+        tickets were created while the DB was unreachable, so it is safer
+        to surface the failure as a 500 to the caller.
+        """
         row = self.db.fetch_one("SELECT control.generate_ticket_number() AS num")
-        return row["num"] if row else "FS-2026-000000"
+        if not row or not row.get("num"):
+            raise RuntimeError(
+                "control.generate_ticket_number() returned no value "
+                "— check the DB connection and the function definition"
+            )
+        return row["num"]
 
     # ────────────────────────────────────────
     # DASHBOARD
@@ -385,6 +413,21 @@ class ControlService:
 
         return row
 
+    @staticmethod
+    def _serialise_history_value(v: Any) -> Optional[str]:
+        """
+        Convert a field value to a TEXT string suitable for ticket_history.
+
+        Lists and dicts are JSON-encoded so they remain parseable later
+        (str() on a Python list produces "['a', 'b']" which is not valid
+        JSON). Scalars are stringified. None stays None.
+        """
+        if v is None:
+            return None
+        if isinstance(v, (list, dict)):
+            return json.dumps(v, default=str)
+        return str(v)
+
     def update_ticket(self, ticket_id: int, data: Dict[str, Any], agent_id: int) -> Optional[Dict[str, Any]]:
         """Update a ticket and record history for changed fields."""
         ticket = self.get_ticket(ticket_id)
@@ -409,7 +452,11 @@ class ControlService:
             if old_value != new_value:
                 updates.append(f"{field} = %s")
                 params.append(new_value if new_value is not None else None)
-                history_entries.append((field, str(old_value) if old_value is not None else None, str(new_value) if new_value is not None else None))
+                history_entries.append((
+                    field,
+                    self._serialise_history_value(old_value),
+                    self._serialise_history_value(new_value),
+                ))
 
         # Auto-set timestamps
         if "status" in data:
@@ -517,27 +564,60 @@ class ControlService:
         """, (ticket_id,))
 
     def add_ticket_note(self, ticket_id: int, body: str, agent_id: int) -> Dict[str, Any]:
+        """
+        Insert an internal note.
+
+        Returns the note row with `agent_name` set to a plain string
+        (matching the shape returned by get_ticket_notes). Previously this
+        attached a dict like {"display_name": "..."} to the agent_name key,
+        which made the API shape inconsistent between "freshly-added"
+        and "reloaded" notes.
+        """
         row = self.db.fetch_one("""
             INSERT INTO control.ticket_notes (ticket_id, agent_id, body)
             VALUES (%s, %s, %s)
             RETURNING *
         """, (ticket_id, agent_id, body))
-        row["agent_name"] = self.db.fetch_one(
-            "SELECT display_name FROM control.support_agents WHERE id = %s", (agent_id,)
+        agent = self.db.fetch_one(
+            "SELECT display_name FROM control.support_agents WHERE id = %s",
+            (agent_id,)
         )
+        row["agent_name"] = agent["display_name"] if agent else None
         return row
 
-    def update_ticket_note(self, note_id: int, body: str, agent_id: int) -> Optional[Dict[str, Any]]:
-        self.db.execute_sql(
-            "UPDATE control.ticket_notes SET body = %s WHERE id = %s AND agent_id = %s",
-            (body, note_id, agent_id)
-        )
-        return self.db.fetch_one("SELECT * FROM control.ticket_notes WHERE id = %s", (note_id,))
+    def update_ticket_note(
+        self, ticket_id: int, note_id: int, body: str, agent_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update an internal note.
 
-    def delete_ticket_note(self, note_id: int, agent_id: int) -> bool:
+        Both ticket_id and note_id are required in the WHERE clause so a
+        caller cannot update a note belonging to a different ticket by
+        passing a mismatched note_id from the URL of another ticket.
+        Also restricts to the original author (agent_id) so agents can't
+        edit each other's notes.
+        """
         self.db.execute_sql(
-            "DELETE FROM control.ticket_notes WHERE id = %s AND agent_id = %s",
-            (note_id, agent_id)
+            "UPDATE control.ticket_notes SET body = %s "
+            "WHERE id = %s AND ticket_id = %s AND agent_id = %s",
+            (body, note_id, ticket_id, agent_id)
+        )
+        return self.db.fetch_one(
+            "SELECT * FROM control.ticket_notes WHERE id = %s AND ticket_id = %s",
+            (note_id, ticket_id)
+        )
+
+    def delete_ticket_note(
+        self, ticket_id: int, note_id: int, agent_id: int
+    ) -> bool:
+        """
+        Delete an internal note. Same ticket_id + agent_id ownership rule
+        as update_ticket_note.
+        """
+        self.db.execute_sql(
+            "DELETE FROM control.ticket_notes "
+            "WHERE id = %s AND ticket_id = %s AND agent_id = %s",
+            (note_id, ticket_id, agent_id)
         )
         return True
 
@@ -546,11 +626,18 @@ class ControlService:
     # ────────────────────────────────────────
 
     def get_ticket_history(self, ticket_id: int) -> List[Dict[str, Any]]:
+        """
+        Audit trail for a ticket.
+
+        LEFT JOIN to support_agents (not INNER JOIN) so that history rows
+        with changed_by = NULL — e.g. future system-side changes — still
+        appear in the response instead of being silently dropped.
+        """
         return self.db.fetch_all("""
             SELECT h.id, h.field, h.old_value, h.new_value, h.created_at,
                    sa.display_name AS changed_by_name
             FROM control.ticket_history h
-            JOIN control.support_agents sa ON sa.id = h.changed_by
+            LEFT JOIN control.support_agents sa ON sa.id = h.changed_by
             WHERE h.ticket_id = %s
             ORDER BY h.created_at ASC
         """, (ticket_id,))
