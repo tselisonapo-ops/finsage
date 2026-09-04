@@ -80780,15 +80780,6 @@ async function saveEditModal() {
         // This ensures the PAYE Export panel is ready
         window.__taxFiling.init();
     }
-
-    // ✅ ADD THIS: Initialize your PAYE Tax Filing module
-    if (typeof initPayeTaxFiling === 'function') {
-      initPayeTaxFiling({
-        companyId: cid(),
-        containerId: 'payeTaxFilingContainer',  // New div ID
-        endpointBase: '/api/companies/' + cid() + '/tax-filing'
-      });
-    }
   }
 
   /**
@@ -80799,7 +80790,6 @@ async function saveEditModal() {
    * 2. The NEW PAYE Tax Filing export section (SARS/RSL/BURS)
    */
   function renderPayrollStatutoryReturns() {
-    // ─── EXISTING: Original Statutory Returns Table ───
     const el = $("payrollStatutoryReturnsList");
     const items = payrollState.statutory.returns || [];
 
@@ -80846,124 +80836,12 @@ async function saveEditModal() {
             </tbody>
           </table>
         </div>
-      ` : `<p class="payroll-muted">No statutory returns found.</p>`;
+    ` : `<p class="payroll-muted">No statutory returns found.</p>`;
 
     el.querySelectorAll("[data-open-statutory-return]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        openPayrollStatutoryReturn(Number(btn.dataset.openStatutoryReturn));
-      });
-    });
-
-    // ═══════════════════════════════════════════════════════════════
-    // 🆕 UPDATED: PAYE TAX FILING SECTION
-    // ═══════════════════════════════════════════════════════════════
-    // Clean up any pre-existing section to completely prevent duplication
-    const existingSection = document.getElementById('payeTaxFilingSection');
-    if (existingSection) {
-      existingSection.remove();
-    }
-
-    // Create the container cleanly
-    let payeContainer = document.createElement('div');
-    payeContainer.id = 'payeTaxFilingSection';
-    payeContainer.className = 'paye-tax-filing-section';
-    
-    // Append it inside the element wrapper instead of the parent node
-    el.appendChild(payeContainer);
-
-
-    // 1. Dynamic Authority Selection (Auto-detect company setting)
-    const companyAuthority = payrollState.settings?.tax_authority_code || 'SARS';
-    
-    // 2. Dynamic Year Generation (Last 3 years)
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth() + 1;
-    // Tax years in Southern Africa usually span two calendar years (e.g., 2024/2025)
-    // If we are before March (for SARS), we are still in the previous tax year cycle
-    const baseYear = currentMonth < 3 ? currentYear - 1 : currentYear;
-    
-    let yearOptions = '';
-    for (let i = 0; i < 3; i++) {
-      const yr = baseYear - i;
-      const label = `${yr}/${yr + 1}`;
-      yearOptions += `<option value="${label}">${label}</option>`;
-    }
-
-    payeContainer.innerHTML = `
-        <div style="margin: 28px 0 20px 0; padding: 16px 20px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #3b82f6;">
-          <h3 style="margin: 0 0 6px 0; font-size: 15px; font-weight: 600; color: #334155; display: flex; align-items: center; gap: 8px;">
-            📋 PAYE Tax Filing Export
-          </h3>
-          <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
-            Generate compliant export files including **Employee Benefits** for SARS (South Africa), RSL (Lesotho), or BURS (Botswana).
-          </p>
-        </div>
-
-        <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; padding: 18px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
-          
-          <!-- Authority Selector -->
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Tax Authority</label>
-            <select id="payeAuthoritySelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 200px; color: #334155;">
-              <option value="SARS" ${companyAuthority === 'SARS' ? 'selected' : ''}>🇿🇦 SARS — South Africa</option>
-              <option value="RSL" ${companyAuthority === 'RSL' ? 'selected' : ''}>🇱🇸 RSL — Lesotho</option>
-              <option value="BURS" ${companyAuthority === 'BURS' ? 'selected' : ''}>🇧🇼 BURS — Botswana</option>
-            </select>
-          </div>
-
-          <!-- Period Selector -->
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Tax Year</label>
-            <select id="payePeriodSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 140px; color: #334155;">
-              ${yearOptions}
-            </select>
-          </div>
-
-          <!-- Format Selector -->
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Export Format</label>
-            <select id="payeFormatSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 130px; color: #334155;">
-              <option value="csv">📄 CSV (Standard)</option>
-              <option value="xlsx">📊 Excel (.xlsx)</option>
-              <option value="xml">🔧 SARS XML (e-Filing)</option>
-            </select>
-          </div>
-
-          <!-- Action Buttons -->
-          <div style="display: flex; gap: 10px; align-items: flex-end; margin-left: auto;">
-            <button id="payePreviewBtn" style="padding: 9px 18px; background: #ffffff; color: #475569; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
-              👁️ Preview Data
-            </button>
-            
-            <button id="payeExportBtn" style="padding: 9px 18px; background: #1e293b; color: #ffffff; border: 1px solid #0f172a; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
-              📥 Export Filing
-            </button>
-          </div>
-        </div>
-
-        <div id="payePreviewArea" style="margin-top: 16px; min-height: 120px; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <div style="text-align: center; color: #94a3b8; padding: 30px;">
-            <p style="margin: 0 0 8px 0; font-size: 32px;">📊</p>
-            <p style="margin: 0; font-size: 14px;">Select parameters and click Preview to verify tax data</p>
-          </div>
-        </div>
-      `;
-
-    // Attach event listeners using the proper "FinSage" pattern
-    $("payePreviewBtn")?.addEventListener("click", () => {
-      if (typeof window.previewPayeData === 'function') {
-        window.previewPayeData();
-      } else {
-        showPayrollStatus("Tax Filing module not fully loaded.", "error");
-      }
-    });
-
-    $("payeExportBtn")?.addEventListener("click", (e) => {
-      if (typeof window.exportPayeFiling === 'function') {
-        window.exportPayeFiling(e);
-      } else {
-        showPayrollStatus("Tax Filing module not fully loaded.", "error");
-      }
+        btn.addEventListener("click", () => {
+            openPayrollStatutoryReturn(Number(btn.dataset.openStatutoryReturn));
+        });
     });
   }
 

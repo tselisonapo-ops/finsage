@@ -58,239 +58,7 @@
         previewData: null,
         employeeCount: 0
     };
-    
-    // ====================================================================
-    // UTILITY FUNCTIONS
-    // ====================================================================
-    
-    // Global functions for PAYE buttons
-    window.previewPayeData = async function() {
-    const authority = document.getElementById('payeAuthoritySelect')?.value || 'SARS';
-    const period = document.getElementById('payePeriodSelect')?.value || '2024/2025';
-    const previewArea = document.getElementById('payePreviewArea');
-    
-    if (!previewArea) return;
-    
-    previewArea.innerHTML = `
-        <div style="text-align:center; padding:30px; color:#64748b;">
-        <p style="font-size:24px; margin-bottom:12px;">⏳</p>
-        <p>Loading employee data for ${authority} (${period})...</p>
-        </div>
-    `;
-    
-    try {
-        // Call your backend API
-        const companyId = typeof cid === 'function' ? cid() : window.CURRENT_COMPANY_ID;
-        const url = ENDPOINTS.taxFiling.preview(
-            companyId,
-            authority,
-            period
-        );
 
-        const data = await apiFetch(url);
-        
-        if (data.employees && data.employees.length > 0) {
-        previewArea.innerHTML = `
-            <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
-            <strong style="color:#1e293b;">Employee Preview (${data.employees.length} employees)</strong>
-            <span style="font-size:12px; color:#64748b;">${authority} • ${period}</span>
-            </div>
-            
-            <table style="width:100%; border-collapse:collapse; font-size:13px;">
-            <thead>
-                <tr style="background:#f1f5f9;">
-                <th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e2e8f0;">Emp #</th>
-                <th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e2e8f0;">Full Name</th>
-                <th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e2e8f0;">Tax Reference</th>
-                <th style="padding:10px 8px; text-align:right; border-bottom:2px solid #e2e8f0;">Gross Income</th>
-                <th style="padding:10px 8px; text-align:right; border-bottom:2px solid #e2e8f0;">PAYE Deducted</th>
-                <th style="padding:10px 8px; text-align:center; border-bottom:2px solid #e2e8f0;">Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${data.employees.map(emp => `
-                <tr style="border-bottom:1px solid #f1f5f9; transition:background 0.15s;"
-                    onmouseover="this.style.background='#f8fafc'"
-                    onmouseout="this.style.background='white'">
-                    <td style="padding:10px 8px;"><strong>${esc(emp.employee_no)}</strong></td>
-                    <td style="padding:10px 8px;">${esc(emp.first_name)} ${esc(emp.last_name)}</td>
-                    <td style="padding:10px 8px; font-family:monospace; font-size:12px;">${esc(emp.tax_number) || '<em style="color:#94a3b8;">—</em>'}</td>
-                    <td style="padding:10px 8px; text-align:right; font-variant-numeric:tabular-nums;">
-                    ${(emp.gross_income || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
-                    </td>
-                    <td style="padding:10px 8px; text-align:right; font-variant-numeric:tabular-nums; color:#dc2626; font-weight:500;">
-                    ${(emp.paye_deducted || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
-                    </td>
-                    <td style="padding:10px 8px; text-align:center;">
-                    <span style="
-                        padding:3px 10px; 
-                        border-radius:12px; 
-                        font-size:11px; 
-                        font-weight:500;
-                        ${emp.status === 'active' 
-                        ? 'background:#dcfce7; color:#166534;' 
-                        : emp.status === 'inactive'
-                            ? 'background:#fef3c7; color:#92400e;'
-                            : 'background:#f1f5f9; color:#64748b;'
-                        }
-                    ">
-                        ${esc(emp.status || 'unknown')}
-                    </span>
-                    </td>
-                </tr>
-                `).join('')}
-            </tbody>
-            <tfoot>
-                <tr style="font-weight:700; background:#f8fafc; border-top:2px solid #e2e8f0;">
-                <td colspan="3" style="padding:12px 8px; text-align:right; color:#475569;">
-                    Totals (${data.employees.length} employees):
-                </td>
-                <td style="padding:12px 8px; text-align:right; color:#1e293b;">
-                    ${(data.totals?.gross_income || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
-                </td>
-                <td style="padding:12px 8px; text-align:right; color:#dc2626;">
-                    ${(data.totals?.paye_deducted || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
-                </td>
-                <td></td>
-                </tr>
-            </tfoot>
-            </table>
-            
-            <div style="
-            margin-top:14px; 
-            padding:12px 16px; 
-            background:#eff6ff; 
-            border-left:4px solid #3b82f6; 
-            border-radius:0 6px 6px 0;
-            font-size:13px;
-            color:#1e40af;
-            ">
-            ✅ Ready to export. Click <strong>"Export Filing"</strong> to download your ${authority.toUpperCase()} return file.
-            </div>
-        `;
-        } else {
-        previewArea.innerHTML = `
-            <div style="text-align:center; padding:30px; color:#94a3b8;">
-            <p style="font-size:32px; margin-bottom:12px;">📭</p>
-            <p style="margin:0 0 6px 0; font-size:14px;">No employee data found</p>
-            <p style="margin:0; font-size:12px;">Try selecting a different period or check if employees have been processed.</p>
-            </div>
-        `;
-        }
-        
-    } catch (err) {
-        console.error('[PAYE] Preview error:', err);
-        previewArea.innerHTML = `
-        <div style="
-            text-align:center; 
-            padding:30px; 
-            color:#dc2626; 
-            background:#fef2f2; 
-            border-radius:8px;
-            border:1px solid #fecaca;
-        ">
-            <p style="font-size:28px; margin-bottom:10px;">⚠️</p>
-            <p style="margin:0 0 6px 0; font-weight:600;">Failed to load data</p>
-            <p style="margin:0; font-size:13px;">${err.message}</p>
-        </div>
-        `;
-    }
-    };
-
-    window.exportPayeFiling = async function(event) {
-        // 1. Get Selections from the DOM
-        const authority = document.getElementById('payeAuthoritySelect')?.value || 'SARS';
-        const periodStr = document.getElementById('payePeriodSelect')?.value || '2024/2025';
-        const format = document.getElementById('payeFormatSelect')?.value || 'csv';
-        
-        // 2. Parse the period string (e.g., "2024/2025") into actual dates
-        // Southern African tax years have different start months
-        const startYear = parseInt(periodStr.split('/')[0]);
-        let periodStart, periodEnd;
-
-        if (authority === 'SARS') {
-            // South Africa: March to February
-            periodStart = `${startYear}-03-01`;
-            periodEnd = `${startYear + 1}-02-28`;
-        } else if (authority === 'RSL') {
-            // Lesotho: April to March
-            periodStart = `${startYear}-04-01`;
-            periodEnd = `${startYear + 1}-03-31`;
-        } else {
-            // Botswana (BURS): July to June
-            periodStart = `${startYear}-07-01`;
-            periodEnd = `${startYear + 1}-06-30`;
-        }
-
-        // 3. Construct the Request Body
-        // We pull employer info directly from the global payrollState
-        const requestBody = {
-            authority_code: authority,
-            format: format,
-            period_start: periodStart,
-            period_end: periodEnd,
-            include_benefits: true, // This triggers the backend benefits query
-            employer_info: {
-                name: payrollState.settings?.company_name || window.CURRENT_COMPANY?.name || '',
-                tax_reference_number: payrollState.settings?.tax_reference_number || window.CURRENT_COMPANY?.tax_number || '',
-                registration_number: window.CURRENT_COMPANY?.registration_number || ''
-            }
-        };
-
-        // 4. Execute Export
-        const btn = event?.currentTarget || event?.target;
-        const originalText = btn?.innerHTML;
-        const companyId = typeof cid === 'function' ? cid() : window.CURRENT_COMPANY_ID;
-
-        try {
-            if (btn) {
-                btn.innerHTML = '⏳ Processing...';
-                btn.disabled = true;
-            }
-
-            const response = await fetch(`/api/companies/${companyId}/payroll/tax-filing/export`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    // Include your standard auth header helper
-                    ...(typeof AUTH_HEADER === 'function' ? AUTH_HEADER() : {})
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Export failed');
-            }
-
-            // 5. Handle File Download
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            const timestamp = new Date().toISOString().slice(0, 10);
-            
-            a.href = url;
-            a.download = `${authority}_PAYE_Export_${periodStr.replace('/', '-')}_${timestamp}.${format}`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
-
-            showPayrollStatus(`Successfully exported ${authority} filing.`, "success");
-
-        } catch (err) {
-            console.error('[PAYE Export] Error:', err);
-            showPayrollStatus(`Export Error: ${err.message}`, "error");
-        } finally {
-            if (btn) {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-            }
-        }
-    };
-    /**
-     * Safe wrapper around your existing apiFetch
-     */
     async function apiCall(url, options = {}) {
         if (typeof apiFetch === 'function') {
             return await apiFetch(url, options);
@@ -385,18 +153,33 @@
                 </div>
 
                 <!-- Period Selection -->
-                <div class="tax-filing-section" id="taxFilingPeriodSection" style="display:none;">
-                    <label class="tax-filing-label">Filing Period</label>
-                    <div class="tax-filing-period-row">
-                        <select id="taxFilingMonth" class="tax-filing-select">
-                            <option value="">Select Month</option>
-                            ${generateMonthOptions()}
-                        </select>
-                        <select id="taxFilingYear" class="tax-filing-select">
-                            <option value="">Year</option>
-                            ${generateYearOptions()}
+                <div class="tax-filing-period-section"
+                    id="taxFilingPeriodSection">
+
+                    <div class="tax-filing-field">
+                        <label for="taxFilingYear">
+                            Tax Year
+                        </label>
+
+                        <select id="taxFilingYear">
+                            ${generateYearOptions(
+                                state.selectedAuthority || 'SARS'
+                            )}
                         </select>
                     </div>
+
+                    <div class="tax-filing-field">
+                        <label for="taxFilingMonth">
+                            Filing Month
+                        </label>
+
+                        <select id="taxFilingMonth">
+                            <option value="">
+                                Select filing month
+                            </option>
+                        </select>
+                    </div>
+
                 </div>
 
                 <!-- Action Buttons -->
@@ -630,15 +413,102 @@
     /**
      * Generate year options for period selector
      */
-    function generateYearOptions() {
-        const currentYear = new Date().getFullYear();
-        let options = '';
-        for (let year = currentYear; year >= currentYear - 3; year--) {
-            options += `<option value="${year}" ${year === currentYear ? 'selected' : ''}>${year}</option>`;
+    function generateYearOptions(authorityCode) {
+        const currentDate = new Date();
+        const currentYear = currentDate.getFullYear();
+        const currentMonth = currentDate.getMonth() + 1;
+
+        let baseYear = currentYear;
+
+        // SARS tax year starts in March
+        if (authorityCode === 'SARS' && currentMonth < 3) {
+            baseYear = currentYear - 1;
         }
+
+        // Lesotho tax year starts in April
+        if (authorityCode === 'RSL' && currentMonth < 4) {
+            baseYear = currentYear - 1;
+        }
+
+        // Botswana tax year starts in July
+        if (authorityCode === 'BURS' && currentMonth < 7) {
+            baseYear = currentYear - 1;
+        }
+
+        let options = '';
+
+        for (
+            let year = baseYear;
+            year >= baseYear - 3;
+            year--
+        ) {
+            options += `
+                <option
+                    value="${year}"
+                    ${year === baseYear ? 'selected' : ''}
+                >
+                    ${year}/${year + 1}
+                </option>
+            `;
+        }
+
         return options;
     }
     
+    function getTaxYearStartMonth(authorityCode) {
+        if (authorityCode === 'SARS') {
+            return 3;
+        }
+
+        if (authorityCode === 'RSL') {
+            return 4;
+        }
+
+        if (authorityCode === 'BURS') {
+            return 7;
+        }
+
+        return 1;
+    }
+
+
+    function generateFilingMonthOptions(authorityCode, taxYear) {
+        const startMonth =
+            getTaxYearStartMonth(authorityCode);
+
+        const startYear = Number(taxYear);
+
+        let options = '';
+
+        for (let i = 0; i < 12; i++) {
+            const date = new Date(
+                startYear,
+                startMonth - 1 + i,
+                1
+            );
+
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+
+            const value =
+                `${year}-${String(month).padStart(2, '0')}`;
+
+            const label =
+                date.toLocaleString('en-ZA', {
+                    month: 'long',
+                    year: 'numeric'
+                });
+
+            options += `
+                <option value="${value}">
+                    ${label}
+                </option>
+            `;
+        }
+
+        return options;
+    }
+
     // ====================================================================
     // CORE FUNCTIONS (Exposed via window.__taxFiling)
     // ====================================================================
@@ -692,9 +562,21 @@
          * Bind event listeners
          */
         bindEvents() {
-            // Period change handlers
             document.getElementById('taxFilingMonth')?.addEventListener('change', () => this.onPeriodChange());
-            document.getElementById('taxFilingYear')?.addEventListener('change', () => this.onPeriodChange());
+
+            document.getElementById('taxFilingYear')?.addEventListener('change', () => {
+                const authority = state.selectedAuthority || 'SARS';
+                const year = document.getElementById('taxFilingYear')?.value;
+                const monthSelect = document.getElementById('taxFilingMonth');
+
+                if (monthSelect && year) {
+                    monthSelect.innerHTML =
+                        '<option value="">Select filing month</option>' +
+                        generateFilingMonthOptions(authority, year);
+                }
+
+                this.onPeriodChange();
+            });
         },
         
         /**
@@ -726,13 +608,26 @@
          * Handle period change
          */
         onPeriodChange() {
-            const month = document.getElementById('taxFilingMonth')?.value;
-            const year = document.getElementById('taxFilingYear')?.value;
-            
-            if (month && year) {
-                state.selectedPeriod = { month, year };
-                console.log(`[Tax Filing] Selected period: ${month}/${year}`);
+            const monthValue = document.getElementById('taxFilingMonth')?.value;
+            const taxYear = document.getElementById('taxFilingYear')?.value;
+
+            if (!monthValue || !taxYear) {
+                state.selectedPeriod = null;
+                return;
             }
+
+            const [year, month] = monthValue.split('-').map(Number);
+            const lastDay = new Date(year, month, 0).getDate();
+
+            state.selectedPeriod = {
+                month,
+                year,
+                taxYear,
+                periodStart: `${year}-${String(month).padStart(2, '0')}-01`,
+                periodEnd: `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+            };
+
+            console.log('[Tax Filing] Selected monthly period:', state.selectedPeriod);
         },
         
         /**
@@ -745,13 +640,10 @@
             
             try {
                 const companyId = getCompanyId();
-                const { month, year } = state.selectedPeriod;
-                
-                // Calculate period dates
-                const lastDay = new Date(year, month, 0).getDate();
-                const periodStart = `${year}-${String(month).padStart(2, '0')}-01`;
-                const periodEnd = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
-                
+                const {
+                    periodStart,
+                    periodEnd
+                } = state.selectedPeriod;
                 const response = await apiCall(ENDPOINTS.taxFiling.validate(companyId), {
                     method: 'POST',
                     body: JSON.stringify({
@@ -787,13 +679,12 @@
             
             try {
                 const companyId = getCompanyId();
-                const { month, year } = state.selectedPeriod;
+                const {
+                    periodStart,
+                    periodEnd
+                } = state.selectedPeriod;
                 const config = TAX_FILING_CONFIG.authorities[state.selectedAuthority];
-                
-                const lastDay = new Date(year, month, 0).getDate();
-                const periodStart = `${year}-${String(month).padStart(2, '0')}-01`;
-                const periodEnd = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
-                
+
                 // Build export request
                 const requestBody = {
                     authority_code: state.selectedAuthority,
