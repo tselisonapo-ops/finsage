@@ -164203,6 +164203,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         """
         schema = self.company_schema(company_id)
 
+        import logging
+
+        logger = logging.getLogger(__name__)
         logger.warning(
             "=== PAYROLL FILING DEBUG === company_id=%r schema=%r period_start=%r period_end=%r authority=%r",
             company_id,
@@ -164211,9 +164214,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             period_end,
             authority_code
         )
-        import logging
-
-        logger = logging.getLogger(__name__)
         query = f"""
             SELECT
                 e.id AS employee_id,
