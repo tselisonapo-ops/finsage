@@ -24640,137 +24640,27 @@ label:has(#projectTeamUserSearch) {
               STATUTORY RETURNS TAB PANEL - ADD THIS!
               ═══════════════════════════════════════════════════════════════ -->
           <div id="payrollTabStatutory" class="payroll-panel hidden">
-            <div class="payroll-section-navigation">
-              <button
-                type="button"
-                class="payroll-back-btn"
-                data-payroll-back-dashboard
-              >
-                ← Back to Payroll Dashboard
-              </button>
 
-              <div>
-                <h3>Statutory Returns</h3>
-                <p class="payroll-muted">File and track authority returns (PAYE, UIF, SDL, WCF).</p>
-              </div>
-            </div>
-            <!-- Filters Section -->
-            <div style="
-              display: flex;
-              gap: 16px;
-              margin-bottom: 20px;
-              padding: 18px;
-              background: #f8fafc;
-              border-radius: 10px;
-              border: 1px solid #e2e8f0;
-              flex-wrap: wrap;
-              align-items: flex-end;
-            ">
-              <div style="display: flex; flex-direction: column; gap: 6px; min-width: 180px;">
-                <label for="payrollStatutoryAuthorityFilter" style="
-                  font-size: 11px;
-                  font-weight: 600;
-                  color: #64748b;
-                  text-transform: uppercase;
-                  letter-spacing: 0.5px;
-                ">Authority</label>
-                <select id="payrollStatutoryAuthorityFilter" style="
-                  padding: 9px 12px;
-                  border: 1px solid #cbd5e1;
-                  border-radius: 6px;
-                  font-size: 13px;
-                  background: white;
-                ">
-                  <option value="">All Authorities</option>
-                  <option value="SARS">SARS</option>
-                  <option value="RSL">RSL</option>
-                  <option value="BURS">BURS</option>
-                  <option value="UIF">UIF</option>
-                  <option value="SDL">SDL</option>
-                </select>
+              <div class="payroll-section-navigation">
+                  <button
+                      type="button"
+                      class="payroll-back-btn"
+                      data-payroll-back-dashboard
+                  >
+                      ← Back to Payroll Dashboard
+                  </button>
+
+                  <div>
+                      <h3>Statutory Returns</h3>
+                      <p class="payroll-muted">
+                          File and track authority returns (PAYE, UIF, SDL, WCF).
+                      </p>
+                  </div>
               </div>
 
-              <div style="display: flex; flex-direction: column; gap: 6px; min-width: 180px;">
-                <label for="payrollStatutoryTypeFilter" style="
-                  font-size: 11px;
-                  font-weight: 600;
-                  color: #64748b;
-                  text-transform: uppercase;
-                  letter-spacing: 0.5px;
-                ">Return Type</label>
-                <select id="payrollStatutoryTypeFilter" style="
-                  padding: 9px 12px;
-                  border: 1px solid #cbd5e1;
-                  border-radius: 6px;
-                  font-size: 13px;
-                  background: white;
-                ">
-                  <option value="">All Types</option>
-                  <option value="PAYE">PAYE</option>
-                  <option value="UIF">UIF</option>
-                  <option value="SDL">SDL</option>
-                  <option value="WCF">WCF</option>
-                </select>
-              </div>
-
-              <div style="display: flex; flex-direction: column; gap: 6px; min-width: 160px;">
-                <label for="payrollStatutoryStatusFilter" style="
-                  font-size: 11px;
-                  font-weight: 600;
-                  color: #64748b;
-                  text-transform: uppercase;
-                  letter-spacing: 0.5px;
-                ">Status</label>
-                <select id="payrollStatutoryStatusFilter" style="
-                  padding: 9px 12px;
-                  border: 1px solid #cbd5e1;
-                  border-radius: 6px;
-                  font-size: 13px;
-                  background: white;
-                ">
-                  <option value="">All Statuses</option>
-                  <option value="draft">Draft</option>
-                  <option value="pending">Pending</option>
-                  <option value="submitted">Submitted</option>
-                  <option value="accepted">Accepted</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
-
-              <button 
-                onclick="loadPayrollStatutoryWorkspace()" 
-                style="
-                  padding: 9px 20px;
-                  background: #3b82f6;
-                  color: white;
-                  border: none;
-                  border-radius: 6px;
-                  font-size: 13px;
-                  font-weight: 500;
-                  cursor: pointer;
-                  height: fit-content;
-                "
-              >
-                🔍 Refresh Returns
-              </button>
-            </div>
-
-            <!-- Existing Statutory Returns List Container -->
-            <div id="payrollStatutoryReturnsList">
-              <p class="payroll-muted" style="text-align:center; padding:40px; color:#94a3b8;">
-                Loading statutory returns...
-              </p>
-            </div>
-
-              <!-- Statutory Return Detail (renders when a return is opened) -->
               <div id="payrollStatutoryReturnDetail"></div>
 
-            <!-- 
-              ══════════════════════════════════════════════════════════
-              PAYE TAX FILING SECTION - Will be populated by JavaScript
-              ══════════════════════════════════════════════════════════
-            -->
-            <div id="payeTaxFilingSection"></div>
+              <div id="payeTaxFilingSection"></div>
 
           </div>
 

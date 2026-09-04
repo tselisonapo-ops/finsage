@@ -132,29 +132,100 @@
      * This gets injected into your Statutory Returns tab
      */
     function createTaxFilingPanel() {
-        return `
-            <div id="taxFilingPanel" class="tax-filing-panel">
-                <!-- Header -->
-                <div class="tax-filing-header">
-                    <h3 class="tax-filing-title">
-                        <span>📋</span> PAYE Tax Filing Export
-                    </h3>
-                    <p class="tax-filing-subtitle">
-                        Generate compliant tax files for SARS, RSL, or BURS portals
-                    </p>
-                </div>
+    const authorities = [
+        {
+            code: "SARS",
+            name: "SARS",
+            country: "South Africa",
+            icon: "🇿🇦",
+            formats: ["CSV", "Excel", "XML"]
+        },
+        {
+            code: "RSL",
+            name: "RSL",
+            country: "Lesotho",
+            icon: "🇱🇸",
+            formats: ["CSV", "Excel"]
+        },
+        {
+            code: "BURS",
+            name: "BURS",
+            country: "Botswana",
+            icon: "🇧🇼",
+            formats: ["CSV", "Excel"]
+        }
+    ];
 
-                <!-- Authority Selection -->
-                <div class="tax-filing-section">
-                    <label class="tax-filing-label">Select Tax Authority</label>
-                    <div class="tax-filing-authorities" id="taxFilingAuthorities">
-                        ${renderAuthorityCards()}
-                    </div>
-                </div>
+    const selectedAuthority =
+        state.selectedAuthority || "SARS";
 
-                <!-- Period Selection -->
-                <div class="tax-filing-period-section"
-                    id="taxFilingPeriodSection">
+    return `
+        <div id="taxFilingPanel" class="tax-filing-panel">
+
+            <!-- Header -->
+            <div class="tax-filing-header">
+                <h3 class="tax-filing-title">
+                    <span>📋</span>
+                    PAYE Tax Filing Export
+                </h3>
+
+                <p class="tax-filing-subtitle">
+                    Generate compliant tax files for SARS, RSL, or BURS portals
+                </p>
+            </div>
+
+            <!-- Authority Selection -->
+            <div class="tax-filing-section">
+
+                <label class="tax-filing-label">
+                    Select Tax Authority
+                </label>
+
+                <div
+                    class="tax-filing-authorities"
+                    id="taxFilingAuthorities"
+                >
+                    ${authorities.map(authority => `
+                        <div
+                            class="tax-filing-authority-card
+                                ${selectedAuthority === authority.code ? "selected" : ""}"
+                            data-tax-authority="${authority.code}"
+                            role="button"
+                            tabindex="0"
+                        >
+                            <div class="tax-filing-authority-icon">
+                                ${authority.icon}
+                            </div>
+
+                            <div class="tax-filing-authority-name">
+                                ${authority.name}
+                            </div>
+
+                            <div class="tax-filing-authority-country">
+                                ${authority.country}
+                            </div>
+
+                            <div class="tax-filing-authority-formats">
+                                ${authority.formats.map(format => `
+                                    <span class="tax-filing-format-badge">
+                                        ${format}
+                                    </span>
+                                `).join("")}
+                            </div>
+                        </div>
+                    `).join("")}
+                </div>
+            </div>
+
+
+            <!-- Authority Workspace -->
+            <div
+                id="taxFilingAuthorityWorkspace"
+                class="tax-filing-authority-workspace"
+            >
+
+                <!-- Period Filters -->
+                <div class="tax-filing-period-section">
 
                     <div class="tax-filing-field">
                         <label for="taxFilingYear">
@@ -162,9 +233,7 @@
                         </label>
 
                         <select id="taxFilingYear">
-                            ${generateYearOptions(
-                                state.selectedAuthority || 'SARS'
-                            )}
+                            ${generateYearOptions(selectedAuthority)}
                         </select>
                     </div>
 
@@ -175,207 +244,465 @@
 
                         <select id="taxFilingMonth">
                             <option value="">
-                                Select filing month
+                                All Filing Months
                             </option>
+
+                            <option value="01">January</option>
+                            <option value="02">February</option>
+                            <option value="03">March</option>
+                            <option value="04">April</option>
+                            <option value="05">May</option>
+                            <option value="06">June</option>
+                            <option value="07">July</option>
+                            <option value="08">August</option>
+                            <option value="09">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
                         </select>
                     </div>
 
                 </div>
 
+
+                <!-- Returns Table -->
+                <div
+                    id="taxFilingReturnsTable"
+                    class="tax-filing-returns-table"
+                >
+                    <p class="payroll-muted">
+                        Loading ${selectedAuthority} returns...
+                    </p>
+                </div>
+
+
                 <!-- Action Buttons -->
-                <div class="tax-filing-actions" id="taxFilingActions" style="display:none;">
-                    <button type="button" 
-                            class="payroll-primary" 
-                            id="taxFilingValidateBtn"
-                            onclick="window.__taxFiling.validate()">
+                <div
+                    class="tax-filing-actions"
+                    id="taxFilingActions"
+                    style="display:none;"
+                >
+
+                    <button
+                        type="button"
+                        class="payroll-primary"
+                        id="taxFilingValidateBtn"
+                        onclick="window.__taxFiling.validate()"
+                    >
                         ✅ Validate Data
                     </button>
-                    
+
                     <div class="tax-filing-export-group">
-                        <span class="tax-filing-export-label">Export as:</span>
-                        <button type="button" 
-                                class="payroll-secondary" 
-                                id="taxFilingExportCsv"
-                                onclick="window.__taxFiling.export('csv')">
+
+                        <span class="tax-filing-export-label">
+                            Export as:
+                        </span>
+
+                        <button
+                            type="button"
+                            class="payroll-secondary"
+                            id="taxFilingExportCsv"
+                            onclick="window.__taxFiling.export('csv')"
+                        >
                             📄 CSV
                         </button>
-                        <button type="button" 
-                                class="payroll-secondary" 
-                                id="taxFilingExportXlsx"
-                                onclick="window.__taxFiling.export('xlsx')">
+
+                        <button
+                            type="button"
+                            class="payroll-secondary"
+                            id="taxFilingExportXlsx"
+                            onclick="window.__taxFiling.export('xlsx')"
+                        >
                             📊 Excel
                         </button>
-                        <button type="button" 
-                                class="payroll-secondary tax-filing-xml-btn" 
-                                id="taxFilingExportXml"
-                                onclick="window.__taxFiling.export('xml')"
-                                style="display:none;">
+
+                        <button
+                            type="button"
+                            class="payroll-secondary tax-filing-xml-btn"
+                            id="taxFilingExportXml"
+                            onclick="window.__taxFiling.export('xml')"
+                            style="display:none;"
+                        >
                             📝 XML (e-Filing)
                         </button>
+
                     </div>
                 </div>
 
+
                 <!-- Validation Results -->
-                <div id="taxFilingValidationResults" class="tax-filing-validation" style="display:none;"></div>
+                <div
+                    id="taxFilingValidationResults"
+                    class="tax-filing-validation"
+                    style="display:none;"
+                ></div>
 
-                <!-- Preview Table -->
-                <div id="taxFilingPreview" class="tax-filing-preview" style="display:none;"></div>
 
-                <!-- Loading Overlay -->
-                <div id="taxFilingLoading" class="tax-filing-loading" style="display:none;">
+                <!-- Preview -->
+                <div
+                    id="taxFilingPreview"
+                    class="tax-filing-preview"
+                    style="display:none;"
+                ></div>
+
+
+                <!-- Loading -->
+                <div
+                    id="taxFilingLoading"
+                    class="tax-filing-loading"
+                    style="display:none;"
+                >
                     <div class="spinner"></div>
                     <p>Processing...</p>
                 </div>
+
             </div>
-            
-            <style>
-                .tax-filing-panel { 
-                    margin-top: 20px; 
-                    padding: 20px; 
-                    background: #f8fafc; 
-                    border-radius: 8px; 
-                    border: 1px solid #e2e8f0; 
+        </div>
+
+
+        <style>
+
+            .tax-filing-panel {
+                margin-top: 20px;
+                padding: 20px;
+                background: #f8fafc;
+                border-radius: 10px;
+                border: 1px solid #e2e8f0;
+            }
+
+            .tax-filing-header {
+                margin-bottom: 20px;
+            }
+
+            .tax-filing-title {
+                font-size: 18px;
+                font-weight: 600;
+                margin: 0 0 5px 0;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .tax-filing-subtitle {
+                color: #64748b;
+                font-size: 14px;
+                margin: 0;
+            }
+
+            .tax-filing-section {
+                margin-bottom: 20px;
+            }
+
+            .tax-filing-label {
+                display: block;
+                font-weight: 600;
+                margin-bottom: 10px;
+                color: #334155;
+            }
+
+
+            /* =========================================================
+               AUTHORITY CARDS
+            ========================================================= */
+
+            .tax-filing-authorities {
+                display: grid;
+                grid-template-columns:
+                    repeat(3, minmax(0, 1fr));
+                gap: 12px;
+            }
+
+            .tax-filing-authority-card {
+                background: white;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 16px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+
+            .tax-filing-authority-card:hover {
+                border-color: #94a3b8;
+                box-shadow:
+                    0 2px 4px rgba(0,0,0,0.05);
+            }
+
+            .tax-filing-authority-card.selected {
+                border-color: #3b82f6;
+                background: #eff6ff;
+            }
+
+            .tax-filing-authority-icon {
+                font-size: 30px;
+                margin-bottom: 8px;
+            }
+
+            .tax-filing-authority-name {
+                font-weight: 600;
+                margin-bottom: 4px;
+            }
+
+            .tax-filing-authority-country {
+                font-size: 13px;
+                color: #64748b;
+            }
+
+            .tax-filing-authority-formats {
+                display: flex;
+                gap: 4px;
+                margin-top: 8px;
+                flex-wrap: wrap;
+            }
+
+            .tax-filing-format-badge {
+                font-size: 11px;
+                padding: 2px 6px;
+                background: #f1f5f9;
+                border-radius: 4px;
+                color: #475569;
+            }
+
+
+            /* =========================================================
+               AUTHORITY WORKSPACE
+            ========================================================= */
+
+            .tax-filing-authority-workspace {
+                margin-top: 20px;
+                background: white;
+                border: 1px solid #e2e8f0;
+                border-radius: 10px;
+                padding: 18px;
+            }
+
+
+            /* =========================================================
+               PERIOD FILTERS
+               Side by side and deliberately NOT full width
+            ========================================================= */
+
+            .tax-filing-period-section {
+                display: flex;
+                align-items: flex-end;
+                gap: 12px;
+                margin-bottom: 18px;
+                padding-bottom: 16px;
+                border-bottom: 1px solid #e2e8f0;
+            }
+
+            .tax-filing-field {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                width: 180px;
+                max-width: 180px;
+            }
+
+            .tax-filing-field label {
+                font-size: 11px;
+                font-weight: 600;
+                color: #64748b;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+
+            .tax-filing-field select {
+                width: 100%;
+                box-sizing: border-box;
+                padding: 9px 12px;
+                border: 1px solid #cbd5e1;
+                border-radius: 6px;
+                font-size: 13px;
+                background: white;
+                color: #334155;
+            }
+
+
+            /* =========================================================
+               RETURNS TABLE
+            ========================================================= */
+
+            .tax-filing-returns-table {
+                width: 100%;
+                overflow-x: auto;
+                margin-top: 4px;
+            }
+
+            .tax-filing-returns-table .payroll-table-wrap {
+                width: 100%;
+                overflow-x: auto;
+            }
+
+            .tax-filing-returns-table .payroll-preview-table {
+                width: 100%;
+                min-width: 1050px;
+                border-collapse: collapse;
+                font-size: 13px;
+            }
+
+            .tax-filing-returns-table
+            .payroll-preview-table th,
+            .tax-filing-returns-table
+            .payroll-preview-table td {
+                padding: 9px 12px;
+                text-align: left;
+                border-bottom: 1px solid #e2e8f0;
+                white-space: nowrap;
+            }
+
+            .tax-filing-returns-table
+            .payroll-preview-table th {
+                background: #f8fafc;
+                font-weight: 600;
+                color: #475569;
+            }
+
+            .tax-filing-returns-table
+            .payroll-preview-table tbody tr:hover {
+                background: #f8fafc;
+            }
+
+
+            /* =========================================================
+               ACTIONS
+            ========================================================= */
+
+            .tax-filing-actions {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding-top: 16px;
+                margin-top: 8px;
+                border-top: 1px solid #e2e8f0;
+                flex-wrap: wrap;
+                gap: 12px;
+            }
+
+            .tax-filing-export-group {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+
+            .tax-filing-export-label {
+                font-size: 13px;
+                color: #64748b;
+            }
+
+
+            /* =========================================================
+               VALIDATION
+            ========================================================= */
+
+            .tax-filing-validation {
+                margin-top: 16px;
+                padding: 16px;
+                border-radius: 8px;
+            }
+
+            .tax-filing-validation.success {
+                background: #f0fdf4;
+                border: 1px solid #86efac;
+            }
+
+            .tax-filing-validation.error {
+                background: #fef2f2;
+                border: 1px solid #fca5a5;
+            }
+
+            .tax-filing-validation.warning {
+                background: #fffbeb;
+                border: 1px solid #fde047;
+            }
+
+
+            /* =========================================================
+               PREVIEW
+            ========================================================= */
+
+            .tax-filing-preview {
+                margin-top: 16px;
+                overflow-x: auto;
+            }
+
+
+            /* =========================================================
+               LOADING
+            ========================================================= */
+
+            .tax-filing-loading {
+                text-align: center;
+                padding: 40px;
+                color: #64748b;
+            }
+
+            .tax-filing-loading .spinner {
+                width: 32px;
+                height: 32px;
+                border: 3px solid #e2e8f0;
+                border-top-color: #3b82f6;
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+                margin: 0 auto 12px;
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
                 }
-                .tax-filing-header { margin-bottom: 20px; }
-                .tax-filing-title { 
-                    font-size: 18px; 
-                    font-weight: 600; 
-                    margin: 0 0 5px 0;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
+            }
+
+
+            /* =========================================================
+               RESPONSIVE
+            ========================================================= */
+
+            @media (max-width: 800px) {
+
+                .tax-filing-authorities {
+                    grid-template-columns: 1fr;
                 }
-                .tax-filing-subtitle { 
-                    color: #64748b; 
-                    font-size: 14px; 
-                    margin: 0; 
-                }
-                .tax-filing-section { margin-bottom: 20px; }
-                .tax-filing-label { 
-                    display: block; 
-                    font-weight: 600; 
-                    margin-bottom: 10px; 
-                    color: #334155; 
-                }
-                
-                /* Authority Cards */
-                .tax-filing-authorities { 
-                    display: grid; 
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
-                    gap: 12px; 
-                }
-                .tax-filing-authority-card {
-                    background: white;
-                    border: 2px solid #e2e8f0;
-                    border-radius: 8px;
-                    padding: 16px;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                }
-                .tax-filing-authority-card:hover {
-                    border-color: #94a3b8;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-                }
-                .tax-filing-authority-card.selected {
-                    border-color: #3b82f6;
-                    background: #eff6ff;
-                }
-                .tax-filing-authority-icon { font-size: 32px; margin-bottom: 8px; }
-                .tax-filing-authority-name { font-weight: 600; margin-bottom: 4px; }
-                .tax-filing-authority-country { font-size: 13px; color: #64748b; }
-                .tax-filing-authority-formats { 
-                    display: flex; 
-                    gap: 4px; 
-                    margin-top: 8px; 
-                    flex-wrap: wrap; 
-                }
-                .tax-filing-format-badge {
-                    font-size: 11px;
-                    padding: 2px 6px;
-                    background: #f1f5f9;
-                    border-radius: 4px;
-                    color: #475569;
-                }
-                
-                /* Period Row */
-                .tax-filing-period-row { display: flex; gap: 12px; }
-                .tax-filing-select { 
-                    flex: 1; 
-                    padding: 10px 12px; 
-                    border: 1px solid #d1d5db; 
-                    border-radius: 6px; 
-                    font-size: 14px; 
-                }
-                
-                /* Actions */
-                .tax-filing-actions { 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: space-between;
-                    padding-top: 16px;
-                    border-top: 1px solid #e2e8f0;
+
+                .tax-filing-period-section {
                     flex-wrap: wrap;
-                    gap: 12px;
                 }
-                .tax-filing-export-group { display: flex; align-items: center; gap: 8px; }
-                .tax-filing-export-label { font-size: 13px; color: #64748b; }
-                
-                /* Validation Results */
-                .tax-filing-validation { 
-                    margin-top: 16px; 
-                    padding: 16px; 
-                    border-radius: 8px; 
+
+                .tax-filing-field {
+                    width: 180px;
+                    max-width: 180px;
                 }
-                .tax-filing-validation.success { background: #f0fdf4; border: 1px solid #86efac; }
-                .tax-filing-validation.error { background: #fef2f2; border: 1px solid #fca5a5; }
-                .tax-filing-validation.warning { background: #fffbeb; border: 1px solid #fde047; }
-                
-                /* Preview Table */
-                .tax-filing-preview { margin-top: 16px; }
-                .tax-filing-preview-table { 
-                    width: 100%; 
-                    border-collapse: collapse; 
-                    font-size: 13px; 
+
+                .tax-filing-actions {
+                    align-items: stretch;
+                    flex-direction: column;
                 }
-                .tax-filing-preview-table th,
-                .tax-filing-preview-table td { 
-                    padding: 8px 12px; 
-                    text-align: left; 
-                    border-bottom: 1px solid #e2e8f0; 
+
+                .tax-filing-export-group {
+                    width: 100%;
                 }
-                .tax-filing-preview-table th { 
-                    background: #f8fafc; 
-                    font-weight: 600; 
+            }
+
+            @media (max-width: 500px) {
+
+                .tax-filing-field {
+                    width: 100%;
+                    max-width: 100%;
                 }
-                
-                /* Loading */
-                .tax-filing-loading { 
-                    text-align: center; 
-                    padding: 40px; 
-                    color: #64748b; 
+
+                .tax-filing-export-group {
+                    flex-direction: column;
+                    align-items: stretch;
                 }
-                .tax-filing-loading .spinner { 
-                    width: 32px; height: 32px; 
-                    border: 3px solid #e2e8f0; 
-                    border-top-color: #3b82f6; 
-                    border-radius: 50%; 
-                    animation: spin 0.8s linear infinite; 
-                    margin: 0 auto 12px; 
+
+                .tax-filing-export-group button {
+                    width: 100%;
                 }
-                @keyframes spin { to { transform: rotate(360deg); } }
-                
-                /* Responsive */
-                @media (max-width: 640px) {
-                    .tax-filing-authorities { grid-template-columns: 1fr; }
-                    .tax-filing-period-row { flex-direction: column; }
-                    .tax-filing-actions { flex-direction: column; align-items: stretch; }
-                    .tax-filing-export-group { justify-content: stretch; }
-                    .tax-filing-export-group button { flex: 1; }
-                }
-            </style>
-        `;
-    }
-    
+            }
+
+        </style>
+    `;
+}    
     /**
      * Render authority selection cards
      */
@@ -471,6 +798,141 @@
         return 1;
     }
 
+    function initTaxFilingPanel() {
+
+        const panel = $("taxFilingPanel");
+
+        if (!panel) return;
+
+
+        /*
+        * Authority selection
+        */
+        panel
+            .querySelectorAll("[data-tax-authority]")
+            .forEach(card => {
+
+                const selectAuthority = () => {
+
+                    const authority =
+                        card.dataset.taxAuthority;
+
+                    state.selectedAuthority =
+                        authority;
+
+
+                    /*
+                    * Update selected card
+                    */
+                    panel
+                        .querySelectorAll(
+                            "[data-tax-authority]"
+                        )
+                        .forEach(c => {
+                            c.classList.toggle(
+                                "selected",
+                                c.dataset.taxAuthority === authority
+                            );
+                        });
+
+
+                    /*
+                    * Rebuild tax-year options
+                    */
+                    const yearEl =
+                        $("taxFilingYear");
+
+                    if (yearEl) {
+
+                        yearEl.innerHTML =
+                            generateYearOptions(authority);
+
+                    }
+
+
+                    /*
+                    * Reset month
+                    */
+                    const monthEl =
+                        $("taxFilingMonth");
+
+                    if (monthEl) {
+                        monthEl.value = "";
+                    }
+
+
+                    /*
+                    * Re-render authority table
+                    */
+                    renderPayrollStatutoryReturns();
+
+                };
+
+
+                card.addEventListener(
+                    "click",
+                    selectAuthority
+                );
+
+
+                card.addEventListener(
+                    "keydown",
+                    event => {
+
+                        if (
+                            event.key === "Enter" ||
+                            event.key === " "
+                        ) {
+
+                            event.preventDefault();
+
+                            selectAuthority();
+
+                        }
+
+                    }
+                );
+
+            });
+
+
+        /*
+        * Year filter
+        */
+        const yearEl =
+            $("taxFilingYear");
+
+        if (yearEl) {
+
+            yearEl.addEventListener(
+                "change",
+                renderPayrollStatutoryReturns
+            );
+
+        }
+
+
+        /*
+        * Month filter
+        */
+        const monthEl =
+            $("taxFilingMonth");
+
+        if (monthEl) {
+
+            monthEl.addEventListener(
+                "change",
+                renderPayrollStatutoryReturns
+            );
+
+        }
+
+
+        /*
+        * Initial render
+        */
+        renderPayrollStatutoryReturns();
+    }
 
     function generateFilingMonthOptions(authorityCode, taxYear) {
         const startMonth =
@@ -530,31 +992,16 @@
          * Inject the tax filing panel into the DOM
          */
         injectPanel() {
-            // Find the statutory tab content area
-            const statutoryPanel = document.getElementById('payrollTabStatutory');
-            
-            if (statutoryPanel) {
-                // 🟩 FIXED: Clean up any pre-existing panel to stop duplication
-                const oldPanel = document.getElementById('taxFilingPanel');
-                if (oldPanel) {
-                    oldPanel.parentElement.remove(); // Removes the wrapper div container too
-                }
+            const section = document.getElementById('payeTaxFilingSection');
 
-                // Insert our panel before the existing content or append
-                const existingContent = statutoryPanel.querySelector('.payroll-statutory-content');
-                const panelDiv = document.createElement('div');
-                panelDiv.innerHTML = createTaxFilingPanel();
-                
-                if (existingContent) {
-                    statutoryPanel.insertBefore(panelDiv, existingContent);
-                } else {
-                    statutoryPanel.appendChild(panelDiv);
-                }
-                
-                console.log('[Tax Filing] Panel injected into Statutory Returns tab');
-            } else {
-                console.warn('[Tax Filing] Could not find payrollTabStatutory element');
+            if (!section) {
+                console.warn('[Tax Filing] Could not find payeTaxFilingSection element');
+                return;
             }
+
+            section.innerHTML = createTaxFilingPanel();
+
+            console.log('[Tax Filing] Panel injected into Statutory Returns tab');
         },
 
         
@@ -562,7 +1009,16 @@
          * Bind event listeners
          */
         bindEvents() {
-            document.getElementById('taxFilingMonth')?.addEventListener('change', () => this.onPeriodChange());
+            document.querySelectorAll('.tax-filing-authority-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    this.selectAuthority(card.dataset.authority);
+                });
+            });
+
+            document.getElementById('taxFilingMonth')?.addEventListener('change', () => {
+                this.onPeriodChange();
+                renderPayrollStatutoryReturns();
+            });
 
             document.getElementById('taxFilingYear')?.addEventListener('change', () => {
                 const authority = state.selectedAuthority || 'SARS';
@@ -576,6 +1032,23 @@
                 }
 
                 this.onPeriodChange();
+                renderPayrollStatutoryReturns();
+            });
+
+            document.getElementById('taxFilingValidateBtn')?.addEventListener('click', () => {
+                this.validate();
+            });
+
+            document.getElementById('taxFilingExportCsv')?.addEventListener('click', () => {
+                this.export('csv');
+            });
+
+            document.getElementById('taxFilingExportXlsx')?.addEventListener('click', () => {
+                this.export('xlsx');
+            });
+
+            document.getElementById('taxFilingExportXml')?.addEventListener('click', () => {
+                this.export('xml');
             });
         },
         
@@ -584,23 +1057,39 @@
          */
         selectAuthority(authorityCode) {
             state.selectedAuthority = authorityCode;
-            
-            // Update card selection UI
+
             document.querySelectorAll('.tax-filing-authority-card').forEach(card => {
                 card.classList.toggle('selected', card.dataset.authority === authorityCode);
             });
-            
-            // Show period selection
-            document.getElementById('taxFilingPeriodSection').style.display = '';
-            document.getElementById('taxFilingActions').style.display = '';
-            
-            // Show/hide XML button based on authority support
+
+            const periodSection = document.getElementById('taxFilingPeriodSection');
+            const actions = document.getElementById('taxFilingActions');
+
+            if (periodSection) periodSection.style.display = '';
+            if (actions) actions.style.display = '';
+
+            const yearSelect = document.getElementById('taxFilingYear');
+            const monthSelect = document.getElementById('taxFilingMonth');
+
+            if (yearSelect && monthSelect && yearSelect.value) {
+                monthSelect.innerHTML =
+                    '<option value="">Select filing month</option>' +
+                    generateFilingMonthOptions(authorityCode, yearSelect.value);
+            }
+
             const config = TAX_FILING_CONFIG.authorities[authorityCode];
             const xmlBtn = document.getElementById('taxFilingExportXml');
+
             if (xmlBtn) {
-                xmlBtn.style.display = config.supportsFormats.includes('xml') ? '' : 'none';
+                xmlBtn.style.display =
+                    config?.supportsFormats?.includes('xml')
+                        ? 'inline-flex'
+                        : 'none';
             }
-            
+
+            this.onPeriodChange();
+            renderPayrollStatutoryReturns();
+
             console.log(`[Tax Filing] Selected authority: ${authorityCode}`);
         },
         

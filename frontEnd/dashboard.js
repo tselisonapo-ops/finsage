@@ -80790,60 +80790,156 @@ async function saveEditModal() {
    * 2. The NEW PAYE Tax Filing export section (SARS/RSL/BURS)
    */
   function renderPayrollStatutoryReturns() {
-    const el = $("payrollStatutoryReturnsList");
-    const items = payrollState.statutory.returns || [];
 
+    const el = $("taxFilingReturnsTable");
     if (!el) return;
 
-    el.innerHTML = items.length ? `
+    const items = payrollState.statutory.returns || [];
+    const authority = state.selectedAuthority || "SARS";
+
+    const yearEl = $("taxFilingYear");
+    const monthEl = $("taxFilingMonth");
+
+    const selectedYear = yearEl ? String(yearEl.value || "") : "";
+    const selectedMonth = monthEl ? String(monthEl.value || "") : "";
+
+    let filteredItems = items.filter(item => {
+        return String(item.authority_code || "")
+            .toUpperCase() === authority.toUpperCase();
+    });
+
+    if (selectedYear) {
+        filteredItems = filteredItems.filter(item => {
+            const periodStart = String(item.period_start || "").slice(0, 10);
+            const periodEnd = String(item.period_end || "").slice(0, 10);
+
+            return (
+                periodStart.startsWith(selectedYear) ||
+                periodEnd.startsWith(selectedYear)
+            );
+        });
+    }
+
+    if (selectedMonth) {
+        filteredItems = filteredItems.filter(item => {
+            const periodStart = String(item.period_start || "").slice(0, 10);
+            const periodEnd = String(item.period_end || "").slice(0, 10);
+
+            const startMonth = periodStart.slice(5, 7);
+            const endMonth = periodEnd.slice(5, 7);
+
+            return (
+                startMonth === selectedMonth ||
+                endMonth === selectedMonth
+            );
+        });
+    }
+
+    if (!filteredItems.length) {
+
+        el.innerHTML = `
+            <div style="
+                padding:35px 20px;
+                text-align:center;
+                color:#94a3b8;
+                background:#f8fafc;
+                border:1px dashed #cbd5e1;
+                border-radius:8px;
+            ">
+                <div style="font-size:28px;margin-bottom:8px;">
+                    📭
+                </div>
+
+                <strong style="color:#475569;">
+                    No ${esc(authority)} statutory returns found
+                </strong>
+
+                <p style="margin:6px 0 0;">
+                    Try another tax year or filing month.
+                </p>
+            </div>
+        `;
+
+        const actions = $("taxFilingActions");
+
+        if (actions) {
+            actions.style.display = "none";
+        }
+
+        return;
+    }
+
+    el.innerHTML = `
         <div class="payroll-table-wrap">
-          <table class="payroll-preview-table">
-            <thead>
-              <tr>
-                <th>Return</th>
-                <th>Authority</th>
-                <th>Type</th>
-                <th>Period</th>
-                <th>Employees</th>
-                <th>Employee Amount</th>
-                <th>Employer Amount</th>
-                <th>Total Payable</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${items.map(item => `
-                <tr>
-                  <td><strong>${esc(item.return_no)}</strong></td>
-                  <td>${esc(item.authority_code)}</td>
-                  <td>${esc(cap(String(item.return_type || "").replaceAll("_", " ")))}</td>
-                  <td>
-                    ${esc(String(item.period_start || "").slice(0, 10))}
-                    –
-                    ${esc(String(item.period_end || "").slice(0, 10))}
-                  </td>
-                  <td>${Number(item.employee_count || 0)}</td>
-                  <td class="num">${money(item.employee_amount)}</td>
-                  <td class="num">${money(item.employer_amount)}</td>
-                  <td class="num"><strong>${money(item.total_payable)}</strong></td>
-                  <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
-                  <td>
-                    <button class="payroll-link" data-open-statutory-return="${item.id}">Open</button>
-                  </td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
+            <table class="payroll-preview-table">
+                <thead>
+                    <tr>
+                        <th>Return</th>
+                        <th>Authority</th>
+                        <th>Type</th>
+                        <th>Period</th>
+                        <th>Employees</th>
+                        <th>Employee Amount</th>
+                        <th>Employer Amount</th>
+                        <th>Total Payable</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filteredItems.map(item => `
+                        <tr>
+                            <td><strong>${esc(item.return_no)}</strong></td>
+                            <td>${esc(item.authority_code)}</td>
+                            <td>${esc(cap(String(item.return_type || "").replaceAll("_", " ")))}</td>
+                            <td>
+                                ${esc(String(item.period_start || "").slice(0, 10))}
+                                –
+                                ${esc(String(item.period_end || "").slice(0, 10))}
+                            </td>
+                            <td>${Number(item.employee_count || 0)}</td>
+                            <td class="num">${money(item.employee_amount)}</td>
+                            <td class="num">${money(item.employer_amount)}</td>
+                            <td class="num"><strong>${money(item.total_payable)}</strong></td>
+                            <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
+                            <td>
+                                <button
+                                    class="payroll-link"
+                                    data-open-statutory-return="${item.id}"
+                                >
+                                    Open
+                                </button>
+                            </td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
         </div>
-    ` : `<p class="payroll-muted">No statutory returns found.</p>`;
+    `;
 
     el.querySelectorAll("[data-open-statutory-return]").forEach(btn => {
         btn.addEventListener("click", () => {
-            openPayrollStatutoryReturn(Number(btn.dataset.openStatutoryReturn));
+            openPayrollStatutoryReturn(
+                Number(btn.dataset.openStatutoryReturn)
+            );
         });
     });
-  }
+
+    const actions = $("taxFilingActions");
+
+    if (actions) {
+        actions.style.display = "flex";
+    }
+
+    const xmlBtn = $("taxFilingExportXml");
+
+    if (xmlBtn) {
+        xmlBtn.style.display =
+            authority === "SARS"
+                ? "inline-flex"
+                : "none";
+    }
+}
 
   async function editPayrollStatutoryReturn(item={}){
     const values=await payrollForm(
@@ -81126,16 +81222,16 @@ async function saveEditModal() {
   }
 
   function closePayrollStatutoryReturn(){
-    payrollState.statutory.selectedReturn=null;
+      payrollState.statutory.selectedReturn=null;
 
-    const el=$("payrollStatutoryReturnDetail");
-    if(el)el.innerHTML="";
+      const el=$("payrollStatutoryReturnDetail");
+      if(el)el.innerHTML="";
 
-    $("payrollStatutoryReturnsList")
-      ?.scrollIntoView({
-        behavior:"smooth",
-        block:"start",
-      });
+      $("taxFilingReturnsTable")
+          ?.scrollIntoView({
+              behavior:"smooth",
+              block:"start",
+          });
   }
 
   async function calculatePayrollStatutoryReturn(returnId){
