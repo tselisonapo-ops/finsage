@@ -1143,15 +1143,17 @@
          */
         async validate() {
             if (!this.checkPrerequisites()) return;
-            
+
             this.setLoading(true);
-            
+
             try {
                 const companyId = getActiveCompanyId();
+
                 const {
                     periodStart,
                     periodEnd
                 } = state.selectedPeriod;
+
                 const response = await apiCall(ENDPOINTS.taxFiling.validate(companyId), {
                     method: 'POST',
                     body: JSON.stringify({
@@ -1161,19 +1163,32 @@
                         include_benefits: true
                     })
                 });
-                
-                if (response && !response.error) {
-                    state.validationResults = response;
-                    this.renderValidationResults(response);
-                    showStatus(`Validation complete: ${response.summary.total_records} records checked`, 'success');
+
+                if (response?.ok && response?.data) {
+                    const results = response.data;
+
+                    state.validationResults = results;
+
+                    this.renderValidationResults(results);
+
+                    showStatus(
+                        `Validation complete: ${results.summary.total_records} records checked`,
+                        'success'
+                    );
                 } else {
                     throw new Error(response?.error || 'Validation failed');
                 }
-                } catch (error) {
-                    console.error('[Tax Filing] Validation error:', error);
-                    console.error('[Tax Filing] Error object:', error);
-                    showStatus(`Validation failed: ${error.message}`, 'error');
-                } finally {
+
+            } catch (error) {
+                console.error('[Tax Filing] Validation error:', error);
+                console.error('[Tax Filing] Error object:', error);
+
+                showStatus(
+                    `Validation failed: ${error.message}`,
+                    'error'
+                );
+
+            } finally {
                 this.setLoading(false);
             }
         },
