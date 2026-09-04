@@ -1017,7 +1017,7 @@
 
             document.getElementById('taxFilingMonth')?.addEventListener('change', () => {
                 this.onPeriodChange();
-                renderPayrollStatutoryReturns();
+                window.renderPayrollStatutoryReturns?.();
             });
 
             document.getElementById('taxFilingYear')?.addEventListener('change', () => {
@@ -1032,7 +1032,7 @@
                 }
 
                 this.onPeriodChange();
-                renderPayrollStatutoryReturns();
+                window.renderPayrollStatutoryReturns?.();
             });
 
             document.getElementById('taxFilingValidateBtn')?.addEventListener('click', () => {
@@ -1150,10 +1150,11 @@
                 } else {
                     throw new Error(response.error || 'Validation failed');
                 }
-            } catch (error) {
-                console.error('[Tax Filing] Validation error:', error);
-                showStatus(`Validation failed: ${error.message}`, 'error');
-            } finally {
+                } catch (error) {
+                    console.error('[Tax Filing] Validation error:', error);
+                    console.error('[Tax Filing] Error object:', error);
+                    showStatus(`Validation failed: ${error.message}`, 'error');
+                } finally {
                 this.setLoading(false);
             }
         },
