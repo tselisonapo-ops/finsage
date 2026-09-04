@@ -1093,6 +1093,9 @@
             console.log(`[Tax Filing] Selected authority: ${authorityCode}`);
         },
         
+        getSelectedAuthority() {
+            return state.selectedAuthority || "SARS";
+        },
         /**
          * Handle period change
          */
@@ -1143,12 +1146,12 @@
                     })
                 });
                 
-                if (response.ok && response.data) {
-                    state.validationResults = response.data;
-                    this.renderValidationResults(response.data);
-                    showStatus(`Validation complete: ${response.data.summary.total_records} records checked`, 'success');
+                if (response && !response.error) {
+                    state.validationResults = response;
+                    this.renderValidationResults(response);
+                    showStatus(`Validation complete: ${response.summary.total_records} records checked`, 'success');
                 } else {
-                    throw new Error(response.error || 'Validation failed');
+                    throw new Error(response?.error || 'Validation failed');
                 }
                 } catch (error) {
                     console.error('[Tax Filing] Validation error:', error);

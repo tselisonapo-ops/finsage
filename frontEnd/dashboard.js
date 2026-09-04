@@ -80795,7 +80795,10 @@ async function saveEditModal() {
     if (!el) return;
 
     const items = payrollState.statutory.returns || [];
-    const authority = state.selectedAuthority || "SARS";
+
+    const authorityEl = document.querySelector(".tax-filing-authority-card.selected");
+    const authority =
+        window.TaxFilingAPI?.getSelectedAuthority?.() || "SARS";
 
     const yearEl = $("taxFilingYear");
     const monthEl = $("taxFilingMonth");
