@@ -39479,7 +39479,11 @@ window.submitTermDraft = submitTermDraft;
 
 window.openLeaseModificationModal = function (leaseId) {
   ensureModals();
-  state.leaseId = Number(leaseId || getActiveLeaseId()) || null;
+  // FIX (state-is-not-defined): bare `state` is not defined in this scope;
+  // this module stores its state on window.LEASE_UI.state.
+  window.LEASE_UI = window.LEASE_UI || {};
+  window.LEASE_UI.state = window.LEASE_UI.state || {};
+  window.LEASE_UI.state.leaseId = Number(leaseId || getActiveLeaseId()) || null;
   msg("leaseModMsg", "");
   document.getElementById("leaseModPreviewBox").classList.add("hidden");
   applyLeaseModalPolicy("mod");
@@ -39489,7 +39493,10 @@ window.openLeaseModificationModal = function (leaseId) {
 
 window.openLeaseTerminationModal = function (leaseId) {
   ensureModals();
-  state.leaseId = Number(leaseId || getActiveLeaseId()) || null;
+  // FIX (state-is-not-defined): same as openLeaseModificationModal above.
+  window.LEASE_UI = window.LEASE_UI || {};
+  window.LEASE_UI.state = window.LEASE_UI.state || {};
+  window.LEASE_UI.state.leaseId = Number(leaseId || getActiveLeaseId()) || null;
   msg("leaseTermMsg", "");
   document.getElementById("leaseTermPreviewBox").classList.add("hidden");
   applyLeaseModalPolicy("term");
@@ -80797,8 +80804,21 @@ async function saveEditModal() {
     const items = payrollState.statutory.returns || [];
 
     const authorityEl = document.querySelector(".tax-filing-authority-card.selected");
-    const authority =
-        window.TaxFilingAPI?.getSelectedAuthority?.() || "SARS";
+    // FIX (state-is-not-defined): optional chaining does NOT protect against
+    // exceptions thrown INSIDE getSelectedAuthority(). A legacy window.TaxFilingAPI
+    // whose getSelectedAuthority() references an out-of-scope 'state' surfaced as
+    // "state is not defined" in the statutory tab banner. Prefer the live export
+    // (window.__taxFiling) and hard-guard with try/catch.
+    let authority = "SARS";
+    try {
+      authority =
+        window.__taxFiling?.getSelectedAuthority?.() ||
+        window.TaxFilingAPI?.getSelectedAuthority?.() ||
+        "SARS";
+    } catch (e) {
+      console.warn("[Payroll] getSelectedAuthority() failed, falling back to SARS:", e?.message || e);
+      authority = "SARS";
+    }
 
     const yearEl = $("taxFilingYear");
     const monthEl = $("taxFilingMonth");
@@ -83831,6 +83851,12 @@ async function saveEditModal() {
     switchPayrollTab("overview");
     await payrollLoadAll();
   };
+
+  // FIX: expose statutory renderers so tax-filing-dashboard-integration.js can call
+  // them. They were IIFE-private, so bare renderPayrollStatutoryReturns() calls
+  // from that file (e.g. inside TaxFilingAPI.selectAuthority) threw a ReferenceError.
+  window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
+  window.loadPayrollStatutoryWorkspace = loadPayrollStatutoryWorkspace;
 
   function esc(v) {
     return String(v ?? "")
@@ -91260,16 +91286,22 @@ async function saveEditModal() {
   }
 
   async function previewRun() {
-    const cid = state.cid;
-    if (!cid) throw new Error("Missing company id");
+    // FIX (state-is-not-defined): this function was copy-pasted from a module that
+    // had its own `state` object. This module's state object is IFRS9, and the
+    // company id comes from cid().
+    const companyId = cid();
+    if (!companyId) throw new Error("Missing company id");
+
+    IFRS9.contracts = IFRS9.contracts || [];
+    IFRS9.runs = IFRS9.runs || [];
 
     // Auto-select first contract if none selected
     let contractId = Number($("revContractId")?.value || 0) || null;
-    if (!contractId && (state.contracts || []).length > 0) {
-      const firstContract = state.contracts[0];
+    if (!contractId && (IFRS9.contracts || []).length > 0) {
+      const firstContract = IFRS9.contracts[0];
       contractId = firstContract.id;
       if ($("revContractId")) $("revContractId").value = String(contractId);
-      state.selectedContract = firstContract;
+      IFRS9.selectedContract = firstContract;
       renderContractKpis(firstContract);
       console.log("[Revenue] Auto-selected first contract for preview:", contractId);
     }
@@ -91279,12 +91311,12 @@ async function saveEditModal() {
     const periodEnd = payload.period_end || "";
 
     // First, ensure runs are loaded
-    if (!state.runs || !state.runs.length) {
+    if (typeof loadRuns === "function" && (!IFRS9.runs || !IFRS9.runs.length)) {
       await loadRuns();
     }
 
     // Check for existing DRAFT run with same period + contract
-    const existingDraftRun = (state.runs || []).find(r => {
+    const existingDraftRun = (IFRS9.runs || []).find(r => {
       const rStart = String(r.period_start || "").slice(0, 10);
       const rEnd = String(r.period_end || "").slice(0, 10);
       const rContractId = Number(r.contract_id || 0) || null;
@@ -91301,14 +91333,14 @@ async function saveEditModal() {
 
       try {
         // Try to get run detail with entries
-        const runDetailUrl = ENDPOINTS.revenue.runDetail(cid, existingDraftRun.id);
+        const runDetailUrl = ENDPOINTS.revenue.runDetail(companyId, existingDraftRun.id);
         const runRes = await apiFetch(runDetailUrl, { method: "GET" });
         
         data = runRes?.data || runRes;
         
         // If we got entries from the existing run, use them
         if (data?.entries && data.entries.length > 0) {
-          state.preview = data;
+          IFRS9.preview = data;
           // Set the run ID in UI
           if ($("revRunId")) $("revRunId").value = String(existingDraftRun.id);
           renderRunPreview(data);
@@ -91322,13 +91354,13 @@ async function saveEditModal() {
     }
 
     // No existing draft run or fetch failed - call preview API
-    const out = await apiFetch(ENDPOINTS.revenue.previewRun(cid), {
+    const out = await apiFetch(ENDPOINTS.revenue.previewRun(companyId), {
       method: "POST",
       body: JSON.stringify(payload),
     });
 
     data = out?.data || out;
-    state.preview = data;
+    IFRS9.preview = data;
     renderRunPreview(data);
     refreshRunActionState(out);
     

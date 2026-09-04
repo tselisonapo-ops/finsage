@@ -864,7 +864,7 @@
                     /*
                     * Re-render authority table
                     */
-                    renderPayrollStatutoryReturns();
+                    window.renderPayrollStatutoryReturns?.();
 
                 };
 
@@ -906,7 +906,7 @@
 
             yearEl.addEventListener(
                 "change",
-                renderPayrollStatutoryReturns
+                () => window.renderPayrollStatutoryReturns?.()
             );
 
         }
@@ -922,7 +922,7 @@
 
             monthEl.addEventListener(
                 "change",
-                renderPayrollStatutoryReturns
+                () => window.renderPayrollStatutoryReturns?.()
             );
 
         }
@@ -931,7 +931,7 @@
         /*
         * Initial render
         */
-        renderPayrollStatutoryReturns();
+        window.renderPayrollStatutoryReturns?.();
     }
 
     function generateFilingMonthOptions(authorityCode, taxYear) {
@@ -1088,7 +1088,9 @@
             }
 
             this.onPeriodChange();
-            renderPayrollStatutoryReturns();
+            // FIX: renderPayrollStatutoryReturns lives inside dashboard.js's payroll
+            // IIFE and is only reachable via window (dashboard.js now exports it).
+            window.renderPayrollStatutoryReturns?.();
 
             console.log(`[Tax Filing] Selected authority: ${authorityCode}`);
         },
