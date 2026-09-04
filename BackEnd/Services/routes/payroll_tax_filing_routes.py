@@ -727,7 +727,10 @@ def preview_tax_filing_data(company_id: int):
     """
     if request.method == "OPTIONS":
         return _options()
-    
+
+    import logging
+
+    logger = logging.getLogger(__name__)    
     try:
         # 1. Read input filters from URL query parameters
         authority_code = request.args.get('authority')
@@ -749,12 +752,12 @@ def preview_tax_filing_data(company_id: int):
             }), 400
         
         # 3. Fetch company data payload 
-        print("=== TAX FILING PREVIEW INPUT ===")
-        print("company_id:", company_id)
-        print("authority_code:", repr(authority_code))
-        print("period:", repr(period))
-        print("period_start:", repr(period_start))
-        print("period_end:", repr(period_end))
+        logger.warning("=== TAX FILING PREVIEW INPUT ===")
+        logger.warning("company_id=%r", company_id)
+        logger.warning("authority_code=%r", authority_code)
+        logger.warning("period=%r", period)
+        logger.warning("period_start=%r", period_start)
+        logger.warning("period_end=%r", period_end)
 
         records = db_service.get_payroll_records_for_filing(
             company_id=company_id,
@@ -833,6 +836,7 @@ def preview_tax_filing_data(company_id: int):
         return _success(preview_data)
         
     except Exception as e:
+        logger.exception("TAX FILING PREVIEW FAILED")
         return _error("preview_tax_filing_data", e)
 
 # ============================================================================

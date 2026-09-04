@@ -164203,6 +164203,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         """
         schema = self.company_schema(company_id)
 
+        import logging
+
+        logger = logging.getLogger(__name__)
         query = f"""
             SELECT
                 e.id AS employee_id,
@@ -164425,16 +164428,19 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             employee_id_values,
             employee_id_values,
         )
+        logger.warning("=== PAYROLL FILING QUERY PARAMS ===")
+        logger.warning("company_id=%r", company_id)
+        logger.warning("period_start=%r", period_start)
+        logger.warning("period_end=%r", period_end)
+        logger.warning("authority_code=%r", authority_code)
+        logger.warning("employee_ids=%r", employee_ids)
+        logger.warning("params=%r", params)
 
-        print("=== PAYROLL FILING QUERY PARAMS ===")
-        print("company_id:", company_id)
-        print("period_start:", period_start)
-        print("period_end:", period_end)
-        print("authority_code:", repr(authority_code))
-        print("employee_ids:", employee_ids)
-        print("params:", params)
+        result = self._payroll_query(query, params)
 
-        return self._payroll_query(query, params)
+        logger.warning("=== PAYROLL FILING QUERY RESULT === row_count=%d", len(result))
+
+        return result
 
     def get_tax_year_dates(self, authority_code: str, tax_year_label: str) -> tuple:
         """
