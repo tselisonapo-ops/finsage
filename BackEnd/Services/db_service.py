@@ -154936,63 +154936,64 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             Decimal("0"),
         )
 
-uif_employee=Decimal("0.00")
-uif_employer=Decimal("0.00")
+        uif_employee=Decimal("0.00")
+        uif_employer=Decimal("0.00")
 
-if str(tax_context.get("authority_code") or "").upper()=="SARS":
-    uif_employee=self.payroll_calculate_uif(
-        tax_context=tax_context,
-        remuneration=gross,
-        side="employee",
-    )
-    uif_employer=self.payroll_calculate_uif(
-        tax_context=tax_context,
-        remuneration=gross,
-        side="employer",
-    )
+        if str(tax_context.get("authority_code") or "").upper()=="SARS":
+            uif_employee=self.payroll_calculate_uif(
+                tax_context=tax_context,
+                remuneration=gross,
+                side="employee",
+            )
+            uif_employer=self.payroll_calculate_uif(
+                tax_context=tax_context,
+                remuneration=gross,
+                side="employer",
+            )
 
-if uif_employee>0:
-    deduction_lines.append({
-        "item_type":"deduction",
-        "item_id":None,
-        "code":"UIF_EMP",
-        "name":"UIF Employee Deduction",
-        "amount":uif_employee,
-        "quantity":None,
-        "rate":None,
-        "percentage":None,
-        "taxable":False,
-        "pensionable":False,
-        "source_type":"statutory",
-        "source_id":None,
-        "gl_account_code":None,
-        "offset_account_code":None,
-        "metadata":{
-            "authority_code":"SARS",
-            "calculation":"statutory_uif",
-        },
-    })
-    if uif_employer>0:
-        contribution_lines.append({
-            "item_type":"contribution",
-            "item_id":None,
-            "code":"UIF_ER",
-            "name":"Employer UIF Contribution",
-            "amount":uif_employer,
-            "quantity":None,
-            "rate":None,
-            "percentage":None,
-            "taxable":False,
-            "pensionable":False,
-            "source_type":"statutory",
-            "source_id":None,
-            "gl_account_code":None,
-            "offset_account_code":None,
-            "metadata":{
-                "authority_code":"SARS",
-                "calculation":"statutory_uif",
-            },
-        })
+        if uif_employee>0:
+            deduction_lines.append({
+                "item_type":"deduction",
+                "item_id":None,
+                "code":"UIF_EMP",
+                "name":"UIF Employee Deduction",
+                "amount":uif_employee,
+                "quantity":None,
+                "rate":None,
+                "percentage":None,
+                "taxable":False,
+                "pensionable":False,
+                "source_type":"statutory",
+                "source_id":None,
+                "gl_account_code":None,
+                "offset_account_code":None,
+                "metadata":{
+                    "authority_code":"SARS",
+                    "calculation":"statutory_uif",
+                },
+            })
+
+        if uif_employer>0:
+            contribution_lines.append({
+                "item_type":"contribution",
+                "item_id":None,
+                "code":"UIF_ER",
+                "name":"Employer UIF Contribution",
+                "amount":uif_employer,
+                "quantity":None,
+                "rate":None,
+                "percentage":None,
+                "taxable":False,
+                "pensionable":False,
+                "source_type":"statutory",
+                "source_id":None,
+                "gl_account_code":None,
+                "offset_account_code":None,
+                "metadata":{
+                    "authority_code":"SARS",
+                    "calculation":"statutory_uif",
+                },
+            })
         taxable_earnings=sum(
             (
                 _payroll_decimal(x.get("amount"))
