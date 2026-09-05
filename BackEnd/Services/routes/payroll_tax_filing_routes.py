@@ -960,15 +960,36 @@ def preview_tax_filing_data(company_id: int):
 
             # Limit preview records snapshot payload to 5 rows maximum
             if index < 5:
-                sample_records.append({
-                    "payroll_number": rec.get("payroll_number"),
-                    "first_name": rec.get("first_name"),
-                    "last_name": rec.get("last_name"),
-                    "id_number": rec.get("id_number"),
-                    "tax_number": rec.get("tax_number"),
-                    "gross_income": round(gross, 2),
-                    "paye_deducted": round(paye, 2)
-                })
+                total_employees = len(records)
+                total_gross = 0.0
+                total_paye = 0.0
+                total_uif = 0.0
+                total_sdl = 0.0
+                preview_records = []
+
+                for rec in records:
+                    gross = float(rec.get("gross_income") or 0.0)
+                    paye = float(rec.get("paye_deducted") or 0.0)
+                    uif = float(rec.get("uif_deducted") or 0.0)
+                    sdl = float(rec.get("sdl_deducted") or 0.0)
+
+                    total_gross += gross
+                    total_paye += paye
+                    total_uif += uif
+                    total_sdl += sdl
+
+                    preview_records.append({
+                        "payroll_number": rec.get("payroll_number"),
+                        "first_name": rec.get("first_name"),
+                        "last_name": rec.get("last_name"),
+                        "id_number": rec.get("id_number"),
+                        "tax_number": rec.get("tax_number"),
+                        "gross_income": round(gross, 2),
+                        "paye_deducted": round(paye, 2),
+                        "uif_deducted": round(uif, 2),
+                        "sdl_deducted": round(sdl, 2),
+                        "net_pay": round(gross - paye - uif, 2)
+                    })
 
         avg_tax_rate = (
             (total_paye / total_gross * 100)
@@ -1051,7 +1072,7 @@ def preview_tax_filing_data(company_id: int):
                 )
             },
 
-            "sample_records": sample_records,
+            "records": preview_records,
 
             "columns": (
                 sars_cols
