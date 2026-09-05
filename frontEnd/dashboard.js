@@ -80789,36 +80789,20 @@ async function saveEditModal() {
     }
   }
 
-  /**
-   * Render Statutory Returns Tab with Integrated PAYE Tax Filing
-   * ==============================================================
-   * This function renders BOTH:
-   * 1. The existing statutory returns table (other returns like UIF, SDL, etc.)
-   * 2. The NEW PAYE Tax Filing export section (SARS/RSL/BURS)
-   */
-  function renderPayrollStatutoryReturns() {
+  /* Exposed for tax-filing-dashboard-integration.js — it cannot see this
+     file's scope. Accepts an optional target element id so the tax module
+     can render the full-page preview: window.renderPayrollStatutoryReturns('taxFilingPreview') */
+  window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
 
-    const el = $("taxFilingReturnsTable");
+  function renderPayrollStatutoryReturns(targetId) {
+
+    const el = $(targetId || "taxFilingReturnsTable");
     if (!el) return;
 
     const items = payrollState.statutory.returns || [];
 
-    const authorityEl = document.querySelector(".tax-filing-authority-card.selected");
-    // FIX (state-is-not-defined): optional chaining does NOT protect against
-    // exceptions thrown INSIDE getSelectedAuthority(). A legacy window.TaxFilingAPI
-    // whose getSelectedAuthority() references an out-of-scope 'state' surfaced as
-    // "state is not defined" in the statutory tab banner. Prefer the live export
-    // (window.__taxFiling) and hard-guard with try/catch.
-    let authority = "SARS";
-    try {
-      authority =
-        window.__taxFiling?.getSelectedAuthority?.() ||
-        window.TaxFilingAPI?.getSelectedAuthority?.() ||
-        "SARS";
-    } catch (e) {
-      console.warn("[Payroll] getSelectedAuthority() failed, falling back to SARS:", e?.message || e);
-      authority = "SARS";
-    }
+    const authority =
+        window.__taxFiling?.getSelectedAuthority?.() || "SARS";
 
     const yearEl = $("taxFilingYear");
     const monthEl = $("taxFilingMonth");
@@ -80883,12 +80867,8 @@ async function saveEditModal() {
             </div>
         `;
 
-        const actions = $("taxFilingActions");
-
-        if (actions) {
-            actions.style.display = "none";
-        }
-
+        /* The top action bar (Preview / Validate / Export) is owned by the
+           tax module's selectAuthority()/preview() flow — never hide it here. */
         return;
     }
 
@@ -80926,12 +80906,14 @@ async function saveEditModal() {
                             <td class="num"><strong>${money(item.total_payable)}</strong></td>
                             <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
                             <td>
-                                <button
-                                    class="payroll-link"
-                                    data-open-statutory-return="${item.id}"
-                                >
-                                    Open
-                                </button>
+                                ${targetId ? "" : `
+                                    <button
+                                        class="payroll-link"
+                                        data-open-statutory-return="${item.id}"
+                                    >
+                                        Open
+                                    </button>
+                                `}
                             </td>
                         </tr>
                     `).join("")}
@@ -80940,29 +80922,83 @@ async function saveEditModal() {
         </div>
     `;
 
-    el.querySelectorAll("[data-open-statutory-return]").forEach(btn => {
-        btn.addEventListener("click", () => {
-            openPayrollStatutoryReturn(
-                Number(btn.dataset.openStatutoryReturn)
-            );
+    /* "Open" buttons only exist in the inline table, not the full-page preview */
+    if (!targetId) {
+        el.querySelectorAll("[data-open-statutory-return]").forEach(btn => {
+            btn.addEventListener("click", () => {
+                openPayrollStatutoryReturn(
+                    Number(btn.dataset.openStatutoryReturn)
+                );
+            });
         });
-    });
-
-    const actions = $("taxFilingActions");
-
-    if (actions) {
-        actions.style.display = "flex";
     }
 
-    const xmlBtn = $("taxFilingExportXml");
+    /* Removed: the old code forced #taxFilingActions visible and toggled the
+       XML button here — that fought with the tax module's own flow. */
+  }
+  
+  function generatePayeFilingMonths(authority, taxYear) {
+    const startYear = parseInt(String(taxYear).split('/')[0], 10);
 
-    if (xmlBtn) {
-        xmlBtn.style.display =
-            authority === "SARS"
-                ? "inline-flex"
-                : "none";
+    if (!startYear) return '';
+
+    let months = [];
+
+    if (authority === 'SARS') {
+      months = [
+        ['03', 'March'],
+        ['04', 'April'],
+        ['05', 'May'],
+        ['06', 'June'],
+        ['07', 'July'],
+        ['08', 'August'],
+        ['09', 'September'],
+        ['10', 'October'],
+        ['11', 'November'],
+        ['12', 'December'],
+        ['01', 'January'],
+        ['02', 'February']
+      ];
+    } else if (authority === 'RSL') {
+      months = [
+        ['04', 'April'],
+        ['05', 'May'],
+        ['06', 'June'],
+        ['07', 'July'],
+        ['08', 'August'],
+        ['09', 'September'],
+        ['10', 'October'],
+        ['11', 'November'],
+        ['12', 'December'],
+        ['01', 'January'],
+        ['02', 'February'],
+        ['03', 'March']
+      ];
+    } else {
+      months = [
+        ['07', 'July'],
+        ['08', 'August'],
+        ['09', 'September'],
+        ['10', 'October'],
+        ['11', 'November'],
+        ['12', 'December'],
+        ['01', 'January'],
+        ['02', 'February'],
+        ['03', 'March'],
+        ['04', 'April'],
+        ['05', 'May'],
+        ['06', 'June']
+      ];
     }
-}
+
+    return months.map(([month, name]) => {
+      const year = ['01', '02', '03'].includes(month)
+        ? startYear + 1
+        : startYear;
+
+      return `<option value="${year}-${month}">${name} ${year}</option>`;
+    }).join('');
+  }
 
   async function editPayrollStatutoryReturn(item={}){
     const values=await payrollForm(
