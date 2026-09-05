@@ -156,9 +156,8 @@
             const url = window.ENDPOINTS.taxFiling.preview(company, authority, period);
             const data = await window.apiFetch(url, { method: "GET" });
 
-            const rows   = Array.isArray(data) ? data : (data.employees || data.lines || data.results || data.data || []);
-            const totals = (!Array.isArray(data) && data) ? (data.totals || data.summary || null) : null;
-
+            const rows = Array.isArray(data) ? data : (data.sample_records || data.employees || data.lines || data.results || data.data || []);
+            const totals = (!Array.isArray(data) && data) ? (data.totals || data.summary || data.statistics || null) : null;
             if (!rows.length) {
                 showMsg(`<div style="padding:24px;text-align:center;color:#64748b;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;">📭 No PAYE data found for ${authority} — ${period}.</div>`);
                 return;

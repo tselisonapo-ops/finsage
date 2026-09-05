@@ -801,6 +801,7 @@ def preview_tax_filing_data(company_id: int):
         return _options()
 
     import logging
+    import re
     from datetime import datetime, date
 
     logger = logging.getLogger(__name__)
@@ -845,28 +846,37 @@ def preview_tax_filing_data(company_id: int):
             except ValueError:
                 return jsonify({
                     "ok": False,
-                    "error": f"Invalid monthly filing period '{period}'. Expected format: YYYY-MM-DD to YYYY-MM-DD"
+                    "error": (
+                        f"Invalid monthly filing period '{period}'. "
+                        "Expected format: YYYY-MM-DD to YYYY-MM-DD"
+                    )
                 }), 400
 
             # Validate date ordering
             if period_start > period_end:
                 return jsonify({
                     "ok": False,
-                    "error": f"Invalid filing period '{period}': start date is after end date"
+                    "error": (
+                        f"Invalid filing period '{period}': "
+                        "start date is after end date"
+                    )
                 }), 400
 
-            # PAYE must be a single calendar month.
+            # PAYE must cover one calendar month only
             if (
                 period_start.year != period_end.year
                 or period_start.month != period_end.month
             ):
                 return jsonify({
                     "ok": False,
-                    "error": f"PAYE filing period must cover one calendar month only: '{period}'"
+                    "error": (
+                        f"PAYE filing period must cover one calendar "
+                        f"month only: '{period}'"
+                    )
                 }), 400
 
         else:
-            # Legacy tax-year lookup.
+            # Legacy tax-year lookup
             # Example: 2024/2025
             period_start, period_end = db_service.get_tax_year_dates(
                 authority_code,
@@ -876,17 +886,33 @@ def preview_tax_filing_data(company_id: int):
             if not period_start or not period_end:
                 return jsonify({
                     "ok": False,
-                    "error": f"Tax year configuration '{period}' not found for authority '{authority_code}' in public.payroll_tax_years"
+                    "error": (
+                        f"Tax year configuration '{period}' not found "
+                        f"for authority '{authority_code}' "
+                        "in public.payroll_tax_years"
+                    )
                 }), 400
 
         # 3. Fetch company data payload
         current_app.logger.warning("=== TAX FILING PREVIEW INPUT ===")
         current_app.logger.warning("company_id: %s", company_id)
-        current_app.logger.warning("authority_code: %r", authority_code)
+        current_app.logger.warning(
+            "authority_code: %r",
+            authority_code
+        )
         current_app.logger.warning("period: %r", period)
-        current_app.logger.warning("is_monthly_period: %s", is_monthly_period)
-        current_app.logger.warning("period_start: %r", period_start)
-        current_app.logger.warning("period_end: %r", period_end)
+        current_app.logger.warning(
+            "is_monthly_period: %s",
+            is_monthly_period
+        )
+        current_app.logger.warning(
+            "period_start: %r",
+            period_start
+        )
+        current_app.logger.warning(
+            "period_end: %r",
+            period_end
+        )
 
         records = db_service.get_payroll_records_for_filing(
             company_id=company_id,
@@ -895,8 +921,13 @@ def preview_tax_filing_data(company_id: int):
             authority_code=authority_code
         ) or []
 
-        current_app.logger.warning("=== TAX FILING PREVIEW RESULT ===")
-        current_app.logger.warning("record_count: %s", len(records))
+        current_app.logger.warning(
+            "=== TAX FILING PREVIEW RESULT ==="
+        )
+        current_app.logger.warning(
+            "record_count: %s",
+            len(records)
+        )
 
         # 4. Process calculations and structural transformations
         total_employees = len(records)
@@ -907,11 +938,20 @@ def preview_tax_filing_data(company_id: int):
         sample_records = []
 
         for index, rec in enumerate(records):
-            # Parse database numeric representations (Decimal to float)
-            gross = float(rec.get('gross_income') or 0.0)
-            paye = float(rec.get('paye_deducted') or 0.0)
-            uif = float(rec.get('uif_deducted') or 0.0)
-            sdl = float(rec.get('sdl_deducted') or 0.0)
+            # Parse database numeric representations
+            # such as Decimal into float
+            gross = float(
+                rec.get("gross_income") or 0.0
+            )
+            paye = float(
+                rec.get("paye_deducted") or 0.0
+            )
+            uif = float(
+                rec.get("uif_deducted") or 0.0
+            )
+            sdl = float(
+                rec.get("sdl_deducted") or 0.0
+            )
 
             total_gross += gross
             total_paye += paye
@@ -921,13 +961,13 @@ def preview_tax_filing_data(company_id: int):
             # Limit preview records snapshot payload to 5 rows maximum
             if index < 5:
                 sample_records.append({
-                    'payroll_number': rec.get('payroll_number'),
-                    'first_name': rec.get('first_name'),
-                    'last_name': rec.get('last_name'),
-                    'id_number': rec.get('id_number'),
-                    'tax_number': rec.get('tax_number'),
-                    'gross_income': round(gross, 2),
-                    'paye_deducted': round(paye, 2)
+                    "payroll_number": rec.get("payroll_number"),
+                    "first_name": rec.get("first_name"),
+                    "last_name": rec.get("last_name"),
+                    "id_number": rec.get("id_number"),
+                    "tax_number": rec.get("tax_number"),
+                    "gross_income": round(gross, 2),
+                    "paye_deducted": round(paye, 2)
                 })
 
         avg_tax_rate = (
@@ -938,71 +978,102 @@ def preview_tax_filing_data(company_id: int):
 
         # 5. Look up columns or map explicit authority schemas
         sars_cols = globals().get(
-            'SARS_CSV_COLUMNS',
-            ['Payroll No', 'First Name', 'Last Name', 'Tax No', 'Gross Income', 'PAYE']
+            "SARS_CSV_COLUMNS",
+            [
+                "Payroll No",
+                "First Name",
+                "Last Name",
+                "Tax No",
+                "Gross Income",
+                "PAYE"
+            ]
         )
 
         rsl_cols = globals().get(
-            'RSL_CSV_COLUMNS',
-            ['Payroll No', 'First Name', 'Last Name', 'ID No', 'Gross Income', 'PAYE']
+            "RSL_CSV_COLUMNS",
+            [
+                "Payroll No",
+                "First Name",
+                "Last Name",
+                "ID No",
+                "Gross Income",
+                "PAYE"
+            ]
         )
 
         burs_cols = globals().get(
-            'BURS_CSV_COLUMNS',
-            ['Payroll No', 'First Name', 'Last Name', 'Gross Income', 'PAYE']
+            "BURS_CSV_COLUMNS",
+            [
+                "Payroll No",
+                "First Name",
+                "Last Name",
+                "Gross Income",
+                "PAYE"
+            ]
         )
 
         preview_data = {
-            'authority_code': authority_code,
+            "authority_code": authority_code,
 
-            'authority_config': SUPPORTED_AUTHORITIES.get(
+            "authority_config": SUPPORTED_AUTHORITIES.get(
                 authority_code,
                 {}
             ),
 
-            'period': {
-                'raw': period,
-                'type': 'monthly' if is_monthly_period else 'tax_year',
-                'start': (
+            "period": {
+                "raw": period,
+                "type": (
+                    "monthly"
+                    if is_monthly_period
+                    else "tax_year"
+                ),
+                "start": (
                     period_start.isoformat()
                     if isinstance(period_start, date)
                     else str(period_start)
                 ),
-                'end': (
+                "end": (
                     period_end.isoformat()
                     if isinstance(period_end, date)
                     else str(period_end)
                 )
             },
 
-            'statistics': {
-                'total_employees': total_employees,
-                'total_gross_income': round(total_gross, 2),
-                'total_paye_deducted': round(total_paye, 2),
-                'total_uif_deducted': round(total_uif, 2),
-                'total_sdl_deducted': round(total_sdl, 2),
-                'average_tax_rate': round(avg_tax_rate, 2),
-                'estimated_file_size': f"~{max(1, round(total_employees * 0.25))} KB"
+            "statistics": {
+                "total_employees": total_employees,
+                "total_gross_income": round(total_gross, 2),
+                "total_paye_deducted": round(total_paye, 2),
+                "total_uif_deducted": round(total_uif, 2),
+                "total_sdl_deducted": round(total_sdl, 2),
+                "average_tax_rate": round(avg_tax_rate, 2),
+                "estimated_file_size": (
+                    f"~{max(1, round(total_employees * 0.25))} KB"
+                )
             },
 
-            'sample_records': sample_records,
+            "sample_records": sample_records,
 
-            'columns': (
-                sars_cols if authority_code == 'SARS'
-                else rsl_cols if authority_code == 'RSL'
+            "columns": (
+                sars_cols
+                if authority_code == "SARS"
+                else rsl_cols
+                if authority_code == "RSL"
                 else burs_cols
             ),
 
-            'warnings': [],
+            "warnings": [],
 
-            'generated_at': datetime.utcnow().isoformat()
+            "generated_at": datetime.utcnow().isoformat()
         }
 
         return _success(preview_data)
 
     except Exception as e:
         logger.exception("TAX FILING PREVIEW FAILED")
-        return _error("preview_tax_filing_data", e)
+        return _error(
+            "preview_tax_filing_data",
+            e
+        )
 
 
 # ============================================================================
