@@ -163759,8 +163759,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         # ---------------------------------------------------------
         # 4. Create new ORIGINAL return
         # ---------------------------------------------------------
-
-        return_id = self.insert_returning_id(
+        inserted = self.fetch_one(
             f"""
             INSERT INTO {schema}.payroll_statutory_return_runs(
                 company_id,
@@ -163832,11 +163831,18 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ),
         )
 
+        if not inserted:
+            raise RuntimeError(
+                "Failed to create payroll statutory return preview."
+            )
+
+        return_id = inserted["id"]
+
         return self.payroll_statutory_return_get(
             company_id,
             return_id,
         )
-
+    
     def payroll_statutory_return_get(
         self,
         company_id:int,
