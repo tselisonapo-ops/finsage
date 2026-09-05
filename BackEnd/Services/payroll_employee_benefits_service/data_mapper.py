@@ -130,11 +130,12 @@ class PayrollEmployeeRecord(TypedDict):
 AUTHORITY_MAPPING = {
     'SARS': {
         'authority_code': 'SARS',
+        'name': 'South African Revenue Service',
         'country_code': 'ZA',
         'currency': 'ZAR',
         'monthly_return_name': 'EMP201',
         'annual_return_name': 'EMP501/IRP5',
-        'tax_year_start_month': 3,  # March
+        'tax_year_start_month': 3,
         'supports_xml': True,
         'id_number_pattern': r'^\d{13}$',
         'required_fields': [
@@ -142,18 +143,19 @@ AUTHORITY_MAPPING = {
             'gross_income', 'paye_deducted', 'period_start_date', 'period_end_date'
         ],
         'optional_fields': [
-            'tax_number', 'uif_deducted', 'sdl_deducted', 
+            'tax_number', 'uif_deducted', 'sdl_deducted',
             'fringe_benefits_total', 'pension_fund_contributions',
             'medical_scheme_contributions'
         ]
     },
     'RSL': {
         'authority_code': 'RSL',
+        'name': 'Revenue Services Lesotho',
         'country_code': 'LS',
         'currency': 'LSL',
         'monthly_return_name': 'EMP160',
         'annual_return_name': 'EMP500',
-        'tax_year_start_month': 4,  # April
+        'tax_year_start_month': 4,
         'supports_xml': False,
         'id_number_pattern': r'^[A-Z0-9]{5,15}$',
         'required_fields': [
@@ -167,11 +169,12 @@ AUTHORITY_MAPPING = {
     },
     'BURS': {
         'authority_code': 'BURS',
+        'name': 'Botswana Unified Revenue Service',
         'country_code': 'BW',
         'currency': 'BWP',
         'monthly_return_name': 'ITP1',
         'annual_return_name': 'ITP2',
-        'tax_year_start_month': 7,  # July
+        'tax_year_start_month': 7,
         'supports_xml': False,
         'id_number_pattern': r'^(\d{6,12}|[A-Z]{1,2}\d{6,9})$',
         'required_fields': [
@@ -185,8 +188,6 @@ AUTHORITY_MAPPING = {
         ]
     }
 }
-
-
 # ============================================================================
 # DATA TRANSFORMATION FUNCTIONS
 # ============================================================================
