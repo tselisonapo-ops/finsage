@@ -345,7 +345,7 @@ def export_tax_filing(company_id: int):
         format_type = body.get('format', 'csv').lower()
         period_start = body.get('period_start')
         period_end = body.get('period_end')
-        employer_info = body.get('employer_info', {})
+        employer_info = body.get('employer_info') or {}
         options = body.get('options', {})
         
         # Validate inputs
@@ -461,14 +461,16 @@ def export_tax_filing(company_id: int):
             "mapped_records: %s",
             len(mapped_data.get('records', []))
         )
+
+        current_app.logger.warning("EXPORT EMPLOYER INFO: %s", mapping_employer_info)
         
         # Generate file content based on format
         file_content, filename, mime_type = generate_export_file(
             authority_code=authority_code,
             format_type=format_type,
-            period_end=date.fromisoformat(period_end) if period_end else date.today(),
-            records=mapped_data['records'],  # Uncomment when integrated
-            employer_info=employer_info
+            period_end=period_end_date,
+            records=mapped_data['records'],
+            employer_info=mapping_employer_info
         )
         
         # Create response with file download headers
@@ -484,8 +486,8 @@ def export_tax_filing(company_id: int):
         return response
         
     except Exception as e:
+        current_app.logger.exception("EXPORT TAX FILING FAILED")
         return _error("export_tax_filing", e)
-
 
 # ============================================================================
 # FILE GENERATION FUNCTIONS
