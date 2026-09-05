@@ -289,7 +289,7 @@
                 }
             });
 
-            const finalUrl = toApiUrl(
+            const finalUrl = window.toApiUrl(
                 window.ENDPOINTS.taxFiling.export(company)
             );
 

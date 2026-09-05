@@ -324,12 +324,15 @@ window.addEventListener("unhandledrejection", (e) => {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
-  function toApiUrl(url) {
-    if (!url) throw new Error("toApiUrl: url is missing");
-    if (/^https?:\/\//i.test(url)) return url;
-    if (url.startsWith("/")) return API_BASE + url;
-    return API_BASE + "/" + url;
-  }
+  window.toApiUrl = function toApiUrl(url) {
+      if (!url) throw new Error("toApiUrl: url is missing");
+
+      if (/^https?:\/\/?/i.test(url)) return url;
+
+      if (url.startsWith("/")) return API_BASE + url;
+
+      return API_BASE + "/" + url;
+  };
 
  // ✅ ONE global apiFetch only
   window.apiFetch = async function apiFetch(url, options = {}) {
