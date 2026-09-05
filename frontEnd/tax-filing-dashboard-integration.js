@@ -179,8 +179,6 @@
                 <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(r.gross_income)}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(r.paye_deducted)}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(r.net_pay)}</td>
-                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(totals.total_gross_income)}</td>            
-                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(totals.total_paye_deducted)}</td>
             </tr>`;
             }
 
@@ -189,9 +187,9 @@
             if (totals) {
                 html += `<tfoot><tr style="background:#f8fafc;font-weight:600;">
                 <td style="padding:10px 12px;border-top:2px solid #e2e8f0;">Totals</td>
-                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["gross_salary","gross","total_gross"]))}</td>
-                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["paye","paye_amount","total_paye","tax_amount"]))}</td>
-                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["net_pay","net","total_net"]))}</td>
+                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(totals.total_gross_income)}</td>
+                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(totals.total_paye_deducted)}</td>
+                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(totals.total_gross_income - totals.total_paye_deducted - (totals.total_uif_deducted || 0))}</td>
             </tr></tfoot>`;
             }
 
