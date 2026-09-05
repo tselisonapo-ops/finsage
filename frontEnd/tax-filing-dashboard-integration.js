@@ -263,11 +263,13 @@
         }
     };  
 
-    window.exportPayeFiling = async function(event) {
-        const authority = document.getElementById('payeAuthoritySelect')?.value || 'SARS';
-        const taxYear = document.getElementById('payeTaxYearSelect')?.value || '';
-        const filingMonth = document.getElementById('payeFilingMonthSelect')?.value || '';
-        const format = document.getElementById('payeFormatSelect')?.value || 'csv';
+    window.exportPayeFiling = async function(event, format) {
+        // New panel: authority from the selected card, year/month from the
+        // panel filters, format passed by whichever button was clicked
+        const authority = window.__taxFiling?.getSelectedAuthority?.() || 'SARS';
+        const taxYear = document.getElementById('taxFilingYear')?.value || '';
+        const filingMonth = document.getElementById('taxFilingMonth')?.value || '';
+        const fmt = (format || 'csv').toLowerCase();
 
         if (!filingMonth) {
             showPayrollStatus("Please select a filing month.", "error");
@@ -286,15 +288,17 @@
         const periodEnd =
             `${periodEndDate.getFullYear()}-${String(periodEndDate.getMonth() + 1).padStart(2, '0')}-${String(periodEndDate.getDate()).padStart(2, '0')}`;
 
+        const settings = (typeof payrollState !== 'undefined' && payrollState?.settings) || {};
+
         const requestBody = {
             authority_code: authority,
-            format: format,
+            format: fmt,
             period_start: periodStart,
             period_end: periodEnd,
             include_benefits: true,
             employer_info: {
-                name: payrollState.settings?.company_name || window.CURRENT_COMPANY?.name || '',
-                tax_reference_number: payrollState.settings?.tax_reference_number || window.CURRENT_COMPANY?.tax_number || '',
+                name: settings.company_name || window.CURRENT_COMPANY?.name || '',
+                tax_reference_number: settings.tax_reference_number || window.CURRENT_COMPANY?.tax_number || '',
                 registration_number: window.CURRENT_COMPANY?.registration_number || ''
             }
         };
@@ -315,7 +319,7 @@
             }
 
             const response = await fetch(
-                `/api/companies/${companyId}/payroll/tax-filing/export`,
+                ENDPOINTS.taxFiling.export(companyId),
                 {
                     method: 'POST',
                     headers: {
@@ -327,8 +331,12 @@
             );
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Export failed');
+                let message = 'Export failed';
+                try {
+                    const errorData = await response.json();
+                    message = errorData.error || message;
+                } catch (_) { /* non-JSON error body */ }
+                throw new Error(message);
             }
 
             const blob = await response.blob();
@@ -338,7 +346,7 @@
 
             a.href = url;
             a.download =
-                `${authority}_PAYE_Export_${filingMonth}_${timestamp}.${format}`;
+                `${authority}_PAYE_Export_${filingMonth}_${timestamp}.${fmt}`;
 
             document.body.appendChild(a);
             a.click();
@@ -1188,23 +1196,23 @@
             });
 
             document.getElementById('taxFilingPreviewBtn')?.addEventListener('click', () => {
-                this.preview();
+                window.previewPayeData?.();
             });
 
             document.getElementById('taxFilingValidateBtn')?.addEventListener('click', () => {
                 this.validate();
             });
 
-            document.getElementById('taxFilingExportCsv')?.addEventListener('click', () => {
-                this.export('csv');
+            document.getElementById('taxFilingExportCsv')?.addEventListener('click', (event) => {
+                window.exportPayeFiling?.(event, 'csv');
             });
 
-            document.getElementById('taxFilingExportXlsx')?.addEventListener('click', () => {
-                this.export('xlsx');
+            document.getElementById('taxFilingExportXlsx')?.addEventListener('click', (event) => {
+                window.exportPayeFiling?.(event, 'xlsx');
             });
 
-            document.getElementById('taxFilingExportXml')?.addEventListener('click', () => {
-                this.export('xml');
+            document.getElementById('taxFilingExportXml')?.addEventListener('click', (event) => {
+                window.exportPayeFiling?.(event, 'xml');
             });
         },
 
@@ -1247,7 +1255,7 @@
                 previewArea.innerHTML = '';
             }
             if (hint) {
-                hint.textContent = 'Pick a filing month (optional), then click Preview to load the returns.';
+                hint.textContent = 'Pick a filing month, then click Preview to load employee data.';
             }
 
             const yearSelect = document.getElementById('taxFilingYear');
