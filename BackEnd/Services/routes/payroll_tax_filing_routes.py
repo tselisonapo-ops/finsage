@@ -381,6 +381,16 @@ def export_tax_filing(company_id: int):
             authority_code=authority_code
         ) or []
 
+        current_app.logger.warning("UIF SOURCE CHECK: %s", [
+            {
+                'employee_id': e.get('employee_id'),
+                'payroll_number': e.get('payroll_number'),
+                'gross_income': e.get('gross_income'),
+                'uif_deducted': e.get('uif_deducted')
+            }
+            for e in employees[:10]
+        ])
+
         company = db_service.fetch_one(
             """
             SELECT
@@ -523,19 +533,26 @@ def generate_export_file(
     Generates file content based on authority and format.
     Returns: (file_content, filename, mime_type)
     """
-    config = SUPPORTED_AUTHORITIES[authority_code]
-    
+    from BackEnd.Services.payroll_employee_benefits_service.data_mapper import AUTHORITY_MAPPING
+    config = AUTHORITY_MAPPING.get(authority_code)
+
+    if not config:
+        raise ValueError(f"Unsupported authority code: {authority_code}")
+
     if format_type == 'csv':
         return generate_csv(authority_code, records, employer_info, period_end)
+
     elif format_type == 'xlsx':
         return generate_xlsx(authority_code, records, employer_info, period_end)
+
     elif format_type == 'xml':
         if authority_code != 'SARS':
             raise ValueError("XML export is only supported for SARS")
+
         return generate_sars_xml(records, employer_info, period_end)
+
     else:
         raise ValueError(f"Unsupported format: {format_type}")
-
 
 def generate_csv(
     authority_code: str,
@@ -609,15 +626,32 @@ def generate_xlsx(
         else:
             columns = BURS_CSV_COLUMNS
         
+        employer_rows = [
+            ('Tax Reference Number', employer_info.get('tax_reference_number', '')),
+            ('Employer Name', employer_info.get('name', '')),
+            ('Registration Number', employer_info.get('registration_number', '')),
+            ('Return Period', period_end.strftime('%Y%m')),
+        ]
+
+        for row_num, (label, value) in enumerate(employer_rows, 1):
+            ws.cell(row=row_num, column=1, value=label).font = Font(bold=True)
+            ws.cell(row=row_num, column=2, value=value)
+
+        header_row = len(employer_rows) + 2
+
         for col_num, column_title in enumerate(columns, 1):
-            cell = ws.cell(row=1, column=col_num, value=column_title.replace('_', ' '))
+            cell = ws.cell(
+                row=header_row,
+                column=col_num,
+                value=column_title.replace('_', ' ')
+            )
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal='center')
             cell.border = thin_border
         
         # Write data rows
-        for row_num, record in enumerate(records, 2):
+        for row_num, record in enumerate(records, header_row + 1):
             row_data = transform_record_for_csv(record, authority_code, employer_info)
             for col_num, column_title in enumerate(columns, 1):
                 value = row_data.get(column_title, '')
@@ -669,26 +703,27 @@ def generate_sars_xml(
     total_sdl = sum(r.get('sdl_deducted', 0) or 0 for r in records)
     
     xml_content = f'''<?xml version="1.0" encoding="UTF-8"?>
-<EMP201Return xmlns="http://www.sars.gov.za/EMP201">
-  <MetaData>
-    <Version>2024</Version>
-    <GeneratedAt>{datetime.utcnow().isoformat()}</GeneratedAt>
-    <SoftwareProvider>FinSage Payroll</SoftwareProvider>
-  </MetaData>
-  <Employer>
-    <TaxReferenceNumber>{employer_info.get('tax_reference_number', '')}</TaxReferenceNumber>
-    <EmployerName>{employer_info.get('name', '')}</EmployerName>
-  </Employer>
-  <ReturnPeriod>{period_end.strftime('%Y%m')}</ReturnPeriod>
-  <Summary>
-    <NumberOfEmployees>{len(records)}</NumberOfEmployees>
-    <TotalRemuneration>{total_remuneration:.2f}</TotalRemuneration>
-    <TotalPAYE>{total_paye:.2f}</TotalPAYE>
-    <TotalUIF>{total_uif:.2f}</TotalUIF>
-    <TotalSDL>{total_sdl:.2f}</TotalSDL>
-  </Summary>
-  <Employees>
-'''
+    <EMP201Return xmlns="http://www.sars.gov.za/EMP201">
+    <MetaData>
+        <Version>2024</Version>
+        <GeneratedAt>{datetime.utcnow().isoformat()}</GeneratedAt>
+        <SoftwareProvider>FinSage Payroll</SoftwareProvider>
+    </MetaData>
+    <Employer>
+        <TaxReferenceNumber>{employer_info.get('tax_reference_number', '')}</TaxReferenceNumber>
+        <EmployerName>{employer_info.get('name', '')}</EmployerName>
+        <RegistrationNumber>{employer_info.get('registration_number', '')}</RegistrationNumber>
+    </Employer>
+    <ReturnPeriod>{period_end.strftime('%Y%m')}</ReturnPeriod>
+    <Summary>
+        <NumberOfEmployees>{len(records)}</NumberOfEmployees>
+        <TotalRemuneration>{total_remuneration:.2f}</TotalRemuneration>
+        <TotalPAYE>{total_paye:.2f}</TotalPAYE>
+        <TotalUIF>{total_uif:.2f}</TotalUIF>
+        <TotalSDL>{total_sdl:.2f}</TotalSDL>
+    </Summary>
+    <Employees>
+    '''
     
     for idx, emp in enumerate(records, 1):
         xml_content += f'''    <Employee seq="{idx}">
@@ -702,7 +737,7 @@ def generate_sars_xml(
         <Code3603_Allowances>{emp.get('allowances', 0):.2f}</Code3603_Allowances>
         <Code3604_BonusesOvertime>{(emp.get('bonus', 0) + emp.get('overtime_pay', 0)):.2f}</Code3604_BonusesOvertime>
         <Code3605_Commission>{emp.get('commission', 0):.2f}</Code3605_Commission>
-      </Remunutation>
+      </Remuneration>
       <Deductions>
         <PAYE>{emp.get('paye_deducted', 0):.2f}</PAYE>
         <UIF>{emp.get('uif_deducted', 0) or 0:.2f}</UIF>
@@ -728,7 +763,13 @@ def generate_export_records(company_id, authority_code, period):
     """Main function to get data ready for export."""
     
     # Get employer info
-    employer_info = db_service.get_company_tax_info(company_id)
+    employer_info = db_service.get_company_tax_info(company_id) or {}
+
+    employer_info = {
+        'tax_reference_number': employer_info.get('tax_reference_number') or employer_info.get('tin') or '',
+        'name': employer_info.get('name') or '',
+        'registration_number': employer_info.get('registration_number') or employer_info.get('company_reg_no') or '',
+    }
     
     # Get employee records
     employees = db_service.get_payroll_records_for_filing(
@@ -775,11 +816,26 @@ COMMON_CSV_COLUMNS = [
 ]
 
 SARS_CSV_COLUMNS = [
-    'tax_reference_number', 'period', 'employee_id', 'id_number', 'first_names', 'surname',
-    'code_3601_total_remuneration', 'code_3602_cash_income', 'code_3603_allowances',
-    'code_3604_bonuses_overtime', 'code_3605_commission', 'paye_deducted', 'uif_deducted',
-    'sdl_deducted', 'pension_fund_contributions', 'medical_scheme_contributions',
-    'employment_start_date', 'payment_date'
+    'tax_reference_number',
+    'employer_name',
+    'employer_registration_number',
+    'period',
+    'employee_id',
+    'id_number',
+    'first_names',
+    'surname',
+    'code_3601_total_remuneration',
+    'code_3602_cash_income',
+    'code_3603_allowances',
+    'code_3604_bonuses_overtime',
+    'code_3605_commission',
+    'paye_deducted',
+    'uif_deducted',
+    'sdl_deducted',
+    'pension_fund_contributions',
+    'medical_scheme_contributions',
+    'employment_start_date',
+    'payment_date'
 ]
 
 RSL_CSV_COLUMNS = [
@@ -807,6 +863,7 @@ def transform_record_for_csv(
         'tax_reference_number': employer_info.get('tax_reference_number', ''),
         'employer_tax_reference': employer_info.get('tax_reference_number', ''),
         'employer_name': employer_info.get('name', ''),
+        'employer_registration_number': employer_info.get('registration_number', ''),
         'employer_tin': employer_info.get('tax_reference_number', ''),
     }
     
