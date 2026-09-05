@@ -364,30 +364,102 @@ def export_tax_filing(company_id: int):
             }), 400
         
         # INTEGRATION POINT: Get actual employee data from your system
-        from payroll_employee_benefits_service.data_mapper import (
-            map_batch_for_export,           # ✅ The function you want
-            map_employee_to_export_record,  # Also useful
-            PayrollEmployeeRecord,          # Type hint
-            validate_for_authority          # Validation helper
+        from typing import cast
+        from BackEnd.Services.payroll_employee_benefits_service.data_mapper import (
+            map_batch_for_export,
+            map_employee_to_export_record,
+            PayrollEmployeeRecord,
+            validate_for_authority
         )
-        
+
+        period_start_date = date.fromisoformat(period_start)
+        period_end_date = date.fromisoformat(period_end)
+
         employees = db_service.get_payroll_records_for_filing(
             company_id=company_id,
-            period_start=date.fromisoformat(period_start),
-            period_end=date.fromisoformat(period_end),
+            period_start=period_start_date,
+            period_end=period_end_date,
             authority_code=authority_code
-        )
-        
+        ) or []
+
+        # Employer information used by the employee mapping layer.
+        mapping_employer_info = {
+            'tax_reference_number': employer_info.get('tax_reference_number', ''),
+            'name': employer_info.get('name', ''),
+            'registration_number': employer_info.get('registration_number', '')
+        }
+
+        # Validate each payroll employee using the actual export mapper.
+        valid_employees = []
+
+        for employee in employees:
+            employee_record = cast(PayrollEmployeeRecord, employee)
+
+            mapped_record = map_employee_to_export_record(
+                emp=employee_record,
+                authority_code=authority_code,
+                employer_info=mapping_employer_info
+            )
+
+            validation_issues = validate_for_authority(
+                record=mapped_record,
+                authority_code=authority_code
+            )
+
+            blocking_errors = [
+                issue
+                for issue in validation_issues
+                if issue.get('severity') == 'error'
+            ]
+
+            if blocking_errors:
+                current_app.logger.warning(
+                    "Tax filing employee rejected: %s",
+                    {
+                        'employee_id': employee_record.get('employee_id'),
+                        'payroll_number': employee_record.get('payroll_number'),
+                        'issues': blocking_errors
+                    }
+                )
+                continue
+
+            valid_employees.append(employee_record)
+
+        # Map the complete validated batch for the final export.
         mapped_data = map_batch_for_export(
-           employees=employees,
-           authority_code=authority_code,
-           employer_info={
-               'tax_reference_number': employer_info.get('tax_reference_number', ''),
-               'name': employer_info.get('name', ''),
-               'registration_number': employer_info.get('registration_number', '')
-            },
-            period_start=date.fromisoformat(period_start),
-            period_end=date.fromisoformat(period_end)
+            employees=valid_employees,
+            authority_code=authority_code,
+            employer_info=mapping_employer_info,
+            period_start=period_start_date,
+            period_end=period_end_date
+        )
+
+        current_app.logger.warning(
+            "=== TAX FILING EXPORT DATA ==="
+        )
+        current_app.logger.warning(
+            "authority_code: %s",
+            authority_code
+        )
+        current_app.logger.warning(
+            "period_start: %s",
+            period_start_date
+        )
+        current_app.logger.warning(
+            "period_end: %s",
+            period_end_date
+        )
+        current_app.logger.warning(
+            "employees_loaded: %s",
+            len(employees)
+        )
+        current_app.logger.warning(
+            "employees_validated: %s",
+            len(valid_employees)
+        )
+        current_app.logger.warning(
+            "mapped_records: %s",
+            len(mapped_data.get('records', []))
         )
         
         # Generate file content based on format
