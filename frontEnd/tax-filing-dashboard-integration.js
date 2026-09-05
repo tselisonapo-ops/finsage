@@ -273,21 +273,40 @@
                 include_benefits: true
             };
 
-            const authObj = (
-                typeof AUTH_HEADER === "function"
-                    ? AUTH_HEADER()
-                    : {}
-            ) || {};
-
             const headers = new Headers();
 
             headers.set("Content-Type", "application/json");
 
-            Object.entries(authObj).forEach(([key, value]) => {
-                if (value != null && String(value).trim() !== "") {
-                    headers.set(key, String(value));
+            let token = null;
+
+            if (typeof window.getToken === "function") {
+                token = window.getToken();
+            }
+
+            if (token && typeof token === "object") {
+                token =
+                    token.access_token ||
+                    token.accessToken ||
+                    token.token ||
+                    token.value ||
+                    null;
+            }
+
+            if (token) {
+                const authValue = String(token).startsWith("Bearer ")
+                    ? String(token)
+                    : `Bearer ${token}`;
+
+                headers.set("Authorization", authValue);
+            }
+
+            console.log(
+                "EXPORT AUTH CHECK",
+                {
+                    hasToken: !!token,
+                    hasAuthorization: headers.has("Authorization")
                 }
-            });
+            );
 
             const finalUrl = window.toApiUrl(
                 window.ENDPOINTS.taxFiling.export(company)
