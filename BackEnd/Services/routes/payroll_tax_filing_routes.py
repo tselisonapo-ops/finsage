@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 import csv
 import io
 import json
+import re
 
 # Import your existing services
 from BackEnd.Services.auth_middleware import _corsify, require_auth
@@ -786,39 +787,104 @@ def preview_tax_filing_data(company_id: int):
     """
     Returns summary statistics and sample records for preview.
     Does NOT generate the actual file.
-    Expects GET query parameters: ?authority=SARS&period=2024/2025
+
+    Expects GET query parameters:
+        ?authority=SARS&period=2025-04-01%20to%202025-04-30
+
+    PAYE is filed monthly, so a monthly date range is accepted directly.
+
+    Legacy tax-year formats such as:
+        ?authority=SARS&period=2024/2025
+    are also supported.
     """
     if request.method == "OPTIONS":
         return _options()
 
     import logging
+    from datetime import datetime, date
 
-    logger = logging.getLogger(__name__)    
+    logger = logging.getLogger(__name__)
+
     try:
         # 1. Read input filters from URL query parameters
-        authority_code = request.args.get('authority')
-        period = request.args.get('period')  # Format example: "2024/2025" or "2024"
-        
+        authority_code = request.args.get("authority")
+        period = request.args.get("period")
+
         if not authority_code or not period:
             return jsonify({
                 "ok": False,
                 "error": "Missing required query parameters: 'authority' and 'period'"
             }), 400
 
-        # 2. Dynamic DB Calendar Lookup (Eliminates hardcoded date fallbacks)
-        period_start, period_end = db_service.get_tax_year_dates(authority_code, period)
-        
-        if not period_start or not period_end:
-            return jsonify({
-                "ok": False,
-                "error": f"Tax year configuration '{period}' not found for authority '{authority_code}' in public.payroll_tax_years"
-            }), 400
-        
-        # 3. Fetch company data payload 
+        authority_code = authority_code.strip()
+        period = period.strip()
+
+        period_start = None
+        period_end = None
+        is_monthly_period = False
+
+        monthly_match = re.match(
+            r"^\s*(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})\s*$",
+            period
+        )
+
+        if monthly_match:
+            try:
+                period_start = datetime.strptime(
+                    monthly_match.group(1),
+                    "%Y-%m-%d"
+                ).date()
+
+                period_end = datetime.strptime(
+                    monthly_match.group(2),
+                    "%Y-%m-%d"
+                ).date()
+
+                is_monthly_period = True
+
+            except ValueError:
+                return jsonify({
+                    "ok": False,
+                    "error": f"Invalid monthly filing period '{period}'. Expected format: YYYY-MM-DD to YYYY-MM-DD"
+                }), 400
+
+            # Validate date ordering
+            if period_start > period_end:
+                return jsonify({
+                    "ok": False,
+                    "error": f"Invalid filing period '{period}': start date is after end date"
+                }), 400
+
+            # PAYE must be a single calendar month.
+            if (
+                period_start.year != period_end.year
+                or period_start.month != period_end.month
+            ):
+                return jsonify({
+                    "ok": False,
+                    "error": f"PAYE filing period must cover one calendar month only: '{period}'"
+                }), 400
+
+        else:
+            # Legacy tax-year lookup.
+            # Example: 2024/2025
+            period_start, period_end = db_service.get_tax_year_dates(
+                authority_code,
+                period
+            )
+
+            if not period_start or not period_end:
+                return jsonify({
+                    "ok": False,
+                    "error": f"Tax year configuration '{period}' not found for authority '{authority_code}' in public.payroll_tax_years"
+                }), 400
+
+        # 3. Fetch company data payload
         current_app.logger.warning("=== TAX FILING PREVIEW INPUT ===")
         current_app.logger.warning("company_id: %s", company_id)
         current_app.logger.warning("authority_code: %r", authority_code)
         current_app.logger.warning("period: %r", period)
+        current_app.logger.warning("is_monthly_period: %s", is_monthly_period)
         current_app.logger.warning("period_start: %r", period_start)
         current_app.logger.warning("period_end: %r", period_end)
 
@@ -831,7 +897,7 @@ def preview_tax_filing_data(company_id: int):
 
         current_app.logger.warning("=== TAX FILING PREVIEW RESULT ===")
         current_app.logger.warning("record_count: %s", len(records))
-        
+
         # 4. Process calculations and structural transformations
         total_employees = len(records)
         total_gross = 0.0
@@ -864,21 +930,51 @@ def preview_tax_filing_data(company_id: int):
                     'paye_deducted': round(paye, 2)
                 })
 
-        avg_tax_rate = (total_paye / total_gross * 100) if total_gross > 0 else 0.0
+        avg_tax_rate = (
+            (total_paye / total_gross * 100)
+            if total_gross > 0
+            else 0.0
+        )
 
         # 5. Look up columns or map explicit authority schemas
-        sars_cols = globals().get('SARS_CSV_COLUMNS', ['Payroll No', 'First Name', 'Last Name', 'Tax No', 'Gross Income', 'PAYE'])
-        rsl_cols = globals().get('RSL_CSV_COLUMNS', ['Payroll No', 'First Name', 'Last Name', 'ID No', 'Gross Income', 'PAYE'])
-        burs_cols = globals().get('BURS_CSV_COLUMNS', ['Payroll No', 'First Name', 'Last Name', 'Gross Income', 'PAYE'])
+        sars_cols = globals().get(
+            'SARS_CSV_COLUMNS',
+            ['Payroll No', 'First Name', 'Last Name', 'Tax No', 'Gross Income', 'PAYE']
+        )
+
+        rsl_cols = globals().get(
+            'RSL_CSV_COLUMNS',
+            ['Payroll No', 'First Name', 'Last Name', 'ID No', 'Gross Income', 'PAYE']
+        )
+
+        burs_cols = globals().get(
+            'BURS_CSV_COLUMNS',
+            ['Payroll No', 'First Name', 'Last Name', 'Gross Income', 'PAYE']
+        )
 
         preview_data = {
             'authority_code': authority_code,
-            'authority_config': SUPPORTED_AUTHORITIES.get(authority_code, {}),
+
+            'authority_config': SUPPORTED_AUTHORITIES.get(
+                authority_code,
+                {}
+            ),
+
             'period': {
                 'raw': period,
-                'start': period_start.isoformat() if isinstance(period_start, date) else str(period_start),
-                'end': period_end.isoformat() if isinstance(period_end, date) else str(period_end)
+                'type': 'monthly' if is_monthly_period else 'tax_year',
+                'start': (
+                    period_start.isoformat()
+                    if isinstance(period_start, date)
+                    else str(period_start)
+                ),
+                'end': (
+                    period_end.isoformat()
+                    if isinstance(period_end, date)
+                    else str(period_end)
+                )
             },
+
             'statistics': {
                 'total_employees': total_employees,
                 'total_gross_income': round(total_gross, 2),
@@ -888,19 +984,26 @@ def preview_tax_filing_data(company_id: int):
                 'average_tax_rate': round(avg_tax_rate, 2),
                 'estimated_file_size': f"~{max(1, round(total_employees * 0.25))} KB"
             },
+
             'sample_records': sample_records,
-            'columns': sars_cols if authority_code == 'SARS' else 
-                      rsl_cols if authority_code == 'RSL' else 
-                      burs_cols,
+
+            'columns': (
+                sars_cols if authority_code == 'SARS'
+                else rsl_cols if authority_code == 'RSL'
+                else burs_cols
+            ),
+
             'warnings': [],
+
             'generated_at': datetime.utcnow().isoformat()
         }
-        
+
         return _success(preview_data)
-        
+
     except Exception as e:
         logger.exception("TAX FILING PREVIEW FAILED")
         return _error("preview_tax_filing_data", e)
+
 
 # ============================================================================
 # ENDPOINT: Preview Tax Filing Data

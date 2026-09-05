@@ -103,111 +103,118 @@
     
     // ================================================================
     // PAYE Preview + Export — called by the tax-filing panel buttons
-    // ================================================================
     window.previewPayeData = async function () {
-    const area       = document.getElementById("taxFilingPreview");
-    const topBar     = document.getElementById("taxFilingTopBar");
-    const previewBtn = document.getElementById("taxFilingPreviewBtn");
-    const actions    = document.getElementById("taxFilingActions");
-    const company    = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
-    const authority  = window.__taxFiling?.getSelectedAuthority?.() || "SARS";
+        const area       = document.getElementById("taxFilingPreview");
+        const topBar     = document.getElementById("taxFilingTopBar");
+        const previewBtn = document.getElementById("taxFilingPreviewBtn");
+        const actions    = document.getElementById("taxFilingActions");
+        const company    = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
+        const authority  = window.__taxFiling?.getSelectedAuthority?.() || "SARS";
 
-    let year  = document.getElementById("taxFilingYear")?.value || "";
-    let month = document.getElementById("taxFilingMonth")?.value || "";
+        let year  = document.getElementById("taxFilingYear")?.value || "";
+        let month = document.getElementById("taxFilingMonth")?.value || "";
 
-    if (/^\d{4}-\d{2}$/.test(month)) {
-        year  = month.slice(0, 4);
-        month = month.slice(5, 7);
-    }
-
-    if (!area) { console.warn("[PAYE Preview] #taxFilingPreview not found"); return; }
-
-    const showMsg = (html) => { area.style.display = "block"; area.innerHTML = html; };
-
-    const mm = String(month || "").padStart(2, "0");
-
-    if (!year || !month || !/^\d{4}$/.test(String(year)) || !/^(0[1-9]|1[0-2])$/.test(mm)) {
-        showMsg('<div style="padding:24px;text-align:center;color:#b45309;background:#fffbeb;border:1px dashed #fcd34d;border-radius:10px;">📅 Select a filing month first, then click <b>Preview Returns</b>.</div>');
-        return;
-    }
-    if (!company) {
-        showMsg('<div style="padding:24px;text-align:center;color:#b91c1c;background:#fef2f2;border:1px dashed #fca5a5;border-radius:10px;">No active company selected.</div>');
-        return;
-    }
-
-    const periodStart = `${year}-${mm}-01`;
-    const periodEnd = `${year}-${mm}-${String(new Date(Number(year), Number(month), 0).getDate()).padStart(2, "0")}`;
-    const period = `${periodStart} to ${periodEnd}`;
-
-    const oldLabel = previewBtn ? previewBtn.textContent : "";
-
-    const stateToken = Symbol("tfPreview");
-    if (previewBtn) previewBtn.__tfToken = stateToken;
-
-    if (previewBtn) { previewBtn.disabled = true; previewBtn.textContent = "⏳ Loading…"; }
-    showMsg(`<div style="padding:32px;text-align:center;color:#64748b;">Loading ${authority} PAYE preview for ${period}…</div>`);
-
-    try {
-        const url = window.ENDPOINTS.taxFiling.preview(company, authority, period);
-        const data = await window.apiFetch(url, { method: "GET" });
-
-        const rows   = Array.isArray(data) ? data : (data.employees || data.lines || data.results || data.data || []);
-        const totals = (!Array.isArray(data) && data) ? (data.totals || data.summary || null) : null;
-
-        if (!rows.length) {
-        showMsg(`<div style="padding:24px;text-align:center;color:#64748b;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;">📭 No PAYE data found for ${authority} — ${period}.</div>`);
-        return;
+        if (/^\d{4}-\d{2}$/.test(month)) {
+            year  = month.slice(0, 4);
+            month = month.slice(5, 7);
         }
 
+        if (!area) { console.warn("[PAYE Preview] #taxFilingPreview not found"); return; }
+
+        const showMsg = (html) => { area.style.display = "block"; area.innerHTML = html; };
+
+        const mm = String(month || "").padStart(2, "0");
+
+        if (!year || !month || !/^\d{4}$/.test(String(year)) || !/^(0[1-9]|1[0-2])$/.test(mm)) {
+            showMsg('<div style="padding:24px;text-align:center;color:#b45309;background:#fffbeb;border:1px dashed #fcd34d;border-radius:10px;">📅 Select a filing month first, then click <b>Preview Returns</b>.</div>');
+            return;
+        }
+
+        if (!company) {
+            showMsg('<div style="padding:24px;text-align:center;color:#b91c1c;background:#fef2f2;border:1px dashed #fca5a5;border-radius:10px;">No active company selected.</div>');
+            return;
+        }
+
+        const periodStart = `${year}-${mm}-01`;
+        const periodEnd = `${year}-${mm}-${String(new Date(Number(year), Number(month), 0).getDate()).padStart(2, "0")}`;
+        const period = `${periodStart} to ${periodEnd}`;
+
+        const oldLabel = previewBtn ? previewBtn.textContent : "";
+
+        const stateToken = Symbol("tfPreview");
+        if (previewBtn) previewBtn.__tfToken = stateToken;
+
+        if (previewBtn) { previewBtn.disabled = true; previewBtn.textContent = "⏳ Loading…"; }
+        showMsg(`<div style="padding:32px;text-align:center;color:#64748b;">Loading ${authority} PAYE preview for ${period}…</div>`);
+
+        // Keep these helpers outside try/catch so they are available everywhere.
         const h = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
         const n = (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const pick = (o, keys) => { for (const k of keys) { if (o && o[k] !== undefined && o[k] !== null && o[k] !== "") return o[k]; } return ""; };
 
-        let html = `<div style="max-height:60vh;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff;">
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead><tr style="background:#f1f5f9;position:sticky;top:0;">
-            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Employee</th>
-            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Gross</th>
-            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">PAYE</th>
-            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Net Pay</th>
-        </tr></thead><tbody>`;
-        for (const r of rows) {
-        html += `<tr>
-            <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${h(pick(r, ["employee_name","employee","name","full_name"]))}</td>
-            <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(pick(r, ["gross_salary","gross","total_gross","gross_pay"]))}</td>
-            <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(pick(r, ["paye","paye_amount","tax_amount","tax"]))}</td>
-            <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(pick(r, ["net_pay","net","total_net"]))}</td>
-        </tr>`;
-        }
-        html += `</tbody>`;
-        if (totals) {
-        html += `<tfoot><tr style="background:#f8fafc;font-weight:600;">
-            <td style="padding:10px 12px;border-top:2px solid #e2e8f0;">Totals</td>
-            <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["gross_salary","gross","total_gross"]))}</td>
-            <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["paye","paye_amount","total_paye","tax_amount"]))}</td>
-            <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["net_pay","net","total_net"]))}</td>
-        </tr></tfoot>`;
-        }
-        html += `</table></div>`;
-        showMsg(html);
+        try {
+            const url = window.ENDPOINTS.taxFiling.preview(company, authority, period);
+            const data = await window.apiFetch(url, { method: "GET" });
 
-        // ✅ SUCCESS ONLY → hide Preview, raise Validate + Exports to the top
-        if (previewBtn) previewBtn.style.display = "none";
-        if (topBar && actions) {
-        actions.style.display = "flex";
-        topBar.appendChild(actions); // physically moves the bar up (keeps its listeners)
+            const rows   = Array.isArray(data) ? data : (data.employees || data.lines || data.results || data.data || []);
+            const totals = (!Array.isArray(data) && data) ? (data.totals || data.summary || null) : null;
+
+            if (!rows.length) {
+                showMsg(`<div style="padding:24px;text-align:center;color:#64748b;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;">📭 No PAYE data found for ${authority} — ${period}.</div>`);
+                return;
+            }
+
+            let html = `<div style="max-height:60vh;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="background:#f1f5f9;position:sticky;top:0;">
+                <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Employee</th>
+                <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Gross</th>
+                <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">PAYE</th>
+                <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Net Pay</th>
+            </tr></thead><tbody>`;
+
+            for (const r of rows) {
+                html += `<tr>
+                <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${h(pick(r, ["employee_name","employee","name","full_name"]))}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(pick(r, ["gross_salary","gross","total_gross","gross_pay"]))}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(pick(r, ["paye","paye_amount","tax_amount","tax"]))}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(pick(r, ["net_pay","net","total_net"]))}</td>
+            </tr>`;
+            }
+
+            html += `</tbody>`;
+
+            if (totals) {
+                html += `<tfoot><tr style="background:#f8fafc;font-weight:600;">
+                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;">Totals</td>
+                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["gross_salary","gross","total_gross"]))}</td>
+                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["paye","paye_amount","total_paye","tax_amount"]))}</td>
+                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["net_pay","net","total_net"]))}</td>
+            </tr></tfoot>`;
+            }
+
+            html += `</table></div>`;
+            showMsg(html);
+
+            // ✅ SUCCESS ONLY → hide Preview, raise Validate + Exports to the top
+            if (previewBtn) previewBtn.style.display = "none";
+            if (topBar && actions) {
+                actions.style.display = "flex";
+                topBar.appendChild(actions); // physically moves the bar up (keeps its listeners)
+            }
+
+            const hint = document.getElementById("taxFilingTopHint");
+            if (hint) hint.textContent = "Review the preview below, then Validate or Export.";
+
+        } catch (err) {
+            console.error("[PAYE Preview] failed:", err);
+            showMsg(`<div style="padding:24px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;"><b>Preview failed:</b> ${h(err?.message || err)}</div>`);
+        } finally {
+            if (previewBtn && previewBtn.__tfToken === stateToken) {
+                previewBtn.disabled = false;
+                previewBtn.textContent = oldLabel || "👁 Preview Returns";
+            }
         }
-        const hint = document.getElementById("taxFilingTopHint");
-        if (hint) hint.textContent = "Review the preview below, then Validate or Export.";
-    } catch (err) {
-        console.error("[PAYE Preview] failed:", err);
-        showMsg(`<div style="padding:24px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;"><b>Preview failed:</b> ${h(err?.message || err)}</div>`);
-    } finally {
-        if (previewBtn && previewBtn.__tfToken === stateToken) {
-            previewBtn.disabled = false;
-            previewBtn.textContent = oldLabel || "👁 Preview Returns";
-        }
-    }
     };
 
     window.exportPayeFiling = async function (event, format) {
