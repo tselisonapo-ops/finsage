@@ -80797,8 +80797,7 @@ async function saveEditModal() {
      can render the full-page preview: window.renderPayrollStatutoryReturns('taxFilingPreview') */
   window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
 
-  function renderPayrollStatutoryReturns(targetId) {
-
+function renderPayrollStatutoryReturns(targetId) {
     const el = $(targetId || "taxFilingReturnsTable");
     if (!el) return;
 
@@ -80818,44 +80817,51 @@ async function saveEditModal() {
             .toUpperCase() === authority.toUpperCase();
     });
 
-    // --- Update the Year matching block inside renderPayrollStatutoryReturns ---
     if (selectedYear) {
         filteredItems = filteredItems.filter(item => {
-            const periodStart = String(item.period_start || "").slice(0, 10); // e.g. "2026-03-01"
+            const periodStart = String(item.period_start || "").slice(0, 10);
             const periodEnd = String(item.period_end || "").slice(0, 10);
-            
-            // If your dropdown says "2026/2027", extract the first part ("2026") and second part ("2027")
+
             if (selectedYear.includes('/')) {
                 const [year1, year2] = selectedYear.split('/');
+
                 return (
-                    periodStart.startsWith(year1) || periodEnd.startsWith(year1) ||
-                    periodStart.startsWith(year2) || periodEnd.startsWith(year2)
+                    periodStart.startsWith(year1) ||
+                    periodEnd.startsWith(year1) ||
+                    periodStart.startsWith(year2) ||
+                    periodEnd.startsWith(year2)
                 );
             }
-            
-            // Fallback for standard single-year strings
+
             return (
-                periodStart.startsWith(selectedYear) || periodEnd.startsWith(selectedYear)
+                periodStart.startsWith(selectedYear) ||
+                periodEnd.startsWith(selectedYear)
             );
         });
     }
 
-    // --- Update the Month matching block to handle "All Filing Months" gracefully ---
-    if (selectedMonth && selectedMonth !== "All Filing Months" && !selectedMonth.toLowerCase().includes("all")) {
+    if (
+        selectedMonth &&
+        selectedMonth !== "All Filing Months" &&
+        !selectedMonth.toLowerCase().includes("all")
+    ) {
         filteredItems = filteredItems.filter(item => {
             const periodStart = String(item.period_start || "").slice(0, 10);
             const periodEnd = String(item.period_end || "").slice(0, 10);
+
             const startMonth = periodStart.slice(5, 7);
             const endMonth = periodEnd.slice(5, 7);
-            
-            // Pad user input month to 2 digits if it comes in as "3" instead of "03"
-            const targetMonth = String(selectedMonth).padStart(2, '0');
-            return (startMonth === targetMonth || endMonth === targetMonth);
+
+            const targetMonth = String(selectedMonth).padStart(2, "0");
+
+            return (
+                startMonth === targetMonth ||
+                endMonth === targetMonth
+            );
         });
     }
 
     if (!filteredItems.length) {
-
         el.innerHTML = `
             <div style="
                 padding:35px 20px;
@@ -80879,8 +80885,6 @@ async function saveEditModal() {
             </div>
         `;
 
-        /* The top action bar (Preview / Validate / Export) is owned by the
-           tax module's selectAuthority()/preview() flow — never hide it here. */
         return;
     }
 
@@ -80890,64 +80894,149 @@ async function saveEditModal() {
                 <thead>
                     <tr>
                         <th>Return</th>
-                        <th>Authority</th>
-                        <th>Type</th>
                         <th>Period</th>
+                        <th>Filed Date</th>
                         <th>Employees</th>
-                        <th>Employee Amount</th>
-                        <th>Employer Amount</th>
+                        <th>PAYE / Employee</th>
+                        <th>Employer</th>
                         <th>Total Payable</th>
                         <th>Status</th>
-                        <th></th>
+                        <th>Action</th>
                     </tr>
                 </thead>
+
                 <tbody>
-                    ${filteredItems.map(item => `
-                        <tr>
-                            <td><strong>${esc(item.return_no)}</strong></td>
-                            <td>${esc(item.authority_code)}</td>
-                            <td>${esc(cap(String(item.return_type || "").replaceAll("_", " ")))}</td>
-                            <td>
-                                ${esc(String(item.period_start || "").slice(0, 10))}
-                                –
-                                ${esc(String(item.period_end || "").slice(0, 10))}
-                            </td>
-                            <td>${Number(item.employee_count || 0)}</td>
-                            <td class="num">${money(item.employee_amount)}</td>
-                            <td class="num">${money(item.employer_amount)}</td>
-                            <td class="num"><strong>${money(item.total_payable)}</strong></td>
-                            <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
-                            <td>
-                                ${targetId ? "" : `
-                                    <button
-                                        class="payroll-link"
-                                        data-open-statutory-return="${item.id}"
-                                    >
-                                        Open
-                                    </button>
-                                `}
-                            </td>
-                        </tr>
-                    `).join("")}
+                    ${filteredItems.map(item => {
+                        const status = String(item.status || "").toLowerCase();
+
+                        const displayStatus =
+                            status === "submitted"
+                                ? "Filed"
+                                : cap(status);
+
+                        const canView = [
+                            "calculated",
+                            "approved",
+                            "submitted",
+                            "accepted",
+                            "rejected",
+                            "cancelled"
+                        ].includes(status);
+
+                        const canRevise = [
+                            "submitted",
+                            "accepted",
+                            "rejected"
+                        ].includes(status);
+
+                        const filedDate =
+                            item.submission_date ||
+                            item.reporting_date ||
+                            null;
+
+                        return `
+                            <tr>
+                                <td>
+                                    <strong>
+                                        ${esc(item.return_no)}
+                                    </strong>
+                                </td>
+
+                                <td>
+                                    ${esc(
+                                        String(item.period_start || "")
+                                            .slice(0, 10)
+                                    )}
+                                    –
+                                    ${esc(
+                                        String(item.period_end || "")
+                                            .slice(0, 10)
+                                    )}
+                                </td>
+
+                                <td>
+                                    ${filedDate
+                                        ? esc(String(filedDate).slice(0, 10))
+                                        : "—"}
+                                </td>
+
+                                <td>
+                                    ${Number(item.employee_count || 0)}
+                                </td>
+
+                                <td class="num">
+                                    ${money(item.employee_amount)}
+                                </td>
+
+                                <td class="num">
+                                    ${money(item.employer_amount)}
+                                </td>
+
+                                <td class="num">
+                                    <strong>
+                                        ${money(item.total_payable)}
+                                    </strong>
+                                </td>
+
+                                <td>
+                                    <span class="payroll-pill">
+                                        ${esc(displayStatus)}
+                                    </span>
+                                </td>
+
+                                <td>
+                                    <div style="
+                                        display:flex;
+                                        gap:8px;
+                                        align-items:center;
+                                    ">
+                                        ${canView ? `
+                                            <button
+                                                class="payroll-link"
+                                                data-view-statutory-return="${item.id}"
+                                            >
+                                                View
+                                            </button>
+                                        ` : ""}
+
+                                        ${canRevise ? `
+                                            <button
+                                                class="payroll-link"
+                                                data-revise-statutory-return="${item.id}"
+                                            >
+                                                Revise
+                                            </button>
+                                        ` : ""}
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join("")}
                 </tbody>
             </table>
         </div>
     `;
 
-    /* "Open" buttons only exist in the inline table, not the full-page preview */
-    if (!targetId) {
-        el.querySelectorAll("[data-open-statutory-return]").forEach(btn => {
-            btn.addEventListener("click", () => {
-                openPayrollStatutoryReturn(
-                    Number(btn.dataset.openStatutoryReturn)
-                );
-            });
+    el.querySelectorAll(
+        "[data-view-statutory-return]"
+    ).forEach(btn => {
+        btn.addEventListener("click", () => {
+            openPayrollStatutoryReturn(
+                Number(btn.dataset.viewStatutoryReturn)
+            );
         });
-    }
+    });
 
-    /* Removed: the old code forced #taxFilingActions visible and toggled the
-       XML button here — that fought with the tax module's own flow. */
-  }
+    el.querySelectorAll(
+        "[data-revise-statutory-return]"
+    ).forEach(btn => {
+        btn.addEventListener("click", () => {
+            revisePayrollStatutoryReturn(
+                Number(btn.dataset.reviseStatutoryReturn)
+            );
+        });
+    });
+}
 
   function generatePayeFilingMonths(authority, taxYear) {
     const startYear = parseInt(String(taxYear).split('/')[0], 10);
@@ -81097,6 +81186,29 @@ async function saveEditModal() {
     );
   }
 
+  async function revisePayrollStatutoryReturn(returnId){
+    if(!returnId)return;
+
+    await apiFetch(
+        ENDPOINTS.payroll.statutoryReturnAction(
+            cid(),
+            returnId,
+            "revise"
+        ),
+        {
+            method:"POST",
+            body:"{}",
+        }
+    );
+
+    await loadPayrollStatutoryWorkspace();
+
+    showPayrollStatus(
+        "Statutory return revision created.",
+        "success"
+    );
+  }
+  
   async function openPayrollStatutoryReturn(returnId){
     const res=await apiFetch(
       ENDPOINTS.payroll.statutoryReturn(
@@ -81124,64 +81236,70 @@ async function saveEditModal() {
     const actions=[];
 
     if(["draft","calculated","rejected"].includes(item.status)){
-      actions.push(["Edit",()=>editPayrollStatutoryReturn(item)]);
+        actions.push(["Edit",()=>editPayrollStatutoryReturn(item)]);
     }
 
     if(["draft","calculated","rejected"].includes(item.status)){
-      actions.push([
-        "Calculate",
-        ()=>calculatePayrollStatutoryReturn(item.id),
-      ]);
+        actions.push([
+            "Calculate",
+            ()=>calculatePayrollStatutoryReturn(item.id),
+        ]);
     }
 
     if(item.status==="calculated"){
-      actions.push([
-        "Approve",
-        ()=>setPayrollStatutoryReturnStatus(
-          item.id,
-          "approve"
-        ),
-      ]);
+        actions.push([
+            "Approve",
+            ()=>setPayrollStatutoryReturnStatus(
+                item.id,
+                "approve"
+            ),
+        ]);
     }
 
     if(item.status==="approved"){
-      actions.push([
-        "Submit",
-        ()=>submitPayrollStatutoryReturn(item),
-      ]);
+        actions.push([
+            "Submit",
+            ()=>submitPayrollStatutoryReturn(item),
+        ]);
     }
 
     if(item.status==="submitted"){
-      actions.push(
-        [
-          "Accept",
-          ()=>setPayrollStatutoryReturnStatus(
-            item.id,
-            "accept"
-          ),
-        ],
-        [
-          "Reject",
-          ()=>rejectPayrollStatutoryReturn(item),
-        ],
-      );
+        actions.push(
+            [
+                "Accept",
+                ()=>setPayrollStatutoryReturnStatus(
+                    item.id,
+                    "accept"
+                ),
+            ],
+            [
+                "Reject",
+                ()=>rejectPayrollStatutoryReturn(item),
+            ],
+        );
     }
 
     if(["calculated","approved","rejected"].includes(item.status)){
-      actions.push([
-        "Return to Draft",
-        ()=>setPayrollStatutoryReturnStatus(
-          item.id,
-          "return-to-draft"
-        ),
-      ]);
+        actions.push([
+            "Return to Draft",
+            ()=>setPayrollStatutoryReturnStatus(
+                item.id,
+                "return-to-draft"
+            ),
+        ]);
+    }
+
+    if(["submitted","accepted"].includes(item.status)){
+        actions.push([
+            "Revise",
+            ()=>revisePayrollStatutoryReturn(item.id),
+        ]);
     }
 
     actions.push([
-      "Export",
-      ()=>exportPayrollStatutoryReturn(item),
+        "Export",
+        ()=>exportPayrollStatutoryReturn(item),
     ]);
-
     const lines=item.lines||[];
 
     el.innerHTML=`

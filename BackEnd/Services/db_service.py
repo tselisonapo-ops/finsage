@@ -36058,7 +36058,7 @@ class DatabaseService:
         )
 
 
-    PAYROLL_MIGRATION_VERSION=6
+    PAYROLL_MIGRATION_VERSION=7
     def ensure_company_payroll(
         self,
         company_id:int,
@@ -39152,18 +39152,15 @@ class DatabaseService:
             submitted_by_user_id BIGINT,
             created_by_user_id BIGINT,
             updated_by_user_id BIGINT,
+            parent_return_id BIGINT,
+            revision_number INT NOT NULL DEFAULT 0,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT uq_payroll_statutory_return UNIQUE(
-                company_id,
-                authority_code,
-                return_type,
-                period_start,
-                period_end
-            ),
+
             CONSTRAINT chk_payroll_statutory_return_dates CHECK(
                 period_end>=period_start
             ),
+
             CONSTRAINT chk_payroll_statutory_return_status CHECK(
                 status IN(
                     'draft',
@@ -39176,6 +39173,41 @@ class DatabaseService:
                 )
             )
         );
+
+        ALTER TABLE {schema}.payroll_statutory_return_runs
+        DROP CONSTRAINT IF EXISTS uq_payroll_statutory_return;
+
+        ALTER TABLE {schema}.payroll_statutory_return_runs
+        ADD COLUMN IF NOT EXISTS parent_return_id BIGINT;
+
+        ALTER TABLE {schema}.payroll_statutory_return_runs
+        ADD COLUMN IF NOT EXISTS revision_number INT NOT NULL DEFAULT 0;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_statutory_original_return
+        ON {schema}.payroll_statutory_return_runs(
+            company_id,
+            authority_code,
+            return_type,
+            period_start,
+            period_end
+        )
+        WHERE parent_return_id IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_statutory_return_parent
+        ON {schema}.payroll_statutory_return_runs(
+            company_id,
+            parent_return_id,
+            revision_number
+        );
+
+        ALTER TABLE {schema}.payroll_statutory_return_runs
+        DROP CONSTRAINT IF EXISTS fk_payroll_statutory_return_parent;
+
+        ALTER TABLE {schema}.payroll_statutory_return_runs
+        ADD CONSTRAINT fk_payroll_statutory_return_parent
+        FOREIGN KEY(parent_return_id)
+        REFERENCES {schema}.payroll_statutory_return_runs(id)
+        ON DELETE RESTRICT;
 
         CREATE INDEX IF NOT EXISTS idx_payroll_statutory_returns
         ON {schema}.payroll_statutory_return_runs(
@@ -39228,28 +39260,58 @@ class DatabaseService:
             source_code,
             schedule_section,
             amount_basis,
-            display_order
+            include_employee_detail,
+            display_order,
+            is_active
         )
         VALUES
         (
             {company_id},
-            'DEFAULT',
+            'SARS',
             'payroll_tax',
             'tax',
-            NULL,
-            'Employee tax',
+            'PAYE',
+            'PAYE',
             'amount',
-            1
+            TRUE,
+            1,
+            TRUE
         ),
         (
             {company_id},
-            'DEFAULT',
-            'employer_contributions',
-            'employer_contribution',
-            NULL,
-            'Employer contributions',
+            'SARS',
+            'payroll_tax',
+            'deduction',
+            'UIF_EMP',
+            'UIF Employee',
             'amount',
-            1
+            TRUE,
+            2,
+            TRUE
+        ),
+        (
+            {company_id},
+            'SARS',
+            'payroll_tax',
+            'employer_contribution',
+            'UIF_ER',
+            'UIF Employer',
+            'amount',
+            TRUE,
+            3,
+            TRUE
+        ),
+        (
+            {company_id},
+            'SARS',
+            'payroll_tax',
+            'deduction',
+            'SDL',
+            'SDL',
+            'amount',
+            TRUE,
+            4,
+            TRUE
         )
         ON CONFLICT DO NOTHING;
         """
@@ -163503,10 +163565,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             params.append(date_to)
 
         return self.fetch_all(f"""
-            SELECT *
-            FROM {schema}.payroll_statutory_return_runs
-            WHERE {" AND ".join(where)}
-            ORDER BY reporting_date DESC,id DESC;
+            SELECT
+                r.*,
+                COALESCE(r.revision_number,0) AS revision_number
+            FROM {schema}.payroll_statutory_return_runs r
+            WHERE {" AND ".join(
+                "r."+condition if condition.startswith("company_id")
+                else condition
+                for condition in where
+            )}
+            ORDER BY r.reporting_date DESC,r.id DESC;
         """,tuple(params))
 
 
@@ -163683,7 +163751,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             """,(
                 company_id,
                 return_no,
-                *values,
+                authority_code,
+                return_type,
+                period_start,
+                period_end,
+                reporting_date,
+                body.get("due_date") or None,
+                str(body.get("currency") or "LSL").upper(),
+                str(body.get("notes") or "").strip() or None,
+                user_id,
+                user_id,
             ))
 
         return self.payroll_statutory_return_get(
@@ -163726,18 +163803,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             WHERE company_id=%s
             AND is_active=TRUE
             AND return_type=%s
-            AND authority_code IN(%s,'DEFAULT')
+            AND authority_code=%s
             ORDER BY
-                CASE
-                    WHEN authority_code=%s THEN 1
-                    ELSE 2
-                END,
                 display_order,
                 id;
         """,(
             company_id,
             statutory["return_type"],
-            statutory["authority_code"],
             statutory["authority_code"],
         ))
 
@@ -163787,6 +163859,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     re.gross_pay,
                     re.taxable_income,
                     l.code AS source_code,
+                    l.line_type AS source_line_type,
                     l.description AS source_description,
                     l.amount,
                     l.metadata
@@ -163804,7 +163877,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ON d.company_id=e.company_id
                 AND d.id=e.department_id
                 WHERE l.company_id=%s
-                AND r.payment_date BETWEEN %s AND %s
+                AND r.period_start=%s
+                AND r.period_end=%s
                 AND r.status='posted'
                 AND l.line_type=%s
                 {code_filter}
@@ -163888,7 +163962,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 COALESCE(SUM(gross_remuneration),0)
                     AS gross_remuneration,
                 COALESCE(SUM(taxable_remuneration),0)
-                    AS taxable_remuneration,
+                    AS taxable_remuneration
+            FROM(
+                SELECT
+                    employee_id,
+                    MAX(gross_remuneration) AS gross_remuneration,
+                    MAX(taxable_remuneration) AS taxable_remuneration
+                FROM {schema}.payroll_statutory_return_lines
+                WHERE company_id=%s
+                AND statutory_return_run_id=%s
+                GROUP BY employee_id
+            ) x;
+        """,(
+            company_id,
+            return_id,
+        )) or {}
+
+        amount_totals=self.fetch_one(f"""
+            SELECT
                 COALESCE(SUM(employee_amount),0)
                     AS employee_amount,
                 COALESCE(SUM(employer_amount),0)
@@ -163902,6 +163993,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             company_id,
             return_id,
         )) or {}
+
+        totals["employee_amount"]=amount_totals.get("employee_amount")
+        totals["employer_amount"]=amount_totals.get("employer_amount")
+        totals["total_payable"]=amount_totals.get("total_payable")
 
         self.fetch_one(f"""
             UPDATE {schema}.payroll_statutory_return_runs
@@ -164065,6 +164160,91 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 company_id,
                 return_id,
             ))
+
+        elif action=="revise":
+            if status not in(
+                "submitted",
+                "accepted",
+                "rejected",
+            ):
+                raise ValueError(
+                    "Only submitted, accepted, or rejected returns can be revised"
+                )
+
+            next_revision=self.fetch_one(f"""
+                SELECT COALESCE(
+                    MAX(revision_number),
+                    0
+                )+1 AS next_revision
+                FROM {schema}.payroll_statutory_return_runs
+                WHERE company_id=%s
+                AND (
+                    id=%s
+                    OR parent_return_id=%s
+                );
+            """,(
+                company_id,
+                return_id,
+                statutory.get("parent_return_id") or return_id,
+            )) or {}
+
+            root_id=(
+                statutory.get("parent_return_id")
+                or statutory["id"]
+            )
+
+            revision_no=int(
+                next_revision.get("next_revision") or 1
+            )
+
+            new_return_no=(
+                f"{statutory['return_no']}-R{revision_no}"
+            )
+
+            row=self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_statutory_return_runs(
+                    company_id,
+                    return_no,
+                    authority_code,
+                    return_type,
+                    period_start,
+                    period_end,
+                    reporting_date,
+                    due_date,
+                    currency,
+                    status,
+                    parent_return_id,
+                    revision_number,
+                    notes,
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    'draft',%s,%s,%s,%s,%s
+                )
+                RETURNING id;
+            """,(
+                company_id,
+                new_return_no,
+                statutory["authority_code"],
+                statutory["return_type"],
+                statutory["period_start"],
+                statutory["period_end"],
+                statutory["reporting_date"],
+                statutory.get("due_date"),
+                statutory["currency"],
+                root_id,
+                revision_no,
+                f"Revision of {statutory['return_no']}",
+                user_id,
+                user_id,
+            ))
+
+            return self.payroll_statutory_return_get(
+                company_id,
+                row["id"],
+            )
 
         elif action=="reject":
             if status!="submitted":
@@ -164404,7 +164584,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     WHERE prl.company_id = e.company_id
                     AND prl.payroll_run_id = pre.payroll_run_id
                     AND prl.employee_id = e.id
-                    AND LOWER(COALESCE(prl.code, '')) IN ('uif')
+                    AND LOWER(COALESCE(prl.code, '')) IN ('uif', 'uif_emp')
+                    AND LOWER(COALESCE(prl.line_type, '')) = 'deduction'
                 ), 0) AS uif_deducted,
 
                 COALESCE((

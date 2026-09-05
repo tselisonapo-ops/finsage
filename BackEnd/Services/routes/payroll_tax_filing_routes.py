@@ -852,6 +852,10 @@ BURS_CSV_COLUMNS = [
     'paye_deducted', 'snpf_contribution', 'medical_aid', 'net_salary'
 ]
 
+def normalize_date_value(value):
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)[:10]
 
 def transform_record_for_csv(
     record: Dict,
@@ -1168,7 +1172,7 @@ def preview_tax_filing_data(company_id: int):
         total_sdl = 0.0
         preview_records = []
 
-        for index, rec in enumerate(records):
+        for rec in records:
             gross = float(rec.get("gross_income") or 0.0)
             paye = float(rec.get("paye_deducted") or 0.0)
             uif = float(rec.get("uif_deducted") or 0.0)
@@ -1179,22 +1183,38 @@ def preview_tax_filing_data(company_id: int):
             total_uif += uif
             total_sdl += sdl
 
-            if index < 5:
-                preview_records.append({
-                    "payroll_number": rec.get("payroll_number"),
-                    "first_name": rec.get("first_name"),
-                    "last_name": rec.get("last_name"),
-                    "id_number": rec.get("id_number"),
-                    "tax_number": rec.get("tax_number"),
-                    "gross_income": round(gross, 2),
-                    "paye_deducted": round(paye, 2),
-                    "uif_deducted": round(uif, 2),
-                    "sdl_deducted": round(sdl, 2),
-                    "net_pay": round(
-                        gross - paye - uif,
-                        2
-                    )
-                })
+            preview_records.append({
+                "employee_id": rec.get("employee_id"),
+                "payroll_number": rec.get("payroll_number"),
+                "first_name": rec.get("first_name"),
+                "last_name": rec.get("last_name"),
+                "id_number": rec.get("id_number"),
+                "tax_number": rec.get("tax_number"),
+                "date_of_birth": rec.get("date_of_birth"),
+                "employment_start_date": rec.get("employment_start_date"),
+                "job_title": rec.get("job_title"),
+                "department": rec.get("department"),
+                "basic_salary": round(float(rec.get("basic_salary") or 0.0), 2),
+                "overtime_pay": round(float(rec.get("overtime_pay") or 0.0), 2),
+                "bonus": round(float(rec.get("bonus") or 0.0), 2),
+                "commission": round(float(rec.get("commission") or 0.0), 2),
+                "allowances": round(float(rec.get("allowances") or 0.0), 2),
+                "other_income": round(float(rec.get("other_income") or 0.0), 2),
+                "gross_income": round(gross, 2),
+                "paye_deducted": round(paye, 2),
+                "uif_deducted": round(uif, 2),
+                "sdl_deducted": round(sdl, 2),
+                "pension_fund_contributions": round(float(rec.get("pension_fund_contributions") or 0.0), 2),
+                "retirement_annuity_contributions": round(float(rec.get("retirement_annuity_contributions") or 0.0), 2),
+                "medical_scheme_contributions": round(float(rec.get("medical_scheme_contributions") or 0.0), 2),
+                "other_deductions": round(float(rec.get("other_deductions") or 0.0), 2),
+                "net_pay": round(float(rec.get("net_pay") or 0.0), 2),
+                "period_start_date": normalize_date_value(rec.get("period_start_date")),
+                "period_end_date": normalize_date_value(rec.get("period_end_date")),
+                "payment_date": normalize_date_value(rec.get("payment_date")),
+                "is_director": bool(rec.get("is_director")),
+                "is_non_resident": bool(rec.get("is_non_resident"))
+            })
 
         avg_tax_rate = (
             (total_paye / total_gross * 100)
