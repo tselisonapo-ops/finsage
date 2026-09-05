@@ -53004,18 +53004,32 @@ class DatabaseService:
         -- ============================================================
         -- STEP 2: ADD FK COLUMN TO project_team_members (references project_roles)
         -- ============================================================
-        ALTER TABLE {schema}.project_team_members 
+        ALTER TABLE {schema}.project_team_members
         ADD COLUMN IF NOT EXISTS project_role_id INT NULL;
 
-        -- Add the foreign key constraint
-        ALTER TABLE {schema}.project_team_members 
-        ADD CONSTRAINT fk_team_member_role 
-            FOREIGN KEY (project_role_id) 
-            REFERENCES {schema}.project_roles(id) 
-            ON DELETE SET NULL;          -- If role deleted, set to NULL (don't lose team member)
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_class t
+                ON t.oid = c.conrelid
+                JOIN pg_namespace n
+                ON n.oid = t.relnamespace
+                WHERE c.conname = 'fk_team_member_role'
+                AND t.relname = 'project_team_members'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.project_team_members
+                ADD CONSTRAINT fk_team_member_role
+                    FOREIGN KEY (project_role_id)
+                    REFERENCES {schema}.project_roles(id)
+                    ON DELETE SET NULL;
+            END IF;
+        END
+        $$;
 
-        -- Index for faster joins
-        CREATE INDEX IF NOT EXISTS idx_team_members_role 
+        CREATE INDEX IF NOT EXISTS idx_team_members_role
             ON {schema}.project_team_members(project_role_id);
 
         CREATE TABLE IF NOT EXISTS {schema}.project_task_assignments (
@@ -63013,7 +63027,7 @@ class DatabaseService:
         END IF;
         END $fk_vpa_bill_company$;                
         """
-        BOOTSTRAP_MIGRATION_VERSION=30
+        BOOTSTRAP_MIGRATION_VERSION=31
         AP_MIGRATION_VERSION=2
         TENANT_SYNC_MIGRATION_VERSION = 1
 

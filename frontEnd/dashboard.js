@@ -80783,7 +80783,11 @@ async function saveEditModal() {
       mappings?.items||[];
     payrollState.statutory.returns=
       returns?.items||[];
+    payrollState.statutory.returns =
+        returns?.items || [];
 
+    console.log("STATUTORY RETURNS RESPONSE", returns);
+    console.log("STATUTORY RETURNS ITEMS", payrollState.statutory.returns);
     renderPayrollStatutoryReturns();
 
     if (window.__taxFiling && typeof window.__taxFiling.init === 'function') {
@@ -80849,14 +80853,12 @@ function renderPayrollStatutoryReturns(targetId) {
             const periodStart = String(item.period_start || "").slice(0, 10);
             const periodEnd = String(item.period_end || "").slice(0, 10);
 
-            const startMonth = periodStart.slice(5, 7);
-            const endMonth = periodEnd.slice(5, 7);
-
-            const targetMonth = String(selectedMonth).padStart(2, "0");
+            const startMonth = periodStart.slice(0, 7);
+            const endMonth = periodEnd.slice(0, 7);
 
             return (
-                startMonth === targetMonth ||
-                endMonth === targetMonth
+                startMonth === selectedMonth ||
+                endMonth === selectedMonth
             );
         });
     }
