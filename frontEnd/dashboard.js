@@ -80815,30 +80815,39 @@ async function saveEditModal() {
             .toUpperCase() === authority.toUpperCase();
     });
 
+    // --- Update the Year matching block inside renderPayrollStatutoryReturns ---
     if (selectedYear) {
         filteredItems = filteredItems.filter(item => {
-            const periodStart = String(item.period_start || "").slice(0, 10);
+            const periodStart = String(item.period_start || "").slice(0, 10); // e.g. "2026-03-01"
             const periodEnd = String(item.period_end || "").slice(0, 10);
-
+            
+            // If your dropdown says "2026/2027", extract the first part ("2026") and second part ("2027")
+            if (selectedYear.includes('/')) {
+                const [year1, year2] = selectedYear.split('/');
+                return (
+                    periodStart.startsWith(year1) || periodEnd.startsWith(year1) ||
+                    periodStart.startsWith(year2) || periodEnd.startsWith(year2)
+                );
+            }
+            
+            // Fallback for standard single-year strings
             return (
-                periodStart.startsWith(selectedYear) ||
-                periodEnd.startsWith(selectedYear)
+                periodStart.startsWith(selectedYear) || periodEnd.startsWith(selectedYear)
             );
         });
     }
 
-    if (selectedMonth) {
+    // --- Update the Month matching block to handle "All Filing Months" gracefully ---
+    if (selectedMonth && selectedMonth !== "All Filing Months" && !selectedMonth.toLowerCase().includes("all")) {
         filteredItems = filteredItems.filter(item => {
             const periodStart = String(item.period_start || "").slice(0, 10);
             const periodEnd = String(item.period_end || "").slice(0, 10);
-
             const startMonth = periodStart.slice(5, 7);
             const endMonth = periodEnd.slice(5, 7);
-
-            return (
-                startMonth === selectedMonth ||
-                endMonth === selectedMonth
-            );
+            
+            // Pad user input month to 2 digits if it comes in as "3" instead of "03"
+            const targetMonth = String(selectedMonth).padStart(2, '0');
+            return (startMonth === targetMonth || endMonth === targetMonth);
         });
     }
 
@@ -80936,7 +80945,7 @@ async function saveEditModal() {
     /* Removed: the old code forced #taxFilingActions visible and toggled the
        XML button here — that fought with the tax module's own flow. */
   }
-  
+
   function generatePayeFilingMonths(authority, taxYear) {
     const startYear = parseInt(String(taxYear).split('/')[0], 10);
 

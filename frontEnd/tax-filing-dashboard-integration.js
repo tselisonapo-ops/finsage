@@ -218,94 +218,146 @@
     };
 
     window.exportPayeFiling = async function (event, format) {
-    if (event && typeof event.preventDefault === "function") event.preventDefault();
+        if (event && typeof event.preventDefault === "function") event.preventDefault();
 
-    const fmt       = (format || "csv").toLowerCase();
-    const company   = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
-    const authority = window.__taxFiling?.getSelectedAuthority?.() || "SARS";
-    const results   = document.getElementById("taxFilingValidationResults");
+        const fmt       = (format || "csv").toLowerCase();
+        const company   = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
+        const authority = window.__taxFiling?.getSelectedAuthority?.() || "SARS";
+        const results   = document.getElementById("taxFilingValidationResults");
 
-    /* FIX (malformed-period bug): same "YYYY-MM" vs "MM" mismatch as the
-       preview — accept both formats here too. */
-    let year  = document.getElementById("taxFilingYear")?.value || "";
-    let month = document.getElementById("taxFilingMonth")?.value || "";
+        let year  = document.getElementById("taxFilingYear")?.value || "";
+        let month = document.getElementById("taxFilingMonth")?.value || "";
 
-    if (/^\d{4}-\d{2}$/.test(month)) {
-        year  = month.slice(0, 4);
-        month = month.slice(5, 7);
-    }
-
-    if (!company) { alert("No active company selected."); return; }
-    if (!year || !month) { alert("Select a filing year and month first."); return; }
-
-    const mm = String(month).padStart(2, "0");
-    if (!/^\d{4}$/.test(String(year)) || !/^(0[1-9]|1[0-2])$/.test(mm)) {
-        alert("Select a valid filing year and month first.");
-        return;
-    }
-    const periodStart = `${year}-${mm}-01`;
-    const periodEnd = `${year}-${mm}-${String(new Date(Number(year), Number(month), 0).getDate()).padStart(2, "0")}`;
-
-    const btn = event?.currentTarget;
-    const oldLabel = btn ? btn.textContent : "";
-
-    /* FIX (stuck-button bug): token-guarded state, same as preview. */
-    const stateToken = Symbol("tfExport");
-    if (btn) btn.__tfToken = stateToken;
-
-    if (btn) { btn.disabled = true; btn.textContent = "⏳ Exporting…"; }
-
-    try {
-        const payload = {
-        authority_code: authority,
-        format: fmt,
-        period_start: periodStart,
-        period_end: periodEnd,
-        include_benefits: true,
-        };
-
-        // raw fetch (like downloadFile at ~line 31516) — apiFetch parses JSON and would mangle the file
-        const resp = await fetch(window.ENDPOINTS.taxFiling.export(company), {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            ...(typeof AUTH_HEADER === "function" ? AUTH_HEADER() : {}),
-        },
-        body: JSON.stringify(payload),
-        });
-
-        if (!resp.ok) {
-        let msg = `Export failed (HTTP ${resp.status})`;
-        try { const j = await resp.json(); msg = j.error || j.detail || j.message || msg; } catch (_) {}
-        throw new Error(msg);
+        if (/^\d{4}-\d{2}$/.test(month)) {
+            year  = month.slice(0, 4);
+            month = month.slice(5, 7);
         }
 
-        const blob = await resp.blob();
-        const ext = fmt === "xlsx" ? "xlsx" : fmt === "xml" ? "xml" : "csv";
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `${authority}_PAYE_${year}_${mm}.${ext}`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        if (!company) {
+            alert("No active company selected.");
+            return;
+        }
 
-        if (results) {
-        results.style.display = "block";
-        results.innerHTML = `<div style="color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;">✅ Export downloaded: ${a.download}</div>`;
+        if (!year || !month) {
+            alert("Select a filing year and month first.");
+            return;
         }
-    } catch (err) {
-        console.error("[PAYE Export] failed:", err);
-        if (results) {
-        results.style.display = "block";
-        results.innerHTML = `<div style="color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;"><b>Export failed:</b> ${err?.message || err}</div>`;
+
+        const mm = String(month).padStart(2, "0");
+
+        if (!/^\d{4}$/.test(String(year)) || !/^(0[1-9]|1[0-2])$/.test(mm)) {
+            alert("Select a valid filing year and month first.");
+            return;
         }
-    } finally {
-        if (btn && btn.__tfToken === stateToken) {
-            btn.disabled = false;
-            btn.textContent = oldLabel;
+
+        const periodStart = `${year}-${mm}-01`;
+        const periodEnd = `${year}-${mm}-${String(new Date(Number(year), Number(month), 0).getDate()).padStart(2, "0")}`;
+
+        const btn = event?.currentTarget;
+        const oldLabel = btn ? btn.textContent : "";
+
+        const stateToken = Symbol("tfExport");
+        if (btn) btn.__tfToken = stateToken;
+
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "⏳ Exporting…";
         }
-    }
+
+        try {
+            const payload = {
+                authority_code: authority,
+                format: fmt,
+                period_start: periodStart,
+                period_end: periodEnd,
+                include_benefits: true
+            };
+
+            const authObj = (
+                typeof AUTH_HEADER === "function"
+                    ? AUTH_HEADER()
+                    : {}
+            ) || {};
+
+            const headers = new Headers();
+
+            headers.set("Content-Type", "application/json");
+
+            Object.entries(authObj).forEach(([key, value]) => {
+                if (value != null && String(value).trim() !== "") {
+                    headers.set(key, String(value));
+                }
+            });
+
+            const finalUrl = toApiUrl(
+                window.ENDPOINTS.taxFiling.export(company)
+            );
+
+            console.log(
+                "EXPORT FETCH HEADERS",
+                finalUrl,
+                Object.fromEntries(headers.entries())
+            );
+
+            const resp = await fetch(finalUrl, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(payload)
+            });
+
+            if (!resp.ok) {
+                let msg = `Export failed (HTTP ${resp.status})`;
+
+                try {
+                    const j = await resp.json();
+                    msg = j.error || j.detail || j.message || msg;
+                } catch (_) {}
+
+                throw new Error(msg);
+            }
+
+            const blob = await resp.blob();
+
+            const ext =
+                fmt === "xlsx"
+                    ? "xlsx"
+                    : fmt === "xml"
+                        ? "xml"
+                        : "csv";
+
+            const a = document.createElement("a");
+            const objectUrl = URL.createObjectURL(blob);
+
+            a.href = objectUrl;
+            a.download = `${authority}_PAYE_${year}_${mm}.${ext}`;
+
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+
+            setTimeout(() => {
+                URL.revokeObjectURL(objectUrl);
+            }, 1000);
+
+            if (results) {
+                results.style.display = "block";
+                results.innerHTML = `<div style="color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;">✅ Export downloaded: ${a.download}</div>`;
+            }
+
+        } catch (err) {
+            console.error("[PAYE Export] failed:", err);
+
+            if (results) {
+                results.style.display = "block";
+                results.innerHTML = `<div style="color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;"><b>Export failed:</b> ${err?.message || err}</div>`;
+            }
+
+        } finally {
+            if (btn && btn.__tfToken === stateToken) {
+                btn.disabled = false;
+                btn.textContent = oldLabel;
+            }
+        }
     };
 
     function showStatus(message, type = 'info') {
