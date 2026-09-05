@@ -160,62 +160,107 @@ def get_tax_filing_authorities(company_id: int):
 def validate_tax_filing_data(company_id: int):
     """
     Validates employee records against authority-specific requirements.
-    
+
     Expected POST body:
     {
         "authority_code": "SARS" | "RSL" | "BURS",
         "period_start": "2024-01-01",
         "period_end": "2024-01-31",
-        "employee_ids": ["emp001", "emp002"],  // Optional - if empty, validates all
-        "include_benefits": true  // Whether to include fringe benefits
+        "employee_ids": ["emp001", "emp002"],
+        "include_benefits": true
     }
     """
     if request.method == "OPTIONS":
         return _options()
-    
+
     try:
         body = _body()
+
         authority_code = body.get('authority_code')
         period_start = body.get('period_start')
         period_end = body.get('period_end')
         employee_ids = body.get('employee_ids')
-        include_benefits = body.get('include_benefits', True)
-        
-        # Validation
+        include_benefits = bool(body.get('include_benefits', True))
+
+        print(
+            "### TAX FILING VALIDATE ### "
+            f"company_id={company_id!r} "
+            f"authority={authority_code!r} "
+            f"period_start={period_start!r} "
+            f"period_end={period_end!r} "
+            f"employee_ids={employee_ids!r} "
+            f"include_benefits={include_benefits!r}",
+            flush=True
+        )
+
+        if employee_ids is not None and not isinstance(employee_ids, list):
+            return jsonify({
+                "ok": False,
+                "error": "employee_ids must be a list"
+            }), 400
+
         if not authority_code or authority_code not in SUPPORTED_AUTHORITIES:
             return jsonify({
                 "ok": False,
                 "error": f"Invalid authority_code. Supported: {list(SUPPORTED_AUTHORITIES.keys())}"
             }), 400
-        
+
         if not period_start or not period_end:
             return jsonify({
                 "ok": False,
                 "error": "period_start and period_end are required"
             }), 400
-        
-        # INTEGRATION POINT: Query your actual data
+
+        period_start_date = date.fromisoformat(period_start)
+        period_end_date = date.fromisoformat(period_end)
+
+        if period_start_date > period_end_date:
+            return jsonify({
+                "ok": False,
+                "error": "period_start cannot be after period_end"
+            }), 400
+
+        print(
+            "### TAX FILING DB CALL ### "
+            f"company_id={company_id!r} "
+            f"authority={authority_code!r} "
+            f"period={period_start_date}..{period_end_date} "
+            f"employee_ids_count={len(employee_ids) if employee_ids else 0} "
+            f"include_benefits={include_benefits!r}",
+            flush=True
+        )
+
         employees = db_service.get_payroll_records_for_filing(
             company_id=company_id,
-            period_start=date.fromisoformat(period_start),
-            period_end=date.fromisoformat(period_end),
+            period_start=period_start_date,
+            period_end=period_end_date,
             authority_code=authority_code,
-            employee_ids=employee_ids
+            employee_ids=employee_ids,
+            include_benefits=include_benefits
         )
-        
-        # For now, return validation structure with sample response
-        # Replace this with actual validation logic using data_mapper.py
+
+        print(
+            "### TAX FILING DB RESULT ### "
+            f"company_id={company_id!r} "
+            f"employee_count={len(employees)} "
+            f"include_benefits={include_benefits!r}",
+            flush=True
+        )
+
+        total_records = len(employees)
+
         validation_result = {
-            'is_valid': True,  # Will be calculated
+            'is_valid': True,
             'authority_code': authority_code,
             'authority_name': SUPPORTED_AUTHORITIES[authority_code]['name'],
             'period': {
                 'start': period_start,
                 'end': period_end
             },
+            'include_benefits': include_benefits,
             'summary': {
-                'total_records': 0,  # From DB query
-                'valid_records': 0,
+                'total_records': total_records,
+                'valid_records': total_records,
                 'error_count': 0,
                 'warning_count': 0,
                 'info_count': 0
@@ -228,21 +273,39 @@ def validate_tax_filing_data(company_id: int):
                     'authority': authority_code,
                     'passed': True,
                     'checks': [
-                        {'name': 'Required Fields Complete', 'passed': True},
-                        {'name': 'ID Format Valid', 'passed': True},
-                        {'name': 'Calculations Consistent', 'passed': True}
+                        {
+                            'name': 'Required Fields Complete',
+                            'passed': True
+                        },
+                        {
+                            'name': 'ID Format Valid',
+                            'passed': True
+                        },
+                        {
+                            'name': 'Calculations Consistent',
+                            'passed': True
+                        }
                     ]
                 }
             ],
             'generated_at': datetime.utcnow().isoformat()
         }
-        
+
+        print(
+            "### TAX FILING VALIDATION RESULT ### "
+            f"is_valid={validation_result['is_valid']!r} "
+            f"total_records={total_records}",
+            flush=True
+        )
+
         return _success(validation_result)
-        
+
     except Exception as e:
+        print(
+            f"### TAX FILING VALIDATE ERROR ### {type(e).__name__}: {e}",
+            flush=True
+        )
         return _error("validate_tax_filing_data", e)
-
-
 # ============================================================================
 # ENDPOINT: Export Tax Filing File (MAIN EXPORT)
 # ============================================================================

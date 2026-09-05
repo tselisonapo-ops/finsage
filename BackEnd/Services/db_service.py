@@ -164188,7 +164188,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         period_start: date,
         period_end: date,
         authority_code: str = None,
-        employee_ids: List[str] = None
+        employee_ids: List[str] = None,
+        include_benefits: bool = True
     ) -> List[Dict]:
         """
         Query payroll employees and their payroll-run results for statutory/tax
@@ -164208,12 +164209,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         schema = self.company_schema(company_id)
 
         logger.warning(
-            "=== PAYROLL FILING DEBUG === company_id=%r schema=%r period_start=%r period_end=%r authority=%r",
+            "=== PAYROLL FILING DEBUG === company_id=%r schema=%r period_start=%r period_end=%r authority=%r employee_ids=%r include_benefits=%r",
             company_id,
             schema,
             period_start,
             period_end,
-            authority_code
+            authority_code,
+            employee_ids,
+            include_benefits
         )
         query = f"""
             SELECT
