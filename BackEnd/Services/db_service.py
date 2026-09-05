@@ -163687,7 +163687,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             # Draft / calculated / rejected:
             # refresh the header with the latest preview values.
-            self.execute(
+            self.execute_sql(
                 f"""
                 UPDATE {schema}.payroll_statutory_return_runs
                 SET
