@@ -100,7 +100,65 @@
             minimumFractionDigits: 2
         }).format(num);
     }
-    
+
+    function normalizeTaxFilingMonth(yearValue, monthValue) {
+        let year = String(yearValue || "").trim();
+        let month = String(monthValue || "").trim();
+
+        if (/^\d{4}-\d{2}$/.test(month)) {
+            year = month.slice(0, 4);
+            month = month.slice(5, 7);
+        }
+
+        if (year.includes("/")) {
+            year = year.split("/")[0].trim();
+        }
+
+        const monthNames = {
+            january: "01",
+            february: "02",
+            march: "03",
+            april: "04",
+            may: "05",
+            june: "06",
+            july: "07",
+            august: "08",
+            september: "09",
+            october: "10",
+            november: "11",
+            december: "12"
+        };
+
+        const monthKey = month.toLowerCase();
+
+        if (monthNames[monthKey]) {
+            month = monthNames[monthKey];
+        } else {
+            const numericMonth = Number(month);
+
+            if (Number.isInteger(numericMonth) && numericMonth >= 1 && numericMonth <= 12) {
+                month = String(numericMonth).padStart(2, "0");
+            }
+        }
+
+        if (!/^\d{4}$/.test(year) || !/^(0[1-9]|1[0-2])$/.test(month)) {
+            return null;
+        }
+
+        return `${year}-${month}`;
+    }
+
+    function normalizeTaxFilingDate(value) {
+        if (!value) return null;
+
+        const text = String(value).trim();
+        const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+        if (!match) return null;
+
+        return `${match[1]}-${match[2]}-${match[3]}`;
+    }
+
     // ================================================================
     // PAYE Preview + Export — called by the tax-filing panel buttons
     window.previewPayeData = async function () {
@@ -135,9 +193,14 @@
             return;
         }
 
-        const periodStart = `${year}-${mm}-01`;
-        const periodEnd = `${year}-${mm}-${String(new Date(Number(year), Number(month), 0).getDate()).padStart(2, "0")}`;
-        const period = `${periodStart} to ${periodEnd}`;
+        const filingMonth = normalizeTaxFilingMonth(year, month);
+
+        if (!filingMonth) {
+            showMsg('<div style="padding:24px;text-align:center;color:#b45309;background:#fffbeb;border:1px dashed #fcd34d;border-radius:10px;">📅 Select a valid filing month first.</div>');
+            return;
+        }
+
+        const period = filingMonth;
 
         const oldLabel = previewBtn ? previewBtn.textContent : "";
 
@@ -145,7 +208,7 @@
         if (previewBtn) previewBtn.__tfToken = stateToken;
 
         if (previewBtn) { previewBtn.disabled = true; previewBtn.textContent = "⏳ Loading…"; }
-        showMsg(`<div style="padding:32px;text-align:center;color:#64748b;">Loading ${authority} PAYE preview for ${period}…</div>`);
+        showMsg(`<div style="padding:32px;text-align:center;color:#64748b;">Loading ${authority} PAYE preview for ${filingMonth}…</div>`);
 
         // Keep these helpers outside try/catch so they are available everywhere.
         const h = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
@@ -153,7 +216,7 @@
         const pick = (o, keys) => { for (const k of keys) { if (o && o[k] !== undefined && o[k] !== null && o[k] !== "") return o[k]; } return ""; };
 
         try {
-            const url = window.ENDPOINTS.taxFiling.preview(company, authority, period);
+            const url = window.ENDPOINTS.taxFiling.preview(company, authority, filingMonth);
             const data = await window.apiFetch(url, { method: "GET" });
 
             const payload = data?.data || data;
@@ -243,6 +306,33 @@
             return;
         }
 
+        const previewUrl = window.ENDPOINTS.taxFiling.preview(
+            company,
+            authority,
+            filingMonth
+        );
+
+        const previewResponse = await window.apiFetch(
+            previewUrl,
+            { method: "GET" }
+        );
+
+        const previewPayload = previewResponse?.data || previewResponse;
+
+        const resolvedStart = normalizeTaxFilingDate(
+            previewPayload?.period?.start
+        );
+
+        const resolvedEnd = normalizeTaxFilingDate(
+            previewPayload?.period?.end
+        );
+
+        if (!resolvedStart || !resolvedEnd) {
+            throw new Error(
+                `No payroll period found for filing month ${filingMonth}.`
+            );
+        }
+
         const mm = String(month).padStart(2, "0");
 
         if (!/^\d{4}$/.test(String(year)) || !/^(0[1-9]|1[0-2])$/.test(mm)) {
@@ -250,9 +340,12 @@
             return;
         }
 
-        const periodStart = `${year}-${mm}-01`;
-        const periodEnd = `${year}-${mm}-${String(new Date(Number(year), Number(month), 0).getDate()).padStart(2, "0")}`;
+        const filingMonth = normalizeTaxFilingMonth(year, month);
 
+        if (!filingMonth) {
+            alert("Select a valid filing year and month first.");
+            return;
+}
         const btn = event?.currentTarget;
         const oldLabel = btn ? btn.textContent : "";
 
@@ -264,12 +357,13 @@
             btn.textContent = "⏳ Exporting…";
         }
 
+
         try {
             const payload = {
                 authority_code: authority,
                 format: fmt,
-                period_start: periodStart,
-                period_end: periodEnd,
+                period_start: resolvedStart,
+                period_end: resolvedEnd,
                 include_benefits: true
             };
 

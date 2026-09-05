@@ -155606,6 +155606,47 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ORDER BY r.period_start DESC, r.id DESC;
         """, (int(company_id),))
 
+
+    def payroll_run_for_filing_month(
+        self,
+        company_id: int,
+        filing_month: str,
+    ) -> dict | None:
+        company_id = int(company_id)
+
+        year, month = filing_month[:7].split("-")
+        year = int(year)
+        month = int(month)
+
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT
+                r.*,
+                c.frequency
+            FROM {schema}.payroll_runs r
+            JOIN {schema}.payroll_pay_calendars c
+            ON c.id = r.pay_calendar_id
+            AND c.company_id = r.company_id
+            WHERE r.company_id = %s
+            AND r.payment_date >= make_date(%s, %s, 1)
+            AND r.payment_date < (
+                make_date(%s, %s, 1) + INTERVAL '1 month'
+            )
+            AND r.status IN ('draft', 'posted')
+            ORDER BY
+                CASE WHEN r.status = 'posted' THEN 0 ELSE 1 END,
+                r.payment_date DESC,
+                r.id DESC
+            LIMIT 1;
+        """, (
+            company_id,
+            year,
+            month,
+            year,
+            month,
+        ))
+
     def payroll_payslip_payload(
         self,
         company_id:int,

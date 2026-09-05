@@ -973,25 +973,69 @@ def preview_tax_filing_data(company_id: int):
         period_start = None
         period_end = None
         is_monthly_period = False
+        payroll_run = None
 
-        monthly_match = re.match(
+        monthly_month_match = re.match(
+            r"^\s*(\d{4})-(\d{2})\s*$",
+            period
+        )
+
+        monthly_range_match = re.match(
             r"^\s*(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})\s*$",
             period
         )
 
-        if monthly_match:
+        if monthly_month_match:
+            filing_month = (
+                f"{monthly_month_match.group(1)}-"
+                f"{monthly_month_match.group(2)}"
+            )
+
             try:
-                period_start = datetime.strptime(
-                    monthly_match.group(1),
+                datetime.strptime(
+                    filing_month,
+                    "%Y-%m"
+                )
+            except ValueError:
+                return jsonify({
+                    "ok": False,
+                    "error": (
+                        f"Invalid filing month '{period}'. "
+                        "Expected format: YYYY-MM"
+                    )
+                }), 400
+
+            is_monthly_period = True
+
+            payroll_run = db_service.payroll_run_for_filing_month(
+                company_id=company_id,
+                filing_month=filing_month,
+            )
+
+            if not payroll_run:
+                return jsonify({
+                    "ok": False,
+                    "error": (
+                        f"No payroll run found for "
+                        f"{authority_code} filing month "
+                        f"'{filing_month}'"
+                    )
+                }), 404
+
+            period_start = payroll_run["period_start"]
+            period_end = payroll_run["period_end"]
+
+        elif monthly_range_match:
+            try:
+                requested_start = datetime.strptime(
+                    monthly_range_match.group(1),
                     "%Y-%m-%d"
                 ).date()
 
-                period_end = datetime.strptime(
-                    monthly_match.group(2),
+                requested_end = datetime.strptime(
+                    monthly_range_match.group(2),
                     "%Y-%m-%d"
                 ).date()
-
-                is_monthly_period = True
 
             except ValueError:
                 return jsonify({
@@ -1002,8 +1046,7 @@ def preview_tax_filing_data(company_id: int):
                     )
                 }), 400
 
-            # Validate date ordering
-            if period_start > period_end:
+            if requested_start > requested_end:
                 return jsonify({
                     "ok": False,
                     "error": (
@@ -1012,10 +1055,9 @@ def preview_tax_filing_data(company_id: int):
                     )
                 }), 400
 
-            # PAYE must cover one calendar month only
             if (
-                period_start.year != period_end.year
-                or period_start.month != period_end.month
+                requested_start.year != requested_end.year
+                or requested_start.month != requested_end.month
             ):
                 return jsonify({
                     "ok": False,
@@ -1024,6 +1066,28 @@ def preview_tax_filing_data(company_id: int):
                         f"month only: '{period}'"
                     )
                 }), 400
+
+            is_monthly_period = True
+
+            filing_month = requested_start.strftime("%Y-%m")
+
+            payroll_run = db_service.payroll_run_for_filing_month(
+                company_id=company_id,
+                filing_month=filing_month,
+            )
+
+            if not payroll_run:
+                return jsonify({
+                    "ok": False,
+                    "error": (
+                        f"No payroll run found for "
+                        f"{authority_code} filing month "
+                        f"'{filing_month}'"
+                    )
+                }), 404
+
+            period_start = payroll_run["period_start"]
+            period_end = payroll_run["period_end"]
 
         else:
             # Legacy tax-year lookup
@@ -1064,6 +1128,23 @@ def preview_tax_filing_data(company_id: int):
             period_end
         )
 
+        current_app.logger.warning(
+            "payroll_run_id: %s",
+            payroll_run.get("id") if payroll_run else None
+        )
+        current_app.logger.warning(
+            "payroll_run_no: %s",
+            payroll_run.get("run_no") if payroll_run else None
+        )
+        current_app.logger.warning(
+            "payroll_run_period: %s → %s",
+            payroll_run.get("period_start") if payroll_run else None,
+            payroll_run.get("period_end") if payroll_run else None
+        )
+        current_app.logger.warning(
+            "payroll_run_payment_date: %s",
+            payroll_run.get("payment_date") if payroll_run else None
+        )
         records = db_service.get_payroll_records_for_filing(
             company_id=company_id,
             period_start=period_start,
@@ -1183,6 +1264,25 @@ def preview_tax_filing_data(company_id: int):
                     else str(period_end)
                 )
             },
+
+            "payroll_run": (
+                {
+                    "id": payroll_run.get("id"),
+                    "run_no": payroll_run.get("run_no"),
+                    "payment_date": (
+                        payroll_run["payment_date"].isoformat()
+                        if isinstance(
+                            payroll_run.get("payment_date"),
+                            date
+                        )
+                        else str(
+                            payroll_run.get("payment_date")
+                        )
+                    ),
+                }
+                if payroll_run
+                else None
+            ),
 
             "statistics": {
                 "total_employees": total_employees,
