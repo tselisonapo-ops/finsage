@@ -80797,166 +80797,260 @@ async function saveEditModal() {
    * 2. The NEW PAYE Tax Filing export section (SARS/RSL/BURS)
    */
   function renderPayrollStatutoryReturns() {
-
-    const el = $("taxFilingReturnsTable");
-    if (!el) return;
-
+    // ─── EXISTING: Original Statutory Returns Table ───
+    const el = $("payrollStatutoryReturnsList");
     const items = payrollState.statutory.returns || [];
 
-    const authorityEl = document.querySelector(".tax-filing-authority-card.selected");
-    // FIX (state-is-not-defined): optional chaining does NOT protect against
-    // exceptions thrown INSIDE getSelectedAuthority(). A legacy window.TaxFilingAPI
-    // whose getSelectedAuthority() references an out-of-scope 'state' surfaced as
-    // "state is not defined" in the statutory tab banner. Prefer the live export
-    // (window.__taxFiling) and hard-guard with try/catch.
-    let authority = "SARS";
-    try {
-      authority =
-        window.__taxFiling?.getSelectedAuthority?.() ||
-        window.__taxFiling?.getSelectedAuthority?.() || "SARS";
-    } catch (e) {
-      console.warn("[Payroll] getSelectedAuthority() failed, falling back to SARS:", e?.message || e);
-      authority = "SARS";
-    }
+    if (!el) return;
 
-    const yearEl = $("taxFilingYear");
-    const monthEl = $("taxFilingMonth");
-
-    const selectedYear = yearEl ? String(yearEl.value || "") : "";
-    const selectedMonth = monthEl ? String(monthEl.value || "") : "";
-
-    let filteredItems = items.filter(item => {
-        return String(item.authority_code || "")
-            .toUpperCase() === authority.toUpperCase();
-    });
-
-    if (selectedYear) {
-        filteredItems = filteredItems.filter(item => {
-            const periodStart = String(item.period_start || "").slice(0, 10);
-            const periodEnd = String(item.period_end || "").slice(0, 10);
-
-            return (
-                periodStart.startsWith(selectedYear) ||
-                periodEnd.startsWith(selectedYear)
-            );
-        });
-    }
-
-    if (selectedMonth) {
-        filteredItems = filteredItems.filter(item => {
-            const periodStart = String(item.period_start || "").slice(0, 10);
-            const periodEnd = String(item.period_end || "").slice(0, 10);
-
-            const startMonth = periodStart.slice(5, 7);
-            const endMonth = periodEnd.slice(5, 7);
-
-            return (
-                startMonth === selectedMonth ||
-                endMonth === selectedMonth
-            );
-        });
-    }
-
-    if (!filteredItems.length) {
-
-        el.innerHTML = `
-            <div style="
-                padding:35px 20px;
-                text-align:center;
-                color:#94a3b8;
-                background:#f8fafc;
-                border:1px dashed #cbd5e1;
-                border-radius:8px;
-            ">
-                <div style="font-size:28px;margin-bottom:8px;">
-                    📭
-                </div>
-
-                <strong style="color:#475569;">
-                    No ${esc(authority)} statutory returns found
-                </strong>
-
-                <p style="margin:6px 0 0;">
-                    Try another tax year or filing month.
-                </p>
-            </div>
-        `;
-
-        return;
-    }
-
-    el.innerHTML = `
+    el.innerHTML = items.length ? `
         <div class="payroll-table-wrap">
-            <table class="payroll-preview-table">
-                <thead>
-                    <tr>
-                        <th>Return</th>
-                        <th>Authority</th>
-                        <th>Type</th>
-                        <th>Period</th>
-                        <th>Employees</th>
-                        <th>Employee Amount</th>
-                        <th>Employer Amount</th>
-                        <th>Total Payable</th>
-                        <th>Status</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${filteredItems.map(item => `
-                        <tr>
-                            <td><strong>${esc(item.return_no)}</strong></td>
-                            <td>${esc(item.authority_code)}</td>
-                            <td>${esc(cap(String(item.return_type || "").replaceAll("_", " ")))}</td>
-                            <td>
-                                ${esc(String(item.period_start || "").slice(0, 10))}
-                                –
-                                ${esc(String(item.period_end || "").slice(0, 10))}
-                            </td>
-                            <td>${Number(item.employee_count || 0)}</td>
-                            <td class="num">${money(item.employee_amount)}</td>
-                            <td class="num">${money(item.employer_amount)}</td>
-                            <td class="num"><strong>${money(item.total_payable)}</strong></td>
-                            <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
-                            <td>
-                                <button
-                                    class="payroll-link"
-                                    data-open-statutory-return="${item.id}"
-                                >
-                                    Open
-                                </button>
-                            </td>
-                        </tr>
-                    `).join("")}
-                </tbody>
-            </table>
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Return</th>
+                <th>Authority</th>
+                <th>Type</th>
+                <th>Period</th>
+                <th>Employees</th>
+                <th>Employee Amount</th>
+                <th>Employer Amount</th>
+                <th>Total Payable</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map(item => `
+                <tr>
+                  <td><strong>${esc(item.return_no)}</strong></td>
+                  <td>${esc(item.authority_code)}</td>
+                  <td>${esc(cap(String(item.return_type || "").replaceAll("_", " ")))}</td>
+                  <td>
+                    ${esc(String(item.period_start || "").slice(0, 10))}
+                    –
+                    ${esc(String(item.period_end || "").slice(0, 10))}
+                  </td>
+                  <td>${Number(item.employee_count || 0)}</td>
+                  <td class="num">${money(item.employee_amount)}</td>
+                  <td class="num">${money(item.employer_amount)}</td>
+                  <td class="num"><strong>${money(item.total_payable)}</strong></td>
+                  <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
+                  <td>
+                    <button class="payroll-link" data-open-statutory-return="${item.id}">Open</button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
         </div>
-    `;
+      ` : `<p class="payroll-muted">No statutory returns found.</p>`;
 
     el.querySelectorAll("[data-open-statutory-return]").forEach(btn => {
-        btn.addEventListener("click", () => {
-            openPayrollStatutoryReturn(
-                Number(btn.dataset.openStatutoryReturn)
-            );
-        });
+      btn.addEventListener("click", () => {
+        openPayrollStatutoryReturn(Number(btn.dataset.openStatutoryReturn));
+      });
     });
 
-    const actions = $("taxFilingActions");
+    // ═══════════════════════════════════════════════════════════════
+    // 🆕 UPDATED: PAYE TAX FILING SECTION
+    // ═══════════════════════════════════════════════════════════════
 
-    if (actions) {
-        actions.style.display = "flex";
+    let payeContainer = document.getElementById('payeTaxFilingSection');
+    if (!payeContainer) {
+      payeContainer = document.createElement('div');
+      payeContainer.id = 'payeTaxFilingSection';
+      payeContainer.className = 'paye-tax-filing-section';
+      el.parentNode.appendChild(payeContainer);
     }
 
-    const xmlBtn = $("taxFilingExportXml");
-
-    if (xmlBtn) {
-        xmlBtn.style.display =
-            authority === "SARS"
-                ? "inline-flex"
-                : "none";
+    // 1. Dynamic Authority Selection (Auto-detect company setting)
+    const companyAuthority = payrollState.settings?.tax_authority_code || 'SARS';
+    
+    // 2. Dynamic Year Generation (Last 3 years)
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+    // Tax years in Southern Africa usually span two calendar years (e.g., 2024/2025)
+    // If we are before March (for SARS), we are still in the previous tax year cycle
+    const baseYear = currentMonth < 3 ? currentYear - 1 : currentYear;
+    
+    let yearOptions = '';
+    for (let i = 0; i < 3; i++) {
+      const yr = baseYear - i;
+      const label = `${yr}/${yr + 1}`;
+      yearOptions += `<option value="${label}">${label}</option>`;
     }
+
+    payeContainer.innerHTML = `
+        <div style="margin: 28px 0 20px 0; padding: 16px 20px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #3b82f6;">
+          <h3 style="margin: 0 0 6px 0; font-size: 15px; font-weight: 600; color: #334155; display: flex; align-items: center; gap: 8px;">
+            📋 PAYE Tax Filing Export
+          </h3>
+          <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
+            Generate compliant export files including **Employee Benefits** for SARS (South Africa), RSL (Lesotho), or BURS (Botswana).
+          </p>
+        </div>
+
+        <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; padding: 18px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+          
+          <!-- Authority Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Tax Authority</label>
+            <select id="payeAuthoritySelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 200px; color: #334155;">
+              <option value="SARS" ${companyAuthority === 'SARS' ? 'selected' : ''}>🇿🇦 SARS — South Africa</option>
+              <option value="RSL" ${companyAuthority === 'RSL' ? 'selected' : ''}>🇱🇸 RSL — Lesotho</option>
+              <option value="BURS" ${companyAuthority === 'BURS' ? 'selected' : ''}>🇧🇼 BURS — Botswana</option>
+            </select>
+          </div>
+
+          <!-- Tax Year Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Tax Year</label>
+            <select id="payeTaxYearSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 140px; color: #334155;">
+              ${yearOptions}
+            </select>
+          </div>
+
+          <!-- Filing Month Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Filing Month</label>
+            <select id="payeFilingMonthSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 150px; color: #334155;">
+              <option value="">Select filing month</option>
+            </select>
+          </div>
+
+          <!-- Format Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Export Format</label>
+            <select id="payeFormatSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 130px; color: #334155;">
+              <option value="csv">📄 CSV (Standard)</option>
+              <option value="xlsx">📊 Excel (.xlsx)</option>
+              <option value="xml">🔧 SARS XML (e-Filing)</option>
+            </select>
+          </div>
+
+          <!-- Action Buttons -->
+          <div style="display: flex; gap: 10px; align-items: flex-end; margin-left: auto;">
+            <button id="payePreviewBtn" style="padding: 9px 18px; background: #ffffff; color: #475569; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
+              👁️ Preview Data
+            </button>
+            
+            <button id="payeExportBtn" style="padding: 9px 18px; background: #1e293b; color: #ffffff; border: 1px solid #0f172a; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
+              📥 Export Filing
+            </button>
+          </div>
+        </div>
+
+        <div id="payePreviewArea" style="margin-top: 16px; min-height: 120px; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <div style="text-align: center; color: #94a3b8; padding: 30px;">
+            <p style="margin: 0 0 8px 0; font-size: 32px;">📊</p>
+            <p style="margin: 0; font-size: 14px;">Select parameters and click Preview to verify tax data</p>
+          </div>
+        </div>
+      `;
+
+    const payeAuthoritySelect = $("payeAuthoritySelect");
+    const payeTaxYearSelect = $("payeTaxYearSelect");
+    const payeFilingMonthSelect = $("payeFilingMonthSelect");
+
+    function refreshPayeFilingMonths() {
+      if (!payeFilingMonthSelect || !payeTaxYearSelect || !payeAuthoritySelect) return;
+
+      const authority = payeAuthoritySelect.value || 'SARS';
+      const taxYear = payeTaxYearSelect.value || '';
+
+      payeFilingMonthSelect.innerHTML =
+        '<option value="">Select filing month</option>' +
+        generatePayeFilingMonths(authority, taxYear);
+    }
+
+    refreshPayeFilingMonths();
+
+    payeAuthoritySelect?.addEventListener("change", refreshPayeFilingMonths);
+    payeTaxYearSelect?.addEventListener("change", refreshPayeFilingMonths);
+
+    // Attach event listeners using the proper "FinSage" pattern
+    $("payePreviewBtn")?.addEventListener("click", () => {
+      if (typeof window.previewPayeData === 'function') {
+        window.previewPayeData();
+      } else {
+        showPayrollStatus("Tax Filing module not fully loaded.", "error");
+      }
+    });
+
+    $("payeExportBtn")?.addEventListener("click", (e) => {
+      if (typeof window.exportPayeFiling === 'function') {
+        window.exportPayeFiling(e);
+      } else {
+        showPayrollStatus("Tax Filing module not fully loaded.", "error");
+      }
+    });
   }
+
   window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
+
+  function generatePayeFilingMonths(authority, taxYear) {
+    const startYear = parseInt(String(taxYear).split('/')[0], 10);
+
+    if (!startYear) return '';
+
+    let months = [];
+
+    if (authority === 'SARS') {
+      months = [
+        ['03', 'March'],
+        ['04', 'April'],
+        ['05', 'May'],
+        ['06', 'June'],
+        ['07', 'July'],
+        ['08', 'August'],
+        ['09', 'September'],
+        ['10', 'October'],
+        ['11', 'November'],
+        ['12', 'December'],
+        ['01', 'January'],
+        ['02', 'February']
+      ];
+    } else if (authority === 'RSL') {
+      months = [
+        ['04', 'April'],
+        ['05', 'May'],
+        ['06', 'June'],
+        ['07', 'July'],
+        ['08', 'August'],
+        ['09', 'September'],
+        ['10', 'October'],
+        ['11', 'November'],
+        ['12', 'December'],
+        ['01', 'January'],
+        ['02', 'February'],
+        ['03', 'March']
+      ];
+    } else {
+      months = [
+        ['07', 'July'],
+        ['08', 'August'],
+        ['09', 'September'],
+        ['10', 'October'],
+        ['11', 'November'],
+        ['12', 'December'],
+        ['01', 'January'],
+        ['02', 'February'],
+        ['03', 'March'],
+        ['04', 'April'],
+        ['05', 'May'],
+        ['06', 'June']
+      ];
+    }
+
+    return months.map(([month, name]) => {
+      const year = ['01', '02', '03'].includes(month)
+        ? startYear + 1
+        : startYear;
+
+      return `<option value="${year}-${month}">${name} ${year}</option>`;
+    }).join('');
+  }
 
   async function editPayrollStatutoryReturn(item={}){
     const values=await payrollForm(

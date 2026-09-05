@@ -101,9 +101,267 @@
         }).format(num);
     }
     
-    /**
-     * Show status message using your existing function
-     */
+    window.previewPayeData = async function() {
+        const authority = document.getElementById('payeAuthoritySelect')?.value || 'SARS';
+        const taxYear = document.getElementById('payeTaxYearSelect')?.value || '';
+        const filingMonth = document.getElementById('payeFilingMonthSelect')?.value || '';
+        const previewArea = document.getElementById('payePreviewArea');
+
+        if (!previewArea) return;
+
+        if (!filingMonth) {
+            previewArea.innerHTML = `
+                <div style="text-align:center; padding:30px; color:#94a3b8;">
+                    <p style="font-size:28px; margin-bottom:10px;">📅</p>
+                    <p style="margin:0; font-size:14px;">Please select a filing month.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const [year, month] = filingMonth.split('-').map(Number);
+
+        if (!year || !month) {
+            showPayrollStatus("Invalid filing month selected.", "error");
+            return;
+        }
+
+        const periodStart = `${year}-${String(month).padStart(2, '0')}-01`;
+        const periodEndDate = new Date(year, month, 0);
+        const periodEnd =
+            `${periodEndDate.getFullYear()}-${String(periodEndDate.getMonth() + 1).padStart(2, '0')}-${String(periodEndDate.getDate()).padStart(2, '0')}`;
+
+        const period = `${periodStart} to ${periodEnd}`;
+
+        previewArea.innerHTML = `
+            <div style="text-align:center; padding:30px; color:#64748b;">
+                <p style="font-size:24px; margin-bottom:12px;">⏳</p>
+                <p>Loading employee data for ${authority} (${period})...</p>
+            </div>
+        `;
+
+        try {
+            const companyId = getActiveCompanyId();
+
+            if (!companyId) {
+                throw new Error("No active company selected");
+            }
+
+            const url = ENDPOINTS.taxFiling.preview(
+                companyId,
+                authority,
+                period
+            );
+
+            const data = await apiFetch(url);
+
+            if (data.employees && data.employees.length > 0) {
+                previewArea.innerHTML = `
+                    <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+                        <strong style="color:#1e293b;">Employee Preview (${data.employees.length} employees)</strong>
+                        <span style="font-size:12px; color:#64748b;">${authority} • ${taxYear} • ${period}</span>
+                    </div>
+
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                        <thead>
+                            <tr style="background:#f1f5f9;">
+                                <th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e2e8f0;">Emp #</th>
+                                <th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e2e8f0;">Full Name</th>
+                                <th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e2e8f0;">Tax Reference</th>
+                                <th style="padding:10px 8px; text-align:right; border-bottom:2px solid #e2e8f0;">Gross Income</th>
+                                <th style="padding:10px 8px; text-align:right; border-bottom:2px solid #e2e8f0;">PAYE Deducted</th>
+                                <th style="padding:10px 8px; text-align:center; border-bottom:2px solid #e2e8f0;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.employees.map(emp => `
+                                <tr style="border-bottom:1px solid #f1f5f9; transition:background 0.15s;"
+                                    onmouseover="this.style.background='#f8fafc'"
+                                    onmouseout="this.style.background='white'">
+                                    <td style="padding:10px 8px;"><strong>${esc(emp.employee_no)}</strong></td>
+                                    <td style="padding:10px 8px;">${esc(emp.first_name)} ${esc(emp.last_name)}</td>
+                                    <td style="padding:10px 8px; font-family:monospace; font-size:12px;">${esc(emp.tax_number) || '<em style="color:#94a3b8;">—</em>'}</td>
+                                    <td style="padding:10px 8px; text-align:right; font-variant-numeric:tabular-nums;">
+                                        ${(emp.gross_income || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
+                                    </td>
+                                    <td style="padding:10px 8px; text-align:right; font-variant-numeric:tabular-nums; color:#dc2626; font-weight:500;">
+                                        ${(emp.paye_deducted || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
+                                    </td>
+                                    <td style="padding:10px 8px; text-align:center;">
+                                        <span style="
+                                            padding:3px 10px;
+                                            border-radius:12px;
+                                            font-size:11px;
+                                            font-weight:500;
+                                            ${emp.status === 'active'
+                                                ? 'background:#dcfce7; color:#166534;'
+                                                : emp.status === 'inactive'
+                                                    ? 'background:#fef3c7; color:#92400e;'
+                                                    : 'background:#f1f5f9; color:#64748b;'
+                                            }
+                                        ">
+                                            ${esc(emp.status || 'unknown')}
+                                        </span>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                        <tfoot>
+                            <tr style="font-weight:700; background:#f8fafc; border-top:2px solid #e2e8f0;">
+                                <td colspan="3" style="padding:12px 8px; text-align:right; color:#475569;">
+                                    Totals (${data.employees.length} employees):
+                                </td>
+                                <td style="padding:12px 8px; text-align:right; color:#1e293b;">
+                                    ${(data.totals?.gross_income || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
+                                </td>
+                                <td style="padding:12px 8px; text-align:right; color:#dc2626;">
+                                    ${(data.totals?.paye_deducted || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
+                                </td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+
+                    <div style="
+                        margin-top:14px;
+                        padding:12px 16px;
+                        background:#eff6ff;
+                        border-left:4px solid #3b82f6;
+                        border-radius:0 6px 6px 0;
+                        font-size:13px;
+                        color:#1e40af;
+                    ">
+                        ✅ Ready to export. Click <strong>"Export Filing"</strong> to download your ${authority.toUpperCase()} return file.
+                    </div>
+                `;
+            } else {
+                previewArea.innerHTML = `
+                    <div style="text-align:center; padding:30px; color:#94a3b8;">
+                        <p style="font-size:32px; margin-bottom:12px;">📭</p>
+                        <p style="margin:0 0 6px 0; font-size:14px;">No employee data found</p>
+                        <p style="margin:0; font-size:12px;">Try selecting a different filing month or check if employees have been processed.</p>
+                    </div>
+                `;
+            }
+
+        } catch (err) {
+            console.error('[PAYE] Preview error:', err);
+            previewArea.innerHTML = `
+                <div style="
+                    text-align:center;
+                    padding:30px;
+                    color:#dc2626;
+                    background:#fef2f2;
+                    border-radius:8px;
+                    border:1px solid #fecaca;
+                ">
+                    <p style="font-size:28px; margin-bottom:10px;">⚠️</p>
+                    <p style="margin:0 0 6px 0; font-weight:600;">Failed to load data</p>
+                    <p style="margin:0; font-size:13px;">${err.message}</p>
+                </div>
+            `;
+        }
+    };  
+
+    window.exportPayeFiling = async function(event) {
+        const authority = document.getElementById('payeAuthoritySelect')?.value || 'SARS';
+        const taxYear = document.getElementById('payeTaxYearSelect')?.value || '';
+        const filingMonth = document.getElementById('payeFilingMonthSelect')?.value || '';
+        const format = document.getElementById('payeFormatSelect')?.value || 'csv';
+
+        if (!filingMonth) {
+            showPayrollStatus("Please select a filing month.", "error");
+            return;
+        }
+
+        const [year, month] = filingMonth.split('-').map(Number);
+
+        if (!year || !month) {
+            showPayrollStatus("Invalid filing month selected.", "error");
+            return;
+        }
+
+        const periodStart = `${year}-${String(month).padStart(2, '0')}-01`;
+        const periodEndDate = new Date(year, month, 0);
+        const periodEnd =
+            `${periodEndDate.getFullYear()}-${String(periodEndDate.getMonth() + 1).padStart(2, '0')}-${String(periodEndDate.getDate()).padStart(2, '0')}`;
+
+        const requestBody = {
+            authority_code: authority,
+            format: format,
+            period_start: periodStart,
+            period_end: periodEnd,
+            include_benefits: true,
+            employer_info: {
+                name: payrollState.settings?.company_name || window.CURRENT_COMPANY?.name || '',
+                tax_reference_number: payrollState.settings?.tax_reference_number || window.CURRENT_COMPANY?.tax_number || '',
+                registration_number: window.CURRENT_COMPANY?.registration_number || ''
+            }
+        };
+
+        const btn = event?.currentTarget || event?.target;
+        const originalText = btn?.innerHTML;
+        const companyId = getActiveCompanyId();
+
+        if (!companyId) {
+            showPayrollStatus("No active company selected.", "error");
+            return;
+        }
+
+        try {
+            if (btn) {
+                btn.innerHTML = '⏳ Processing...';
+                btn.disabled = true;
+            }
+
+            const response = await fetch(
+                `/api/companies/${companyId}/payroll/tax-filing/export`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(typeof AUTH_HEADER === 'function' ? AUTH_HEADER() : {})
+                    },
+                    body: JSON.stringify(requestBody)
+                }
+            );
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Export failed');
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const timestamp = new Date().toISOString().slice(0, 10);
+
+            a.href = url;
+            a.download =
+                `${authority}_PAYE_Export_${filingMonth}_${timestamp}.${format}`;
+
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+
+            showPayrollStatus(
+                `Successfully exported ${authority} filing for ${filingMonth}.`,
+                "success"
+            );
+
+        } catch (err) {
+            console.error('[PAYE Export] Error:', err);
+            showPayrollStatus(`Export Error: ${err.message}`, "error");
+
+        } finally {
+            if (btn) {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+    };
+
     function showStatus(message, type = 'info') {
         if (typeof showPayrollStatus === 'function') {
             showPayrollStatus(message, type);
