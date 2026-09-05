@@ -1222,6 +1222,29 @@ def preview_tax_filing_data(company_id: int):
             else 0.0
         )
 
+        # ---------------------------------------------------------
+        # 4A. Create/update statutory return header from preview
+        # ---------------------------------------------------------
+
+        statutory_return = db_service.payroll_statutory_return_preview_upsert(
+            company_id=company_id,
+            authority_code=authority_code,
+            return_type="payroll_tax",
+            period_start=period_start,
+            period_end=period_end,
+            reporting_date=period_end,
+
+            employee_count=total_employees,
+            gross_remuneration=total_gross,
+            taxable_remuneration=total_gross,
+            employee_amount=total_paye + total_uif,
+            employer_amount=total_sdl,
+            total_payable=total_paye + total_uif + total_sdl,
+
+            notes=f"PAYE preview for {period_start} to {period_end}",
+
+            user_id=None,
+        )
         # 5. Look up columns or map explicit authority schemas
         sars_cols = globals().get(
             "SARS_CSV_COLUMNS",
@@ -1260,6 +1283,12 @@ def preview_tax_filing_data(company_id: int):
 
         preview_data = {
             "authority_code": authority_code,
+
+            "statutory_return": {
+                "id": statutory_return.get("id"),
+                "return_no": statutory_return.get("return_no"),
+                "status": statutory_return.get("status"),
+            },
 
             "authority_config": SUPPORTED_AUTHORITIES.get(
                 authority_code,

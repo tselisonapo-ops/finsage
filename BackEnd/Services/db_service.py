@@ -163591,6 +163591,251 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ORDER BY r.reporting_date DESC,r.id DESC;
         """,tuple(params))
 
+    def payroll_statutory_return_preview_upsert(
+        self,
+        company_id,
+        authority_code,
+        return_type,
+        period_start,
+        period_end,
+        reporting_date,
+        due_date=None,
+        currency="LSL",
+        employee_count=0,
+        gross_remuneration=0,
+        taxable_remuneration=0,
+        employee_amount=0,
+        employer_amount=0,
+        total_payable=0,
+        notes=None,
+        user_id=None,
+    ):
+        """
+        Create or update the ORIGINAL statutory return header
+        when statutory data is previewed.
+
+        This method is intentionally separate from
+        payroll_statutory_return_save(), which is used for
+        existing statutory return records/lifecycle operations.
+
+        Preview behaviour:
+            - No existing original return -> INSERT draft
+            - Existing draft -> UPDATE
+            - Existing calculated -> UPDATE
+            - Existing rejected -> UPDATE
+            - Approved/submitted/accepted/cancelled -> DO NOT overwrite
+
+        Revision returns (parent_return_id IS NOT NULL) are never
+        modified by this method.
+        """
+
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        authority_code = str(authority_code or "").strip().upper()
+        return_type = str(return_type or "").strip().lower()
+
+        # ---------------------------------------------------------
+        # 1. Find existing ORIGINAL return for this exact period
+        # ---------------------------------------------------------
+
+        existing = self.fetch_one(
+            f"""
+            SELECT
+                id,
+                return_no,
+                status
+            FROM {schema}.payroll_statutory_return_runs
+            WHERE company_id = %s
+            AND authority_code = %s
+            AND return_type = %s
+            AND period_start = %s
+            AND period_end = %s
+            AND parent_return_id IS NULL
+            ORDER BY id DESC
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                authority_code,
+                return_type,
+                period_start,
+                period_end,
+            ),
+        )
+
+        # ---------------------------------------------------------
+        # 2. Existing return
+        # ---------------------------------------------------------
+
+        if existing:
+            return_id = existing["id"]
+            status = existing["status"]
+
+            # Do not allow Preview to overwrite a filed/finalised
+            # statutory return.
+            if status in (
+                "approved",
+                "submitted",
+                "accepted",
+                "cancelled",
+            ):
+                return self.payroll_statutory_return_get(
+                    company_id,
+                    return_id,
+                )
+
+            # Draft / calculated / rejected:
+            # refresh the header with the latest preview values.
+            self.execute(
+                f"""
+                UPDATE {schema}.payroll_statutory_return_runs
+                SET
+                    reporting_date = %s,
+                    due_date = %s,
+                    currency = %s,
+                    employee_count = %s,
+                    gross_remuneration = %s,
+                    taxable_remuneration = %s,
+                    employee_amount = %s,
+                    employer_amount = %s,
+                    total_payable = %s,
+                    notes = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE id = %s;
+                """,
+                (
+                    reporting_date,
+                    due_date,
+                    currency,
+                    employee_count,
+                    gross_remuneration,
+                    taxable_remuneration,
+                    employee_amount,
+                    employer_amount,
+                    total_payable,
+                    notes,
+                    user_id,
+                    return_id,
+                ),
+            )
+
+            return self.payroll_statutory_return_get(
+                company_id,
+                return_id,
+            )
+
+        # ---------------------------------------------------------
+        # 3. No existing return
+        # ---------------------------------------------------------
+        # Generate a new original return number.
+        # ---------------------------------------------------------
+
+        row = self.fetch_one(
+            f"""
+            SELECT COALESCE(
+                MAX(
+                    CASE
+                        WHEN return_no ~ '^STAT-[0-9]+$'
+                        THEN CAST(
+                            SUBSTRING(return_no FROM 6)
+                            AS BIGINT
+                        )
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS max_no
+            FROM {schema}.payroll_statutory_return_runs
+            WHERE company_id = %s;
+            """,
+            (company_id,),
+        )
+
+        next_no = int(row["max_no"] or 0) + 1
+        return_no = f"STAT-{next_no:06d}"
+
+        # ---------------------------------------------------------
+        # 4. Create new ORIGINAL return
+        # ---------------------------------------------------------
+
+        return_id = self.insert_returning_id(
+            f"""
+            INSERT INTO {schema}.payroll_statutory_return_runs(
+                company_id,
+                return_no,
+                authority_code,
+                return_type,
+                period_start,
+                period_end,
+                reporting_date,
+                due_date,
+                currency,
+                status,
+                employee_count,
+                gross_remuneration,
+                taxable_remuneration,
+                employee_amount,
+                employer_amount,
+                total_payable,
+                notes,
+                created_by_user_id,
+                updated_by_user_id,
+                parent_return_id,
+                revision_number
+            )
+            VALUES(
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                'draft',
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                NULL,
+                0
+            )
+            RETURNING id;
+            """,
+            (
+                company_id,
+                return_no,
+                authority_code,
+                return_type,
+                period_start,
+                period_end,
+                reporting_date,
+                due_date,
+                currency,
+                employee_count,
+                gross_remuneration,
+                taxable_remuneration,
+                employee_amount,
+                employer_amount,
+                total_payable,
+                notes,
+                user_id,
+                user_id,
+            ),
+        )
+
+        return self.payroll_statutory_return_get(
+            company_id,
+            return_id,
+        )
 
     def payroll_statutory_return_get(
         self,
