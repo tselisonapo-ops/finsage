@@ -2,7 +2,7 @@
 """Full CRUD for tickets, messages, notes, and history."""
 from flask import Blueprint, request, jsonify, g
 
-from backend.control_auth import require_control_auth
+from BackEnd.Services.control_auth import require_control_auth
 
 tickets_bp = Blueprint('control_tickets', __name__, url_prefix='/control/api')
 

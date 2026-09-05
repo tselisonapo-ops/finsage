@@ -44,7 +44,7 @@ def control_login():
 
     # Generate JWT using the main app's method
     from BackEnd.Services.auth_service import generate_jwt
-    from backend.services.control_service import ControlService
+    from BackEnd.Services.service_control.service_control import ControlService
 
     user_id = user['id']
     payload = {
@@ -77,7 +77,7 @@ def control_login():
 @control_auth_bp.route('/auth/me', methods=['GET'])
 def control_me():
     """Return the current agent's profile (requires auth)."""
-    from backend.control_auth import require_control_auth
+    from BackEnd.Services.control_auth import require_control_auth
 
     @require_control_auth
     def _inner():

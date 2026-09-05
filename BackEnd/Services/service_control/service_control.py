@@ -31,6 +31,26 @@ class ControlService:
         self.db = db_service
 
     # ────────────────────────────────────────
+    # SCHEMA ENSURE — single entry point for DB migration
+    # ────────────────────────────────────────
+
+    def ensure_schema(self) -> None:
+        """
+        Ensure the `control.*` schema, tables, enums, functions, triggers
+        and seed data exist. Idempotent — no-op on the second call.
+
+        This is the ONLY method in the codebase that calls
+        `ensure_control_schema()` from `backend.migrations`. Everything
+        else (blueprint registration, request handlers, tests) goes through
+        this method, so the migration has exactly one caller.
+
+        Called once per Flask process at startup by
+        `register_control_blueprints(app)` in `backend/__init__.py`.
+        """
+        from BackEnd.Services.service_control.migrations import ensure_control_schema
+        ensure_control_schema(self.db)
+
+    # ────────────────────────────────────────
     # TICKET NUMBER GENERATION
     # ────────────────────────────────────────
 

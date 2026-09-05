@@ -1,7 +1,7 @@
 # FinSage Control — Settings Routes (Admin)
 from flask import Blueprint, request, jsonify, g
 
-from backend.control_auth import require_control_auth, require_control_admin
+from BackEnd.Services.control_auth import require_control_auth, require_control_admin
 
 settings_bp = Blueprint('control_settings', __name__, url_prefix='/control/api/settings')
 

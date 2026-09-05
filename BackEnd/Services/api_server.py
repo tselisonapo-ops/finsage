@@ -240,7 +240,11 @@ from BackEnd.Services.routes.ias41_disclosure_routes import (
 )
 from BackEnd.Services.routes.consolidation_routes import consolidation_bp
 from BackEnd.Services.routes.payroll_tax_filing_routes import payroll_tax_filing_bp
-
+from BackEnd.Services.control.auth import control_auth_bp
+from BackEnd.Services.control.customers import customers_bp 
+from BackEnd.Services.control.settings import settings_bp
+from BackEnd.Services.control.tickets import tickets_bp
+from BackEnd.Services.control.dashboard import dashboard_bp
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
 # ────────────────────────────────────────────────────────────────
@@ -438,6 +442,11 @@ app.register_blueprint(corporate_structure_bp)
 app.register_blueprint(ops_bp)
 app.register_blueprint(consolidation_bp)
 app.register_blueprint(payroll_tax_filing_bp)
+app.register_blueprint(control_auth_bp)
+app.register_blueprint(customers_bp)
+app.register_blueprint(settings_bp)
+app.register_blueprint(tickets_bp)
+app.register_blueprint(dashboard_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 

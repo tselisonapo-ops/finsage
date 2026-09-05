@@ -1,7 +1,7 @@
 # FinSage Control — Dashboard Routes
 from flask import Blueprint, jsonify, g
 
-from backend.control_auth import require_control_auth
+from BackEnd.Services.control_auth import require_control_auth
 
 dashboard_bp = Blueprint('control_dashboard', __name__, url_prefix='/control/api')
 

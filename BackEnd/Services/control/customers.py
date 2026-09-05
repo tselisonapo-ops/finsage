@@ -2,7 +2,7 @@
 """Read-only access to FinSage company data with Control metadata."""
 from flask import Blueprint, request, jsonify, g
 
-from backend.control_auth import require_control_auth
+from BackEnd.Services.control_auth import require_control_auth
 
 customers_bp = Blueprint('control_customers', __name__, url_prefix='/control/api')
 

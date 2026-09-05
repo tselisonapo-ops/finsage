@@ -101,273 +101,170 @@
         }).format(num);
     }
     
-    window.previewPayeData = async function() {
-        const authority = document.getElementById('payeAuthoritySelect')?.value || 'SARS';
-        const taxYear = document.getElementById('payeTaxYearSelect')?.value || '';
-        const filingMonth = document.getElementById('payeFilingMonthSelect')?.value || '';
-        const previewArea = document.getElementById('payePreviewArea');
+    // ================================================================
+    // PAYE Preview + Export — called by the tax-filing panel buttons
+    // ================================================================
+    window.previewPayeData = async function () {
+    const area       = document.getElementById("taxFilingPreview");
+    const topBar     = document.getElementById("taxFilingTopBar");
+    const previewBtn = document.getElementById("taxFilingPreviewBtn");
+    const actions    = document.getElementById("taxFilingActions");
+    const company    = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
+    const authority  = window.__taxFiling?.getSelectedAuthority?.() || "SARS";
+    const year       = document.getElementById("taxFilingYear")?.value;
+    const month      = document.getElementById("taxFilingMonth")?.value;
 
-        if (!previewArea) return;
+    if (!area) { console.warn("[PAYE Preview] #taxFilingPreview not found"); return; }
 
-        if (!filingMonth) {
-            previewArea.innerHTML = `
-                <div style="text-align:center; padding:30px; color:#94a3b8;">
-                    <p style="font-size:28px; margin-bottom:10px;">📅</p>
-                    <p style="margin:0; font-size:14px;">Please select a filing month.</p>
-                </div>
-            `;
-            return;
+    const showMsg = (html) => { area.style.display = "block"; area.innerHTML = html; };
+
+    if (!year || !month) {
+        showMsg('<div style="padding:24px;text-align:center;color:#b45309;background:#fffbeb;border:1px dashed #fcd34d;border-radius:10px;">📅 Select a filing month first, then click <b>Preview Returns</b>.</div>');
+        return;
+    }
+    if (!company) {
+        showMsg('<div style="padding:24px;text-align:center;color:#b91c1c;background:#fef2f2;border:1px dashed #fca5a5;border-radius:10px;">No active company selected.</div>');
+        return;
+    }
+
+    const mm = String(month).padStart(2, "0");
+    const periodStart = `${year}-${mm}-01`;
+    const periodEnd = `${year}-${mm}-${String(new Date(year, Number(month), 0).getDate()).padStart(2, "0")}`;
+    const period = `${periodStart} to ${periodEnd}`;
+
+    const oldLabel = previewBtn ? previewBtn.textContent : "";
+    if (previewBtn) { previewBtn.disabled = true; previewBtn.textContent = "⏳ Loading…"; }
+    showMsg(`<div style="padding:32px;text-align:center;color:#64748b;">Loading ${authority} PAYE preview for ${period}…</div>`);
+
+    try {
+        const url = window.ENDPOINTS.taxFiling.preview(company, authority, period);
+        const data = await window.apiFetch(url, { method: "GET" });
+
+        const rows   = Array.isArray(data) ? data : (data.employees || data.lines || data.results || data.data || []);
+        const totals = (!Array.isArray(data) && data) ? (data.totals || data.summary || null) : null;
+
+        if (!rows.length) {
+        showMsg(`<div style="padding:24px;text-align:center;color:#64748b;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;">📭 No PAYE data found for ${authority} — ${period}.</div>`);
+        return;
         }
 
-        const [year, month] = filingMonth.split('-').map(Number);
+        const h = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+        const n = (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const pick = (o, keys) => { for (const k of keys) { if (o && o[k] !== undefined && o[k] !== null && o[k] !== "") return o[k]; } return ""; };
 
-        if (!year || !month) {
-            showPayrollStatus("Invalid filing month selected.", "error");
-            return;
+        let html = `<div style="max-height:60vh;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:#f1f5f9;position:sticky;top:0;">
+            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Employee</th>
+            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Gross</th>
+            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">PAYE</th>
+            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Net Pay</th>
+        </tr></thead><tbody>`;
+        for (const r of rows) {
+        html += `<tr>
+            <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${h(pick(r, ["employee_name","employee","name","full_name"]))}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(pick(r, ["gross_salary","gross","total_gross","gross_pay"]))}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(pick(r, ["paye","paye_amount","tax_amount","tax"]))}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(pick(r, ["net_pay","net","total_net"]))}</td>
+        </tr>`;
         }
-
-        const periodStart = `${year}-${String(month).padStart(2, '0')}-01`;
-        const periodEndDate = new Date(year, month, 0);
-        const periodEnd =
-            `${periodEndDate.getFullYear()}-${String(periodEndDate.getMonth() + 1).padStart(2, '0')}-${String(periodEndDate.getDate()).padStart(2, '0')}`;
-
-        const period = `${periodStart} to ${periodEnd}`;
-
-        previewArea.innerHTML = `
-            <div style="text-align:center; padding:30px; color:#64748b;">
-                <p style="font-size:24px; margin-bottom:12px;">⏳</p>
-                <p>Loading employee data for ${authority} (${period})...</p>
-            </div>
-        `;
-
-        try {
-            const companyId = getActiveCompanyId();
-
-            if (!companyId) {
-                throw new Error("No active company selected");
-            }
-
-            const url = ENDPOINTS.taxFiling.preview(
-                companyId,
-                authority,
-                period
-            );
-
-            const data = await apiFetch(url);
-
-            if (data.employees && data.employees.length > 0) {
-                previewArea.innerHTML = `
-                    <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
-                        <strong style="color:#1e293b;">Employee Preview (${data.employees.length} employees)</strong>
-                        <span style="font-size:12px; color:#64748b;">${authority} • ${taxYear} • ${period}</span>
-                    </div>
-
-                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
-                        <thead>
-                            <tr style="background:#f1f5f9;">
-                                <th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e2e8f0;">Emp #</th>
-                                <th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e2e8f0;">Full Name</th>
-                                <th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e2e8f0;">Tax Reference</th>
-                                <th style="padding:10px 8px; text-align:right; border-bottom:2px solid #e2e8f0;">Gross Income</th>
-                                <th style="padding:10px 8px; text-align:right; border-bottom:2px solid #e2e8f0;">PAYE Deducted</th>
-                                <th style="padding:10px 8px; text-align:center; border-bottom:2px solid #e2e8f0;">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.employees.map(emp => `
-                                <tr style="border-bottom:1px solid #f1f5f9; transition:background 0.15s;"
-                                    onmouseover="this.style.background='#f8fafc'"
-                                    onmouseout="this.style.background='white'">
-                                    <td style="padding:10px 8px;"><strong>${esc(emp.employee_no)}</strong></td>
-                                    <td style="padding:10px 8px;">${esc(emp.first_name)} ${esc(emp.last_name)}</td>
-                                    <td style="padding:10px 8px; font-family:monospace; font-size:12px;">${esc(emp.tax_number) || '<em style="color:#94a3b8;">—</em>'}</td>
-                                    <td style="padding:10px 8px; text-align:right; font-variant-numeric:tabular-nums;">
-                                        ${(emp.gross_income || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
-                                    </td>
-                                    <td style="padding:10px 8px; text-align:right; font-variant-numeric:tabular-nums; color:#dc2626; font-weight:500;">
-                                        ${(emp.paye_deducted || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
-                                    </td>
-                                    <td style="padding:10px 8px; text-align:center;">
-                                        <span style="
-                                            padding:3px 10px;
-                                            border-radius:12px;
-                                            font-size:11px;
-                                            font-weight:500;
-                                            ${emp.status === 'active'
-                                                ? 'background:#dcfce7; color:#166534;'
-                                                : emp.status === 'inactive'
-                                                    ? 'background:#fef3c7; color:#92400e;'
-                                                    : 'background:#f1f5f9; color:#64748b;'
-                                            }
-                                        ">
-                                            ${esc(emp.status || 'unknown')}
-                                        </span>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                        <tfoot>
-                            <tr style="font-weight:700; background:#f8fafc; border-top:2px solid #e2e8f0;">
-                                <td colspan="3" style="padding:12px 8px; text-align:right; color:#475569;">
-                                    Totals (${data.employees.length} employees):
-                                </td>
-                                <td style="padding:12px 8px; text-align:right; color:#1e293b;">
-                                    ${(data.totals?.gross_income || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
-                                </td>
-                                <td style="padding:12px 8px; text-align:right; color:#dc2626;">
-                                    ${(data.totals?.paye_deducted || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2})}
-                                </td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
-                    </table>
-
-                    <div style="
-                        margin-top:14px;
-                        padding:12px 16px;
-                        background:#eff6ff;
-                        border-left:4px solid #3b82f6;
-                        border-radius:0 6px 6px 0;
-                        font-size:13px;
-                        color:#1e40af;
-                    ">
-                        ✅ Ready to export. Click <strong>"Export Filing"</strong> to download your ${authority.toUpperCase()} return file.
-                    </div>
-                `;
-            } else {
-                previewArea.innerHTML = `
-                    <div style="text-align:center; padding:30px; color:#94a3b8;">
-                        <p style="font-size:32px; margin-bottom:12px;">📭</p>
-                        <p style="margin:0 0 6px 0; font-size:14px;">No employee data found</p>
-                        <p style="margin:0; font-size:12px;">Try selecting a different filing month or check if employees have been processed.</p>
-                    </div>
-                `;
-            }
-
-        } catch (err) {
-            console.error('[PAYE] Preview error:', err);
-            previewArea.innerHTML = `
-                <div style="
-                    text-align:center;
-                    padding:30px;
-                    color:#dc2626;
-                    background:#fef2f2;
-                    border-radius:8px;
-                    border:1px solid #fecaca;
-                ">
-                    <p style="font-size:28px; margin-bottom:10px;">⚠️</p>
-                    <p style="margin:0 0 6px 0; font-weight:600;">Failed to load data</p>
-                    <p style="margin:0; font-size:13px;">${err.message}</p>
-                </div>
-            `;
+        html += `</tbody>`;
+        if (totals) {
+        html += `<tfoot><tr style="background:#f8fafc;font-weight:600;">
+            <td style="padding:10px 12px;border-top:2px solid #e2e8f0;">Totals</td>
+            <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["gross_salary","gross","total_gross"]))}</td>
+            <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["paye","paye_amount","total_paye","tax_amount"]))}</td>
+            <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(pick(totals, ["net_pay","net","total_net"]))}</td>
+        </tr></tfoot>`;
         }
-    };  
+        html += `</table></div>`;
+        showMsg(html);
 
-    window.exportPayeFiling = async function(event, format) {
-        // New panel: authority from the selected card, year/month from the
-        // panel filters, format passed by whichever button was clicked
-        const authority = window.__taxFiling?.getSelectedAuthority?.() || 'SARS';
-        const taxYear = document.getElementById('taxFilingYear')?.value || '';
-        const filingMonth = document.getElementById('taxFilingMonth')?.value || '';
-        const fmt = (format || 'csv').toLowerCase();
-
-        if (!filingMonth) {
-            showPayrollStatus("Please select a filing month.", "error");
-            return;
+        // ✅ SUCCESS ONLY → hide Preview, raise Validate + Exports to the top
+        if (previewBtn) previewBtn.style.display = "none";
+        if (topBar && actions) {
+        actions.style.display = "flex";
+        topBar.appendChild(actions); // physically moves the bar up (keeps its listeners)
         }
+        const hint = document.getElementById("taxFilingTopHint");
+        if (hint) hint.textContent = "Review the preview below, then Validate or Export.";
+    } catch (err) {
+        console.error("[PAYE Preview] failed:", err);
+        showMsg(`<div style="padding:24px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;"><b>Preview failed:</b> ${h(err?.message || err)}</div>`);
+    } finally {
+        if (previewBtn) { previewBtn.disabled = false; previewBtn.textContent = oldLabel || "👁 Preview Returns"; }
+    }
+    };
 
-        const [year, month] = filingMonth.split('-').map(Number);
+    window.exportPayeFiling = async function (event, format) {
+    if (event && typeof event.preventDefault === "function") event.preventDefault();
 
-        if (!year || !month) {
-            showPayrollStatus("Invalid filing month selected.", "error");
-            return;
-        }
+    const fmt       = (format || "csv").toLowerCase();
+    const company   = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
+    const authority = window.__taxFiling?.getSelectedAuthority?.() || "SARS";
+    const year      = document.getElementById("taxFilingYear")?.value;
+    const month     = document.getElementById("taxFilingMonth")?.value;
+    const results   = document.getElementById("taxFilingValidationResults");
 
-        const periodStart = `${year}-${String(month).padStart(2, '0')}-01`;
-        const periodEndDate = new Date(year, month, 0);
-        const periodEnd =
-            `${periodEndDate.getFullYear()}-${String(periodEndDate.getMonth() + 1).padStart(2, '0')}-${String(periodEndDate.getDate()).padStart(2, '0')}`;
+    if (!company) { alert("No active company selected."); return; }
+    if (!year || !month) { alert("Select a filing year and month first."); return; }
 
-        const settings = (typeof payrollState !== 'undefined' && payrollState?.settings) || {};
+    const mm = String(month).padStart(2, "0");
+    const periodStart = `${year}-${mm}-01`;
+    const periodEnd = `${year}-${mm}-${String(new Date(year, Number(month), 0).getDate()).padStart(2, "0")}`;
 
-        const requestBody = {
-            authority_code: authority,
-            format: fmt,
-            period_start: periodStart,
-            period_end: periodEnd,
-            include_benefits: true,
-            employer_info: {
-                name: settings.company_name || window.CURRENT_COMPANY?.name || '',
-                tax_reference_number: settings.tax_reference_number || window.CURRENT_COMPANY?.tax_number || '',
-                registration_number: window.CURRENT_COMPANY?.registration_number || ''
-            }
+    const btn = event?.currentTarget;
+    const oldLabel = btn ? btn.textContent : "";
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Exporting…"; }
+
+    try {
+        const payload = {
+        authority_code: authority,
+        format: fmt,
+        period_start: periodStart,
+        period_end: periodEnd,
+        include_benefits: true,
         };
 
-        const btn = event?.currentTarget || event?.target;
-        const originalText = btn?.innerHTML;
-        const companyId = getActiveCompanyId();
+        // raw fetch (like downloadFile at ~line 31516) — apiFetch parses JSON and would mangle the file
+        const resp = await fetch(window.ENDPOINTS.taxFiling.export(company), {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            ...(typeof AUTH_HEADER === "function" ? AUTH_HEADER() : {}),
+        },
+        body: JSON.stringify(payload),
+        });
 
-        if (!companyId) {
-            showPayrollStatus("No active company selected.", "error");
-            return;
+        if (!resp.ok) {
+        let msg = `Export failed (HTTP ${resp.status})`;
+        try { const j = await resp.json(); msg = j.error || j.detail || j.message || msg; } catch (_) {}
+        throw new Error(msg);
         }
 
-        try {
-            if (btn) {
-                btn.innerHTML = '⏳ Processing...';
-                btn.disabled = true;
-            }
+        const blob = await resp.blob();
+        const ext = fmt === "xlsx" ? "xlsx" : fmt === "xml" ? "xml" : "csv";
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${authority}_PAYE_${year}_${mm}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 
-            const response = await fetch(
-                ENDPOINTS.taxFiling.export(companyId),
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        ...(typeof AUTH_HEADER === 'function' ? AUTH_HEADER() : {})
-                    },
-                    body: JSON.stringify(requestBody)
-                }
-            );
-
-            if (!response.ok) {
-                let message = 'Export failed';
-                try {
-                    const errorData = await response.json();
-                    message = errorData.error || message;
-                } catch (_) { /* non-JSON error body */ }
-                throw new Error(message);
-            }
-
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            const timestamp = new Date().toISOString().slice(0, 10);
-
-            a.href = url;
-            a.download =
-                `${authority}_PAYE_Export_${filingMonth}_${timestamp}.${fmt}`;
-
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
-
-            showPayrollStatus(
-                `Successfully exported ${authority} filing for ${filingMonth}.`,
-                "success"
-            );
-
-        } catch (err) {
-            console.error('[PAYE Export] Error:', err);
-            showPayrollStatus(`Export Error: ${err.message}`, "error");
-
-        } finally {
-            if (btn) {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-            }
+        if (results) {
+        results.style.display = "block";
+        results.innerHTML = `<div style="color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;">✅ Export downloaded: ${a.download}</div>`;
         }
+    } catch (err) {
+        console.error("[PAYE Export] failed:", err);
+        if (results) {
+        results.style.display = "block";
+        results.innerHTML = `<div style="color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;"><b>Export failed:</b> ${err?.message || err}</div>`;
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = oldLabel; }
+    }
     };
 
     function showStatus(message, type = 'info') {
@@ -1164,56 +1061,80 @@
          * Bind event listeners
          */
         bindEvents() {
-            if (this._bound) return;   // panel is injected once — bind once
-            this._bound = true;
+            const self = this;
 
+            // ---------- resolve preview/export however they were defined ----------
+            const getPreviewFn = () => {
+                if (typeof previewPayeData === 'function') return previewPayeData;              // local fn in this file
+                if (typeof window.previewPayeData === 'function') return window.previewPayeData; // global
+                return null;
+            };
+            const callPreview = () => {
+                const fn = getPreviewFn();
+                if (fn) fn();
+                else console.warn('[Tax Filing] No preview function found (previewPayeData / window.previewPayeData)');
+            };
+            const callExport = (e, fmt) => {
+                if (typeof exportPayeFiling === 'function') { exportPayeFiling(e, fmt); return; }
+                if (typeof window.exportPayeFiling === 'function') { window.exportPayeFiling(e, fmt); return; }
+                if (typeof self.export === 'function') { self.export(fmt); return; }  // module's own export(format)
+                console.warn('[Tax Filing] No export function found (exportPayeFiling / window.exportPayeFiling)');
+            };
+
+            // ---------- top bar + Preview button (created if template lacks it) ----------
+            const returnsTable = document.getElementById('taxFilingReturnsTable');
+            let topBar = document.getElementById('taxFilingTopBar');
+            if (!topBar && returnsTable) {
+                returnsTable.insertAdjacentHTML('beforebegin', `
+                    <div id="taxFilingTopBar"
+                         style="display:none;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 0;padding:12px 16px;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;">
+                        <span id="taxFilingTopHint" style="color:#64748b;font-size:13px;"></span>
+                        <button type="button" class="payroll-primary" id="taxFilingPreviewBtn">👁 Preview Returns</button>
+                    </div>
+                `);
+                topBar = document.getElementById('taxFilingTopBar');
+            }
+
+            // ---------- authority cards (template uses data-tax-authority!) ----------
             document.querySelectorAll('.tax-filing-authority-card').forEach(card => {
                 card.addEventListener('click', () => {
-                    /* cards carry data-tax-authority (dataset.taxAuthority) */
-                    const code = card.dataset.taxAuthority || card.dataset.authority;
-                    this.selectAuthority(code);
+                    this.selectAuthority(card.dataset.taxAuthority || card.dataset.authority);
                 });
+            });
+
+            // ---------- period selects ----------
+            document.getElementById('taxFilingMonth')?.addEventListener('change', () => {
+                this.onPeriodChange();
+                window.renderPayrollStatutoryReturns?.();
             });
 
             document.getElementById('taxFilingYear')?.addEventListener('change', () => {
                 const authority = state.selectedAuthority || 'SARS';
                 const year = document.getElementById('taxFilingYear')?.value;
                 const monthSelect = document.getElementById('taxFilingMonth');
-
                 if (monthSelect && year) {
                     monthSelect.innerHTML =
-                        '<option value="">All Filing Months</option>' +
+                        '<option value="">Select filing month</option>' +
                         generateFilingMonthOptions(authority, year);
                 }
-
                 this.onPeriodChange();
-                this.refreshTables();
+                window.renderPayrollStatutoryReturns?.();
             });
 
-            document.getElementById('taxFilingMonth')?.addEventListener('change', () => {
-                this.onPeriodChange();
-                this.refreshTables();
-            });
+            // ---------- strip inline onclick (prevents double-fire), then bind once ----------
+            ['taxFilingValidateBtn', 'taxFilingExportCsv', 'taxFilingExportXlsx',
+             'taxFilingExportXml', 'taxFilingPreviewBtn']
+                .forEach(id => document.getElementById(id)?.removeAttribute('onclick'));
 
-            document.getElementById('taxFilingPreviewBtn')?.addEventListener('click', () => {
-                window.previewPayeData?.();
-            });
+            document.getElementById('taxFilingValidateBtn')?.addEventListener('click', () => this.validate());
+            document.getElementById('taxFilingPreviewBtn')?.addEventListener('click', callPreview);
+            document.getElementById('taxFilingExportCsv')?.addEventListener('click', (e) => callExport(e, 'csv'));
+            document.getElementById('taxFilingExportXlsx')?.addEventListener('click', (e) => callExport(e, 'xlsx'));
+            document.getElementById('taxFilingExportXml')?.addEventListener('click', (e) => callExport(e, 'xml'));
 
-            document.getElementById('taxFilingValidateBtn')?.addEventListener('click', () => {
-                this.validate();
-            });
-
-            document.getElementById('taxFilingExportCsv')?.addEventListener('click', (event) => {
-                window.exportPayeFiling?.(event, 'csv');
-            });
-
-            document.getElementById('taxFilingExportXlsx')?.addEventListener('click', (event) => {
-                window.exportPayeFiling?.(event, 'xlsx');
-            });
-
-            document.getElementById('taxFilingExportXml')?.addEventListener('click', (event) => {
-                window.exportPayeFiling?.(event, 'xml');
-            });
+            console.log('[Tax Filing] bindEvents done | preview fn:',
+                typeof getPreviewFn(), '| preview btn in DOM:',
+                !!document.getElementById('taxFilingPreviewBtn'));
         },
 
         /* Re-render the inline table, and the full-page preview if it is open */
@@ -1229,62 +1150,48 @@
          */
         selectAuthority(authorityCode) {
             const code = authorityCode || state.selectedAuthority || 'SARS';
-            state.selectedAuthority = code;
+            state.selectedAuthority = code;   // ← real value, so checkPrerequisites() can pass
 
-            /* highlight — read the same attribute the cards actually carry */
             document.querySelectorAll('.tax-filing-authority-card').forEach(card => {
-                const cardCode = card.dataset.taxAuthority || card.dataset.authority;
-                card.classList.toggle('selected', cardCode === code);
+                card.classList.toggle('selected',
+                    (card.dataset.taxAuthority || card.dataset.authority) === code);
             });
 
-            /* NEW FLOW: authority click shows ONLY the Preview button.
-               Validate + export appear at the very top AFTER preview. */
-            state.previewRendered = false;
+            const periodSection = document.getElementById('taxFilingPeriodSection');
+            const topBar     = document.getElementById('taxFilingTopBar');
+            const previewBtn = document.getElementById('taxFilingPreviewBtn');
+            const actions    = document.getElementById('taxFilingActions');
+            const area       = document.getElementById('taxFilingPreview');
+            const hint       = document.getElementById('taxFilingTopHint');
 
-            const previewBtn  = document.getElementById('taxFilingPreviewBtn');
-            const topBar      = document.getElementById('taxFilingTopBar');
-            const actions     = document.getElementById('taxFilingActions');
-            const previewArea = document.getElementById('taxFilingPreview');
-            const hint        = document.getElementById('taxFilingTopHint');
+            if (periodSection) periodSection.style.display = '';
 
-            if (topBar) topBar.style.display = '';
+            // Preview-first UX: Preview shows now, Validate + exports wait until preview succeeds
+            if (topBar) topBar.style.display = 'flex';
             if (previewBtn) previewBtn.style.display = '';
             if (actions) actions.style.display = 'none';
-            if (previewArea) {
-                previewArea.style.display = 'none';
-                previewArea.innerHTML = '';
-            }
-            if (hint) {
-                hint.textContent = 'Pick a filing month, then click Preview to load employee data.';
-            }
+            if (area) { area.style.display = 'none'; area.innerHTML = ''; }
+            if (hint) hint.textContent = `Pick a filing month for ${code}, then click Preview to load employee data.`;
 
             const yearSelect = document.getElementById('taxFilingYear');
             const monthSelect = document.getElementById('taxFilingMonth');
-
             if (yearSelect && monthSelect && yearSelect.value) {
                 monthSelect.innerHTML =
-                    '<option value="">All Filing Months</option>' +
+                    '<option value="">Select filing month</option>' +
                     generateFilingMonthOptions(code, yearSelect.value);
             }
 
             const config = TAX_FILING_CONFIG.authorities[code];
             const xmlBtn = document.getElementById('taxFilingExportXml');
-
             if (xmlBtn) {
-                xmlBtn.style.display =
-                    config?.supportsFormats?.includes('xml')
-                        ? 'inline-flex'
-                        : 'none';
+                xmlBtn.style.display = config?.supportsFormats?.includes('xml') ? 'inline-flex' : 'none';
             }
 
             this.onPeriodChange();
-
-            /* scope-safe: the renderer lives in dashboard.js, published on window */
             window.renderPayrollStatutoryReturns?.();
 
-            console.log(`[Tax Filing] Selected authority: ${code}`);
+            console.log('[Tax Filing] Selected authority:', code);
         },
-
         /* Step 2 of the flow: render the table full-page, then hand the
            top bar over to Validate + export options. */
         preview() {
