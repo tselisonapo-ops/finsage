@@ -345,7 +345,6 @@ def export_tax_filing(company_id: int):
         format_type = body.get('format', 'csv').lower()
         period_start = body.get('period_start')
         period_end = body.get('period_end')
-        employer_info = body.get('employer_info') or {}
         options = body.get('options', {})
         
         # Validate inputs
@@ -382,11 +381,31 @@ def export_tax_filing(company_id: int):
             authority_code=authority_code
         ) or []
 
+        company = db_service.fetch_one(
+            """
+            SELECT
+                c.id,
+                c.name,
+                c.company_reg_no,
+                c.tin
+            FROM public.companies c
+            WHERE c.id = %s
+            LIMIT 1
+            """,
+            (company_id,)
+        )
+
+        if not company:
+            return jsonify({
+                "ok": False,
+                "error": "Company not found"
+            }), 404
+            
         # Employer information used by the employee mapping layer.
         mapping_employer_info = {
-            'tax_reference_number': employer_info.get('tax_reference_number', ''),
-            'name': employer_info.get('name', ''),
-            'registration_number': employer_info.get('registration_number', '')
+            'tax_reference_number': company.get('tin') or '',
+            'name': company.get('name') or '',
+            'registration_number': company.get('company_reg_no') or ''
         }
 
         # Validate each payroll employee using the actual export mapper.
