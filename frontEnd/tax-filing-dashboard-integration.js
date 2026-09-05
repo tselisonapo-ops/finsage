@@ -111,14 +111,22 @@
     const actions    = document.getElementById("taxFilingActions");
     const company    = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
     const authority  = window.__taxFiling?.getSelectedAuthority?.() || "SARS";
-    const year       = document.getElementById("taxFilingYear")?.value;
-    const month      = document.getElementById("taxFilingMonth")?.value;
+
+    let year  = document.getElementById("taxFilingYear")?.value || "";
+    let month = document.getElementById("taxFilingMonth")?.value || "";
+
+    if (/^\d{4}-\d{2}$/.test(month)) {
+        year  = month.slice(0, 4);
+        month = month.slice(5, 7);
+    }
 
     if (!area) { console.warn("[PAYE Preview] #taxFilingPreview not found"); return; }
 
     const showMsg = (html) => { area.style.display = "block"; area.innerHTML = html; };
 
-    if (!year || !month) {
+    const mm = String(month || "").padStart(2, "0");
+
+    if (!year || !month || !/^\d{4}$/.test(String(year)) || !/^(0[1-9]|1[0-2])$/.test(mm)) {
         showMsg('<div style="padding:24px;text-align:center;color:#b45309;background:#fffbeb;border:1px dashed #fcd34d;border-radius:10px;">📅 Select a filing month first, then click <b>Preview Returns</b>.</div>');
         return;
     }
@@ -127,12 +135,15 @@
         return;
     }
 
-    const mm = String(month).padStart(2, "0");
     const periodStart = `${year}-${mm}-01`;
-    const periodEnd = `${year}-${mm}-${String(new Date(year, Number(month), 0).getDate()).padStart(2, "0")}`;
+    const periodEnd = `${year}-${mm}-${String(new Date(Number(year), Number(month), 0).getDate()).padStart(2, "0")}`;
     const period = `${periodStart} to ${periodEnd}`;
 
     const oldLabel = previewBtn ? previewBtn.textContent : "";
+
+    const stateToken = Symbol("tfPreview");
+    if (previewBtn) previewBtn.__tfToken = stateToken;
+
     if (previewBtn) { previewBtn.disabled = true; previewBtn.textContent = "⏳ Loading…"; }
     showMsg(`<div style="padding:32px;text-align:center;color:#64748b;">Loading ${authority} PAYE preview for ${period}…</div>`);
 
@@ -192,7 +203,10 @@
         console.error("[PAYE Preview] failed:", err);
         showMsg(`<div style="padding:24px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;"><b>Preview failed:</b> ${h(err?.message || err)}</div>`);
     } finally {
-        if (previewBtn) { previewBtn.disabled = false; previewBtn.textContent = oldLabel || "👁 Preview Returns"; }
+        if (previewBtn && previewBtn.__tfToken === stateToken) {
+            previewBtn.disabled = false;
+            previewBtn.textContent = oldLabel || "👁 Preview Returns";
+        }
     }
     };
 
@@ -202,19 +216,36 @@
     const fmt       = (format || "csv").toLowerCase();
     const company   = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
     const authority = window.__taxFiling?.getSelectedAuthority?.() || "SARS";
-    const year      = document.getElementById("taxFilingYear")?.value;
-    const month     = document.getElementById("taxFilingMonth")?.value;
     const results   = document.getElementById("taxFilingValidationResults");
+
+    /* FIX (malformed-period bug): same "YYYY-MM" vs "MM" mismatch as the
+       preview — accept both formats here too. */
+    let year  = document.getElementById("taxFilingYear")?.value || "";
+    let month = document.getElementById("taxFilingMonth")?.value || "";
+
+    if (/^\d{4}-\d{2}$/.test(month)) {
+        year  = month.slice(0, 4);
+        month = month.slice(5, 7);
+    }
 
     if (!company) { alert("No active company selected."); return; }
     if (!year || !month) { alert("Select a filing year and month first."); return; }
 
     const mm = String(month).padStart(2, "0");
+    if (!/^\d{4}$/.test(String(year)) || !/^(0[1-9]|1[0-2])$/.test(mm)) {
+        alert("Select a valid filing year and month first.");
+        return;
+    }
     const periodStart = `${year}-${mm}-01`;
-    const periodEnd = `${year}-${mm}-${String(new Date(year, Number(month), 0).getDate()).padStart(2, "0")}`;
+    const periodEnd = `${year}-${mm}-${String(new Date(Number(year), Number(month), 0).getDate()).padStart(2, "0")}`;
 
     const btn = event?.currentTarget;
     const oldLabel = btn ? btn.textContent : "";
+
+    /* FIX (stuck-button bug): token-guarded state, same as preview. */
+    const stateToken = Symbol("tfExport");
+    if (btn) btn.__tfToken = stateToken;
+
     if (btn) { btn.disabled = true; btn.textContent = "⏳ Exporting…"; }
 
     try {
@@ -263,7 +294,10 @@
         results.innerHTML = `<div style="color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;"><b>Export failed:</b> ${err?.message || err}</div>`;
         }
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = oldLabel; }
+        if (btn && btn.__tfToken === stateToken) {
+            btn.disabled = false;
+            btn.textContent = oldLabel;
+        }
     }
     };
 
@@ -1037,7 +1071,20 @@
          */
         init() {
             this.injectPanel();
-            this.bindEvents();
+
+            /* FIX (dead-button bug): init() is called on EVERY statutory-tab
+               visit via loadPayrollStatutoryWorkspace() -> window.__taxFiling.init().
+               bindEvents() is NOT idempotent, so every visit stacked ANOTHER click
+               listener on the same buttons (1 click => N parallel handlers fighting
+               over disabled/textContent). Guard the binding to the lifetime of the
+               injected section so each DOM binds exactly once. */
+            const section = document.getElementById('payeTaxFilingSection');
+            if (section && section.dataset.tfBound === '1') {
+                console.log('[Tax Filing] init() repeat ignored (events already bound)');
+                return;
+            }
+
+            this.bindEvents(section);
             console.log('[Tax Filing] Module initialized');
         },
 
@@ -1060,7 +1107,7 @@
         /**
          * Bind event listeners
          */
-        bindEvents() {
+        bindEvents(section) {
             const self = this;
 
             // ---------- resolve preview/export however they were defined ----------
@@ -1131,6 +1178,11 @@
             document.getElementById('taxFilingExportCsv')?.addEventListener('click', (e) => callExport(e, 'csv'));
             document.getElementById('taxFilingExportXlsx')?.addEventListener('click', (e) => callExport(e, 'xlsx'));
             document.getElementById('taxFilingExportXml')?.addEventListener('click', (e) => callExport(e, 'xml'));
+
+            /* FIX (dead-button bug): record on the section that this DOM is bound,
+               so repeated init() calls (every tab visit / return save / recalc)
+               can never stack duplicate listeners again. */
+            if (section) section.dataset.tfBound = '1';
 
             console.log('[Tax Filing] bindEvents done | preview fn:',
                 typeof getPreviewFn(), '| preview btn in DOM:',
