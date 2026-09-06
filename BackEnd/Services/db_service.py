@@ -163090,18 +163090,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ) AS name,
 
                 COALESCE(
-                    et.taxable, bt.taxable, FALSE
+                    et.taxable,
+                    bt.taxable,
+                    FALSE
                 ) AS taxable,
 
                 COALESCE(
-                    et.pensionable, FALSE
+                    et.pensionable,
+                    FALSE
                 ) AS pensionable,
-
-                dt.posting_account_code AS posting_account_code,
-
-                dt.liability_account_code AS liability_account_code,
-
-                dt.posting_account_type AS posting_account_type
 
                 dt.posting_account_code
                     AS posting_account_code,
@@ -163110,10 +163107,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     AS liability_account_code,
 
                 dt.posting_account_type
-                    AS posting_account_type,
-
-                et.gl_account_code
-                    AS earning_gl_account_code
+                    AS posting_account_type
 
             FROM {schema}.payroll_employee_pay_setup_items i
 
