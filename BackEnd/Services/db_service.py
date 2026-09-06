@@ -39251,69 +39251,6 @@ class DatabaseService:
             statutory_return_run_id,
             employee_id
         );
-
-        INSERT INTO {schema}.payroll_statutory_item_mappings(
-            company_id,
-            authority_code,
-            return_type,
-            source_line_type,
-            source_code,
-            schedule_section,
-            amount_basis,
-            include_employee_detail,
-            display_order,
-            is_active
-        )
-        VALUES
-        (
-            {company_id},
-            'SARS',
-            'payroll_tax',
-            'tax',
-            'PAYE',
-            'PAYE',
-            'amount',
-            TRUE,
-            1,
-            TRUE
-        ),
-        (
-            {company_id},
-            'SARS',
-            'payroll_tax',
-            'deduction',
-            'UIF_EMP',
-            'UIF Employee',
-            'amount',
-            TRUE,
-            2,
-            TRUE
-        ),
-        (
-            {company_id},
-            'SARS',
-            'payroll_tax',
-            'employer_contribution',
-            'UIF_ER',
-            'UIF Employer',
-            'amount',
-            TRUE,
-            3,
-            TRUE
-        ),
-        (
-            {company_id},
-            'SARS',
-            'payroll_tax',
-            'deduction',
-            'SDL',
-            'SDL',
-            'amount',
-            TRUE,
-            4,
-            TRUE
-        )
-        ON CONFLICT DO NOTHING;
         """
         self.execute_ddl(
             ddl,
@@ -151325,6 +151262,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         self.payroll_seed_defaults(company_id)
 
         settings = self.payroll_settings_get(company_id)
+
         if not settings:
             company = self.fetch_one("""
                 SELECT currency, country
@@ -151355,6 +151293,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "calendar_generation_months": 12,
                 "is_active": True,
             })
+
         else:
             # ── Existing company: set authority if still NULL ──
             if not settings.get("tax_authority_id"):
@@ -151371,6 +151310,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                 if tax_authority_id:
                     schema = self.company_schema(company_id)
+
                     self.execute_sql(f"""
                         UPDATE {schema}.payroll_settings
                         SET tax_authority_id = %s
@@ -151380,7 +151320,33 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                     settings["tax_authority_id"] = tax_authority_id
 
-        return {"ok": True, "settings": settings}
+        # ── Ensure statutory mappings for the company's authority ──
+        authority = None
+
+        if settings.get("tax_authority_id"):
+            authority = self.fetch_one("""
+                SELECT code
+                FROM public.tax_authorities
+                WHERE id=%s
+                LIMIT 1;
+            """, (
+                settings["tax_authority_id"],
+            ))
+
+        authority_code = str(
+            (authority or {}).get("code") or ""
+        ).strip().upper()
+
+        if authority_code in ("SARS", "RSL", "BURS"):
+            self.ensure_payroll_statutory_mappings(
+                company_id,
+                authority_code,
+            )
+
+        return {
+            "ok": True,
+            "settings": settings,
+        }
 
     def _resolve_tax_authority(self, country: str) -> int | None:
         """Return the tax_authorities.id for the given country."""
@@ -163525,6 +163491,134 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return row
 
+    def ensure_payroll_statutory_mappings(
+        self,
+        company_id: int,
+        authority_code: str = "SARS",
+    ):
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        authority_code = (
+            str(authority_code or "")
+            .strip()
+            .upper()
+        )
+
+        if authority_code not in ("SARS", "RSL", "BURS"):
+            raise ValueError(
+                f"Unsupported statutory authority: {authority_code}"
+            )
+
+        mappings = {
+            "SARS": [
+                (
+                    "payroll_tax",
+                    "tax",
+                    "PAYE",
+                    "PAYE",
+                    "amount",
+                    True,
+                    1,
+                ),
+                (
+                    "payroll_tax",
+                    "deduction",
+                    "UIF_EMP",
+                    "UIF Employee",
+                    "amount",
+                    True,
+                    2,
+                ),
+                (
+                    "payroll_tax",
+                    "employer_contribution",
+                    "UIF_ER",
+                    "UIF Employer",
+                    "amount",
+                    True,
+                    3,
+                ),
+                (
+                    "payroll_tax",
+                    "employer_contribution",
+                    "SDL",
+                    "SDL",
+                    "amount",
+                    True,
+                    4,
+                ),
+            ],
+
+            "RSL": [
+                (
+                    "payroll_tax",
+                    "tax",
+                    "PAYE",
+                    "PAYE",
+                    "amount",
+                    True,
+                    1,
+                ),
+            ],
+
+            "BURS": [
+                (
+                    "payroll_tax",
+                    "tax",
+                    "PAYE",
+                    "PAYE",
+                    "amount",
+                    True,
+                    1,
+                ),
+            ],
+        }
+
+        authority_mappings = mappings[authority_code]
+
+        for mapping in authority_mappings:
+            (
+                return_type,
+                source_line_type,
+                source_code,
+                schedule_section,
+                amount_basis,
+                include_employee_detail,
+                display_order,
+            ) = mapping
+
+            self.fetch_one(f"""
+                INSERT INTO
+                    {schema}.payroll_statutory_item_mappings(
+                        company_id,
+                        authority_code,
+                        return_type,
+                        source_line_type,
+                        source_code,
+                        schedule_section,
+                        amount_basis,
+                        include_employee_detail,
+                        display_order,
+                        is_active
+                    )
+                VALUES(
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                )
+                ON CONFLICT DO NOTHING
+                RETURNING id;
+            """,(
+                company_id,
+                authority_code,
+                return_type,
+                source_line_type,
+                source_code,
+                schedule_section,
+                amount_basis,
+                include_employee_detail,
+                display_order,
+                True,
+            ))
 
     def payroll_statutory_mapping_delete(
         self,
