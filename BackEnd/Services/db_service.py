@@ -160091,6 +160091,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         run_lines = run.get("lines") or []
 
+        lines = []
+        missing = []
+
+        def add_line(account_code, description, debit=0, credit=0, bucket=None):
+            debit = round(float(debit or 0), 2)
+            credit = round(float(credit or 0), 2)
+
+            if debit <= 0 and credit <= 0:
+                return
+
+            lines.append({
+                "account_code": account_code,
+                "description": description,
+                "debit": debit,
+                "credit": credit,
+                "bucket": bucket,
+            })
+
         gross = round(float(run.get("gross_pay") or 0), 2)
         net = round(float(run.get("net_pay") or 0), 2)
 
@@ -160135,38 +160153,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
         ), 2)
 
-        if other_employer_total > 0:
-            employer_expense = mappings.get(
-                "employer_contribution_expense"
-            )
-            employer_payable = mappings.get(
-                "other_deductions_payable"
-            )
-
-            if not employer_expense:
-                missing.append(
-                    "employer_contribution_expense"
-                )
-
-            if not employer_payable:
-                missing.append(
-                    "other_deductions_payable"
-                )
-
-            if employer_expense and employer_payable:
-                add_line(
-                    employer_expense,
-                    "Employer payroll contributions expense",
-                    debit=other_employer_total,
-                    bucket="employer_contribution_expense",
-                )
-
-                add_line(
-                    employer_payable,
-                    "Employer payroll contributions payable",
-                    credit=other_employer_total,
-                    bucket="employer_contribution_payable",
-                )
+        missing = []
 
         required = {
             "salary_expense": mappings.get("salary_expense"),
@@ -160174,7 +160161,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "paye_payable": mappings.get("paye_payable"),
         }
 
-        missing = [k for k, v in required.items() if not v]
+        missing.extend(
+            k for k, v in required.items()
+            if not v
+        )
 
         if uif_employee_total > 0 or uif_employer_total > 0:
             if not mappings.get("uif_payable"):
@@ -160195,23 +160185,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "difference": 0,
                 "missing_mappings": sorted(set(missing)),
             }
-
-        lines = []
-
-        def add_line(account_code,description,debit=0,credit=0,bucket=None):
-            debit=round(float(debit or 0),2)
-            credit=round(float(credit or 0),2)
-
-            if debit<=0 and credit<=0:
-                return
-
-            lines.append({
-                "account_code":account_code,
-                "description":description,
-                "debit":debit,
-                "credit":credit,
-                "bucket":bucket,
-            })
 
         add_line(
             required["salary_expense"],
