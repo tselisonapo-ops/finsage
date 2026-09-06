@@ -7085,46 +7085,80 @@ body.payroll-modal-open{
   }
 }
 
+.payroll-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.payroll-compact-table {
+  width: max-content !important;
+  min-width: 100%;
+  table-layout: auto !important;
+  border-collapse: collapse;
+}
+
 .payroll-compact-table th,
 .payroll-compact-table td {
-  text-align: center;
+  text-align: center !important;
   vertical-align: middle;
-  padding: 7px 5px;
+  padding: 7px 10px;
+  white-space: nowrap;
 }
 
 .payroll-compact-table th {
-  white-space: normal;
   line-height: 1.15;
+  white-space: normal;
 }
 
 .payroll-compact-table td {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
 }
 
-.payroll-compact-table td:first-child,
-.payroll-compact-table th:first-child {
-  text-align: left;
+.payroll-compact-table th:first-child,
+.payroll-compact-table td:first-child {
+  text-align: left !important;
 }
 
-.payroll-compact-table .num {
-  text-align: center;
+.payroll-compact-table .payroll-employee-col,
+.payroll-compact-table .payroll-employee-cell {
+  min-width: 155px;
+  width: 155px;
+  white-space: normal;
+  text-align: left !important;
+}
+
+.payroll-compact-table .payroll-number {
+  text-align: center !important;
+  min-width: 105px;
+}
+
+.payroll-compact-table .payroll-deduction-col {
+  min-width: 115px;
+  text-align: center !important;
+  white-space: nowrap;
+}
+
+.payroll-compact-table th:nth-child(2),
+.payroll-compact-table td:nth-child(2) {
+  min-width: 135px;
+}
+
+.payroll-compact-table th:nth-child(3),
+.payroll-compact-table td:nth-child(3) {
+  min-width: 115px;
 }
 
 .payroll-compact-table .payroll-muted {
-  text-align: center;
+  text-align: center !important;
   font-size: 11px;
   line-height: 1.2;
   margin-top: 3px;
 }
 
-.payroll-compact-table .payroll-deduction-col {
-  white-space: nowrap;
-}
-
-.payroll-table-wrap {
-  width: 100%;
-  overflow-x: auto;
+.payroll-compact-table .payroll-employee-cell .payroll-muted {
+  text-align: left !important;
 }
 /* =========================================================
    IAS 12 DEFERRED TAX SCREEN

@@ -162677,7 +162677,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             residency_status,
         ))
 
-
     def payroll_tax_parameters(
         self,
         tax_year_id: int,
@@ -162702,32 +162701,52 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             for row in rows
         }
 
-        # Normalise UIF parameters to the names/units
-        # expected by payroll_calculate_uif().
-        employee_rate = parameters.get(
-            "uif_employee_rate"
-        )
-        employer_rate = parameters.get(
-            "uif_employer_rate"
-        )
-        uif_cap = parameters.get(
-            "monthly UIF_cap"
+        employee_rate = _payroll_decimal(
+            parameters.get("uif_employee_rate")
         )
 
-        if employee_rate is not None:
+        employer_rate = _payroll_decimal(
+            parameters.get("uif_employer_rate")
+        )
+
+        contribution_cap = _payroll_decimal(
+            parameters.get("monthly UIF_cap")
+        )
+
+        # Database stores UIF rates as percentages:
+        # 1.00 = 1%, while the calculator requires:
+        # 0.01 = 1%.
+        if employee_rate > 0:
             parameters["uif_rate_employee"] = (
-                _payroll_decimal(employee_rate) / Decimal("100")
+                employee_rate / Decimal("100")
             )
 
-        if employer_rate is not None:
+        if employer_rate > 0:
             parameters["uif_rate_employer"] = (
-                _payroll_decimal(employer_rate) / Decimal("100")
+                employer_rate / Decimal("100")
             )
 
-        if uif_cap is not None:
-            parameters["uif_monthly_remuneration_ceiling"] = (
-                _payroll_decimal(uif_cap)
+        # monthly UIF_cap is the maximum UIF CONTRIBUTION,
+        # not the remuneration ceiling.
+        #
+        # At a 1% rate:
+        # R177.12 / 1% = R17,712 remuneration ceiling.
+        if contribution_cap > 0:
+            parameters["uif_employee_contribution_cap"] = (
+                contribution_cap
             )
+            parameters["uif_employer_contribution_cap"] = (
+                contribution_cap
+            )
+
+            if employee_rate > 0:
+                parameters["uif_monthly_remuneration_ceiling"] = (
+                    contribution_cap
+                    / (
+                        employee_rate
+                        / Decimal("100")
+                    )
+                )
 
         return parameters
 

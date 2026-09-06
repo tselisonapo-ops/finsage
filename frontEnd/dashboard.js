@@ -70346,64 +70346,17 @@ async function saveEditModal() {
 
     const deductionColumns = [...deductionMap.values()];
 
-    // ---------------------------------------------------------
-    // Compact column widths.
-    // Employee gets more room; numeric columns stay compact.
-    // ---------------------------------------------------------
-    const columnCount = 8 + deductionColumns.length;
-
-    const employeeWidth = 20;
-    const normalWidth = Math.max(
-      7,
-      Math.min(
-        11,
-        Math.floor(100 / columnCount)
-      )
-    );
-
-    const deductionWidth = Math.max(
-      8,
-      Math.min(
-        11,
-        normalWidth + 1
-      )
-    );
-
-    const colgroup = `
-      <colgroup>
-        <col style="width:${employeeWidth}%">
-        <col style="width:${normalWidth}%">
-        <col style="width:${normalWidth}%">
-        <col style="width:${normalWidth}%">
-        <col style="width:${normalWidth}%">
-
-        ${deductionColumns.map(()=>{
-          return `<col style="width:${deductionWidth}%">`;
-        }).join("")}
-
-        <col style="width:${normalWidth}%">
-        <col style="width:${normalWidth}%">
-        <col style="width:${normalWidth}%">
-      </colgroup>
-    `;
-
-    // ---------------------------------------------------------
-    // Dynamic deduction headings.
-    // ---------------------------------------------------------
     const deductionHeaders = deductionColumns.map(column=>`
       <th class="payroll-deduction-col">
         ${esc(column.code)}
       </th>
     `).join("");
 
-    // ---------------------------------------------------------
-    // Dynamic deduction cells.
-    // ---------------------------------------------------------
     const deductionCells = item=>{
       const deductions = item?.deductions || {};
 
       return deductionColumns.map(column=>`
-        <td class="num payroll-deduction-col">
+        <td class="payroll-number payroll-deduction-col">
           ${money(deductions[column.code] || 0)}
         </td>
       `).join("");
@@ -70411,16 +70364,11 @@ async function saveEditModal() {
 
     el.innerHTML = `
       <div class="payroll-table-wrap">
-        <table
-          class="payroll-preview-table payroll-compact-table"
-          style="table-layout:fixed;width:100%;"
-        >
-
-          ${colgroup}
+        <table class="payroll-preview-table payroll-compact-table">
 
           <thead>
             <tr>
-              <th>Employee</th>
+              <th class="payroll-employee-col">Employee</th>
               <th>Eligibility</th>
               <th>Proration</th>
               <th>Basic</th>
@@ -70438,18 +70386,22 @@ async function saveEditModal() {
             ${items.map(item=>`
               <tr>
 
-                <td>
+                <td class="payroll-employee-cell">
                   <strong>
                     ${esc(item.first_name||"")}
-                    ${esc(item.last_name ? " " + item.last_name : "")}
+                    ${esc(
+                      item.last_name
+                        ? " " + item.last_name
+                        : ""
+                    )}
                   </strong>
 
                   <div class="payroll-muted">
                     ${esc(
-                      item.calculation_message||
+                      item.calculation_message ||
                       cap(
-                        item.calculation_status||
-                        item.status||
+                        item.calculation_status ||
+                        item.status ||
                         "calculated"
                       )
                     )}
@@ -70457,30 +70409,36 @@ async function saveEditModal() {
                 </td>
 
                 <td>
-                  ${esc(String(
-                    item.eligible_from||"—"
-                  ).slice(0,10))}
-                  –
-                  ${esc(String(
-                    item.eligible_to||"—"
-                  ).slice(0,10))}
+                  <div>
+                    ${esc(
+                      String(
+                        item.eligible_from || "—"
+                      ).slice(0,10)
+                    )}
+                    –
+                    ${esc(
+                      String(
+                        item.eligible_to || "—"
+                      ).slice(0,10)
+                    )}
+                  </div>
 
                   <div class="payroll-muted">
-                    ${Number(
-                      item.eligible_days||0
-                    )} of
-                    ${Number(
-                      item.scheduled_days||0
-                    )} days
+                    ${Number(item.eligible_days||0)}
+                    of
+                    ${Number(item.scheduled_days||0)}
+                    days
                   </div>
                 </td>
 
                 <td>
-                  ${(
-                    Number(
-                      item.proration_factor||0
-                    ) * 100
-                  ).toFixed(2)}%
+                  <div>
+                    ${(
+                      Number(
+                        item.proration_factor||0
+                      ) * 100
+                    ).toFixed(2)}%
+                  </div>
 
                   <div class="payroll-muted">
                     ${esc(
@@ -70491,27 +70449,27 @@ async function saveEditModal() {
                   </div>
                 </td>
 
-                <td class="num">
+                <td class="payroll-number">
                   ${money(item.basic_pay)}
                 </td>
 
-                <td class="num">
+                <td class="payroll-number">
                   ${money(item.gross_pay)}
                 </td>
 
                 ${deductionCells(item)}
 
-                <td class="num">
+                <td class="payroll-number">
                   ${money(item.total_deductions)}
                 </td>
 
-                <td class="num">
+                <td class="payroll-number">
                   ${money(
                     item.employer_contributions
                   )}
                 </td>
 
-                <td class="num">
+                <td class="payroll-number">
                   <strong>
                     ${money(item.net_pay)}
                   </strong>
