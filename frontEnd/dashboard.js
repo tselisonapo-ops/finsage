@@ -70307,22 +70307,117 @@ async function saveEditModal() {
   }
 
   function renderPayrollRunEmployees(run){
-    const el=$("payrollRunEmployeesList");
+    const el = $("payrollRunEmployeesList");
     if(!el)return;
 
-    const items=run?.employees||[];
+    const items = run?.employees || [];
 
     if(!items.length){
-      el.innerHTML=`
+      el.innerHTML = `
         <p class="payroll-muted">
           No employees calculated yet.
         </p>`;
       return;
     }
 
-    el.innerHTML=`
+    // ---------------------------------------------------------
+    // Discover deduction columns dynamically.
+    // Only deductions with a non-zero value somewhere in
+    // the current payroll run are displayed.
+    // ---------------------------------------------------------
+    const deductionMap = new Map();
+
+    items.forEach(item=>{
+      const deductions = item?.deductions || {};
+
+      Object.entries(deductions).forEach(([code,value])=>{
+        const amount = Number(value || 0);
+
+        if(amount === 0)return;
+
+        if(!deductionMap.has(code)){
+          deductionMap.set(code,{
+            code,
+            name: code
+          });
+        }
+      });
+    });
+
+    const deductionColumns = [...deductionMap.values()];
+
+    // ---------------------------------------------------------
+    // Compact column widths.
+    // Employee gets more room; numeric columns stay compact.
+    // ---------------------------------------------------------
+    const columnCount = 8 + deductionColumns.length;
+
+    const employeeWidth = 20;
+    const normalWidth = Math.max(
+      7,
+      Math.min(
+        11,
+        Math.floor(100 / columnCount)
+      )
+    );
+
+    const deductionWidth = Math.max(
+      8,
+      Math.min(
+        11,
+        normalWidth + 1
+      )
+    );
+
+    const colgroup = `
+      <colgroup>
+        <col style="width:${employeeWidth}%">
+        <col style="width:${normalWidth}%">
+        <col style="width:${normalWidth}%">
+        <col style="width:${normalWidth}%">
+        <col style="width:${normalWidth}%">
+
+        ${deductionColumns.map(()=>{
+          return `<col style="width:${deductionWidth}%">`;
+        }).join("")}
+
+        <col style="width:${normalWidth}%">
+        <col style="width:${normalWidth}%">
+        <col style="width:${normalWidth}%">
+      </colgroup>
+    `;
+
+    // ---------------------------------------------------------
+    // Dynamic deduction headings.
+    // ---------------------------------------------------------
+    const deductionHeaders = deductionColumns.map(column=>`
+      <th class="payroll-deduction-col">
+        ${esc(column.code)}
+      </th>
+    `).join("");
+
+    // ---------------------------------------------------------
+    // Dynamic deduction cells.
+    // ---------------------------------------------------------
+    const deductionCells = item=>{
+      const deductions = item?.deductions || {};
+
+      return deductionColumns.map(column=>`
+        <td class="num payroll-deduction-col">
+          ${money(deductions[column.code] || 0)}
+        </td>
+      `).join("");
+    };
+
+    el.innerHTML = `
       <div class="payroll-table-wrap">
-        <table class="payroll-preview-table">
+        <table
+          class="payroll-preview-table payroll-compact-table"
+          style="table-layout:fixed;width:100%;"
+        >
+
+          ${colgroup}
+
           <thead>
             <tr>
               <th>Employee</th>
@@ -70330,7 +70425,10 @@ async function saveEditModal() {
               <th>Proration</th>
               <th>Basic</th>
               <th>Gross</th>
-              <th>Deductions</th>
+
+              ${deductionHeaders}
+
+              <th>Total Deductions</th>
               <th>Employer</th>
               <th>Net</th>
             </tr>
@@ -70339,11 +70437,11 @@ async function saveEditModal() {
           <tbody>
             ${items.map(item=>`
               <tr>
+
                 <td>
                   <strong>
-                    ${esc(item.employee_no||"")} —
                     ${esc(item.first_name||"")}
-                    ${esc(item.last_name||"")}
+                    ${esc(item.last_name ? " " + item.last_name : "")}
                   </strong>
 
                   <div class="payroll-muted">
@@ -70381,7 +70479,7 @@ async function saveEditModal() {
                   ${(
                     Number(
                       item.proration_factor||0
-                    )*100
+                    ) * 100
                   ).toFixed(2)}%
 
                   <div class="payroll-muted">
@@ -70401,6 +70499,8 @@ async function saveEditModal() {
                   ${money(item.gross_pay)}
                 </td>
 
+                ${deductionCells(item)}
+
                 <td class="num">
                   ${money(item.total_deductions)}
                 </td>
@@ -70416,11 +70516,14 @@ async function saveEditModal() {
                     ${money(item.net_pay)}
                   </strong>
                 </td>
+
               </tr>
             `).join("")}
           </tbody>
+
         </table>
-      </div>`;
+      </div>
+    `;
   }
 
   async function loadPayrollRunAttendance(){

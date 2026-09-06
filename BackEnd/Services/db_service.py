@@ -155007,21 +155007,41 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             Decimal("0"),
         )
 
-        uif_employee=Decimal("0.00")
-        uif_employer=Decimal("0.00")
+        uif_employee = Decimal("0.00")
+        uif_employer = Decimal("0.00")
 
-        if str(tax_context.get("authority_code") or "").upper()=="SARS":
-            uif_employee=self.payroll_calculate_uif(
+        print(
+            "PAYROLL DEBUG UIF CONTEXT:",
+            employee_id,
+            "authority_code=",
+            tax_context.get("authority_code"),
+            "tax_year_id=",
+            tax_context.get("tax_year_id"),
+            "gross=",
+            gross,
+        )
+
+        if str(tax_context.get("authority_code") or "").upper() == "SARS":
+            uif_employee = self.payroll_calculate_uif(
                 tax_context=tax_context,
                 remuneration=gross,
                 side="employee",
             )
-            uif_employer=self.payroll_calculate_uif(
+
+            uif_employer = self.payroll_calculate_uif(
                 tax_context=tax_context,
                 remuneration=gross,
                 side="employer",
             )
 
+        print(
+            "PAYROLL DEBUG UIF RESULT:",
+            employee_id,
+            "employee=",
+            uif_employee,
+            "employer=",
+            uif_employer,
+        )
         if uif_employee>0:
             deduction_lines.append({
                 "item_type":"deduction",
@@ -155353,11 +155373,22 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 +"; ".join(errors)
             )
 
-        tax_context=self.payroll_company_tax_context(
+        tax_context = self.payroll_company_tax_context(
             company_id,
             run["payment_date"],
         )
 
+        print(
+            "PAYROLL DEBUG TAX CONTEXT:",
+            {
+                "authority_code": tax_context.get("authority_code"),
+                "country_code": tax_context.get("country_code"),
+                "tax_year_id": tax_context.get("tax_year_id"),
+                "tax_year_label": tax_context.get("tax_year_label"),
+                "effective_from": tax_context.get("effective_from"),
+                "effective_to": tax_context.get("effective_to"),
+            },
+        )
         if not tax_context:
             raise ValueError(
                 "No payroll tax context is configured "
@@ -155603,13 +155634,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         schema = self.company_schema(company_id)
 
         run = self.fetch_one(f"""
-            SELECT r.*, c.frequency
+            SELECT
+                r.*,
+                c.frequency
             FROM {schema}.payroll_runs r
             JOIN {schema}.payroll_pay_calendars c
-            ON c.id=r.pay_calendar_id
-            AND c.company_id=r.company_id
-            WHERE r.company_id=%s
-            AND r.id=%s
+                ON c.id = r.pay_calendar_id
+                AND c.company_id = r.company_id
+            WHERE r.company_id = %s
+            AND r.id = %s
             LIMIT 1;
         """, (
             company_id,
@@ -155627,10 +155660,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 e.last_name
             FROM {schema}.payroll_run_employees re
             JOIN {schema}.payroll_employees e
-            ON e.id=re.employee_id
-            AND e.company_id=re.company_id
-            WHERE re.company_id=%s
-            AND re.payroll_run_id=%s
+                ON e.id = re.employee_id
+                AND e.company_id = re.company_id
+            WHERE re.company_id = %s
+            AND re.payroll_run_id = %s
             ORDER BY e.employee_no;
         """, (
             company_id,
@@ -155640,8 +155673,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         lines = self.fetch_all(f"""
             SELECT *
             FROM {schema}.payroll_run_lines
-            WHERE company_id=%s
-            AND payroll_run_id=%s
+            WHERE company_id = %s
+            AND payroll_run_id = %s
             ORDER BY run_employee_id, id;
         """, (
             company_id,
@@ -155651,16 +155684,81 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         by_employee = {}
 
         for line in lines:
+            run_employee_id = int(line["run_employee_id"])
+
             by_employee.setdefault(
-                int(line["run_employee_id"]),
+                run_employee_id,
                 [],
             ).append(line)
 
+        # ---------------------------------------------------------
+        # Build dynamic deduction columns from actual run lines.
+        #
+        # PAYE is stored as line_type = "tax".
+        # Other employee deductions are line_type = "deduction".
+        #
+        # Only non-zero values are included.
+        # ---------------------------------------------------------
         for employee in employees:
-            employee["lines"] = by_employee.get(
-                int(employee["id"]),
+            run_employee_id = int(employee["id"])
+
+            employee_lines = by_employee.get(
+                run_employee_id,
                 [],
             )
+
+            deductions = {}
+
+            for line in employee_lines:
+                line_type = str(
+                    line.get("line_type") or ""
+                ).strip().lower()
+
+                code = str(
+                    line.get("code") or ""
+                ).strip()
+
+                if not code:
+                    continue
+
+                if line_type not in ("deduction", "tax"):
+                    continue
+
+                amount = _payroll_money(
+                    line.get("amount")
+                )
+
+                if amount == 0:
+                    continue
+
+                deductions[code] = _payroll_money(
+                    deductions.get(code, Decimal("0.00"))
+                    + amount
+                )
+
+            # Store the dynamic deduction breakdown.
+            employee["deductions"] = {
+                code: float(amount)
+                for code, amount in deductions.items()
+            }
+
+            # Convenient explicit UIF value for the frontend.
+            employee["uif_employee"] = float(
+                deductions.get(
+                    "UIF_EMP",
+                    Decimal("0.00"),
+                )
+            )
+
+            # Convenient explicit PAYE value.
+            employee["paye"] = float(
+                deductions.get(
+                    "PAYE",
+                    Decimal("0.00"),
+                )
+            )
+
+            employee["lines"] = employee_lines
 
         run["employees"] = employees
         run["lines"] = lines
