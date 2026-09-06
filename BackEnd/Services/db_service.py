@@ -163102,40 +163102,50 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                 /*
                 * Accounting configuration
+                *
+                * Deduction accounts come from payroll_deduction_types.
+                * Earning accounts come from payroll_earning_types.
+                * Employer contribution accounts come from the
+                * contribution type's liability/expense fields.
                 */
                 CASE
+                    WHEN i.item_type = 'earning'
+                        THEN et.expense_account_code
+
                     WHEN i.item_type = 'deduction'
                         THEN dt.posting_account_code
-                    WHEN i.item_type = 'contribution'
-                        THEN ct.liability_account_code
+
                     ELSE NULL
                 END AS posting_account_code,
 
                 CASE
                     WHEN i.item_type = 'deduction'
                         THEN dt.liability_account_code
+
                     WHEN i.item_type = 'contribution'
                         THEN ct.liability_account_code
+
                     ELSE NULL
                 END AS liability_account_code,
 
                 CASE
                     WHEN i.item_type = 'earning'
-                        THEN et.expense_account_code
-                    WHEN i.item_type = 'contribution'
-                        THEN ct.gl_account_code
+                        THEN et.gl_account_code
+
                     ELSE NULL
                 END AS gl_account_code,
 
                 CASE
                     WHEN i.item_type = 'deduction'
                         THEN dt.posting_account_type
+
                     ELSE NULL
                 END AS posting_account_type,
 
                 CASE
                     WHEN i.item_type = 'contribution'
                         THEN ct.expense_account_code
+
                     ELSE NULL
                 END AS expense_account_code
 
