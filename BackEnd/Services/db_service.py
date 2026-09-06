@@ -160139,9 +160139,45 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ), 2)
 
         # ------------------------------------------------------------------
-        # Employer contributions that are NOT already represented by a
-        # defined contribution / benefit plan.
+        # Identify employee deductions that already have an explicit posting
+        # account. These deductions must be posted to their own GL account
+        # and must not also be picked up as generic employer contributions.
+        #
+        # The payroll run can contain an employer_contribution representation
+        # for the same payroll item. Where that employer-side line has no
+        # explicit GL account and matches an explicitly posted deduction,
+        # it is not posted again.
         # ------------------------------------------------------------------
+
+        explicit_deduction_amounts = {
+            round(float(x.get("amount") or 0), 2)
+            for x in run_lines
+            if (
+                x.get("line_type") == "deduction"
+                and x.get("source_type") != "defined_contribution_plan"
+                and (x.get("code") or "").strip().upper() != "UIF_EMP"
+                and (x.get("gl_account_code") or "").strip()
+                and float(x.get("amount") or 0) > 0
+            )
+        }
+
+        def is_duplicate_generic_employer_line(x):
+            if x.get("line_type") != "employer_contribution":
+                return False
+
+            if (x.get("code") or "").strip().upper() == "UIF_ER":
+                return False
+
+            if x.get("source_type") == "defined_contribution_plan":
+                return False
+
+            # If the employer contribution has its own explicit GL account,
+            # it is a genuine separately-posted employer cost and must remain.
+            if (x.get("gl_account_code") or "").strip():
+                return False
+
+            amount = round(float(x.get("amount") or 0), 2)
+            return amount in explicit_deduction_amounts
 
         other_employer_total = round(sum(
             float(x.get("amount") or 0)
@@ -160150,6 +160186,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 x.get("line_type") == "employer_contribution"
                 and (x.get("code") or "").strip().upper() != "UIF_ER"
                 and x.get("source_type") != "defined_contribution_plan"
+                and not is_duplicate_generic_employer_line(x)
             )
         ), 2)
 
@@ -160271,9 +160308,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if amount<=0:
                 continue
 
+            # An explicit posting account on the payroll line is authoritative.
+            # Never route such a deduction through the generic
+            # other_deductions_payable account.
             account_code=(x.get("gl_account_code") or "").strip()
 
-            if not account_code:
+            if account_code:
+                pass
+            else:
                 account_code=(
                     mappings.get("other_deductions_payable")
                     or ""
