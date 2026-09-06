@@ -154945,11 +154945,28 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
         basic=basic_result["prorated_basic_amount"]
 
+        print(
+            "PAYROLL DEBUG SETUP:",
+            employee_id,
+            run["period_start"],
+            run["period_end"],
+            setup.get("items"),
+        )
+
         setup_lines=self._payroll_setup_lines(
             setup,
             basic,
             tax_context,
         )
+
+        print(
+            "PAYROLL DEBUG EARNINGS:",
+            employee_id,
+            run["period_start"],
+            run["period_end"],
+            setup_lines.get("earnings"),
+        )
+
         period_lines=self._payroll_period_input_lines(
             company_id,
             payroll_run_id,
