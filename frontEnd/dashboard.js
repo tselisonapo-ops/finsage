@@ -80757,51 +80757,152 @@ async function saveEditModal() {
     });
   }
 
+
   async function loadPayrollStatutoryWorkspace(){
     const params={
-      authority_code:
-        $("payrollStatutoryAuthorityFilter")?.value||"",
-      return_type:
-        $("payrollStatutoryTypeFilter")?.value||"",
-      status:
-        $("payrollStatutoryStatusFilter")?.value||"",
+        authority_code:$("payrollStatutoryAuthorityFilter")?.value||"",
+        return_type:$("payrollStatutoryTypeFilter")?.value||"",
+        status:$("payrollStatutoryStatusFilter")?.value||"",
     };
 
     const [mappings,returns]=await Promise.all([
-      apiFetch(
-        ENDPOINTS.payroll.statutoryMappings(cid())
-      ),
-      apiFetch(
-        ENDPOINTS.payroll.statutoryReturns(
-          cid(),
-          params
-        )
-      ),
+        apiFetch(ENDPOINTS.payroll.statutoryMappings(cid())),
+        apiFetch(
+            ENDPOINTS.payroll.statutoryReturns(cid(),params)
+        ),
     ]);
 
-    payrollState.statutory.mappings=
-      mappings?.items||[];
-    payrollState.statutory.returns=
-      returns?.items||[];
-    payrollState.statutory.returns =
-        returns?.items || [];
+    payrollState.statutory.mappings=mappings?.items||[];
+    payrollState.statutory.returns=returns?.items||[];
 
-    console.log("STATUTORY RETURNS RESPONSE", returns);
-    console.log("STATUTORY RETURNS ITEMS", payrollState.statutory.returns);
-    renderPayrollStatutoryReturns();
+    console.log("STATUTORY RETURNS RESPONSE",returns);
+    console.log(
+        "STATUTORY RETURNS ITEMS",
+        payrollState.statutory.returns
+    );
 
-    if (window.__taxFiling && typeof window.__taxFiling.init === 'function') {
-        // This ensures the PAYE Export panel is ready
+    renderPayrollStatutoryDashboard();
+
+    if(
+        window.__taxFiling &&
+        typeof window.__taxFiling.init==="function"
+    ){
         window.__taxFiling.init();
     }
   }
+
 
   /* Exposed for tax-filing-dashboard-integration.js — it cannot see this
      file's scope. Accepts an optional target element id so the tax module
      can render the full-page preview: window.renderPayrollStatutoryReturns('taxFilingPreview') */
   window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
 
-function renderPayrollStatutoryReturns(targetId) {
+  function renderPayrollStatutoryDashboard(){
+    const el=$("payeTaxFilingSection");
+    if(!el)return;
+
+    const items=payrollState.statutory.returns||[];
+
+    const authorities=[
+        {
+            code:"SARS",
+            name:"South African Revenue Service",
+            description:"PAYE, UIF and SDL",
+        },
+        {
+            code:"RSL",
+            name:"Revenue Services Lesotho",
+            description:"PAYE",
+        },
+        {
+            code:"BURS",
+            name:"Botswana Unified Revenue Service",
+            description:"PAYE",
+        },
+    ];
+
+    el.innerHTML=`
+        <div class="payroll-card">
+            <div class="payroll-card-head">
+                <div>
+                    <h3>Statutory Returns Dashboard</h3>
+                    <p class="payroll-muted">
+                        Select a statutory authority to manage its returns.
+                    </p>
+                </div>
+            </div>
+
+            <div style="
+                display:grid;
+                grid-template-columns:
+                    repeat(auto-fit,minmax(240px,1fr));
+                gap:16px;
+                margin-top:20px;
+            ">
+                ${authorities.map(a=>{
+                    const count=items.filter(item=>
+                        String(item.authority_code||"")
+                            .toUpperCase()===a.code
+                    ).length;
+
+                    return `
+                        <button
+                            type="button"
+                            class="payroll-card"
+                            data-statutory-authority="${a.code}"
+                            style="
+                                text-align:left;
+                                cursor:pointer;
+                                border:1px solid #e2e8f0;
+                                background:#fff;
+                            "
+                        >
+                            <div style="
+                                font-size:18px;
+                                font-weight:700;
+                                margin-bottom:6px;
+                            ">
+                                ${esc(a.code)}
+                            </div>
+
+                            <div style="
+                                font-weight:600;
+                                color:#334155;
+                            ">
+                                ${esc(a.name)}
+                            </div>
+
+                            <div class="payroll-muted">
+                                ${esc(a.description)}
+                            </div>
+
+                            <div style="
+                                margin-top:14px;
+                                font-size:13px;
+                                color:#64748b;
+                            ">
+                                ${count}
+                                return${count===1?"":"s"}
+                            </div>
+                        </button>
+                    `;
+                }).join("")}
+            </div>
+        </div>
+    `;
+
+    el.querySelectorAll(
+        "[data-statutory-authority]"
+    ).forEach(btn=>{
+        btn.addEventListener("click",()=>{
+            openPayrollStatutoryAuthority(
+                btn.dataset.statutoryAuthority
+            );
+        });
+    });
+  }
+
+  function renderPayrollStatutoryReturns(targetId) {
     const el = $(targetId || "payeTaxFilingSection");
     if (!el) return;
 
@@ -81038,9 +81139,9 @@ function renderPayrollStatutoryReturns(targetId) {
             );
         });
     });
-}
-window.loadPayrollStatutoryWorkspace = loadPayrollStatutoryWorkspace;
-window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
+  }
+  window.loadPayrollStatutoryWorkspace = loadPayrollStatutoryWorkspace;
+  window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
 
   function generatePayeFilingMonths(authority, taxYear) {
     const startYear = parseInt(String(taxYear).split('/')[0], 10);
@@ -81453,30 +81554,6 @@ window.openPayrollStatutoryReturn=
       closePayrollStatutoryReturn();
     });
   }
-
-  function renderPayrollStatutoryWorkspace() {
-    const view = payrollState.statutory.view || "list";
-
-    console.log(
-        "[Statutory Workspace] rendering view:",
-        view
-    );
-
-    if (view === "detail") {
-        renderPayrollStatutoryReturnDetail();
-        return;
-    }
-
-    if (view === "preview") {
-        renderPayrollStatutoryPreview();
-        return;
-    }
-
-    renderPayrollStatutoryReturns();
-  }
-
-  window.renderPayrollStatutoryWorkspace =
-      renderPayrollStatutoryWorkspace;
 
   function closePayrollStatutoryReturn(){
     payrollState.statutory.selectedReturn=null;
