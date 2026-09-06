@@ -80802,7 +80802,7 @@ async function saveEditModal() {
   window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
 
 function renderPayrollStatutoryReturns(targetId) {
-    const el = $(targetId || "taxFilingReturnsTable");
+    const el = $(targetId || "payeTaxFilingSection");
     if (!el) return;
 
     const items = payrollState.statutory.returns || [];
@@ -80917,6 +80917,7 @@ function renderPayrollStatutoryReturns(targetId) {
                                 : cap(status);
 
                         const canView = [
+                            "draft",
                             "calculated",
                             "approved",
                             "submitted",
@@ -80924,7 +80925,6 @@ function renderPayrollStatutoryReturns(targetId) {
                             "rejected",
                             "cancelled"
                         ].includes(status);
-
                         const canRevise = [
                             "submitted",
                             "accepted",
@@ -81023,9 +81023,9 @@ function renderPayrollStatutoryReturns(targetId) {
         "[data-view-statutory-return]"
     ).forEach(btn => {
         btn.addEventListener("click", () => {
-            openPayrollStatutoryReturn(
-                Number(btn.dataset.viewStatutoryReturn)
-            );
+          window.openPayrollStatutoryReturn(
+              Number(btn.dataset.viewStatutoryReturn)
+          );
         });
     });
 
@@ -81039,6 +81039,8 @@ function renderPayrollStatutoryReturns(targetId) {
         });
     });
 }
+window.loadPayrollStatutoryWorkspace = loadPayrollStatutoryWorkspace;
+window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
 
   function generatePayeFilingMonths(authority, taxYear) {
     const startYear = parseInt(String(taxYear).split('/')[0], 10);
@@ -81213,25 +81215,65 @@ function renderPayrollStatutoryReturns(targetId) {
   
   async function openPayrollStatutoryReturn(returnId){
     const res=await apiFetch(
-      ENDPOINTS.payroll.statutoryReturn(
-        cid(),
-        returnId
-      )
+        ENDPOINTS.payroll.statutoryReturn(cid(),returnId)
     );
 
     const item=res?.data||null;
+    if(!item)return;
+
     payrollState.statutory.selectedReturn=item;
+    payrollState.statutory.view="detail";
+
     renderPayrollStatutoryReturnDetail();
 
-  $("payrollStatutoryReturnDetail")
-    ?.scrollIntoView({
-      behavior:"smooth",
-      block:"start",
-    });
+    $("payeTaxFilingSection")
+        ?.scrollIntoView({
+            behavior:"smooth",
+            block:"start",
+        });
   }
 
+window.openPayrollStatutoryReturn=
+    openPayrollStatutoryReturn;
+
+  function renderPayrollStatutoryWorkspace() {
+      const el = $("payeTaxFilingSection");
+
+      if (!el) {
+          console.warn(
+              "[Statutory Workspace] #payeTaxFilingSection not found"
+          );
+          return;
+      }
+
+      const view =
+          payrollState.statutory.view || "list";
+
+      console.log(
+          "[Statutory Workspace] rendering:",
+          view
+      );
+
+      if (view === "detail") {
+          renderPayrollStatutoryReturnDetail();
+          return;
+      }
+
+      if (view === "preview") {
+          renderPayrollStatutoryPreview();
+          return;
+      }
+
+      renderPayrollStatutoryReturns(
+          "payeTaxFilingSection"
+      );
+  }
+
+  window.renderPayrollStatutoryWorkspace =
+      renderPayrollStatutoryWorkspace;
+
   function renderPayrollStatutoryReturnDetail(){
-    const el=$("payrollStatutoryReturnDetail");
+    const el = $("payeTaxFilingSection");
     const item=payrollState.statutory.selectedReturn;
     if(!el||!item)return;
 
@@ -81412,17 +81454,41 @@ function renderPayrollStatutoryReturns(targetId) {
     });
   }
 
+  function renderPayrollStatutoryWorkspace() {
+    const view = payrollState.statutory.view || "list";
+
+    console.log(
+        "[Statutory Workspace] rendering view:",
+        view
+    );
+
+    if (view === "detail") {
+        renderPayrollStatutoryReturnDetail();
+        return;
+    }
+
+    if (view === "preview") {
+        renderPayrollStatutoryPreview();
+        return;
+    }
+
+    renderPayrollStatutoryReturns();
+  }
+
+  window.renderPayrollStatutoryWorkspace =
+      renderPayrollStatutoryWorkspace;
+
   function closePayrollStatutoryReturn(){
-      payrollState.statutory.selectedReturn=null;
+    payrollState.statutory.selectedReturn=null;
+    payrollState.statutory.view="list";
 
-      const el=$("payrollStatutoryReturnDetail");
-      if(el)el.innerHTML="";
+    renderPayrollStatutoryReturns("payeTaxFilingSection");
 
-      $("taxFilingReturnsTable")
-          ?.scrollIntoView({
-              behavior:"smooth",
-              block:"start",
-          });
+    $("payeTaxFilingSection")
+        ?.scrollIntoView({
+            behavior:"smooth",
+            block:"start",
+        });
   }
 
   async function calculatePayrollStatutoryReturn(returnId){

@@ -131361,7 +131361,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             revision.get("next_no") or 1
         )
 
-        self.execute(
+        self.execute_sql(
             f"""
             INSERT INTO {schema}.project_budget_revisions (
                 company_id,
@@ -131394,7 +131394,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ),
         )
 
-        self.execute(
+        self.execute_sql(
             f"""
             UPDATE {schema}.projects
             SET budget_value = %s,
@@ -131413,7 +131413,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ),
         )
 
-        self.execute(
+        self.execute_sql(
             f"""
             UPDATE {schema}.project_changes
             SET status = 'applied',
@@ -131668,7 +131668,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     ):
         schema = self.company_schema(company_id)
 
-        self.execute(
+        self.execute_sql(
             f"""
             INSERT INTO {schema}.project_activity_log (
                 company_id,
@@ -132976,7 +132976,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         if existing:
-            self.execute(
+            self.execute_sql(
                 f"""
                 UPDATE {schema}.asset_borrowing_links
                 SET
@@ -133069,7 +133069,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if end_date < row["capitalization_start_date"]:
             raise ValueError("END_DATE_BEFORE_START_DATE")
 
-        self.execute(
+        self.execute_sql(
             f"""
             UPDATE {schema}.asset_borrowing_links
             SET
@@ -133261,7 +133261,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not journal_id:
             raise ValueError("POSTED_JOURNAL_ID_REQUIRED")
 
-        self.execute(
+        self.execute_sql(
             f"""
             INSERT INTO {schema}.project_closeouts (
                 company_id,
@@ -133290,7 +133290,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ),
         )
 
-        self.execute(
+        self.execute_sql(
             f"""
             UPDATE {schema}.project_asset_links
             SET link_type = 'capital_asset'
@@ -133353,7 +133353,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not closeout_date:
             raise ValueError("CLOSEOUT_DATE_REQUIRED")
 
-        self.execute(
+        self.execute_sql(
             f"""
             INSERT INTO {schema}.project_closeouts (
                 company_id,
@@ -133396,7 +133396,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ),
         )
 
-        self.execute(
+        self.execute_sql(
             f"""
             UPDATE {schema}.projects
             SET is_locked = TRUE,
@@ -133437,7 +133437,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not closeout:
             raise ValueError("PROJECT_NOT_CLOSED")
 
-        self.execute(
+        self.execute_sql(
             f"""
             UPDATE {schema}.project_closeouts
             SET status = 'reopened',
@@ -133456,7 +133456,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ),
         )
 
-        self.execute(
+        (self.execute_sql)(
             f"""
             UPDATE {schema}.projects
             SET is_locked = FALSE,

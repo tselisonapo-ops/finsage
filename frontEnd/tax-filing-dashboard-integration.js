@@ -162,7 +162,7 @@
     // ================================================================
     // PAYE Preview + Export — called by the tax-filing panel buttons
     window.previewPayeData = async function () {
-        const area       = document.getElementById("taxFilingPreview");
+        const area=document.getElementById("payeTaxFilingSection");
         const topBar     = document.getElementById("taxFilingTopBar");
         const previewBtn = document.getElementById("taxFilingPreviewBtn");
         const actions    = document.getElementById("taxFilingActions");
@@ -213,13 +213,30 @@
         // Keep these helpers outside try/catch so they are available everywhere.
         const h = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
         const n = (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const pick = (o, keys) => { for (const k of keys) { if (o && o[k] !== undefined && o[k] !== null && o[k] !== "") return o[k]; } return ""; };
 
         try {
             const url = window.ENDPOINTS.taxFiling.preview(company, authority, filingMonth);
             const data = await window.apiFetch(url, { method: "GET" });
 
             const payload = data?.data || data;
+
+            console.log("[PAYE Preview] response:", data);
+            console.log("[PAYE Preview] payload:", payload);
+
+            const statutoryReturnId =
+                payload?.statutory_return_id ||
+                payload?.statutoryReturnId ||
+                payload?.statutory_return?.id ||
+                payload?.statutoryReturn?.id ||
+                payload?.return_id ||
+                payload?.return?.id ||
+                null;
+
+            console.log(
+                "[PAYE Preview] statutory return ID:",
+                statutoryReturnId
+            );
+
             const rows = Array.isArray(payload) ? payload : (payload.records || payload.sample_records || payload.employees || payload.lines || payload.results || payload.data || []);
             const totals = (!Array.isArray(payload) && payload) ? (payload.totals || payload.summary || payload.statistics || null) : null;
             if (!rows.length) {
@@ -227,33 +244,401 @@
                 return;
             }
 
-            let html = `<div style="max-height:60vh;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff;">
-            <table style="width:100%;border-collapse:collapse;font-size:13px;">
-            <thead><tr style="background:#f1f5f9;position:sticky;top:0;">
-                <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Employee</th>
-                <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Gross</th>
-                <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">PAYE</th>
-                <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">Net Pay</th>
-            </tr></thead><tbody>`;
+            let html = `
+            <div style="
+                max-height:65vh;
+                overflow:auto;
+                border:1px solid #e2e8f0;
+                border-radius:10px;
+                background:#fff;
+            ">
+                <table style="
+                    width:100%;
+                    min-width:2400px;
+                    border-collapse:collapse;
+                    font-size:12px;
+                    white-space:nowrap;
+                ">
+                    <thead>
+                        <tr style="
+                            background:#f1f5f9;
+                            position:sticky;
+                            top:0;
+                            z-index:2;
+                        ">
+                            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Employee No.
+                            </th>
+
+                            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Employee
+                            </th>
+
+                            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                ID Number
+                            </th>
+
+                            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Tax Number
+                            </th>
+
+                            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Date of Birth
+                            </th>
+
+                            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Employment Start
+                            </th>
+
+                            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Job Title
+                            </th>
+
+                            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Department
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Basic Salary
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Overtime
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Bonus
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Commission
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Allowances
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Other Income
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Gross Income
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                PAYE
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                UIF
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                SDL
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Pension
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Retirement Annuity
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Medical
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Other Deductions
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Net Pay
+                            </th>
+
+                            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Period
+                            </th>
+
+                            <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Payment Date
+                            </th>
+
+                            <th style="text-align:center;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Director
+                            </th>
+
+                            <th style="text-align:center;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                Non-Resident
+                            </th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+            `;
 
             for (const r of rows) {
-                html += `<tr>
-                <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${h([r.first_name, r.last_name].filter(Boolean).join(" "))}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(r.gross_income)}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(r.paye_deducted)}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;">${n(r.net_pay)}</td>
-            </tr>`;
+
+                const employeeName = [
+                    r.first_name,
+                    r.last_name
+                ].filter(Boolean).join(" ");
+
+                const periodStart =
+                    r.period_start_date
+                        ? String(r.period_start_date).slice(0, 10)
+                        : "";
+
+                const periodEnd =
+                    r.period_end_date
+                        ? String(r.period_end_date).slice(0, 10)
+                        : "";
+
+                const paymentDate =
+                    r.payment_date
+                        ? String(r.payment_date).slice(0, 10)
+                        : "";
+
+                const dob =
+                    r.date_of_birth
+                        ? String(r.date_of_birth).slice(0, 10)
+                        : "";
+
+                const employmentStart =
+                    r.employment_start_date
+                        ? String(r.employment_start_date).slice(0, 10)
+                        : "";
+
+                html += `
+                    <tr>
+
+                        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                            ${h(r.payroll_number)}
+                        </td>
+
+                        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                            <strong>${h(employeeName)}</strong>
+                        </td>
+
+                        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                            ${h(r.id_number)}
+                        </td>
+
+                        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                            ${h(r.tax_number)}
+                        </td>
+
+                        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                            ${h(dob)}
+                        </td>
+
+                        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                            ${h(employmentStart)}
+                        </td>
+
+                        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                            ${h(r.job_title)}
+                        </td>
+
+                        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                            ${h(r.department)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.basic_salary)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.overtime_pay)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.bonus)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.commission)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.allowances)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.other_income)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;font-weight:600;">
+                            ${n(r.gross_income)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;font-weight:600;">
+                            ${n(r.paye_deducted)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.uif_deducted)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.sdl_deducted)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.pension_fund_contributions)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.retirement_annuity_contributions)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.medical_scheme_contributions)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(r.other_deductions)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;font-weight:600;">
+                            ${n(r.net_pay)}
+                        </td>
+
+                        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                            ${h(periodStart)} → ${h(periodEnd)}
+                        </td>
+
+                        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                            ${h(paymentDate)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:center;border-bottom:1px solid #f1f5f9;">
+                            ${r.is_director ? "Yes" : "No"}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:center;border-bottom:1px solid #f1f5f9;">
+                            ${r.is_non_resident ? "Yes" : "No"}
+                        </td>
+
+                    </tr>
+                `;
             }
 
             html += `</tbody>`;
 
+            const sumField = (field) =>
+                rows.reduce(
+                    (sum, row) => sum + Number(row?.[field] || 0),
+                    0
+                );
+
+            const previewTotals = {
+                basic_salary: sumField("basic_salary"),
+                overtime_pay: sumField("overtime_pay"),
+                bonus: sumField("bonus"),
+                commission: sumField("commission"),
+                allowances: sumField("allowances"),
+                other_income: sumField("other_income"),
+                gross_income: sumField("gross_income"),
+                paye_deducted: sumField("paye_deducted"),
+                uif_deducted: sumField("uif_deducted"),
+                sdl_deducted: sumField("sdl_deducted"),
+                pension_fund_contributions:
+                    sumField("pension_fund_contributions"),
+                retirement_annuity_contributions:
+                    sumField("retirement_annuity_contributions"),
+                medical_scheme_contributions:
+                    sumField("medical_scheme_contributions"),
+                other_deductions: sumField("other_deductions"),
+                net_pay: sumField("net_pay")
+            };
+
             if (totals) {
-                html += `<tfoot><tr style="background:#f8fafc;font-weight:600;">
-                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;">Totals</td>
-                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(totals.total_gross_income)}</td>
-                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(totals.total_paye_deducted)}</td>
-                <td style="padding:10px 12px;border-top:2px solid #e2e8f0;text-align:right;">${n(totals.total_gross_income - totals.total_paye_deducted - (totals.total_uif_deducted || 0))}</td>
-            </tr></tfoot>`;
+                html += `
+                <tfoot>
+                    <tr style="
+                        background:#f8fafc;
+                        font-weight:700;
+                        position:sticky;
+                        bottom:0;
+                    ">
+
+                        <td colspan="8"
+                            style="padding:10px 12px;border-top:2px solid #e2e8f0;">
+                            TOTALS — ${rows.length} Employees
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.basic_salary)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.overtime_pay)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.bonus)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.commission)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.allowances)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.other_income)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.gross_income)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.paye_deducted)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.uif_deducted)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.sdl_deducted)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.pension_fund_contributions)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.retirement_annuity_contributions)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.medical_scheme_contributions)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.other_deductions)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.net_pay)}
+                        </td>
+
+                        <td colspan="4"
+                            style="padding:10px 12px;border-top:2px solid #e2e8f0;">
+                        </td>
+
+                    </tr>
+                </tfoot>
+                </table>
+                </div>
+                `;
             }
 
             html += `</table></div>`;
@@ -268,6 +653,36 @@
 
             const hint = document.getElementById("taxFilingTopHint");
             if (hint) hint.textContent = "Review the preview below, then Validate or Export.";
+
+        if (statutoryReturnId) {
+
+            console.log(
+                "[PAYE Preview] Reloading statutory returns..."
+            );
+
+            if (typeof window.loadPayrollStatutoryWorkspace === "function") {
+                await window.loadPayrollStatutoryWorkspace();
+            } else {
+                console.warn(
+                    "[PAYE Preview] loadPayrollStatutoryWorkspace is not available on window."
+                );
+            }
+
+            console.log(
+                "[PAYE Preview] Opening statutory return:",
+                statutoryReturnId
+            );
+
+            if (typeof window.openPayrollStatutoryReturn === "function") {
+                await window.openPayrollStatutoryReturn(
+                    Number(statutoryReturnId)
+                );
+            } else {
+                console.warn(
+                    "[PAYE Preview] openPayrollStatutoryReturn is not available on window."
+                );
+            }
+        }
 
         } catch (err) {
             console.error("[PAYE Preview] failed:", err);

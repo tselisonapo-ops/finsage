@@ -1284,10 +1284,27 @@ def preview_tax_filing_data(company_id: int):
         preview_data = {
             "authority_code": authority_code,
 
+            "statutory_return_id": statutory_return.get("id"),
+
             "statutory_return": {
                 "id": statutory_return.get("id"),
                 "return_no": statutory_return.get("return_no"),
                 "status": statutory_return.get("status"),
+            },
+
+            "statutory_totals": {
+                "employee_amount": round(
+                    total_paye + total_uif,
+                    2
+                ),
+                "employer_amount": round(
+                    total_sdl,
+                    2
+                ),
+                "total_payable": round(
+                    total_paye + total_uif + total_sdl,
+                    2
+                ),
             },
 
             "authority_config": SUPPORTED_AUTHORITIES.get(
