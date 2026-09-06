@@ -80760,22 +80760,37 @@ async function saveEditModal() {
 
   async function loadPayrollStatutoryWorkspace(){
     const params={
-        authority_code:$("payrollStatutoryAuthorityFilter")?.value||"",
-        return_type:$("payrollStatutoryTypeFilter")?.value||"",
-        status:$("payrollStatutoryStatusFilter")?.value||"",
+        authority_code:
+            $("payrollStatutoryAuthorityFilter")?.value||"",
+        return_type:
+            $("payrollStatutoryTypeFilter")?.value||"",
+        status:
+            $("payrollStatutoryStatusFilter")?.value||"",
     };
 
     const [mappings,returns]=await Promise.all([
-        apiFetch(ENDPOINTS.payroll.statutoryMappings(cid())),
         apiFetch(
-            ENDPOINTS.payroll.statutoryReturns(cid(),params)
+            ENDPOINTS.payroll.statutoryMappings(cid())
+        ),
+        apiFetch(
+            ENDPOINTS.payroll.statutoryReturns(
+                cid(),
+                params
+            )
         ),
     ]);
 
-    payrollState.statutory.mappings=mappings?.items||[];
-    payrollState.statutory.returns=returns?.items||[];
+    payrollState.statutory.mappings=
+        mappings?.items||[];
 
-    console.log("STATUTORY RETURNS RESPONSE",returns);
+    payrollState.statutory.returns=
+        returns?.items||[];
+
+    console.log(
+        "STATUTORY RETURNS RESPONSE",
+        returns
+    );
+
     console.log(
         "STATUTORY RETURNS ITEMS",
         payrollState.statutory.returns
@@ -80791,11 +80806,8 @@ async function saveEditModal() {
     }
   }
 
-
-  /* Exposed for tax-filing-dashboard-integration.js — it cannot see this
-     file's scope. Accepts an optional target element id so the tax module
-     can render the full-page preview: window.renderPayrollStatutoryReturns('taxFilingPreview') */
-  window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
+  window.loadPayrollStatutoryWorkspace=
+    loadPayrollStatutoryWorkspace;
 
   function renderPayrollStatutoryDashboard(){
     const el=$("payeTaxFilingSection");
@@ -80902,14 +80914,254 @@ async function saveEditModal() {
     });
   }
 
+  function openPayrollStatutoryAuthority(authority){
+    payrollState.statutory.selectedAuthority=authority;
+
+    const el=$("payeTaxFilingSection");
+    if(!el)return;
+
+    const now=new Date();
+    const year=now.getFullYear();
+
+    el.innerHTML=`
+        <div class="payroll-card">
+
+            <div class="payroll-section-navigation">
+                <button
+                    type="button"
+                    class="payroll-back-btn"
+                    data-statutory-dashboard
+                >
+                    ← Back to Statutory Dashboard
+                </button>
+            </div>
+
+            <div class="payroll-card-head">
+                <div>
+                    <h3>${esc(authority)} Statutory Returns</h3>
+                    <p class="payroll-muted">
+                        Manage ${esc(authority)} payroll statutory filings.
+                    </p>
+                </div>
+            </div>
+
+            <div
+                id="taxFilingTopBar"
+                style="
+                    display:flex;
+                    align-items:flex-end;
+                    justify-content:space-between;
+                    gap:16px;
+                    flex-wrap:wrap;
+                    margin-top:20px;
+                    padding:16px;
+                    background:#f8fafc;
+                    border:1px solid #e2e8f0;
+                    border-radius:10px;
+                "
+            >
+
+                <div
+                    style="
+                        display:flex;
+                        gap:12px;
+                        flex-wrap:wrap;
+                        align-items:flex-end;
+                    "
+                >
+
+                    <div>
+                        <label
+                            style="
+                                display:block;
+                                font-size:12px;
+                                font-weight:600;
+                                margin-bottom:5px;
+                            "
+                        >
+                            Tax Year
+                        </label>
+
+                        <select
+                            id="taxFilingYear"
+                            class="payroll-input"
+                        >
+                            <option value="">
+                                Select tax year
+                            </option>
+
+                            <option value="${year}/${String(year+1).slice(-2)}">
+                                ${year}/${String(year+1).slice(-2)}
+                            </option>
+
+                            <option value="${year-1}/${String(year).slice(-2)}">
+                                ${year-1}/${String(year).slice(-2)}
+                            </option>
+
+                            <option value="${year-2}/${String(year-1).slice(-2)}">
+                                ${year-2}/${String(year-1).slice(-2)}
+                            </option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label
+                            style="
+                                display:block;
+                                font-size:12px;
+                                font-weight:600;
+                                margin-bottom:5px;
+                            "
+                        >
+                            Filing Month
+                        </label>
+
+                        <select
+                            id="taxFilingMonth"
+                            class="payroll-input"
+                        >
+                            <option value="">
+                                Select month
+                            </option>
+
+                            ${Array.from({length:12},(_,i)=>{
+                                const m=String(i+1).padStart(2,"0");
+                                const name=new Date(
+                                    2000,
+                                    i,
+                                    1
+                                ).toLocaleString(
+                                    "en-US",
+                                    {month:"long"}
+                                );
+
+                                return `
+                                    <option value="${m}">
+                                        ${name}
+                                    </option>
+                                `;
+                            }).join("")}
+                        </select>
+                    </div>
+
+                    <button
+                        type="button"
+                        id="taxFilingPreviewBtn"
+                        class="payroll-primary"
+                        onclick="window.previewPayeData()"
+                    >
+                        👁 Preview Returns
+                    </button>
+
+                </div>
+
+                <div
+                    id="taxFilingActions"
+                    style="
+                        display:none;
+                        gap:8px;
+                        flex-wrap:wrap;
+                    "
+                >
+
+                    <button
+                        type="button"
+                        class="payroll-secondary"
+                        onclick="window.validatePayeFiling?.()"
+                    >
+                        ✓ Validate
+                    </button>
+
+                    <button
+                        type="button"
+                        class="payroll-secondary"
+                        onclick="window.exportPayeFiling(event,'csv')"
+                    >
+                        Export CSV
+                    </button>
+
+                    <button
+                        type="button"
+                        class="payroll-secondary"
+                        onclick="window.exportPayeFiling(event,'xlsx')"
+                    >
+                        Export Excel
+                    </button>
+
+                    <button
+                        type="button"
+                        class="payroll-secondary"
+                        onclick="window.exportPayeFiling(event,'xml')"
+                    >
+                        Export XML
+                    </button>
+
+                </div>
+
+            </div>
+
+            <div
+                id="taxFilingTopHint"
+                class="payroll-muted"
+                style="margin-top:10px;"
+            >
+                Select a tax year and filing month, then preview the return.
+            </div>
+
+            <div
+                id="taxFilingValidationResults"
+                style="
+                    display:none;
+                    margin-top:12px;
+                "
+            ></div>
+
+            <div
+                id="taxFilingPreview"
+                style="
+                    display:none;
+                    margin-top:20px;
+                "
+            ></div>
+
+            <div
+                id="statutoryReturnsList"
+                style="
+                    margin-top:24px;
+                "
+            ></div>
+
+        </div>
+    `;
+
+    el.querySelector("[data-statutory-dashboard]")
+        ?.addEventListener("click",()=>{
+            renderPayrollStatutoryDashboard();
+        });
+
+    renderPayrollStatutoryReturns("statutoryReturnsList");
+
+    if(
+        window.__taxFiling &&
+        typeof window.__taxFiling.init==="function"
+    ){
+        window.__taxFiling.init();
+    }
+  }
+
+  window.openPayrollStatutoryAuthority=
+    openPayrollStatutoryAuthority;
+
   function renderPayrollStatutoryReturns(targetId) {
     const el = $(targetId || "payeTaxFilingSection");
     if (!el) return;
 
     const items = payrollState.statutory.returns || [];
 
-    const authority =
-        window.__taxFiling?.getSelectedAuthority?.() || "SARS";
+    const authority=
+        payrollState.statutory.selectedAuthority||
+        window.__taxFiling?.getSelectedAuthority?.()||
+        "SARS";
 
     const yearEl = $("taxFilingYear");
     const monthEl = $("taxFilingMonth");

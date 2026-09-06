@@ -162,13 +162,15 @@
     // ================================================================
     // PAYE Preview + Export — called by the tax-filing panel buttons
     window.previewPayeData = async function () {
-        const area=document.getElementById("payeTaxFilingSection");
+        const area=document.getElementById("taxFilingPreview");
         const topBar     = document.getElementById("taxFilingTopBar");
         const previewBtn = document.getElementById("taxFilingPreviewBtn");
         const actions    = document.getElementById("taxFilingActions");
         const company    = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
-        const authority  = window.__taxFiling?.getSelectedAuthority?.() || "SARS";
-
+        const authority=
+            payrollState.statutory.selectedAuthority||
+            window.__taxFiling?.getSelectedAuthority?.()||
+            "SARS";
         let year  = document.getElementById("taxFilingYear")?.value || "";
         let month = document.getElementById("taxFilingMonth")?.value || "";
 
@@ -700,7 +702,10 @@
 
         const fmt       = (format || "csv").toLowerCase();
         const company   = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
-        const authority = window.__taxFiling?.getSelectedAuthority?.() || "SARS";
+        const authority=
+            payrollState.statutory.selectedAuthority||
+            window.__taxFiling?.getSelectedAuthority?.()||
+            "SARS";
         const results   = document.getElementById("taxFilingValidationResults");
 
         let year  = document.getElementById("taxFilingYear")?.value || "";
@@ -720,7 +725,7 @@
             alert("Select a filing year and month first.");
             return;
         }
-
+        const previewPayload = previewResponse?.data || previewResponse;
         const previewUrl = window.ENDPOINTS.taxFiling.preview(
             company,
             authority,
@@ -731,8 +736,6 @@
             previewUrl,
             { method: "GET" }
         );
-
-        const previewPayload = previewResponse?.data || previewResponse;
 
         const resolvedStart = normalizeTaxFilingDate(
             previewPayload?.period?.start
