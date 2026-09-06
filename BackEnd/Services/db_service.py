@@ -151402,8 +151402,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             LIMIT 1;
         """, (int(company_id),))
 
-
-
     def payroll_setup_master(self, company_id: int) -> dict:
         company_id = int(company_id)
         schema = self.company_schema(company_id)
@@ -163091,11 +163089,55 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     ct.name
                 ) AS name,
 
-                COALESCE(et.taxable, bt.taxable, FALSE)
-                    AS taxable,
+                COALESCE(
+                    et.taxable,
+                    bt.taxable,
+                    FALSE
+                ) AS taxable,
 
-                COALESCE(et.pensionable, FALSE)
-                    AS pensionable
+                COALESCE(
+                    et.pensionable,
+                    FALSE
+                ) AS pensionable,
+
+                /*
+                * Accounting configuration
+                */
+                CASE
+                    WHEN i.item_type = 'deduction'
+                        THEN dt.posting_account_code
+                    WHEN i.item_type = 'contribution'
+                        THEN ct.liability_account_code
+                    ELSE NULL
+                END AS posting_account_code,
+
+                CASE
+                    WHEN i.item_type = 'deduction'
+                        THEN dt.liability_account_code
+                    WHEN i.item_type = 'contribution'
+                        THEN ct.liability_account_code
+                    ELSE NULL
+                END AS liability_account_code,
+
+                CASE
+                    WHEN i.item_type = 'earning'
+                        THEN et.expense_account_code
+                    WHEN i.item_type = 'contribution'
+                        THEN ct.gl_account_code
+                    ELSE NULL
+                END AS gl_account_code,
+
+                CASE
+                    WHEN i.item_type = 'deduction'
+                        THEN dt.posting_account_type
+                    ELSE NULL
+                END AS posting_account_type,
+
+                CASE
+                    WHEN i.item_type = 'contribution'
+                        THEN ct.expense_account_code
+                    ELSE NULL
+                END AS expense_account_code
 
             FROM {schema}.payroll_employee_pay_setup_items i
 
