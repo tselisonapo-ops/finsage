@@ -656,36 +656,6 @@
             const hint = document.getElementById("taxFilingTopHint");
             if (hint) hint.textContent = "Review the preview below, then Validate or Export.";
 
-        if (statutoryReturnId) {
-
-            console.log(
-                "[PAYE Preview] Reloading statutory returns..."
-            );
-
-            if (typeof window.loadPayrollStatutoryWorkspace === "function") {
-                await window.loadPayrollStatutoryWorkspace();
-            } else {
-                console.warn(
-                    "[PAYE Preview] loadPayrollStatutoryWorkspace is not available on window."
-                );
-            }
-
-            console.log(
-                "[PAYE Preview] Opening statutory return:",
-                statutoryReturnId
-            );
-
-            if (typeof window.openPayrollStatutoryReturn === "function") {
-                await window.openPayrollStatutoryReturn(
-                    Number(statutoryReturnId)
-                );
-            } else {
-                console.warn(
-                    "[PAYE Preview] openPayrollStatutoryReturn is not available on window."
-                );
-            }
-        }
-
         } catch (err) {
             console.error("[PAYE Preview] failed:", err);
             showMsg(`<div style="padding:24px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;"><b>Preview failed:</b> ${h(err?.message || err)}</div>`);
