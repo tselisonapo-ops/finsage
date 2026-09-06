@@ -164310,7 +164310,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     _payroll_money(
                         employee_amount+employer_amount
                     ),
-                    row.get("metadata") or {},
+                    Json(row.get("metadata") or {}),
                 ))
                 inserted+=1
 
