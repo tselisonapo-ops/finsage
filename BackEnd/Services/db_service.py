@@ -160120,13 +160120,53 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             and x.get("source_type") != "defined_contribution_plan"
         ), 2)
 
+        # ------------------------------------------------------------------
+        # Employer contributions that are NOT already represented by a
+        # defined contribution / benefit plan.
+        # ------------------------------------------------------------------
+
         other_employer_total = round(sum(
             float(x.get("amount") or 0)
             for x in run_lines
-            if x.get("line_type") == "employer_contribution"
-            and (x.get("code") or "").strip().upper() != "UIF_ER"
-            and x.get("source_type") != "defined_contribution_plan"
+            if (
+                x.get("line_type") == "employer_contribution"
+                and (x.get("code") or "").strip().upper() != "UIF_ER"
+                and x.get("source_type") != "defined_contribution_plan"
+            )
         ), 2)
+
+        if other_employer_total > 0:
+            employer_expense = mappings.get(
+                "employer_contribution_expense"
+            )
+            employer_payable = mappings.get(
+                "other_deductions_payable"
+            )
+
+            if not employer_expense:
+                missing.append(
+                    "employer_contribution_expense"
+                )
+
+            if not employer_payable:
+                missing.append(
+                    "other_deductions_payable"
+                )
+
+            if employer_expense and employer_payable:
+                add_line(
+                    employer_expense,
+                    "Employer payroll contributions expense",
+                    debit=other_employer_total,
+                    bucket="employer_contribution_expense",
+                )
+
+                add_line(
+                    employer_payable,
+                    "Employer payroll contributions payable",
+                    credit=other_employer_total,
+                    bucket="employer_contribution_payable",
+                )
 
         required = {
             "salary_expense": mappings.get("salary_expense"),
