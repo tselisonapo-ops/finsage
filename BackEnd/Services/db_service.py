@@ -163036,7 +163036,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         raise NotImplementedError(
             "BURS PAYE calculation is not yet activated."
         )
-
+    
     def payroll_employee_pay_setup_for_period(
         self,
         company_id: int,
@@ -163090,64 +163090,30 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ) AS name,
 
                 COALESCE(
-                    et.taxable,
-                    bt.taxable,
-                    FALSE
+                    et.taxable, bt.taxable, FALSE
                 ) AS taxable,
 
                 COALESCE(
-                    et.pensionable,
-                    FALSE
+                    et.pensionable, FALSE
                 ) AS pensionable,
 
-                /*
-                * Accounting configuration
-                *
-                * Deduction accounts come from payroll_deduction_types.
-                * Earning accounts come from payroll_earning_types.
-                * Employer contribution accounts come from the
-                * contribution type's liability/expense fields.
-                */
-                CASE
-                    WHEN i.item_type = 'earning'
-                        THEN et.expense_account_code
+                dt.posting_account_code AS posting_account_code,
 
-                    WHEN i.item_type = 'deduction'
-                        THEN dt.posting_account_code
+                dt.liability_account_code AS liability_account_code,
 
-                    ELSE NULL
-                END AS posting_account_code,
+                dt.posting_account_type AS posting_account_type
 
-                CASE
-                    WHEN i.item_type = 'deduction'
-                        THEN dt.liability_account_code
+                dt.posting_account_code
+                    AS posting_account_code,
 
-                    WHEN i.item_type = 'contribution'
-                        THEN ct.liability_account_code
+                dt.liability_account_code
+                    AS liability_account_code,
 
-                    ELSE NULL
-                END AS liability_account_code,
+                dt.posting_account_type
+                    AS posting_account_type,
 
-                CASE
-                    WHEN i.item_type = 'earning'
-                        THEN et.gl_account_code
-
-                    ELSE NULL
-                END AS gl_account_code,
-
-                CASE
-                    WHEN i.item_type = 'deduction'
-                        THEN dt.posting_account_type
-
-                    ELSE NULL
-                END AS posting_account_type,
-
-                CASE
-                    WHEN i.item_type = 'contribution'
-                        THEN ct.expense_account_code
-
-                    ELSE NULL
-                END AS expense_account_code
+                et.gl_account_code
+                    AS earning_gl_account_code
 
             FROM {schema}.payroll_employee_pay_setup_items i
 
@@ -163163,8 +163129,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ON i.item_type='benefit'
             AND bt.id=i.item_id
 
-            LEFT JOIN
-                {schema}.payroll_employer_contribution_types ct
+            LEFT JOIN {schema}.payroll_employer_contribution_types ct
             ON i.item_type='contribution'
             AND ct.id=i.item_id
 
