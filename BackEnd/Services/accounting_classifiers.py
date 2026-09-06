@@ -1519,11 +1519,17 @@ def _coa_role_from_text(
             return "payroll_termination_benefit_expense"
 
         if has_any(
+            "employer uif",
+            "uif expense",
+            "uif contribution expense",
+        ):
+            return "payroll_uif_expense"
+    
+        if has_any(
             "employer contribution",
             "employer pension",
             "employer provident",
             "employer medical",
-            "employer uif",
             "payroll contributions expense",
             "defined contribution expense",
             "defined-contribution expense",
@@ -1570,6 +1576,14 @@ def _coa_role_from_text(
         return "employee_salary_advance_receivable"
 
     if is_liability:
+        if has_any(
+            "uif payable",
+            "uif liability",
+            "unemployment insurance payable",
+            "unemployment insurance fund payable",
+        ):
+            return "payroll_uif_payable"
+
         if has_any(
             "leave pay provision",
             "leave provision",

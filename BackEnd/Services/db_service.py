@@ -152397,10 +152397,19 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "salary_expense": "payroll_salary_expense",
             "net_salary_payable": "payroll_net_salary_payable",
             "paye_payable": "payroll_paye_payable",
+
             "other_deductions_payable":
                 "payroll_other_deductions_payable",
+
             "employer_contribution_expense":
                 "payroll_employer_contribution_expense",
+
+            # UIF
+            "uif_payable":
+                "payroll_uif_payable",
+
+            "uif_expense":
+                "payroll_uif_expense",
         }
 
         for mapping_key, role in role_map.items():
@@ -154519,17 +154528,19 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         side: str,
     ):
         """
-        Calculate UIF for the payroll period using the active
-        SARS tax-year parameters.
-
-        side:
-            employee -> UIF_EMP
-            employer -> UIF_ER
+        Calculate monthly UIF using the active SARS tax-year
+        remuneration ceiling and contribution rate.
         """
+
         if not tax_context:
             return Decimal("0.00")
 
-        if str(tax_context.get("authority_code") or "").upper() != "SARS":
+        if (
+            str(
+                tax_context.get("authority_code") or ""
+            ).upper()
+            != "SARS"
+        ):
             return Decimal("0.00")
 
         tax_year_id = tax_context.get("tax_year_id")
@@ -154543,19 +154554,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         if side == "employee":
             rate = _payroll_decimal(
-                parameters.get("uif_employee_rate")
+                parameters.get("uif_rate_employee")
             )
         elif side == "employer":
             rate = _payroll_decimal(
-                parameters.get("uif_employer_rate")
+                parameters.get("uif_rate_employer")
             )
         else:
             raise ValueError(
                 f"Unsupported UIF side: {side}"
             )
 
-        cap = _payroll_decimal(
-            parameters.get("monthly UIF_cap")
+        remuneration_ceiling = _payroll_decimal(
+            parameters.get(
+                "uif_monthly_remuneration_ceiling"
+            )
         )
 
         remuneration = _payroll_money(remuneration)
@@ -154563,16 +154576,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if remuneration <= 0 or rate <= 0:
             return Decimal("0.00")
 
-        amount = _payroll_money(
+        if remuneration_ceiling > 0:
+            remuneration = min(
+                remuneration,
+                remuneration_ceiling,
+            )
+
+        return _payroll_money(
             remuneration * rate
         )
-
-        # uif_cap represents the maximum contribution
-        # for one side for the payroll period.
-        if cap > 0:
-            amount = min(amount, cap)
-
-        return _payroll_money(amount)
 
     def _payroll_period_input_lines(
         self,
@@ -160002,48 +160014,76 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "missing_mappings":[],
             }
 
-        mappings=self.payroll_mapping(company_id)
+        mappings = self.payroll_mapping(company_id)
 
-        required={
-            "salary_expense":mappings.get("salary_expense"),
-            "net_salary_payable":mappings.get("net_salary_payable"),
-            "paye_payable":mappings.get("paye_payable"),
+        run_lines = run.get("lines") or []
+
+        gross = round(float(run.get("gross_pay") or 0), 2)
+        net = round(float(run.get("net_pay") or 0), 2)
+
+        tax_total = round(sum(
+            float(x.get("amount") or 0)
+            for x in run_lines
+            if x.get("line_type") == "tax"
+        ), 2)
+
+        # ---------------------------------------------------------
+        # UIF
+        # ---------------------------------------------------------
+
+        uif_employee_total = round(sum(
+            float(x.get("amount") or 0)
+            for x in run_lines
+            if x.get("line_type") == "deduction"
+            and (x.get("code") or "").strip().upper() == "UIF_EMP"
+            and x.get("source_type") != "defined_contribution_plan"
+        ), 2)
+
+        uif_employer_total = round(sum(
+            float(x.get("amount") or 0)
+            for x in run_lines
+            if x.get("line_type") == "employer_contribution"
+            and (x.get("code") or "").strip().upper() == "UIF_ER"
+            and x.get("source_type") != "defined_contribution_plan"
+        ), 2)
+
+        other_employer_total = round(sum(
+            float(x.get("amount") or 0)
+            for x in run_lines
+            if x.get("line_type") == "employer_contribution"
+            and (x.get("code") or "").strip().upper() != "UIF_ER"
+            and x.get("source_type") != "defined_contribution_plan"
+        ), 2)
+
+        required = {
+            "salary_expense": mappings.get("salary_expense"),
+            "net_salary_payable": mappings.get("net_salary_payable"),
+            "paye_payable": mappings.get("paye_payable"),
         }
 
-        missing=[k for k,v in required.items() if not v]
+        missing = [k for k, v in required.items() if not v]
+
+        if uif_employee_total > 0 or uif_employer_total > 0:
+            if not mappings.get("uif_payable"):
+                missing.append("uif_payable")
+
+            if uif_employer_total > 0 and not mappings.get("uif_expense"):
+                missing.append("uif_expense")
 
         if missing:
-            return{
-                "ok":True,
-                "ready_to_post":False,
-                "reason":"Missing payroll GL mappings.",
-                "run":run,
-                "lines":[],
-                "debits":0,
-                "credits":0,
-                "difference":0,
-                "missing_mappings":missing,
+            return {
+                "ok": True,
+                "ready_to_post": False,
+                "reason": "Missing payroll GL mappings.",
+                "run": run,
+                "lines": [],
+                "debits": 0,
+                "credits": 0,
+                "difference": 0,
+                "missing_mappings": sorted(set(missing)),
             }
 
-        run_lines=run.get("lines") or []
-
-        gross=round(float(run.get("gross_pay") or 0),2)
-        net=round(float(run.get("net_pay") or 0),2)
-
-        tax_total=round(sum(
-            float(x.get("amount") or 0)
-            for x in run_lines
-            if x.get("line_type")=="tax"
-        ),2)
-
-        employer_total=round(sum(
-            float(x.get("amount") or 0)
-            for x in run_lines
-            if x.get("line_type")=="employer_contribution"
-            and x.get("source_type")!="defined_contribution_plan"
-        ),2)
-
-        lines=[]
+        lines = []
 
         def add_line(account_code,description,debit=0,credit=0,bucket=None):
             debit=round(float(debit or 0),2)
@@ -160067,9 +160107,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             bucket="gross_pay",
         )
 
-        if employer_total>0:
-            employer_expense=mappings.get("employer_contribution_expense")
-            employer_payable=mappings.get("other_deductions_payable")
+        if other_employer_total > 0:
+            employer_expense = mappings.get("employer_contribution_expense")
+            employer_payable = mappings.get("other_deductions_payable")
 
             if not employer_expense:
                 missing.append("employer_contribution_expense")
@@ -160081,14 +160121,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 add_line(
                     employer_expense,
                     "Employer payroll contributions expense",
-                    debit=employer_total,
+                    debit=other_employer_total,
                     bucket="employer_contribution_expense",
                 )
 
                 add_line(
                     employer_payable,
                     "Employer payroll contributions payable",
-                    credit=employer_total,
+                    credit=other_employer_total,
                     bucket="employer_contribution_payable",
                 )
 
@@ -160099,13 +160139,46 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             bucket="tax",
         )
 
+        # ---------------------------------------------------------
+        # UIF
+        # ---------------------------------------------------------
+
+        uif_payable = mappings.get("uif_payable")
+        uif_expense = mappings.get("uif_expense")
+
+        if uif_employee_total > 0 or uif_employer_total > 0:
+
+            if uif_payable:
+                add_line(
+                    uif_payable,
+                    "UIF payable",
+                    credit=round(
+                        uif_employee_total + uif_employer_total,
+                        2,
+                    ),
+                    bucket="uif_payable",
+                )
+
+            if uif_employer_total > 0 and uif_expense:
+                add_line(
+                    uif_expense,
+                    "Employer UIF contribution expense",
+                    debit=uif_employer_total,
+                    bucket="uif_employer_expense",
+                )
         deduction_groups={}
 
         for x in run_lines:
-            if x.get("line_type")!="deduction":
+            if x.get("line_type") != "deduction":
                 continue
 
-            if x.get("source_type")=="defined_contribution_plan":
+            code = (x.get("code") or "").strip().upper()
+
+            # UIF_EMP is handled explicitly above.
+            if code == "UIF_EMP":
+                continue
+
+            if x.get("source_type") == "defined_contribution_plan":
                 continue
 
             amount=round(float(x.get("amount") or 0),2)
@@ -160265,24 +160338,30 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 if difference==0 and not missing and not invalid_accounts
                 else "Payroll journal preview has issues."
             ),
-            "run":{
-                "id":run.get("id"),
-                "run_no":run.get("run_no"),
-                "status":run.get("status"),
-                "period_start":run.get("period_start"),
-                "period_end":run.get("period_end"),
-                "payment_date":run.get("payment_date"),
-                "gross_pay":gross,
-                "total_deductions":round(
+            "run": {
+                "id": run.get("id"),
+                "run_no": run.get("run_no"),
+                "status": run.get("status"),
+                "period_start": run.get("period_start"),
+                "period_end": run.get("period_end"),
+                "payment_date": run.get("payment_date"),
+                "gross_pay": gross,
+                "total_deductions": round(
                     float(run.get("total_deductions") or 0),
                     2,
                 ),
-                "total_employer_contributions":round(
+                "total_employer_contributions": round(
                     float(run.get("total_employer_contributions") or 0),
                     2,
                 ),
-                "net_pay":net,
-                "posted_journal_id":run.get("posted_journal_id"),
+                "uif_employee_total": uif_employee_total,
+                "uif_employer_total": uif_employer_total,
+                "uif_total": round(
+                    uif_employee_total + uif_employer_total,
+                    2,
+                ),
+                "net_pay": net,
+                "posted_journal_id": run.get("posted_journal_id"),
             },
             "lines":enriched_lines,
             "debits":debits,
