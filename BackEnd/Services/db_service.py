@@ -154533,20 +154533,27 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         """
 
         if not tax_context:
-            return Decimal("0.00")
+            raise ValueError(
+                "UIF calculation failed: tax context is empty."
+            )
 
-        if (
-            str(
-                tax_context.get("authority_code") or ""
-            ).upper()
-            != "SARS"
-        ):
-            return Decimal("0.00")
+        authority_code = str(
+            tax_context.get("authority_code") or ""
+        ).strip().upper()
+
+        if authority_code != "SARS":
+            raise ValueError(
+                "UIF calculation failed: "
+                f"expected SARS authority, got "
+                f"{authority_code or 'empty'}."
+            )
 
         tax_year_id = tax_context.get("tax_year_id")
 
         if not tax_year_id:
-            return Decimal("0.00")
+            raise ValueError(
+                "UIF calculation failed: tax_year_id is missing."
+            )
 
         parameters = self.payroll_tax_parameters(
             int(tax_year_id)
@@ -154573,18 +154580,45 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         remuneration = _payroll_money(remuneration)
 
-        if remuneration <= 0 or rate <= 0:
+        if remuneration <= 0:
             return Decimal("0.00")
 
-        if remuneration_ceiling > 0:
-            remuneration = min(
-                remuneration,
-                remuneration_ceiling,
+        if rate <= 0:
+            raise ValueError(
+                "UIF calculation failed: "
+                f"invalid {side} UIF rate: {rate}"
             )
 
-        return _payroll_money(
-            remuneration * rate
+        if remuneration_ceiling <= 0:
+            raise ValueError(
+                "UIF calculation failed: "
+                "monthly remuneration ceiling is not configured."
+            )
+
+        capped_remuneration = min(
+            remuneration,
+            remuneration_ceiling,
         )
+
+        result = _payroll_money(
+            capped_remuneration * rate
+        )
+
+        print(
+            "PAYROLL UIF CALC:",
+            {
+                "side": side,
+                "authority_code": authority_code,
+                "tax_year_id": int(tax_year_id),
+                "remuneration": remuneration,
+                "ceiling": remuneration_ceiling,
+                "capped_remuneration": capped_remuneration,
+                "rate": rate,
+                "result": result,
+            },
+        )
+
+        return result
 
     def _payroll_period_input_lines(
         self,
