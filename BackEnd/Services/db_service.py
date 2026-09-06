@@ -162692,7 +162692,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             WHERE tax_year_id=%s;
         """, (int(tax_year_id),))
 
-        return {
+        parameters = {
             row["parameter_key"]:
                 row.get("numeric_value")
                 if row.get("numeric_value") is not None
@@ -162702,6 +162702,34 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             for row in rows
         }
 
+        # Normalise UIF parameters to the names/units
+        # expected by payroll_calculate_uif().
+        employee_rate = parameters.get(
+            "uif_employee_rate"
+        )
+        employer_rate = parameters.get(
+            "uif_employer_rate"
+        )
+        uif_cap = parameters.get(
+            "monthly UIF_cap"
+        )
+
+        if employee_rate is not None:
+            parameters["uif_rate_employee"] = (
+                _payroll_decimal(employee_rate) / Decimal("100")
+            )
+
+        if employer_rate is not None:
+            parameters["uif_rate_employer"] = (
+                _payroll_decimal(employer_rate) / Decimal("100")
+            )
+
+        if uif_cap is not None:
+            parameters["uif_monthly_remuneration_ceiling"] = (
+                _payroll_decimal(uif_cap)
+            )
+
+        return parameters
 
     def payroll_progressive_tax(
         self,
