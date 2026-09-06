@@ -154431,25 +154431,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             code=str(item.get("code") or "").strip().upper()
 
-            if code=="UIF_EMP":
-                amount=self.payroll_calculate_uif(
-                    tax_context=tax_context,
-                    remuneration=basic,
-                    side="employee",
-                )
+            if code in ("UIF_EMP", "UIF_ER"):
+                continue
 
-            elif code=="UIF_ER":
-                amount=self.payroll_calculate_uif(
-                    tax_context=tax_context,
-                    remuneration=basic,
-                    side="employer",
-                )
-
-            else:
-                amount=self.payroll_setup_item_amount(
-                    item,
-                    basic,
-                )
+            amount=self.payroll_setup_item_amount(
+                item,
+                basic,
+            )
 
             if amount<=0:
                 continue
@@ -154528,32 +154516,25 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         side: str,
     ):
         """
-        Calculate monthly UIF using the active SARS tax-year
-        remuneration ceiling and contribution rate.
+        Calculate UIF from the employee's gross remuneration
+        for the current payroll period.
         """
 
         if not tax_context:
-            raise ValueError(
-                "UIF calculation failed: tax context is empty."
-            )
+            return Decimal("0.00")
 
-        authority_code = str(
-            tax_context.get("authority_code") or ""
-        ).strip().upper()
-
-        if authority_code != "SARS":
-            raise ValueError(
-                "UIF calculation failed: "
-                f"expected SARS authority, got "
-                f"{authority_code or 'empty'}."
-            )
+        if (
+            str(
+                tax_context.get("authority_code") or ""
+            ).upper()
+            != "SARS"
+        ):
+            return Decimal("0.00")
 
         tax_year_id = tax_context.get("tax_year_id")
 
         if not tax_year_id:
-            raise ValueError(
-                "UIF calculation failed: tax_year_id is missing."
-            )
+            return Decimal("0.00")
 
         parameters = self.payroll_tax_parameters(
             int(tax_year_id)
@@ -154580,45 +154561,18 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         remuneration = _payroll_money(remuneration)
 
-        if remuneration <= 0:
+        if remuneration <= 0 or rate <= 0:
             return Decimal("0.00")
 
-        if rate <= 0:
-            raise ValueError(
-                "UIF calculation failed: "
-                f"invalid {side} UIF rate: {rate}"
+        if remuneration_ceiling > 0:
+            remuneration = min(
+                remuneration,
+                remuneration_ceiling,
             )
 
-        if remuneration_ceiling <= 0:
-            raise ValueError(
-                "UIF calculation failed: "
-                "monthly remuneration ceiling is not configured."
-            )
-
-        capped_remuneration = min(
-            remuneration,
-            remuneration_ceiling,
+        return _payroll_money(
+            remuneration * rate
         )
-
-        result = _payroll_money(
-            capped_remuneration * rate
-        )
-
-        print(
-            "PAYROLL UIF CALC:",
-            {
-                "side": side,
-                "authority_code": authority_code,
-                "tax_year_id": int(tax_year_id),
-                "remuneration": remuneration,
-                "ceiling": remuneration_ceiling,
-                "capped_remuneration": capped_remuneration,
-                "rate": rate,
-                "result": result,
-            },
-        )
-
-        return result
 
     def _payroll_period_input_lines(
         self,
@@ -162713,40 +162667,34 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             parameters.get("monthly UIF_cap")
         )
 
-        # Database stores UIF rates as percentages:
-        # 1.00 = 1%, while the calculator requires:
-        # 0.01 = 1%.
+        # DB stores 1.00 for 1%.
+        parameters["uif_rate_employee"] = (
+            employee_rate / Decimal("100")
+        )
+
+        parameters["uif_rate_employer"] = (
+            employer_rate / Decimal("100")
+        )
+
+        # R177.12 is the maximum contribution,
+        # therefore R17,712 is the remuneration ceiling at 1%.
+        parameters["uif_employee_contribution_cap"] = (
+            contribution_cap
+        )
+
+        parameters["uif_employer_contribution_cap"] = (
+            contribution_cap
+        )
+
         if employee_rate > 0:
-            parameters["uif_rate_employee"] = (
-                employee_rate / Decimal("100")
-            )
-
-        if employer_rate > 0:
-            parameters["uif_rate_employer"] = (
-                employer_rate / Decimal("100")
-            )
-
-        # monthly UIF_cap is the maximum UIF CONTRIBUTION,
-        # not the remuneration ceiling.
-        #
-        # At a 1% rate:
-        # R177.12 / 1% = R17,712 remuneration ceiling.
-        if contribution_cap > 0:
-            parameters["uif_employee_contribution_cap"] = (
+            parameters["uif_monthly_remuneration_ceiling"] = (
                 contribution_cap
+                / (employee_rate / Decimal("100"))
             )
-            parameters["uif_employer_contribution_cap"] = (
-                contribution_cap
+        else:
+            parameters["uif_monthly_remuneration_ceiling"] = (
+                Decimal("0.00")
             )
-
-            if employee_rate > 0:
-                parameters["uif_monthly_remuneration_ceiling"] = (
-                    contribution_cap
-                    / (
-                        employee_rate
-                        / Decimal("100")
-                    )
-                )
 
         return parameters
 
