@@ -72713,12 +72713,12 @@ async function saveEditModal() {
       throw error;
 
     }finally{
-      if(button){
-        button.disabled=false;
-        button.textContent=
-          button.dataset.originalText||
+      buttons.forEach(btn=>{
+        btn.disabled=false;
+        btn.textContent=
+          btn.dataset.originalText||
           "Calculate";
-      }
+      });
     }
   }
 

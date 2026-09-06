@@ -152380,23 +152380,31 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ) + values)
 
     def payroll_mapping(self, company_id: int) -> dict:
-        schema = self.company_schema(company_id)
+        company_id = int(company_id)
 
         rows = self.fetch_all(f"""
-            SELECT mapping_key, gl_account_code
-            FROM {schema}.payroll_account_mappings
+            SELECT
+                mapping_key,
+                gl_account_code
+            FROM {self.company_schema(company_id)}.payroll_account_mappings
             WHERE company_id=%s;
-        """, (int(company_id),))
+        """, (company_id,))
 
         mappings = {
             r["mapping_key"]: r["gl_account_code"]
             for r in rows
+            if r.get("mapping_key") and r.get("gl_account_code")
         }
 
         role_map = {
-            "salary_expense": "payroll_salary_expense",
-            "net_salary_payable": "payroll_net_salary_payable",
-            "paye_payable": "payroll_paye_payable",
+            "salary_expense":
+                "payroll_salary_expense",
+
+            "net_salary_payable":
+                "payroll_net_salary_payable",
+
+            "paye_payable":
+                "payroll_paye_payable",
 
             "other_deductions_payable":
                 "payroll_other_deductions_payable",
@@ -152413,21 +152421,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         }
 
         for mapping_key, role in role_map.items():
+
+            # Explicit payroll mapping always wins.
             if mappings.get(mapping_key):
                 continue
 
-            account = self.fetch_one(f"""
-                SELECT code
-                FROM {schema}.coa
-                WHERE company_id=%s
-                AND role=%s
-                AND posting=TRUE
-                ORDER BY code
-                LIMIT 1;
-            """, (
-                int(company_id),
+            account = self.ensure_coa_role_for_posting(
+                company_id,
                 role,
-            ))
+                required=False,
+            )
 
             if account:
                 mappings[mapping_key] = account["code"]
