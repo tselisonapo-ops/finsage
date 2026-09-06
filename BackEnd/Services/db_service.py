@@ -152382,20 +152382,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     def payroll_mapping(self, company_id: int) -> dict:
         company_id = int(company_id)
 
-        rows = self.fetch_all(f"""
-            SELECT
-                mapping_key,
-                gl_account_code
-            FROM {self.company_schema(company_id)}.payroll_account_mappings
-            WHERE company_id=%s;
-        """, (company_id,))
-
-        mappings = {
-            r["mapping_key"]: r["gl_account_code"]
-            for r in rows
-            if r.get("mapping_key") and r.get("gl_account_code")
-        }
-
         role_map = {
             "salary_expense":
                 "payroll_salary_expense",
@@ -152420,11 +152406,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "payroll_uif_expense",
         }
 
-        for mapping_key, role in role_map.items():
+        mappings = {}
 
-            # Explicit payroll mapping always wins.
-            if mappings.get(mapping_key):
-                continue
+        for mapping_key, role in role_map.items():
 
             account = self.ensure_coa_role_for_posting(
                 company_id,

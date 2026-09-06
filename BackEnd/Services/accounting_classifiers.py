@@ -1461,10 +1461,6 @@ def _coa_role_from_text(
             return "cogs_merchandise"
 
     # ----------------------------
-    # Payroll roles
-    # ----------------------------
-
-    # ----------------------------
     # Payroll and IAS 19 roles
     # ----------------------------
 
