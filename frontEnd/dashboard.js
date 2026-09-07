@@ -69394,6 +69394,10 @@ async function saveEditModal() {
     if (tab === "employee-pay") {
       renderPayrollSetupSelects();
 
+      await loadPayrollCalendars();
+
+      renderPayrollPreviewCalendarOptions();
+
       const employeeId = Number(
         $("payrollPaySetupEmployeeId")?.value || 0
       );
