@@ -75740,48 +75740,69 @@ async function saveEditModal() {
     }
 
     // ------------------------------------------------------------
-    // Determine preview period
+    // Determine preview payroll calendar
     // ------------------------------------------------------------
 
     const effectiveFrom =
       $("payrollPaySetupEffectiveFrom")?.value;
 
-    let periodEnd = effectiveFrom;
+    const payrollCalendar =
+      getPayrollPreviewCalendar();
 
-    /*
-    * For the setup preview we need a period date.
-    *
-    * If a payroll period is already selected elsewhere in the
-    * payroll screen, use that instead.
-    */
+    if (!payrollCalendar?.id) {
 
-    if (
-      payrollState?.currentRun?.period_end
-    ) {
-      periodEnd =
-        payrollState.currentRun.period_end;
+      setTxt(
+        "payrollPreviewPeriod",
+        "No payroll period available"
+      );
+
+      renderPayrollPreviewLines(
+        "payrollPreviewEarnings",
+        []
+      );
+
+      renderPayrollPreviewLines(
+        "payrollPreviewDeductions",
+        []
+      );
+
+      setTxt(
+        "payrollPreviewGross",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewDeductionsTotal",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewNet",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewEmployerTotal",
+        payrollPreviewMoney(0)
+      );
+
+      return;
     }
 
-    if (!periodEnd) {
+    const calendarId =
+      payrollCalendar.id;
 
-      const now = new Date();
+    const periodStart =
+      payrollCalendar.period_start;
 
-      periodEnd =
-        new Date(
-          now.getFullYear(),
-          now.getMonth() + 1,
-          0
-        )
-          .toISOString()
-          .slice(0, 10);
-    }
+    const periodEnd =
+      payrollCalendar.period_end;
 
     const paymentDate =
-      payrollState?.currentRun?.payment_date ||
-      periodEnd;
+      payrollCalendar.payment_date;
 
     const frequency =
-      payrollState?.currentRun?.frequency ||
+      payrollCalendar.frequency ||
       "monthly";
 
     // ------------------------------------------------------------
@@ -75821,18 +75842,16 @@ async function saveEditModal() {
 
       const params =
         new URLSearchParams({
-          period_end: periodEnd,
-          payment_date: paymentDate,
-          frequency: frequency,
+          calendar_id: calendarId,
         });
 
-        const result = await apiFetch(
-            ENDPOINTS.payroll.payslipLitePreview(
-                cid(),
-                employee.id,
-                params.toString()
-            )
-        );
+      const result = await apiFetch(
+        ENDPOINTS.payroll.payslipLitePreview(
+          cid(),
+          employee.id,
+          params.toString()
+        )
+      );
 
       if (!result) {
         throw new Error(
@@ -76037,7 +76056,9 @@ async function saveEditModal() {
 
       setTxt(
         "payrollPreviewPeriod",
-        "Preview unavailable"
+        result.tax_year_label
+          ? result.tax_year_label
+          : "Current setup"
       );
 
       renderPayrollPreviewLines(
@@ -76071,6 +76092,44 @@ async function saveEditModal() {
       );
     }
   }
+
+function getPayrollPreviewCalendar() {
+  const calendars = Array.isArray(
+    payrollState?.calendars
+  )
+    ? payrollState.calendars
+    : [];
+
+  if (!calendars.length) {
+    return null;
+  }
+
+  // Prefer an open calendar.
+  const openCalendars = calendars
+    .filter(calendar =>
+      String(calendar?.status || "")
+        .toLowerCase() === "open"
+    )
+    .sort((a, b) =>
+      String(b?.period_end || "")
+        .localeCompare(
+          String(a?.period_end || "")
+        )
+    );
+
+  if (openCalendars.length) {
+    return openCalendars[0];
+  }
+
+  // Otherwise use the most recent calendar.
+  return [...calendars]
+    .sort((a, b) =>
+      String(b?.period_end || "")
+        .localeCompare(
+          String(a?.period_end || "")
+        )
+    )[0] || null;
+}
 
   function renderPayrollMasterSetup(){
     const setup=payrollState.setup||{};
