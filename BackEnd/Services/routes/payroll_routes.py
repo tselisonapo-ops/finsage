@@ -3469,18 +3469,15 @@ def api_payroll_employee_payslip(
 @payroll_bp.get(
     "/companies/<int:company_id>/payroll/employees/<int:employee_id>/payslip-lite/preview"
 )
+@require_auth
 def payroll_employee_payslip_lite_preview_route(
     company_id,
     employee_id,
 ):
     try:
-        period_end = request.args.get(
-            "period_end"
-        )
+        period_end = request.args.get("period_end")
 
-        payment_date = request.args.get(
-            "payment_date"
-        )
+        payment_date = request.args.get("payment_date")
 
         frequency = (
             request.args.get("frequency")
@@ -3498,9 +3495,7 @@ def payroll_employee_payslip_lite_preview_route(
             "weekly",
         }:
             return jsonify({
-                "error": (
-                    "Unsupported payroll frequency"
-                )
+                "error": "Unsupported payroll frequency"
             }), 400
 
         result = db_service.payroll_employee_payslip_lite_preview(
@@ -3526,6 +3521,7 @@ def payroll_employee_payslip_lite_preview_route(
         return jsonify({
             "error": "Unable to calculate Payslip Lite preview."
         }), 500
+
 
 @payroll_bp.route(
     "/api/companies/<int:company_id>/payroll/"
