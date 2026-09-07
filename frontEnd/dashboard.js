@@ -75161,401 +75161,6 @@ async function saveEditModal() {
     `).join("");
   }
 
-  const SARS_FALLBACK_BRACKETS = [
-    { from: 0,        to: 247500,  rate: 0.18, base: 0 },
-    { from: 247500,   to: 384000,  rate: 0.26, base: 44550 },
-    { from: 384000,   to: 531600,  rate: 0.31, base: 80100 },
-    { from: 531600,   to: 697000,  rate: 0.36, base: 125826 },
-    { from: 697000,   to: 882000,  rate: 0.39, base: 185326 },
-    { from: 882000,   to: 1893600, rate: 0.41, base: 257541 },
-    { from: 1893600,  to: null,    rate: 0.45, base: 672037 },
-  ];
-
-  /**
-   * Hardcoded Lesotho RSL brackets — fallback.
-   * Aligned with seed_payroll_tax.sql.
-   */
-  const RSL_FALLBACK_BRACKETS = [
-    { from: 0,       to: 84000,  rate: 0.00, base: 0 },
-    { from: 84000,   to: 156000, rate: 0.20, base: 0 },
-    { from: 156000,  to: 252000, rate: 0.30, base: 14400 },
-    { from: 252000,  to: null,   rate: 0.35, base: 43200 },
-  ];
-
-  /**
-   * Hardcoded Botswana BURS brackets — fallback.
-   * Aligned with seed_payroll_tax.sql.
-   */
-  const BURS_FALLBACK_BRACKETS = [
-    { from: 0,       to: 48000,  rate: 0.00, base: 0 },
-    { from: 48000,   to: 84000,  rate: 0.05, base: 0 },
-    { from: 84000,   to: 120000, rate: 0.125, base: 1800 },
-    { from: 120000,  to: 156000, rate: 0.1875, base: 6300 },
-    { from: 156000,  to: 192000, rate: 0.25, base: 13050 },
-    { from: 192000,  to: null,   rate: 0.30, base: 22050 },
-  ];
-
-  /**
-   * Normalise a bracket row to the simple format { from, to, rate, base }.
-   *
-   * Handles BOTH your DB column names AND the simple format, so it
-   * works regardless of whether your API transforms the data or
-   * returns raw DB rows.
-   *
-   * DB format:  { lower_bound, upper_bound, base_tax, marginal_rate, excess_over }
-   * Simple:     { from, to, rate, base }
-   */
-  function normaliseBracket(raw) {
-    return {
-      from:   Number(raw.from   ?? raw.lower_bound  ?? 0),
-      to:     raw.to     ?? raw.upper_bound  ?? null,
-      rate:   Number(raw.rate   ?? raw.marginal_rate ?? 0),
-      base:   Number(raw.base   ?? raw.base_tax     ?? 0),
-      excess: Number(raw.excess ?? raw.excess_over  ?? raw.from ?? raw.lower_bound ?? 0),
-    };
-  }
-
-  /**
-   * Calculate annual tax from normalised brackets.
-   *
-   * For each bracket:
-   *   tax = base + (taxable_income - excess) × rate
-   *
-   * @param {number} annualTaxable
-   * @param {Array}  rawBrackets  — array of bracket objects (either format)
-   * @returns {number} annual tax before rebates
-   */
-  function calculateBracketTax(annualTaxable, rawBrackets) {
-    if (!rawBrackets || !rawBrackets.length || annualTaxable <= 0) return 0;
-
-    const brackets = rawBrackets.map(normaliseBracket);
-    let tax = 0;
-    let applied = false;
-
-    for (let i = 0; i < brackets.length; i++) {
-      const b = brackets[i];
-      const upper = (b.to === null || b.to === undefined) ? Infinity : Number(b.to);
-
-      if (annualTaxable > Number(b.excess) && annualTaxable <= upper) {
-        tax = Number(b.base) + (annualTaxable - Number(b.excess)) * Number(b.rate);
-        applied = true;
-        break;
-      }
-    }
-
-    // Income exceeds the highest defined bracket
-    if (!applied && brackets.length > 0) {
-      const top = brackets[brackets.length - 1];
-      tax = Number(top.base) + (annualTaxable - Number(top.excess)) * Number(top.rate);
-    }
-
-    return Math.max(0, tax);
-  }
-
-  /**
-   * Get a parameter value from the tax context.
-   * Checks both flat keys (from API) and nested parameters array.
-   */
-  function getTaxParam(taxContext, key, fallback) {
-    // Check flat keys first (e.g. context.primary_rebate)
-    if (taxContext[key] !== undefined && taxContext[key] !== null) {
-      return Number(taxContext[key]);
-    }
-
-    // Check nested parameters array
-    // (in case the API returns them grouped)
-    if (Array.isArray(taxContext.parameters)) {
-      const param = taxContext.parameters.find(
-        p => p.parameter_key === key
-      );
-      if (param && param.numeric_value !== null) {
-        return Number(param.numeric_value);
-      }
-    }
-
-    return fallback !== undefined ? Number(fallback) : null;
-  }
-
-  /**
-   * Calculate age from a date-of-birth string (yyyy-mm-dd).
-   */
-  function getAgeFromDate(dobStr) {
-    if (!dobStr) return 0;
-    try {
-      const dob = new Date(dobStr);
-      const today = new Date();
-      let age = today.getFullYear() - dob.getFullYear();
-      const monthDiff = today.getMonth() - dob.getMonth();
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-        age--;
-      }
-      return Math.max(0, age);
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  /**
-   * South Africa SARS PAYE — progressive brackets + age-based rebates
-   * + medical aid tax credits (section 6A).
-   *
-   * Taxable income = Gross pay
-   *   – employee pension/retirement fund contributions (section 11F)
-   *
-   * Medical credits are deducted from the TAX (not from income).
-   */
-  function calculateSARSPayE(monthlyTaxable, taxContext) {
-    const annualTaxable = monthlyTaxable * 12;
-
-    // 1. Brackets — prefer API, fall back to hardcoded
-    const apiBrackets = taxContext.brackets;
-    const brackets = (Array.isArray(apiBrackets) && apiBrackets.length > 0)
-      ? apiBrackets
-      : SARS_FALLBACK_BRACKETS;
-
-    // 2. Calculate gross annual tax
-    let annualTax = calculateBracketTax(annualTaxable, brackets);
-
-    // 3. Age-dependent rebates
-    const employee = payrollPreviewSelectedEmployee();
-    const taxProfile = (employee?.tax_profiles || [])[0] || {};
-    const dob = taxProfile.date_of_birth || "";
-    const residencyStatus = taxProfile.residency_status || "resident";
-
-    // Non-residents get NO rebates
-    const rebatesApply = residencyStatus !== "non_resident" &&
-      getTaxParam(taxContext, "rebate_applies_non_resident", 0) !== 1;
-
-    if (rebatesApply) {
-      const primaryRebate   = getTaxParam(taxContext, "primary_rebate", 17235);
-      const secondaryRebate = getTaxParam(taxContext, "secondary_rebate", 9150);
-      const tertiaryRebate  = getTaxParam(taxContext, "tertiary_rebate", 3047);
-
-      let totalRebate = primaryRebate;
-
-      if (dob) {
-        const age = getAgeFromDate(dob);
-        if (age >= 75) {
-          totalRebate += secondaryRebate + tertiaryRebate;
-        } else if (age >= 65) {
-          totalRebate += secondaryRebate;
-        }
-      }
-
-      annualTax -= totalRebate;
-      if (annualTax < 0) annualTax = 0;
-    }
-
-    // 4. Medical aid tax credit (section 6A) — deducted from tax, not income
-    const medicalMembers = Number(taxProfile.medical_scheme_members || 0);
-
-    if (medicalMembers > 0) {
-      const monthlyCredit = getTaxParam(
-        taxContext, "medical_credit_monthly", 364
-      );
-
-      const additionalCredit = getTaxParam(
-        taxContext, "medical_credit_additional_monthly", 246
-      );
-
-      const dependants = Math.max(0, medicalMembers - 1);
-      const annualMedicalCredit = (monthlyCredit + dependants * additionalCredit) * 12;
-
-      annualTax -= annualMedicalCredit;
-      if (annualTax < 0) annualTax = 0;
-    }
-
-    // 5. Monthly conversion
-    return Math.round((annualTax / 12) * 100) / 100;
-  }
-
-  /**
-   * Lesotho RSL PAYE — progressive brackets, no age rebates.
-   */
-  function calculateRSLPayE(monthlyTaxable, taxContext) {
-    const annualTaxable = monthlyTaxable * 12;
-
-    const apiBrackets = taxContext.brackets;
-    const brackets = (Array.isArray(apiBrackets) && apiBrackets.length > 0)
-      ? apiBrackets
-      : RSL_FALLBACK_BRACKETS;
-
-    let annualTax = calculateBracketTax(annualTaxable, brackets);
-
-    // Lesotho has no separate rebate system (the 0% first bracket
-    // acts as the tax-free threshold), but check for an annual_rebate
-    // parameter just in case.
-    const annualRebate = getTaxParam(taxContext, "annual_rebate", 0);
-    if (annualRebate > 0) {
-      annualTax -= annualRebate;
-      if (annualTax < 0) annualTax = 0;
-    }
-
-    return Math.round((annualTax / 12) * 100) / 100;
-  }
-
-  /**
-   * Generic PAYE calculator — for any authority that returns bracket data.
-   * Used for Botswana BURS and any future authorities.
-   */
-  function calculateGenericPayE(monthlyTaxable, taxContext) {
-    const apiBrackets = taxContext.brackets;
-    if (!Array.isArray(apiBrackets) || !apiBrackets.length) return 0;
-
-    const basis = String(taxContext.calculation_basis || "annualised").toLowerCase();
-    const isMonthly = basis.includes("monthly");
-
-    const effectiveIncome = isMonthly ? monthlyTaxable : monthlyTaxable * 12;
-    let tax = calculateBracketTax(effectiveIncome, apiBrackets);
-
-    // Apply rebate if any (only for annualised calculations)
-    if (!isMonthly) {
-      const annualRebate = getTaxParam(taxContext, "annual_rebate", 0);
-      if (annualRebate > 0) {
-        tax -= annualRebate;
-        if (tax < 0) tax = 0;
-      }
-      // Also check primary_rebate key (SA-style)
-      const primaryRebate = getTaxParam(taxContext, "primary_rebate", 0);
-      if (primaryRebate > 0) {
-        tax -= primaryRebate;
-        if (tax < 0) tax = 0;
-      }
-    }
-
-    if (isMonthly) {
-      return Math.round(tax * 100) / 100;
-    }
-
-    return Math.round((tax / 12) * 100) / 100;
-  }
-
-  /**
-   * MAIN ENTRY POINT — calculate PAYE for the payslip preview.
-   *
-   * Routes to the correct calculator based on country code,
-   * using API brackets if available, falling back to hardcoded tables.
-   *
-   * @param {number} monthlyTaxableIncome
-   * @returns {number} monthly PAYE
-   */
-  function calculatePreviewPaye(monthlyTaxableIncome) {
-    if (monthlyTaxableIncome <= 0) return 0;
-
-    const ctx = payrollState.taxContext;
-    if (!ctx) return 0;
-
-    const country = String(
-      ctx.country_code ||
-      window.CURRENT_COMPANY?.country ||
-      window.CURRENT_COMPANY_COUNTRY ||
-      ""
-    ).trim().toUpperCase();
-
-    // South Africa
-    if (["ZA", "RSA", "SOUTH AFRICA"].includes(country)) {
-      return calculateSARSPayE(monthlyTaxableIncome, ctx);
-    }
-
-    // Lesotho
-    if (["LS", "LES", "LESOTHO"].includes(country)) {
-      return calculateRSLPayE(monthlyTaxableIncome, ctx);
-    }
-
-    // Botswana or any other — try generic with API brackets,
-    // then try BURS fallback
-    if (Array.isArray(ctx.brackets) && ctx.brackets.length > 0) {
-      return calculateGenericPayE(monthlyTaxableIncome, ctx);
-    }
-
-    if (["BW", "BOT", "BOTSWANA"].includes(country)) {
-      // Use BURS fallback brackets
-      const ctxWithBrackets = { ...ctx, brackets: BURS_FALLBACK_BRACKETS };
-      return calculateGenericPayE(monthlyTaxableIncome, ctxWithBrackets);
-    }
-
-    // No matching authority
-    return 0;
-  }
-
-  function calculatePreviewUif(remuneration, side = "employee") {
-    remuneration = Number(remuneration || 0);
-
-    if (remuneration <= 0) {
-      return 0;
-    }
-
-    const ctx = payrollState.taxContext;
-
-    if (!ctx) {
-      return 0;
-    }
-
-    const authority = String(
-      ctx.authority_code ||
-      ""
-    ).trim().toUpperCase();
-
-    if (authority !== "SARS") {
-      return 0;
-    }
-
-    const rateKey =
-      side === "employer"
-        ? "uif_rate_employer"
-        : "uif_rate_employee";
-
-    const capKey =
-      side === "employer"
-        ? "uif_employer_contribution_cap"
-        : "uif_employee_contribution_cap";
-
-    const rate = getTaxParam(
-      ctx,
-      rateKey,
-      0.01
-    );
-
-    const remunerationCeiling = getTaxParam(
-      ctx,
-      "uif_monthly_remuneration_ceiling",
-      17712
-    );
-
-    const contributionCap = getTaxParam(
-      ctx,
-      capKey,
-      177.12
-    );
-
-    if (rate <= 0) {
-      return 0;
-    }
-
-    const cappedRemuneration =
-      remunerationCeiling > 0
-        ? Math.min(
-            remuneration,
-            remunerationCeiling
-          )
-        : remuneration;
-
-    let contribution =
-      cappedRemuneration * rate;
-
-    if (contributionCap > 0) {
-      contribution =
-        Math.min(
-          contribution,
-          contributionCap
-        );
-    }
-
-    return Math.round(
-      contribution * 100
-    ) / 100;
-  }
-
   async function renderPayrollPayslipPreview() {
     const employee = payrollPreviewSelectedEmployee();
 
@@ -75565,16 +75170,6 @@ async function saveEditModal() {
           .join(" ")
       : "Select employee";
 
-    setTxt(
-      "payrollPreviewEmployeeName",
-      employeeName || "Select employee"
-    );
-
-    setTxt(
-      "payrollPreviewEmployeeNo",
-      employee?.employee_no || "—"
-    );
-
     const payBasisLabels = {
       monthly: "Monthly Salary",
       hourly: "Hours × Rate",
@@ -75583,6 +75178,50 @@ async function saveEditModal() {
       commission_only: "Commission Only",
     };
 
+    const clearPreview = (period = "Current setup") => {
+      setTxt("payrollPreviewPeriod", period);
+
+      renderPayrollPreviewLines(
+        "payrollPreviewEarnings",
+        []
+      );
+
+      renderPayrollPreviewLines(
+        "payrollPreviewDeductions",
+        []
+      );
+
+      setTxt(
+        "payrollPreviewGross",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewDeductionsTotal",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewNet",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewEmployerTotal",
+        payrollPreviewMoney(0)
+      );
+    };
+
+    setTxt(
+      "payrollPreviewEmployeeName",
+      employeeName
+    );
+
+    setTxt(
+      "payrollPreviewEmployeeNo",
+      employee?.employee_no || "—"
+    );
+
     setTxt(
       "payrollPreviewPayBasis",
       payBasisLabels[
@@ -75590,16 +75229,18 @@ async function saveEditModal() {
       ] || "Monthly Salary"
     );
 
+    const effectiveFrom =
+      $("payrollPaySetupEffectiveFrom")?.value;
+
     setTxt(
       "payrollPreviewEffectiveFrom",
-      $("payrollPaySetupEffectiveFrom")?.value
-        ? formatPayrollDate(
-            $("payrollPaySetupEffectiveFrom").value
-          )
+      effectiveFrom
+        ? formatPayrollDate(effectiveFrom)
         : "—"
     );
 
-    const company = window.CURRENT_COMPANY || {};
+    const company =
+      window.CURRENT_COMPANY || {};
 
     setTxt(
       "payrollPreviewCompanyName",
@@ -75620,37 +75261,26 @@ async function saveEditModal() {
         .join(" | ") || "Payroll preview"
     );
 
-    // ------------------------------------------------------------
-    // Company logo
-    // ------------------------------------------------------------
-
     const companyLogo =
       $("payrollPreviewCompanyLogo");
 
     const logoFallback =
       $("payrollPreviewLogoFallback");
 
-    const companyName =
-      company.name || "Company";
-
-    const initials = companyName
-      .replace(/[^A-Za-z\s]/g, "")
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(w => w[0].toUpperCase())
-      .slice(0, 3)
-      .join("");
+    const initials =
+      (company.name || "Company")
+        .replace(/[^A-Za-z\s]/g, "")
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(w => w[0].toUpperCase())
+        .slice(0, 3)
+        .join("");
 
     if (companyLogo && company.logo_url) {
-
       companyLogo.src = company.logo_url;
-
       companyLogo.classList.remove("hidden");
-
       logoFallback?.classList.add("hidden");
-
     } else {
-
       companyLogo?.classList.add("hidden");
 
       if (logoFallback) {
@@ -75662,130 +75292,88 @@ async function saveEditModal() {
         );
       }
 
-      if (
-        !company.logo_url &&
-        cid()
-      ) {
-
-        apiFetch(
-          `/api/companies/${cid()}`
-        )
+      if (!company.logo_url && cid()) {
+        apiFetch(`/api/companies/${cid()}`)
           .then(c => {
+            if (!c?.logo_url) return;
 
-            if (c?.logo_url) {
+            companyLogo.src = c.logo_url;
 
-              companyLogo.src =
+            companyLogo.classList.remove(
+              "hidden"
+            );
+
+            logoFallback?.classList.add(
+              "hidden"
+            );
+
+            if (window.CURRENT_COMPANY) {
+              window.CURRENT_COMPANY.logo_url =
                 c.logo_url;
-
-              companyLogo.classList.remove(
-                "hidden"
-              );
-
-              logoFallback?.classList.add(
-                "hidden"
-              );
-
-              if (window.CURRENT_COMPANY) {
-                window.CURRENT_COMPANY.logo_url =
-                  c.logo_url;
-              }
             }
           })
           .catch(() => {});
       }
     }
 
-    // ------------------------------------------------------------
-    // No employee selected
-    // ------------------------------------------------------------
-
     if (!employee?.id) {
-
-      setTxt(
-        "payrollPreviewPeriod",
-        "Current setup"
-      );
-
-      renderPayrollPreviewLines(
-        "payrollPreviewEarnings",
-        []
-      );
-
-      renderPayrollPreviewLines(
-        "payrollPreviewDeductions",
-        []
-      );
-
-      setTxt(
-        "payrollPreviewGross",
-        payrollPreviewMoney(0)
-      );
-
-      setTxt(
-        "payrollPreviewDeductionsTotal",
-        payrollPreviewMoney(0)
-      );
-
-      setTxt(
-        "payrollPreviewNet",
-        payrollPreviewMoney(0)
-      );
-
-      setTxt(
-        "payrollPreviewEmployerTotal",
-        payrollPreviewMoney(0)
-      );
-
+      clearPreview();
       return;
     }
 
-    // ------------------------------------------------------------
-    // Determine preview payroll calendar
-    // ------------------------------------------------------------
+    const calendars =
+      Array.isArray(payrollState?.calendars)
+        ? payrollState.calendars
+        : [];
 
-    const effectiveFrom =
-      $("payrollPaySetupEffectiveFrom")?.value;
-
-    const payrollCalendar =
-      getPayrollPreviewCalendar();
-
-    if (!payrollCalendar?.id) {
-
-      setTxt(
-        "payrollPreviewPeriod",
+    if (!calendars.length) {
+      clearPreview(
         "No payroll period available"
       );
+      return;
+    }
 
-      renderPayrollPreviewLines(
-        "payrollPreviewEarnings",
-        []
+    const currentRun =
+      payrollState?.currentRun || {};
+
+    let payrollCalendar = null;
+
+    if (currentRun.calendar_id) {
+      payrollCalendar =
+        calendars.find(
+          c =>
+            String(c?.id) ===
+            String(currentRun.calendar_id)
+        ) || null;
+    }
+
+    if (
+      !payrollCalendar &&
+      currentRun.period_start &&
+      currentRun.period_end
+    ) {
+      payrollCalendar =
+        calendars.find(c =>
+          String(c?.period_start || "")
+            .slice(0, 10) ===
+          String(currentRun.period_start)
+            .slice(0, 10) &&
+          String(c?.period_end || "")
+            .slice(0, 10) ===
+          String(currentRun.period_end)
+            .slice(0, 10)
+        ) || null;
+    }
+
+    if (!payrollCalendar) {
+      payrollCalendar =
+        getPayrollPreviewCalendar();
+    }
+
+    if (!payrollCalendar?.id) {
+      clearPreview(
+        "No payroll period available"
       );
-
-      renderPayrollPreviewLines(
-        "payrollPreviewDeductions",
-        []
-      );
-
-      setTxt(
-        "payrollPreviewGross",
-        payrollPreviewMoney(0)
-      );
-
-      setTxt(
-        "payrollPreviewDeductionsTotal",
-        payrollPreviewMoney(0)
-      );
-
-      setTxt(
-        "payrollPreviewNet",
-        payrollPreviewMoney(0)
-      );
-
-      setTxt(
-        "payrollPreviewEmployerTotal",
-        payrollPreviewMoney(0)
-      );
-
       return;
     }
 
@@ -75797,17 +75385,6 @@ async function saveEditModal() {
 
     const periodEnd =
       payrollCalendar.period_end;
-
-    const paymentDate =
-      payrollCalendar.payment_date;
-
-    const frequency =
-      payrollCalendar.frequency ||
-      "monthly";
-
-    // ------------------------------------------------------------
-    // Show loading state
-    // ------------------------------------------------------------
 
     setTxt(
       "payrollPreviewPeriod",
@@ -75834,34 +75411,26 @@ async function saveEditModal() {
       "..."
     );
 
-    // ------------------------------------------------------------
-    // Backend calculation
-    // ------------------------------------------------------------
-
     try {
-
       const params =
         new URLSearchParams({
-          calendar_id: calendarId,
+          calendar_id: String(calendarId),
         });
 
-      const result = await apiFetch(
-        ENDPOINTS.payroll.payslipLitePreview(
-          cid(),
-          employee.id,
-          params.toString()
-        )
-      );
+      const result =
+        await apiFetch(
+          ENDPOINTS.payroll.payslipLitePreview(
+            cid(),
+            employee.id,
+            params.toString()
+          )
+        );
 
       if (!result) {
         throw new Error(
           "No payroll preview was returned."
         );
       }
-
-      // ----------------------------------------------------------
-      // Employee
-      // ----------------------------------------------------------
 
       setTxt(
         "payrollPreviewEmployeeName",
@@ -75877,22 +75446,13 @@ async function saveEditModal() {
           "—"
       );
 
-      // ----------------------------------------------------------
-      // Pay basis
-      // ----------------------------------------------------------
-
       setTxt(
         "payrollPreviewPayBasis",
         payBasisLabels[
           result.setup?.pay_basis ||
           $("payrollPayBasis")?.value
-        ] ||
-          "Monthly Salary"
+        ] || "Monthly Salary"
       );
-
-      // ----------------------------------------------------------
-      // Effective date
-      // ----------------------------------------------------------
 
       setTxt(
         "payrollPreviewEffectiveFrom",
@@ -75907,48 +75467,41 @@ async function saveEditModal() {
             : "—"
       );
 
-      // ----------------------------------------------------------
-      // Period
-      // ----------------------------------------------------------
+      const previewCalendar =
+        result.payroll_calendar;
+
+      const previewStart =
+        previewCalendar?.period_start ||
+        periodStart;
+
+      const previewEnd =
+        previewCalendar?.period_end ||
+        periodEnd;
 
       setTxt(
         "payrollPreviewPeriod",
-        result.tax_year_label
-          ? result.tax_year_label
+        previewStart && previewEnd
+          ? `${formatPayrollDate(
+              previewStart
+            )} – ${formatPayrollDate(
+              previewEnd
+            )}`
           : "Current setup"
       );
 
-      // ----------------------------------------------------------
-      // Earnings
-      // ----------------------------------------------------------
-
-      const earnings =
-        Array.isArray(result.earnings)
-          ? result.earnings
-          : [];
-
       renderPayrollPreviewLines(
         "payrollPreviewEarnings",
-        earnings
+        Array.isArray(result.earnings)
+          ? result.earnings
+          : []
       );
-
-      // ----------------------------------------------------------
-      // Deductions
-      // ----------------------------------------------------------
-
-      const deductions =
-        Array.isArray(result.deductions)
-          ? result.deductions
-          : [];
 
       renderPayrollPreviewLines(
         "payrollPreviewDeductions",
-        deductions
+        Array.isArray(result.deductions)
+          ? result.deductions
+          : []
       );
-
-      // ----------------------------------------------------------
-      // Totals
-      // ----------------------------------------------------------
 
       const gross =
         Number(result.gross || 0);
@@ -75990,15 +75543,10 @@ async function saveEditModal() {
         )
       );
 
-      // ----------------------------------------------------------
-      // PAYE note
-      // ----------------------------------------------------------
-
       const payeNoteEl =
         $("payrollPreviewPayeNote");
 
       if (payeNoteEl) {
-
         const method =
           result.tax_result?.method;
 
@@ -76013,34 +75561,27 @@ async function saveEditModal() {
           "current year";
 
         if (method === "manual") {
-
           payeNoteEl.textContent =
             "Manually entered";
 
           payeNoteEl.classList.remove(
             "hidden"
           );
-
         } else if (method === "exempt") {
-
           payeNoteEl.textContent =
             "PAYE exempt";
 
           payeNoteEl.classList.remove(
             "hidden"
           );
-
         } else if (method) {
-
           payeNoteEl.textContent =
             `Backend calculated (${authority}, ${year})`;
 
           payeNoteEl.classList.remove(
             "hidden"
           );
-
         } else {
-
           payeNoteEl.classList.add(
             "hidden"
           );
@@ -76048,88 +75589,57 @@ async function saveEditModal() {
       }
 
     } catch (error) {
-
       console.error(
         "Payslip Lite preview failed:",
         error
       );
 
-      setTxt(
-        "payrollPreviewPeriod",
-        result.tax_year_label
-          ? result.tax_year_label
-          : "Current setup"
+      clearPreview(
+        "Preview unavailable"
       );
 
-      renderPayrollPreviewLines(
-        "payrollPreviewEarnings",
-        []
-      );
-
-      renderPayrollPreviewLines(
-        "payrollPreviewDeductions",
-        []
-      );
-
-      setTxt(
-        "payrollPreviewGross",
-        payrollPreviewMoney(0)
-      );
-
-      setTxt(
-        "payrollPreviewDeductionsTotal",
-        payrollPreviewMoney(0)
-      );
-
-      setTxt(
-        "payrollPreviewNet",
-        payrollPreviewMoney(0)
-      );
-
-      setTxt(
-        "payrollPreviewEmployerTotal",
-        payrollPreviewMoney(0)
-      );
+      $("payrollPreviewPayeNote")
+        ?.classList.add("hidden");
     }
   }
 
-function getPayrollPreviewCalendar() {
-  const calendars = Array.isArray(
-    payrollState?.calendars
-  )
-    ? payrollState.calendars
-    : [];
-
-  if (!calendars.length) {
-    return null;
-  }
-
-  // Prefer an open calendar.
-  const openCalendars = calendars
-    .filter(calendar =>
-      String(calendar?.status || "")
-        .toLowerCase() === "open"
+  function getPayrollPreviewCalendar() {
+    const calendars = Array.isArray(
+      payrollState?.calendars
     )
-    .sort((a, b) =>
-      String(b?.period_end || "")
-        .localeCompare(
-          String(a?.period_end || "")
-        )
-    );
+      ? payrollState.calendars
+      : [];
 
-  if (openCalendars.length) {
-    return openCalendars[0];
+    if (!calendars.length) {
+      return null;
+    }
+
+    // Prefer an open calendar.
+    const openCalendars = calendars
+      .filter(calendar =>
+        String(calendar?.status || "")
+          .toLowerCase() === "open"
+      )
+      .sort((a, b) =>
+        String(b?.period_end || "")
+          .localeCompare(
+            String(a?.period_end || "")
+          )
+      );
+
+    if (openCalendars.length) {
+      return openCalendars[0];
+    }
+
+    // Otherwise use the most recent calendar.
+    return [...calendars]
+      .sort((a, b) =>
+        String(b?.period_end || "")
+          .localeCompare(
+            String(a?.period_end || "")
+          )
+      )[0] || null;
   }
-
-  // Otherwise use the most recent calendar.
-  return [...calendars]
-    .sort((a, b) =>
-      String(b?.period_end || "")
-        .localeCompare(
-          String(a?.period_end || "")
-        )
-    )[0] || null;
-}
 
   function renderPayrollMasterSetup(){
     const setup=payrollState.setup||{};
