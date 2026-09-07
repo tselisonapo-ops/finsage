@@ -156453,12 +156453,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         self,
         company_id: int,
         employee_id: int,
-        period_end,
-        payment_date=None,
-        frequency="monthly",
+        calendar_id=None,
     ):
         """
         Return a backend-calculated Payslip Lite preview.
+
+        The payroll calendar is the authoritative source for:
+        - period_start
+        - period_end
+        - payment_date
+        - frequency
 
         No payroll records are created or modified.
         """
@@ -156466,10 +156470,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         company_id = int(company_id)
         employee_id = int(employee_id)
 
+        schema = self.company_schema(company_id)
+
+        # ------------------------------------------------------------
+        # Employee
+        # ------------------------------------------------------------
+
         employee = self.fetch_one(
             f"""
             SELECT *
-            FROM {self.company_schema(company_id)}.payroll_employees
+            FROM {schema}.payroll_employees
             WHERE company_id=%s
             AND id=%s
             """,
@@ -156484,16 +156494,102 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "Employee not found."
             )
 
-        period_end = (
-            period_end
-            if isinstance(period_end, date)
-            else date.fromisoformat(
-                str(period_end)[:10]
+        # ------------------------------------------------------------
+        # Payroll Calendar
+        #
+        # The calendar is the authoritative source of the payroll
+        # period. Do not reconstruct period_start from period_end.
+        # ------------------------------------------------------------
+
+        if calendar_id in (None, "", "None"):
+            raise ValueError(
+                "Payroll calendar is required."
             )
+
+        try:
+            calendar_id = int(calendar_id)
+        except (TypeError, ValueError):
+            raise ValueError(
+                "Invalid payroll calendar."
+            )
+
+        payroll_calendar = self.fetch_one(
+            f"""
+            SELECT
+                id,
+                company_id,
+                frequency,
+                period_start,
+                period_end,
+                payment_date,
+                status
+            FROM {schema}.payroll_pay_calendars
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1
+            """,
+            (
+                company_id,
+                calendar_id,
+            ),
         )
 
+        if not payroll_calendar:
+            raise ValueError(
+                "Payroll calendar period could not be found."
+            )
+
+        payroll_calendar = dict(
+            payroll_calendar
+        )
+
+        # ------------------------------------------------------------
+        # Calendar dates
+        # ------------------------------------------------------------
+
+        period_start = payroll_calendar.get(
+            "period_start"
+        )
+
+        period_end = payroll_calendar.get(
+            "period_end"
+        )
+
+        payment_date = payroll_calendar.get(
+            "payment_date"
+        )
+
+        frequency = (
+            payroll_calendar.get(
+                "frequency"
+            )
+            or "monthly"
+        ).strip().lower()
+
+        if period_start is None:
+            raise ValueError(
+                "Payroll calendar has no period start date."
+            )
+
+        if period_end is None:
+            raise ValueError(
+                "Payroll calendar has no period end date."
+            )
+
         if payment_date is None:
-            payment_date = period_end
+            raise ValueError(
+                "Payroll calendar has no payment date."
+            )
+
+        if not isinstance(period_start, date):
+            period_start = date.fromisoformat(
+                str(period_start)[:10]
+            )
+
+        if not isinstance(period_end, date):
+            period_end = date.fromisoformat(
+                str(period_end)[:10]
+            )
 
         if not isinstance(payment_date, date):
             payment_date = date.fromisoformat(
@@ -156531,15 +156627,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         # ------------------------------------------------------------
         # Minimal run context
         #
-        # This is NOT saved as a payroll run.
-        # It simply gives the existing calculation engine the
-        # period information it expects.
+        # IMPORTANT:
+        # These dates come directly from payroll_pay_calendars.
         # ------------------------------------------------------------
 
         run = {
-            "period_start": period_end.replace(
-                day=1
-            ),
+            "calendar_id": payroll_calendar["id"],
+            "period_start": period_start,
             "period_end": period_end,
             "payment_date": payment_date,
             "frequency": frequency,
@@ -156557,6 +156651,20 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 tax_context=tax_context,
             )
         )
+
+        # ------------------------------------------------------------
+        # Include calendar information in the preview response
+        # ------------------------------------------------------------
+
+        result["payroll_calendar"] = {
+            "id": payroll_calendar["id"],
+            "company_id": payroll_calendar["company_id"],
+            "frequency": frequency,
+            "period_start": period_start,
+            "period_end": period_end,
+            "payment_date": payment_date,
+            "status": payroll_calendar.get("status"),
+        }
 
         return result
 

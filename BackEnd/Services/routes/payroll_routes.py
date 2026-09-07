@@ -3476,35 +3476,19 @@ def payroll_employee_payslip_lite_preview_route(
     employee_id,
 ):
     try:
-        period_end = request.args.get("period_end")
+        calendar_id = request.args.get(
+            "calendar_id"
+        )
 
-        payment_date = request.args.get("payment_date")
-
-        frequency = (
-            request.args.get("frequency")
-            or "monthly"
-        ).strip().lower()
-
-        if not period_end:
+        if not calendar_id:
             return jsonify({
-                "error": "period_end is required"
-            }), 400
-
-        if frequency not in {
-            "monthly",
-            "fortnightly",
-            "weekly",
-        }:
-            return jsonify({
-                "error": "Unsupported payroll frequency"
+                "error": "calendar_id is required"
             }), 400
 
         result = db_service.payroll_employee_payslip_lite_preview(
             company_id=company_id,
             employee_id=employee_id,
-            period_end=period_end,
-            payment_date=payment_date,
-            frequency=frequency,
+            calendar_id=calendar_id,
         )
 
         return jsonify(result), 200
@@ -3514,13 +3498,16 @@ def payroll_employee_payslip_lite_preview_route(
             "error": str(exc)
         }), 400
 
-    except Exception as exc:
+    except Exception:
         current_app.logger.exception(
             "Payslip Lite preview failed"
         )
 
         return jsonify({
-            "error": "Unable to calculate Payslip Lite preview."
+            "error": (
+                "Unable to calculate "
+                "Payslip Lite preview."
+            )
         }), 500
 
 @payroll_bp.route(
