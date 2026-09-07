@@ -75165,6 +75165,54 @@ async function saveEditModal() {
     `).join("");
   }
 
+  function formatPayrollCalendarPeriodLabel(calendar) {
+    if (!calendar) return "";
+
+    const start = calendar.period_start;
+    const end = calendar.period_end;
+
+    if (!start && !end) {
+      return "Payroll period";
+    }
+
+    const startDate = start
+      ? new Date(start)
+      : null;
+
+    const endDate = end
+      ? new Date(end)
+      : null;
+
+    const formatter = new Intl.DateTimeFormat(
+      "en-US",
+      {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      }
+    );
+
+    if (!startDate) {
+      return endDate
+        ? formatter.format(endDate)
+        : "Payroll period";
+    }
+
+    if (!endDate) {
+      return formatter.format(startDate);
+    }
+
+    const startMonth = formatter.format(startDate);
+    const endMonth = formatter.format(endDate);
+
+    if (startMonth === endMonth) {
+      return startMonth;
+    }
+
+    return `${startMonth} – ${endMonth}`;
+  }
+
+
   function renderPayrollPreviewCalendarOptions() {
     const select = $("payrollPreviewCalendarId");
 
@@ -75200,29 +75248,10 @@ async function saveEditModal() {
 
         option.value = calendar.id;
 
-        const start =
-          calendar.period_start
-            ? formatPayrollDate(
-                calendar.period_start
-              )
-            : "";
-
-        const end =
-          calendar.period_end
-            ? formatPayrollDate(
-                calendar.period_end
-              )
-            : "";
-
-        const payment =
-          calendar.payment_date
-            ? ` — Pay date: ${formatPayrollDate(
-                calendar.payment_date
-              )}`
-            : "";
-
         option.textContent =
-          `${start} – ${end}${payment}`;
+          formatPayrollCalendarPeriodLabel(
+            calendar
+          );
 
         select.appendChild(option);
       });
@@ -75230,8 +75259,8 @@ async function saveEditModal() {
     if (
       currentValue &&
       calendars.some(
-        c =>
-          String(c?.id) ===
+        calendar =>
+          String(calendar?.id) ===
           String(currentValue)
       )
     ) {
