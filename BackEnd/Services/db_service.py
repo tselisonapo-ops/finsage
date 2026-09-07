@@ -156518,10 +156518,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             or "SARS"
         ).strip().upper()
 
-        tax_context = self.payroll_tax_context(
+        tax_context = self.payroll_company_tax_context(
             company_id=company_id,
-            authority_code=authority_code,
-            period_end=period_end,
+            payment_date=payment_date,
         )
 
         if not tax_context:
