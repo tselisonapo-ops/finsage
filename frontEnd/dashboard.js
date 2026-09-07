@@ -75161,6 +75161,80 @@ async function saveEditModal() {
     `).join("");
   }
 
+  function renderPayrollPreviewCalendarOptions() {
+    const select = $("payrollPreviewCalendarId");
+
+    if (!select) return;
+
+    const calendars = Array.isArray(
+      payrollState?.calendars
+    )
+      ? payrollState.calendars
+      : [];
+
+    const currentValue = select.value;
+
+    select.innerHTML = `
+      <option value="">
+        Select payroll period…
+      </option>
+    `;
+
+    calendars
+      .slice()
+      .sort((a, b) =>
+        String(b?.period_end || "")
+          .localeCompare(
+            String(a?.period_end || "")
+          )
+      )
+      .forEach(calendar => {
+        if (!calendar?.id) return;
+
+        const option =
+          document.createElement("option");
+
+        option.value = calendar.id;
+
+        const start =
+          calendar.period_start
+            ? formatPayrollDate(
+                calendar.period_start
+              )
+            : "";
+
+        const end =
+          calendar.period_end
+            ? formatPayrollDate(
+                calendar.period_end
+              )
+            : "";
+
+        const payment =
+          calendar.payment_date
+            ? ` — Pay date: ${formatPayrollDate(
+                calendar.payment_date
+              )}`
+            : "";
+
+        option.textContent =
+          `${start} – ${end}${payment}`;
+
+        select.appendChild(option);
+      });
+
+    if (
+      currentValue &&
+      calendars.some(
+        c =>
+          String(c?.id) ===
+          String(currentValue)
+      )
+    ) {
+      select.value = currentValue;
+    }
+  }
+
   async function renderPayrollPayslipPreview() {
     const employee = payrollPreviewSelectedEmployee();
 
@@ -75333,46 +75407,29 @@ async function saveEditModal() {
       return;
     }
 
-    const currentRun =
-      payrollState?.currentRun || {};
+    const calendarSelect =
+      $("payrollPreviewCalendarId");
 
-    let payrollCalendar = null;
+    const selectedCalendarId =
+      calendarSelect?.value;
 
-    if (currentRun.calendar_id) {
-      payrollCalendar =
-        calendars.find(
-          c =>
-            String(c?.id) ===
-            String(currentRun.calendar_id)
-        ) || null;
+    if (!selectedCalendarId) {
+      clearPreview(
+        "Select a payroll period"
+      );
+      return;
     }
 
-    if (
-      !payrollCalendar &&
-      currentRun.period_start &&
-      currentRun.period_end
-    ) {
-      payrollCalendar =
-        calendars.find(c =>
-          String(c?.period_start || "")
-            .slice(0, 10) ===
-          String(currentRun.period_start)
-            .slice(0, 10) &&
-          String(c?.period_end || "")
-            .slice(0, 10) ===
-          String(currentRun.period_end)
-            .slice(0, 10)
-        ) || null;
-    }
+    const payrollCalendar =
+      calendars.find(
+        calendar =>
+          String(calendar?.id) ===
+          String(selectedCalendarId)
+      );
 
     if (!payrollCalendar) {
-      payrollCalendar =
-        getPayrollPreviewCalendar();
-    }
-
-    if (!payrollCalendar?.id) {
       clearPreview(
-        "No payroll period available"
+        "Selected payroll period not found"
       );
       return;
     }
@@ -76153,6 +76210,7 @@ async function saveEditModal() {
         : Array.isArray(res?.items) ? res.items
         : Array.isArray(res) ? res
         : payrollState.calendars;
+      renderPayrollPreviewCalendarOptions();
       renderPayrollCalendars();
     } catch (e) {
       console.warn("Failed to load payroll calendars:", e);
@@ -84144,6 +84202,14 @@ window.openPayrollStatutoryReturn=
           await loadPayrollEmployeePaySetup(
             employeeId
           );
+        })
+      );
+
+    $("payrollPreviewCalendarId")
+      ?.addEventListener(
+        "change",
+        runPayrollAction(async () => {
+          await renderPayrollPayslipPreview();
         })
       );
 

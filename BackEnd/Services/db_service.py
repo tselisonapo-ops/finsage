@@ -156685,7 +156685,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         - Uses the same payroll calculation engines as the
         actual payroll calculation.
         """
-
+        schema=self.company_schema(company_id)
         employee_id = int(employee["id"])
 
         name = " ".join(
@@ -156739,23 +156739,54 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         # ------------------------------------------------------------
-        # Preview facts
+        # Payroll run / attendance facts
         #
-        # No payroll_run_id exists in preview mode, so use a
-        # neutral preview fact set.
+        # Attendance inputs are linked to payroll_runs, not directly
+        # to payroll calendars. The selected calendar therefore maps
+        # to the existing payroll run, which supplies the attendance
+        # context used by the normal payroll engine.
         # ------------------------------------------------------------
 
-        facts = {
-            "eligible": True,
-            "eligible_days": Decimal("0"),
-            "worked_days": Decimal("0"),
-            "paid_leave_days": Decimal("0"),
-            "unpaid_days": Decimal("0"),
-            "worked_hours": Decimal("0"),
-            "scheduled_hours": Decimal("0"),
-            "unpaid_hours": Decimal("0"),
-            "proration_factor": Decimal("1"),
-        }
+        preview_payroll_run = self.fetch_one(
+            f"""
+            SELECT
+                id,
+                company_id,
+                pay_calendar_id,
+                period_start,
+                period_end,
+                payment_date,
+                status
+            FROM {schema}.payroll_runs
+            WHERE company_id=%s
+            AND pay_calendar_id=%s
+            ORDER BY id DESC
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                run["calendar_id"],
+            ),
+        )
+
+        if not preview_payroll_run:
+            raise ValueError(
+                "No payroll run exists for the selected "
+                "payroll calendar. Create the payroll run "
+                "before capturing attendance."
+            )
+
+        preview_payroll_run_id = int(
+            preview_payroll_run["id"]
+        )
+
+        facts = self.payroll_employee_period_facts(
+            company_id,
+            preview_payroll_run_id,
+            employee,
+            setup,
+            run=run,
+        )
 
         # ------------------------------------------------------------
         # Basic pay
