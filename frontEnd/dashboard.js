@@ -76210,6 +76210,17 @@ async function saveEditModal() {
         : Array.isArray(res?.items) ? res.items
         : Array.isArray(res) ? res
         : payrollState.calendars;
+
+      console.log(
+        "PAYROLL CALENDARS LOADED:",
+        payrollState.calendars
+      );
+
+      console.log(
+        "PAYROLL PERIOD SELECT:",
+        $("payrollPreviewCalendarId")
+      );
+
       renderPayrollPreviewCalendarOptions();
       renderPayrollCalendars();
     } catch (e) {
