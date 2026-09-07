@@ -164633,6 +164633,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         company_id: int,
         periods: int = None,
         from_month=None,
+        from_date=None,
     ):
         import calendar as cal_mod
         from datetime import date, timedelta
@@ -164689,8 +164690,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
 
         # If the configured end day is earlier than the
-        # start day, the period must end in the following
-        # month unless the user explicitly configured that.
+        # configured start day, the period ends in the
+        # following month unless explicitly configured otherwise.
         if end_day < start_day and end_offset == 0:
             end_offset = 1
 
@@ -164705,28 +164706,25 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "periods must be between 1 and 60"
             )
 
-        # --------------------------------------------------
-        # Determine first period anchor
-        # --------------------------------------------------
+        anchor_value = (
+            from_date
+            if from_date
+            else from_month
+            if from_month
+            else settings.get("payroll_start_date")
+        )
 
-        if from_month:
-            if isinstance(from_month, str):
+        if anchor_value:
+            if isinstance(anchor_value, str):
                 anchor = date.fromisoformat(
-                    from_month[:10]
+                    anchor_value[:10]
                 )
+            elif isinstance(anchor_value, date):
+                anchor = anchor_value
             else:
-                anchor = from_month
-
-        elif settings.get("payroll_start_date"):
-            value = settings["payroll_start_date"]
-
-            if isinstance(value, str):
-                anchor = date.fromisoformat(
-                    value[:10]
+                raise ValueError(
+                    "Invalid payroll calendar start date"
                 )
-            else:
-                anchor = value
-
         else:
             today = date.today()
             anchor = date(
@@ -164734,12 +164732,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 today.month,
                 1,
             )
-
-        anchor = date(
-            anchor.year,
-            anchor.month,
-            1,
-        )
 
         # --------------------------------------------------
         # Holiday adjustment configuration
@@ -164759,41 +164751,55 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         elif adjustment == "nearest_workday":
             h_direction = "nearest"
 
-        # --------------------------------------------------
-        # Supersede future OPEN calendars
-        #
-        # Never touch locked/processed/closed calendars.
-        # --------------------------------------------------
+        generated_end_reference = anchor
+
+        temp_start = anchor
+
+        for _ in range(periods):
+            temp_end_month = self._payroll_add_months(
+                date(
+                    temp_start.year,
+                    temp_start.month,
+                    1,
+                ),
+                end_offset,
+            )
+
+            temp_end = self._payroll_safe_month_day(
+                temp_end_month.year,
+                temp_end_month.month,
+                end_day,
+            )
+
+            generated_end_reference = temp_end
+
+            temp_start = temp_end + timedelta(days=1)
 
         self.execute_sql(
             f"""
             UPDATE {schema}.payroll_pay_calendars
-            SET status = 'superseded'
+            SET status = 'closed'
             WHERE company_id = %s
             AND status = 'open'
-            AND period_end >= %s;
+            AND period_end >= %s
+            AND period_start <= %s
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.payroll_runs pr
+                WHERE pr.calendar_id =
+                        payroll_pay_calendars.id
+            );
             """,
             (
                 company_id,
                 anchor,
+                generated_end_reference,
             ),
         )
 
         generated = []
 
-        # --------------------------------------------------
-        # IMPORTANT:
-        #
-        # The first period uses the configured start day.
-        # Every following period starts immediately after
-        # the previous period ends.
-        # --------------------------------------------------
-
-        raw_period_start = self._payroll_safe_month_day(
-            anchor.year,
-            anchor.month,
-            start_day,
-        )
+        raw_period_start = anchor
 
         for index in range(periods):
 
@@ -164816,10 +164822,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 end_day,
             )
 
-            if raw_period_end < raw_period_start:
-                raise ValueError(
-                    "Generated period end cannot be before "
-                    "period start"
+            while raw_period_end < raw_period_start:
+                end_month = self._payroll_add_months(
+                    end_month,
+                    1,
+                )
+
+                raw_period_end = self._payroll_safe_month_day(
+                    end_month.year,
+                    end_month.month,
+                    end_day,
                 )
 
             # --------------------------------------------------
@@ -164850,6 +164862,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             else:
                 period_end = raw_period_end
 
+            if period_end < period_start:
+                raise ValueError(
+                    "Generated period end cannot be before "
+                    "period start"
+                )
+
             # --------------------------------------------------
             # Calculate payment date
             # --------------------------------------------------
@@ -164870,8 +164888,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             # --------------------------------------------------
             # Weekend adjustment
-            #
-            # "none" means do not alter the payment date.
             # --------------------------------------------------
 
             if adjustment in {
@@ -164941,7 +164957,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 )
 
             # --------------------------------------------------
-            # Insert calendar
+            # Insert / update calendar
             # --------------------------------------------------
 
             row = self.fetch_one(
@@ -164991,13 +165007,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     )
 
             generated.append(row)
-
-            # --------------------------------------------------
-            # NEXT PERIOD:
-            #
-            # The next period starts the day after the
-            # previous RAW period ends.
-            # --------------------------------------------------
 
             raw_period_start = (
                 raw_period_end + timedelta(days=1)

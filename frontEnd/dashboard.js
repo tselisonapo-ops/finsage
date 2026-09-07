@@ -76108,33 +76108,11 @@ async function saveEditModal() {
         settings.payment_adjustment;
     }
 
-    // FIX 2 — Safe month formatting.
-    // The backend may return payroll_start_date as various formats:
-    //   "2025-07-01",  "2025-07-01T00:00:00",
-    //   a Python date object,  or even null.
-    // We need a reliable "yyyy-MM" for <input type="month">.
-    if ($("payrollFirstPeriodMonth")) {
-      const val = settings.payroll_start_date;
-      if (val) {
-        const s = String(val);
-        // Try ISO "2025-07-01" or "2025-07-01T..."
-        const isoMatch = s.match(/^(\d{4})-(\d{2})/);
-        if (isoMatch) {
-          $("payrollFirstPeriodMonth").value =
-            isoMatch[1] + "-" + isoMatch[2];
-        }
-        // If not ISO, try parsing as Date
-        else {
-          const d = new Date(s);
-          if (!isNaN(d.getTime())) {
-            const mm = String(d.getMonth() + 1).padStart(2, "0");
-            const yyyy = d.getFullYear();
-            $("payrollFirstPeriodMonth").value =
-              yyyy + "-" + mm;
-          }
-        }
-      }
-      // If no value at all, leave blank — don't set anything.
+    // Payroll calendar start date.
+    // This must be YYYY-MM-DD because the field is <input type="date">.
+    if ($("payrollFirstPeriodDate")) {
+      $("payrollFirstPeriodDate").value =
+        payrollToInputDate(settings.payroll_start_date);
     }
 
     renderPayrollSchedulePreview();
@@ -82542,8 +82520,8 @@ window.openPayrollStatutoryReturn=
       throw new Error("No active company selected.");
     }
 
-    const firstPeriodMonth =
-      $("payrollFirstPeriodMonth")?.value || "";
+    const firstPeriodDate =
+      $("payrollFirstPeriodDate")?.value || "";
 
     const res = await apiFetch(
       ENDPOINTS.payroll.generateCalendars(companyId),
@@ -82551,9 +82529,7 @@ window.openPayrollStatutoryReturn=
         method: "POST",
         body: JSON.stringify({
           periods: 12,
-          from_month: firstPeriodMonth
-            ? `${firstPeriodMonth}-01`
-            : null,
+          from_date: firstPeriodDate || null,
         }),
       }
     );
@@ -82599,8 +82575,8 @@ window.openPayrollStatutoryReturn=
       }
     }
 
-    const firstPeriodMonth =
-      $("payrollFirstPeriodMonth")?.value || "";
+    const firstPeriodDate =
+      $("payrollFirstPeriodDate")?.value || "";
 
     const payload = {
       default_frequency:
@@ -82620,9 +82596,7 @@ window.openPayrollStatutoryReturn=
         $("payrollPaymentAdjustment")?.value || "none",
 
       payroll_start_date:
-        firstPeriodMonth
-          ? `${firstPeriodMonth}-01`
-          : null,
+        firstPeriodDate || null,
 
       calendar_generation_months: 12,
 
@@ -84415,7 +84389,7 @@ window.openPayrollStatutoryReturn=
         "payrollPaymentDayRule",
         "payrollPaymentMonthOffset",
         "payrollPaymentAdjustment",
-        "payrollFirstPeriodMonth",
+        "payrollFirstPeriodDate",
       ].forEach(id => {
         $(id)?.addEventListener(
           "change",
