@@ -154725,19 +154725,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         side: str,
     ):
         """
-        Calculate UIF from the employee's gross remuneration
-        for the current payroll period.
+        Calculate UIF for the current payroll period.
+
+        UIF is calculated at the applicable employee/employer rate,
+        subject to the statutory monthly remuneration ceiling and
+        the applicable contribution cap.
         """
 
         if not tax_context:
             return Decimal("0.00")
 
-        if (
-            str(
-                tax_context.get("authority_code") or ""
-            ).upper()
-            != "SARS"
-        ):
+        authority_code = str(
+            tax_context.get("authority_code") or ""
+        ).strip().upper()
+
+        if authority_code != "SARS":
             return Decimal("0.00")
 
         tax_year_id = tax_context.get("tax_year_id")
@@ -154749,20 +154751,36 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             int(tax_year_id)
         )
 
+        side = str(side or "").strip().lower()
+
         if side == "employee":
             rate = _payroll_decimal(
                 parameters.get("uif_rate_employee")
             )
+
+            contribution_cap = _payroll_money(
+                parameters.get(
+                    "uif_employee_contribution_cap"
+                )
+            )
+
         elif side == "employer":
             rate = _payroll_decimal(
                 parameters.get("uif_rate_employer")
             )
+
+            contribution_cap = _payroll_money(
+                parameters.get(
+                    "uif_employer_contribution_cap"
+                )
+            )
+
         else:
             raise ValueError(
                 f"Unsupported UIF side: {side}"
             )
 
-        remuneration_ceiling = _payroll_decimal(
+        remuneration_ceiling = _payroll_money(
             parameters.get(
                 "uif_monthly_remuneration_ceiling"
             )
@@ -154773,15 +154791,28 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if remuneration <= 0 or rate <= 0:
             return Decimal("0.00")
 
+        # UIF is only calculated on remuneration up to
+        # the statutory monthly remuneration ceiling.
         if remuneration_ceiling > 0:
-            remuneration = min(
+            uif_remuneration = min(
                 remuneration,
                 remuneration_ceiling,
             )
+        else:
+            uif_remuneration = remuneration
 
-        return _payroll_money(
-            remuneration * rate
+        contribution = _payroll_money(
+            uif_remuneration * rate
         )
+
+        # Apply the statutory contribution cap explicitly.
+        if contribution_cap > 0:
+            contribution = min(
+                contribution,
+                contribution_cap,
+            )
+
+        return _payroll_money(contribution)
 
     def _payroll_period_input_lines(
         self,
@@ -156417,6 +156448,684 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payroll_run_id,
             employee_id,
         )
+
+    def payroll_employee_payslip_lite_preview(
+        self,
+        company_id: int,
+        employee_id: int,
+        period_end,
+        payment_date=None,
+        frequency="monthly",
+    ):
+        """
+        Return a backend-calculated Payslip Lite preview.
+
+        No payroll records are created or modified.
+        """
+
+        company_id = int(company_id)
+        employee_id = int(employee_id)
+
+        employee = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {self.company_schema(company_id)}.payroll_employees
+            WHERE company_id=%s
+            AND id=%s
+            """,
+            (
+                company_id,
+                employee_id,
+            ),
+        )
+
+        if not employee:
+            raise ValueError(
+                "Employee not found."
+            )
+
+        period_end = (
+            period_end
+            if isinstance(period_end, date)
+            else date.fromisoformat(
+                str(period_end)[:10]
+            )
+        )
+
+        if payment_date is None:
+            payment_date = period_end
+
+        if not isinstance(payment_date, date):
+            payment_date = date.fromisoformat(
+                str(payment_date)[:10]
+            )
+
+        # ------------------------------------------------------------
+        # Tax context
+        # ------------------------------------------------------------
+
+        tax_profile = (
+            self._payroll_tax_profile_for_run(
+                company_id,
+                employee_id,
+                payment_date,
+            )
+            or {}
+        )
+
+        authority_code = str(
+            tax_profile.get("authority_code")
+            or "SARS"
+        ).strip().upper()
+
+        tax_context = self.payroll_tax_context(
+            company_id=company_id,
+            authority_code=authority_code,
+            period_end=period_end,
+        )
+
+        if not tax_context:
+            raise ValueError(
+                "No applicable payroll tax context was found."
+            )
+
+        # ------------------------------------------------------------
+        # Minimal run context
+        #
+        # This is NOT saved as a payroll run.
+        # It simply gives the existing calculation engine the
+        # period information it expects.
+        # ------------------------------------------------------------
+
+        run = {
+            "period_start": period_end.replace(
+                day=1
+            ),
+            "period_end": period_end,
+            "payment_date": payment_date,
+            "frequency": frequency,
+        }
+
+        # ------------------------------------------------------------
+        # Calculate
+        # ------------------------------------------------------------
+
+        result = (
+            self._payroll_calculate_employee_preview(
+                company_id=company_id,
+                run=run,
+                employee=employee,
+                tax_context=tax_context,
+            )
+        )
+
+        return result
+
+    def _payroll_calculate_employee_preview(
+        self,
+        company_id: int,
+        run: dict,
+        employee: dict,
+        tax_context: dict,
+    ) -> dict:
+        """
+        Calculate one employee for preview purposes.
+
+        IMPORTANT:
+        - Does not create a payroll run.
+        - Does not save payroll_run_employees.
+        - Does not save payroll_run_lines.
+        - Uses the same payroll calculation engines as the
+        actual payroll calculation.
+        """
+
+        employee_id = int(employee["id"])
+
+        name = " ".join(
+            filter(
+                None,
+                [
+                    employee.get("first_name"),
+                    employee.get("last_name"),
+                ],
+            )
+        )
+
+        # ------------------------------------------------------------
+        # Pay Setup
+        # ------------------------------------------------------------
+
+        setup = self.payroll_employee_pay_setup_for_period(
+            company_id,
+            employee_id,
+            run["period_end"],
+        )
+
+        if not setup:
+            return {
+                "skipped": True,
+                "employee_id": employee_id,
+                "employee_no": employee.get("employee_no"),
+                "employee_name": name,
+                "reason": "No effective pay setup",
+            }
+
+        # ------------------------------------------------------------
+        # Contract
+        # ------------------------------------------------------------
+
+        contract = self._payroll_contract_for_period(
+            company_id,
+            employee_id,
+            run["period_start"],
+            run["period_end"],
+        )
+
+        # ------------------------------------------------------------
+        # Tax profile
+        # ------------------------------------------------------------
+
+        tax_profile = self._payroll_tax_profile_for_run(
+            company_id,
+            employee_id,
+            run["payment_date"],
+        )
+
+        # ------------------------------------------------------------
+        # Preview facts
+        #
+        # No payroll_run_id exists in preview mode, so use a
+        # neutral preview fact set.
+        # ------------------------------------------------------------
+
+        facts = {
+            "eligible": True,
+            "eligible_days": Decimal("0"),
+            "worked_days": Decimal("0"),
+            "paid_leave_days": Decimal("0"),
+            "unpaid_days": Decimal("0"),
+            "worked_hours": Decimal("0"),
+            "scheduled_hours": Decimal("0"),
+            "unpaid_hours": Decimal("0"),
+            "proration_factor": Decimal("1"),
+        }
+
+        # ------------------------------------------------------------
+        # Basic pay
+        # ------------------------------------------------------------
+
+        basic_result = self.payroll_calculate_basic_pay(
+            setup,
+            facts,
+        )
+
+        basic = _payroll_money(
+            basic_result.get(
+                "prorated_basic_amount"
+            )
+            or 0
+        )
+
+        # ------------------------------------------------------------
+        # Pay Setup lines
+        # ------------------------------------------------------------
+
+        setup_lines = self._payroll_setup_lines(
+            setup,
+            basic,
+            tax_context,
+        )
+
+        earning_lines = list(
+            setup_lines.get("earnings") or []
+        )
+
+        deduction_lines = list(
+            setup_lines.get("deductions") or []
+        )
+
+        benefit_lines = list(
+            setup_lines.get("benefits") or []
+        )
+
+        contribution_lines = list(
+            setup_lines.get("contributions") or []
+        )
+
+        # ------------------------------------------------------------
+        # Basic earning
+        #
+        # _payroll_setup_lines() may already add BASIC.
+        # Do not add another BASIC here.
+        # ------------------------------------------------------------
+
+        # ------------------------------------------------------------
+        # Gross
+        # ------------------------------------------------------------
+
+        gross = _payroll_money(
+            sum(
+                (
+                    _payroll_decimal(
+                        x.get("amount")
+                    )
+                    for x in earning_lines
+                ),
+                Decimal("0"),
+            )
+        )
+
+        # ------------------------------------------------------------
+        # UIF
+        #
+        # Uses the existing backend UIF calculator.
+        # Ceiling and contribution cap remain DB-driven.
+        # ------------------------------------------------------------
+
+        uif_employee = Decimal("0.00")
+        uif_employer = Decimal("0.00")
+
+        if (
+            str(
+                tax_context.get("authority_code")
+                or ""
+            ).upper()
+            == "SARS"
+        ):
+            uif_employee = self.payroll_calculate_uif(
+                tax_context=tax_context,
+                remuneration=gross,
+                side="employee",
+            )
+
+            uif_employer = self.payroll_calculate_uif(
+                tax_context=tax_context,
+                remuneration=gross,
+                side="employer",
+            )
+
+        if uif_employee > 0:
+            deduction_lines.append(
+                {
+                    "item_type": "deduction",
+                    "item_id": None,
+                    "code": "UIF_EMP",
+                    "name": "UIF Employee Deduction",
+                    "amount": uif_employee,
+                    "quantity": None,
+                    "rate": None,
+                    "percentage": None,
+                    "taxable": False,
+                    "pensionable": False,
+                    "source_type": "statutory",
+                    "source_id": None,
+                    "gl_account_code": None,
+                    "offset_account_code": None,
+                    "metadata": {
+                        "authority_code": "SARS",
+                        "calculation": "statutory_uif",
+                    },
+                }
+            )
+
+        if uif_employer > 0:
+            contribution_lines.append(
+                {
+                    "item_type": "contribution",
+                    "item_id": None,
+                    "code": "UIF_ER",
+                    "name": "UIF Employer Contribution",
+                    "amount": uif_employer,
+                    "quantity": None,
+                    "rate": None,
+                    "percentage": None,
+                    "taxable": False,
+                    "pensionable": False,
+                    "source_type": "statutory",
+                    "source_id": None,
+                    "gl_account_code": None,
+                    "offset_account_code": None,
+                    "metadata": {
+                        "authority_code": "SARS",
+                        "calculation": "statutory_uif",
+                    },
+                }
+            )
+
+        # ------------------------------------------------------------
+        # Taxable earnings
+        # ------------------------------------------------------------
+
+        taxable_earnings = _payroll_money(
+            sum(
+                (
+                    _payroll_decimal(
+                        x.get("amount")
+                    )
+                    for x in earning_lines
+                    if x.get("taxable")
+                ),
+                Decimal("0"),
+            )
+        )
+
+        # ------------------------------------------------------------
+        # Taxable benefits
+        # ------------------------------------------------------------
+
+        taxable_benefits = _payroll_money(
+            sum(
+                (
+                    _payroll_decimal(
+                        x.get("amount")
+                    )
+                    for x in benefit_lines
+                    if x.get("taxable")
+                ),
+                Decimal("0"),
+            )
+        )
+
+        taxable_income = _payroll_money(
+            taxable_earnings
+            + taxable_benefits
+        )
+
+        # ------------------------------------------------------------
+        # PAYE
+        # ------------------------------------------------------------
+
+        tax_treatment = (
+            setup.get("tax_treatment")
+            or "standard"
+        )
+
+        if (
+            tax_treatment == "manual"
+            or tax_profile.get(
+                "calculation_method"
+            ) == "manual"
+        ):
+
+            paye = _payroll_money(
+                setup.get("manual_paye_amount")
+                if setup.get(
+                    "manual_paye_amount"
+                ) not in (None, "")
+                else tax_profile.get(
+                    "manual_paye_amount"
+                )
+            )
+
+            tax_result = {
+                "paye": paye,
+                "authority_code":
+                    tax_context.get(
+                        "authority_code"
+                    ),
+                "tax_year_label":
+                    tax_context.get(
+                        "tax_year_label"
+                    ),
+                "method": "manual",
+            }
+
+        elif (
+            tax_treatment == "exempt"
+            or tax_profile.get("paye_exempt")
+            or tax_profile.get(
+                "calculation_method"
+            ) == "exempt"
+        ):
+
+            paye = Decimal("0.00")
+
+            tax_result = {
+                "paye": paye,
+                "authority_code":
+                    tax_context.get(
+                        "authority_code"
+                    ),
+                "tax_year_label":
+                    tax_context.get(
+                        "tax_year_label"
+                    ),
+                "method": "exempt",
+            }
+
+        else:
+
+            tax_result = self.payroll_calculate_paye(
+                tax_context=tax_context,
+                taxable_income=taxable_income,
+                frequency=run["frequency"],
+                tax_profile=tax_profile,
+            )
+
+            paye = _payroll_money(
+                tax_result.get("paye")
+            )
+
+        # ------------------------------------------------------------
+        # Pensionable pay
+        # ------------------------------------------------------------
+
+        pensionable_pay = _payroll_money(
+            sum(
+                (
+                    _payroll_decimal(
+                        x.get("amount")
+                    )
+                    for x in earning_lines
+                    if x.get("pensionable")
+                ),
+                Decimal("0"),
+            )
+        )
+
+        # ------------------------------------------------------------
+        # Defined contributions
+        # ------------------------------------------------------------
+
+        dc_deductions, dc_contributions = (
+            self.payroll_defined_contribution_lines(
+                company_id,
+                employee_id,
+                run["period_start"],
+                run["period_end"],
+                pensionable_pay,
+            )
+        )
+
+        deduction_lines.extend(
+            dc_deductions
+        )
+
+        contribution_lines.extend(
+            dc_contributions
+        )
+
+        # ------------------------------------------------------------
+        # Employee deductions
+        # ------------------------------------------------------------
+
+        employee_deductions = _payroll_money(
+            sum(
+                (
+                    _payroll_decimal(
+                        x.get("amount")
+                    )
+                    for x in deduction_lines
+                ),
+                Decimal("0"),
+            )
+        )
+
+        # ------------------------------------------------------------
+        # Employer contributions
+        # ------------------------------------------------------------
+
+        employer_contributions = _payroll_money(
+            sum(
+                (
+                    _payroll_decimal(
+                        x.get("amount")
+                    )
+                    for x in contribution_lines
+                ),
+                Decimal("0"),
+            )
+        )
+
+        # ------------------------------------------------------------
+        # Totals
+        # ------------------------------------------------------------
+
+        total_deductions = _payroll_money(
+            employee_deductions
+            + paye
+        )
+
+        net_pay = _payroll_money(
+            gross
+            - total_deductions
+        )
+
+        employer_cost = _payroll_money(
+            gross
+            + employer_contributions
+        )
+
+        if net_pay < 0:
+            raise ValueError(
+                f"Total deductions exceed gross pay for "
+                f"{employee.get('employee_no')} {name}."
+            )
+
+        # ------------------------------------------------------------
+        # Add PAYE as a display line
+        # ------------------------------------------------------------
+
+        if paye > 0:
+            deduction_lines.append(
+                {
+                    "item_type": "deduction",
+                    "item_id": None,
+                    "code": "PAYE",
+                    "name": "PAYE",
+                    "amount": paye,
+                    "quantity": None,
+                    "rate": None,
+                    "percentage": None,
+                    "taxable": False,
+                    "pensionable": False,
+                    "source_type": "tax_engine",
+                    "source_id": None,
+                    "gl_account_code": None,
+                    "offset_account_code": None,
+                    "metadata": {
+                        "method":
+                            tax_result.get(
+                                "method"
+                            ),
+                        "taxable_income":
+                            str(taxable_income),
+                    },
+                }
+            )
+
+        # ------------------------------------------------------------
+        # Return complete preview calculation
+        # ------------------------------------------------------------
+
+        return {
+            "skipped": False,
+
+            "employee_id":
+                employee_id,
+
+            "employee_no":
+                employee.get("employee_no"),
+
+            "employee_name":
+                name,
+
+            "contract":
+                contract,
+
+            "setup":
+                setup,
+
+            "facts":
+                facts,
+
+            "basic":
+                basic,
+
+            "basic_result":
+                basic_result,
+
+            "earnings":
+                earning_lines,
+
+            "benefits":
+                benefit_lines,
+
+            "deductions":
+                deduction_lines,
+
+            "contributions":
+                contribution_lines,
+
+            "gross":
+                gross,
+
+            "taxable_earnings":
+                taxable_earnings,
+
+            "taxable_benefits":
+                taxable_benefits,
+
+            "taxable_income":
+                taxable_income,
+
+            "paye":
+                paye,
+
+            "uif_employee":
+                uif_employee,
+
+            "uif_employer":
+                uif_employer,
+
+            "total_deductions":
+                total_deductions,
+
+            "employer_contributions":
+                employer_contributions,
+
+            "net_pay":
+                net_pay,
+
+            "employer_cost":
+                employer_cost,
+
+            "tax_result":
+                tax_result,
+
+            "tax_authority_code":
+                tax_result.get(
+                    "authority_code"
+                ),
+
+            "tax_year_label":
+                tax_result.get(
+                    "tax_year_label"
+                ),
+
+            "calculation_message":
+                "Estimated from the current setup.",
+        }
 
     def _payroll_report_filters(
         self,
@@ -163331,7 +164040,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     AS liability_account_code,
 
                 dt.posting_account_type
-                    AS posting_account_type
+                    AS posting_account_type,
+
+                ct.expense_account_code
+                    AS expense_account_code,
+
+                ct.liability_account_code
+                    AS contribution_liability_account_code,
+
+                ct.offset_account_code
+                    AS offset_account_code
 
             FROM {schema}.payroll_employee_pay_setup_items i
 
@@ -163360,6 +164078,306 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             company_id,
             int(setup["id"]),
         ))
+
+        memberships = self.fetch_all(f"""
+            SELECT
+                m.id AS membership_id,
+                m.plan_id,
+                m.employee_id,
+                m.membership_number,
+                m.employee_percentage,
+                m.employer_percentage,
+                m.pensionable_percentage,
+
+                m.effective_from AS membership_effective_from,
+                m.effective_to AS membership_effective_to,
+
+                p.code AS plan_code,
+                p.name AS plan_name,
+                p.plan_type,
+
+                p.employee_deduction_type_id,
+                p.employer_contribution_type_id,
+
+                p.employee_contribution_percentage,
+                p.employer_contribution_percentage,
+
+                p.calculation_source,
+
+                dt.code AS deduction_code,
+                dt.name AS deduction_name,
+                dt.posting_account_code AS deduction_posting_account_code,
+                dt.liability_account_code AS deduction_liability_account_code,
+                dt.posting_account_type AS deduction_posting_account_type,
+
+                ct.code AS contribution_code,
+                ct.name AS contribution_name,
+                ct.expense_account_code AS contribution_expense_account_code,
+                ct.liability_account_code AS contribution_liability_account_code,
+                ct.offset_account_code AS contribution_offset_account_code
+
+            FROM {schema}.payroll_benefit_plan_members m
+
+            JOIN {schema}.payroll_benefit_plans p
+            ON p.id=m.plan_id
+            AND p.company_id=m.company_id
+
+            LEFT JOIN {schema}.payroll_deduction_types dt
+            ON dt.company_id=m.company_id
+            AND dt.id=p.employee_deduction_type_id
+
+            LEFT JOIN {schema}.payroll_employer_contribution_types ct
+            ON ct.company_id=m.company_id
+            AND ct.id=p.employer_contribution_type_id
+
+            WHERE m.company_id=%s
+            AND m.employee_id=%s
+            AND m.is_active=TRUE
+            AND p.is_active=TRUE
+
+            AND m.effective_from <= %s
+            AND (
+                m.effective_to IS NULL
+                OR m.effective_to >= %s
+            )
+
+            AND (
+                p.effective_from IS NULL
+                OR p.effective_from <= %s
+            )
+
+            AND (
+                p.effective_to IS NULL
+                OR p.effective_to >= %s
+            )
+
+            ORDER BY
+                m.effective_from,
+                m.id;
+        """, (
+            company_id,
+            employee_id,
+            period_end,
+            period_end,
+            period_end,
+            period_end,
+        ))
+
+        item_map = {}
+
+        for item in setup.get("items") or []:
+            key = (
+                str(item.get("item_type") or ""),
+                int(item.get("item_id") or 0),
+            )
+
+            item["source"] = "pay_setup"
+
+            item_map[key] = item
+
+        for member in memberships:
+
+            deduction_id = int(
+                member.get("employee_deduction_type_id") or 0
+            )
+
+            contribution_id = int(
+                member.get("employer_contribution_type_id") or 0
+            )
+
+            employee_pct = (
+                member.get("employee_percentage")
+                if member.get("employee_percentage") is not None
+                else member.get(
+                    "employee_contribution_percentage"
+                )
+            )
+
+            employer_pct = (
+                member.get("employer_percentage")
+                if member.get("employer_percentage") is not None
+                else member.get(
+                    "employer_contribution_percentage"
+                )
+            )
+
+            # ---------------------------------------------------------
+            # Employee benefit contribution
+            # ---------------------------------------------------------
+
+            if deduction_id:
+
+                key = ("deduction", deduction_id)
+
+                existing = item_map.get(key)
+
+                item_map[key] = {
+                    "id": (
+                        existing.get("id")
+                        if existing
+                        else None
+                    ),
+
+                    "company_id": company_id,
+                    "pay_setup_id": setup.get("id"),
+                    "employee_id": employee_id,
+
+                    "item_type": "deduction",
+                    "item_id": deduction_id,
+
+                    "code":
+                        member.get("deduction_code"),
+
+                    "name":
+                        member.get("deduction_name"),
+
+                    "calculation_method":
+                        "percentage",
+
+                    "amount": 0,
+
+                    "percentage": (
+                        employee_pct
+                        if employee_pct is not None
+                        else 0
+                    ),
+
+                    "quantity": None,
+                    "rate": None,
+                    "calculated_amount": None,
+
+                    "effective_from":
+                        member.get(
+                            "membership_effective_from"
+                        ),
+
+                    "effective_to":
+                        member.get(
+                            "membership_effective_to"
+                        ),
+
+                    "is_active": True,
+
+                    "posting_account_code":
+                        member.get(
+                            "deduction_posting_account_code"
+                        ),
+
+                    "liability_account_code":
+                        member.get(
+                            "deduction_liability_account_code"
+                        ),
+
+                    "posting_account_type":
+                        member.get(
+                            "deduction_posting_account_type"
+                        ),
+
+                    "source": "benefit_plan",
+
+                    "source_plan_id":
+                        member.get("plan_id"),
+
+                    "source_plan_code":
+                        member.get("plan_code"),
+
+                    "source_plan_name":
+                        member.get("plan_name"),
+
+                    "source_membership_id":
+                        member.get("membership_id"),
+                }
+
+            # ---------------------------------------------------------
+            # Employer benefit contribution
+            # ---------------------------------------------------------
+
+            if contribution_id:
+
+                key = ("contribution", contribution_id)
+
+                existing = item_map.get(key)
+
+                item_map[key] = {
+                    "id": (
+                        existing.get("id")
+                        if existing
+                        else None
+                    ),
+
+                    "company_id": company_id,
+                    "pay_setup_id": setup.get("id"),
+                    "employee_id": employee_id,
+
+                    "item_type": "contribution",
+                    "item_id": contribution_id,
+
+                    "code":
+                        member.get("contribution_code"),
+
+                    "name":
+                        member.get("contribution_name"),
+
+                    "calculation_method":
+                        "percentage",
+
+                    "amount": 0,
+
+                    "percentage": (
+                        employer_pct
+                        if employer_pct is not None
+                        else 0
+                    ),
+
+                    "quantity": None,
+                    "rate": None,
+                    "calculated_amount": None,
+
+                    "effective_from":
+                        member.get(
+                            "membership_effective_from"
+                        ),
+
+                    "effective_to":
+                        member.get(
+                            "membership_effective_to"
+                        ),
+
+                    "is_active": True,
+
+                    "expense_account_code":
+                        member.get(
+                            "contribution_expense_account_code"
+                        ),
+
+                    "liability_account_code":
+                        member.get(
+                            "contribution_liability_account_code"
+                        ),
+
+                    "offset_account_code":
+                        member.get(
+                            "contribution_offset_account_code"
+                        ),
+
+                    "source": "benefit_plan",
+
+                    "source_plan_id":
+                        member.get("plan_id"),
+
+                    "source_plan_code":
+                        member.get("plan_code"),
+
+                    "source_plan_name":
+                        member.get("plan_name"),
+
+                    "source_membership_id":
+                        member.get("membership_id"),
+                }
+
+        setup["items"] = list(item_map.values())
+
+        setup["benefit_plan_memberships"] = memberships
 
         return setup
 

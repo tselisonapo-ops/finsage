@@ -2443,6 +2443,9 @@ const ENDPOINTS = {
     run: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}`,
 
+    payslipLitePreview: (companyId, employeeId, params = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/payslip-lite/preview${params ? `?${params}` : ""}`,
+
     calculateRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/calculate`,
 
@@ -75475,326 +75478,598 @@ async function saveEditModal() {
     return 0;
   }
 
-  function renderPayrollPayslipPreview() {
-    const employee=payrollPreviewSelectedEmployee();
+  function calculatePreviewUif(remuneration, side = "employee") {
+    remuneration = Number(remuneration || 0);
 
-    const employeeName=employee
-      ?[employee.first_name,employee.last_name]
-        .filter(Boolean)
-        .join(" ")
-      :"Select employee";
+    if (remuneration <= 0) {
+      return 0;
+    }
+
+    const ctx = payrollState.taxContext;
+
+    if (!ctx) {
+      return 0;
+    }
+
+    const authority = String(
+      ctx.authority_code ||
+      ""
+    ).trim().toUpperCase();
+
+    if (authority !== "SARS") {
+      return 0;
+    }
+
+    const rateKey =
+      side === "employer"
+        ? "uif_rate_employer"
+        : "uif_rate_employee";
+
+    const capKey =
+      side === "employer"
+        ? "uif_employer_contribution_cap"
+        : "uif_employee_contribution_cap";
+
+    const rate = getTaxParam(
+      ctx,
+      rateKey,
+      0.01
+    );
+
+    const remunerationCeiling = getTaxParam(
+      ctx,
+      "uif_monthly_remuneration_ceiling",
+      17712
+    );
+
+    const contributionCap = getTaxParam(
+      ctx,
+      capKey,
+      177.12
+    );
+
+    if (rate <= 0) {
+      return 0;
+    }
+
+    const cappedRemuneration =
+      remunerationCeiling > 0
+        ? Math.min(
+            remuneration,
+            remunerationCeiling
+          )
+        : remuneration;
+
+    let contribution =
+      cappedRemuneration * rate;
+
+    if (contributionCap > 0) {
+      contribution =
+        Math.min(
+          contribution,
+          contributionCap
+        );
+    }
+
+    return Math.round(
+      contribution * 100
+    ) / 100;
+  }
+
+  async function renderPayrollPayslipPreview() {
+    const employee = payrollPreviewSelectedEmployee();
+
+    const employeeName = employee
+      ? [employee.first_name, employee.last_name]
+          .filter(Boolean)
+          .join(" ")
+      : "Select employee";
 
     setTxt(
       "payrollPreviewEmployeeName",
-      employeeName||"Select employee"
+      employeeName || "Select employee"
     );
 
     setTxt(
       "payrollPreviewEmployeeNo",
-      employee?.employee_no||"—"
+      employee?.employee_no || "—"
     );
 
-    const payBasisLabels={
-      monthly:"Monthly Salary",
-      hourly:"Hours × Rate",
-      daily:"Days × Rate",
-      quantity:"Quantity × Rate",
-      commission_only:"Commission Only",
+    const payBasisLabels = {
+      monthly: "Monthly Salary",
+      hourly: "Hours × Rate",
+      daily: "Days × Rate",
+      quantity: "Quantity × Rate",
+      commission_only: "Commission Only",
     };
 
     setTxt(
       "payrollPreviewPayBasis",
-      payBasisLabels[$("payrollPayBasis")?.value]||
-        "Monthly Salary"
+      payBasisLabels[
+        $("payrollPayBasis")?.value
+      ] || "Monthly Salary"
     );
 
     setTxt(
       "payrollPreviewEffectiveFrom",
       $("payrollPaySetupEffectiveFrom")?.value
-        ?formatPayrollDate(
-          $("payrollPaySetupEffectiveFrom").value
-        )
-        :"—"
+        ? formatPayrollDate(
+            $("payrollPaySetupEffectiveFrom").value
+          )
+        : "—"
     );
 
-    const company=window.CURRENT_COMPANY||{};
+    const company = window.CURRENT_COMPANY || {};
 
     setTxt(
       "payrollPreviewCompanyName",
-      company.name||"Company"
+      company.name || "Company"
     );
 
     setTxt(
       "payrollPreviewCompanyDetails",
       [
         company.company_reg_no
-          ?`Reg No: ${company.company_reg_no}`
-          :"",
+          ? `Reg No: ${company.company_reg_no}`
+          : "",
         company.vat
-          ?`VAT No: ${company.vat}`
-          :"",
-      ].filter(Boolean).join(" | ")||
-        "Payroll preview"
+          ? `VAT No: ${company.vat}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" | ") || "Payroll preview"
     );
 
-    const companyLogo=$("payrollPreviewCompanyLogo");
-    const logoFallback=$("payrollPreviewLogoFallback");
-    const companyName=company.name||"Company";
+    // ------------------------------------------------------------
+    // Company logo
+    // ------------------------------------------------------------
 
-    const initials=companyName
-      .replace(/[^A-Za-z\s]/g,"")
+    const companyLogo =
+      $("payrollPreviewCompanyLogo");
+
+    const logoFallback =
+      $("payrollPreviewLogoFallback");
+
+    const companyName =
+      company.name || "Company";
+
+    const initials = companyName
+      .replace(/[^A-Za-z\s]/g, "")
       .split(/\s+/)
       .filter(Boolean)
-      .map(w=>w[0].toUpperCase())
-      .slice(0,3)
+      .map(w => w[0].toUpperCase())
+      .slice(0, 3)
       .join("");
 
-    if(companyLogo&&company.logo_url){
-      companyLogo.src=company.logo_url;
+    if (companyLogo && company.logo_url) {
+
+      companyLogo.src = company.logo_url;
+
       companyLogo.classList.remove("hidden");
+
       logoFallback?.classList.add("hidden");
-    }else{
+
+    } else {
+
       companyLogo?.classList.add("hidden");
 
-      if(logoFallback){
-        logoFallback.textContent=initials||"F";
-        logoFallback.classList.remove("hidden");
+      if (logoFallback) {
+        logoFallback.textContent =
+          initials || "F";
+
+        logoFallback.classList.remove(
+          "hidden"
+        );
       }
 
-      if(!company.logo_url&&cid()){
-        apiFetch(`/api/companies/${cid()}`)
-          .then(c=>{
-            if(c?.logo_url){
-              companyLogo.src=c.logo_url;
-              companyLogo.classList.remove("hidden");
-              logoFallback?.classList.add("hidden");
+      if (
+        !company.logo_url &&
+        cid()
+      ) {
 
-              if(window.CURRENT_COMPANY){
-                window.CURRENT_COMPANY.logo_url=
+        apiFetch(
+          `/api/companies/${cid()}`
+        )
+          .then(c => {
+
+            if (c?.logo_url) {
+
+              companyLogo.src =
+                c.logo_url;
+
+              companyLogo.classList.remove(
+                "hidden"
+              );
+
+              logoFallback?.classList.add(
+                "hidden"
+              );
+
+              if (window.CURRENT_COMPANY) {
+                window.CURRENT_COMPANY.logo_url =
                   c.logo_url;
               }
             }
           })
-          .catch(()=>{});
+          .catch(() => {});
       }
     }
 
-    const earnings=
-      collectPayrollPreviewLines("earning")
-        .filter(line=>line.code!=="BASIC");
+    // ------------------------------------------------------------
+    // No employee selected
+    // ------------------------------------------------------------
 
-    const deductions=
-      collectPayrollPreviewLines("deduction");
+    if (!employee?.id) {
 
-    const benefits=
-      collectPayrollPreviewLines("benefit");
-
-    const contributions=
-      collectPayrollPreviewLines("contribution");
-
-    const basicPay=payrollPreviewBasicPay();
-
-    const basicEarning={
-      code:"BASIC",
-      name:
-        $("payrollBasicEarningTypeId")
-          ?.selectedOptions?.[0]
-          ?.textContent?.trim()||
-        "Basic Salary",
-      amount:basicPay,
-    };
-
-    const earningLines=
-      basicPay>0
-        ?[basicEarning,...earnings]
-        :earnings;
-
-    const cashGross=earningLines.reduce(
-      (total,line)=>
-        total+Number(line.amount||0),
-      0
-    );
-
-    const taxableBenefits=benefits
-      .filter(line=>line.taxable!==false)
-      .reduce(
-        (total,line)=>
-          total+Number(line.amount||0),
-        0
+      setTxt(
+        "payrollPreviewPeriod",
+        "Current setup"
       );
 
-    const taxableEmployerContributions=
-      contributions
-        .filter(line=>
-          line.source==="benefit_plan"
+      renderPayrollPreviewLines(
+        "payrollPreviewEarnings",
+        []
+      );
+
+      renderPayrollPreviewLines(
+        "payrollPreviewDeductions",
+        []
+      );
+
+      setTxt(
+        "payrollPreviewGross",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewDeductionsTotal",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewNet",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewEmployerTotal",
+        payrollPreviewMoney(0)
+      );
+
+      return;
+    }
+
+    // ------------------------------------------------------------
+    // Determine preview period
+    // ------------------------------------------------------------
+
+    const effectiveFrom =
+      $("payrollPaySetupEffectiveFrom")?.value;
+
+    let periodEnd = effectiveFrom;
+
+    /*
+    * For the setup preview we need a period date.
+    *
+    * If a payroll period is already selected elsewhere in the
+    * payroll screen, use that instead.
+    */
+
+    if (
+      payrollState?.currentRun?.period_end
+    ) {
+      periodEnd =
+        payrollState.currentRun.period_end;
+    }
+
+    if (!periodEnd) {
+
+      const now = new Date();
+
+      periodEnd =
+        new Date(
+          now.getFullYear(),
+          now.getMonth() + 1,
+          0
         )
-        .reduce(
-          (total,line)=>
-            total+Number(line.amount||0),
-          0
-        );
-
-    const grossPay=
-      cashGross+
-      taxableBenefits;
-
-    const taxableRemuneration=
-      grossPay+
-      taxableEmployerContributions;
-
-    const payeTreatment=
-      $("payrollPayTaxTreatment")?.value||
-      "standard";
-
-    let calculatedPaye=0;
-
-    if(payeTreatment==="manual"){
-      calculatedPaye=Number(
-        $("payrollManualPayeAmount")?.value||0
-      );
-
-    }else if(payeTreatment==="exempt"){
-      calculatedPaye=0;
-
-    }else{
-      let taxableIncome=taxableRemuneration;
-
-      const pensionDeductions=
-        deductions.filter(d=>
-          /PENSION|RETIREMENT|RA_/i.test(
-            `${d.code||""} ${d.name||""}`
-          )
-        );
-
-      const employeeRetirementContribution=
-        pensionDeductions.reduce(
-          (sum,d)=>
-            sum+Number(d.amount||0),
-          0
-        );
-
-      const employerRetirementContribution=
-        contributions
-          .filter(c=>
-            c.source==="benefit_plan"&&
-            [
-              "defined_contribution",
-              "defined_benefit",
-            ].includes(
-              String(c.source_plan_type||"")
-            )
-          )
-          .reduce(
-            (sum,c)=>
-              sum+Number(c.amount||0),
-            0
-          );
-
-      const retirementDeduction=
-        employeeRetirementContribution+
-        employerRetirementContribution;
-
-      taxableIncome-=retirementDeduction;
-
-      if(taxableIncome<0){
-        taxableIncome=0;
-      }
-
-      calculatedPaye=
-        calculatePreviewPaye(taxableIncome);
+          .toISOString()
+          .slice(0, 10);
     }
 
-    const deductionLines=
-      deductions.filter(
-        d=>d.code!=="PAYE"
-      );
+    const paymentDate =
+      payrollState?.currentRun?.payment_date ||
+      periodEnd;
 
-    if(calculatedPaye>0){
-      deductionLines.push({
-        code:"PAYE",
-        name:"PAYE",
-        amount:calculatedPaye,
-      });
-    }
+    const frequency =
+      payrollState?.currentRun?.frequency ||
+      "monthly";
 
-    const payeNoteEl=
-      $("payrollPreviewPayeNote");
+    // ------------------------------------------------------------
+    // Show loading state
+    // ------------------------------------------------------------
 
-    if(payeNoteEl){
-      if(
-        payeTreatment==="standard"&&
-        calculatedPaye>0
-      ){
-        const ctx=payrollState.taxContext;
-        const authorityName=
-          ctx?.authority_code||"Tax Authority";
-        const yearLabel=
-          ctx?.tax_year_label||"current year";
-
-        payeNoteEl.textContent=
-          `Bracket-based (${authorityName}, ${yearLabel})`;
-
-        payeNoteEl.classList.remove("hidden");
-
-      }else if(payeTreatment==="exempt"){
-        payeNoteEl.textContent="PAYE exempt";
-        payeNoteEl.classList.remove("hidden");
-
-      }else if(payeTreatment==="manual"){
-        payeNoteEl.textContent="Manually entered";
-        payeNoteEl.classList.remove("hidden");
-
-      }else{
-        payeNoteEl.classList.add("hidden");
-      }
-    }
-
-    const totalDeductions=
-      deductionLines.reduce(
-        (total,line)=>
-          total+Number(line.amount||0),
-        0
-      );
-
-    const employerTotal=
-      contributions.reduce(
-        (total,line)=>
-          total+Number(line.amount||0),
-        0
-      );
-
-    const netPay=
-      grossPay-totalDeductions;
-
-    renderPayrollPreviewLines(
-      "payrollPreviewEarnings",
-      earningLines
-    );
-
-    renderPayrollPreviewLines(
-      "payrollPreviewDeductions",
-      deductionLines
+    setTxt(
+      "payrollPreviewPeriod",
+      "Calculating..."
     );
 
     setTxt(
       "payrollPreviewGross",
-      payrollPreviewMoney(grossPay)
+      "..."
     );
 
     setTxt(
       "payrollPreviewDeductionsTotal",
-      payrollPreviewMoney(totalDeductions)
+      "..."
     );
 
     setTxt(
       "payrollPreviewNet",
-      payrollPreviewMoney(netPay)
+      "..."
     );
 
     setTxt(
       "payrollPreviewEmployerTotal",
-      payrollPreviewMoney(employerTotal)
+      "..."
     );
+
+    // ------------------------------------------------------------
+    // Backend calculation
+    // ------------------------------------------------------------
+
+    try {
+
+      const params =
+        new URLSearchParams({
+          period_end: periodEnd,
+          payment_date: paymentDate,
+          frequency: frequency,
+        });
+
+        const result = await apiFetch(
+            ENDPOINT.payroll.payslipLitePreview(
+                cid(),
+                employee.id,
+                params.toString()
+            )
+        );
+
+      if (!result) {
+        throw new Error(
+          "No payroll preview was returned."
+        );
+      }
+
+      // ----------------------------------------------------------
+      // Employee
+      // ----------------------------------------------------------
+
+      setTxt(
+        "payrollPreviewEmployeeName",
+        result.employee_name ||
+          employeeName ||
+          "Select employee"
+      );
+
+      setTxt(
+        "payrollPreviewEmployeeNo",
+        result.employee_no ||
+          employee.employee_no ||
+          "—"
+      );
+
+      // ----------------------------------------------------------
+      // Pay basis
+      // ----------------------------------------------------------
+
+      setTxt(
+        "payrollPreviewPayBasis",
+        payBasisLabels[
+          result.setup?.pay_basis ||
+          $("payrollPayBasis")?.value
+        ] ||
+          "Monthly Salary"
+      );
+
+      // ----------------------------------------------------------
+      // Effective date
+      // ----------------------------------------------------------
+
+      setTxt(
+        "payrollPreviewEffectiveFrom",
+        result.setup?.effective_from
+          ? formatPayrollDate(
+              result.setup.effective_from
+            )
+          : effectiveFrom
+            ? formatPayrollDate(
+                effectiveFrom
+              )
+            : "—"
+      );
+
+      // ----------------------------------------------------------
+      // Period
+      // ----------------------------------------------------------
+
+      setTxt(
+        "payrollPreviewPeriod",
+        result.tax_year_label
+          ? result.tax_year_label
+          : "Current setup"
+      );
+
+      // ----------------------------------------------------------
+      // Earnings
+      // ----------------------------------------------------------
+
+      const earnings =
+        Array.isArray(result.earnings)
+          ? result.earnings
+          : [];
+
+      renderPayrollPreviewLines(
+        "payrollPreviewEarnings",
+        earnings
+      );
+
+      // ----------------------------------------------------------
+      // Deductions
+      // ----------------------------------------------------------
+
+      const deductions =
+        Array.isArray(result.deductions)
+          ? result.deductions
+          : [];
+
+      renderPayrollPreviewLines(
+        "payrollPreviewDeductions",
+        deductions
+      );
+
+      // ----------------------------------------------------------
+      // Totals
+      // ----------------------------------------------------------
+
+      const gross =
+        Number(result.gross || 0);
+
+      const totalDeductions =
+        Number(
+          result.total_deductions || 0
+        );
+
+      const netPay =
+        Number(result.net_pay || 0);
+
+      const employerTotal =
+        Number(
+          result.employer_contributions || 0
+        );
+
+      setTxt(
+        "payrollPreviewGross",
+        payrollPreviewMoney(gross)
+      );
+
+      setTxt(
+        "payrollPreviewDeductionsTotal",
+        payrollPreviewMoney(
+          totalDeductions
+        )
+      );
+
+      setTxt(
+        "payrollPreviewNet",
+        payrollPreviewMoney(netPay)
+      );
+
+      setTxt(
+        "payrollPreviewEmployerTotal",
+        payrollPreviewMoney(
+          employerTotal
+        )
+      );
+
+      // ----------------------------------------------------------
+      // PAYE note
+      // ----------------------------------------------------------
+
+      const payeNoteEl =
+        $("payrollPreviewPayeNote");
+
+      if (payeNoteEl) {
+
+        const method =
+          result.tax_result?.method;
+
+        const authority =
+          result.tax_authority_code ||
+          result.tax_result?.authority_code ||
+          "Tax Authority";
+
+        const year =
+          result.tax_year_label ||
+          result.tax_result?.tax_year_label ||
+          "current year";
+
+        if (method === "manual") {
+
+          payeNoteEl.textContent =
+            "Manually entered";
+
+          payeNoteEl.classList.remove(
+            "hidden"
+          );
+
+        } else if (method === "exempt") {
+
+          payeNoteEl.textContent =
+            "PAYE exempt";
+
+          payeNoteEl.classList.remove(
+            "hidden"
+          );
+
+        } else if (method) {
+
+          payeNoteEl.textContent =
+            `Backend calculated (${authority}, ${year})`;
+
+          payeNoteEl.classList.remove(
+            "hidden"
+          );
+
+        } else {
+
+          payeNoteEl.classList.add(
+            "hidden"
+          );
+        }
+      }
+
+    } catch (error) {
+
+      console.error(
+        "Payslip Lite preview failed:",
+        error
+      );
+
+      setTxt(
+        "payrollPreviewPeriod",
+        "Preview unavailable"
+      );
+
+      renderPayrollPreviewLines(
+        "payrollPreviewEarnings",
+        []
+      );
+
+      renderPayrollPreviewLines(
+        "payrollPreviewDeductions",
+        []
+      );
+
+      setTxt(
+        "payrollPreviewGross",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewDeductionsTotal",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewNet",
+        payrollPreviewMoney(0)
+      );
+
+      setTxt(
+        "payrollPreviewEmployerTotal",
+        payrollPreviewMoney(0)
+      );
+    }
   }
 
   function renderPayrollMasterSetup(){
