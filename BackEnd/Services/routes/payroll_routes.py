@@ -3467,7 +3467,8 @@ def api_payroll_employee_payslip(
         }),400 
 
 @payroll_bp.get(
-    "/companies/<int:company_id>/payroll/employees/<int:employee_id>/payslip-lite/preview"
+    "/api/companies/<int:company_id>/payroll/"
+    "employees/<int:employee_id>/payslip-lite/preview"
 )
 @require_auth
 def payroll_employee_payslip_lite_preview_route(
@@ -3521,7 +3522,6 @@ def payroll_employee_payslip_lite_preview_route(
         return jsonify({
             "error": "Unable to calculate Payslip Lite preview."
         }), 500
-
 
 @payroll_bp.route(
     "/api/companies/<int:company_id>/payroll/"
