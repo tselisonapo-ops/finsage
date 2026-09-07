@@ -151803,9 +151803,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             SELECT *
             FROM {schema}.payroll_pay_calendars
             WHERE company_id=%s
+            AND status IN ('open', 'locked', 'processed')
             ORDER BY period_start DESC, id DESC;
         """, (int(company_id),))
-
 
     def payroll_calendar_create(self, company_id: int, data: dict):
         schema = self.company_schema(company_id)
