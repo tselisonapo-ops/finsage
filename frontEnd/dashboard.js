@@ -77474,9 +77474,22 @@ async function saveEditModal() {
 
     if(tab==="employees"){
       renderPayrollEmployees();
+
+      loadPayrollCalendars().catch(error =>
+        showPayrollStatus(
+          error?.message ||
+          "Payroll periods could not be loaded.",
+          "error"
+        )
+      );
+
     }else if(tab==="calendars"){
-      loadPayrollCalendars().catch(error=>
-        showPayrollStatus(error?.message||"Calendars could not be loaded.","error")
+      loadPayrollCalendars().catch(error =>
+        showPayrollStatus(
+          error?.message ||
+          "Calendars could not be loaded.",
+          "error"
+        )
       );
     }else if(tab==="runs"){
       loadPayrollRuns().catch(error=>
