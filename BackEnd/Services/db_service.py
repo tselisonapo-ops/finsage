@@ -152192,12 +152192,187 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return employee
 
-    def payroll_contract_create(self, company_id: int, employee_id: int, data: dict):
+    def payroll_employee_pay_setup_sync_from_contract(
+        self,
+        company_id: int,
+        employee_id: int,
+        contract: dict,
+    ):
+        """
+        Synchronise the employee's contractual salary into the
+        payroll pay setup.
+
+        The contract is the source for the employee's basic salary.
+        Existing recurring pay-setup items are preserved.
+        """
+
         company_id = int(company_id)
         employee_id = int(employee_id)
+
         schema = self.company_schema(company_id)
 
-        current = self.fetch_one(f"""
+        salary_type = str(
+            contract.get("salary_type") or "monthly"
+        ).strip().lower()
+
+        basic_salary = float(
+            contract.get("basic_salary") or 0
+        )
+
+        hourly_rate = (
+            float(contract["hourly_rate"])
+            if contract.get("hourly_rate") not in (None, "")
+            else None
+        )
+
+        normal_hours = (
+            float(contract["normal_hours_per_month"])
+            if contract.get("normal_hours_per_month")
+            not in (None, "")
+            else None
+        )
+
+        effective_from = contract.get("effective_from")
+
+        if not effective_from:
+            raise ValueError(
+                "Contract effective_from is required"
+            )
+
+        # Map the contract salary type to the payroll pay basis.
+        if salary_type == "monthly":
+            pay_basis = "monthly"
+            fixed_basic_amount = basic_salary
+            standard_quantity = None
+            rate = None
+
+        elif salary_type == "hourly":
+            pay_basis = "hourly"
+            fixed_basic_amount = 0
+            standard_quantity = normal_hours
+            rate = hourly_rate
+
+        elif salary_type == "daily":
+            pay_basis = "daily"
+            fixed_basic_amount = 0
+            standard_quantity = None
+            rate = hourly_rate
+
+        else:
+            # Preserve compatibility with existing payroll setup.
+            pay_basis = "monthly"
+            fixed_basic_amount = basic_salary
+            standard_quantity = None
+            rate = None
+
+        # Determine whether a Pay Setup already exists for
+        # this exact effective date.
+        existing = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.payroll_employee_pay_setups
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND effective_from=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                employee_id,
+                effective_from,
+            ),
+        )
+
+        if existing:
+            return self.fetch_one(
+                f"""
+                UPDATE {schema}.payroll_employee_pay_setups
+                SET
+                    pay_basis=%s,
+                    fixed_basic_amount=%s,
+                    standard_quantity=%s,
+                    rate=%s,
+                    is_active=TRUE,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND employee_id=%s
+                AND effective_from=%s
+                RETURNING *;
+                """,
+                (
+                    pay_basis,
+                    fixed_basic_amount,
+                    standard_quantity,
+                    rate,
+                    company_id,
+                    employee_id,
+                    effective_from,
+                ),
+            )
+
+        # If there is no Pay Setup for this effective date,
+        # create one while leaving recurring items to be
+        # managed separately.
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.payroll_employee_pay_setups (
+                company_id,
+                employee_id,
+                pay_basis,
+                basic_earning_type_id,
+                fixed_basic_amount,
+                standard_quantity,
+                rate,
+                tax_treatment,
+                manual_paye_amount,
+                proration_method,
+                hours_per_day,
+                attendance_required,
+                effective_from,
+                is_active
+            )
+            VALUES (
+                %s,
+                %s,
+                %s,
+                NULL,
+                %s,
+                %s,
+                %s,
+                'standard',
+                NULL,
+                'working_days',
+                8,
+                FALSE,
+                %s,
+                TRUE
+            )
+            RETURNING *;
+            """,
+            (
+                company_id,
+                employee_id,
+                pay_basis,
+                fixed_basic_amount,
+                standard_quantity,
+                rate,
+                effective_from,
+            ),
+        )
+        
+    def payroll_contract_create(
+        self,
+        company_id: int,
+        employee_id: int,
+        data: dict,
+    ):
+        company_id = int(company_id)
+        employee_id = int(employee_id)
+
+        schema = self.company_schema(company_id)
+
+        current = self.fetch_one(
+            f"""
             SELECT id
             FROM {schema}.payroll_employee_contracts
             WHERE company_id=%s
@@ -152205,7 +152380,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             AND is_active=TRUE
             ORDER BY effective_from DESC,id DESC
             LIMIT 1;
-        """, (company_id, employee_id))
+            """,
+            (
+                company_id,
+                employee_id,
+            ),
+        )
 
         values = (
             data.get("contract_type") or "permanent",
@@ -152218,10 +152398,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             bool(data.get("is_active", True)),
         )
 
+        if not values[5]:
+            raise ValueError(
+                "effective_from is required"
+            )
+
         if current:
-            return self.fetch_one(f"""
+            contract = self.fetch_one(
+                f"""
                 UPDATE {schema}.payroll_employee_contracts
-                SET contract_type=%s,
+                SET
+                    contract_type=%s,
                     salary_type=%s,
                     basic_salary=%s,
                     hourly_rate=%s,
@@ -152233,25 +152420,62 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 AND employee_id=%s
                 AND id=%s
                 RETURNING *;
-            """, values + (
-                company_id,
-                employee_id,
-                int(current["id"]),
-            ))
-
-        return self.fetch_one(f"""
-            INSERT INTO {schema}.payroll_employee_contracts (
-                company_id,employee_id,contract_type,salary_type,
-                basic_salary,hourly_rate,normal_hours_per_month,
-                effective_from,effective_to,is_active
+                """,
+                values + (
+                    company_id,
+                    employee_id,
+                    int(current["id"]),
+                ),
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING *;
-        """, (
-            company_id,
-            employee_id,
-        ) + values)
 
+        else:
+            contract = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.payroll_employee_contracts (
+                    company_id,
+                    employee_id,
+                    contract_type,
+                    salary_type,
+                    basic_salary,
+                    hourly_rate,
+                    normal_hours_per_month,
+                    effective_from,
+                    effective_to,
+                    is_active
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s
+                )
+                RETURNING *;
+                """,
+                (
+                    company_id,
+                    employee_id,
+                ) + values,
+            )
+
+        if not contract:
+            raise ValueError(
+                "Failed to save employee contract"
+            )
+
+        # ---------------------------------------------------------
+        # Synchronise contractual salary into Pay Setup.
+        #
+        # IMPORTANT:
+        # This only updates/creates the Pay Setup header.
+        # It does NOT replace payroll_employee_pay_setup_items.
+        # Therefore recurring earnings, deductions, benefits,
+        # UIF, pension, etc. remain intact.
+        # ---------------------------------------------------------
+        self.payroll_employee_pay_setup_sync_from_contract(
+            company_id=company_id,
+            employee_id=employee_id,
+            contract=contract,
+        )
+
+        return contract
 
     def payroll_tax_profile_create(self, company_id: int, employee_id: int, data: dict):
         company_id = int(company_id)
