@@ -164047,7 +164047,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ct.liability_account_code
                     AS contribution_liability_account_code,
 
-                ct.offset_account_code
+                NULL
                     AS offset_account_code
 
             FROM {schema}.payroll_employee_pay_setup_items i
