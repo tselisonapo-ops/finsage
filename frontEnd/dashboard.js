@@ -75827,7 +75827,7 @@ async function saveEditModal() {
         });
 
         const result = await apiFetch(
-            ENDPOINT.payroll.payslipLitePreview(
+            ENDPOINTS.payroll.payslipLitePreview(
                 cid(),
                 employee.id,
                 params.toString()
