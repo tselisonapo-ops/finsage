@@ -68612,11 +68612,7 @@ async function saveEditModal() {
         payment
     );
 
-    if (
-        payment.selectedPlanId &&
-        payment.selectedBankId &&
-        payment.paymentDate
-    ) {
+    if (payment.paymentDate) {
         console.log(
             "[DC PAYMENT] 8 - CALLING loadPayrollLiabilityClearing"
         );
@@ -68629,7 +68625,7 @@ async function saveEditModal() {
                 payment.payrollRunId,
 
             benefitPlanId:
-                payment.selectedPlanId,
+                payment.selectedPlanId || null,
 
             definedContributionRunId:
                 payment.runId,
@@ -68644,7 +68640,7 @@ async function saveEditModal() {
         console.log(
             "[DC PAYMENT] 9 - loadPayrollLiabilityClearing completed"
         );
-    } else {
+    }else {
         console.log(
             "[DC PAYMENT] 8 - LIABILITY NOT CALLED",
             {
