@@ -68552,7 +68552,14 @@ async function saveEditModal() {
                 ])
         ).values()];
 
+    console.log("[DC PAYMENT] BEFORE refreshBankAccounts");
+
     await refreshBankAccounts();
+
+    console.log(
+        "[DC PAYMENT] AFTER refreshBankAccounts",
+        payrollState.bankAccounts
+    );
 
     const banks =
         Array.isArray(
