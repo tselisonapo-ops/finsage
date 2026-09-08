@@ -162738,6 +162738,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         amount=None,
         reference=None,
         user_id=None,
+        notes=None,
         benefit_plan_id=None,
         defined_contribution_run_id=None,
     ) -> dict:
