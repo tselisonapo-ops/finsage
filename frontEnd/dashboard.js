@@ -68510,10 +68510,59 @@ async function saveEditModal() {
     const paymentPreview =
         payment.paymentPreview || {};
 
-    const outstanding =
+    /*
+     * Clearing account = the selected BANK.
+     */
+    const selectedBank =
+        banks.find(
+            b => Number(b.id) === Number(payment.selectedBankId)
+        ) || null;
+
+    const clearingLabel = selectedBank
+        ? [
+              selectedBank.bank_name || selectedBank.bankName || selectedBank.name || "Bank",
+              selectedBank.account_name || selectedBank.accountName || "",
+              (selectedBank.account_number || selectedBank.accountNumber)
+                  ? `(${selectedBank.account_number || selectedBank.accountNumber})`
+                  : ""
+          ].filter(Boolean).join(" ")
+        : (liability.liability_account?.name || "—");
+
+    /*
+     * Normalise balance fields — loaders store camelCase,
+     * API may return snake_case. Derive outstanding if missing.
+     */
+    const recognised =
         Number(
-            liability.outstanding_amount || 0
+            liability.recognized_amount ??
+            liability.recognised_amount ??
+            liability.recognisedLiability ??
+            liability.liabilityAmount ??
+            0
+        ) || 0;
+
+    const historical =
+        Number(
+            liability.previously_paid ??
+            liability.historical_paid_amount ??
+            liability.paid_amount ??
+            liability.historicalPaidAmount ??
+            liability.historicalPayments ??
+            0
+        ) || 0;
+
+    const reportedOutstanding =
+        Number(
+            liability.outstanding_amount ??
+            liability.remaining_amount ??
+            liability.outstandingAmount ??
+            NaN
         );
+
+    const outstanding =
+        Number.isFinite(reportedOutstanding)
+            ? reportedOutstanding
+            : Math.max(recognised - historical, 0);
 
     const selectedPlanId =
         payment.selectedPlanId || "";
@@ -68545,37 +68594,28 @@ async function saveEditModal() {
                 <div>
                     <span>Clearing Account</span>
                     <strong>
-                        ${esc(
-                            liability.liability_account?.name ||
-                            "—"
-                        )}
+                        ${esc(clearingLabel)}
                     </strong>
                 </div>
 
                 <div>
                     <span>Liability</span>
                     <strong>
-                        ${money(
-                            liability.recognized_amount
-                        )}
+                        ${money(recognised)}
                     </strong>
                 </div>
 
                 <div>
                     <span>Historical Payments</span>
                     <strong>
-                        ${money(
-                            liability.previously_paid
-                        )}
+                        ${money(historical)}
                     </strong>
                 </div>
 
                 <div>
                     <span>Outstanding</span>
                     <strong>
-                        ${money(
-                            liability.outstanding_amount
-                        )}
+                        ${money(outstanding)}
                     </strong>
                 </div>
 
@@ -68686,10 +68726,8 @@ async function saveEditModal() {
                         min="0"
                         id="payrollDcPaymentAmount"
                         value="${
-                            liability.outstanding_amount != null
-                                ? Number(
-                                    liability.outstanding_amount
-                                ).toFixed(2)
+                            outstanding > 0
+                                ? outstanding.toFixed(2)
                                 : ""
                         }"
                     />
@@ -68735,7 +68773,7 @@ async function saveEditModal() {
                     class="payroll-secondary dark"
                     type="button"
                     ${
-                        outstanding > 0
+                        outstanding > 0 && selectedBankId
                             ? ""
                             : "disabled"
                     }
@@ -68828,7 +68866,38 @@ async function saveEditModal() {
                         event.target.value
                     ) || null;
 
+                /*
+                 * Bank = clearing account changed:
+                 * the old journal preview is stale.
+                 */
+                payment.paymentPreview =
+                    null;
+
                 renderPayrollDcPayment();
+
+                try {
+                    await loadPayrollLiabilityClearing({
+                        liabilityType:
+                            "defined_contribution",
+
+                        payrollRunId:
+                            payment.payrollRunId,
+
+                        benefitPlanId:
+                            payment.selectedPlanId || null,
+
+                        definedContributionRunId:
+                            payment.runId,
+
+                        prefix:
+                            "payrollDcPayment",
+
+                        referencePrefix:
+                            "DC-PAY"
+                    });
+                } finally {
+                    renderPayrollDcPayment();
+                }
             }
         );
 
@@ -69356,32 +69425,41 @@ async function saveEditModal() {
             payment.selectedPlanId
         ) || null;
 
+    /*
+     * Bank = clearing account.
+     * Prefer the live dropdown, fall back to state.
+     * NaN-safe: Number(undefined) must not slip through.
+     */
     const bankId =
         Number(
+            $("payrollDcPaymentBank")?.value ||
             payment.selectedBankId
         );
+
+    if (!Number.isFinite(bankId) || bankId <= 0) {
+        throw new Error(
+            "Select a bank account."
+        );
+    }
+
+    payment.selectedBankId =
+        bankId;
 
     const paymentDate =
         normalizePayrollDate(
             $("payrollDcPaymentDate")?.value
         );
 
-    const amount =
-        Number(
-            $("payrollDcPaymentAmount")?.value
-        );
-
-    if (!bankId) {
-        throw new Error(
-            "Select a bank account."
-        );
-    }
-
     if (!paymentDate) {
         throw new Error(
             "Enter a valid payment date."
         );
     }
+
+    const amount =
+        Number(
+            $("payrollDcPaymentAmount")?.value
+        );
 
     if (!Number.isFinite(amount) || amount <= 0) {
         throw new Error(
@@ -69392,7 +69470,7 @@ async function saveEditModal() {
     const response =
         await apiFetch(
             ENDPOINTS.payroll.liabilityPaymentPreview(
-                COMPANY_ID,
+                cid(),  // was COMPANY_ID — kept consistent with loadPayrollLiabilityClearing
                 payment.payrollRunId
             ),
             {
@@ -69444,8 +69522,23 @@ async function saveEditModal() {
     payment.paymentPreview =
         preview;
 
-    renderPayrollDcPayment();
-    await loadPayrollDcPaymentLiability();
+    /*
+     * Refresh the liability balance from the backend,
+     * THEN re-render the screen.
+     * Old code did render first, then update — that was the bug.
+     */
+    try {
+        await loadPayrollLiabilityClearing({
+            liabilityType: "defined_contribution",
+            payrollRunId: payment.payrollRunId,
+            benefitPlanId: payment.selectedPlanId || null,
+            definedContributionRunId: payment.runId,
+            prefix: "payrollDcPayment",
+            referencePrefix: "DC-PAY"
+        });
+    } finally {
+        renderPayrollDcPayment();
+    }
   }
 
   async function postPayrollDcPayment() {
@@ -74479,8 +74572,17 @@ async function saveEditModal() {
 
     const companyId = cid();
 
+    const paymentState =
+        payrollState.employeeBenefits
+            ?.selectedDefinedContributionPayment;
+
+    /*
+     * The new DC UI renders a status div (…Status) instead
+     * of a message input (…Message) — support both.
+     */
     const messageEl =
-      $(`${prefix}Message`);
+      $(`${prefix}Message`) ||
+      $(`${prefix}Status`);
 
     const recognizedEl =
       $(`${prefix}RecognisedLiability`);
@@ -74500,8 +74602,13 @@ async function saveEditModal() {
     const dateEl =
       $(`${prefix}Date`);
 
+    /*
+     * New DC UI renders the bank select as `${prefix}Bank`;
+     * the salary UI still uses `${prefix}BankAccount`.
+     */
     const bankEl =
-      $(`${prefix}BankAccount`);
+      $(`${prefix}BankAccount`) ||
+      $(`${prefix}Bank`);
 
     const referenceEl =
       $(`${prefix}Reference`);
@@ -74526,26 +74633,53 @@ async function saveEditModal() {
     }
 
     /*
-     * Load the existing company bank accounts.
+     * Load the company bank accounts.
      *
-     * This is required for the eventual payment, but the
-     * liability balance itself does NOT depend on a bank
-     * account being selected.
+     * Resilient: if the fetch fails we fall back to the
+     * bank list already held in payment state, and the
+     * balance call still proceeds.
      */
-    const banks =
-        console.log("[DC PAYMENT] 1 - openPayrollDcPayment entered");
+    let banks = [];
 
-        console.log("[DC PAYMENT] 2 - before refreshBankAccounts");
-        await refreshBankAccounts();
-        console.log("[DC PAYMENT] 3 - after refreshBankAccounts");
+    try {
+      banks =
+        (await refreshBankAccounts()) || [];
+    } catch (error) {
+      console.warn(
+        "[payroll] bank accounts load failed:",
+        error
+      );
 
-        console.log("[DC PAYMENT] 4 - continuing payment setup");
+      banks =
+        paymentState?.banks || [];
+    }
+
+    /*
+     * Keep the payment state's bank list in sync so the
+     * re-rendered dropdown always has options, and
+     * auto-select when there is exactly one account.
+     */
+    if (paymentState) {
+
+      if (banks.length) {
+        paymentState.banks =
+          banks;
+      }
+
+      if (
+        !paymentState.selectedBankId &&
+        banks.length === 1
+      ) {
+        paymentState.selectedBankId =
+          Number(banks[0].id) || null;
+      }
+    }
 
     if (bankEl) {
       bankEl.innerHTML =
         `<option value="">-- Select bank account --</option>`;
 
-      (banks || []).forEach(bank => {
+      banks.forEach(bank => {
 
         const id =
           bank.id ??
@@ -74613,23 +74747,77 @@ async function saveEditModal() {
             String(id);
         }
       });
+
+      /*
+       * Only one real option besides the placeholder:
+       * select it so a clearing bank is always set.
+       */
+      if (
+        !bankEl.value &&
+        bankEl.options.length === 2
+      ) {
+        bankEl.value =
+          bankEl.options[1].value;
+      }
     }
+
+    /*
+     * Resolve the CLEARING BANK.
+     *
+     * Dropdown first, then payment state. This id is used
+     * as the clearing account for the balance request.
+     */
+    const clearingBankId =
+      Number(
+        bankEl?.value ||
+        paymentState?.selectedBankId ||
+        0
+      ) || null;
+
+    if (clearingBankId && paymentState) {
+      paymentState.selectedBankId =
+        clearingBankId;
+    }
+
+    const clearingLabel =
+      bankEl?.selectedOptions?.[0]?.text ||
+      (() => {
+        const b = banks.find(
+          x => Number(x.id) === Number(clearingBankId)
+        );
+
+        if (!b) return null;
+
+        return [
+          b.bank_name || b.bankName || b.name || "Bank",
+          b.account_name || b.accountName || "",
+          (b.account_number || b.accountNumber)
+            ? `(${b.account_number || b.accountNumber})`
+            : ""
+        ].filter(Boolean).join(" ");
+      })() ||
+      (clearingBankId
+        ? `Bank account ${clearingBankId}`
+        : null);
 
     /*
      * Determine the payroll run.
      *
-     * For the normal payroll payment screen this comes
-     * from payrollState.selectedRun.
-     *
-     * For defined contributions it can come directly
-     * from the selected DC run.
+     * For defined contributions prefer the selected DC run —
+     * payrollState.selectedRun may belong to another screen.
      */
     const run =
-      payrollState.selectedRun ||
-      payrollState.employeeBenefits
-        ?.selectedDefinedContributionRun
-        ?.run ||
-      {};
+      liabilityType === "defined_contribution"
+        ? (payrollState.employeeBenefits
+              ?.selectedDefinedContributionRun
+              ?.run ||
+            payrollState.selectedRun ||
+            {})
+        : (payrollState.selectedRun ||
+            payrollState.employeeBenefits
+              ?.selectedDefinedContributionRun
+              ?.run ||
+            {});
 
     /*
      * Default the payment date.
@@ -74645,13 +74833,20 @@ async function saveEditModal() {
 
     /*
      * Default the payment reference.
+     * Do not double-prefix a run_no that already
+     * starts with the reference prefix.
      */
     if (
       referenceEl &&
       !referenceEl.value
     ) {
+      const runNo =
+        String(run.run_no || runId);
+
       referenceEl.value =
-        `${referencePrefix}-${run.run_no || runId}`;
+        runNo.startsWith(`${referencePrefix}-`)
+          ? runNo
+          : `${referencePrefix}-${runNo}`;
     }
 
     try {
@@ -74671,10 +74866,6 @@ async function saveEditModal() {
           liabilityType
       };
 
-      /*
-       * Defined-contribution liabilities need the
-       * specific contribution run and benefit plan.
-       */
       if (
         benefitPlanId !== null &&
         benefitPlanId !== undefined &&
@@ -74691,6 +74882,15 @@ async function saveEditModal() {
       ) {
         params.defined_contribution_run_id =
           Number(definedContributionRunId);
+      }
+
+      /*
+       * Clearing account must be a bank account —
+       * scope the balance to the selected clearing bank.
+       */
+      if (clearingBankId) {
+        params.bank_account_id =
+          clearingBankId;
       }
 
       const balance =
@@ -74728,23 +74928,30 @@ async function saveEditModal() {
           0
         );
 
-      const outstanding =
+      const reportedOutstanding =
         Number(
           data.outstanding_amount ??
           data.remaining_amount ??
-          Math.max(
-            recognisedLiability -
-            historicalPayments,
-            0
-          )
+          NaN
         );
+
+      const outstanding =
+        Number.isFinite(reportedOutstanding)
+          ? reportedOutstanding
+          : Math.max(
+              recognisedLiability -
+              historicalPayments,
+              0
+            );
 
       /*
        * Store the complete balance in payroll state.
+       *
+       * Snake_case mirrors are written so
+       * renderPayrollDcPayment() always finds them.
        */
-      payrollState.employeeBenefits
-        .selectedDefinedContributionPayment
-        .liabilityPreview = {
+      if (paymentState) {
+        paymentState.liabilityPreview = {
           ...data,
 
           liabilityAmount:
@@ -74760,8 +74967,30 @@ async function saveEditModal() {
             historicalPayments,
 
           outstandingAmount:
-            outstanding
+            outstanding,
+
+          recognized_amount:
+            recognisedLiability,
+
+          previously_paid:
+            historicalPayments,
+
+          outstanding_amount:
+            outstanding,
+
+          /*
+           * Clearing account = the selected bank.
+           */
+          liability_account:
+            data.liability_account ||
+            (clearingBankId
+              ? {
+                  id: clearingBankId,
+                  name: clearingLabel
+                }
+              : null)
         };
+      }
 
       /*
        * Recognised Liability
@@ -74808,32 +75037,14 @@ async function saveEditModal() {
        * Liability / Clearing Account
        */
       if (clearingAccountEl) {
-
-        const liabilityAccount =
-          data.liability_account ||
-          {};
-
         clearingAccountEl.value =
-          liabilityAccount.name ||
-          liabilityAccount.code ||
+          clearingLabel ||
+          data.liability_account?.name ||
+          data.liability_account?.code ||
           data.clearing_account_name ||
           data.clearing_account ||
           data.clearing_account_code ||
           "";
-      }
-
-      /*
-       * Store the selected bank account.
-       */
-      if (
-        bankEl?.value &&
-        payrollState.employeeBenefits
-          .selectedDefinedContributionPayment
-      ) {
-        payrollState.employeeBenefits
-          .selectedDefinedContributionPayment
-          .selectedBankId =
-            Number(bankEl.value);
       }
 
       /*
