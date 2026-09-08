@@ -40908,7 +40908,7 @@ class DatabaseService:
                         ''payroll_termination_benefit_settlement'',
                         ''payroll_liability_payment'',
                         ''payroll_liability_payment_reversal'',
-                        
+
                         ''ias41_acquisition'',
                         ''ias41_acquisition_reversal'',
                         ''ias41_event'',
@@ -163549,11 +163549,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         #
         # These exact lines are returned by preview and MUST be fed
         # unchanged into payroll_liability_payment_post().
+        #
+        # account_code is retained for posting.
+        # account_name is included for display in the GL preview.
         # ------------------------------------------------------------
 
         journal_lines = [
             {
                 "account_code": liability_account_code,
+                "account_name": liability_account_name,
                 "description": (
                     f"Payment of "
                     f"{requested_type.replace('_', ' ')} "
@@ -163565,6 +163569,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             },
             {
                 "account_code": bank_account_code,
+                "account_name": bank_account_name,
                 "description": (
                     f"Payroll "
                     f"{requested_type.replace('_', ' ')} "
