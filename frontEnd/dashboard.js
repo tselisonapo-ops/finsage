@@ -68486,177 +68486,6 @@ async function saveEditModal() {
       .map(a=>[a.code,a.name]);
   }
 
-  async function openPayrollDcPayment(runId) {
-    const detail =
-        payrollState.employeeBenefits
-            .selectedDefinedContributionRun;
-
-    if (
-        !detail ||
-        Number(detail.run?.id) !== Number(runId)
-    ) {
-        await openPayrollDcRun(runId);
-    }
-
-    const current =
-        payrollState.employeeBenefits
-            .selectedDefinedContributionRun;
-
-    if (!current) {
-        throw new Error(
-            "Unable to load the contribution run."
-        );
-    }
-
-    const run =
-        current.run || {};
-
-    const lines =
-        current.lines || [];
-
-    if (run.status !== "posted") {
-        throw new Error(
-            "Only posted contribution runs can be paid."
-        );
-    }
-
-    const payrollRunId =
-        Number(run.payroll_run_id || 0);
-
-    if (!payrollRunId) {
-        throw new Error(
-            "This contribution run is not linked to a payroll run."
-        );
-    }
-
-    const plans =
-        [...new Map(
-            lines
-                .filter(line =>
-                    line.benefit_plan_id
-                )
-                .map(line => [
-                    Number(line.benefit_plan_id),
-                    {
-                        id:
-                            Number(
-                                line.benefit_plan_id
-                            ),
-                        code:
-                            line.benefit_plan_code ||
-                            "",
-                        name:
-                            line.benefit_plan_name ||
-                            ""
-                    }
-                ])
-        ).values()];
-
-    console.log("[DC PAYMENT] BEFORE refreshBankAccounts");
-    const banks =
-        await refreshBankAccounts();
-
-    console.log(
-        "[DC PAYMENT] 3 - after bank accounts"
-    );
-
-    const paymentDate =
-        normalizePayrollDate(
-            run.payment_date ||
-            run.reporting_date ||
-            run.period_end
-        );
-
-    console.log(
-        "[DC PAYMENT] 4 - payment date",
-        paymentDate
-    );
-
-    payrollState.employeeBenefits
-        .selectedDefinedContributionPayment = {
-            runId: Number(runId),
-            payrollRunId,
-            plans,
-            banks,
-            paymentDate,
-            selectedPlanId:
-                plans.length === 1
-                    ? plans[0].id
-                    : null,
-            selectedBankId:
-                banks.length === 1
-                    ? Number(banks[0].id)
-                    : null,
-            liabilityPreview: null,
-            paymentPreview: null
-        };
-
-    console.log(
-        "[DC PAYMENT] 5 - payment state created",
-        payrollState.employeeBenefits
-            .selectedDefinedContributionPayment
-    );
-
-    renderPayrollDcPayment();
-
-    console.log(
-        "[DC PAYMENT] 6 - renderPayrollDcPayment completed"
-    );
-
-    const payment =
-        payrollState.employeeBenefits
-            .selectedDefinedContributionPayment;
-
-    console.log(
-        "[DC PAYMENT] 7 - payment state",
-        payment
-    );
-
-    if (payment.paymentDate) {
-        console.log(
-            "[DC PAYMENT] 8 - CALLING loadPayrollLiabilityClearing"
-        );
-
-        await loadPayrollLiabilityClearing({
-            liabilityType:
-                "defined_contribution",
-
-            payrollRunId:
-                payment.payrollRunId,
-
-            benefitPlanId:
-                payment.selectedPlanId || null,
-
-            definedContributionRunId:
-                payment.runId,
-
-            prefix:
-                "payrollDcPayment",
-
-            referencePrefix:
-                "DC-PAY"
-        });
-
-        console.log(
-            "[DC PAYMENT] 9 - loadPayrollLiabilityClearing completed"
-        );
-    }else {
-        console.log(
-            "[DC PAYMENT] 8 - LIABILITY NOT CALLED",
-            {
-                selectedPlanId:
-                    payment.selectedPlanId,
-
-                selectedBankId:
-                    payment.selectedBankId,
-
-                paymentDate:
-                    payment.paymentDate
-            }
-        );
-    }
-  }
-
   function renderPayrollDcPayment() {
     const el =
         $("payrollDcPaymentSection");
@@ -68717,17 +68546,10 @@ async function saveEditModal() {
                     <span>Clearing Account</span>
                     <strong>
                         ${esc(
-                            liability.clearing_account_code ||
+                            liability.liability_account?.name ||
                             "—"
                         )}
                     </strong>
-
-                    <div class="payroll-muted">
-                        ${esc(
-                            liability.clearing_account_name ||
-                            ""
-                        )}
-                    </div>
                 </div>
 
                 <div>
@@ -69041,6 +68863,177 @@ async function saveEditModal() {
         );
   }
 
+  async function openPayrollDcPayment(runId) {
+    const detail =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionRun;
+
+    if (
+        !detail ||
+        Number(detail.run?.id) !== Number(runId)
+    ) {
+        await openPayrollDcRun(runId);
+    }
+
+    const current =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionRun;
+
+    if (!current) {
+        throw new Error(
+            "Unable to load the contribution run."
+        );
+    }
+
+    const run =
+        current.run || {};
+
+    const lines =
+        current.lines || [];
+
+    if (run.status !== "posted") {
+        throw new Error(
+            "Only posted contribution runs can be paid."
+        );
+    }
+
+    const payrollRunId =
+        Number(run.payroll_run_id || 0);
+
+    if (!payrollRunId) {
+        throw new Error(
+            "This contribution run is not linked to a payroll run."
+        );
+    }
+
+    const plans =
+        [...new Map(
+            lines
+                .filter(line =>
+                    line.benefit_plan_id
+                )
+                .map(line => [
+                    Number(line.benefit_plan_id),
+                    {
+                        id:
+                            Number(
+                                line.benefit_plan_id
+                            ),
+                        code:
+                            line.benefit_plan_code ||
+                            "",
+                        name:
+                            line.benefit_plan_name ||
+                            ""
+                    }
+                ])
+        ).values()];
+
+    console.log("[DC PAYMENT] BEFORE refreshBankAccounts");
+    const banks =
+        await refreshBankAccounts();
+
+    console.log(
+        "[DC PAYMENT] 3 - after bank accounts"
+    );
+
+    const paymentDate =
+        normalizePayrollDate(
+            run.payment_date ||
+            run.reporting_date ||
+            run.period_end
+        );
+
+    console.log(
+        "[DC PAYMENT] 4 - payment date",
+        paymentDate
+    );
+
+    payrollState.employeeBenefits
+        .selectedDefinedContributionPayment = {
+            runId: Number(runId),
+            payrollRunId,
+            plans,
+            banks,
+            paymentDate,
+            selectedPlanId:
+                plans.length === 1
+                    ? plans[0].id
+                    : null,
+            selectedBankId:
+                banks.length === 1
+                    ? Number(banks[0].id)
+                    : null,
+            liabilityPreview: null,
+            paymentPreview: null
+        };
+
+    console.log(
+        "[DC PAYMENT] 5 - payment state created",
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment
+    );
+
+    renderPayrollDcPayment();
+
+    console.log(
+        "[DC PAYMENT] 6 - renderPayrollDcPayment completed"
+    );
+
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    console.log(
+        "[DC PAYMENT] 7 - payment state",
+        payment
+    );
+
+    if (payment.paymentDate) {
+        console.log(
+            "[DC PAYMENT] 8 - CALLING loadPayrollLiabilityClearing"
+        );
+
+        await loadPayrollLiabilityClearing({
+            liabilityType:
+                "defined_contribution",
+
+            payrollRunId:
+                payment.payrollRunId,
+
+            benefitPlanId:
+                payment.selectedPlanId || null,
+
+            definedContributionRunId:
+                payment.runId,
+
+            prefix:
+                "payrollDcPayment",
+
+            referencePrefix:
+                "DC-PAY"
+        });
+
+        console.log(
+            "[DC PAYMENT] 9 - loadPayrollLiabilityClearing completed"
+        );
+    }else {
+        console.log(
+            "[DC PAYMENT] 8 - LIABILITY NOT CALLED",
+            {
+                selectedPlanId:
+                    payment.selectedPlanId,
+
+                selectedBankId:
+                    payment.selectedBankId,
+
+                paymentDate:
+                    payment.paymentDate
+            }
+        );
+    }
+  }
+
   async function loadPayrollDcPaymentLiability() {
     const payment =
         payrollState.employeeBenefits
@@ -69318,7 +69311,7 @@ async function saveEditModal() {
     const planId =
         Number(
             payment.selectedPlanId
-        );
+        ) || null;
 
     const bankId =
         Number(
@@ -69334,12 +69327,6 @@ async function saveEditModal() {
         Number(
             $("payrollDcPaymentAmount")?.value
         );
-
-    if (!planId) {
-        throw new Error(
-            "Select a benefit plan."
-        );
-    }
 
     if (!bankId) {
         throw new Error(
@@ -69379,7 +69366,7 @@ async function saveEditModal() {
                         payment.runId,
 
                     benefit_plan_id:
-                        planId,
+                        planId || null,
 
                     bank_account_id:
                         bankId,
