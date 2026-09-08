@@ -4065,10 +4065,7 @@ def api_payroll_liability_payment_preview(
 
         bank_account_id = payload.get("bank_account_id")
 
-        payment_date = (
-            payload.get("payment_date")
-            or None
-        )
+        payment_date = payload.get("payment_date") or None
 
         amount = payload.get("amount")
 
@@ -4094,6 +4091,56 @@ def api_payroll_liability_payment_preview(
                 "error": "Bank account is required",
             }), 400
 
+        # Get the authenticated user ID supplied by require_auth.
+        user_id = getattr(g, "user_id", None)
+
+        if user_id not in (None, "", "None"):
+            try:
+                user_id = int(user_id)
+            except (TypeError, ValueError):
+                return jsonify({
+                    "ok": False,
+                    "error": "Invalid authenticated user",
+                }), 401
+        else:
+            user_id = None
+
+        # Normalize payment_date.
+        #
+        # Supported input:
+        #   2025-04-29
+        #   2025-04-29T00:00:00
+        #   2025-04-29T00:00:00Z
+        #   Tue, 29 Apr 2025 00:00:00 GMT
+        #
+        # Always pass YYYY-MM-DD to the DB service.
+        if payment_date:
+            payment_date = str(payment_date).strip()
+
+            try:
+                from datetime import datetime
+                from email.utils import parsedate_to_datetime
+
+                try:
+                    parsed_payment_date = datetime.fromisoformat(
+                        payment_date.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    parsed_payment_date = parsedate_to_datetime(
+                        payment_date
+                    )
+
+                payment_date = parsed_payment_date.date().isoformat()
+
+            except (ValueError, TypeError, OverflowError):
+                return jsonify({
+                    "ok": False,
+                    "error": (
+                        "Invalid payment date. "
+                        "Expected YYYY-MM-DD."
+                    ),
+                }), 400
+
         result = db_service.payroll_liability_payment_preview(
             company_id=int(company_id),
             payroll_run_id=int(run_id),
@@ -4102,6 +4149,7 @@ def api_payroll_liability_payment_preview(
             payment_date=payment_date,
             amount=amount,
             reference=reference,
+            user_id=user_id,
             notes=notes,
         )
 
@@ -4116,7 +4164,7 @@ def api_payroll_liability_payment_preview(
             "error": str(e),
         }), 400
 
-    except Exception as e:
+    except Exception:
         current_app.logger.exception(
             "Payroll liability payment preview failed"
         )
@@ -4125,7 +4173,7 @@ def api_payroll_liability_payment_preview(
             "ok": False,
             "error": "Unable to preview payroll liability payment",
         }), 500
-
+    
 @payroll_bp.route(
     "/api/companies/<int:company_id>/payroll/"
     "runs/<int:run_id>/liability-payment",

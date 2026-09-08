@@ -40906,7 +40906,9 @@ class DatabaseService:
                         ''payroll_termination_benefit'',
                         ''payroll_termination_benefit_reversal'',
                         ''payroll_termination_benefit_settlement'',
-
+                        ''payroll_liability_payment'',
+                        ''payroll_liability_payment_reversal'',
+                        
                         ''ias41_acquisition'',
                         ''ias41_acquisition_reversal'',
                         ''ias41_event'',
@@ -162758,11 +162760,34 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         The tax context identifies the applicable payroll regime, while
         the posted payroll journal identifies the actual liability
         recognized by this payroll run.
+
+        Preview is read-only. No payment record or journal is created here.
         """
+
+        from datetime import datetime, date
+        from email.utils import parsedate_to_datetime
 
         company_id = int(company_id)
         payroll_run_id = int(payroll_run_id)
         bank_account_id = int(bank_account_id)
+
+        # ------------------------------------------------------------
+        # Normalize optional audit fields
+        # ------------------------------------------------------------
+
+        if user_id in (None, "", "None"):
+            user_id = None
+        else:
+            try:
+                user_id = int(user_id)
+            except (TypeError, ValueError):
+                raise ValueError("Invalid user_id")
+
+        notes = (
+            str(notes).strip()
+            if notes not in (None, "", "None")
+            else None
+        )
 
         schema = self.company_schema(company_id)
 
@@ -162819,7 +162844,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "Benefit plan is required for contribution payment"
                 )
 
-            defined_contribution_run_id = int(defined_contribution_run_id)
+            defined_contribution_run_id = int(
+                defined_contribution_run_id
+            )
             benefit_plan_id = int(benefit_plan_id)
 
         # ------------------------------------------------------------
@@ -162849,6 +162876,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         # ------------------------------------------------------------
         # 2. Payment date
+        #
+        # Accept:
+        #
+        #   2025-04-29
+        #   2025-04-29T00:00:00
+        #   2025-04-29T00:00:00Z
+        #   Tue, 29 Apr 2025 00:00:00 GMT
+        #
+        # Never blindly slice the first 10 characters because an
+        # HTTP/browser formatted date starts with "Tue, 29..." and
+        # would become the invalid string "Tue, 29 Ap".
         # ------------------------------------------------------------
 
         if payment_date in (None, "", "None"):
@@ -162862,10 +162900,49 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if isinstance(payment_date, datetime):
             payment_date = payment_date.date()
 
-        elif not isinstance(payment_date, date):
-            payment_date = date.fromisoformat(
-                str(payment_date)[:10]
-            )
+        elif isinstance(payment_date, date):
+            pass
+
+        else:
+            payment_date_string = str(payment_date).strip()
+
+            if not payment_date_string:
+                raise ValueError(
+                    "Payroll liability payment date is required"
+                )
+
+            parsed_payment_date = None
+
+            # First try ISO formats.
+            try:
+                parsed_payment_date = datetime.fromisoformat(
+                    payment_date_string.replace("Z", "+00:00")
+                ).date()
+            except ValueError:
+                pass
+
+            # Then try RFC/HTTP formatted dates.
+            if parsed_payment_date is None:
+                try:
+                    parsed_payment_date = parsedate_to_datetime(
+                        payment_date_string
+                    ).date()
+                except (TypeError, ValueError, OverflowError):
+                    pass
+
+            if parsed_payment_date is None:
+                # Finally support a plain YYYY-MM-DD value explicitly.
+                try:
+                    parsed_payment_date = date.fromisoformat(
+                        payment_date_string
+                    )
+                except ValueError:
+                    raise ValueError(
+                        "Invalid payroll liability payment date. "
+                        "Expected YYYY-MM-DD."
+                    )
+
+            payment_date = parsed_payment_date
 
         payment_date = payment_date.isoformat()
 
@@ -162938,12 +163015,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "Defined-contribution run not found"
                 )
 
-            if int(dc_run.get("payroll_run_id") or 0) != int(payroll_run_id):
+            if int(
+                dc_run.get("payroll_run_id") or 0
+            ) != int(payroll_run_id):
                 raise ValueError(
                     "Defined-contribution run is not linked to this payroll run"
                 )
 
-            if dc_run.get("status") != "posted":
+            if str(
+                dc_run.get("status") or ""
+            ).strip().lower() != "posted":
                 raise ValueError(
                     "Defined-contribution run must be posted before payment"
                 )
@@ -162968,15 +163049,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         # ------------------------------------------------------------
         # 5. Resolve liability COA account
-        #
-        # For defined-contribution payments, the payable account must come
-        # from the contribution run lines that were actually calculated.
-        #
-        # This protects us if the benefit plan's configuration is changed
-        # after the contribution run was posted.
-        #
-        # For all other payroll liabilities, continue using the normal
-        # semantic COA role.
         # ------------------------------------------------------------
 
         benefit_plan = None
@@ -163124,9 +163196,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             # --------------------------------------------------------
             # Normal payroll liabilities
-            #
-            # Salary, PAYE, UIF, medical aid, other deductions, etc.
-            # continue using the existing semantic COA role.
             # --------------------------------------------------------
 
             liability_account = self.ensure_coa_role_for_posting(
@@ -163187,15 +163256,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         # ------------------------------------------------------------
         # 7. Find liability recognized by THIS payroll run
-        #
-        # Normal payroll liabilities:
-        #     Read the posted payroll journal.
-        #
-        # Defined contribution:
-        #     Read the exact contribution run lines.
-        #
-        # The DC run is already linked to the posted payroll run, and
-        # the contribution lines are the source of the total payable.
         # ------------------------------------------------------------
 
         if is_defined_contribution:
@@ -163345,6 +163405,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             recognized_amount - previously_paid
         )
 
+        # ------------------------------------------------------------
+        # 9. Already fully paid
+        # ------------------------------------------------------------
+
         if outstanding_amount <= 0:
             return {
                 "ok": True,
@@ -163381,6 +163445,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                 "payment_date": payment_date,
 
+                "payment_amount": 0,
+                "remaining_amount": 0,
+
+                "reference": reference,
+                "notes": notes,
+                "user_id": user_id,
+
                 "tax_context": {
                     "authority_code": authority_code,
                     "country_code": country_code,
@@ -163413,7 +163484,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             }
 
         # ------------------------------------------------------------
-        # 9. Payment amount
+        # 10. Payment amount
         # ------------------------------------------------------------
 
         if amount in (None, "", "None"):
@@ -163443,7 +163514,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
 
         # ------------------------------------------------------------
-        # 10. Reference
+        # 11. Reference
         # ------------------------------------------------------------
 
         reference = (
@@ -163465,7 +163536,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 )
 
         # ------------------------------------------------------------
-        # 11. Remaining amount after this payment
+        # 12. Remaining amount after this payment
         # ------------------------------------------------------------
 
         remaining_amount = round(
@@ -163474,7 +163545,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         # ------------------------------------------------------------
-        # 12. CREATE THE ACTUAL JOURNAL LINES
+        # 13. CREATE THE ACTUAL JOURNAL LINES
         #
         # These exact lines are returned by preview and MUST be fed
         # unchanged into payroll_liability_payment_post().
@@ -163535,7 +163606,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
 
         # ------------------------------------------------------------
-        # 13. Return complete preview
+        # 14. Return complete preview
         # ------------------------------------------------------------
 
         return {
@@ -163551,7 +163622,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "liability_role": liability_role,
 
             "benefit_plan_id": benefit_plan_id,
-            "defined_contribution_run_id": defined_contribution_run_id,
+            "defined_contribution_run_id": (
+                defined_contribution_run_id
+            ),
 
             "liability_account": {
                 "code": liability_account_code,
@@ -163575,11 +163648,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "payment_date": payment_date,
             "reference": reference,
 
+            # --------------------------------------------------------
+            # Audit/payment metadata
+            # --------------------------------------------------------
+            #
+            # These are NOT written to the database by preview.
+            # They are carried forward so the posting operation can
+            # persist the exact user and notes supplied for the payment.
+            #
+            "user_id": user_id,
+            "notes": notes,
+
             "tax_context": {
                 "authority_code": authority_code,
                 "country_code": country_code,
                 "tax_year_label": tax_year_label,
-                "tax_year_id": tax_context.get("tax_year_id"),
+                "tax_year_id": tax_context.get(
+                    "tax_year_id"
+                ),
                 "calculation_basis": tax_context.get(
                     "calculation_basis"
                 ),
