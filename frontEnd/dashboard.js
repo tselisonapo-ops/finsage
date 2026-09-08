@@ -84404,12 +84404,10 @@ function renderPayrollPayeRunClearing(
             ? history
             : [];
 
-    const paymentDate=
-        run?.payment_date
-            ? String(
-                run.payment_date
-            ).slice(0,10)
-            : "";
+    const paymentDate =
+        normalizePayrollDate(
+            run?.payment_date
+        );
 
     const postedPayments=
         payments.filter(payment=>
