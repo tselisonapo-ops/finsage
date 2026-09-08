@@ -74193,7 +74193,6 @@ async function saveEditModal() {
                   <strong>
                     ${esc(
                       line.account_name ||
-                      line.account_code ||
                       "Unmapped account"
                     )}
                   </strong>
