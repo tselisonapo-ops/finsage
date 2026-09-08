@@ -68553,20 +68553,13 @@ async function saveEditModal() {
         ).values()];
 
     console.log("[DC PAYMENT] BEFORE refreshBankAccounts");
-
-    await refreshBankAccounts();
+    const banks =
+        await refreshBankAccounts();
 
     console.log(
-        "[DC PAYMENT] AFTER refreshBankAccounts",
-        payrollState.bankAccounts
+        "[DC PAYMENT] BANK ACCOUNTS LOADED",
+        banks
     );
-
-    const banks =
-        Array.isArray(
-            payrollState.bankAccounts
-        )
-            ? payrollState.bankAccounts
-            : [];
 
     const paymentDate =
         normalizePayrollDate(
