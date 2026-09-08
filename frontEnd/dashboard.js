@@ -84341,11 +84341,22 @@ async function saveEditModal() {
             )
         );
 
+    console.log(
+        "[PAYE CLEARING] RAW RUN RESPONSE",
+        runResponse
+    );
+
     const run =
         runResponse?.run ||
+        runResponse?.data?.run ||
         runResponse?.data ||
         runResponse ||
         {};
+
+    console.log(
+        "[PAYE CLEARING] RESOLVED RUN",
+        run
+    );
 
     payrollState.selectedRun =
         run;
@@ -84463,25 +84474,35 @@ async function saveEditModal() {
      * ---------------------------------------------------------
      */
 
+    const rawPaymentDate =
+        run?.payment_date ??
+        run?.pay_date ??
+        run?.payroll_payment_date ??
+        run?.paymentDate ??
+        run?.payDate ??
+        run?.payrollPaymentDate ??
+        run?.period_end ??
+        run?.periodEnd ??
+        null;
+
     const paymentDate =
         normalizePayrollDate(
-            run?.payment_date
+            rawPaymentDate
         );
 
     console.log(
         "[PAYE CLEARING] PAYMENT DATE",
         {
-            original:
-                run?.payment_date,
-
-            normalized:
-                paymentDate
+            rawPaymentDate,
+            normalized: paymentDate,
+            run
         }
     );
 
     if (!paymentDate) {
-        throw new Error(
-            "The payroll run does not have a valid payment date."
+        console.warn(
+            "[PAYE CLEARING] No payment date returned by payroll run.",
+            run
         );
     }
 
