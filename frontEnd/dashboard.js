@@ -66177,12 +66177,7 @@ async function saveEditModal() {
       <div
           id="payrollDcPaymentSection"
           style="margin-top:20px;"
-      ></div>
-
-      <div
-          id="payrollDcPaymentSection"
-          style="margin-top:20px;"
-      ></div>      
+      ></div>     
     `;
 
     $("payrollCalculateDcBtn")?.addEventListener(
@@ -66193,17 +66188,17 @@ async function saveEditModal() {
     );
 
     $("payrollPreviewDcBtn")?.addEventListener(
-      "click",
-      ()=>previewPayrollDcRun(r.id).catch(error=>{
-        showPayrollStatus(error.message,"error");
-      })
+        "click",
+        ()=>previewPayrollDcPayment(r.id).catch(error=>{
+            showPayrollStatus(error.message,"error");
+        })
     );
 
     $("payrollPostDcBtn")?.addEventListener(
-      "click",
-      ()=>postPayrollDcRun(r.id).catch(error=>{
-        showPayrollStatus(error.message,"error");
-      })
+        "click",
+        ()=>postPayrollDcPayment(r.id).catch(error=>{
+            showPayrollStatus(error.message,"error");
+        })
     );
 
     $("payrollReverseDcBtn")?.addEventListener(
