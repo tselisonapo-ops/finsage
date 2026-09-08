@@ -68983,83 +68983,258 @@ async function saveEditModal() {
         return;
     }
 
-    const planId =
-        Number(
-            payment.selectedPlanId
-        );
+    const runId =
+        Number(payment.runId || 0);
 
-    const bankId =
-        Number(
-            payment.selectedBankId
-        );
+    const payrollRunId =
+        Number(payment.payrollRunId || 0);
+
+    if (!runId || !payrollRunId) {
+        return;
+    }
+
+    const companyId = cid();
+
+    const messageEl =
+        $("payrollDcPaymentMessage");
+
+    const outstandingEl =
+        $("payrollDcPaymentOutstanding");
+
+    const amountEl =
+        $("payrollDcPaymentAmount");
+
+    const dateEl =
+        $("payrollDcPaymentDate");
+
+    const bankEl =
+        $("payrollDcPaymentBankAccount");
+
+    const referenceEl =
+        $("payrollDcPaymentReference");
+
+    const previewEl =
+        $("payrollDcPaymentPreview");
+
+    const postBtn =
+        $("payrollDcPaymentPostBtn");
+
+    if (postBtn) {
+        postBtn.disabled = true;
+    }
+
+    if (previewEl) {
+        previewEl.innerHTML = "";
+    }
+
+    if (messageEl) {
+        messageEl.textContent =
+            "Loading contribution payable balance…";
+    }
+
+    /*
+     * The payment date is taken from the
+     * contribution/payroll run.
+     */
+    const current =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionRun;
+
+    const run =
+        current?.run || {};
 
     const paymentDate =
         normalizePayrollDate(
-            payment.paymentDate
+            payment.paymentDate ||
+            run.payment_date ||
+            run.reporting_date ||
+            run.period_end
         );
 
-    if (!planId) {
-        return;
+    if (dateEl) {
+        dateEl.value = paymentDate;
     }
 
-    if (!bankId) {
-        return;
+    /*
+     * Default payment reference.
+     * The user can edit this afterwards.
+     */
+    if (
+        referenceEl &&
+        !referenceEl.value
+    ) {
+        referenceEl.value =
+            `DC-PAY-${run.run_no || runId}`;
     }
 
-    if (!paymentDate) {
-        return;
-    }
-
-    const response =
-        await apiFetch(
-            ENDPOINTS.payroll.liabilityPaymentPreview(
-                COMPANY_ID,
-                payment.payrollRunId
-            ),
-            {
-                method: "POST",
-
-                body: JSON.stringify({
-                    liability_type:
-                        "defined_contribution",
-
-                    payroll_run_id:
-                        payment.payrollRunId,
-
-                    defined_contribution_run_id:
-                        payment.runId,
-
-                    benefit_plan_id:
-                        planId,
-
-                    bank_account_id:
-                        bankId,
-
-                    payment_date:
-                        paymentDate
-                })
-            }
-        );
-
-    const preview =
-        response?.preview ||
-        response?.data?.preview ||
-        response?.data ||
-        response ||
-        {};
-
-    console.log(
-        "[DC PAYMENT] LIABILITY PREVIEW",
-        preview
-    );
-
-    payment.liabilityPreview =
-        preview;
-
-    payment.paymentPreview =
+    /*
+     * Use the selected bank account.
+     */
+    const bankAccountId =
+        payment.selectedBankId ||
+        bankEl?.value ||
         null;
 
-    renderPayrollDcPayment();
+    if (!bankAccountId) {
+        if (messageEl) {
+            messageEl.textContent =
+                "Select a payment bank account to preview the contribution payable balance.";
+        }
+
+        return;
+    }
+
+    /*
+     * Benefit plan is optional when the run contains
+     * only one plan. If there are multiple plans,
+     * the selected plan identifies the clearing account.
+     */
+    const benefitPlanId =
+        payment.selectedPlanId
+            ? Number(payment.selectedPlanId)
+            : null;
+
+    try {
+        const preview =
+            await apiFetch(
+                ENDPOINTS.payroll.liabilityPaymentPreview(
+                    companyId,
+                    payrollRunId
+                ),
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        liability_type:
+                            "defined_contribution",
+
+                        payroll_run_id:
+                            payrollRunId,
+
+                        defined_contribution_run_id:
+                            runId,
+
+                        benefit_plan_id:
+                            benefitPlanId,
+
+                        bank_account_id:
+                            Number(bankAccountId),
+
+                        payment_date:
+                            paymentDate || null
+                    })
+                }
+            );
+
+        const data =
+            preview?.preview ||
+            preview?.data ||
+            preview ||
+            {};
+
+        /*
+         * Backend should return the clearing/payable
+         * account and the liability/payment history.
+         */
+        const recognisedLiability =
+            Number(
+                data.liability_amount ??
+                data.recognised_liability ??
+                0
+            );
+
+        const historicalPayments =
+            Number(
+                data.historical_paid_amount ??
+                data.paid_amount ??
+                data.previous_payments ??
+                0
+            );
+
+        const outstanding =
+            Number(
+                data.outstanding_amount ??
+                data.remaining_amount ??
+                Math.max(
+                    recognisedLiability -
+                    historicalPayments,
+                    0
+                )
+            );
+
+        payment.liabilityPreview = {
+            ...data,
+            liabilityAmount:
+                recognisedLiability,
+            historicalPaidAmount:
+                historicalPayments,
+            outstandingAmount:
+                outstanding
+        };
+
+        /*
+         * Display outstanding amount.
+         */
+        if (outstandingEl) {
+            outstandingEl.value =
+                money(outstanding);
+        }
+
+        /*
+         * Prefill payment amount with the
+         * outstanding liability.
+         *
+         * The user can change this afterwards.
+         */
+        if (amountEl) {
+            amountEl.value =
+                outstanding > 0
+                    ? outstanding.toFixed(2)
+                    : "";
+        }
+
+        /*
+         * Keep the selected bank in state.
+         */
+        payment.selectedBankId =
+            Number(bankAccountId);
+
+        /*
+         * Display the clearing account if the
+         * payment UI has a dedicated field.
+         */
+        const clearingAccountEl =
+            $("payrollDcPaymentClearingAccount");
+
+        if (clearingAccountEl) {
+            clearingAccountEl.value =
+                data.clearing_account_name ||
+                data.clearing_account ||
+                data.clearing_account_code ||
+                "";
+        }
+
+        if (messageEl) {
+            if (outstanding > 0) {
+                messageEl.innerHTML =
+                    `Contribution payable outstanding: <strong>${money(outstanding)}</strong>`;
+            } else {
+                messageEl.textContent =
+                    "There is no outstanding contribution payable for this payroll run.";
+            }
+        }
+
+    } catch (error) {
+        console.warn(
+            "[payroll] contribution payable clearing load failed:",
+            error
+        );
+
+        if (messageEl) {
+            messageEl.textContent =
+                error?.message ||
+                "Contribution payable balance could not be loaded.";
+        }
+    }
   }
 
   async function previewPayrollDcPayment() {
@@ -69173,6 +69348,7 @@ async function saveEditModal() {
         preview;
 
     renderPayrollDcPayment();
+    await loadPayrollDcPaymentLiability();
   }
 
   async function postPayrollDcPayment() {
