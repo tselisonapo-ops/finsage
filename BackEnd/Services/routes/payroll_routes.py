@@ -1,8 +1,12 @@
-from flask import Blueprint, request, jsonify, g, current_app, make_response
+from flask import Blueprint, request, jsonify, g, current_app, make_response, Response
 from BackEnd.Services.auth_middleware import _corsify, require_auth
 from .invoice_routes import _deny_if_wrong_company
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.period_core import resolve_company_period
+from flask import send_file
+import io
+from BackEnd.Services.utils.payslip_template import render_payslip_pdf
+
 payroll_bp = Blueprint("payroll", __name__)
 
 
@@ -3466,6 +3470,28 @@ def api_payroll_employee_payslip(
             "error":str(error),
         }),400 
 
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/employees/<int:employee_id>/payslip.pdf",
+    methods=["GET"],
+)
+@require_auth
+def api_payslip_pdf(company_id, run_id, employee_id):
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+    try:
+        pdf_bytes = render_payslip_pdf(company_id, run_id, employee_id)
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"payslip_run{run_id}_emp{employee_id}.pdf",
+        )
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    
 @payroll_bp.get(
     "/api/companies/<int:company_id>/payroll/"
     "employees/<int:employee_id>/payslip-lite/preview"
@@ -4013,3 +4039,491 @@ def api_payroll_close_out(company_id:int):
             "ok":False,
             "error":str(error),
         }),400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/liability-payment/preview",
+    methods=["POST"],
+)
+@require_auth
+def api_payroll_liability_payment_preview(
+    company_id,
+    run_id,
+):
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        liability_type = (
+            payload.get("liability_type")
+            or payload.get("type")
+            or ""
+        ).strip()
+
+        bank_account_id = payload.get("bank_account_id")
+
+        payment_date = (
+            payload.get("payment_date")
+            or None
+        )
+
+        amount = payload.get("amount")
+
+        reference = (
+            payload.get("reference")
+            or ""
+        ).strip() or None
+
+        notes = (
+            payload.get("notes")
+            or ""
+        ).strip() or None
+
+        if not liability_type:
+            return jsonify({
+                "ok": False,
+                "error": "Liability type is required",
+            }), 400
+
+        if bank_account_id in (None, "", "None"):
+            return jsonify({
+                "ok": False,
+                "error": "Bank account is required",
+            }), 400
+
+        result = db_service.payroll_liability_payment_preview(
+            company_id=int(company_id),
+            payroll_run_id=int(run_id),
+            liability_type=liability_type,
+            bank_account_id=int(bank_account_id),
+            payment_date=payment_date,
+            amount=amount,
+            reference=reference,
+            notes=notes,
+        )
+
+        return jsonify({
+            "ok": True,
+            "preview": result,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "Payroll liability payment preview failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": "Unable to preview payroll liability payment",
+        }), 500
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/liability-payment",
+    methods=["POST"],
+)
+@require_auth
+def api_payroll_liability_payment_post(
+    company_id,
+    run_id,
+):
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        liability_type = (
+            payload.get("liability_type")
+            or payload.get("type")
+            or ""
+        ).strip()
+
+        bank_account_id = payload.get("bank_account_id")
+
+        payment_date = (
+            payload.get("payment_date")
+            or None
+        )
+
+        amount = payload.get("amount")
+
+        reference = (
+            payload.get("reference")
+            or ""
+        ).strip() or None
+
+        notes = (
+            payload.get("notes")
+            or ""
+        ).strip() or None
+
+        benefit_plan_id = payload.get(
+            "benefit_plan_id"
+        )
+
+        defined_contribution_run_id = payload.get(
+            "defined_contribution_run_id"
+        )
+
+        if not liability_type:
+            return jsonify({
+                "ok": False,
+                "error": "Liability type is required",
+            }), 400
+
+        if bank_account_id in (
+            None,
+            "",
+            "None",
+        ):
+            return jsonify({
+                "ok": False,
+                "error": "Bank account is required",
+            }), 400
+
+        result = db_service.payroll_liability_payment_post(
+            company_id=int(company_id),
+            payroll_run_id=int(run_id),
+            liability_type=liability_type,
+            bank_account_id=int(bank_account_id),
+            payment_date=payment_date,
+            amount=amount,
+            reference=reference,
+            notes=notes,
+            user_id=None,
+            benefit_plan_id=(
+                int(benefit_plan_id)
+                if benefit_plan_id not in (
+                    None,
+                    "",
+                    "None",
+                )
+                else None
+            ),
+            defined_contribution_run_id=(
+                int(defined_contribution_run_id)
+                if defined_contribution_run_id not in (
+                    None,
+                    "",
+                    "None",
+                )
+                else None
+            ),
+        )
+
+        payslip_email_result = None
+
+        if liability_type.strip().lower() in (
+            "salary",
+            "net_salary",
+            "payroll_net_salary",
+        ):
+            try:
+                payslip_email_result = (
+                    db_service.payroll_send_bulk_payslips(
+                        company_id=int(company_id),
+                        payroll_run_id=int(run_id),
+                    )
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "Bulk payslip email process failed "
+                    "after salary payment for payroll run %s",
+                    run_id,
+                )
+
+                payslip_email_result = {
+                    "ok": False,
+                    "sent": 0,
+                    "skipped": 0,
+                    "failed": 0,
+                    "message": (
+                        "Salary payment posted, but "
+                        "payslip emails could not be processed"
+                    ),
+                }
+
+        return jsonify({
+            "ok": True,
+            "payment": result,
+            "payslip_emails": payslip_email_result,
+        }), 200
+
+    except ValueError as e:
+        message = str(e)
+
+        if message.startswith(
+            "DUPLICATE_PAYMENT_REFERENCE|"
+        ):
+            return jsonify({
+                "ok": False,
+                "error": message,
+            }), 409
+
+        return jsonify({
+            "ok": False,
+            "error": message,
+        }), 400
+
+    except Exception:
+        current_app.logger.exception(
+            "Payroll liability payment posting failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": "Unable to post payroll liability payment",
+        }), 500
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/employees/<int:employee_id>/payslip.pdf",
+    methods=["GET"],
+)
+@require_auth
+def api_payroll_payslip_pdf(
+    company_id,
+    run_id,
+    employee_id,
+):
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        from BackEnd.Services.utils.payslip_template import render_payslip_pdf
+
+        schema = db_service.company_schema(company_id)
+
+        employee = db_service.fetch_one(
+            f"""
+            SELECT
+                pe.id,
+                pe.employee_no,
+                pe.first_name,
+                pe.last_name,
+                pe.email
+            FROM {schema}.payroll_employees pe
+            JOIN {schema}.payroll_run_employees pre
+                ON pre.employee_id = pe.id
+            WHERE pe.company_id = %s
+            AND pre.company_id = %s
+            AND pre.payroll_run_id = %s
+            AND pe.id = %s
+            LIMIT 1
+            """,
+            (
+                int(company_id),
+                int(company_id),
+                int(run_id),
+                int(employee_id),
+            ),
+        )
+
+        if not employee:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    "Employee was not found on this payroll run"
+                ),
+            }), 404
+
+        payroll_run = db_service.fetch_one(
+            f"""
+            SELECT
+                id,
+                run_no,
+                status
+            FROM {schema}.payroll_runs
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1
+            """,
+            (
+                int(company_id),
+                int(run_id),
+            ),
+        )
+
+        if not payroll_run:
+            return jsonify({
+                "ok": False,
+                "error": "Payroll run not found",
+            }), 404
+
+        if str(
+            payroll_run.get("status") or ""
+        ).strip().lower() != "posted":
+            return jsonify({
+                "ok": False,
+                "error": (
+                    "Payslip is only available after "
+                    "the payroll run has been posted"
+                ),
+            }), 400
+
+        pdf_bytes = render_payslip_pdf(
+            int(company_id),
+            int(run_id),
+            int(employee_id),
+        )
+
+        if not pdf_bytes:
+            return jsonify({
+                "ok": False,
+                "error": "Payslip PDF could not be generated",
+            }), 500
+
+        employee_no = (
+            str(employee.get("employee_no") or "")
+            .strip()
+        )
+
+        run_no = (
+            str(payroll_run.get("run_no") or run_id)
+            .strip()
+        )
+
+        filename = (
+            f"Payslip-"
+            f"{employee_no or employee_id}-"
+            f"{run_no}.pdf"
+        )
+
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": (
+                    f'inline; filename="{filename}"'
+                )
+            },
+        )
+
+    except ValueError as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+    except Exception:
+        current_app.logger.exception(
+            "Payroll payslip PDF generation failed "
+            "for company %s, run %s, employee %s",
+            company_id,
+            run_id,
+            employee_id,
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": (
+                "Unable to generate payslip PDF"
+            ),
+        }), 500
+    
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/liability-payments",
+    methods=["GET"],
+)
+@require_auth
+def api_payroll_liability_payments(
+    company_id,
+    run_id,
+):
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        liability_type = (
+            request.args.get("liability_type")
+            or request.args.get("type")
+            or ""
+        ).strip() or None
+
+        payments = db_service.payroll_liability_payments_get(
+            company_id=int(company_id),
+            payroll_run_id=int(run_id),
+            liability_type=liability_type,
+        )
+
+        return jsonify({
+            "ok": True,
+            "payments": payments,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+    except Exception:
+        current_app.logger.exception(
+            "Payroll liability payment history failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": "Unable to load payroll liability payments",
+        }), 500
+    
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "liability-payments/<int:payment_id>",
+    methods=["GET"],
+)
+@require_auth
+def api_payroll_liability_payment_detail(
+    company_id,
+    payment_id,
+):
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        payment = db_service.payroll_liability_payment_get(
+            company_id=int(company_id),
+            payment_id=int(payment_id),
+        )
+
+        if not payment:
+            return jsonify({
+                "ok": False,
+                "error": "Payroll liability payment not found",
+            }), 404
+
+        return jsonify({
+            "ok": True,
+            "payment": payment,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+    except Exception:
+        current_app.logger.exception(
+            "Payroll liability payment detail failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": "Unable to load payroll liability payment",
+        }), 500

@@ -2599,6 +2599,31 @@ const ENDPOINTS = {
     journalPreview: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/journal-preview`,
 
+    // POST /api/companies/<cid>/payroll/runs/<runId>/liability-payment/preview
+    liabilityPaymentPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/liability-payment/preview`,
+
+    // POST /api/companies/<cid>/payroll/runs/<runId>/liability-payment
+    liabilityPayment: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/liability-payment`,
+
+    // GET /api/companies/<cid>/payroll/runs/<runId>/liability-payments
+    liabilityPayments: (companyId, runId, { liability_type = "" } = {}) => {
+      const params = new URLSearchParams();
+
+      if (liability_type) {
+        params.append("liability_type", String(liability_type));
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/liability-payments${qs ? `?${qs}` : ""}`;
+    },
+
+    // GET /api/companies/<cid>/payroll/liability-payments/<paymentId>
+    liabilityPaymentDetail: (companyId, paymentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/liability-payments/${encodeURIComponent(paymentId)}`,
+
     glDiagnostics: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/gl-diagnostics`,
   
@@ -64496,6 +64521,13 @@ async function saveEditModal() {
       returns:[],
       selectedReturn:null,
     },
+
+    payeClearing: {
+        selectedRunId: null,
+        preview: null,
+        banks: [],
+        history: [],
+    },
   };
 
   payrollState.employeeBenefits = payrollState.employeeBenefits || {
@@ -65991,6 +66023,7 @@ async function saveEditModal() {
 
     const r=d.run||{},lines=d.lines||[];
     const locked=["posted","reversed"].includes(r.status);
+    const posted=r.status==="posted";
 
     el.innerHTML=`
       <div class="payroll-posting-card">
@@ -66008,6 +66041,7 @@ async function saveEditModal() {
         </span>
 
         <div class="payroll-run-actions">
+
           <button
             id="payrollCalculateDcBtn"
             class="payroll-secondary dark"
@@ -66017,12 +66051,42 @@ async function saveEditModal() {
           </button>
 
           <button
+            id="payrollPreviewDcBtn"
+            class="payroll-secondary dark"
+            type="button"
+            ${lines.length?"":"disabled"}>
+            Preview Journal
+          </button>
+
+          <button
+            id="payrollPostDcBtn"
             class="payroll-primary"
             type="button"
-            disabled
-            title="Defined-contribution amounts are posted through the payroll run">
-            Posted through Payroll
+            ${locked||!lines.length?"disabled":""}>
+            Post Contributions
           </button>
+
+          <button
+            id="payrollReverseDcBtn"
+            class="payroll-secondary dark"
+            type="button"
+            ${posted?"":"disabled"}>
+            Reverse
+          </button>
+
+          ${
+            posted
+              ?`
+                <button
+                  id="payrollPayDcBtn"
+                  class="payroll-primary"
+                  type="button">
+                  Pay Contribution
+                </button>
+              `
+              :""
+          }
+
         </div>
       </div>
 
@@ -66094,11 +66158,44 @@ async function saveEditModal() {
             }
           </tbody>
         </table>
-      </div>`;
+      </div>
+
+      <div id="payrollDcJournalPreview"></div>
+    `;
 
     $("payrollCalculateDcBtn")?.addEventListener(
       "click",
-      ()=>calculatePayrollDcRun(r.id)
+      ()=>calculatePayrollDcRun(r.id).catch(error=>{
+        showPayrollStatus(error.message,"error");
+      })
+    );
+
+    $("payrollPreviewDcBtn")?.addEventListener(
+      "click",
+      ()=>previewPayrollDcRun(r.id).catch(error=>{
+        showPayrollStatus(error.message,"error");
+      })
+    );
+
+    $("payrollPostDcBtn")?.addEventListener(
+      "click",
+      ()=>postPayrollDcRun(r.id).catch(error=>{
+        showPayrollStatus(error.message,"error");
+      })
+    );
+
+    $("payrollReverseDcBtn")?.addEventListener(
+      "click",
+      ()=>reversePayrollDcRun(r.id).catch(error=>{
+        showPayrollStatus(error.message,"error");
+      })
+    );
+
+    $("payrollPayDcBtn")?.addEventListener(
+      "click",
+      ()=>openPayrollDcPayment(r.id).catch(error=>{
+        showPayrollStatus(error.message,"error");
+      })
     );
   }
 
@@ -67787,131 +67884,131 @@ async function saveEditModal() {
   }
 
   async function openPayrollBonusScheme(item={}){
-      const payload=await payrollForm(
-          item.id?"Edit bonus scheme":"New bonus scheme",
-          [
-              payrollGeneratedCodeField(
-                  "code","Scheme code",item.code
-              ),
-              {
-                  name:"name",
-                  label:"Scheme name",
-                  required:true,
-                  value:item.name||"",
-              },
-              {
-                  name:"scheme_type",
-                  label:"Scheme type",
-                  type:"select",
-                  required:true,
-                  value:item.scheme_type||"performance_bonus",
-                  options:[
-                      ["performance_bonus","Performance bonus"],
-                      ["profit_sharing","Profit sharing"],
-                      ["thirteenth_cheque","Thirteenth cheque"],
-                      ["retention_bonus","Retention bonus"],
-                      ["commission_accrual","Commission accrual"],
-                      ["other","Other"],
-                  ],
-              },
-              {
-                  name:"measurement_basis",
-                  label:"Remuneration basis",
-                  type:"select",
-                  required:true,
-                  value:item.measurement_basis||"basic_salary",
-                  options:[
-                      ["basic_salary","Basic salary"],
-                      ["gross_salary","Gross payroll earnings"],
-                      ["pensionable_salary","Pensionable payroll earnings"],
-                      ["taxable_salary","Taxable payroll earnings"],
-                  ],
-              },
-              {
-                  name:"target_percentage",
-                  label:"Target %",
-                  type:"number",
-                  step:"0.01",
-                  min:0,
-                  value:item.target_percentage||0,
-              },
-              {
-                  name:"probability_percentage",
-                  label:"Probability %",
-                  type:"number",
-                  step:"0.01",
-                  min:0,
-                  max:100,
-                  value:item.probability_percentage??100,
-              },
-              {
-                  name:"performance_percentage",
-                  label:"Performance %",
-                  type:"number",
-                  step:"0.01",
-                  min:0,
-                  value:item.performance_percentage??100,
-              },
-              {
-                  name:"required_service_months",
-                  label:"Required service months",
-                  type:"number",
-                  step:"1",
-                  min:0,
-                  value:item.required_service_months||0,
-              },
-              {
-                  name:"payment_due_date",
-                  label:"Payment due date",
-                  type:"date",
-                  value:item.payment_due_date||"",
-              },
-              {
-                  name:"expense_account_code",
-                  label:"Bonus expense account",
-                  type:"account",
-                  accountKind:"expense",
-                  required:true,
-                  value:item.expense_account_code||"",
-              },
-              {
-                  name:"liability_account_code",
-                  label:"Bonus liability account",
-                  type:"account",
-                  accountKind:"liability",
-                  required:true,
-                  value:item.liability_account_code||"",
-              },
-              {
-                  name:"is_short_term",
-                  label:"Short-term benefit",
-                  type:"checkbox",
-                  value:item.is_short_term!==false,
-              },
-              {
-                  name:"is_active",
-                  label:"Active",
-                  type:"checkbox",
-                  value:item.is_active!==false,
-              },
-          ],
-          item
-      );
+    const payload=await payrollForm(
+        item.id?"Edit bonus scheme":"New bonus scheme",
+        [
+            payrollGeneratedCodeField(
+                "code","Scheme code",item.code
+            ),
+            {
+                name:"name",
+                label:"Scheme name",
+                required:true,
+                value:item.name||"",
+            },
+            {
+                name:"scheme_type",
+                label:"Scheme type",
+                type:"select",
+                required:true,
+                value:item.scheme_type||"performance_bonus",
+                options:[
+                    ["performance_bonus","Performance bonus"],
+                    ["profit_sharing","Profit sharing"],
+                    ["thirteenth_cheque","Thirteenth cheque"],
+                    ["retention_bonus","Retention bonus"],
+                    ["commission_accrual","Commission accrual"],
+                    ["other","Other"],
+                ],
+            },
+            {
+                name:"measurement_basis",
+                label:"Remuneration basis",
+                type:"select",
+                required:true,
+                value:item.measurement_basis||"basic_salary",
+                options:[
+                    ["basic_salary","Basic salary"],
+                    ["gross_salary","Gross payroll earnings"],
+                    ["pensionable_salary","Pensionable payroll earnings"],
+                    ["taxable_salary","Taxable payroll earnings"],
+                ],
+            },
+            {
+                name:"target_percentage",
+                label:"Target %",
+                type:"number",
+                step:"0.01",
+                min:0,
+                value:item.target_percentage||0,
+            },
+            {
+                name:"probability_percentage",
+                label:"Probability %",
+                type:"number",
+                step:"0.01",
+                min:0,
+                max:100,
+                value:item.probability_percentage??100,
+            },
+            {
+                name:"performance_percentage",
+                label:"Performance %",
+                type:"number",
+                step:"0.01",
+                min:0,
+                value:item.performance_percentage??100,
+            },
+            {
+                name:"required_service_months",
+                label:"Required service months",
+                type:"number",
+                step:"1",
+                min:0,
+                value:item.required_service_months||0,
+            },
+            {
+                name:"payment_due_date",
+                label:"Payment due date",
+                type:"date",
+                value:item.payment_due_date||"",
+            },
+            {
+                name:"expense_account_code",
+                label:"Bonus expense account",
+                type:"account",
+                accountKind:"expense",
+                required:true,
+                value:item.expense_account_code||"",
+            },
+            {
+                name:"liability_account_code",
+                label:"Bonus liability account",
+                type:"account",
+                accountKind:"liability",
+                required:true,
+                value:item.liability_account_code||"",
+            },
+            {
+                name:"is_short_term",
+                label:"Short-term benefit",
+                type:"checkbox",
+                value:item.is_short_term!==false,
+            },
+            {
+                name:"is_active",
+                label:"Active",
+                type:"checkbox",
+                value:item.is_active!==false,
+            },
+        ],
+        item
+    );
 
-      if(!payload)return;
+    if(!payload)return;
 
-      await apiFetch(
-          item.id
-              ?ENDPOINTS.payroll.bonusScheme(cid(),item.id)
-              :ENDPOINTS.payroll.bonusSchemes(cid()),
-          {
-              method:item.id?"PATCH":"POST",
-              body:JSON.stringify(payload),
-          }
-      );
+    await apiFetch(
+        item.id
+            ?ENDPOINTS.payroll.bonusScheme(cid(),item.id)
+            :ENDPOINTS.payroll.bonusSchemes(cid()),
+        {
+            method:item.id?"PATCH":"POST",
+            body:JSON.stringify(payload),
+        }
+    );
 
-      await loadPayrollBonusWorkspace();
-      showPayrollStatus("Bonus scheme saved.","success");
+    await loadPayrollBonusWorkspace();
+    showPayrollStatus("Bonus scheme saved.","success");
   }
 
   function payrollEmployeeName(employee = {}) {
@@ -68365,6 +68462,527 @@ async function saveEditModal() {
     return selected
       .sort((a,b)=>a.name.localeCompare(b.name))
       .map(a=>[a.code,a.name]);
+  }
+
+  async function openPayrollDcPayment(runId){
+    const d=payrollState.employeeBenefits.selectedDefinedContributionRun;
+    const r=d?.run||{};
+    const lines=d?.lines||[];
+
+    if(!r.id||Number(r.id)!==Number(runId)){
+      await openPayrollDcRun(runId);
+    }
+
+    const current=payrollState.employeeBenefits.selectedDefinedContributionRun;
+    const run=current?.run||{};
+    const runLines=current?.lines||[];
+
+    if(!run.id||Number(run.id)!==Number(runId)){
+      throw new Error(
+        "Unable to load the selected contribution run"
+      );
+    }
+
+    if(String(run.status||"").toLowerCase()!=="posted"){
+      throw new Error(
+        "Post the contribution run before making payment"
+      );
+    }
+
+    /*
+    * The contribution run belongs to a payroll run.
+    *
+    * The generic liability-payment endpoint expects the
+    * PAYROLL RUN ID in its URL, while the body carries the
+    * DEFINED-CONTRIBUTION RUN ID.
+    */
+    const payrollRunId=Number(
+      run.payroll_run_id
+    );
+
+    if(!payrollRunId){
+      throw new Error(
+        "This contribution run is not linked to a payroll run"
+      );
+    }
+
+    /*
+    * Build the list of benefit plans contained in this
+    * contribution run.
+    */
+    const plans=[];
+
+    runLines.forEach(x=>{
+      const id=Number(x.plan_id);
+
+      if(!id)return;
+
+      if(!plans.some(p=>Number(p.id)===id)){
+        plans.push({
+          id:id,
+          code:x.plan_code||"",
+          name:x.plan_name||"",
+        });
+      }
+    });
+
+    if(!plans.length){
+      throw new Error(
+        "No benefit plan was found on this contribution run"
+      );
+    }
+
+    /*
+    * Load the existing company bank accounts.
+    */
+    const banks=await refreshBankAccounts();
+
+    const activeBanks=banks.filter(
+      x=>x.is_active!==false
+    );
+
+    if(!activeBanks.length){
+      throw new Error(
+        "No active bank accounts are available for payment"
+      );
+    }
+
+    const planOptions=plans.map(p=>[
+      p.id,
+      `${p.code}${p.code?" — ":""}${p.name}`,
+    ]);
+
+    const bankOptions=activeBanks.map(x=>[
+      x.id,
+      `${x.account_name||x.name||"Bank account"}`
+      +(
+        x.account_number
+          ?` — ${x.account_number}`
+          :""
+      ),
+    ]);
+
+    /*
+    * Step 1:
+    * Collect the payment information.
+    */
+    const payment=await payrollForm(
+      "Pay Defined Contribution",
+      [
+        {
+          name:"benefit_plan_id",
+          label:"Benefit plan",
+          type:"select",
+          required:true,
+          value:plans.length===1?plans[0].id:"",
+          options:planOptions,
+          placeholder:"Select benefit plan",
+        },
+
+        {
+          name:"bank_account_id",
+          label:"Bank account",
+          type:"select",
+          required:true,
+          options:bankOptions,
+          placeholder:"Select bank account",
+        },
+
+        {
+          name:"payment_date",
+          label:"Payment date",
+          type:"date",
+          required:true,
+          value:
+            run.payment_date
+            ||run.reporting_date
+            ||new Date().toISOString().slice(0,10),
+        },
+
+        {
+          name:"amount",
+          label:"Amount",
+          type:"number",
+          required:true,
+          step:"0.01",
+          min:0.01,
+          placeholder:"Enter payment amount",
+          value:"",
+        },
+
+        {
+          name:"reference",
+          label:"Payment reference",
+          value:
+            `${run.run_no||"DC"}-PAY`,
+        },
+
+        {
+          name:"notes",
+          label:"Notes",
+          type:"textarea",
+          value:"",
+        },
+      ],
+    );
+
+    if(!payment)return;
+
+    const selectedPlanId=Number(
+      payment.benefit_plan_id
+    );
+
+    if(!selectedPlanId){
+      throw new Error(
+        "Benefit plan is required"
+      );
+    }
+
+    const selectedBankId=Number(
+      payment.bank_account_id
+    );
+
+    if(!selectedBankId){
+      throw new Error(
+        "Bank account is required"
+      );
+    }
+
+    const paymentAmount=Number(
+      payment.amount
+    );
+
+    if(!Number.isFinite(paymentAmount)||paymentAmount<=0){
+      throw new Error(
+        "Payment amount must be greater than zero"
+      );
+    }
+
+    /*
+    * Step 2:
+    * Generate the official accounting preview.
+    *
+    * IMPORTANT:
+    *
+    * URL runId = PAYROLL RUN ID
+    *
+    * Body defined_contribution_run_id =
+    * CONTRIBUTION RUN ID
+    */
+    const previewResponse=await apiFetch(
+      ENDPOINTS.payroll.liabilityPaymentPreview(
+        cid(),
+        payrollRunId
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify({
+          liability_type:"defined_contribution",
+
+          payroll_run_id:payrollRunId,
+
+          defined_contribution_run_id:Number(
+            runId
+          ),
+
+          benefit_plan_id:selectedPlanId,
+
+          bank_account_id:selectedBankId,
+
+          payment_date:
+            payment.payment_date,
+
+          amount:paymentAmount,
+
+          reference:
+            payment.reference||null,
+
+          notes:
+            payment.notes||null,
+        }),
+      }
+    );
+
+    const preview=previewResponse?.preview;
+
+    if(!preview){
+      throw new Error(
+        previewResponse?.error
+        ||"Unable to generate payment preview"
+      );
+    }
+
+    /*
+    * The backend may tell us that the liability has already
+    * been fully paid.
+    */
+    if(preview.ready_to_post===false){
+      throw new Error(
+        preview.message
+        ||"This contribution liability has already been fully paid"
+      );
+    }
+
+    const previewPlan=
+      preview.benefit_plan
+      ||plans.find(
+        p=>Number(p.id)===selectedPlanId
+      )
+      ||{};
+
+    const previewLiabilityAccount=
+      preview.liability_account||{};
+
+    const previewBank=
+      preview.bank_account||{};
+
+    const previewJournal=
+      preview.journal||{};
+
+    const previewLines=
+      previewJournal.lines||[];
+
+    /*
+    * Step 3:
+    * Show the actual accounting preview before posting.
+    */
+    const journalText=previewLines.length
+      ?previewLines.map(x=>
+          `${x.account_code}`
+          +` — ${x.description||""}`
+          +` | Dr ${money(x.debit)}`
+          +` | Cr ${money(x.credit)}`
+        ).join("\n")
+      :"No journal lines returned";
+
+    const confirmed=await payrollForm(
+      "Confirm Contribution Payment",
+      [
+        {
+          name:"benefit_plan",
+          label:"Benefit plan",
+          readonly:true,
+          value:
+            `${previewPlan.code||""}`
+            +(
+              previewPlan.code
+                ?" — "
+                :""
+            )
+            +(
+              previewPlan.name
+              ||""
+            ),
+        },
+
+        {
+          name:"payment_date",
+          label:"Payment date",
+          type:"date",
+          readonly:true,
+          value:
+            String(
+              preview.payment_date||""
+            ),
+        },
+
+        {
+          name:"contribution_run",
+          label:"Contribution run",
+          readonly:true,
+          value:
+            String(
+              preview.defined_contribution_run_id
+              ||runId
+            ),
+        },
+
+        {
+          name:"liability_account",
+          label:"Contribution payable",
+          readonly:true,
+          value:
+            `${previewLiabilityAccount.code||""}`
+            +(
+              previewLiabilityAccount.code
+                ?" — "
+                :""
+            )
+            +(
+              previewLiabilityAccount.name
+              ||""
+            ),
+        },
+
+        {
+          name:"bank_account",
+          label:"Bank account",
+          readonly:true,
+          value:
+            `${previewBank.code||""}`
+            +(
+              previewBank.code
+                ?" — "
+                :""
+            )
+            +(
+              previewBank.name
+              ||""
+            ),
+        },
+
+        {
+          name:"recognized_amount",
+          label:"Recognized liability",
+          type:"number",
+          readonly:true,
+          value:
+            Number(
+              preview.recognized_amount||0
+            ).toFixed(2),
+        },
+
+        {
+          name:"previously_paid",
+          label:"Previously paid",
+          type:"number",
+          readonly:true,
+          value:
+            Number(
+              preview.previously_paid||0
+            ).toFixed(2),
+        },
+
+        {
+          name:"outstanding_amount",
+          label:"Outstanding before payment",
+          type:"number",
+          readonly:true,
+          value:
+            Number(
+              preview.outstanding_amount||0
+            ).toFixed(2),
+        },
+
+        {
+          name:"payment_amount",
+          label:"Payment amount",
+          type:"number",
+          readonly:true,
+          value:
+            Number(
+              preview.payment_amount||0
+            ).toFixed(2),
+        },
+
+        {
+          name:"remaining_amount",
+          label:"Remaining after payment",
+          type:"number",
+          readonly:true,
+          value:
+            Number(
+              preview.remaining_amount||0
+            ).toFixed(2),
+        },
+
+        {
+          name:"journal",
+          label:"Accounting journal",
+          type:"textarea",
+          readonly:true,
+          value:
+            journalText
+            +"\n\n"
+            +`Debits: ${money(
+              previewJournal.debits
+            )}`
+            +"\n"
+            +`Credits: ${money(
+              previewJournal.credits
+            )}`
+            +"\n"
+            +`Difference: ${money(
+              previewJournal.difference
+            )}`,
+        },
+      ],
+    );
+
+    if(!confirmed)return;
+
+    /*
+    * Step 4:
+    * Post the payment.
+    *
+    * Again:
+    *
+    * URL runId = PAYROLL RUN ID
+    *
+    * body defined_contribution_run_id =
+    * CONTRIBUTION RUN ID
+    */
+    const postResponse=await apiFetch(
+      ENDPOINTS.payroll.liabilityPayment(
+        cid(),
+        payrollRunId
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify({
+          liability_type:"defined_contribution",
+
+          payroll_run_id:payrollRunId,
+
+          defined_contribution_run_id:Number(
+            runId
+          ),
+
+          benefit_plan_id:selectedPlanId,
+
+          bank_account_id:selectedBankId,
+
+          payment_date:
+            payment.payment_date,
+
+          amount:
+            Number(
+              preview.payment_amount
+            ),
+
+          reference:
+            preview.reference
+            ||payment.reference
+            ||null,
+
+          notes:
+            payment.notes||null,
+        }),
+      }
+    );
+
+    if(
+      !postResponse
+      ||postResponse.ok===false
+    ){
+      throw new Error(
+        postResponse?.error
+        ||"Defined-contribution payment could not be posted"
+      );
+    }
+
+    /*
+    * Refresh the contribution run so the UI reflects the
+    * newly posted payment.
+    */
+    await openPayrollDcRun(runId);
+
+    await loadPayrollBenefitPlans();
+
+    showPayrollStatus(
+      "Defined-contribution payment posted and liability cleared.",
+      "success"
+    );
   }
 
   function renderPayrollBenefitDisclosure(){
@@ -69328,6 +69946,15 @@ async function saveEditModal() {
         fail(
           error,
           "Audit history could not be loaded."
+        )
+      );
+    }
+
+    if(tab==="posting"){
+      loadPayrollSalaryPayableClearing().catch(error=>
+        fail(
+          error,
+          "Salary payable clearing could not be loaded."
         )
       );
     }
@@ -73161,6 +73788,1350 @@ async function saveEditModal() {
     showPayrollStatus("Payroll posted successfully.", "success");
   }
 
+  async function loadPayrollSalaryPayableClearing() {
+    const runId = payrollState.selectedRun?.id;
+
+    if (!runId) {
+      return;
+    }
+
+    const companyId = cid();
+
+    const messageEl = $("payrollSalaryPaymentMessage");
+    const outstandingEl = $("payrollSalaryPaymentOutstanding");
+    const amountEl = $("payrollSalaryPaymentAmount");
+    const dateEl = $("payrollSalaryPaymentDate");
+    const bankEl = $("payrollSalaryPaymentBankAccount");
+    const referenceEl = $("payrollSalaryPaymentReference");
+    const previewEl = $("payrollSalaryPaymentPreview");
+    const postBtn = $("payrollSalaryPaymentPostBtn");
+
+    if (postBtn) {
+      postBtn.disabled = true;
+    }
+
+    if (previewEl) {
+      previewEl.innerHTML = "";
+    }
+
+    if (messageEl) {
+      messageEl.textContent =
+        "Loading salary payable balance…";
+    }
+
+    /*
+    * Load the existing company bank accounts.
+    *
+    * We deliberately reuse refreshBankAccounts()
+    * rather than creating another bank-account API call.
+    */
+    const banks = await refreshBankAccounts();
+
+    if (bankEl) {
+      bankEl.innerHTML =
+        `<option value="">-- Select bank account --</option>`;
+
+      (banks || []).forEach(bank => {
+        const id =
+          bank.id ??
+          bank.bank_account_id ??
+          null;
+
+        if (!id) return;
+
+        const bankName =
+          bank.bank_name ||
+          bank.bankName ||
+          bank.name ||
+          "Bank";
+
+        const accountName =
+          bank.account_name ||
+          bank.accountName ||
+          "";
+
+        const accountNumber =
+          bank.account_number ||
+          bank.accountNumber ||
+          "";
+
+        const currency =
+          bank.currency ||
+          bank.bank_currency ||
+          "";
+
+        const label = [
+          bankName,
+          accountName,
+          accountNumber
+            ? `(${accountNumber})`
+            : "",
+          currency
+            ? `• ${currency}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+
+        const option =
+          document.createElement("option");
+
+        option.value = String(id);
+        option.textContent =
+          label || `Bank account ${id}`;
+
+        bankEl.appendChild(option);
+
+        /*
+        * Use the company's default payment bank
+        * when one exists.
+        */
+        if (
+          bank.is_default_payments === true &&
+          !bankEl.value
+        ) {
+          bankEl.value = String(id);
+        }
+      });
+    }
+
+    /*
+    * Default the payment date to the payroll run's
+    * scheduled payment date.
+    */
+    const run = payrollState.selectedRun || {};
+
+    if (dateEl) {
+      dateEl.value =
+        String(run.payment_date || "").slice(0, 10);
+    }
+
+    /*
+    * Default the reference.
+    */
+    if (referenceEl && !referenceEl.value) {
+      referenceEl.value =
+        `SALARY-PAY-${run.run_no || runId}`;
+    }
+
+    /*
+    * The salary liability preview endpoint calculates
+    * the actual outstanding amount from the payroll
+    * posting and previously posted salary payments.
+    *
+    * We use amount=outstanding only after the preview
+    * response gives us the balance.
+    */
+    try {
+      const bankAccountId =
+        bankEl?.value || null;
+
+      if (!bankAccountId) {
+        if (messageEl) {
+          messageEl.textContent =
+            "Select a payment bank account to preview the salary payable balance.";
+        }
+        return;
+      }
+
+      const preview = await apiFetch(
+        ENDPOINTS.payroll.liabilityPaymentPreview(
+          companyId,
+          runId
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            liability_type: "salary",
+            bank_account_id: Number(bankAccountId),
+            payment_date:
+              dateEl?.value ||
+              run.payment_date ||
+              null,
+          }),
+        }
+      );
+
+      const data =
+        preview?.preview ||
+        preview?.data ||
+        preview ||
+        {};
+
+      const outstanding =
+        Number(
+          data.outstanding_amount ??
+          data.remaining_amount ??
+          data.amount ??
+          0
+        );
+
+      if (outstandingEl) {
+        outstandingEl.value =
+          money(outstanding);
+      }
+
+      if (amountEl) {
+        amountEl.value =
+          outstanding > 0
+            ? outstanding.toFixed(2)
+            : "";
+      }
+
+      if (messageEl) {
+        if (outstanding > 0) {
+          messageEl.innerHTML =
+            `Salary payable outstanding: <strong>${money(outstanding)}</strong>`;
+        } else {
+          messageEl.textContent =
+            "There is no outstanding salary payable for this payroll run.";
+        }
+      }
+
+    } catch (error) {
+      console.warn(
+        "[payroll] salary payable clearing load failed:",
+        error
+      );
+
+      if (messageEl) {
+        messageEl.textContent =
+          error?.message ||
+          "Salary payable balance could not be loaded.";
+      }
+    }
+  }
+
+  async function previewPayrollSalaryPayment() {
+    const companyId = cid();
+    const runId = payrollState.selectedRun?.id;
+
+    if (!runId) {
+      throw new Error("Select a payroll run first.");
+    }
+
+    const bankAccountId =
+      $("payrollSalaryPaymentBankAccount")?.value;
+
+    if (!bankAccountId) {
+      throw new Error("Select a payment bank account.");
+    }
+
+    const paymentDate =
+      $("payrollSalaryPaymentDate")?.value;
+
+    if (!paymentDate) {
+      throw new Error("Payment date is required.");
+    }
+
+    const amount =
+      Number(
+        $("payrollSalaryPaymentAmount")?.value || 0
+      );
+
+    if (!(amount > 0)) {
+      throw new Error("Payment amount must be greater than zero.");
+    }
+
+    const reference =
+      (
+        $("payrollSalaryPaymentReference")?.value ||
+        ""
+      ).trim();
+
+    const notes =
+      (
+        $("payrollSalaryPaymentNotes")?.value ||
+        ""
+      ).trim();
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.liabilityPaymentPreview(
+        companyId,
+        runId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          liability_type: "salary",
+          bank_account_id: Number(bankAccountId),
+          payment_date: paymentDate,
+          amount: amount,
+          reference: reference || null,
+          notes: notes || null,
+        }),
+      }
+    );
+
+    const preview =
+      res?.preview ||
+      res?.data ||
+      res ||
+      {};
+
+    payrollState.salaryPaymentPreview = preview;
+
+    renderPayrollSalaryPaymentPreview(preview);
+
+    return preview;
+  }
+
+  function renderPayrollSalaryPaymentPreview(preview) {
+    const container =
+      $("payrollSalaryPaymentPreview");
+
+    const postBtn =
+      $("payrollSalaryPaymentPostBtn");
+
+    if (!container) return;
+
+    const journal =
+      preview?.journal || {};
+
+    const lines =
+      journal?.lines ||
+      preview?.lines ||
+      [];
+
+    const accounts =
+      preview?.accounts ||
+      {};
+
+    const amount =
+      Number(
+        preview?.amount ||
+        preview?.payment_amount ||
+        0
+      );
+
+    const difference =
+      Number(
+        journal?.difference ??
+        preview?.difference ??
+        0
+      );
+
+    const ready =
+      Boolean(
+        preview?.ready_to_post ??
+        (
+          lines.length > 0 &&
+          Math.abs(difference) < 0.01
+        )
+      );
+
+    if (postBtn) {
+      postBtn.disabled = !ready;
+    }
+
+    if (!lines.length) {
+      container.innerHTML = `
+        <div class="payroll-empty-state">
+          <strong>No payment journal preview available</strong>
+          <p>
+            ${esc(
+              preview?.reason ||
+              "The salary payment could not be previewed."
+            )}
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="payroll-journal-meta">
+        <div>
+          <span>Liability</span>
+          <strong>
+            ${esc(
+              accounts?.liability?.name ||
+              accounts?.liability?.code ||
+              "Salary Payable"
+            )}
+          </strong>
+        </div>
+
+        <div>
+          <span>Bank</span>
+          <strong>
+            ${esc(
+              accounts?.bank?.name ||
+              accounts?.bank?.code ||
+              "Bank"
+            )}
+          </strong>
+        </div>
+
+        <div>
+          <span>Amount</span>
+          <strong>${money(amount)}</strong>
+        </div>
+
+        <div>
+          <span>Difference</span>
+          <strong>${money(difference)}</strong>
+        </div>
+      </div>
+
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Description</th>
+              <th class="num">Debit</th>
+              <th class="num">Credit</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${lines.map(line => `
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(
+                      line.account_name ||
+                      line.account_code ||
+                      "Unmapped account"
+                    )}
+                  </strong>
+                </td>
+
+                <td>
+                  ${esc(line.description || "")}
+                </td>
+
+                <td class="num debit-col">
+                  ${
+                    Number(line.debit || 0)
+                      ? money(line.debit)
+                      : "&mdash;"
+                  }
+                </td>
+
+                <td class="num credit-col">
+                  ${
+                    Number(line.credit || 0)
+                      ? money(line.credit)
+                      : "&mdash;"
+                  }
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+
+          <tfoot>
+            <tr>
+              <th colspan="2">
+                Total
+              </th>
+
+              <th class="num">
+                ${money(journal.debits || preview.debits || 0)}
+              </th>
+
+              <th class="num">
+                ${money(journal.credits || preview.credits || 0)}
+              </th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="${ready ? "notice success" : "notice error"}">
+        ${
+          ready
+            ? "Payment journal is balanced and ready to post."
+            : esc(
+                preview?.reason ||
+                "Payment journal is not ready to post."
+              )
+        }
+      </div>
+    `;
+  }
+
+  async function postPayrollSalaryPayment() {
+    const companyId = cid();
+    const runId = payrollState.selectedRun?.id;
+
+    if (!runId) {
+      throw new Error("Select a payroll run first.");
+    }
+
+    const preview =
+      payrollState.salaryPaymentPreview;
+
+    if (!preview) {
+      throw new Error(
+        "Preview the salary payment before posting."
+      );
+    }
+
+    if (
+      preview.ready_to_post === false
+    ) {
+      throw new Error(
+        preview.reason ||
+        "Salary payment is not ready to post."
+      );
+    }
+
+    const bankAccountId =
+      $("payrollSalaryPaymentBankAccount")?.value;
+
+    const paymentDate =
+      $("payrollSalaryPaymentDate")?.value;
+
+    const amount =
+      Number(
+        $("payrollSalaryPaymentAmount")?.value || 0
+      );
+
+    const reference =
+      (
+        $("payrollSalaryPaymentReference")?.value ||
+        ""
+      ).trim();
+
+    const notes =
+      (
+        $("payrollSalaryPaymentNotes")?.value ||
+        ""
+      ).trim();
+
+    if (!bankAccountId) {
+      throw new Error(
+        "Select a payment bank account."
+      );
+    }
+
+    if (!paymentDate) {
+      throw new Error(
+        "Payment date is required."
+      );
+    }
+
+    if (!(amount > 0)) {
+      throw new Error(
+        "Payment amount must be greater than zero."
+      );
+    }
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.liabilityPayment(
+        companyId,
+        runId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          liability_type: "salary",
+          bank_account_id: Number(bankAccountId),
+          payment_date: paymentDate,
+          amount: amount,
+          reference: reference || null,
+          notes: notes || null,
+        }),
+      }
+    );
+
+    const result =
+      res?.payment ||
+      res?.data ||
+      res ||
+      {};
+
+    payrollState.salaryPaymentPreview = null;
+
+    const previewEl =
+      $("payrollSalaryPaymentPreview");
+
+    if (previewEl) {
+      previewEl.innerHTML = `
+        <div class="notice success">
+          Salary payment posted successfully.
+          ${
+            result.journal_id
+              ? `Journal #${esc(String(result.journal_id))}.`
+              : ""
+          }
+        </div>
+      `;
+    }
+
+    $("payrollSalaryPaymentPostBtn")?.setAttribute(
+      "disabled",
+      "disabled"
+    );
+
+    await loadPayrollSalaryPayableClearing();
+
+    return result;
+  }
+
+  async function loadPayrollPayeClearing(runId) {
+    const companyId=cid();
+
+    if(!runId){
+        return;
+    }
+
+    payrollState.payeClearing.selectedRunId=Number(runId);
+    payrollState.payeClearing.preview=null;
+
+    const [banks,history]=await Promise.all([
+        refreshBankAccounts(),
+        apiFetch(
+            ENDPOINTS.payroll.liabilityPayments(
+                companyId,
+                runId,
+                {
+                    liability_type:"paye",
+                }
+            )
+        ),
+    ]);
+
+    payrollState.payeClearing.banks=
+        Array.isArray(banks)
+            ? banks
+            : [];
+
+    payrollState.payeClearing.history=
+        history?.items||
+        history?.payments||
+        [];
+
+    renderPayrollPayeClearing(
+        payrollState.payeClearing.history
+    );
+  }
+
+  window.loadPayrollPayeClearing=
+    loadPayrollPayeClearing;
+
+  function renderPayrollPayeClearing(history){
+    const el=$("payrollPayeClearingSection");
+
+    if(!el){
+        return;
+    }
+
+    const banks=
+        payrollState.payeClearing.banks||
+        [];
+
+    const payments=
+        Array.isArray(history)
+            ? history
+            : [];
+
+    const runId=
+        payrollState.payeClearing.selectedRunId;
+
+    const run=
+        payrollState.selectedRun||
+        {};
+
+    const postedRun=
+        String(run.status||"").toLowerCase()==="posted";
+
+    const paymentDate=
+        run.payment_date
+            ? String(run.payment_date).slice(0,10)
+            : "";
+
+    el.innerHTML=`
+        <div class="payroll-card">
+            <div class="payroll-card-head">
+                <div>
+                    <h3>PAYE Clearing</h3>
+                    <p class="payroll-muted">
+                        Clear the PAYE liability recognised by
+                        this posted payroll run when payment is made
+                        to the tax authority.
+                    </p>
+                </div>
+
+                <span class="payroll-pill">
+                    PAYE Payable
+                </span>
+            </div>
+
+            ${
+                !postedRun
+                    ? `
+                        <div class="notice error">
+                            PAYE can only be cleared after the
+                            payroll run has been posted.
+                        </div>
+                    `
+                    : `
+                        <div class="payroll-preview-meta">
+                            <div>
+                                <span>Payroll Run</span>
+                                <strong>
+                                    ${esc(run.run_no||String(runId))}
+                                </strong>
+                            </div>
+
+                            <div>
+                                <span>Payment Date</span>
+                                <strong>
+                                    ${formatPayrollDate(paymentDate)}
+                                </strong>
+                            </div>
+
+                            <div>
+                                <span>Liability</span>
+                                <strong>
+                                    PAYE Payable
+                                </strong>
+                            </div>
+
+                            <div>
+                                <span>Status</span>
+                                <strong>
+                                    Posted
+                                </strong>
+                            </div>
+                        </div>
+
+                        <div
+                            id="payrollPayeClearingOutstanding"
+                            class="payroll-empty-state"
+                        >
+                            <strong>
+                                PAYE outstanding amount
+                            </strong>
+                            <p>
+                                Enter the payment details below
+                                to preview the clearing entry.
+                            </p>
+                        </div>
+
+                        <div class="payroll-form-grid">
+
+                            <div class="payroll-field">
+                                <label for="payrollPayePaymentDate">
+                                    Payment Date
+                                </label>
+
+                                <input
+                                    id="payrollPayePaymentDate"
+                                    class="payroll-input"
+                                    type="date"
+                                    value="${esc(paymentDate)}"
+                                >
+                            </div>
+
+                            <div class="payroll-field">
+                                <label for="payrollPayeBankAccount">
+                                    Bank Account
+                                </label>
+
+                                <select
+                                    id="payrollPayeBankAccount"
+                                    class="payroll-input"
+                                >
+                                    <option value="">
+                                        Select bank account
+                                    </option>
+
+                                    ${banks.map(bank=>{
+                                        const label=[
+                                            bank.bank_name,
+                                            bank.account_name,
+                                            bank.account_number
+                                                ? `••••${String(bank.account_number).slice(-4)}`
+                                                : ""
+                                        ]
+                                        .filter(Boolean)
+                                        .join(" — ");
+
+                                        return `
+                                            <option
+                                                value="${esc(String(bank.id))}"
+                                            >
+                                                ${esc(
+                                                    label||
+                                                    bank.name||
+                                                    `Bank Account ${bank.id}`
+                                                )}
+                                            </option>
+                                        `;
+                                    }).join("")}
+                                </select>
+                            </div>
+
+                            <div class="payroll-field">
+                                <label for="payrollPayeAmount">
+                                    Payment Amount
+                                </label>
+
+                                <input
+                                    id="payrollPayeAmount"
+                                    class="payroll-input"
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                >
+                            </div>
+
+                            <div class="payroll-field">
+                                <label for="payrollPayeReference">
+                                    Payment Reference
+                                </label>
+
+                                <input
+                                    id="payrollPayeReference"
+                                    class="payroll-input"
+                                    type="text"
+                                    maxlength="150"
+                                    placeholder="e.g. SARS payment reference"
+                                >
+                            </div>
+
+                            <div
+                                class="payroll-field"
+                                style="grid-column:1/-1;"
+                            >
+                                <label for="payrollPayeNotes">
+                                    Notes
+                                </label>
+
+                                <textarea
+                                    id="payrollPayeNotes"
+                                    class="payroll-input"
+                                    rows="3"
+                                    placeholder="Optional payment notes"
+                                ></textarea>
+                            </div>
+
+                        </div>
+
+                        <div class="payroll-run-actions">
+
+                            <button
+                                id="payrollPayePreviewBtn"
+                                type="button"
+                                class="payroll-primary"
+                            >
+                                Preview PAYE Payment
+                            </button>
+
+                            <button
+                                id="payrollPayePostBtn"
+                                type="button"
+                                class="payroll-primary"
+                                disabled
+                            >
+                                Post PAYE Payment
+                            </button>
+
+                        </div>
+
+                        <div
+                            id="payrollPayePaymentPreview"
+                            class="hidden"
+                        ></div>
+
+                        <div class="payroll-card">
+                            <div class="payroll-card-head">
+                                <div>
+                                    <h3>PAYE Payment History</h3>
+                                    <p class="payroll-muted">
+                                        Payments already posted against
+                                        this payroll run.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div id="payrollPayePaymentHistory">
+                                ${
+                                    payments.length
+                                        ? `
+                                            <div class="payroll-table-wrap">
+                                                <table class="payroll-preview-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Date</th>
+                                                            <th>Reference</th>
+                                                            <th>Bank</th>
+                                                            <th>Status</th>
+                                                            <th class="num">
+                                                                Amount
+                                                            </th>
+                                                        </tr>
+                                                    </thead>
+
+                                                    <tbody>
+                                                        ${
+                                                            payments.map(
+                                                                payment=>`
+                                                                    <tr>
+                                                                        <td>
+                                                                            ${formatPayrollDate(
+                                                                                payment.payment_date
+                                                                            )}
+                                                                        </td>
+
+                                                                        <td>
+                                                                            ${esc(
+                                                                                payment.reference||
+                                                                                "—"
+                                                                            )}
+                                                                        </td>
+
+                                                                        <td>
+                                                                            ${esc(
+                                                                                payment.bank_account_code||
+                                                                                payment.bank_account_name||
+                                                                                "—"
+                                                                            )}
+                                                                        </td>
+
+                                                                        <td>
+                                                                            ${esc(
+                                                                                cap(
+                                                                                    payment.status||
+                                                                                    ""
+                                                                                )
+                                                                            )}
+                                                                        </td>
+
+                                                                        <td class="num">
+                                                                            ${money(
+                                                                                payment.amount
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                `
+                                                            ).join("")
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        `
+                                        : `
+                                            <div class="payroll-empty-state">
+                                                <strong>
+                                                    No PAYE payments posted
+                                                </strong>
+                                                <p>
+                                                    No PAYE clearing payment
+                                                    has been posted against
+                                                    this payroll run.
+                                                </p>
+                                            </div>
+                                        `
+                                }
+                            </div>
+                        </div>
+                    `
+            }
+        </div>
+    `;
+
+    if(!postedRun){
+        return;
+    }
+
+    $("payrollPayePreviewBtn")
+        ?.addEventListener(
+            "click",
+            previewPayrollPayePayment
+        );
+
+    $("payrollPayePostBtn")
+        ?.addEventListener(
+            "click",
+            postPayrollPayePayment
+        );
+  }
+
+  async function previewPayrollPayePayment(){
+    const companyId=cid();
+
+    const runId=
+        payrollState.payeClearing?.selectedRunId||
+        null;
+
+    if(!runId){
+        throw new Error(
+            "Select a payroll run first."
+        );
+    }
+
+    const bankAccountId=
+        $("payrollPayeBankAccount")?.value||
+        "";
+
+    const paymentDate=
+        $("payrollPayePaymentDate")?.value||
+        "";
+
+    const amount=
+        $("payrollPayeAmount")?.value||
+        "";
+
+    const reference=
+        $("payrollPayeReference")?.value.trim()||
+        "";
+
+    const notes=
+        $("payrollPayeNotes")?.value.trim()||
+        "";
+
+    if(!bankAccountId){
+        throw new Error(
+            "Select a bank account."
+        );
+    }
+
+    if(!paymentDate){
+        throw new Error(
+            "Payment date is required."
+        );
+    }
+
+    if(!amount||Number(amount)<=0){
+        throw new Error(
+            "Enter a valid PAYE payment amount."
+        );
+    }
+
+    const res=await apiFetch(
+        ENDPOINTS.payroll.liabilityPaymentPreview(
+            companyId,
+            runId
+        ),
+        {
+            method:"POST",
+            body:JSON.stringify({
+                liability_type:"paye",
+                bank_account_id:Number(
+                    bankAccountId
+                ),
+                payment_date:paymentDate,
+                amount:Number(amount),
+                reference:reference||null,
+                notes:notes||null,
+            }),
+        }
+    );
+
+    payrollState.payeClearing.preview=
+        res?.preview||
+        res?.data||
+        null;
+
+    renderPayrollPayePaymentPreview(
+        payrollState.payeClearing.preview
+    );
+  }
+
+
+  async function postPayrollPayePayment(){
+    const companyId=cid();
+
+    const runId=
+        payrollState.payeClearing?.selectedRunId||
+        null;
+
+    const preview=
+        payrollState.payeClearing?.preview||
+        null;
+
+    if(!runId){
+        throw new Error(
+            "Select a payroll run first."
+        );
+    }
+
+    if(!preview?.ready_to_post){
+        throw new Error(
+            "Preview the PAYE payment and resolve any errors before posting."
+        );
+    }
+
+    const bankAccountId=
+        $("payrollPayeBankAccount")?.value||
+        "";
+
+    const paymentDate=
+        $("payrollPayePaymentDate")?.value||
+        "";
+
+    const amount=
+        $("payrollPayeAmount")?.value||
+        "";
+
+    const reference=
+        $("payrollPayeReference")?.value.trim()||
+        "";
+
+    const notes=
+        $("payrollPayeNotes")?.value.trim()||
+        "";
+
+    const res=await apiFetch(
+        ENDPOINTS.payroll.liabilityPayment(
+            companyId,
+            runId
+        ),
+        {
+            method:"POST",
+            body:JSON.stringify({
+                liability_type:"paye",
+                bank_account_id:Number(
+                    bankAccountId
+                ),
+                payment_date:paymentDate,
+                amount:Number(amount),
+                reference:reference||null,
+                notes:notes||null,
+            }),
+        }
+    );
+
+    payrollState.payeClearing.preview=null;
+
+    showPayrollStatus(
+        "PAYE payment posted successfully.",
+        "success"
+    );
+
+    await loadPayrollPayeRunClearing(
+        runId
+    );
+  }
+
+  function renderPayrollPayePaymentPreview(preview){
+    const el=$("payrollPayePaymentPreview");
+
+    if(!el){
+        return;
+    }
+
+    const lines=
+        preview?.journal?.lines||
+        preview?.lines||
+        [];
+
+    const ready=Boolean(
+        preview?.ready_to_post
+    );
+
+    el.classList.remove("hidden");
+
+    el.innerHTML=`
+        <div class="payroll-card">
+            <div class="payroll-card-head">
+                <div>
+                    <h3>PAYE Payment Preview</h3>
+                    <p class="payroll-muted">
+                        Review the accounting entry before posting.
+                    </p>
+                </div>
+            </div>
+
+            ${
+                preview?.error
+                    ? `
+                        <div class="notice error">
+                            ${esc(preview.error)}
+                        </div>
+                    `
+                    : ""
+            }
+
+            <div class="payroll-journal-meta">
+
+                <div>
+                    <span>Liability</span>
+                    <strong>
+                        ${esc(
+                            preview?.accounts?.liability?.code||
+                            "PAYE Payable"
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Bank</span>
+                    <strong>
+                        ${esc(
+                            preview?.accounts?.bank?.code||
+                            preview?.bank_account?.ledger_account_code||
+                            "—"
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Payment Amount</span>
+                    <strong>
+                        ${money(
+                            preview?.amount||
+                            preview?.payment_amount||
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Difference</span>
+                    <strong>
+                        ${money(
+                            preview?.difference||
+                            0
+                        )}
+                    </strong>
+                </div>
+
+            </div>
+
+            ${
+                lines.length
+                    ? `
+                        <div class="payroll-table-wrap">
+                            <table class="payroll-preview-table">
+                                <thead>
+                                    <tr>
+                                        <th>Account</th>
+                                        <th>Description</th>
+                                        <th class="num">
+                                            Debit
+                                        </th>
+                                        <th class="num">
+                                            Credit
+                                        </th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    ${
+                                        lines.map(line=>`
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        ${esc(
+                                                            line.account_name||
+                                                            line.account_code||
+                                                            "Unmapped account"
+                                                        )}
+                                                    </strong>
+                                                </td>
+
+                                                <td>
+                                                    ${esc(
+                                                        line.description||
+                                                        ""
+                                                    )}
+                                                </td>
+
+                                                <td class="num debit-col">
+                                                    ${
+                                                        Number(
+                                                            line.debit||0
+                                                        )
+                                                            ? money(
+                                                                line.debit
+                                                            )
+                                                            : "&mdash;"
+                                                    }
+                                                </td>
+
+                                                <td class="num credit-col">
+                                                    ${
+                                                        Number(
+                                                            line.credit||0
+                                                        )
+                                                            ? money(
+                                                                line.credit
+                                                            )
+                                                            : "&mdash;"
+                                                    }
+                                                </td>
+                                            </tr>
+                                        `).join("")
+                                    }
+                                </tbody>
+
+                                <tfoot>
+                                    <tr>
+                                        <th colspan="2">
+                                            Total
+                                        </th>
+
+                                        <th class="num">
+                                            ${money(
+                                                preview?.journal?.debits||
+                                                preview?.debits||
+                                                0
+                                            )}
+                                        </th>
+
+                                        <th class="num">
+                                            ${money(
+                                                preview?.journal?.credits||
+                                                preview?.credits||
+                                                0
+                                            )}
+                                        </th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    `
+                    : `
+                        <div class="payroll-empty-state">
+                            <strong>
+                                No journal lines available
+                            </strong>
+                            <p>
+                                ${esc(
+                                    preview?.reason||
+                                    "The PAYE payment could not be previewed."
+                                )}
+                            </p>
+                        </div>
+                    `
+            }
+
+            <div
+                class="${
+                    ready
+                        ? "notice success"
+                        : "notice error"
+                } payroll-preview-result"
+            >
+                ${
+                    ready
+                        ? "PAYE payment journal is balanced and ready to post."
+                        : esc(
+                            preview?.reason||
+                            "PAYE payment is not ready to post."
+                        )
+                }
+            </div>
+        </div>
+    `;
+
+    const postButton=$(
+        "payrollPayePostBtn"
+    );
+
+    if(postButton){
+        postButton.disabled=!ready;
+    }
+  }
+
   function collectPayrollPaySetupItems() {
     return Array.from(
       document.querySelectorAll(
@@ -74715,12 +76686,32 @@ async function saveEditModal() {
                   Fixed amount
                 </option>
 
-                <option value="percentage">
-                  Percentage
+                <option value="basic_salary">
+                  Basic salary
+                </option>
+
+                <option value="basic_commission">
+                  Basic + commission
+                </option>
+
+                <option value="hours_rate">
+                  Hours × rate
+                </option>
+
+                <option value="days_rate">
+                  Days × rate
                 </option>
 
                 <option value="quantity_rate">
                   Quantity × rate
+                </option>
+
+                <option value="commission_only">
+                  Commission only
+                </option>
+
+                <option value="percentage">
+                  Percentage
                 </option>
 
                 <option value="manual">
@@ -74746,6 +76737,36 @@ async function saveEditModal() {
 
             <label
               class="payroll-pay-input-wrap hidden"
+              data-pay-basic-wrap="${esc(key)}"
+            >
+              Basic amount
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                data-pay-choice-basic="${esc(key)}"
+                placeholder="0.00"
+              >
+            </label>
+
+            <label
+              class="payroll-pay-input-wrap hidden"
+              data-pay-commission-wrap="${esc(key)}"
+            >
+              Commission
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                data-pay-choice-commission="${esc(key)}"
+                placeholder="0.00"
+              >
+            </label>
+
+            <label
+              class="payroll-pay-input-wrap hidden"
               data-pay-percent-wrap="${esc(key)}"
             >
               Percentage
@@ -74763,7 +76784,9 @@ async function saveEditModal() {
               class="payroll-pay-input-wrap hidden"
               data-pay-quantity-wrap="${esc(key)}"
             >
-              Hours / Quantity
+              <span data-pay-quantity-label="${esc(key)}">
+                Quantity
+              </span>
 
               <input
                 type="number"
@@ -74835,7 +76858,10 @@ async function saveEditModal() {
         );
 
         if (checkbox.checked) {
-          updatePayChoiceMethodFields(key, el);
+          updatePayChoiceMethodFields(
+            key,
+            el
+          );
         }
       });
     });
@@ -74847,22 +76873,36 @@ async function saveEditModal() {
         const key =
           select.dataset.payChoiceMethod;
 
-        updatePayChoiceMethodFields(key, el);
+        updatePayChoiceMethodFields(
+          key,
+          el
+        );
       });
     });
 
     el.querySelectorAll(
-      "[data-pay-choice-quantity], [data-pay-choice-rate]"
+      "[data-pay-choice-quantity]," +
+      " [data-pay-choice-rate]," +
+      " [data-pay-choice-amount]," +
+      " [data-pay-choice-basic]," +
+      " [data-pay-choice-commission]"
     ).forEach(input => {
       input.addEventListener("input", () => {
         const key =
           input.dataset.payChoiceQuantity ||
-          input.dataset.payChoiceRate;
+          input.dataset.payChoiceRate ||
+          input.dataset.payChoiceAmount ||
+          input.dataset.payChoiceBasic ||
+          input.dataset.payChoiceCommission;
 
-        calculatePayChoiceTotal(key, el);
+        calculatePayChoiceTotal(
+          key,
+          el
+        );
       });
     });
   }
+
 
   function togglePayChoiceWrap(
     container,
@@ -74903,51 +76943,131 @@ async function saveEditModal() {
         `[data-pay-choice-method="${key}"]`
       )?.value || "fixed_amount";
 
+    const isFixed =
+      method === "fixed_amount";
+
+    const isBasicSalary =
+      method === "basic_salary";
+
+    const isBasicCommission =
+      method === "basic_commission";
+
+    const isHours =
+      method === "hours_rate";
+
+    const isDays =
+      method === "days_rate";
+
+    const isQuantity =
+      method === "quantity_rate";
+
+    const isCommission =
+      method === "commission_only";
+
+    const isPercentage =
+      method === "percentage";
+
+    const isManual =
+      method === "manual";
+
     togglePayChoiceWrap(
       container,
       `[data-pay-fixed-wrap="${key}"]`,
-      method === "fixed_amount"
+      isFixed
+    );
+
+    togglePayChoiceWrap(
+      container,
+      `[data-pay-basic-wrap="${key}"]`,
+      isBasicSalary ||
+      isBasicCommission
+    );
+
+    togglePayChoiceWrap(
+      container,
+      `[data-pay-commission-wrap="${key}"]`,
+      isCommission ||
+      isBasicCommission
     );
 
     togglePayChoiceWrap(
       container,
       `[data-pay-percent-wrap="${key}"]`,
-      method === "percentage"
+      isPercentage
     );
 
     togglePayChoiceWrap(
       container,
       `[data-pay-quantity-wrap="${key}"]`,
-      method === "quantity_rate"
+      isHours ||
+      isDays ||
+      isQuantity
     );
 
     togglePayChoiceWrap(
       container,
       `[data-pay-rate-wrap="${key}"]`,
-      method === "quantity_rate"
+      isHours ||
+      isDays ||
+      isQuantity
     );
 
     togglePayChoiceWrap(
       container,
       `[data-pay-total-wrap="${key}"]`,
-      method === "quantity_rate"
+      isHours ||
+      isDays ||
+      isQuantity ||
+      isCommission ||
+      isBasicCommission
     );
 
     togglePayChoiceWrap(
       container,
       `[data-pay-manual-wrap="${key}"]`,
-      method === "manual"
+      isManual
     );
 
-    if (method === "quantity_rate") {
-      calculatePayChoiceTotal(key, container);
+    const quantityLabel =
+      container.querySelector(
+        `[data-pay-quantity-label="${key}"]`
+      );
+
+    if (quantityLabel) {
+      if (isHours) {
+        quantityLabel.textContent = "Hours";
+      } else if (isDays) {
+        quantityLabel.textContent = "Days";
+      } else {
+        quantityLabel.textContent = "Quantity";
+      }
+    }
+
+    if (
+      isBasicSalary ||
+      isBasicCommission ||
+      isHours ||
+      isDays ||
+      isQuantity ||
+      isCommission
+    ) {
+      calculatePayChoiceTotal(
+        key,
+        container
+      );
     }
   }
+
 
   function calculatePayChoiceTotal(
     key,
     container = document,
   ) {
+    const method =
+      container.querySelector(
+        `[data-pay-choice-method="${key}"]`
+      )?.value || "fixed_amount";
+
     const quantity = Number(
       container.querySelector(
         `[data-pay-choice-quantity="${key}"]`
@@ -74960,14 +77080,62 @@ async function saveEditModal() {
       )?.value || 0
     );
 
-    const total = quantity * rate;
-
-    const totalInput = container.querySelector(
-      `[data-pay-choice-total="${key}"]`
+    const basic = Number(
+      container.querySelector(
+        `[data-pay-choice-basic="${key}"]`
+      )?.value || 0
     );
 
+    const commission = Number(
+      container.querySelector(
+        `[data-pay-choice-commission="${key}"]`
+      )?.value || 0
+    );
+
+    const amount = Number(
+      container.querySelector(
+        `[data-pay-choice-amount="${key}"]`
+      )?.value || 0
+    );
+
+    let total = 0;
+
+    if (method === "basic_salary") {
+      total = basic;
+    }
+
+    else if (method === "basic_commission") {
+      total = basic + commission;
+    }
+
+    else if (method === "hours_rate") {
+      total = quantity * rate;
+    }
+
+    else if (method === "days_rate") {
+      total = quantity * rate;
+    }
+
+    else if (method === "quantity_rate") {
+      total = quantity * rate;
+    }
+
+    else if (method === "commission_only") {
+      total = commission;
+    }
+
+    else if (method === "fixed_amount") {
+      total = amount;
+    }
+
+    const totalInput =
+      container.querySelector(
+        `[data-pay-choice-total="${key}"]`
+      );
+
     if (totalInput) {
-      totalInput.value = total.toFixed(2);
+      totalInput.value =
+        total.toFixed(2);
     }
   }
 
@@ -81157,9 +83325,9 @@ async function saveEditModal() {
 
     const items = payrollState.statutory.returns || [];
 
-    const authority=
-        payrollState.statutory.selectedAuthority||
-        window.__taxFiling?.getSelectedAuthority?.()||
+    const authority =
+        payrollState.statutory.selectedAuthority ||
+        window.__taxFiling?.getSelectedAuthority?.() ||
         "SARS";
 
     const yearEl = $("taxFilingYear");
@@ -81175,8 +83343,11 @@ async function saveEditModal() {
 
     if (selectedYear) {
         filteredItems = filteredItems.filter(item => {
-            const periodStart = String(item.period_start || "").slice(0, 10);
-            const periodEnd = String(item.period_end || "").slice(0, 10);
+            const periodStart =
+                String(item.period_start || "").slice(0, 10);
+
+            const periodEnd =
+                String(item.period_end || "").slice(0, 10);
 
             if (selectedYear.includes('/')) {
                 const [year1, year2] = selectedYear.split('/');
@@ -81202,8 +83373,11 @@ async function saveEditModal() {
         !selectedMonth.toLowerCase().includes("all")
     ) {
         filteredItems = filteredItems.filter(item => {
-            const periodStart = String(item.period_start || "").slice(0, 10);
-            const periodEnd = String(item.period_end || "").slice(0, 10);
+            const periodStart =
+                String(item.period_start || "").slice(0, 10);
+
+            const periodEnd =
+                String(item.period_end || "").slice(0, 10);
 
             const startMonth = periodStart.slice(0, 7);
             const endMonth = periodEnd.slice(0, 7);
@@ -81215,169 +83389,272 @@ async function saveEditModal() {
         });
     }
 
-    if (!filteredItems.length) {
-        el.innerHTML = `
-            <div style="
-                padding:35px 20px;
-                text-align:center;
-                color:#94a3b8;
-                background:#f8fafc;
-                border:1px dashed #cbd5e1;
-                border-radius:8px;
-            ">
-                <div style="font-size:28px;margin-bottom:8px;">
-                    📭
-                </div>
-
-                <strong style="color:#475569;">
-                    No ${esc(authority)} statutory returns found
-                </strong>
-
-                <p style="margin:6px 0 0;">
-                    Try another tax year or filing month.
-                </p>
-            </div>
-        `;
-
-        return;
-    }
-
     el.innerHTML = `
-        <div class="payroll-table-wrap">
-            <table class="payroll-preview-table">
-                <thead>
-                    <tr>
-                        <th>Return</th>
-                        <th>Period</th>
-                        <th>Filed Date</th>
-                        <th>Employees</th>
-                        <th>PAYE / Employee</th>
-                        <th>Employer</th>
-                        <th>Total Payable</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
+        <div class="payroll-card">
 
-                <tbody>
-                    ${filteredItems.map(item => {
-                        const status = String(item.status || "").toLowerCase();
+            <div class="payroll-card-head">
+                <div>
+                    <h3>${esc(authority)} Statutory Returns</h3>
 
-                        const displayStatus =
-                            status === "submitted"
-                                ? "Filed"
-                                : cap(status);
+                    <p class="payroll-muted">
+                        Manage statutory returns and clear
+                        recognised payroll PAYE liabilities.
+                    </p>
+                </div>
+            </div>
 
-                        const canView = [
-                            "draft",
-                            "calculated",
-                            "approved",
-                            "submitted",
-                            "accepted",
-                            "rejected",
-                            "cancelled"
-                        ].includes(status);
-                        const canRevise = [
-                            "submitted",
-                            "accepted",
-                            "rejected"
-                        ].includes(status);
+            ${
+                filteredItems.length
+                    ? `
+                        <div class="payroll-table-wrap">
+                            <table class="payroll-preview-table">
+                                <thead>
+                                    <tr>
+                                        <th>Return</th>
+                                        <th>Period</th>
+                                        <th>Filed Date</th>
+                                        <th>Employees</th>
+                                        <th>PAYE / Employee</th>
+                                        <th>Employer</th>
+                                        <th>Total Payable</th>
+                                        <th>Status</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
 
-                        const filedDate =
-                            item.submission_date ||
-                            item.reporting_date ||
-                            null;
+                                <tbody>
+                                    ${filteredItems.map(item => {
+                                        const status =
+                                            String(
+                                                item.status || ""
+                                            ).toLowerCase();
 
-                        return `
-                            <tr>
-                                <td>
-                                    <strong>
-                                        ${esc(item.return_no)}
-                                    </strong>
-                                </td>
+                                        const displayStatus =
+                                            status === "submitted"
+                                                ? "Filed"
+                                                : cap(status);
 
-                                <td>
-                                    ${esc(
-                                        String(item.period_start || "")
-                                            .slice(0, 10)
-                                    )}
-                                    –
-                                    ${esc(
-                                        String(item.period_end || "")
-                                            .slice(0, 10)
-                                    )}
-                                </td>
+                                        const canView = [
+                                            "draft",
+                                            "calculated",
+                                            "approved",
+                                            "submitted",
+                                            "accepted",
+                                            "rejected",
+                                            "cancelled"
+                                        ].includes(status);
 
-                                <td>
-                                    ${filedDate
-                                        ? esc(String(filedDate).slice(0, 10))
-                                        : "—"}
-                                </td>
+                                        const canRevise = [
+                                            "submitted",
+                                            "accepted",
+                                            "rejected"
+                                        ].includes(status);
 
-                                <td>
-                                    ${Number(item.employee_count || 0)}
-                                </td>
+                                        const filedDate =
+                                            item.submission_date ||
+                                            item.reporting_date ||
+                                            null;
 
-                                <td class="num">
-                                    ${money(item.employee_amount)}
-                                </td>
+                                        return `
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        ${esc(
+                                                            item.return_no
+                                                        )}
+                                                    </strong>
+                                                </td>
 
-                                <td class="num">
-                                    ${money(item.employer_amount)}
-                                </td>
+                                                <td>
+                                                    ${esc(
+                                                        String(
+                                                            item.period_start || ""
+                                                        ).slice(0, 10)
+                                                    )}
+                                                    –
+                                                    ${esc(
+                                                        String(
+                                                            item.period_end || ""
+                                                        ).slice(0, 10)
+                                                    )}
+                                                </td>
 
-                                <td class="num">
-                                    <strong>
-                                        ${money(item.total_payable)}
-                                    </strong>
-                                </td>
+                                                <td>
+                                                    ${
+                                                        filedDate
+                                                            ? esc(
+                                                                String(
+                                                                    filedDate
+                                                                ).slice(0, 10)
+                                                            )
+                                                            : "—"
+                                                    }
+                                                </td>
 
-                                <td>
-                                    <span class="payroll-pill">
-                                        ${esc(displayStatus)}
-                                    </span>
-                                </td>
+                                                <td>
+                                                    ${
+                                                        Number(
+                                                            item.employee_count || 0
+                                                        )
+                                                    }
+                                                </td>
 
-                                <td>
-                                    <div style="
-                                        display:flex;
-                                        gap:8px;
-                                        align-items:center;
-                                    ">
-                                        ${canView ? `
-                                            <button
-                                                class="payroll-link"
-                                                data-view-statutory-return="${item.id}"
-                                            >
-                                                View
-                                            </button>
-                                        ` : ""}
+                                                <td class="num">
+                                                    ${money(
+                                                        item.employee_amount
+                                                    )}
+                                                </td>
 
-                                        ${canRevise ? `
-                                            <button
-                                                class="payroll-link"
-                                                data-revise-statutory-return="${item.id}"
-                                            >
-                                                Revise
-                                            </button>
-                                        ` : ""}
-                                    </div>
-                                </td>
-                            </tr>
-                        `;
-                    }).join("")}
-                </tbody>
-            </table>
+                                                <td class="num">
+                                                    ${money(
+                                                        item.employer_amount
+                                                    )}
+                                                </td>
+
+                                                <td class="num">
+                                                    <strong>
+                                                        ${money(
+                                                            item.total_payable
+                                                        )}
+                                                    </strong>
+                                                </td>
+
+                                                <td>
+                                                    <span class="payroll-pill">
+                                                        ${esc(
+                                                            displayStatus
+                                                        )}
+                                                    </span>
+                                                </td>
+
+                                                <td>
+                                                    <div style="
+                                                        display:flex;
+                                                        gap:8px;
+                                                        align-items:center;
+                                                    ">
+                                                        ${
+                                                            canView
+                                                                ? `
+                                                                    <button
+                                                                        class="payroll-link"
+                                                                        data-view-statutory-return="${item.id}"
+                                                                    >
+                                                                        View
+                                                                    </button>
+                                                                `
+                                                                : ""
+                                                        }
+
+                                                        ${
+                                                            canRevise
+                                                                ? `
+                                                                    <button
+                                                                        class="payroll-link"
+                                                                        data-revise-statutory-return="${item.id}"
+                                                                    >
+                                                                        Revise
+                                                                    </button>
+                                                                `
+                                                                : ""
+                                                        }
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join("")}
+                                </tbody>
+                            </table>
+                        </div>
+                    `
+                    : `
+                        <div style="
+                            padding:35px 20px;
+                            text-align:center;
+                            color:#94a3b8;
+                            background:#f8fafc;
+                            border:1px dashed #cbd5e1;
+                            border-radius:8px;
+                        ">
+                            <div style="
+                                font-size:28px;
+                                margin-bottom:8px;
+                            ">
+                                📭
+                            </div>
+
+                            <strong style="color:#475569;">
+                                No ${esc(authority)}
+                                statutory returns found
+                            </strong>
+
+                            <p style="margin:6px 0 0;">
+                                Try another tax year or filing month.
+                            </p>
+                        </div>
+                    `
+            }
+
         </div>
+
+        ${
+            authority.toUpperCase() === "SARS" ||
+            authority.toUpperCase() === "RSL" ||
+            authority.toUpperCase() === "BURS"
+                ? `
+                    <div
+                        id="payrollPayeClearingSection"
+                        style="margin-top:20px;"
+                    >
+                        <div class="payroll-card">
+
+                            <div class="payroll-card-head">
+                                <div>
+                                    <h3>PAYE Clearing</h3>
+
+                                    <p class="payroll-muted">
+                                        Clear PAYE recognised from
+                                        posted payroll runs when
+                                        payment is made to the
+                                        tax authority.
+                                    </p>
+                                </div>
+
+                                <span class="payroll-pill">
+                                    PAYE Payable
+                                </span>
+                            </div>
+
+                            <div
+                                id="payrollPayeClearingContent"
+                                class="payroll-empty-state"
+                            >
+                                <strong>
+                                    Select a payroll run
+                                </strong>
+
+                                <p>
+                                    Select a posted payroll run below
+                                    to view and clear its PAYE liability.
+                                </p>
+                            </div>
+
+                        </div>
+                    </div>
+                `
+                : ""
+        }
     `;
 
     el.querySelectorAll(
         "[data-view-statutory-return]"
     ).forEach(btn => {
         btn.addEventListener("click", () => {
-          window.openPayrollStatutoryReturn(
-              Number(btn.dataset.viewStatutoryReturn)
-          );
+            window.openPayrollStatutoryReturn(
+                Number(
+                    btn.dataset.viewStatutoryReturn
+                )
+            );
         });
     });
 
@@ -81386,11 +83663,726 @@ async function saveEditModal() {
     ).forEach(btn => {
         btn.addEventListener("click", () => {
             revisePayrollStatutoryReturn(
-                Number(btn.dataset.reviseStatutoryReturn)
+                Number(
+                    btn.dataset.reviseStatutoryReturn
+                )
             );
         });
     });
+
+    if (
+        authority.toUpperCase() === "SARS" ||
+        authority.toUpperCase() === "RSL" ||
+        authority.toUpperCase() === "BURS"
+    ) {
+        renderPayrollPayeClearingSelector();
+    }
   }
+
+async function renderPayrollPayeClearingSelector(){
+    const el=$("payrollPayeClearingContent");
+
+    if(!el){
+        return;
+    }
+
+    const companyId=cid();
+
+    el.innerHTML=`
+        <div class="payroll-empty-state">
+            <strong>Loading payroll runs&hellip;</strong>
+            <p>
+                Fetching posted payroll runs with PAYE liabilities.
+            </p>
+        </div>
+    `;
+
+    try{
+        const res=await apiFetch(
+            ENDPOINTS.payroll.runs(companyId)
+        );
+
+        const runs=
+            res?.items||
+            res?.runs||
+            res?.data||
+            [];
+
+        const postedRuns=Array.isArray(runs)
+            ? runs.filter(run=>
+                String(run.status||"").toLowerCase()==="posted"
+            )
+            : [];
+
+        if(!postedRuns.length){
+            el.innerHTML=`
+                <div class="payroll-empty-state">
+                    <strong>No posted payroll runs</strong>
+
+                    <p>
+                        PAYE can only be cleared after a payroll
+                        run has been posted.
+                    </p>
+                </div>
+            `;
+
+            return;
+        }
+
+        el.innerHTML=`
+            <div class="payroll-field">
+                <label for="payrollPayeRunSelector">
+                    Payroll Run
+                </label>
+
+                <select
+                    id="payrollPayeRunSelector"
+                    class="payroll-input"
+                >
+                    <option value="">
+                        Select posted payroll run
+                    </option>
+
+                    ${postedRuns.map(run=>`
+                        <option value="${esc(String(run.id))}">
+                            ${esc(
+                                run.run_no||
+                                `Payroll Run ${run.id}`
+                            )}
+                            ${
+                                run.period_start
+                                    ? ` — ${esc(
+                                        String(
+                                            run.period_start
+                                        ).slice(0,10)
+                                    )}`
+                                    : ""
+                            }
+                            ${
+                                run.period_end
+                                    ? ` – ${esc(
+                                        String(
+                                            run.period_end
+                                        ).slice(0,10)
+                                    )}`
+                                    : ""
+                            }
+                        </option>
+                    `).join("")}
+                </select>
+            </div>
+
+            <div
+                id="payrollPayeRunClearing"
+                style="margin-top:20px;"
+            >
+                <div class="payroll-empty-state">
+                    <strong>
+                        Select a payroll run
+                    </strong>
+
+                    <p>
+                        Select a posted payroll run to view
+                        its PAYE liability and payment history.
+                    </p>
+                </div>
+            </div>
+        `;
+
+        const selector=$(
+            "payrollPayeRunSelector"
+        );
+
+        selector?.addEventListener(
+            "change",
+            async()=>{
+                const runId=selector.value;
+
+                if(!runId){
+                    const target=$(
+                        "payrollPayeRunClearing"
+                    );
+
+                    if(target){
+                        target.innerHTML=`
+                            <div class="payroll-empty-state">
+                                <strong>
+                                    Select a payroll run
+                                </strong>
+
+                                <p>
+                                    Select a posted payroll run to
+                                    view its PAYE liability.
+                                </p>
+                            </div>
+                        `;
+                    }
+
+                    return;
+                }
+
+                await loadPayrollPayeRunClearing(
+                    Number(runId)
+                );
+            }
+        );
+
+    }catch(error){
+        el.innerHTML=`
+            <div class="notice error">
+                ${esc(
+                    error?.message||
+                    "Payroll runs could not be loaded."
+                )}
+            </div>
+        `;
+    }
+}
+
+
+async function loadPayrollPayeRunClearing(runId){
+    const target=$(
+        "payrollPayeRunClearing"
+    );
+
+    if(!target){
+        return;
+    }
+
+    const companyId=cid();
+
+    payrollState.payeClearing=
+        payrollState.payeClearing||{};
+
+    payrollState.payeClearing.selectedRunId=
+        Number(runId);
+
+    payrollState.payeClearing.preview=null;
+
+    target.innerHTML=`
+        <div class="payroll-empty-state">
+            <strong>
+                Loading PAYE liability&hellip;
+            </strong>
+
+            <p>
+                Fetching recognised PAYE and previous payments.
+            </p>
+        </div>
+    `;
+
+    try{
+        const runResponse=await apiFetch(
+            ENDPOINTS.payroll.run(
+                companyId,
+                runId
+            )
+        );
+
+        const run=
+            runResponse?.data||
+            runResponse?.run||
+            runResponse;
+
+        if(!run){
+            throw new Error(
+                "Payroll run could not be loaded."
+            );
+        }
+
+        const [history,banks]=await Promise.all([
+            apiFetch(
+                ENDPOINTS.payroll.liabilityPayments(
+                    companyId,
+                    runId,
+                    {
+                        liability_type:"paye",
+                    }
+                )
+            ),
+            refreshBankAccounts(),
+        ]);
+
+        payrollState.payeClearing.history=
+            history?.items||
+            history?.payments||
+            [];
+
+        payrollState.payeClearing.banks=
+            Array.isArray(banks)
+                ? banks
+                : [];
+
+        renderPayrollPayeRunClearing(
+            run,
+            payrollState.payeClearing.history,
+            payrollState.payeClearing.banks
+        );
+
+    }catch(error){
+        target.innerHTML=`
+            <div class="notice error">
+                ${esc(
+                    error?.message||
+                    "PAYE clearing could not be loaded."
+                )}
+            </div>
+        `;
+    }
+}
+
+
+function renderPayrollPayeRunClearing(
+    run,
+    history,
+    banks
+){
+    const target=$(
+        "payrollPayeRunClearing"
+    );
+
+    if(!target){
+        return;
+    }
+
+    const payments=
+        Array.isArray(history)
+            ? history
+            : [];
+
+    const paymentDate=
+        run?.payment_date
+            ? String(
+                run.payment_date
+            ).slice(0,10)
+            : "";
+
+    const postedPayments=
+        payments.filter(payment=>
+            String(
+                payment.status||""
+            ).toLowerCase()==="posted"
+        );
+
+    const paidAmount=
+        postedPayments.reduce(
+            (total,payment)=>
+                total+
+                Number(
+                    payment.amount||0
+                ),
+            0
+        );
+
+    target.innerHTML=`
+        <div class="payroll-card">
+
+            <div class="payroll-card-head">
+                <div>
+                    <h3>
+                        PAYE Liability
+                    </h3>
+
+                    <p class="payroll-muted">
+                        ${
+                            esc(
+                                run?.run_no||
+                                `Payroll Run ${run?.id||""}`
+                            )
+                        }
+                    </p>
+                </div>
+
+                <span class="payroll-pill">
+                    Posted
+                </span>
+            </div>
+
+            <div class="payroll-preview-meta">
+
+                <div>
+                    <span>Payroll Run</span>
+
+                    <strong>
+                        ${esc(
+                            run?.run_no||
+                            `#${run?.id||""}`
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Payroll Payment Date</span>
+
+                    <strong>
+                        ${formatPayrollDate(
+                            paymentDate
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Payments Already Posted</span>
+
+                    <strong>
+                        ${money(paidAmount)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Liability</span>
+
+                    <strong>
+                        PAYE Payable
+                    </strong>
+                </div>
+
+            </div>
+
+            <div
+                class="payroll-empty-state"
+                style="margin-top:16px;"
+            >
+                <strong>
+                    PAYE payment
+                </strong>
+
+                <p>
+                    Enter the actual amount paid to the
+                    tax authority. The server will validate
+                    it against the PAYE liability recognised
+                    by this payroll run and previous payments.
+                </p>
+            </div>
+
+            <div class="payroll-form-grid">
+
+                <div class="payroll-field">
+
+                    <label for="payrollPayePaymentDate">
+                        Payment Date
+                    </label>
+
+                    <input
+                        id="payrollPayePaymentDate"
+                        class="payroll-input"
+                        type="date"
+                        value="${esc(paymentDate)}"
+                    >
+
+                </div>
+
+                <div class="payroll-field">
+
+                    <label for="payrollPayeBankAccount">
+                        Bank Account
+                    </label>
+
+                    <select
+                        id="payrollPayeBankAccount"
+                        class="payroll-input"
+                    >
+
+                        <option value="">
+                            Select bank account
+                        </option>
+
+                        ${banks.map(bank=>{
+                            const accountNumber=
+                                bank.account_number
+                                    ? `••••${String(
+                                        bank.account_number
+                                    ).slice(-4)}`
+                                    : "";
+
+                            const label=[
+                                bank.bank_name,
+                                bank.account_name,
+                                accountNumber
+                            ]
+                            .filter(Boolean)
+                            .join(" — ");
+
+                            return `
+                                <option
+                                    value="${esc(
+                                        String(bank.id)
+                                    )}"
+                                >
+                                    ${esc(
+                                        label||
+                                        bank.name||
+                                        `Bank Account ${bank.id}`
+                                    )}
+                                </option>
+                            `;
+                        }).join("")}
+
+                    </select>
+
+                </div>
+
+                <div class="payroll-field">
+
+                    <label for="payrollPayeAmount">
+                        Payment Amount
+                    </label>
+
+                    <input
+                        id="payrollPayeAmount"
+                        class="payroll-input"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        placeholder="0.00"
+                    >
+
+                </div>
+
+                <div class="payroll-field">
+
+                    <label for="payrollPayeReference">
+                        Payment Reference
+                    </label>
+
+                    <input
+                        id="payrollPayeReference"
+                        class="payroll-input"
+                        type="text"
+                        maxlength="150"
+                        placeholder="Tax authority payment reference"
+                    >
+
+                </div>
+
+                <div
+                    class="payroll-field"
+                    style="grid-column:1/-1;"
+                >
+
+                    <label for="payrollPayeNotes">
+                        Notes
+                    </label>
+
+                    <textarea
+                        id="payrollPayeNotes"
+                        class="payroll-input"
+                        rows="3"
+                        placeholder="Optional payment notes"
+                    ></textarea>
+
+                </div>
+
+            </div>
+
+            <div class="payroll-run-actions">
+
+                <button
+                    id="payrollPayePreviewBtn"
+                    type="button"
+                    class="payroll-primary"
+                >
+                    Preview PAYE Payment
+                </button>
+
+                <button
+                    id="payrollPayePostBtn"
+                    type="button"
+                    class="payroll-primary"
+                    disabled
+                >
+                    Post PAYE Payment
+                </button>
+
+            </div>
+
+            <div
+                id="payrollPayePaymentPreview"
+                class="hidden"
+                style="margin-top:20px;"
+            ></div>
+
+        </div>
+
+        <div
+            class="payroll-card"
+            style="margin-top:20px;"
+        >
+
+            <div class="payroll-card-head">
+
+                <div>
+                    <h3>
+                        PAYE Payment History
+                    </h3>
+
+                    <p class="payroll-muted">
+                        Payments already posted against
+                        this payroll run.
+                    </p>
+                </div>
+
+            </div>
+
+            <div id="payrollPayePaymentHistory">
+
+                ${
+                    payments.length
+                        ? `
+                            <div class="payroll-table-wrap">
+
+                                <table class="payroll-preview-table">
+
+                                    <thead>
+                                        <tr>
+                                            <th>
+                                                Date
+                                            </th>
+
+                                            <th>
+                                                Reference
+                                            </th>
+
+                                            <th>
+                                                Bank
+                                            </th>
+
+                                            <th>
+                                                Status
+                                            </th>
+
+                                            <th class="num">
+                                                Amount
+                                            </th>
+
+                                            <th>
+                                                Journal
+                                            </th>
+                                        </tr>
+                                    </thead>
+
+                                    <tbody>
+
+                                        ${
+                                            payments.map(
+                                                payment=>`
+                                                    <tr>
+
+                                                        <td>
+                                                            ${formatPayrollDate(
+                                                                payment.payment_date
+                                                            )}
+                                                        </td>
+
+                                                        <td>
+                                                            ${esc(
+                                                                payment.reference||
+                                                                "—"
+                                                            )}
+                                                        </td>
+
+                                                        <td>
+                                                            ${esc(
+                                                                payment.bank_account_code||
+                                                                payment.bank_account_name||
+                                                                "—"
+                                                            )}
+                                                        </td>
+
+                                                        <td>
+                                                            <span class="payroll-pill">
+                                                                ${esc(
+                                                                    cap(
+                                                                        payment.status||
+                                                                        ""
+                                                                    )
+                                                                )}
+                                                            </span>
+                                                        </td>
+
+                                                        <td class="num">
+                                                            ${money(
+                                                                payment.amount
+                                                            )}
+                                                        </td>
+
+                                                        <td>
+                                                            ${
+                                                                payment.journal_id
+                                                                    ? `#${esc(
+                                                                        String(
+                                                                            payment.journal_id
+                                                                        )
+                                                                    )}`
+                                                                    : "—"
+                                                            }
+                                                        </td>
+
+                                                    </tr>
+                                                `
+                                            ).join("")
+                                        }
+
+                                    </tbody>
+
+                                </table>
+
+                            </div>
+                        `
+                        : `
+                            <div class="payroll-empty-state">
+
+                                <strong>
+                                    No PAYE payments posted
+                                </strong>
+
+                                <p>
+                                    This payroll run has not yet
+                                    had a PAYE clearing payment posted.
+                                </p>
+
+                            </div>
+                        `
+                }
+
+            </div>
+
+        </div>
+    `;
+
+    $("payrollPayePreviewBtn")
+        ?.addEventListener(
+            "click",
+            async()=>{
+                try{
+                    await previewPayrollPayePayment();
+                }catch(error){
+                    showPayrollStatus(
+                        error?.message||
+                        "PAYE payment preview failed.",
+                        "error"
+                    );
+                }
+            }
+        );
+
+    $("payrollPayePostBtn")
+        ?.addEventListener(
+            "click",
+            async()=>{
+                try{
+                    await postPayrollPayePayment();
+                }catch(error){
+                    showPayrollStatus(
+                        error?.message||
+                        "PAYE payment could not be posted.",
+                        "error"
+                    );
+                }
+            }
+        );
+  }
+
   window.loadPayrollStatutoryWorkspace = loadPayrollStatutoryWorkspace;
   window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
 
@@ -84381,6 +87373,70 @@ window.openPayrollStatutoryReturn=
       runPayrollAction(createPayrollBenefitType)
     );
 
+    $("payrollSalaryPaymentPreviewBtn")?.addEventListener(
+      "click",
+      async () => {
+        try {
+          const button =
+            $("payrollSalaryPaymentPreviewBtn");
+
+          if (button) {
+            button.disabled = true;
+          }
+
+          await previewPayrollSalaryPayment();
+
+        } catch (e) {
+          showPayrollStatus(
+            e.message,
+            "error"
+          );
+
+        } finally {
+          const button =
+            $("payrollSalaryPaymentPreviewBtn");
+
+          if (button) {
+            button.disabled = false;
+          }
+        }
+      }
+    );
+
+    $("payrollSalaryPaymentPostBtn")?.addEventListener(
+      "click",
+      async () => {
+        try {
+          const button =
+            $("payrollSalaryPaymentPostBtn");
+
+          if (button) {
+            button.disabled = true;
+          }
+
+          await postPayrollSalaryPayment();
+
+          showPayrollStatus(
+            "Salary payment posted successfully.",
+            "success"
+          );
+
+        } catch (e) {
+          showPayrollStatus(
+            e.message,
+            "error"
+          );
+
+          const preview =
+            payrollState.salaryPaymentPreview;
+
+          if (preview?.ready_to_post) {
+            $("payrollSalaryPaymentPostBtn")
+              ?.removeAttribute("disabled");
+          }
+        }
+      }
+    );
       [
         "payrollScheduleFrequency",
         "payrollPeriodStartDay",
@@ -125674,52 +128730,54 @@ function bindBillViewerModal() {
     return out > 0 ? out : 0;
   }
 
-  async function loadBanks() {
-    if (!elBank) return;
+  async function loadBanks(targetSelect = elBank) {
+    if (!targetSelect) return;
 
-    // keep your existing safety prune (even though we won't be using COA options anymore)
     pruneBankSelectOptions?.();
 
     const { cid } = getCtx();
     if (!cid) return;
 
-    // ✅ Correct endpoint: company bank accounts (used to pay vendors)
     const url =
       (typeof ENDPOINTS?.bankAccounts === "function")
         ? ENDPOINTS.bankAccounts(cid)
         : `${API_BASE}/api/companies/${cid}/bank_accounts`;
 
     try {
-      const keep = String(elBank.value || "");
+      const keep = String(targetSelect.value || "");
 
-      // optional: show loading state
-      elBank.innerHTML = `<option value="">Loading bank accounts…</option>`;
+      targetSelect.innerHTML =
+        `<option value="">Loading bank accounts…</option>`;
 
       const raw = await apiFetch(url, { method: "GET" });
-      const payload = (typeof unwrapApi === "function") ? unwrapApi(raw) : raw;
+      const payload =
+        (typeof unwrapApi === "function")
+          ? unwrapApi(raw)
+          : raw;
 
-      // Your Flask route returns jsonify(accounts) => likely an array
       const rows =
         Array.isArray(payload) ? payload :
         Array.isArray(payload?.data) ? payload.data :
         Array.isArray(payload?.accounts) ? payload.accounts :
         [];
 
-      // rebuild select
-      elBank.innerHTML = `<option value="">-- Select bank account --</option>`;
+      targetSelect.innerHTML =
+        `<option value="">-- Select bank account --</option>`;
 
       if (!rows.length) {
-        elBank.insertAdjacentHTML(
+        targetSelect.insertAdjacentHTML(
           "beforeend",
           `<option value="" disabled>(No bank accounts found)</option>`
         );
         return;
       }
 
-      // ✅ Normalize bank accounts into options
-      // Value: prefer bank_account_code / posting code if it exists, else fall back to id
       rows.forEach(b => {
-        const id = b.id ?? b.bank_account_id ?? b.bankAccountId ?? null;
+        const id =
+          b.id ??
+          b.bank_account_id ??
+          b.bankAccountId ??
+          null;
 
         const value =
           b.bank_account_code ||
@@ -125731,42 +128789,62 @@ function bindBillViewerModal() {
         if (!value) return;
 
         const bankName =
-          b.bank_name || b.bankName || b.name || "Bank";
+          b.bank_name ||
+          b.bankName ||
+          b.name ||
+          "Bank";
 
         const acctName =
-          b.account_name || b.accountName || b.label || "";
+          b.account_name ||
+          b.accountName ||
+          b.label ||
+          "";
 
         const acctNo =
-          b.account_number || b.accountNumber || "";
+          b.account_number ||
+          b.accountNumber ||
+          "";
 
         const ccy =
-          b.currency || b.bank_currency || "";
+          b.currency ||
+          b.bank_currency ||
+          "";
 
         const label = [
           bankName,
           acctName,
           acctNo ? `(${acctNo})` : "",
           ccy ? `• ${ccy}` : "",
-        ].filter(Boolean).join(" ").trim();
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
 
-        elBank.insertAdjacentHTML(
+        targetSelect.insertAdjacentHTML(
           "beforeend",
-          `<option value="${escapeHtml(String(value))}">${escapeHtml(label || String(value))}</option>`
+          `<option value="${escapeHtml(String(value))}">
+            ${escapeHtml(label || String(value))}
+          </option>`
         );
       });
 
-      // restore selection if still valid
-      if (keep) elBank.value = keep;
+      if (keep) {
+        targetSelect.value = keep;
+      }
 
     } catch (e) {
       console.warn("[AP] loadBanks failed:", url, e);
-      elBank.innerHTML = `<option value="" disabled>(Failed to load bank accounts)</option>`;
+
+      targetSelect.innerHTML =
+        `<option value="" disabled>
+          (Failed to load bank accounts)
+        </option>`;
+
     } finally {
-      // keep your prune hook
       pruneBankSelectOptions?.();
     }
   }
-
+  window.loadBanks = loadBanks;
   function bindWhtToggle() {
     if (!elWhtEnabled || !elWhtWrap) return;
     if (elWhtEnabled.dataset.bound === "1") return;

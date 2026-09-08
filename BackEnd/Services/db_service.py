@@ -64,6 +64,7 @@ from psycopg2.extras import Json, execute_values
 from psycopg2.pool import SimpleConnectionPool
 import uuid
 
+import logging
 from BackEnd.Services import accounting_classifiers as ac
 from BackEnd.Services.company_context import get_company_context, normalize_role
 from BackEnd.Services.industry_profiles import get_industry_profile
@@ -103,6 +104,7 @@ from BackEnd.Services.lessor_lease_engine import (
     build_lessor_billing_schedule,
     lessor_lease_engine,
 )
+from BackEnd.Services.emailer import send_company_mail
 # ────────────────────────────────────────────────────────────────
 # ENV-DEPENDENT CONFIG (NOW SAFE)
 # ────────────────────────────────────────────────────────────────
@@ -39250,6 +39252,75 @@ class DatabaseService:
             company_id,
             statutory_return_run_id,
             employee_id
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_liability_payments (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INTEGER NOT NULL,
+            payroll_run_id INTEGER NOT NULL,
+
+            liability_type VARCHAR(80) NOT NULL,
+            liability_account_code VARCHAR(50) NOT NULL,
+
+            bank_account_id INTEGER NOT NULL,
+            bank_account_code VARCHAR(50) NOT NULL,
+
+            payment_date DATE NOT NULL,
+
+            amount NUMERIC(18, 2) NOT NULL,
+
+            status VARCHAR(20) NOT NULL DEFAULT 'draft',
+
+            reference VARCHAR(150),
+            notes TEXT,
+
+            journal_id BIGINT,
+
+            created_by BIGINT,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+
+            posted_at TIMESTAMP,
+
+            CONSTRAINT payroll_liability_payments_amount_chk
+                CHECK (amount > 0),
+
+            CONSTRAINT payroll_liability_payments_status_chk
+                CHECK (
+                    status IN (
+                        'draft',
+                        'posted',
+                        'reversed'
+                    )
+                )
+        );
+
+        ALTER TABLE {schema}.payroll_liability_payments
+        ADD COLUMN IF NOT EXISTS benefit_plan_id BIGINT;
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_liability_payments_plan
+        ON {schema}.payroll_liability_payments (payroll_run_id, liability_type, benefit_plan_id);
+
+        CREATE INDEX IF NOT EXISTS
+            idx_payroll_liability_payments_run
+        ON {schema}.payroll_liability_payments (
+            company_id,
+            payroll_run_id,
+            liability_type,
+            status
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            idx_payroll_liability_payments_journal
+        ON {schema}.payroll_liability_payments (
+            journal_id
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            idx_payroll_liability_payments_reference
+        ON {schema}.payroll_liability_payments (
+            company_id,
+            reference
         );
         """
         self.execute_ddl(
@@ -154603,118 +154674,150 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         self,
         setup: dict,
         basic,
+        facts: dict,
         tax_context: dict = None,
+        commission_amount=Decimal("0.00"),
     )->dict:
-        earnings=[]
-        deductions=[]
-        benefits=[]
-        contributions=[]
+        earnings = []
+        deductions = []
+        benefits = []
+        contributions = []
 
-        basic=_payroll_money(basic)
+        basic = _payroll_money(basic)
+        commission_amount = _payroll_money(
+            commission_amount
+        )
 
-        if basic>0:
+        if basic > 0:
             earnings.append({
-                "item_type":"earning",
-                "item_id":setup.get("basic_earning_type_id"),
-                "code":"BASIC",
-                "name":"Basic Salary",
-                "amount":basic,
-                "quantity":setup.get("standard_quantity"),
-                "rate":setup.get("rate"),
-                "percentage":None,
-                "taxable":True,
-                "pensionable":True,
-                "source_type":"pay_setup",
-                "source_id":setup["id"],
-                "gl_account_code":None,
-                "offset_account_code":None,
-                "metadata":{},
+                "item_type": "earning",
+                "item_id": setup.get(
+                    "basic_earning_type_id"
+                ),
+                "code": "BASIC",
+                "name": "Basic Salary",
+                "amount": basic,
+                "quantity": setup.get(
+                    "standard_quantity"
+                ),
+                "rate": setup.get("rate"),
+                "percentage": None,
+                "taxable": True,
+                "pensionable": True,
+                "source_type": "pay_setup",
+                "source_id": setup["id"],
+                "gl_account_code": None,
+                "offset_account_code": None,
+                "metadata": {},
             })
 
         for item in setup.get("items") or []:
-            if item.get("item_type")=="earning" and item.get("code")=="BASIC":
+            if (
+                item.get("item_type") == "earning"
+                and item.get("code") == "BASIC"
+            ):
                 continue
 
-            if item.get("calculation_method")=="manual":
+            method = str(
+                item.get("calculation_method")
+                or "fixed_amount"
+            ).strip().lower()
+
+            if method == "manual":
                 continue
 
-            code=str(item.get("code") or "").strip().upper()
+            code = str(
+                item.get("code") or ""
+            ).strip().upper()
 
             if code in ("UIF_EMP", "UIF_ER"):
                 continue
 
-            amount=self.payroll_setup_item_amount(
+            amount = self.payroll_setup_item_amount(
                 item,
                 basic,
+                facts,
+                commission_amount,
             )
 
-            if amount<=0:
+            if amount <= 0:
                 continue
 
-            item_type=item.get("item_type")
+            item_type = item.get("item_type")
 
-            gl_account_code=item.get("gl_account_code")
-            offset_account_code=item.get("offset_account_code")
+            gl_account_code = item.get(
+                "gl_account_code"
+            )
 
-            if item_type=="earning":
-                gl_account_code=(
+            offset_account_code = item.get(
+                "offset_account_code"
+            )
+
+            if item_type == "earning":
+                gl_account_code = (
                     item.get("expense_account_code")
                     or item.get("gl_account_code")
                 )
 
-            elif item_type=="deduction":
-                gl_account_code=(
+            elif item_type == "deduction":
+                gl_account_code = (
                     item.get("posting_account_code")
                     or item.get("liability_account_code")
                     or item.get("gl_account_code")
                 )
 
-            elif item_type=="contribution":
-                gl_account_code=(
+            elif item_type == "contribution":
+                gl_account_code = (
                     item.get("liability_account_code")
                     or item.get("gl_account_code")
                 )
 
-                offset_account_code=(
+                offset_account_code = (
                     item.get("expense_account_code")
                     or item.get("offset_account_code")
                 )
 
-            line={
+            line = {
                 **item,
-                "name":item.get("name") or item.get("description"),
-                "amount":amount,
-                "source_type":"pay_setup_item",
-                "source_id":item["id"],
-                "gl_account_code":gl_account_code,
-                "offset_account_code":offset_account_code,
-                "metadata":{
-                    **(item.get("metadata") or {}),
+                "name": (
+                    item.get("name")
+                    or item.get("description")
+                ),
+                "amount": amount,
+                "source_type": "pay_setup_item",
+                "source_id": item["id"],
+                "gl_account_code": gl_account_code,
+                "offset_account_code": offset_account_code,
+                "metadata": {
+                    **(
+                        item.get("metadata")
+                        or {}
+                    ),
                     "posting_account_type":
                         item.get("posting_account_type")
-                        if item_type=="deduction"
+                        if item_type == "deduction"
                         else None,
                 },
             }
 
-            if item_type=="earning":
+            if item_type == "earning":
                 earnings.append(line)
 
-            elif item_type=="deduction":
-                if item.get("code")!="PAYE":
+            elif item_type == "deduction":
+                if item.get("code") != "PAYE":
                     deductions.append(line)
 
-            elif item_type=="benefit":
+            elif item_type == "benefit":
                 benefits.append(line)
 
-            elif item_type=="contribution":
+            elif item_type == "contribution":
                 contributions.append(line)
 
-        return{
-            "earnings":earnings,
-            "deductions":deductions,
-            "benefits":benefits,
-            "contributions":contributions,
+        return {
+            "earnings": earnings,
+            "deductions": deductions,
+            "benefits": benefits,
+            "contributions": contributions,
         }
 
     def payroll_calculate_uif(
@@ -155183,6 +155286,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             setup,
             facts,
         )
+
         basic=basic_result["prorated_basic_amount"]
 
         print(
@@ -155193,10 +155297,81 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             setup.get("items"),
         )
 
+        # ---------------------------------------------------------
+        # PERIOD INPUTS
+        # ---------------------------------------------------------
+
+        period_lines=self._payroll_period_input_lines(
+            company_id,
+            payroll_run_id,
+            employee_id,
+        )
+
+        # ---------------------------------------------------------
+        # COMMISSION FROM APPROVED PERIOD INPUTS
+        # ---------------------------------------------------------
+
+        commission_amount=sum(
+            (
+                _payroll_decimal(x.get("amount"))
+                for x in period_lines["earnings"]
+                if str(x.get("code") or "").strip().upper()
+                == "COMMISSION"
+            ),
+            Decimal("0"),
+        )
+
+        # ---------------------------------------------------------
+        # DETERMINE WHETHER COMMISSION IS CONSUMED BY PAY SETUP
+        # ---------------------------------------------------------
+
+        commission_methods=[]
+
+        for setup_item in (setup.get("items") or []):
+            method=str(
+                setup_item.get("calculation_method")
+                or ""
+            ).strip().lower()
+
+            if method in (
+                "basic_commission",
+                "commission_only",
+            ):
+                commission_methods.append(method)
+
+        if len(commission_methods)>1:
+            raise ValueError(
+                f"Employee {employee.get('employee_no')} {name} "
+                f"has multiple commission calculation methods "
+                f"configured. Use only one of "
+                f"'basic_commission' or 'commission_only'."
+            )
+
+        commission_consumed=bool(commission_methods)
+
+        print(
+            "PAYROLL DEBUG COMMISSION:",
+            employee_id,
+            "amount=",
+            commission_amount,
+            "method=",
+            commission_methods[0]
+            if commission_methods
+            else None,
+            "consumed=",
+            commission_consumed,
+        )
+
+        # ---------------------------------------------------------
+        # SETUP LINES
+        # ---------------------------------------------------------
+
         setup_lines=self._payroll_setup_lines(
             setup,
             basic,
+            facts,
             tax_context,
+            commission_amount,
         )
 
         print(
@@ -155207,25 +155382,45 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             setup_lines.get("earnings"),
         )
 
-        period_lines=self._payroll_period_input_lines(
-            company_id,
-            payroll_run_id,
-            employee_id,
-        )
+        # ---------------------------------------------------------
+        # PERIOD INPUT EARNINGS
+        # ---------------------------------------------------------
+
+        period_earning_lines=[]
+
+        for line in period_lines["earnings"]:
+            code=str(
+                line.get("code") or ""
+            ).strip().upper()
+
+            if(
+                commission_consumed
+                and code=="COMMISSION"
+            ):
+                continue
+
+            period_earning_lines.append(line)
 
         earning_lines=(
             setup_lines["earnings"]
-            +period_lines["earnings"]
+            +period_earning_lines
         )
+
         deduction_lines=(
             setup_lines["deductions"]
             +period_lines["deductions"]
         )
+
         benefit_lines=setup_lines["benefits"]
+
         contribution_lines=(
             setup_lines["contributions"]
             +period_lines["contributions"]
         )
+
+        # ---------------------------------------------------------
+        # GROSS
+        # ---------------------------------------------------------
 
         gross=sum(
             (
@@ -155235,8 +155430,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             Decimal("0"),
         )
 
-        uif_employee = Decimal("0.00")
-        uif_employer = Decimal("0.00")
+        # ---------------------------------------------------------
+        # UIF
+        # ---------------------------------------------------------
+
+        uif_employee=Decimal("0.00")
+        uif_employer=Decimal("0.00")
 
         print(
             "PAYROLL DEBUG UIF CONTEXT:",
@@ -155249,14 +155448,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             gross,
         )
 
-        if str(tax_context.get("authority_code") or "").upper() == "SARS":
-            uif_employee = self.payroll_calculate_uif(
+        if str(
+            tax_context.get("authority_code") or ""
+        ).upper()=="SARS":
+
+            uif_employee=self.payroll_calculate_uif(
                 tax_context=tax_context,
                 remuneration=gross,
                 side="employee",
             )
 
-            uif_employer = self.payroll_calculate_uif(
+            uif_employer=self.payroll_calculate_uif(
                 tax_context=tax_context,
                 remuneration=gross,
                 side="employer",
@@ -155270,6 +155472,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "employer=",
             uif_employer,
         )
+
         if uif_employee>0:
             deduction_lines.append({
                 "item_type":"deduction",
@@ -155313,6 +155516,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "calculation":"statutory_uif",
                 },
             })
+
+        # ---------------------------------------------------------
+        # TAXABLE EARNINGS
+        # ---------------------------------------------------------
+
         taxable_earnings=sum(
             (
                 _payroll_decimal(x.get("amount"))
@@ -155334,6 +155542,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         taxable_income=_payroll_money(
             taxable_earnings+taxable_benefits
         )
+
+        # ---------------------------------------------------------
+        # PAYE
+        # ---------------------------------------------------------
 
         tax_treatment=(
             setup.get("tax_treatment")
@@ -155389,9 +155601,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 frequency=run["frequency"],
                 tax_profile=tax_profile,
             )
+
             paye=_payroll_money(
                 tax_result.get("paye")
             )
+
+        # ---------------------------------------------------------
+        # PENSIONABLE PAY
+        # ---------------------------------------------------------
 
         pensionable_pay=sum(
             (
@@ -155415,6 +155632,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         deduction_lines.extend(dc_deductions)
         contribution_lines.extend(dc_contributions)
 
+        # ---------------------------------------------------------
+        # TOTALS
+        # ---------------------------------------------------------
+
         employee_deductions=sum(
             (
                 _payroll_decimal(x.get("amount"))
@@ -155434,13 +155655,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         total_deductions=_payroll_money(
             employee_deductions+paye
         )
+
         gross=_payroll_money(gross)
+
         employer_contributions=_payroll_money(
             employer_contributions
         )
+
         net_pay=_payroll_money(
             gross-total_deductions
         )
+
         employer_cost=_payroll_money(
             gross+employer_contributions
         )
@@ -155467,6 +155692,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "calculation_message":None,
         }
 
+        # ---------------------------------------------------------
+        # SAVE RUN EMPLOYEE
+        # ---------------------------------------------------------
+
         run_employee=self._payroll_save_run_employee(
             company_id,
             payroll_run_id,
@@ -155477,6 +155706,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             basic_result,
             result,
         )
+
+        # ---------------------------------------------------------
+        # SAVE RUN LINES
+        # ---------------------------------------------------------
 
         all_lines=[
             *[
@@ -155539,7 +155772,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "employer":employer_contributions,
             "net":net_pay,
         }
-
 
     def _payroll_update_run_totals(
         self,
@@ -156044,6 +156276,350 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             month,
         ))
 
+    def payroll_payslip_employees(
+        self,
+        company_id: int,
+        payroll_run_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        rows = self.db.fetch_all(
+            f"""
+            SELECT
+                pre.employee_id,
+                pe.employee_no,
+                pe.first_name,
+                pe.last_name,
+                pe.email,
+                pe.phone,
+                pe.id_number,
+                pe.passport_number,
+                pe.tax_number,
+                pe.department_id,
+                pe.position_id,
+                pe.start_date,
+                pe.termination_date,
+                pe.employment_status,
+                pe.is_archived
+            FROM {schema}.payroll_run_employees pre
+            JOIN {schema}.payroll_employees pe
+                ON pe.id = pre.employee_id
+            WHERE pre.company_id = %s
+            AND pre.payroll_run_id = %s
+            ORDER BY
+                pe.last_name,
+                pe.first_name,
+                pe.employee_no
+            """,
+            (
+                int(company_id),
+                int(payroll_run_id),
+            ),
+        )
+
+        return rows or []
+
+    import logging
+    def payroll_send_bulk_payslips(
+        self,
+        company_id: int,
+        payroll_run_id: int,
+    ) -> dict:
+        from BackEnd.Services.utils.payslip_template import render_payslip_pdf
+        from BackEnd.Services.emailer import send_company_mail
+
+        employees = self.payroll_payslip_employees(
+            company_id=company_id,
+            payroll_run_id=payroll_run_id,
+        )
+
+        if not employees:
+            return {
+                "ok": True,
+                "sent": 0,
+                "skipped": 0,
+                "failed": 0,
+                "message": "No employees were found on this payroll run",
+                "results": [],
+            }
+
+        sent = 0
+        skipped = 0
+        failed = 0
+        results = []
+
+        for employee in employees:
+            employee_id = employee.get("employee_id")
+
+            email = (
+                str(employee.get("email") or "")
+                .strip()
+            )
+
+            first_name = (
+                str(employee.get("first_name") or "")
+                .strip()
+            )
+
+            last_name = (
+                str(employee.get("last_name") or "")
+                .strip()
+            )
+
+            employee_name = (
+                f"{first_name} {last_name}"
+            ).strip()
+
+            employee_no = (
+                str(employee.get("employee_no") or "")
+                .strip()
+            )
+
+            if not employee_id:
+                skipped += 1
+
+                results.append({
+                    "employee_id": None,
+                    "employee_no": employee_no,
+                    "employee_name": employee_name,
+                    "email": email or None,
+                    "status": "skipped",
+                    "reason": "Employee ID is missing",
+                })
+
+                continue
+
+            if not email:
+                skipped += 1
+
+                results.append({
+                    "employee_id": employee_id,
+                    "employee_no": employee_no,
+                    "employee_name": employee_name,
+                    "email": None,
+                    "status": "skipped",
+                    "reason": "Employee has no email address",
+                })
+
+                continue
+
+            try:
+                existing = self.db.fetch_one(
+                    f"""
+                    SELECT
+                        id,
+                        status,
+                        sent_at
+                    FROM {self.company_schema(company_id)}.payroll_payslip_email_log
+                    WHERE company_id = %s
+                    AND payroll_run_id = %s
+                    AND employee_id = %s
+                    LIMIT 1
+                    """,
+                    (
+                        int(company_id),
+                        int(payroll_run_id),
+                        int(employee_id),
+                    ),
+                )
+
+                if (
+                    existing
+                    and str(
+                        existing.get("status") or ""
+                    ).lower() == "sent"
+                ):
+                    skipped += 1
+
+                    results.append({
+                        "employee_id": employee_id,
+                        "employee_no": employee_no,
+                        "employee_name": employee_name,
+                        "email": email,
+                        "status": "skipped",
+                        "reason": "Payslip already sent",
+                    })
+
+                    continue
+
+                pdf_bytes = render_payslip_pdf(
+                    int(company_id),
+                    int(payroll_run_id),
+                    int(employee_id),
+                )
+
+                if not pdf_bytes:
+                    raise ValueError(
+                        "Payslip PDF renderer returned no document"
+                    )
+
+                filename = (
+                    f"Payslip-"
+                    f"{employee_no or employee_id}-"
+                    f"{int(payroll_run_id)}.pdf"
+                )
+
+                send_company_mail(
+                    company_id=int(company_id),
+                    to_email=email,
+                    subject=(
+                        f"Payslip - "
+                        f"{employee_name or 'Employee'}"
+                    ),
+                    html_body=(
+                        f"<p>Dear "
+                        f"{first_name or 'Employee'},</p>"
+                        f"<p>"
+                        f"Please find your payslip attached."
+                        f"</p>"
+                        f"<p>"
+                        f"This is an automated message from "
+                        f"FinSage."
+                        f"</p>"
+                    ),
+                    text_body=(
+                        f"Dear "
+                        f"{first_name or 'Employee'},\n\n"
+                        f"Please find your payslip attached.\n\n"
+                        f"This is an automated message from "
+                        f"FinSage."
+                    ),
+                    attachments=[
+                        (
+                            filename,
+                            pdf_bytes,
+                            "application/pdf",
+                        )
+                    ],
+                )
+
+                self.execute_sql(
+                    f"""
+                    INSERT INTO {self.company_schema(company_id)}
+                        .payroll_payslip_email_log
+                    (
+                        company_id,
+                        payroll_run_id,
+                        employee_id,
+                        email,
+                        status,
+                        sent_at,
+                        error
+                    )
+                    VALUES (
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        'sent',
+                        NOW(),
+                        NULL
+                    )
+                    ON CONFLICT (
+                        company_id,
+                        payroll_run_id,
+                        employee_id
+                    )
+                    DO UPDATE SET
+                        email = EXCLUDED.email,
+                        status = 'sent',
+                        sent_at = NOW(),
+                        error = NULL
+                    """,
+                    (
+                        int(company_id),
+                        int(payroll_run_id),
+                        int(employee_id),
+                        email,
+                    ),
+                )
+
+                sent += 1
+
+                results.append({
+                    "employee_id": employee_id,
+                    "employee_no": employee_no,
+                    "employee_name": employee_name,
+                    "email": email,
+                    "status": "sent",
+                })
+
+            except Exception as e:
+                failed += 1
+
+                error_message = str(e)
+
+                try:
+                    self.execute_sql(
+                        f"""
+                        INSERT INTO {self.company_schema(company_id)}
+                            .payroll_payslip_email_log
+                        (
+                            company_id,
+                            payroll_run_id,
+                            employee_id,
+                            email,
+                            status,
+                            sent_at,
+                            error
+                        )
+                        VALUES (
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            'failed',
+                            NULL,
+                            %s
+                        )
+                        ON CONFLICT (
+                            company_id,
+                            payroll_run_id,
+                            employee_id
+                        )
+                        DO UPDATE SET
+                            email = EXCLUDED.email,
+                            status = 'failed',
+                            error = EXCLUDED.error
+                        """,
+                        (
+                            int(company_id),
+                            int(payroll_run_id),
+                            int(employee_id),
+                            email,
+                            error_message,
+                        ),
+                    )
+                except Exception:
+                    current_app.logger.exception(
+                        "Unable to record payslip email failure "
+                        "for employee %s on payroll run %s",
+                        employee_id,
+                        payroll_run_id,
+                    )
+
+                results.append({
+                    "employee_id": employee_id,
+                    "employee_no": employee_no,
+                    "employee_name": employee_name,
+                    "email": email,
+                    "status": "failed",
+                    "reason": error_message,
+                })
+
+        return {
+            "ok": failed == 0,
+            "sent": sent,
+            "skipped": skipped,
+            "failed": failed,
+            "message": (
+                f"{sent} payslip(s) sent, "
+                f"{skipped} skipped, "
+                f"{failed} failed"
+            ),
+            "results": results,
+        }
+
     def payroll_payslip_payload(
         self,
         company_id:int,
@@ -156152,7 +156728,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 branch_code,
                 account_number,
                 account_type,
-                account_holder_name
+                account_name
             FROM {schema}.payroll_employee_bank_accounts
             WHERE company_id=%s
             AND employee_id=%s
@@ -162094,6 +162670,1264 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payroll_run_id,
         )
 
+    def payroll_liability_payment_preview(
+        self,
+        company_id: int,
+        payroll_run_id: int,
+        liability_type: str,
+        bank_account_id: int,
+        payment_date=None,
+        amount=None,
+        reference=None,
+        user_id=None,
+        benefit_plan_id=None,
+        defined_contribution_run_id=None,
+    ) -> dict:
+        """
+        Build the journal preview for clearing a payroll liability.
+
+        The preview is the single source of truth for the accounting
+        entry that will subsequently be posted.
+
+        The posting function MUST use the journal lines returned here.
+
+        Accounting:
+
+            Dr Payroll Liability
+            Cr Bank
+
+        The tax context identifies the applicable payroll regime, while
+        the posted payroll journal identifies the actual liability
+        recognized by this payroll run.
+        """
+
+        company_id = int(company_id)
+        payroll_run_id = int(payroll_run_id)
+        bank_account_id = int(bank_account_id)
+
+        schema = self.company_schema(company_id)
+
+        liability_role_map = {
+            "salary": "payroll_net_salary_payable",
+            "net_salary": "payroll_net_salary_payable",
+
+            "paye": "payroll_paye_payable",
+            "withholding_tax": "payroll_paye_payable",
+
+            "uif": "payroll_uif_payable",
+
+            "defined_contribution": "payroll_defined_contribution_payable",
+            "pension": "payroll_defined_contribution_payable",
+            "provident": "payroll_defined_contribution_payable",
+            "retirement": "payroll_defined_contribution_payable",
+
+            "defined_benefit": "payroll_defined_benefit_liability",
+            "long_term_benefit": "payroll_long_term_benefit_liability",
+            "termination_benefit": "payroll_termination_benefit_liability",
+
+            "medical_aid": "payroll_medical_aid_payable",
+
+            "other_deduction": "payroll_other_deductions_payable",
+            "other_payroll_deduction": "payroll_other_deductions_payable",
+        }
+
+        requested_type = str(
+            liability_type or ""
+        ).strip().lower()
+
+        if requested_type not in liability_role_map:
+            raise ValueError(
+                f"Unsupported payroll liability type: {liability_type}"
+            )
+
+        liability_role = liability_role_map[requested_type]
+
+        is_defined_contribution = requested_type in {
+            "defined_contribution",
+            "pension",
+            "provident",
+            "retirement",
+        }
+
+        if is_defined_contribution:
+            if defined_contribution_run_id in (None, ""):
+                raise ValueError(
+                    "Defined-contribution run is required for contribution payment"
+                )
+
+            if benefit_plan_id in (None, ""):
+                raise ValueError(
+                    "Benefit plan is required for contribution payment"
+                )
+
+            defined_contribution_run_id = int(defined_contribution_run_id)
+            benefit_plan_id = int(benefit_plan_id)
+
+        # ------------------------------------------------------------
+        # 1. Payroll run
+        # ------------------------------------------------------------
+
+        run = self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if str(run.get("status") or "").lower() != "posted":
+            raise ValueError(
+                "Payroll run must be posted before its liabilities "
+                "can be paid"
+            )
+
+        posted_journal_id = run.get("posted_journal_id")
+
+        if not posted_journal_id:
+            raise ValueError(
+                "Payroll run is marked posted but has no posted journal"
+            )
+
+        # ------------------------------------------------------------
+        # 2. Payment date
+        # ------------------------------------------------------------
+
+        if payment_date in (None, "", "None"):
+            payment_date = run.get("payment_date")
+
+        if payment_date in (None, "", "None"):
+            raise ValueError(
+                "Payroll liability payment date is required"
+            )
+
+        if isinstance(payment_date, datetime):
+            payment_date = payment_date.date()
+
+        elif not isinstance(payment_date, date):
+            payment_date = date.fromisoformat(
+                str(payment_date)[:10]
+            )
+
+        payment_date = payment_date.isoformat()
+
+        # ------------------------------------------------------------
+        # 3. Tax context
+        #
+        # This tells the preview which payroll tax regime applies.
+        #
+        # IMPORTANT:
+        # Tax context does not manufacture an amount.
+        #
+        # The posted payroll journal remains the source of truth for
+        # the liability actually recognized.
+        # ------------------------------------------------------------
+
+        tax_context = self.payroll_company_tax_context(
+            company_id,
+            payment_date,
+        )
+
+        authority_code = str(
+            tax_context.get("authority_code") or ""
+        ).strip().upper()
+
+        country_code = str(
+            tax_context.get("country_code") or ""
+        ).strip().upper()
+
+        tax_year_label = (
+            tax_context.get("tax_year_label")
+            or ""
+        )
+
+        # ------------------------------------------------------------
+        # 4. Tax-context validation
+        # ------------------------------------------------------------
+
+        statutory_types = {
+            "paye",
+            "withholding_tax",
+            "uif",
+        }
+
+        if requested_type in statutory_types:
+            if not authority_code:
+                raise ValueError(
+                    "Payroll tax authority could not be determined "
+                    "for this payment"
+                )
+
+        dc_run = None
+        dc_plan = None
+
+        if is_defined_contribution:
+            dc_run = self.db.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.payroll_defined_contribution_runs
+                WHERE company_id=%s
+                AND id=%s
+                """,
+                (
+                    int(company_id),
+                    defined_contribution_run_id,
+                ),
+            )
+
+            if not dc_run:
+                raise ValueError(
+                    "Defined-contribution run not found"
+                )
+
+            if int(dc_run.get("payroll_run_id") or 0) != int(payroll_run_id):
+                raise ValueError(
+                    "Defined-contribution run is not linked to this payroll run"
+                )
+
+            if dc_run.get("status") != "posted":
+                raise ValueError(
+                    "Defined-contribution run must be posted before payment"
+                )
+
+            dc_plan = self.db.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.payroll_benefit_plans
+                WHERE company_id=%s
+                AND id=%s
+                """,
+                (
+                    int(company_id),
+                    benefit_plan_id,
+                ),
+            )
+
+            if not dc_plan:
+                raise ValueError(
+                    "Benefit plan not found"
+                )
+
+        # ------------------------------------------------------------
+        # 5. Resolve liability COA account
+        #
+        # For defined-contribution payments, the payable account must come
+        # from the contribution run lines that were actually calculated.
+        #
+        # This protects us if the benefit plan's configuration is changed
+        # after the contribution run was posted.
+        #
+        # For all other payroll liabilities, continue using the normal
+        # semantic COA role.
+        # ------------------------------------------------------------
+
+        benefit_plan = None
+        liability_account_code = None
+        liability_account_name = None
+
+        if is_defined_contribution:
+
+            # --------------------------------------------------------
+            # Validate the selected contribution run
+            # --------------------------------------------------------
+
+            dc_run = self.fetch_one(
+                f"""
+                SELECT
+                    id,
+                    payroll_run_id,
+                    run_no,
+                    status,
+                    reporting_date
+                FROM {schema}.payroll_defined_contribution_runs
+                WHERE company_id = %s
+                AND id = %s
+                LIMIT 1
+                """,
+                (
+                    company_id,
+                    defined_contribution_run_id,
+                ),
+            )
+
+            if not dc_run:
+                raise ValueError(
+                    "Defined-contribution run not found"
+                )
+
+            if int(
+                dc_run.get("payroll_run_id") or 0
+            ) != payroll_run_id:
+                raise ValueError(
+                    "Defined-contribution run is not linked "
+                    "to this payroll run"
+                )
+
+            if str(
+                dc_run.get("status") or ""
+            ).strip().lower() != "posted":
+                raise ValueError(
+                    "Defined-contribution run must be posted "
+                    "before payment"
+                )
+
+            # --------------------------------------------------------
+            # Validate the benefit plan
+            # --------------------------------------------------------
+
+            benefit_plan = self.fetch_one(
+                f"""
+                SELECT
+                    id,
+                    code,
+                    name,
+                    payable_account_code
+                FROM {schema}.payroll_benefit_plans
+                WHERE company_id = %s
+                AND id = %s
+                LIMIT 1
+                """,
+                (
+                    company_id,
+                    benefit_plan_id,
+                ),
+            )
+
+            if not benefit_plan:
+                raise ValueError(
+                    "Benefit plan not found"
+                )
+
+            # --------------------------------------------------------
+            # Get the payable account actually used by this DC run
+            # for this benefit plan.
+            # --------------------------------------------------------
+
+            dc_account_rows = self.fetch_all(
+                f"""
+                SELECT
+                    payable_account_code,
+                    COALESCE(
+                        SUM(total_contribution),
+                        0
+                    ) AS recognized_amount
+                FROM {schema}.payroll_defined_contribution_run_lines
+                WHERE company_id = %s
+                AND run_id = %s
+                AND plan_id = %s
+                GROUP BY payable_account_code
+                """,
+                (
+                    company_id,
+                    defined_contribution_run_id,
+                    benefit_plan_id,
+                ),
+            )
+
+            if not dc_account_rows:
+                raise ValueError(
+                    "No contribution was recognized for the selected "
+                    "benefit plan in this contribution run"
+                )
+
+            payable_accounts = {
+                str(
+                    row.get("payable_account_code") or ""
+                ).strip()
+                for row in dc_account_rows
+            }
+
+            payable_accounts.discard("")
+
+            if not payable_accounts:
+                raise ValueError(
+                    "The selected benefit plan has no contribution "
+                    "payable account in this contribution run"
+                )
+
+            if len(payable_accounts) != 1:
+                raise ValueError(
+                    "The selected benefit plan has multiple payable "
+                    "accounts in this contribution run"
+                )
+
+            liability_account_code = next(
+                iter(payable_accounts)
+            )
+
+            liability_account_name = (
+                benefit_plan.get("name")
+                or liability_account_code
+            )
+
+            liability_role = "benefit_plan_payable"
+
+        else:
+
+            # --------------------------------------------------------
+            # Normal payroll liabilities
+            #
+            # Salary, PAYE, UIF, medical aid, other deductions, etc.
+            # continue using the existing semantic COA role.
+            # --------------------------------------------------------
+
+            liability_account = self.ensure_coa_role_for_posting(
+                company_id,
+                liability_role,
+                required=True,
+            )
+
+            liability_account_code = str(
+                liability_account.get("code") or ""
+            ).strip()
+
+            liability_account_name = (
+                liability_account.get("name")
+                or liability_account_code
+            )
+
+        if not liability_account_code:
+            raise ValueError(
+                f"Resolved COA role '{liability_role}' "
+                f"has no posting account code"
+            )
+
+        # ------------------------------------------------------------
+        # 6. Resolve bank account
+        # ------------------------------------------------------------
+
+        bank_account = self.get_company_bank_account(
+            company_id,
+            bank_account_id,
+        )
+
+        if not bank_account:
+            raise ValueError(
+                "Company bank account not found"
+            )
+
+        if int(
+            bank_account.get("company_id") or company_id
+        ) != company_id:
+            raise ValueError(
+                "Selected bank account does not belong to this company"
+            )
+
+        bank_account_code = str(
+            bank_account.get("ledger_account_code") or ""
+        ).strip()
+
+        if not bank_account_code:
+            raise ValueError(
+                "Selected bank account has no ledger account code"
+            )
+
+        bank_account_name = (
+            bank_account.get("name")
+            or bank_account_code
+        )
+
+        # ------------------------------------------------------------
+        # 7. Find liability recognized by THIS payroll run
+        #
+        # Normal payroll liabilities:
+        #     Read the posted payroll journal.
+        #
+        # Defined contribution:
+        #     Read the exact contribution run lines.
+        #
+        # The DC run is already linked to the posted payroll run, and
+        # the contribution lines are the source of the total payable.
+        # ------------------------------------------------------------
+
+        if is_defined_contribution:
+
+            recognized_row = self.fetch_one(
+                f"""
+                SELECT
+                    COALESCE(
+                        SUM(total_contribution),
+                        0
+                    ) AS recognized_amount
+                FROM {schema}.payroll_defined_contribution_run_lines
+                WHERE company_id = %s
+                AND run_id = %s
+                AND plan_id = %s
+                """,
+                (
+                    company_id,
+                    defined_contribution_run_id,
+                    benefit_plan_id,
+                ),
+            )
+
+            recognized_amount = money(
+                (recognized_row or {}).get(
+                    "recognized_amount"
+                )
+            )
+
+            if recognized_amount <= 0:
+                raise ValueError(
+                    "No outstanding contribution was recognized "
+                    "for the selected benefit plan"
+                )
+
+        else:
+
+            liability_row = self.fetch_one(
+                f"""
+                SELECT
+                    jl.account_code,
+                    COALESCE(
+                        SUM(jl.credit),
+                        0
+                    ) AS recognized_credit,
+                    COALESCE(
+                        SUM(jl.debit),
+                        0
+                    ) AS recognized_debit
+                FROM {schema}.journal j
+                JOIN {schema}.journal_lines jl
+                    ON jl.journal_id = j.id
+                WHERE j.id = %s
+                AND jl.account_code = %s
+                GROUP BY jl.account_code
+                LIMIT 1
+                """,
+                (
+                    int(posted_journal_id),
+                    liability_account_code,
+                ),
+            )
+
+            recognized_credit = money(
+                (liability_row or {}).get(
+                    "recognized_credit"
+                )
+            )
+
+            recognized_debit = money(
+                (liability_row or {}).get(
+                    "recognized_debit"
+                )
+            )
+
+            recognized_amount = money(
+                recognized_credit - recognized_debit
+            )
+
+            if recognized_amount <= 0:
+                raise ValueError(
+                    f"No outstanding {requested_type} liability "
+                    f"was recognized by payroll run "
+                    f"{payroll_run_id} on account "
+                    f"{liability_account_code}"
+                )
+
+        # ------------------------------------------------------------
+        # 8. Previous payments against this exact liability
+        # ------------------------------------------------------------
+
+        if is_defined_contribution:
+
+            previous_row = self.fetch_one(
+                f"""
+                SELECT
+                    COALESCE(
+                        SUM(amount),
+                        0
+                    ) AS amount_paid
+                FROM {schema}.payroll_liability_payments
+                WHERE company_id = %s
+                AND payroll_run_id = %s
+                AND liability_type = %s
+                AND benefit_plan_id = %s
+                AND defined_contribution_run_id = %s
+                AND status = 'posted'
+                """,
+                (
+                    company_id,
+                    payroll_run_id,
+                    requested_type,
+                    benefit_plan_id,
+                    defined_contribution_run_id,
+                ),
+            )
+
+        else:
+
+            previous_row = self.fetch_one(
+                f"""
+                SELECT
+                    COALESCE(
+                        SUM(amount),
+                        0
+                    ) AS amount_paid
+                FROM {schema}.payroll_liability_payments
+                WHERE company_id = %s
+                AND payroll_run_id = %s
+                AND liability_type = %s
+                AND status = 'posted'
+                """,
+                (
+                    company_id,
+                    payroll_run_id,
+                    requested_type,
+                ),
+            )
+
+        previously_paid = money(
+            (previous_row or {}).get(
+                "amount_paid"
+            )
+        )
+
+        outstanding_amount = money(
+            recognized_amount - previously_paid
+        )
+
+        if outstanding_amount <= 0:
+            return {
+                "ok": True,
+                "ready_to_post": False,
+
+                "company_id": company_id,
+                "payroll_run_id": payroll_run_id,
+
+                "run_no": run.get("run_no"),
+
+                "liability_type": requested_type,
+                "liability_role": liability_role,
+
+                "benefit_plan_id": benefit_plan_id,
+                "defined_contribution_run_id": (
+                    defined_contribution_run_id
+                ),
+
+                "liability_account": {
+                    "code": liability_account_code,
+                    "name": liability_account_name,
+                    "role": liability_role,
+                },
+
+                "bank_account": {
+                    "id": bank_account_id,
+                    "code": bank_account_code,
+                    "name": bank_account_name,
+                },
+
+                "recognized_amount": recognized_amount,
+                "previously_paid": previously_paid,
+                "outstanding_amount": 0,
+
+                "payment_date": payment_date,
+
+                "tax_context": {
+                    "authority_code": authority_code,
+                    "country_code": country_code,
+                    "tax_year_label": tax_year_label,
+                    "tax_year_id": tax_context.get(
+                        "tax_year_id"
+                    ),
+                    "calculation_basis": tax_context.get(
+                        "calculation_basis"
+                    ),
+                    "effective_from": tax_context.get(
+                        "effective_from"
+                    ),
+                    "effective_to": tax_context.get(
+                        "effective_to"
+                    ),
+                },
+
+                "message": (
+                    f"{requested_type.replace('_', ' ').title()} "
+                    f"liability has already been fully paid."
+                ),
+
+                "journal": {
+                    "lines": [],
+                    "debits": 0,
+                    "credits": 0,
+                    "difference": 0,
+                },
+            }
+
+        # ------------------------------------------------------------
+        # 9. Payment amount
+        # ------------------------------------------------------------
+
+        if amount in (None, "", "None"):
+            payment_amount = outstanding_amount
+
+        else:
+            try:
+                payment_amount = round(
+                    float(amount),
+                    2,
+                )
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "Payment amount must be numeric"
+                )
+
+        if payment_amount <= 0:
+            raise ValueError(
+                "Payment amount must be greater than zero"
+            )
+
+        if payment_amount > outstanding_amount:
+            raise ValueError(
+                f"Payment amount {payment_amount:.2f} exceeds "
+                f"outstanding liability "
+                f"{outstanding_amount:.2f}"
+            )
+
+        # ------------------------------------------------------------
+        # 10. Reference
+        # ------------------------------------------------------------
+
+        reference = (
+            str(reference).strip()
+            if reference
+            else ""
+        )
+
+        if not reference:
+            reference = (
+                f"PAYROLL-{requested_type.upper()}"
+                f"-PAYMENT-{payroll_run_id}"
+            )
+
+            if previously_paid > 0:
+                reference = (
+                    f"{reference}-"
+                    f"{int(round(previously_paid * 100))}"
+                )
+
+        # ------------------------------------------------------------
+        # 11. Remaining amount after this payment
+        # ------------------------------------------------------------
+
+        remaining_amount = round(
+            outstanding_amount - payment_amount,
+            2,
+        )
+
+        # ------------------------------------------------------------
+        # 12. CREATE THE ACTUAL JOURNAL LINES
+        #
+        # These exact lines are returned by preview and MUST be fed
+        # unchanged into payroll_liability_payment_post().
+        # ------------------------------------------------------------
+
+        journal_lines = [
+            {
+                "account_code": liability_account_code,
+                "description": (
+                    f"Payment of "
+                    f"{requested_type.replace('_', ' ')} "
+                    f"for payroll run "
+                    f"{run.get('run_no') or payroll_run_id}"
+                ),
+                "debit": payment_amount,
+                "credit": 0,
+            },
+            {
+                "account_code": bank_account_code,
+                "description": (
+                    f"Payroll "
+                    f"{requested_type.replace('_', ' ')} "
+                    f"payment from "
+                    f"{bank_account_name}"
+                ),
+                "debit": 0,
+                "credit": payment_amount,
+            },
+        ]
+
+        total_debits = round(
+            sum(
+                float(line.get("debit") or 0)
+                for line in journal_lines
+            ),
+            2,
+        )
+
+        total_credits = round(
+            sum(
+                float(line.get("credit") or 0)
+                for line in journal_lines
+            ),
+            2,
+        )
+
+        difference = round(
+            total_debits - total_credits,
+            2,
+        )
+
+        if difference != 0:
+            raise ValueError(
+                f"Payroll liability payment journal is unbalanced: "
+                f"debits={total_debits:.2f}, "
+                f"credits={total_credits:.2f}, "
+                f"difference={difference:.2f}"
+            )
+
+        # ------------------------------------------------------------
+        # 13. Return complete preview
+        # ------------------------------------------------------------
+
+        return {
+            "ok": True,
+            "ready_to_post": True,
+
+            "company_id": company_id,
+            "payroll_run_id": payroll_run_id,
+
+            "run_no": run.get("run_no"),
+
+            "liability_type": requested_type,
+            "liability_role": liability_role,
+
+            "benefit_plan_id": benefit_plan_id,
+            "defined_contribution_run_id": defined_contribution_run_id,
+
+            "liability_account": {
+                "code": liability_account_code,
+                "name": liability_account_name,
+                "role": liability_role,
+            },
+
+            "bank_account": {
+                "id": bank_account_id,
+                "code": bank_account_code,
+                "name": bank_account_name,
+            },
+
+            "recognized_amount": recognized_amount,
+            "previously_paid": previously_paid,
+            "outstanding_amount": outstanding_amount,
+
+            "payment_amount": payment_amount,
+            "remaining_amount": remaining_amount,
+
+            "payment_date": payment_date,
+            "reference": reference,
+
+            "tax_context": {
+                "authority_code": authority_code,
+                "country_code": country_code,
+                "tax_year_label": tax_year_label,
+                "tax_year_id": tax_context.get("tax_year_id"),
+                "calculation_basis": tax_context.get(
+                    "calculation_basis"
+                ),
+                "effective_from": tax_context.get(
+                    "effective_from"
+                ),
+                "effective_to": tax_context.get(
+                    "effective_to"
+                ),
+            },
+
+            "journal": {
+                "lines": journal_lines,
+                "debits": total_debits,
+                "credits": total_credits,
+                "difference": difference,
+            },
+
+            "status": (
+                "paid"
+                if remaining_amount <= 0
+                else "partially_paid"
+                if previously_paid > 0
+                else "unpaid"
+            ),
+        }
+
+    def payroll_liability_payment_post(
+        self,
+        company_id: int,
+        payroll_run_id: int,
+        liability_type: str,
+        bank_account_id: int,
+        payment_date=None,
+        amount=None,
+        reference=None,
+        user_id=None,
+        notes=None,
+        benefit_plan_id=None,
+        defined_contribution_run_id=None,
+    ) -> dict:
+
+        """
+        Post a payroll liability payment.
+
+        The journal lines are generated exclusively by
+        payroll_liability_payment_preview().
+
+        This function takes those exact lines and sends them to the
+        existing post_journal() accounting engine.
+        """
+
+        company_id = int(company_id)
+        payroll_run_id = int(payroll_run_id)
+        bank_account_id = int(bank_account_id)
+
+        schema = self.company_schema(company_id)
+
+        # ------------------------------------------------------------
+        # 1. Generate the official preview
+        #
+        # This creates the exact journal lines that will be posted.
+        # ------------------------------------------------------------
+
+        preview = self.payroll_liability_payment_preview(
+            company_id=company_id,
+            payroll_run_id=payroll_run_id,
+            liability_type=liability_type,
+            bank_account_id=bank_account_id,
+            payment_date=payment_date,
+            amount=amount,
+            reference=reference,
+            user_id=user_id,
+            benefit_plan_id=benefit_plan_id,
+            defined_contribution_run_id=defined_contribution_run_id,
+        )
+
+        if not preview.get("ready_to_post"):
+            raise ValueError(
+                preview.get("message")
+                or "Payroll liability payment is not ready to post"
+            )
+
+        journal = preview.get("journal") or {}
+
+        journal_lines = journal.get("lines") or []
+
+        if not journal_lines:
+            raise ValueError(
+                "Payroll liability payment preview returned no journal lines"
+            )
+
+        if round(
+            float(journal.get("debits") or 0),
+            2,
+        ) != round(
+            float(journal.get("credits") or 0),
+            2,
+        ):
+            raise ValueError(
+                "Payroll liability payment preview is unbalanced"
+            )
+
+        payment_amount = round(
+            float(preview.get("payment_amount") or 0),
+            2,
+        )
+
+        if payment_amount <= 0:
+            raise ValueError(
+                "Payroll liability payment amount must be greater than zero"
+            )
+
+        payment_reference = (
+            preview.get("reference")
+            or ""
+        ).strip()
+
+        if not payment_reference:
+            raise ValueError(
+                "Payroll liability payment reference is required"
+            )
+
+        # ------------------------------------------------------------
+        # 2. Re-enter transaction and protect against duplicate posting
+        # ------------------------------------------------------------
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+
+                if (
+                    defined_contribution_run_id is not None
+                    or benefit_plan_id is not None
+                ):
+
+                    existing_payment = self.fetch_one(
+                        f"""
+                        SELECT
+                            id,
+                            status,
+                            amount,
+                            journal_id,
+                            payment_date,
+                            reference
+                        FROM {schema}.payroll_liability_payments
+                        WHERE company_id = %s
+                        AND payroll_run_id = %s
+                        AND liability_type = %s
+                        AND benefit_plan_id = %s
+                        AND defined_contribution_run_id = %s
+                        AND status = 'posted'
+                        AND reference = %s
+                        LIMIT 1
+                        """,
+                        (
+                            company_id,
+                            payroll_run_id,
+                            str(liability_type or "")
+                            .strip()
+                            .lower(),
+                            benefit_plan_id,
+                            defined_contribution_run_id,
+                            payment_reference,
+                        ),
+                        cur=cur,
+                    )
+
+                else:
+
+                    existing_payment = self.fetch_one(
+                        f"""
+                        SELECT
+                            id,
+                            status,
+                            amount,
+                            journal_id,
+                            payment_date,
+                            reference
+                        FROM {schema}.payroll_liability_payments
+                        WHERE company_id = %s
+                        AND payroll_run_id = %s
+                        AND liability_type = %s
+                        AND status = 'posted'
+                        AND reference = %s
+                        LIMIT 1
+                        """,
+                        (
+                            company_id,
+                            payroll_run_id,
+                            str(liability_type or "")
+                            .strip()
+                            .lower(),
+                            payment_reference,
+                        ),
+                        cur=cur,
+                    )
+
+                if existing_payment:
+                    raise ValueError(
+                        f"Payroll liability payment already posted "
+                        f"with reference {payment_reference} "
+                        f"(journal "
+                        f"{existing_payment.get('journal_id')})"
+                    )
+
+                # --------------------------------------------------------
+                # 3. Create payment record
+                # --------------------------------------------------------
+
+                payment_row = self.fetch_one(
+                    f"""
+                    INSERT INTO {schema}.payroll_liability_payments (
+                        company_id,
+                        payroll_run_id,
+                        liability_type,
+                        liability_account_code,
+                        bank_account_id,
+                        bank_account_code,
+                        payment_date,
+                        amount,
+                        status,
+                        reference,
+                        notes,
+                        created_by,
+                        benefit_plan_id,
+                        defined_contribution_run_id,
+                        created_at
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,%s,%s,%s,%s,
+                        'draft',%s,%s,%s,%s,%s,NOW()
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        company_id,
+                        payroll_run_id,
+                        liability_type,
+                        preview["liability_account"]["code"],
+                        bank_account_id,
+                        preview["bank_account"]["code"],
+                        preview["payment_date"],
+                        payment_amount,
+                        payment_reference,
+                        notes,
+                        user_id,
+                        benefit_plan_id,
+                        defined_contribution_run_id,
+                    ),
+                    cur=cur,
+                )
+
+                if not payment_row:
+                    raise ValueError(
+                        "Failed to create payroll liability payment record"
+                    )
+
+                payment_id = int(
+                    payment_row["id"]
+                )
+
+                # --------------------------------------------------------
+                # 4. Post EXACT preview journal lines
+                #
+                # No journal reconstruction happens here.
+                # --------------------------------------------------------
+
+                journal_id = self.post_journal(
+                    company_id,
+                    {
+                        "date": preview["payment_date"],
+                        "ref": payment_reference,
+                        "description": (
+                            f"Payroll "
+                            f"{preview['liability_type'].replace('_', ' ')} "
+                            f"payment for run "
+                            f"{preview.get('run_no') or payroll_run_id}"
+                        ),
+                        "source": "payroll_liability_payment",
+                        "source_id": payment_id,
+                        "currency": (
+                            self.payroll_run_get(
+                                company_id,
+                                payroll_run_id,
+                            ).get("currency")
+                            or "USD"
+                        ),
+                        "gross_amount": payment_amount,
+                        "net_amount": payment_amount,
+                        "vat_amount": 0,
+                        "lines": journal_lines,
+                        "created_by_user_id": user_id,
+                        "prepared_by_user_id": user_id,
+                        "module_name": "payroll",
+                    },
+                    cur=cur,
+                    conn=conn,
+                )
+
+                # --------------------------------------------------------
+                # 5. Mark payment posted
+                # --------------------------------------------------------
+
+                posted_payment = self.fetch_one(
+                    f"""
+                    UPDATE {schema}.payroll_liability_payments
+                    SET
+                        status = 'posted',
+                        journal_id = %s,
+                        posted_at = NOW()
+                    WHERE company_id = %s
+                    AND id = %s
+                    AND status = 'draft'
+                    RETURNING *
+                    """,
+                    (
+                        int(journal_id),
+                        company_id,
+                        payment_id,
+                    ),
+                    cur=cur,
+                )
+
+                if not posted_payment:
+                    raise ValueError(
+                        "Payroll liability payment status update failed"
+                    )
+
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        # ------------------------------------------------------------
+        # 6. Return posting result based on the preview
+        # ------------------------------------------------------------
+
+        return {
+            "ok": True,
+
+            "payment_id": payment_id,
+            "journal_id": int(journal_id),
+
+            "company_id": company_id,
+            "payroll_run_id": payroll_run_id,
+
+            "run_no": preview.get("run_no"),
+
+            "liability_type": preview.get(
+                "liability_type"
+            ),
+
+            "liability_role": preview.get(
+                "liability_role"
+            ),
+
+            "liability_account": preview.get(
+                "liability_account"
+            ),
+
+            "bank_account": preview.get(
+                "bank_account"
+            ),
+
+            "recognized_amount": preview.get(
+                "recognized_amount"
+            ),
+
+            "previously_paid": preview.get(
+                "previously_paid"
+            ),
+
+            "payment_amount": preview.get(
+                "payment_amount"
+            ),
+
+            "remaining_amount": preview.get(
+                "remaining_amount"
+            ),
+
+            "payment_date": preview.get(
+                "payment_date"
+            ),
+
+            "reference": payment_reference,
+
+            "tax_context": preview.get(
+                "tax_context"
+            ),
+
+            "journal": {
+                "lines": journal_lines,
+                "debits": journal.get("debits"),
+                "credits": journal.get("credits"),
+                "difference": journal.get("difference"),
+            },
+
+            "status": (
+                "paid"
+                if float(
+                    preview.get("remaining_amount") or 0
+                ) <= 0
+                else "partially_paid"
+            ),
+        }
+
     def payroll_departments_list(self, company_id: int):
         schema = self.company_schema(company_id)
 
@@ -162973,7 +164807,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         pay_setup_id = int(setup["id"])
 
-        # Replace the active assignment set with the submitted set.
         self.execute_sql(f"""
             UPDATE
                 {schema}.payroll_employee_pay_setup_items
@@ -163018,31 +164851,42 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             if calculation_method not in {
                 "fixed_amount",
-                "percentage",
+                "basic_salary",
+                "basic_commission",
+                "hours_rate",
+                "days_rate",
                 "quantity_rate",
+                "commission_only",
+                "percentage",
                 "manual",
             }:
                 raise ValueError(
-                    "Invalid calculation_method"
+                    f"Invalid calculation_method: "
+                    f"{calculation_method}"
                 )
 
-            amount = float(item.get("amount") or 0)
+            amount = float(
+                item.get("amount") or 0
+            )
 
             percentage = (
                 float(item["percentage"])
-                if item.get("percentage") not in (None, "")
+                if item.get("percentage")
+                not in (None, "")
                 else None
             )
 
             quantity = (
                 float(item["quantity"])
-                if item.get("quantity") not in (None, "")
+                if item.get("quantity")
+                not in (None, "")
                 else None
             )
 
             item_rate = (
                 float(item["rate"])
-                if item.get("rate") not in (None, "")
+                if item.get("rate")
+                not in (None, "")
                 else None
             )
 
@@ -163053,18 +164897,39 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 else None
             )
 
-            effective_from=item.get("effective_from") or effective_from
-            effective_to=item.get("effective_to") or None
-            notes=(item.get("notes") or "").strip() or None
+            effective_from = (
+                item.get("effective_from")
+                or effective_from
+            )
 
-            row=self.fetch_one(f"""
+            effective_to = (
+                item.get("effective_to")
+                or None
+            )
+
+            notes = (
+                (item.get("notes") or "").strip()
+                or None
+            )
+
+            row = self.fetch_one(f"""
                 INSERT INTO
                     {schema}.payroll_employee_pay_setup_items (
-                        company_id,pay_setup_id,employee_id,
-                        item_type,item_id,calculation_method,
-                        amount,percentage,quantity,rate,
-                        calculated_amount,effective_from,
-                        effective_to,notes,is_active
+                        company_id,
+                        pay_setup_id,
+                        employee_id,
+                        item_type,
+                        item_id,
+                        calculation_method,
+                        amount,
+                        percentage,
+                        quantity,
+                        rate,
+                        calculated_amount,
+                        effective_from,
+                        effective_to,
+                        notes,
+                        is_active
                     )
                 VALUES (
                     %s,%s,%s,%s,%s,%s,
@@ -163078,24 +164943,51 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     item_id
                 )
                 DO UPDATE SET
-                    calculation_method=EXCLUDED.calculation_method,
-                    amount=EXCLUDED.amount,
-                    percentage=EXCLUDED.percentage,
-                    quantity=EXCLUDED.quantity,
-                    rate=EXCLUDED.rate,
-                    calculated_amount=EXCLUDED.calculated_amount,
-                    effective_from=EXCLUDED.effective_from,
-                    effective_to=EXCLUDED.effective_to,
-                    notes=EXCLUDED.notes,
-                    is_active=TRUE,
-                    updated_at=NOW()
+                    calculation_method =
+                        EXCLUDED.calculation_method,
+
+                    amount =
+                        EXCLUDED.amount,
+
+                    percentage =
+                        EXCLUDED.percentage,
+
+                    quantity =
+                        EXCLUDED.quantity,
+
+                    rate =
+                        EXCLUDED.rate,
+
+                    calculated_amount =
+                        EXCLUDED.calculated_amount,
+
+                    effective_from =
+                        EXCLUDED.effective_from,
+
+                    effective_to =
+                        EXCLUDED.effective_to,
+
+                    notes =
+                        EXCLUDED.notes,
+
+                    is_active = TRUE,
+                    updated_at = NOW()
                 RETURNING *;
-            """,(
-                company_id,pay_setup_id,employee_id,
-                item_type,item_id,calculation_method,
-                amount,percentage,quantity,item_rate,
-                calculated_amount,effective_from,
-                effective_to,notes,
+            """, (
+                company_id,
+                pay_setup_id,
+                employee_id,
+                item_type,
+                item_id,
+                calculation_method,
+                amount,
+                percentage,
+                quantity,
+                item_rate,
+                calculated_amount,
+                effective_from,
+                effective_to,
+                notes,
             ))
 
             saved_items.append(row)
@@ -164523,10 +166415,22 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         self,
         item: dict,
         gross_base,
+        facts: dict = None,
+        commission_amount=Decimal("0.00"),
     ):
-        method = (
+        facts = facts or {}
+
+        method = str(
             item.get("calculation_method")
             or "fixed_amount"
+        ).strip().lower()
+
+        gross_base = _payroll_decimal(
+            gross_base
+        )
+
+        commission_amount = _payroll_decimal(
+            commission_amount
         )
 
         if method == "fixed_amount":
@@ -164534,19 +166438,67 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 item.get("amount")
             )
 
+        if method == "basic_salary":
+            return _payroll_money(
+                gross_base
+            )
+
+        if method == "basic_commission":
+            return _payroll_money(
+                gross_base + commission_amount
+            )
+
+        if method == "hours_rate":
+            worked_hours = _payroll_decimal(
+                facts.get("worked_hours")
+            )
+
+            rate = _payroll_decimal(
+                item.get("rate")
+            )
+
+            return _payroll_money(
+                worked_hours * rate
+            )
+
+        if method == "days_rate":
+            worked_days = _payroll_decimal(
+                facts.get("worked_days")
+            )
+
+            rate = _payroll_decimal(
+                item.get("rate")
+            )
+
+            return _payroll_money(
+                worked_days * rate
+            )
+
+        if method == "quantity_rate":
+            quantity = _payroll_decimal(
+                item.get("quantity")
+            )
+
+            rate = _payroll_decimal(
+                item.get("rate")
+            )
+
+            return _payroll_money(
+                quantity * rate
+            )
+
+        if method == "commission_only":
+            return _payroll_money(
+                commission_amount
+            )
+
         if method == "percentage":
             return _payroll_money(
-                _payroll_decimal(gross_base)
+                gross_base
                 * _payroll_decimal(
                     item.get("percentage")
                 )
                 / Decimal("100")
-            )
-
-        if method == "quantity_rate":
-            return _payroll_money(
-                _payroll_decimal(item.get("quantity"))
-                * _payroll_decimal(item.get("rate"))
             )
 
         if method == "manual":
@@ -164554,7 +166506,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         raise ValueError(
             f"Unsupported calculation method: {method}"
-        ) 
+        )
+
 
     def _payroll_adjust_to_workday(
         self,

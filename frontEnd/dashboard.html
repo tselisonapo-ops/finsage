@@ -24013,6 +24013,128 @@ label:has(#projectTeamUserSearch) {
 
                   <div id="payrollReconciliationPanel"></div>
                 </div>
+
+                <div class="payroll-card" id="payrollSalaryPayableClearingCard">
+                  <div class="payroll-card-head">
+                    <div>
+                      <h3>Salary Payable Clearing</h3>
+                      <p class="payroll-muted">
+                        Pay employees and clear the salary payable liability recognised by this payroll run.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div id="payrollSalaryPaymentMessage" class="payroll-muted">
+                    Loading salary payable balance&hellip;
+                  </div>
+
+                  <div class="payroll-form-grid">
+                    <div class="payroll-form-field">
+                      <label for="payrollSalaryPaymentLiability">
+                        Liability
+                      </label>
+                      <select id="payrollSalaryPaymentLiability">
+                        <option value="salary">Salary Payable</option>
+                      </select>
+                    </div>
+
+                    <div class="payroll-form-field">
+                      <label for="payrollSalaryPaymentOutstanding">
+                        Outstanding
+                      </label>
+                      <input
+                        id="payrollSalaryPaymentOutstanding"
+                        type="text"
+                        value="0.00"
+                        readonly
+                      >
+                    </div>
+
+                    <div class="payroll-form-field">
+                      <label for="payrollSalaryPaymentDate">
+                        Payment Date
+                      </label>
+                      <input
+                        id="payrollSalaryPaymentDate"
+                        type="date"
+                      >
+                    </div>
+
+                    <div class="payroll-form-field">
+                      <label for="payrollSalaryPaymentAmount">
+                        Amount to Pay
+                      </label>
+                      <input
+                        id="payrollSalaryPaymentAmount"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        placeholder="0.00"
+                      >
+                    </div>
+
+                    <div class="payroll-form-field payroll-form-field-wide">
+                      <label for="payrollSalaryPaymentBankAccount">
+                        Bank Account
+                      </label>
+                      <select id="payrollSalaryPaymentBankAccount">
+                        <option value="">-- Select bank account --</option>
+                      </select>
+                    </div>
+
+                    <div class="payroll-form-field payroll-form-field-wide">
+                      <label for="payrollSalaryPaymentReference">
+                        Reference
+                      </label>
+                      <input
+                        id="payrollSalaryPaymentReference"
+                        type="text"
+                        maxlength="150"
+                        placeholder="e.g. SALARY-PAY-36-202504"
+                      >
+                    </div>
+
+                    <div class="payroll-form-field payroll-form-field-wide">
+                      <label for="payrollSalaryPaymentNotes">
+                        Notes
+                      </label>
+                      <textarea
+                        id="payrollSalaryPaymentNotes"
+                        rows="3"
+                        placeholder="Optional payment notes"
+                      ></textarea>
+                    </div>
+                  </div>
+
+                  <div class="payroll-run-actions">
+                    <button
+                      id="payrollSalaryPaymentPreviewBtn"
+                      type="button"
+                      class="btn btn-secondary"
+                    >
+                      Preview Payment
+                    </button>
+
+                    <button
+                      id="payrollSalaryPaymentPostBtn"
+                      type="button"
+                      class="btn btn-primary"
+                      disabled
+                    >
+                      Post Salary Payment
+                    </button>
+                  </div>
+
+                  <div
+                    id="payrollSalaryPaymentPreview"
+                    class="payroll-preview-result"
+                  ></div>
+
+                  <div
+                    id="payrollSalaryPaymentHistory"
+                    class="payroll-table-wrap"
+                  ></div>
+                </div>
               </div>
 
               <div
