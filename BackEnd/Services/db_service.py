@@ -164270,17 +164270,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         if is_defined_contribution:
 
-            if benefit_plan_id in (None, "", "None"):
-                raise ValueError(
-                    "Benefit plan is required for contribution balance"
-                )
-
             if defined_contribution_run_id in (None, "", "None"):
                 raise ValueError(
                     "Defined-contribution run is required for contribution balance"
                 )
 
-            benefit_plan_id = int(benefit_plan_id)
             defined_contribution_run_id = int(
                 defined_contribution_run_id
             )
@@ -164325,89 +164319,22 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "before its liability can be cleared"
                 )
 
-            benefit_plan = self.fetch_one(
-                f"""
-                SELECT
-                    id,
-                    code,
-                    name,
-                    payable_account_code
-                FROM {schema}.payroll_benefit_plans
-                WHERE company_id = %s
-                AND id = %s
-                LIMIT 1
-                """,
-                (
-                    company_id,
-                    benefit_plan_id,
-                ),
+            # The posted payroll journal is the accounting source
+            # of truth for the defined-contribution liability.
+            liability_account = self.ensure_coa_role_for_posting(
+                company_id,
+                liability_role,
+                required=True,
             )
 
-            if not benefit_plan:
-                raise ValueError(
-                    "Benefit plan not found"
-                )
+            liability_account_code = str(
+                liability_account.get("code") or ""
+            ).strip()
 
-            dc_account_rows = self.fetch_all(
-                f"""
-                SELECT
-                    payable_account_code,
-                    COALESCE(
-                        SUM(total_contribution),
-                        0
-                    ) AS recognized_amount
-                FROM {schema}.payroll_defined_contribution_run_lines
-                WHERE company_id = %s
-                AND run_id = %s
-                AND plan_id = %s
-                GROUP BY payable_account_code
-                """,
-                (
-                    company_id,
-                    defined_contribution_run_id,
-                    benefit_plan_id,
-                ),
-            )
-
-            if not dc_account_rows:
-                raise ValueError(
-                    "No contribution was recognized for the selected "
-                    "benefit plan in this contribution run"
-                )
-
-            payable_accounts = {
-                str(
-                    row.get("payable_account_code") or ""
-                ).strip()
-                for row in dc_account_rows
-            }
-
-            payable_accounts.discard("")
-
-            if not payable_accounts:
-                raise ValueError(
-                    "The selected benefit plan has no contribution "
-                    "payable account"
-                )
-
-            if len(payable_accounts) != 1:
-                raise ValueError(
-                    "The selected benefit plan has multiple payable "
-                    "accounts in this contribution run"
-                )
-
-            liability_account_code = next(
-                iter(payable_accounts)
-            )
-
-            # For now retain the same naming behaviour as the payment
-            # preview. The GL code remains the authoritative account.
             liability_account_name = (
-                benefit_plan.get("name")
+                liability_account.get("name")
                 or liability_account_code
             )
-
-            liability_role = "benefit_plan_payable"
 
         else:
 
@@ -164426,41 +164353,52 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 or liability_account_code
             )
 
-        if not liability_account_code:
-            raise ValueError(
-                f"Resolved COA role '{liability_role}' "
-                f"has no posting account code"
-            )
-
         # ------------------------------------------------------------
         # 4. Calculate recognized liability
         # ------------------------------------------------------------
 
         if is_defined_contribution:
 
-            recognized_row = self.fetch_one(
+            liability_row = self.fetch_one(
                 f"""
                 SELECT
+                    jl.account_code,
                     COALESCE(
-                        SUM(total_contribution),
+                        SUM(jl.credit),
                         0
-                    ) AS recognized_amount
-                FROM {schema}.payroll_defined_contribution_run_lines
-                WHERE company_id = %s
-                AND run_id = %s
-                AND plan_id = %s
+                    ) AS recognized_credit,
+                    COALESCE(
+                        SUM(jl.debit),
+                        0
+                    ) AS recognized_debit
+                FROM {schema}.journal j
+                JOIN {schema}.journal_lines jl
+                    ON jl.journal_id = j.id
+                WHERE j.id = %s
+                AND jl.account_code = %s
+                GROUP BY jl.account_code
+                LIMIT 1
                 """,
                 (
-                    company_id,
-                    defined_contribution_run_id,
-                    benefit_plan_id,
+                    int(posted_journal_id),
+                    liability_account_code,
                 ),
             )
 
-            recognized_amount = money(
-                (recognized_row or {}).get(
-                    "recognized_amount"
+            recognized_credit = money(
+                (liability_row or {}).get(
+                    "recognized_credit"
                 )
+            )
+
+            recognized_debit = money(
+                (liability_row or {}).get(
+                    "recognized_debit"
+                )
+            )
+
+            recognized_amount = money(
+                recognized_credit - recognized_debit
             )
 
         else:
@@ -164531,18 +164469,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     'provident',
                     'retirement'
                 )
-                AND benefit_plan_id = %s
                 AND defined_contribution_run_id = %s
                 AND status = 'posted'
                 """,
                 (
                     company_id,
                     payroll_run_id,
-                    benefit_plan_id,
                     defined_contribution_run_id,
                 ),
             )
-
         else:
 
             payment_type_aliases = {
