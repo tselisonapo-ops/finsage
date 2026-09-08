@@ -68587,19 +68587,37 @@ async function saveEditModal() {
             paymentPreview: null
         };
 
-    renderPayrollDcPayment();
+    renderPayrollDcPayment(); 
+ 
+    const payment = 
+        payrollState.employeeBenefits 
+            .selectedDefinedContributionPayment; 
+ 
+    if ( 
+        payment.selectedPlanId && 
+        payment.selectedBankId && 
+        payment.paymentDate 
+    ) { 
+        await loadPayrollLiabilityClearing({ 
+            liabilityType: 
+                "defined_contribution", 
 
-    const payment =
-        payrollState.employeeBenefits
-            .selectedDefinedContributionPayment;
+            payrollRunId: 
+                payment.payrollRunId, 
 
-    if (
-        payment.selectedPlanId &&
-        payment.selectedBankId &&
-        payment.paymentDate
-    ) {
-        await loadPayrollDcPaymentLiability();
-    }
+            benefitPlanId: 
+                payment.selectedPlanId, 
+
+            definedContributionRunId: 
+                payment.runId, 
+
+            prefix: 
+                "payrollDcPayment", 
+
+            referencePrefix: 
+                "DC-PAY" 
+        }); 
+    } 
   }
 
   function renderPayrollDcPayment() {
