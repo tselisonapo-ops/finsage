@@ -74393,39 +74393,15 @@ async function saveEditModal() {
     payrollState.payeClearing.selectedRunId =
       Number(runId);
 
-    payrollState.payeClearing.preview = null;
+    payrollState.payeClearing.preview =
+      null;
+
+    const run =
+      payrollState.selectedRun ||
+      {};
 
     const messageEl =
       $("payrollPayePaymentMessage");
-
-    const outstandingEl =
-      $("payrollPayePaymentOutstanding");
-
-    const amountEl =
-      $("payrollPayeAmount");
-
-    const dateEl =
-      $("payrollPayePaymentDate");
-
-    const bankEl =
-      $("payrollPayeBankAccount");
-
-    const referenceEl =
-      $("payrollPayeReference");
-
-    const previewEl =
-      $("payrollPayePaymentPreview");
-
-    const postBtn =
-      $("payrollPayePaymentPostBtn");
-
-    if (postBtn) {
-      postBtn.disabled = true;
-    }
-
-    if (previewEl) {
-      previewEl.innerHTML = "";
-    }
 
     if (messageEl) {
       messageEl.textContent =
@@ -74433,7 +74409,7 @@ async function saveEditModal() {
     }
 
     /*
-    * Load the existing company bank accounts.
+    * 1. Load bank accounts.
     */
     const banks =
       await refreshBankAccounts();
@@ -74443,116 +74419,13 @@ async function saveEditModal() {
         ? banks
         : [];
 
-    if (bankEl) {
-      bankEl.innerHTML =
-        `<option value="">-- Select bank account --</option>`;
-
-      (banks || []).forEach(bank => {
-        const id =
-          bank.id ??
-          bank.bank_account_id ??
-          null;
-
-        if (!id) {
-          return;
-        }
-
-        const bankName =
-          bank.bank_name ||
-          bank.bankName ||
-          bank.name ||
-          "Bank";
-
-        const accountName =
-          bank.account_name ||
-          bank.accountName ||
-          "";
-
-        const accountNumber =
-          bank.account_number ||
-          bank.accountNumber ||
-          "";
-
-        const currency =
-          bank.currency ||
-          bank.bank_currency ||
-          "";
-
-        const label = [
-          bankName,
-          accountName,
-          accountNumber
-            ? `(${accountNumber})`
-            : "",
-          currency
-            ? `• ${currency}`
-            : "",
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .trim();
-
-        const option =
-          document.createElement("option");
-
-        option.value = String(id);
-
-        option.textContent =
-          label ||
-          `Bank account ${id}`;
-
-        bankEl.appendChild(option);
-
-        /*
-        * Use the company's default payment bank.
-        */
-        if (
-          bank.is_default_payments === true &&
-          !bankEl.value
-        ) {
-          bankEl.value =
-            String(id);
-        }
-      });
-    }
-
     /*
-    * Get the selected payroll run.
+    * 2. Load existing PAYE payment history.
     */
-    const run =
-      payrollState.selectedRun ||
-      {};
+    let history = null;
 
-    /*
-    * Default the payment date to the
-    * payroll run payment date.
-    */
-    if (dateEl) {
-      dateEl.value =
-        String(
-          run.payment_date || ""
-        ).slice(0, 10);
-    }
-
-    /*
-    * Default the reference.
-    */
-    if (
-      referenceEl &&
-      !referenceEl.value
-    ) {
-      referenceEl.value =
-        `PAYE-PAY-${run.run_no || runId}`;
-    }
-
-    /*
-    * Load existing PAYE payment history.
-    *
-    * This is separate from calculating the
-    * outstanding PAYE liability.
-    */
     try {
-      const history =
+      history =
         await apiFetch(
           ENDPOINTS.payroll.liabilityPayments(
             companyId,
@@ -74567,7 +74440,9 @@ async function saveEditModal() {
         history?.items ||
         history?.payments ||
         [];
+
     } catch (error) {
+
       console.warn(
         "[payroll] PAYE payment history load failed:",
         error
@@ -74578,35 +74453,55 @@ async function saveEditModal() {
     }
 
     /*
-    * The liability preview endpoint calculates:
+    * 3. Render first.
     *
-    *   recognised PAYE
-    *   - previously paid PAYE
-    *   = outstanding PAYE
-    *
-    * We deliberately do NOT send amount here.
-    * The backend calculates the outstanding
-    * balance first.
+    * This creates payrollPayeBankAccount.
     */
-    try {
-      const bankAccountId =
-        bankEl?.value ||
-        null;
+    renderPayrollPayeClearing(
+      payrollState.payeClearing.history
+    );
 
-      if (!bankAccountId) {
-        if (messageEl) {
-          messageEl.textContent =
-            "Select a payment bank account to preview the PAYE payable balance.";
-        }
+    /*
+    * 4. Get the bank account that was rendered.
+    */
+    const bankEl =
+      $("payrollPayeBankAccount");
 
-        renderPayrollPayeClearing(
-          payrollState.payeClearing.history
-        );
+    const bankAccountId =
+      bankEl?.value ||
+      "";
 
-        return;
+    if (!bankAccountId) {
+
+      if (messageEl) {
+        messageEl.textContent =
+          "Select a payment bank account to load the PAYE payable balance.";
       }
 
-      const preview =
+      return;
+    }
+
+    /*
+    * 5. Get the payroll payment date.
+    */
+    const dateEl =
+      $("payrollPayePaymentDate");
+
+    const paymentDate =
+      dateEl?.value ||
+      String(
+        run.payment_date ||
+        ""
+      ).slice(0, 10);
+
+    /*
+    * 6. Calculate the PAYE outstanding balance.
+    *
+    * DO NOT send amount here.
+    */
+    try {
+
+      const balanceResponse =
         await apiFetch(
           ENDPOINTS.payroll.liabilityPaymentPreview(
             companyId,
@@ -74614,6 +74509,7 @@ async function saveEditModal() {
           ),
           {
             method: "POST",
+
             body: JSON.stringify({
               liability_type: "paye",
 
@@ -74621,41 +74517,35 @@ async function saveEditModal() {
                 Number(bankAccountId),
 
               payment_date:
-                dateEl?.value ||
-                run.payment_date ||
+                paymentDate ||
                 null,
             }),
           }
         );
 
-      const data =
-        preview?.preview ||
-        preview?.data ||
-        preview ||
+      const balance =
+        balanceResponse?.preview ||
+        balanceResponse?.data ||
+        balanceResponse ||
         {};
 
       payrollState.payeClearing.balance =
-        data;
+        balance;
 
       const outstanding =
         Number(
-          data.outstanding_amount ??
-          data.remaining_amount ??
-          data.amount ??
+          balance.outstanding_amount ??
+          balance.remaining_amount ??
+          balance.amount ??
           0
         );
 
       /*
-      * Display outstanding PAYE.
+      * 7. Prefill amount.
       */
-      if (outstandingEl) {
-        outstandingEl.value =
-          money(outstanding);
-      }
+      const amountEl =
+        $("payrollPayeAmount");
 
-      /*
-      * Automatically prefill the payment amount.
-      */
       if (amountEl) {
         amountEl.value =
           outstanding > 0
@@ -74664,382 +74554,589 @@ async function saveEditModal() {
       }
 
       /*
-      * Display status/message.
+      * 8. Update outstanding display.
       */
-      if (messageEl) {
-        if (outstanding > 0) {
-          messageEl.innerHTML =
-            `PAYE payable outstanding: <strong>${money(outstanding)}</strong>`;
-        } else {
-          messageEl.textContent =
-            "There is no outstanding PAYE payable for this payroll run.";
-        }
+      const outstandingEl =
+        $("payrollPayeClearingOutstanding");
+
+      if (outstandingEl) {
+        outstandingEl.innerHTML = `
+          <strong>
+            PAYE outstanding amount
+          </strong>
+
+          <p>
+            ${
+              outstanding > 0
+                ? `<strong>${money(outstanding)}</strong>`
+                : "There is no outstanding PAYE payable for this payroll run."
+            }
+          </p>
+        `;
+      }
+
+      /*
+      * 9. Update message.
+      */
+      const newMessageEl =
+        $("payrollPayePaymentMessage");
+
+      if (newMessageEl) {
+        newMessageEl.innerHTML =
+          outstanding > 0
+            ? `PAYE payable outstanding: <strong>${money(outstanding)}</strong>`
+            : "There is no outstanding PAYE payable for this payroll run.";
       }
 
     } catch (error) {
+
       console.warn(
-        "[payroll] PAYE payable clearing load failed:",
+        "[payroll] PAYE payable balance load failed:",
         error
       );
 
-      if (messageEl) {
-        messageEl.textContent =
+      const newMessageEl =
+        $("payrollPayePaymentMessage");
+
+      if (newMessageEl) {
+        newMessageEl.textContent =
           error?.message ||
           "PAYE payable balance could not be loaded.";
       }
     }
-
-    /*
-    * Render payment history after both
-    * history and balance have been loaded.
-    */
-    renderPayrollPayeClearing(
-      payrollState.payeClearing.history
-    );
   }
 
   window.loadPayrollPayeClearing =
     loadPayrollPayeClearing;
 
-  function renderPayrollPayeClearing(history){
-    const el=$("payrollPayeClearingSection");
+  function renderPayrollPayeClearing(history) {
+    const el = $("payrollPayeClearingSection");
 
-    if(!el){
-        return;
+    if (!el) {
+      return;
     }
 
-    const banks=
-        payrollState.payeClearing.banks||
-        [];
+    const banks =
+      payrollState.payeClearing.banks ||
+      [];
 
-    const payments=
-        Array.isArray(history)
-            ? history
-            : [];
+    const payments =
+      Array.isArray(history)
+        ? history
+        : [];
 
-    const runId=
-        payrollState.payeClearing.selectedRunId;
+    const runId =
+      payrollState.payeClearing.selectedRunId;
 
-    const run=
-        payrollState.selectedRun||
-        {};
+    const run =
+      payrollState.selectedRun ||
+      {};
 
-    const postedRun=
-        String(run.status||"").toLowerCase()==="posted";
+    const postedRun =
+      String(run.status || "")
+        .toLowerCase() === "posted";
 
-    const paymentDate=
-        run.payment_date
-            ? String(run.payment_date).slice(0,10)
-            : "";
+    const paymentDate =
+      run.payment_date
+        ? String(run.payment_date).slice(0, 10)
+        : "";
 
-    el.innerHTML=`
-        <div class="payroll-card">
-            <div class="payroll-card-head">
-                <div>
-                    <h3>PAYE Clearing</h3>
-                    <p class="payroll-muted">
-                        Clear the PAYE liability recognised by
-                        this posted payroll run when payment is made
-                        to the tax authority.
-                    </p>
+    /*
+    * Balance loaded by loadPayrollPayeClearing().
+    */
+    const balance =
+      payrollState.payeClearing.balance ||
+      {};
+
+    const outstanding =
+      Number(
+        balance.outstanding_amount ??
+        balance.remaining_amount ??
+        balance.amount ??
+        0
+      );
+
+    /*
+    * Preserve any amount already entered by the user.
+    * If there isn't one, use the outstanding PAYE amount.
+    */
+    const existingAmount =
+      $("payrollPayeAmount")?.value ||
+      "";
+
+    const paymentAmount =
+      existingAmount ||
+      (
+        outstanding > 0
+          ? outstanding.toFixed(2)
+          : ""
+      );
+
+    el.innerHTML = `
+      <div class="payroll-card">
+
+        <div class="payroll-card-head">
+
+          <div>
+            <h3>PAYE Clearing</h3>
+
+            <p class="payroll-muted">
+              Clear the PAYE liability recognised by
+              this posted payroll run when payment is made
+              to the tax authority.
+            </p>
+          </div>
+
+          <span class="payroll-pill">
+            PAYE Payable
+          </span>
+
+        </div>
+
+        ${
+          !postedRun
+            ? `
+                <div class="notice error">
+                  PAYE can only be cleared after the
+                  payroll run has been posted.
+                </div>
+              `
+            : `
+                <div class="payroll-preview-meta">
+
+                  <div>
+                    <span>Payroll Run</span>
+
+                    <strong>
+                      ${esc(
+                        run.run_no ||
+                        String(runId)
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Payment Date</span>
+
+                    <strong>
+                      ${formatPayrollDate(paymentDate)}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Liability</span>
+
+                    <strong>
+                      PAYE Payable
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Status</span>
+
+                    <strong>
+                      Posted
+                    </strong>
+                  </div>
+
                 </div>
 
-                <span class="payroll-pill">
-                    PAYE Payable
-                </span>
-            </div>
+                <!-- PAYE OUTSTANDING BALANCE -->
 
-            ${
-                !postedRun
-                    ? `
-                        <div class="notice error">
-                            PAYE can only be cleared after the
-                            payroll run has been posted.
-                        </div>
-                    `
-                    : `
-                        <div class="payroll-preview-meta">
-                            <div>
-                                <span>Payroll Run</span>
-                                <strong>
-                                    ${esc(run.run_no||String(runId))}
-                                </strong>
-                            </div>
+                <div
+                  id="payrollPayeClearingOutstanding"
+                  class="payroll-empty-state"
+                >
 
-                            <div>
-                                <span>Payment Date</span>
-                                <strong>
-                                    ${formatPayrollDate(paymentDate)}
-                                </strong>
-                            </div>
+                  <strong>
+                    PAYE outstanding amount
+                  </strong>
 
-                            <div>
-                                <span>Liability</span>
-                                <strong>
-                                    PAYE Payable
-                                </strong>
-                            </div>
+                  <p>
+                    ${
+                      outstanding > 0
+                        ? `<strong>${money(outstanding)}</strong>`
+                        : "There is no outstanding PAYE payable for this payroll run."
+                    }
+                  </p>
 
-                            <div>
-                                <span>Status</span>
-                                <strong>
-                                    Posted
-                                </strong>
-                            </div>
-                        </div>
+                </div>
 
-                        <div
-                            id="payrollPayeClearingOutstanding"
-                            class="payroll-empty-state"
-                        >
-                            <strong>
-                                PAYE outstanding amount
-                            </strong>
-                            <p>
-                                Enter the payment details below
-                                to preview the clearing entry.
-                            </p>
-                        </div>
+                <div class="payroll-form-grid">
 
-                        <div class="payroll-form-grid">
+                  <!-- PAYMENT DATE -->
 
-                            <div class="payroll-field">
-                                <label for="payrollPayePaymentDate">
-                                    Payment Date
-                                </label>
+                  <div class="payroll-field">
 
-                                <input
-                                    id="payrollPayePaymentDate"
-                                    class="payroll-input"
-                                    type="date"
-                                    value="${esc(paymentDate)}"
-                                >
-                            </div>
+                    <label
+                      for="payrollPayePaymentDate"
+                    >
+                      Payment Date
+                    </label>
 
-                            <div class="payroll-field">
-                                <label for="payrollPayeBankAccount">
-                                    Bank Account
-                                </label>
+                    <input
+                      id="payrollPayePaymentDate"
+                      class="payroll-input"
+                      type="date"
+                      value="${esc(paymentDate)}"
+                    >
 
-                                <select
-                                    id="payrollPayeBankAccount"
-                                    class="payroll-input"
-                                >
-                                    <option value="">
-                                        Select bank account
-                                    </option>
+                  </div>
 
-                                    ${banks.map(bank=>{
-                                        const label=[
-                                            bank.bank_name,
-                                            bank.account_name,
-                                            bank.account_number
-                                                ? `••••${String(bank.account_number).slice(-4)}`
-                                                : ""
-                                        ]
-                                        .filter(Boolean)
-                                        .join(" — ");
 
-                                        return `
-                                            <option
-                                                value="${esc(String(bank.id))}"
-                                            >
-                                                ${esc(
-                                                    label||
-                                                    bank.name||
-                                                    `Bank Account ${bank.id}`
-                                                )}
-                                            </option>
-                                        `;
-                                    }).join("")}
-                                </select>
-                            </div>
+                  <!-- BANK ACCOUNT -->
 
-                            <div class="payroll-field">
-                                <label for="payrollPayeAmount">
-                                    Payment Amount
-                                </label>
+                  <div class="payroll-field">
 
-                                <input
-                                    id="payrollPayeAmount"
-                                    class="payroll-input"
-                                    type="number"
-                                    min="0.01"
-                                    step="0.01"
-                                    placeholder="0.00"
-                                >
-                            </div>
+                    <label
+                      for="payrollPayeBankAccount"
+                    >
+                      Bank Account
+                    </label>
 
-                            <div class="payroll-field">
-                                <label for="payrollPayeReference">
-                                    Payment Reference
-                                </label>
+                    <select
+                      id="payrollPayeBankAccount"
+                      class="payroll-input"
+                    >
 
-                                <input
-                                    id="payrollPayeReference"
-                                    class="payroll-input"
-                                    type="text"
-                                    maxlength="150"
-                                    placeholder="e.g. SARS payment reference"
-                                >
-                            </div>
+                      <option value="">
+                        Select bank account
+                      </option>
 
-                            <div
-                                class="payroll-field"
-                                style="grid-column:1/-1;"
+                      ${
+                        banks.map(bank => {
+
+                          const label = [
+                            bank.bank_name,
+                            bank.account_name,
+                            bank.account_number
+                              ? `••••${String(
+                                  bank.account_number
+                                ).slice(-4)}`
+                              : ""
+                          ]
+                            .filter(Boolean)
+                            .join(" — ");
+
+                          return `
+                            <option
+                              value="${esc(
+                                String(bank.id)
+                              )}"
                             >
-                                <label for="payrollPayeNotes">
-                                    Notes
-                                </label>
+                              ${esc(
+                                label ||
+                                bank.name ||
+                                `Bank Account ${bank.id}`
+                              )}
+                            </option>
+                          `;
 
-                                <textarea
-                                    id="payrollPayeNotes"
-                                    class="payroll-input"
-                                    rows="3"
-                                    placeholder="Optional payment notes"
-                                ></textarea>
+                        }).join("")
+                      }
+
+                    </select>
+
+                  </div>
+
+
+                  <!-- PAYMENT AMOUNT -->
+
+                  <div class="payroll-field">
+
+                    <label
+                      for="payrollPayeAmount"
+                    >
+                      Payment Amount
+                    </label>
+
+                    <input
+                      id="payrollPayeAmount"
+                      class="payroll-input"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      placeholder="0.00"
+                      value="${esc(paymentAmount)}"
+                    >
+
+                  </div>
+
+
+                  <!-- REFERENCE -->
+
+                  <div class="payroll-field">
+
+                    <label
+                      for="payrollPayeReference"
+                    >
+                      Payment Reference
+                    </label>
+
+                    <input
+                      id="payrollPayeReference"
+                      class="payroll-input"
+                      type="text"
+                      maxlength="150"
+                      value="${esc(
+                        $("payrollPayeReference")?.value ||
+                        `PAYE-PAY-${run.run_no || runId}`
+                      )}"
+                      placeholder="e.g. SARS payment reference"
+                    >
+
+                  </div>
+
+
+                  <!-- NOTES -->
+
+                  <div
+                    class="payroll-field"
+                    style="grid-column:1/-1;"
+                  >
+
+                    <label
+                      for="payrollPayeNotes"
+                    >
+                      Notes
+                    </label>
+
+                    <textarea
+                      id="payrollPayeNotes"
+                      class="payroll-input"
+                      rows="3"
+                      placeholder="Optional payment notes"
+                    >${esc(
+                      $("payrollPayeNotes")?.value ||
+                      ""
+                    )}</textarea>
+
+                  </div>
+
+                </div>
+
+
+                <!-- ACTIONS -->
+
+                <div class="payroll-run-actions">
+
+                  <button
+                    id="payrollPayePreviewBtn"
+                    type="button"
+                    class="payroll-primary"
+                  >
+                    Preview PAYE Payment
+                  </button>
+
+                  <button
+                    id="payrollPayePostBtn"
+                    type="button"
+                    class="payroll-primary"
+                    disabled
+                  >
+                    Post PAYE Payment
+                  </button>
+
+                </div>
+
+
+                <!-- PAYMENT PREVIEW -->
+
+                <div
+                  id="payrollPayePaymentPreview"
+                  class="hidden"
+                ></div>
+
+
+                <!-- PAYMENT HISTORY -->
+
+                <div class="payroll-card">
+
+                  <div class="payroll-card-head">
+
+                    <div>
+
+                      <h3>
+                        PAYE Payment History
+                      </h3>
+
+                      <p class="payroll-muted">
+                        Payments already posted against
+                        this payroll run.
+                      </p>
+
+                    </div>
+
+                  </div>
+
+
+                  <div id="payrollPayePaymentHistory">
+
+                    ${
+                      payments.length
+                        ? `
+                            <div class="payroll-table-wrap">
+
+                              <table class="payroll-preview-table">
+
+                                <thead>
+
+                                  <tr>
+
+                                    <th>
+                                      Date
+                                    </th>
+
+                                    <th>
+                                      Reference
+                                    </th>
+
+                                    <th>
+                                      Bank
+                                    </th>
+
+                                    <th>
+                                      Status
+                                    </th>
+
+                                    <th class="num">
+                                      Amount
+                                    </th>
+
+                                  </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                  ${
+                                    payments.map(
+                                      payment => `
+                                        <tr>
+
+                                          <td>
+                                            ${formatPayrollDate(
+                                              payment.payment_date
+                                            )}
+                                          </td>
+
+                                          <td>
+                                            ${esc(
+                                              payment.reference ||
+                                              "—"
+                                            )}
+                                          </td>
+
+                                          <td>
+                                            ${esc(
+                                              payment.bank_account_code ||
+                                              payment.bank_account_name ||
+                                              "—"
+                                            )}
+                                          </td>
+
+                                          <td>
+                                            ${esc(
+                                              cap(
+                                                payment.status ||
+                                                ""
+                                              )
+                                            )}
+                                          </td>
+
+                                          <td class="num">
+                                            ${money(
+                                              payment.amount
+                                            )}
+                                          </td>
+
+                                        </tr>
+                                      `
+                                    ).join("")
+                                  }
+
+                                </tbody>
+
+                              </table>
+
                             </div>
+                          `
+                        : `
+                            <div class="payroll-empty-state">
 
-                        </div>
+                              <strong>
+                                No PAYE payments posted
+                              </strong>
 
-                        <div class="payroll-run-actions">
+                              <p>
+                                No PAYE clearing payment
+                                has been posted against
+                                this payroll run.
+                              </p>
 
-                            <button
-                                id="payrollPayePreviewBtn"
-                                type="button"
-                                class="payroll-primary"
-                            >
-                                Preview PAYE Payment
-                            </button>
-
-                            <button
-                                id="payrollPayePostBtn"
-                                type="button"
-                                class="payroll-primary"
-                                disabled
-                            >
-                                Post PAYE Payment
-                            </button>
-
-                        </div>
-
-                        <div
-                            id="payrollPayePaymentPreview"
-                            class="hidden"
-                        ></div>
-
-                        <div class="payroll-card">
-                            <div class="payroll-card-head">
-                                <div>
-                                    <h3>PAYE Payment History</h3>
-                                    <p class="payroll-muted">
-                                        Payments already posted against
-                                        this payroll run.
-                                    </p>
-                                </div>
                             </div>
+                          `
+                    }
 
-                            <div id="payrollPayePaymentHistory">
-                                ${
-                                    payments.length
-                                        ? `
-                                            <div class="payroll-table-wrap">
-                                                <table class="payroll-preview-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>Date</th>
-                                                            <th>Reference</th>
-                                                            <th>Bank</th>
-                                                            <th>Status</th>
-                                                            <th class="num">
-                                                                Amount
-                                                            </th>
-                                                        </tr>
-                                                    </thead>
+                  </div>
 
-                                                    <tbody>
-                                                        ${
-                                                            payments.map(
-                                                                payment=>`
-                                                                    <tr>
-                                                                        <td>
-                                                                            ${formatPayrollDate(
-                                                                                payment.payment_date
-                                                                            )}
-                                                                        </td>
+                </div>
+              `
+        }
 
-                                                                        <td>
-                                                                            ${esc(
-                                                                                payment.reference||
-                                                                                "—"
-                                                                            )}
-                                                                        </td>
-
-                                                                        <td>
-                                                                            ${esc(
-                                                                                payment.bank_account_code||
-                                                                                payment.bank_account_name||
-                                                                                "—"
-                                                                            )}
-                                                                        </td>
-
-                                                                        <td>
-                                                                            ${esc(
-                                                                                cap(
-                                                                                    payment.status||
-                                                                                    ""
-                                                                                )
-                                                                            )}
-                                                                        </td>
-
-                                                                        <td class="num">
-                                                                            ${money(
-                                                                                payment.amount
-                                                                            )}
-                                                                        </td>
-                                                                    </tr>
-                                                                `
-                                                            ).join("")
-                                                        }
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        `
-                                        : `
-                                            <div class="payroll-empty-state">
-                                                <strong>
-                                                    No PAYE payments posted
-                                                </strong>
-                                                <p>
-                                                    No PAYE clearing payment
-                                                    has been posted against
-                                                    this payroll run.
-                                                </p>
-                                            </div>
-                                        `
-                                }
-                            </div>
-                        </div>
-                    `
-            }
-        </div>
+      </div>
     `;
 
-    if(!postedRun){
-        return;
+    if (!postedRun) {
+      return;
     }
 
-    $("payrollPayePreviewBtn")
-        ?.addEventListener(
-            "click",
-            previewPayrollPayePayment
+    /*
+    * Re-apply the default bank account after
+    * the HTML has been rebuilt.
+    */
+    const newBankEl =
+      $("payrollPayeBankAccount");
+
+    if (
+      newBankEl &&
+      banks.length
+    ) {
+      const defaultBank =
+        banks.find(
+          bank =>
+            bank.is_default_payments === true
         );
 
+      if (defaultBank) {
+        const defaultId =
+          defaultBank.id ??
+          defaultBank.bank_account_id;
+
+        if (defaultId) {
+          newBankEl.value =
+            String(defaultId);
+        }
+      }
+    }
+
+    /*
+    * Preview button.
+    */
+    $("payrollPayePreviewBtn")
+      ?.addEventListener(
+        "click",
+        previewPayrollPayePayment
+      );
+
+    /*
+    * Post button.
+    */
     $("payrollPayePostBtn")
-        ?.addEventListener(
-            "click",
-            postPayrollPayePayment
-        );
+      ?.addEventListener(
+        "click",
+        postPayrollPayePayment
+      );
   }
 
   async function previewPayrollPayePayment(){
