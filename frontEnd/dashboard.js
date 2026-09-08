@@ -68556,7 +68556,7 @@ async function saveEditModal() {
                     <span>Liability</span>
                     <strong>
                         ${money(
-                            liability.liability_amount
+                            liability.recognized_amount
                         )}
                     </strong>
                 </div>
@@ -68565,7 +68565,7 @@ async function saveEditModal() {
                     <span>Historical Payments</span>
                     <strong>
                         ${money(
-                            liability.historical_paid_amount
+                            liability.previously_paid
                         )}
                     </strong>
                 </div>
@@ -68795,7 +68795,27 @@ async function saveEditModal() {
                 payment.paymentPreview =
                     null;
 
-                await loadPayrollDcPaymentLiability();
+                await loadPayrollLiabilityClearing({
+                    liabilityType:
+                        "defined_contribution",
+
+                    payrollRunId:
+                        payment.payrollRunId,
+
+                    benefitPlanId:
+                        payment.selectedPlanId || null,
+
+                    definedContributionRunId:
+                        payment.runId,
+
+                    prefix:
+                        "payrollDcPayment",
+
+                    referencePrefix:
+                        "DC-PAY"
+                });
+
+                renderPayrollDcPayment();
             }
         );
 
@@ -68808,7 +68828,7 @@ async function saveEditModal() {
                         event.target.value
                     ) || null;
 
-                await loadPayrollDcPaymentLiability();
+                renderPayrollDcPayment();
             }
         );
 
@@ -68819,7 +68839,7 @@ async function saveEditModal() {
                 payment.paymentDate =
                     event.target.value;
 
-                await loadPayrollDcPaymentLiability();
+                renderPayrollDcPayment();
             }
         );
 
@@ -68827,13 +68847,34 @@ async function saveEditModal() {
         ?.addEventListener(
             "click",
             () =>
-                loadPayrollDcPaymentLiability()
-                    .catch(error => {
-                        showPayrollStatus(
-                            error.message,
-                            "error"
-                        );
-                    })
+                loadPayrollLiabilityClearing({
+                    liabilityType:
+                        "defined_contribution",
+
+                    payrollRunId:
+                        payment.payrollRunId,
+
+                    benefitPlanId:
+                        payment.selectedPlanId || null,
+
+                    definedContributionRunId:
+                        payment.runId,
+
+                    prefix:
+                        "payrollDcPayment",
+
+                    referencePrefix:
+                        "DC-PAY"
+                })
+                .then(() => {
+                    renderPayrollDcPayment();
+                })
+                .catch(error => {
+                    showPayrollStatus(
+                        error.message,
+                        "error"
+                    );
+                })
         );
 
     $("payrollPreviewDcPaymentBtn")
@@ -68994,29 +69035,31 @@ async function saveEditModal() {
             "[DC PAYMENT] 8 - CALLING loadPayrollLiabilityClearing"
         );
 
-        await loadPayrollLiabilityClearing({
-            liabilityType:
-                "defined_contribution",
+        await loadPayrollLiabilityClearing({ 
+            liabilityType: 
+                "defined_contribution", 
 
-            payrollRunId:
-                payment.payrollRunId,
+            payrollRunId: 
+                payment.payrollRunId, 
 
-            benefitPlanId:
-                payment.selectedPlanId || null,
+            benefitPlanId: 
+                payment.selectedPlanId || null, 
 
-            definedContributionRunId:
-                payment.runId,
+            definedContributionRunId: 
+                payment.runId, 
 
-            prefix:
-                "payrollDcPayment",
+            prefix: 
+                "payrollDcPayment", 
 
-            referencePrefix:
-                "DC-PAY"
-        });
+            referencePrefix: 
+                "DC-PAY" 
+        }); 
 
         console.log(
             "[DC PAYMENT] 9 - loadPayrollLiabilityClearing completed"
         );
+
+        renderPayrollDcPayment();
     }else {
         console.log(
             "[DC PAYMENT] 8 - LIABILITY NOT CALLED",
