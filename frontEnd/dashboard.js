@@ -73916,7 +73916,9 @@ async function saveEditModal() {
 
     if (dateEl) {
       dateEl.value =
-        String(run.payment_date || "").slice(0, 10);
+        normalizePayrollDate(
+          run.payment_date
+        );
     }
 
     /*
@@ -74383,6 +74385,73 @@ async function saveEditModal() {
     return result;
   }
 
+  function normalizePayrollDate(value) {
+    if (!value) {
+      return "";
+    }
+
+    const raw =
+      String(value).trim();
+
+    if (!raw) {
+      return "";
+    }
+
+    /*
+    * Already YYYY-MM-DD.
+    */
+    if (
+      /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ) {
+      return raw;
+    }
+
+    /*
+    * ISO datetime.
+    *
+    * Example:
+    * 2025-04-29T00:00:00
+    * 2025-04-29T00:00:00Z
+    */
+    if (
+      /^\d{4}-\d{2}-\d{2}T/.test(raw)
+    ) {
+      return raw.slice(0, 10);
+    }
+
+    /*
+    * RFC / HTTP date.
+    *
+    * Example:
+    * Tue, 29 Apr 2025 00:00:00 GMT
+    */
+    const parsed =
+      new Date(raw);
+
+    if (
+      !Number.isNaN(
+        parsed.getTime()
+      )
+    ) {
+      const year =
+        parsed.getFullYear();
+
+      const month =
+        String(
+          parsed.getMonth() + 1
+        ).padStart(2, "0");
+
+      const day =
+        String(
+          parsed.getDate()
+        ).padStart(2, "0");
+
+      return `${year}-${month}-${day}`;
+    }
+
+    return "";
+  }
+
   async function loadPayrollPayeClearing(runId) {
     const companyId = cid();
 
@@ -74487,12 +74556,12 @@ async function saveEditModal() {
     const dateEl =
       $("payrollPayePaymentDate");
 
-    const paymentDate =
-      dateEl?.value ||
-      String(
-        run.payment_date ||
-        ""
-      ).slice(0, 10);
+    if (dateEl) {
+      dateEl.value =
+        normalizePayrollDate(
+          run.payment_date
+        );
+    }
 
     /*
     * 6. Calculate the PAYE outstanding balance.
@@ -74637,9 +74706,9 @@ async function saveEditModal() {
         .toLowerCase() === "posted";
 
     const paymentDate =
-      run.payment_date
-        ? String(run.payment_date).slice(0, 10)
-        : "";
+      normalizePayrollDate(
+        run.payment_date
+      );
 
     /*
     * Balance loaded by loadPayrollPayeClearing().
