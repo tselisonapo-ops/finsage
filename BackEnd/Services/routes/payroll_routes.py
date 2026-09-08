@@ -4575,3 +4575,73 @@ def api_payroll_liability_payment_detail(
             "ok": False,
             "error": "Unable to load payroll liability payment",
         }), 500
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/liability-balance",
+    methods=["GET"],
+)
+@require_auth
+def api_payroll_liability_balance(
+    company_id,
+    run_id,
+):
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        liability_type = (
+            request.args.get("liability_type")
+            or request.args.get("type")
+            or ""
+        ).strip()
+
+        if not liability_type:
+            return jsonify({
+                "ok": False,
+                "error": "Liability type is required",
+            }), 400
+
+        benefit_plan_id = (
+            request.args.get("benefit_plan_id")
+            or None
+        )
+
+        defined_contribution_run_id = (
+            request.args.get(
+                "defined_contribution_run_id"
+            )
+            or None
+        )
+
+        balance = db_service.payroll_liability_balance_get(
+            company_id=int(company_id),
+            payroll_run_id=int(run_id),
+            liability_type=liability_type,
+            benefit_plan_id=benefit_plan_id,
+            defined_contribution_run_id=(
+                defined_contribution_run_id
+            ),
+        )
+
+        return jsonify({
+            "ok": True,
+            "balance": balance,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+    except Exception:
+        current_app.logger.exception(
+            "Payroll liability balance failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": "Unable to load payroll liability balance",
+        }), 500

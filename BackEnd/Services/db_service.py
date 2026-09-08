@@ -162730,6 +162730,59 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return rows or []
 
+    def payroll_liability_payment_get(
+        self,
+        company_id: int,
+        payment_id: int,
+    ) -> dict | None:
+        company_id = int(company_id)
+        payment_id = int(payment_id)
+
+        schema = self.company_schema(company_id)
+
+        payment = self.fetch_one(
+            f"""
+            SELECT
+                p.id,
+                p.company_id,
+                p.payroll_run_id,
+                p.liability_type,
+                p.liability_account_code,
+                p.bank_account_id,
+                p.bank_account_code,
+                p.payment_date,
+                p.amount,
+                p.status,
+                p.reference,
+                p.notes,
+                p.journal_id,
+                p.created_by,
+                p.created_at,
+                p.posted_at,
+                p.benefit_plan_id,
+                p.defined_contribution_run_id,
+
+                r.run_no
+
+            FROM {schema}.payroll_liability_payments p
+
+            LEFT JOIN {schema}.payroll_runs r
+                ON r.id = p.payroll_run_id
+                AND r.company_id = p.company_id
+
+            WHERE p.company_id = %s
+            AND p.id = %s
+
+            LIMIT 1
+            """,
+            (
+                company_id,
+                payment_id,
+            ),
+        )
+
+        return payment
+
     def payroll_liability_payment_preview(
         self,
         company_id: int,
@@ -164075,6 +164128,529 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     preview.get("remaining_amount") or 0
                 ) <= 0
                 else "partially_paid"
+            ),
+        }
+
+    def payroll_liability_balance_get(
+        self,
+        company_id: int,
+        payroll_run_id: int,
+        liability_type: str,
+        benefit_plan_id=None,
+        defined_contribution_run_id=None,
+    ) -> dict:
+        """
+        Return the accounting liability balance for a payroll run.
+
+        This is read-only.
+
+        The posted payroll journal is the source of truth for normal
+        payroll liabilities. Posted contribution-run lines are the source
+        of truth for defined-contribution liabilities.
+
+        Balance:
+
+            recognized liability
+            - posted payments
+            = outstanding liability
+        """
+
+        company_id = int(company_id)
+        payroll_run_id = int(payroll_run_id)
+
+        schema = self.company_schema(company_id)
+
+        # ------------------------------------------------------------
+        # 1. Normalize liability type
+        # ------------------------------------------------------------
+
+        liability_role_map = {
+            "salary": "payroll_net_salary_payable",
+            "net_salary": "payroll_net_salary_payable",
+
+            "paye": "payroll_paye_payable",
+            "withholding_tax": "payroll_paye_payable",
+
+            "uif": "payroll_uif_payable",
+
+            "defined_contribution": "payroll_defined_contribution_payable",
+            "pension": "payroll_defined_contribution_payable",
+            "provident": "payroll_defined_contribution_payable",
+            "retirement": "payroll_defined_contribution_payable",
+
+            "defined_benefit": "payroll_defined_benefit_liability",
+            "long_term_benefit": "payroll_long_term_benefit_liability",
+            "termination_benefit": "payroll_termination_benefit_liability",
+
+            "medical_aid": "payroll_medical_aid_payable",
+
+            "other_deduction": "payroll_other_deductions_payable",
+            "other_payroll_deduction": "payroll_other_deductions_payable",
+        }
+
+        requested_type = str(
+            liability_type or ""
+        ).strip().lower()
+
+        if requested_type not in liability_role_map:
+            raise ValueError(
+                f"Unsupported payroll liability type: {liability_type}"
+            )
+
+        liability_role = liability_role_map[requested_type]
+
+        # ------------------------------------------------------------
+        # Canonical payment type.
+        #
+        # This prevents aliases such as withholding_tax from being
+        # treated as a completely separate liability from PAYE.
+        # ------------------------------------------------------------
+
+        canonical_type_map = {
+            "salary": "salary",
+            "net_salary": "salary",
+
+            "paye": "paye",
+            "withholding_tax": "paye",
+
+            "uif": "uif",
+
+            "defined_contribution": "defined_contribution",
+            "pension": "defined_contribution",
+            "provident": "defined_contribution",
+            "retirement": "defined_contribution",
+
+            "defined_benefit": "defined_benefit",
+            "long_term_benefit": "long_term_benefit",
+            "termination_benefit": "termination_benefit",
+
+            "medical_aid": "medical_aid",
+
+            "other_deduction": "other_deduction",
+            "other_payroll_deduction": "other_deduction",
+        }
+
+        canonical_type = canonical_type_map[requested_type]
+
+        is_defined_contribution = canonical_type == "defined_contribution"
+
+        # ------------------------------------------------------------
+        # 2. Get payroll run
+        # ------------------------------------------------------------
+
+        run = self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if str(
+            run.get("status") or ""
+        ).strip().lower() != "posted":
+            raise ValueError(
+                "Payroll run must be posted before its liabilities "
+                "can be cleared"
+            )
+
+        posted_journal_id = run.get("posted_journal_id")
+
+        if not posted_journal_id:
+            raise ValueError(
+                "Payroll run is marked posted but has no posted journal"
+            )
+
+        # ------------------------------------------------------------
+        # 3. Resolve liability account
+        # ------------------------------------------------------------
+
+        liability_account_code = None
+        liability_account_name = None
+
+        if is_defined_contribution:
+
+            if benefit_plan_id in (None, "", "None"):
+                raise ValueError(
+                    "Benefit plan is required for contribution balance"
+                )
+
+            if defined_contribution_run_id in (None, "", "None"):
+                raise ValueError(
+                    "Defined-contribution run is required for contribution balance"
+                )
+
+            benefit_plan_id = int(benefit_plan_id)
+            defined_contribution_run_id = int(
+                defined_contribution_run_id
+            )
+
+            dc_run = self.fetch_one(
+                f"""
+                SELECT
+                    id,
+                    payroll_run_id,
+                    run_no,
+                    status,
+                    reporting_date
+                FROM {schema}.payroll_defined_contribution_runs
+                WHERE company_id = %s
+                AND id = %s
+                LIMIT 1
+                """,
+                (
+                    company_id,
+                    defined_contribution_run_id,
+                ),
+            )
+
+            if not dc_run:
+                raise ValueError(
+                    "Defined-contribution run not found"
+                )
+
+            if int(
+                dc_run.get("payroll_run_id") or 0
+            ) != payroll_run_id:
+                raise ValueError(
+                    "Defined-contribution run is not linked "
+                    "to this payroll run"
+                )
+
+            if str(
+                dc_run.get("status") or ""
+            ).strip().lower() != "posted":
+                raise ValueError(
+                    "Defined-contribution run must be posted "
+                    "before its liability can be cleared"
+                )
+
+            benefit_plan = self.fetch_one(
+                f"""
+                SELECT
+                    id,
+                    code,
+                    name,
+                    payable_account_code
+                FROM {schema}.payroll_benefit_plans
+                WHERE company_id = %s
+                AND id = %s
+                LIMIT 1
+                """,
+                (
+                    company_id,
+                    benefit_plan_id,
+                ),
+            )
+
+            if not benefit_plan:
+                raise ValueError(
+                    "Benefit plan not found"
+                )
+
+            dc_account_rows = self.fetch_all(
+                f"""
+                SELECT
+                    payable_account_code,
+                    COALESCE(
+                        SUM(total_contribution),
+                        0
+                    ) AS recognized_amount
+                FROM {schema}.payroll_defined_contribution_run_lines
+                WHERE company_id = %s
+                AND run_id = %s
+                AND plan_id = %s
+                GROUP BY payable_account_code
+                """,
+                (
+                    company_id,
+                    defined_contribution_run_id,
+                    benefit_plan_id,
+                ),
+            )
+
+            if not dc_account_rows:
+                raise ValueError(
+                    "No contribution was recognized for the selected "
+                    "benefit plan in this contribution run"
+                )
+
+            payable_accounts = {
+                str(
+                    row.get("payable_account_code") or ""
+                ).strip()
+                for row in dc_account_rows
+            }
+
+            payable_accounts.discard("")
+
+            if not payable_accounts:
+                raise ValueError(
+                    "The selected benefit plan has no contribution "
+                    "payable account"
+                )
+
+            if len(payable_accounts) != 1:
+                raise ValueError(
+                    "The selected benefit plan has multiple payable "
+                    "accounts in this contribution run"
+                )
+
+            liability_account_code = next(
+                iter(payable_accounts)
+            )
+
+            # For now retain the same naming behaviour as the payment
+            # preview. The GL code remains the authoritative account.
+            liability_account_name = (
+                benefit_plan.get("name")
+                or liability_account_code
+            )
+
+            liability_role = "benefit_plan_payable"
+
+        else:
+
+            liability_account = self.ensure_coa_role_for_posting(
+                company_id,
+                liability_role,
+                required=True,
+            )
+
+            liability_account_code = str(
+                liability_account.get("code") or ""
+            ).strip()
+
+            liability_account_name = (
+                liability_account.get("name")
+                or liability_account_code
+            )
+
+        if not liability_account_code:
+            raise ValueError(
+                f"Resolved COA role '{liability_role}' "
+                f"has no posting account code"
+            )
+
+        # ------------------------------------------------------------
+        # 4. Calculate recognized liability
+        # ------------------------------------------------------------
+
+        if is_defined_contribution:
+
+            recognized_row = self.fetch_one(
+                f"""
+                SELECT
+                    COALESCE(
+                        SUM(total_contribution),
+                        0
+                    ) AS recognized_amount
+                FROM {schema}.payroll_defined_contribution_run_lines
+                WHERE company_id = %s
+                AND run_id = %s
+                AND plan_id = %s
+                """,
+                (
+                    company_id,
+                    defined_contribution_run_id,
+                    benefit_plan_id,
+                ),
+            )
+
+            recognized_amount = money(
+                (recognized_row or {}).get(
+                    "recognized_amount"
+                )
+            )
+
+        else:
+
+            liability_row = self.fetch_one(
+                f"""
+                SELECT
+                    jl.account_code,
+                    COALESCE(
+                        SUM(jl.credit),
+                        0
+                    ) AS recognized_credit,
+                    COALESCE(
+                        SUM(jl.debit),
+                        0
+                    ) AS recognized_debit
+                FROM {schema}.journal j
+                JOIN {schema}.journal_lines jl
+                    ON jl.journal_id = j.id
+                WHERE j.id = %s
+                AND jl.account_code = %s
+                GROUP BY jl.account_code
+                LIMIT 1
+                """,
+                (
+                    int(posted_journal_id),
+                    liability_account_code,
+                ),
+            )
+
+            recognized_credit = money(
+                (liability_row or {}).get(
+                    "recognized_credit"
+                )
+            )
+
+            recognized_debit = money(
+                (liability_row or {}).get(
+                    "recognized_debit"
+                )
+            )
+
+            recognized_amount = money(
+                recognized_credit - recognized_debit
+            )
+
+        # ------------------------------------------------------------
+        # 5. Previous posted payments
+        #
+        # Use canonical liability type for normal liabilities.
+        # ------------------------------------------------------------
+
+        if is_defined_contribution:
+
+            previous_row = self.fetch_one(
+                f"""
+                SELECT
+                    COALESCE(
+                        SUM(amount),
+                        0
+                    ) AS amount_paid
+                FROM {schema}.payroll_liability_payments
+                WHERE company_id = %s
+                AND payroll_run_id = %s
+                AND liability_type IN (
+                    'defined_contribution',
+                    'pension',
+                    'provident',
+                    'retirement'
+                )
+                AND benefit_plan_id = %s
+                AND defined_contribution_run_id = %s
+                AND status = 'posted'
+                """,
+                (
+                    company_id,
+                    payroll_run_id,
+                    benefit_plan_id,
+                    defined_contribution_run_id,
+                ),
+            )
+
+        else:
+
+            payment_type_aliases = {
+                "salary": (
+                    "salary",
+                    "net_salary",
+                ),
+                "paye": (
+                    "paye",
+                    "withholding_tax",
+                ),
+                "uif": (
+                    "uif",
+                ),
+                "defined_benefit": (
+                    "defined_benefit",
+                ),
+                "long_term_benefit": (
+                    "long_term_benefit",
+                ),
+                "termination_benefit": (
+                    "termination_benefit",
+                ),
+                "medical_aid": (
+                    "medical_aid",
+                ),
+                "other_deduction": (
+                    "other_deduction",
+                    "other_payroll_deduction",
+                ),
+            }
+
+            aliases = payment_type_aliases.get(
+                canonical_type,
+                (canonical_type,),
+            )
+
+            placeholders = ", ".join(
+                ["%s"] * len(aliases)
+            )
+
+            previous_row = self.fetch_one(
+                f"""
+                SELECT
+                    COALESCE(
+                        SUM(amount),
+                        0
+                    ) AS amount_paid
+                FROM {schema}.payroll_liability_payments
+                WHERE company_id = %s
+                AND payroll_run_id = %s
+                AND liability_type IN ({placeholders})
+                AND status = 'posted'
+                """,
+                (
+                    company_id,
+                    payroll_run_id,
+                    *aliases,
+                ),
+            )
+
+        previously_paid = money(
+            (previous_row or {}).get(
+                "amount_paid"
+            )
+        )
+
+        outstanding_amount = money(
+            recognized_amount - previously_paid
+        )
+
+        if outstanding_amount < 0:
+            outstanding_amount = money("0.00")
+
+        # ------------------------------------------------------------
+        # 6. Return balance
+        # ------------------------------------------------------------
+
+        return {
+            "company_id": company_id,
+            "payroll_run_id": payroll_run_id,
+            "run_no": run.get("run_no"),
+
+            "liability_type": canonical_type,
+            "requested_liability_type": requested_type,
+            "liability_role": liability_role,
+
+            "benefit_plan_id": benefit_plan_id,
+            "defined_contribution_run_id": (
+                defined_contribution_run_id
+            ),
+
+            "liability_account": {
+                "code": liability_account_code,
+                "name": liability_account_name,
+                "role": liability_role,
+            },
+
+            "recognized_amount": recognized_amount,
+            "previously_paid": previously_paid,
+            "outstanding_amount": outstanding_amount,
+
+            "status": (
+                "paid"
+                if outstanding_amount <= 0
+                else "partially_paid"
+                if previously_paid > 0
+                else "unpaid"
             ),
         }
 

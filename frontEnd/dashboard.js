@@ -2620,6 +2620,18 @@ const ENDPOINTS = {
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/liability-payments${qs ? `?${qs}` : ""}`;
     },
 
+    liabilityBalance: (companyId, runId, { liability_type = "" } = {}) => {
+      const params = new URLSearchParams();
+
+      if (liability_type) {
+        params.append("liability_type", String(liability_type));
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/liability-balance${qs ? `?${qs}` : ""}`;
+    },
+
     // GET /api/companies/<cid>/payroll/liability-payments/<paymentId>
     liabilityPaymentDetail: (companyId, paymentId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/liability-payments/${encodeURIComponent(paymentId)}`,
@@ -74372,44 +74384,77 @@ async function saveEditModal() {
   }
 
   async function loadPayrollPayeClearing(runId) {
-    const companyId=cid();
+    const companyId = cid();
 
-    if(!runId){
-        return;
+    if (!runId) {
+      return;
     }
 
-    payrollState.payeClearing.selectedRunId=Number(runId);
-    payrollState.payeClearing.preview=null;
+    payrollState.payeClearing.selectedRunId =
+      Number(runId);
 
-    const [banks,history]=await Promise.all([
+    payrollState.payeClearing.preview = null;
+
+    const [banks, history, balanceResponse] =
+      await Promise.all([
         refreshBankAccounts(),
+
         apiFetch(
-            ENDPOINTS.payroll.liabilityPayments(
-                companyId,
-                runId,
-                {
-                    liability_type:"paye",
-                }
-            )
+          ENDPOINTS.payroll.liabilityPayments(
+            companyId,
+            runId,
+            {
+              liability_type: "paye",
+            }
+          )
         ),
-    ]);
 
-    payrollState.payeClearing.banks=
-        Array.isArray(banks)
-            ? banks
-            : [];
+        apiFetch(
+          ENDPOINTS.payroll.liabilityBalance(
+            companyId,
+            runId,
+            {
+              liability_type: "paye",
+            }
+          )
+        ),
+      ]);
 
-    payrollState.payeClearing.history=
-        history?.items||
-        history?.payments||
-        [];
+    payrollState.payeClearing.banks =
+      Array.isArray(banks)
+        ? banks
+        : [];
+
+    payrollState.payeClearing.history =
+      history?.items ||
+      history?.payments ||
+      [];
+
+    payrollState.payeClearing.balance =
+      balanceResponse?.balance ||
+      null;
+
+    const outstandingAmount =
+      Number(
+        balanceResponse?.balance?.outstanding_amount
+      ) || 0;
+
+    const amountInput =
+      $("payrollPayeAmount");
+
+    if (amountInput) {
+      amountInput.value =
+        outstandingAmount > 0
+          ? outstandingAmount.toFixed(2)
+          : "";
+    }
 
     renderPayrollPayeClearing(
-        payrollState.payeClearing.history
+      payrollState.payeClearing.history
     );
   }
 
-  window.loadPayrollPayeClearing=
+  window.loadPayrollPayeClearing =
     loadPayrollPayeClearing;
 
   function renderPayrollPayeClearing(history){
