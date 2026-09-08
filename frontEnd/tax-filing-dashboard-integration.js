@@ -162,18 +162,25 @@
     // ================================================================
     // PAYE Preview + Export — called by the tax-filing panel buttons
     window.previewPayeData = async function () {
-        const area=document.getElementById("taxFilingPreview");
-        const topBar     = document.getElementById("taxFilingTopBar");
+        const area = document.getElementById("taxFilingPreview");
+        const topBar = document.getElementById("taxFilingTopBar");
         const previewBtn = document.getElementById("taxFilingPreviewBtn");
-        const actions    = document.getElementById("taxFilingActions");
-        const company    = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
-        const authority=
-            payrollState.statutory.selectedAuthority||
-            window.__taxFiling?.getSelectedAuthority?.()||
-            "SARS";
-        let year  = document.getElementById("taxFilingYear")?.value || "";
-        let month = document.getElementById("taxFilingMonth")?.value || "";
+        const actions = document.getElementById("taxFilingActions");
 
+        const company =
+            window.getActiveCompanyId?.() ||
+            window.CURRENT_COMPANY_ID ||
+            window.CURRENT_COMPANY?.id;
+
+        const authority =
+            window.__taxFiling?.getSelectedAuthority?.() ||
+            "SARS";
+
+        let year =
+            document.getElementById("taxFilingYear")?.value || "";
+
+        let month =
+            document.getElementById("taxFilingMonth")?.value || "";
         if (/^\d{4}-\d{2}$/.test(month)) {
             year  = month.slice(0, 4);
             month = month.slice(5, 7);

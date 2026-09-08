@@ -4178,14 +4178,13 @@ def api_payroll_liability_payment_preview(
             "error": str(e),
         }), 400
 
-    except Exception:
+    except Exception as e:
         current_app.logger.exception(
             "Payroll liability payment preview failed"
         )
-
         return jsonify({
             "ok": False,
-            "error": "Unable to preview payroll liability payment",
+            "error": f"{type(e).__name__}: {e}",
         }), 500
     
 @payroll_bp.route(

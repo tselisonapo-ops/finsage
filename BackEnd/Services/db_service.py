@@ -156285,7 +156285,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     ) -> list[dict]:
         schema = self.company_schema(company_id)
 
-        rows = self.db.fetch_all(
+        rows = self.fetch_all(
             f"""
             SELECT
                 pre.employee_id,
@@ -156406,7 +156406,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 continue
 
             try:
-                existing = self.db.fetch_one(
+                existing = self.fetch_one(
                     f"""
                     SELECT
                         id,
@@ -163050,7 +163050,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         dc_plan = None
 
         if is_defined_contribution:
-            dc_run = self.db.fetch_one(
+            dc_run = self.fetch_one(
                 f"""
                 SELECT *
                 FROM {schema}.payroll_defined_contribution_runs
@@ -163082,7 +163082,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "Defined-contribution run must be posted before payment"
                 )
 
-            dc_plan = self.db.fetch_one(
+            dc_plan = self.fetch_one(
                 f"""
                 SELECT *
                 FROM {schema}.payroll_benefit_plans
