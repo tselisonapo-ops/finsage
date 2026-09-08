@@ -950,6 +950,15 @@ def preview_tax_filing_data(company_id: int):
     Legacy tax-year formats such as:
         ?authority=SARS&period=2024/2025
     are also supported.
+
+    SARS EMP201 statutory liability:
+
+        PAYE
+        + UIF employee
+        + UIF employer
+        + SDL
+        - ETI
+        = Total SARS statutory liability
     """
     if request.method == "OPTIONS":
         return _options()
@@ -961,23 +970,71 @@ def preview_tax_filing_data(company_id: int):
     logger = logging.getLogger(__name__)
 
     try:
+        # ---------------------------------------------------------
         # 1. Read input filters from URL query parameters
+        # ---------------------------------------------------------
+
         authority_code = request.args.get("authority")
         period = request.args.get("period")
+        return_type = (
+            request.args.get("return_type")
+            or "EMP201"
+        ).strip().upper()
 
         if not authority_code or not period:
             return jsonify({
                 "ok": False,
-                "error": "Missing required query parameters: 'authority' and 'period'"
+                "error": (
+                    "Missing required query parameters: "
+                    "'authority' and 'period'"
+                )
             }), 400
 
-        authority_code = authority_code.strip()
+        authority_code = authority_code.strip().upper()
         period = period.strip()
+
+        # ---------------------------------------------------------
+        # 1A. Validate return type
+        #
+        # At this stage the preview calculation is designed for
+        # monthly statutory payroll returns.
+        # ---------------------------------------------------------
+
+        supported_preview_return_types = {
+            "SARS": {
+                "EMP201"
+            },
+            "RSL": {
+                "EMP160"
+            },
+            "BURS": {
+                "ITP1"
+            }
+        }
+
+        authority_return_types = supported_preview_return_types.get(
+            authority_code,
+            set()
+        )
+
+        if return_type not in authority_return_types:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    f"Return type '{return_type}' is not currently "
+                    f"supported for authority '{authority_code}' "
+                    "by the payroll preview endpoint."
+                )
+            }), 400
 
         period_start = None
         period_end = None
         is_monthly_period = False
         payroll_run = None
+
+        # ---------------------------------------------------------
+        # 2. Recognise monthly period formats
+        # ---------------------------------------------------------
 
         monthly_month_match = re.match(
             r"^\s*(\d{4})-(\d{2})\s*$",
@@ -1046,7 +1103,8 @@ def preview_tax_filing_data(company_id: int):
                     "ok": False,
                     "error": (
                         f"Invalid monthly filing period '{period}'. "
-                        "Expected format: YYYY-MM-DD to YYYY-MM-DD"
+                        "Expected format: "
+                        "YYYY-MM-DD to YYYY-MM-DD"
                     )
                 }), 400
 
@@ -1094,8 +1152,11 @@ def preview_tax_filing_data(company_id: int):
             period_end = payroll_run["period_end"]
 
         else:
+            # -----------------------------------------------------
             # Legacy tax-year lookup
             # Example: 2024/2025
+            # -----------------------------------------------------
+
             period_start, period_end = db_service.get_tax_year_dates(
                 authority_code,
                 period
@@ -1111,14 +1172,29 @@ def preview_tax_filing_data(company_id: int):
                     )
                 }), 400
 
-        # 3. Fetch company data payload
-        current_app.logger.warning("=== TAX FILING PREVIEW INPUT ===")
-        current_app.logger.warning("company_id: %s", company_id)
+        # ---------------------------------------------------------
+        # 3. Log preview input
+        # ---------------------------------------------------------
+
+        current_app.logger.warning(
+            "=== TAX FILING PREVIEW INPUT ==="
+        )
+        current_app.logger.warning(
+            "company_id: %s",
+            company_id
+        )
         current_app.logger.warning(
             "authority_code: %r",
             authority_code
         )
-        current_app.logger.warning("period: %r", period)
+        current_app.logger.warning(
+            "return_type: %r",
+            return_type
+        )
+        current_app.logger.warning(
+            "period: %r",
+            period
+        )
         current_app.logger.warning(
             "is_monthly_period: %s",
             is_monthly_period
@@ -1131,7 +1207,6 @@ def preview_tax_filing_data(company_id: int):
             "period_end: %r",
             period_end
         )
-
         current_app.logger.warning(
             "payroll_run_id: %s",
             payroll_run.get("id") if payroll_run else None
@@ -1149,6 +1224,11 @@ def preview_tax_filing_data(company_id: int):
             "payroll_run_payment_date: %s",
             payroll_run.get("payment_date") if payroll_run else None
         )
+
+        # ---------------------------------------------------------
+        # 4. Fetch payroll filing records
+        # ---------------------------------------------------------
+
         records = db_service.get_payroll_records_for_filing(
             company_id=company_id,
             period_start=period_start,
@@ -1164,88 +1244,470 @@ def preview_tax_filing_data(company_id: int):
             len(records)
         )
 
-        # 4. Process calculations and structural transformations
+        # ---------------------------------------------------------
+        # 5. Process records ONCE
+        #
+        # This is deliberately a single loop.
+        # The previous implementation processed records twice,
+        # which doubled totals and preview rows.
+        # ---------------------------------------------------------
+
         total_employees = len(records)
+
         total_gross = 0.0
         total_paye = 0.0
+
+        total_uif_employee = 0.0
+        total_uif_employer = 0.0
         total_uif = 0.0
+
         total_sdl = 0.0
+        total_eti = 0.0
+
         preview_records = []
 
         for rec in records:
-            gross = float(rec.get("gross_income") or 0.0)
-            paye = float(rec.get("paye_deducted") or 0.0)
-            uif = float(rec.get("uif_deducted") or 0.0)
-            sdl = float(rec.get("sdl_deducted") or 0.0)
+            # -----------------------------------------------------
+            # Earnings
+            # -----------------------------------------------------
+
+            gross = float(
+                rec.get("gross_income") or 0.0
+            )
+
+            paye = float(
+                rec.get("paye_deducted") or 0.0
+            )
+
+            # -----------------------------------------------------
+            # Employee UIF
+            #
+            # Prefer the new explicit field returned by
+            # get_payroll_records_for_filing().
+            #
+            # Fall back to uif_deducted for compatibility.
+            # -----------------------------------------------------
+
+            uif_employee_value = rec.get(
+                "uif_employee"
+            )
+
+            if uif_employee_value is None:
+                uif_employee_value = rec.get(
+                    "uif_deducted"
+                )
+
+            uif_employee = float(
+                uif_employee_value or 0.0
+            )
+
+            # -----------------------------------------------------
+            # Employer UIF
+            #
+            # IMPORTANT:
+            # Never infer employer UIF by copying employee UIF.
+            # It must come from the employer-side payroll result.
+            # -----------------------------------------------------
+
+            uif_employer = float(
+                rec.get("uif_employer") or 0.0
+            )
+
+            # -----------------------------------------------------
+            # Total UIF
+            # -----------------------------------------------------
+
+            uif_total = (
+                uif_employee +
+                uif_employer
+            )
+
+            # -----------------------------------------------------
+            # SDL
+            #
+            # Prefer explicit SDL field.
+            # Fall back to legacy sdl_deducted.
+            # -----------------------------------------------------
+
+            sdl_value = rec.get("sdl")
+
+            if sdl_value is None:
+                sdl_value = rec.get(
+                    "sdl_deducted"
+                )
+
+            sdl = float(
+                sdl_value or 0.0
+            )
+
+            # -----------------------------------------------------
+            # ETI
+            #
+            # ETI reduces the SARS EMP201 liability.
+            # -----------------------------------------------------
+
+            eti_value = rec.get("eti")
+
+            if eti_value is None:
+                eti_value = rec.get(
+                    "eti_amount"
+                )
+
+            eti = float(
+                eti_value or 0.0
+            )
+
+            # -----------------------------------------------------
+            # Accumulate totals
+            # -----------------------------------------------------
 
             total_gross += gross
             total_paye += paye
-            total_uif += uif
+
+            total_uif_employee += uif_employee
+            total_uif_employer += uif_employer
+            total_uif += uif_total
+
             total_sdl += sdl
+            total_eti += eti
+
+            # -----------------------------------------------------
+            # Build preview record
+            # -----------------------------------------------------
 
             preview_records.append({
-                "employee_id": rec.get("employee_id"),
-                "payroll_number": rec.get("payroll_number"),
-                "first_name": rec.get("first_name"),
-                "last_name": rec.get("last_name"),
-                "id_number": rec.get("id_number"),
-                "tax_number": rec.get("tax_number"),
-                "date_of_birth": rec.get("date_of_birth"),
-                "employment_start_date": rec.get("employment_start_date"),
-                "job_title": rec.get("job_title"),
-                "department": rec.get("department"),
-                "basic_salary": round(float(rec.get("basic_salary") or 0.0), 2),
-                "overtime_pay": round(float(rec.get("overtime_pay") or 0.0), 2),
-                "bonus": round(float(rec.get("bonus") or 0.0), 2),
-                "commission": round(float(rec.get("commission") or 0.0), 2),
-                "allowances": round(float(rec.get("allowances") or 0.0), 2),
-                "other_income": round(float(rec.get("other_income") or 0.0), 2),
-                "gross_income": round(gross, 2),
-                "paye_deducted": round(paye, 2),
-                "uif_deducted": round(uif, 2),
-                "sdl_deducted": round(sdl, 2),
-                "pension_fund_contributions": round(float(rec.get("pension_fund_contributions") or 0.0), 2),
-                "retirement_annuity_contributions": round(float(rec.get("retirement_annuity_contributions") or 0.0), 2),
-                "medical_scheme_contributions": round(float(rec.get("medical_scheme_contributions") or 0.0), 2),
-                "other_deductions": round(float(rec.get("other_deductions") or 0.0), 2),
-                "net_pay": round(float(rec.get("net_pay") or 0.0), 2),
-                "period_start_date": normalize_date_value(rec.get("period_start_date")),
-                "period_end_date": normalize_date_value(rec.get("period_end_date")),
-                "payment_date": normalize_date_value(rec.get("payment_date")),
-                "is_director": bool(rec.get("is_director")),
-                "is_non_resident": bool(rec.get("is_non_resident"))
+                "employee_id": rec.get(
+                    "employee_id"
+                ),
+
+                "payroll_number": rec.get(
+                    "payroll_number"
+                ),
+
+                "first_name": rec.get(
+                    "first_name"
+                ),
+
+                "last_name": rec.get(
+                    "last_name"
+                ),
+
+                "id_number": rec.get(
+                    "id_number"
+                ),
+
+                "tax_number": rec.get(
+                    "tax_number"
+                ),
+
+                "date_of_birth": rec.get(
+                    "date_of_birth"
+                ),
+
+                "employment_start_date": rec.get(
+                    "employment_start_date"
+                ),
+
+                "job_title": rec.get(
+                    "job_title"
+                ),
+
+                "department": rec.get(
+                    "department"
+                ),
+
+                "basic_salary": round(
+                    float(
+                        rec.get("basic_salary") or 0.0
+                    ),
+                    2
+                ),
+
+                "overtime_pay": round(
+                    float(
+                        rec.get("overtime_pay") or 0.0
+                    ),
+                    2
+                ),
+
+                "bonus": round(
+                    float(
+                        rec.get("bonus") or 0.0
+                    ),
+                    2
+                ),
+
+                "commission": round(
+                    float(
+                        rec.get("commission") or 0.0
+                    ),
+                    2
+                ),
+
+                "allowances": round(
+                    float(
+                        rec.get("allowances") or 0.0
+                    ),
+                    2
+                ),
+
+                "other_income": round(
+                    float(
+                        rec.get("other_income") or 0.0
+                    ),
+                    2
+                ),
+
+                "gross_income": round(
+                    gross,
+                    2
+                ),
+
+                "paye_deducted": round(
+                    paye,
+                    2
+                ),
+
+                "uif_employee": round(
+                    uif_employee,
+                    2
+                ),
+
+                "uif_employer": round(
+                    uif_employer,
+                    2
+                ),
+
+                "uif_total": round(
+                    uif_total,
+                    2
+                ),
+
+                # Backward compatibility
+                "uif_deducted": round(
+                    uif_employee,
+                    2
+                ),
+
+                "sdl": round(
+                    sdl,
+                    2
+                ),
+
+                # Backward compatibility
+                "sdl_deducted": round(
+                    sdl,
+                    2
+                ),
+
+                "eti": round(
+                    eti,
+                    2
+                ),
+
+                # Backward compatibility
+                "eti_amount": round(
+                    eti,
+                    2
+                ),
+
+                "pension_fund_contributions": round(
+                    float(
+                        rec.get(
+                            "pension_fund_contributions"
+                        ) or 0.0
+                    ),
+                    2
+                ),
+
+                "retirement_annuity_contributions": round(
+                    float(
+                        rec.get(
+                            "retirement_annuity_contributions"
+                        ) or 0.0
+                    ),
+                    2
+                ),
+
+                "medical_scheme_contributions": round(
+                    float(
+                        rec.get(
+                            "medical_scheme_contributions"
+                        ) or 0.0
+                    ),
+                    2
+                ),
+
+                "other_deductions": round(
+                    float(
+                        rec.get(
+                            "other_deductions"
+                        ) or 0.0
+                    ),
+                    2
+                ),
+
+                "net_pay": round(
+                    float(
+                        rec.get(
+                            "net_pay"
+                        ) or 0.0
+                    ),
+                    2
+                ),
+
+                "period_start_date": normalize_date_value(
+                    rec.get(
+                        "period_start_date"
+                    )
+                ),
+
+                "period_end_date": normalize_date_value(
+                    rec.get(
+                        "period_end_date"
+                    )
+                ),
+
+                "payment_date": normalize_date_value(
+                    rec.get(
+                        "payment_date"
+                    )
+                ),
+
+                "is_director": bool(
+                    rec.get(
+                        "is_director"
+                    )
+                ),
+
+                "is_non_resident": bool(
+                    rec.get(
+                        "is_non_resident"
+                    )
+                )
             })
 
+        # ---------------------------------------------------------
+        # 6. Calculate SARS EMP201 statutory liability
+        #
+        # PAYE
+        # + employee UIF
+        # + employer UIF
+        # + SDL
+        # - ETI
+        # ---------------------------------------------------------
+
+        total_sars_statutory_liability = (
+            total_paye +
+            total_uif_employee +
+            total_uif_employer +
+            total_sdl -
+            total_eti
+        )
+
+        # Do not allow a negative payable amount.
+        # ETI cannot create a negative SARS liability.
+        if total_sars_statutory_liability < 0:
+            total_sars_statutory_liability = 0.0
+
+        # ---------------------------------------------------------
+        # 7. Calculate authority-specific statutory amounts
+        # ---------------------------------------------------------
+
+        if authority_code == "SARS":
+            statutory_employee_amount = (
+                total_paye +
+                total_uif_employee
+            )
+
+            statutory_employer_amount = (
+                total_uif_employer +
+                total_sdl
+            )
+
+            statutory_total_payable = (
+                total_sars_statutory_liability
+            )
+
+        else:
+            # Preserve generic behaviour for other authorities.
+            statutory_employee_amount = (
+                total_paye +
+                total_uif_employee
+            )
+
+            statutory_employer_amount = (
+                total_uif_employer +
+                total_sdl
+            )
+
+            statutory_total_payable = (
+                statutory_employee_amount +
+                statutory_employer_amount -
+                total_eti
+            )
+
+            if statutory_total_payable < 0:
+                statutory_total_payable = 0.0
+
+        # ---------------------------------------------------------
+        # 8. Average PAYE rate
+        # ---------------------------------------------------------
+
         avg_tax_rate = (
-            (total_paye / total_gross * 100)
+            (
+                total_paye /
+                total_gross *
+                100
+            )
             if total_gross > 0
             else 0.0
         )
 
         # ---------------------------------------------------------
-        # 4A. Create/update statutory return header from preview
+        # 9. Create/update statutory return header from preview
         # ---------------------------------------------------------
 
-        statutory_return = db_service.payroll_statutory_return_preview_upsert(
-            company_id=company_id,
-            authority_code=authority_code,
-            return_type="payroll_tax",
-            period_start=period_start,
-            period_end=period_end,
-            reporting_date=period_end,
+        statutory_return = (
+            db_service.payroll_statutory_return_preview_upsert(
+                company_id=company_id,
+                authority_code=authority_code,
+                return_type=return_type,
+                period_start=period_start,
+                period_end=period_end,
+                reporting_date=period_end,
 
-            employee_count=total_employees,
-            gross_remuneration=total_gross,
-            taxable_remuneration=total_gross,
-            employee_amount=total_paye + total_uif,
-            employer_amount=total_sdl,
-            total_payable=total_paye + total_uif + total_sdl,
+                employee_count=total_employees,
 
-            notes=f"PAYE preview for {period_start} to {period_end}",
+                gross_remuneration=total_gross,
 
-            user_id=None,
+                taxable_remuneration=total_gross,
+
+                employee_amount=(
+                    statutory_employee_amount
+                ),
+
+                employer_amount=(
+                    statutory_employer_amount
+                ),
+
+                total_payable=(
+                    statutory_total_payable
+                ),
+
+                notes=(
+                    f"{return_type} preview for "
+                    f"{period_start} to {period_end}"
+                ),
+
+                user_id=None,
+            )
         )
-        # 5. Look up columns or map explicit authority schemas
+
+        # ---------------------------------------------------------
+        # 10. Look up columns or map explicit authority schemas
+        # ---------------------------------------------------------
+
         sars_cols = globals().get(
             "SARS_CSV_COLUMNS",
             [
@@ -1281,28 +1743,85 @@ def preview_tax_filing_data(company_id: int):
             ]
         )
 
+        # ---------------------------------------------------------
+        # 11. Build final preview response
+        # ---------------------------------------------------------
+
         preview_data = {
             "authority_code": authority_code,
 
-            "statutory_return_id": statutory_return.get("id"),
+            "return_type": return_type,
+
+            "statutory_return_id": statutory_return.get(
+                "id"
+            ),
 
             "statutory_return": {
-                "id": statutory_return.get("id"),
-                "return_no": statutory_return.get("return_no"),
-                "status": statutory_return.get("status"),
+                "id": statutory_return.get(
+                    "id"
+                ),
+
+                "return_no": statutory_return.get(
+                    "return_no"
+                ),
+
+                "status": statutory_return.get(
+                    "status"
+                ),
             },
 
+            # -----------------------------------------------------
+            # Statutory totals
+            # -----------------------------------------------------
+
             "statutory_totals": {
-                "employee_amount": round(
-                    total_paye + total_uif,
+                "paye": round(
+                    total_paye,
                     2
                 ),
-                "employer_amount": round(
+
+                "uif_employee": round(
+                    total_uif_employee,
+                    2
+                ),
+
+                "uif_employer": round(
+                    total_uif_employer,
+                    2
+                ),
+
+                "uif_total": round(
+                    total_uif,
+                    2
+                ),
+
+                "sdl": round(
                     total_sdl,
                     2
                 ),
+
+                "eti": round(
+                    total_eti,
+                    2
+                ),
+
+                "employee_amount": round(
+                    statutory_employee_amount,
+                    2
+                ),
+
+                "employer_amount": round(
+                    statutory_employer_amount,
+                    2
+                ),
+
+                "total_sars_statutory_liability": round(
+                    total_sars_statutory_liability,
+                    2
+                ),
+
                 "total_payable": round(
-                    total_paye + total_uif + total_sdl,
+                    statutory_total_payable,
                     2
                 ),
             },
@@ -1312,37 +1831,68 @@ def preview_tax_filing_data(company_id: int):
                 {}
             ),
 
+            # -----------------------------------------------------
+            # Period
+            # -----------------------------------------------------
+
             "period": {
                 "raw": period,
+
                 "type": (
                     "monthly"
                     if is_monthly_period
                     else "tax_year"
                 ),
+
                 "start": (
                     period_start.isoformat()
-                    if isinstance(period_start, date)
-                    else str(period_start)
+                    if isinstance(
+                        period_start,
+                        date
+                    )
+                    else str(
+                        period_start
+                    )
                 ),
+
                 "end": (
                     period_end.isoformat()
-                    if isinstance(period_end, date)
-                    else str(period_end)
+                    if isinstance(
+                        period_end,
+                        date
+                    )
+                    else str(
+                        period_end
+                    )
                 )
             },
 
+            # -----------------------------------------------------
+            # Payroll run
+            # -----------------------------------------------------
+
             "payroll_run": (
                 {
-                    "id": payroll_run.get("id"),
-                    "run_no": payroll_run.get("run_no"),
+                    "id": payroll_run.get(
+                        "id"
+                    ),
+
+                    "run_no": payroll_run.get(
+                        "run_no"
+                    ),
+
                     "payment_date": (
                         payroll_run["payment_date"].isoformat()
                         if isinstance(
-                            payroll_run.get("payment_date"),
+                            payroll_run.get(
+                                "payment_date"
+                            ),
                             date
                         )
                         else str(
-                            payroll_run.get("payment_date")
+                            payroll_run.get(
+                                "payment_date"
+                            )
                         )
                     ),
                 }
@@ -1350,19 +1900,83 @@ def preview_tax_filing_data(company_id: int):
                 else None
             ),
 
+            # -----------------------------------------------------
+            # Statistics
+            # -----------------------------------------------------
+
             "statistics": {
                 "total_employees": total_employees,
-                "total_gross_income": round(total_gross, 2),
-                "total_paye_deducted": round(total_paye, 2),
-                "total_uif_deducted": round(total_uif, 2),
-                "total_sdl_deducted": round(total_sdl, 2),
-                "average_tax_rate": round(avg_tax_rate, 2),
+
+                "total_gross_income": round(
+                    total_gross,
+                    2
+                ),
+
+                "total_paye_deducted": round(
+                    total_paye,
+                    2
+                ),
+
+                "total_uif_employee": round(
+                    total_uif_employee,
+                    2
+                ),
+
+                "total_uif_employer": round(
+                    total_uif_employer,
+                    2
+                ),
+
+                "total_uif": round(
+                    total_uif,
+                    2
+                ),
+
+                "total_sdl": round(
+                    total_sdl,
+                    2
+                ),
+
+                "total_eti": round(
+                    total_eti,
+                    2
+                ),
+
+                "total_sars_statutory_liability": round(
+                    total_sars_statutory_liability,
+                    2
+                ),
+
+                # Existing compatibility fields
+                "total_uif_deducted": round(
+                    total_uif_employee,
+                    2
+                ),
+
+                "total_sdl_deducted": round(
+                    total_sdl,
+                    2
+                ),
+
+                "average_tax_rate": round(
+                    avg_tax_rate,
+                    2
+                ),
+
                 "estimated_file_size": (
                     f"~{max(1, round(total_employees * 0.25))} KB"
                 )
             },
 
+            # -----------------------------------------------------
+            # Employee records
+            # -----------------------------------------------------
+
             "records": preview_records,
+
+            # -----------------------------------------------------
+            # Authority columns
+            # -----------------------------------------------------
 
             "columns": (
                 sars_cols
@@ -1377,10 +1991,15 @@ def preview_tax_filing_data(company_id: int):
             "generated_at": datetime.utcnow().isoformat()
         }
 
-        return _success(preview_data)
+        return _success(
+            preview_data
+        )
 
     except Exception as e:
-        logger.exception("TAX FILING PREVIEW FAILED")
+        logger.exception(
+            "TAX FILING PREVIEW FAILED"
+        )
+
         return _error(
             "preview_tax_filing_data",
             e

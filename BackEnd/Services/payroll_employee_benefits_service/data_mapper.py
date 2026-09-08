@@ -93,9 +93,13 @@ class PayrollEmployeeRecord(TypedDict):
     gross_income: Decimal
     
     # Deductions
+    # Statutory deductions and employer liabilities
     paye_deducted: Decimal
-    uif_deducted: Optional[Decimal]      # South Africa only
-    sdl_deducted: Optional[Decimal]      # South Africa only
+    uif_employee: Optional[Decimal]     # South Africa: employee contribution
+    uif_employer: Optional[Decimal]     # South Africa: employer contribution
+    uif_total: Optional[Decimal]        # South Africa: employee + employer
+    sdl: Optional[Decimal]              # South Africa: employer SDL liability
+    eti: Optional[Decimal]              # South Africa: Employment Tax Incentive
     pension_fund_contributions: Decimal
     retirement_annuity_contributions: Decimal
     medical_scheme_contributions: Decimal
@@ -143,8 +147,14 @@ AUTHORITY_MAPPING = {
             'gross_income', 'paye_deducted', 'period_start_date', 'period_end_date'
         ],
         'optional_fields': [
-            'tax_number', 'uif_deducted', 'sdl_deducted',
-            'fringe_benefits_total', 'pension_fund_contributions',
+            'tax_number',
+            'uif_employee',
+            'uif_employer',
+            'uif_total',
+            'sdl',
+            'eti',
+            'fringe_benefits_total',
+            'pension_fund_contributions',
             'medical_scheme_contributions'
         ]
     },
@@ -274,10 +284,42 @@ def map_employee_to_export_record(
         'gross_income': float(money(emp.get('gross_income', 0))),
         
         # Deductions
+        # Statutory deductions and liabilities
         'paye_deducted': float(money(emp.get('paye_deducted', 0))),
-        'uif_deducted': float(money(emp.get('uif_deducted', 0))) if emp.get('uif_deducted') else None,
-        'sdl_deducted': float(money(emp.get('sdl_deducted', 0))) if emp.get('sdl_deducted') else None,
-        'pension_fund_contributions': float(money(emp.get('pension_fund_contributions', 0))),
+
+        'uif_employee': (
+            float(money(emp.get('uif_employee', 0)))
+            if emp.get('uif_employee') is not None
+            else None
+        ),
+
+        'uif_employer': (
+            float(money(emp.get('uif_employer', 0)))
+            if emp.get('uif_employer') is not None
+            else None
+        ),
+
+        'uif_total': (
+            float(money(emp.get('uif_total', 0)))
+            if emp.get('uif_total') is not None
+            else None
+        ),
+
+        'sdl': (
+            float(money(emp.get('sdl', 0)))
+            if emp.get('sdl') is not None
+            else None
+        ),
+
+        'eti': (
+            float(money(emp.get('eti', 0)))
+            if emp.get('eti') is not None
+            else None
+        ),
+
+        'pension_fund_contributions': float(
+            money(emp.get('pension_fund_contributions', 0))
+        ),
         'retirement_annuity_contributions': float(money(emp.get('retirement_annuity_contributions', 0))),
         'medical_scheme_contributions': float(money(emp.get('medical_scheme_contributions', 0))),
         'other_deductions': float(money(emp.get('other_deductions', 0))),
@@ -403,26 +445,64 @@ def map_batch_for_export(
     # Calculate summary totals
     total_gross = sum(r['gross_income'] for r in records)
     total_paye = sum(r['paye_deducted'] for r in records)
-    total_uif = sum(r.get('uif_deducted', 0) or 0 for r in records)
+    total_uif_employee = sum(
+        r.get('uif_employee', 0) or 0
+        for r in records
+    )
+
+    total_uif_employer = sum(
+        r.get('uif_employer', 0) or 0
+        for r in records
+    )
+
+    total_uif = sum(
+        r.get('uif_total', 0) or 0
+        for r in records
+    )
+
+    total_sdl = sum(
+        r.get('sdl', 0) or 0
+        for r in records
+    )
+
+    total_eti = sum(
+        r.get('eti', 0) or 0
+        for r in records
+    )
     total_sdl = sum(r.get('sdl_deducted', 0) or 0 for r in records)
     total_net = sum(r['net_pay'] for r in records)
     
-    summary = {
-        'authority_code': authority_code,
-        'authority_name': config['name'],
-        'country_code': config['country_code'],
-        'currency': config['currency'],
-        'return_type': config['monthly_return_name'],
-        'period_start': format_date(period_start),
-        'period_end': format_date(period_end),
-        'total_employees': len(records),
-        'total_gross_income': float(total_gross),
-        'total_paye_deducted': float(total_paye),
-        'total_uif_deducted': float(total_uif),
-        'total_sdl_deducted': float(total_sdl),
-        'total_net_pay': float(total_net),
-        'average_tax_rate': float((total_paye / total_gross * 100) if total_gross > 0 else 0),
-        'generated_at': datetime.utcnow().isoformat(),
+    summary = { 
+        'authority_code': authority_code, 
+        'authority_name': config['name'], 
+        'country_code': config['country_code'], 
+        'currency': config['currency'], 
+        'return_type': config['monthly_return_name'], 
+        'period_start': format_date(period_start), 
+        'period_end': format_date(period_end), 
+        'total_employees': len(records), 
+        'total_gross_income': float(total_gross), 
+        'total_paye_deducted': float(total_paye), 
+        'total_uif_employee': float(total_uif_employee),
+        'total_uif_employer': float(total_uif_employer),
+        'total_uif': float(total_uif),
+        'total_sdl': float(total_sdl),
+        'total_eti': float(total_eti),
+
+        'total_sars_statutory_liability': float(
+            total_paye +
+            total_uif +
+            total_sdl -
+            total_eti
+        ) if authority_code == 'SARS' else 0.0,
+
+        'total_net_pay': float(total_net), 
+        'average_tax_rate': float(
+            (total_paye / total_gross * 100)
+            if total_gross > 0
+            else 0
+        ), 
+        'generated_at': datetime.utcnow().isoformat(), 
     }
     
     return {
@@ -489,14 +569,32 @@ def _validate_sars_rules(record: Dict) -> List[Dict]:
         })
     
     # UIF cap check
-    uif = record.get('uif_deducted')
-    if uif and uif > 177.12:
-        issues.append({
-            'severity': 'warning',
-            'field': 'uif_deducted',
-            'message': f"UIF contribution (R{uif:.2f}) exceeds monthly cap of R177.12",
-            'authority': 'SARS'
-        })
+    uif_employee = record.get('uif_employee')
+    uif_employer = record.get('uif_employer')
+    uif_total = record.get('uif_total')
+
+    if (
+        uif_employee is not None and
+        uif_employer is not None and
+        uif_total is not None
+    ):
+        expected_total = money(
+            dec(uif_employee) +
+            dec(uif_employer)
+        )
+
+        actual_total = money(uif_total)
+
+        if expected_total != actual_total:
+            issues.append({
+                'severity': 'error',
+                'field': 'uif_total',
+                'message': (
+                    'Total UIF does not equal employee UIF '
+                    'plus employer UIF'
+                ),
+                'authority': 'SARS'
+            })
     
     return issues
 
@@ -587,10 +685,19 @@ def get_payroll_records_for_filing(
             COALESCE(pe.other_income, 0) AS other_income,
             COALESCE(pe.gross_income, 0) AS gross_income,
             
-            -- Deductions
+            -- Statutory deductions and employer liabilities
             COALESCE(pd.paye_deducted, 0) AS paye_deducted,
-            COALESCE(pd.uif_deducted, 0) AS uif_deducted,
-            COALESCE(pd.sdl_deducted, 0) AS sdl_deducted,
+            COALESCE(pd.uif_employee, 0) AS uif_employee,
+            COALESCE(pd.uif_employer, 0) AS uif_employer,
+            COALESCE(
+                pd.uif_employee,
+                0
+            ) + COALESCE(
+                pd.uif_employer,
+                0
+            ) AS uif_total,
+            COALESCE(pd.sdl, 0) AS sdl,
+            COALESCE(pd.eti, 0) AS eti,
             COALESCE(pd.pension_fund, 0) AS pension_fund_contributions,
             COALESCE(pd.medical_scheme, 0) AS medical_scheme_contributions,
             COALESCE(pd.other_deductions, 0) AS other_deductions,

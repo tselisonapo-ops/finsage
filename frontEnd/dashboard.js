@@ -2620,11 +2620,23 @@ const ENDPOINTS = {
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/liability-payments${qs ? `?${qs}` : ""}`;
     },
 
-    liabilityBalance: (companyId, runId, { liability_type = "" } = {}) => {
+    liabilityBalance: (companyId, runId, {
+      liability_type = "",
+      benefit_plan_id = null,
+      defined_contribution_run_id = null
+    } = {}) => {
       const params = new URLSearchParams();
 
       if (liability_type) {
         params.append("liability_type", String(liability_type));
+      }
+
+      if (benefit_plan_id) {
+        params.append("benefit_plan_id", String(benefit_plan_id));
+      }
+
+      if (defined_contribution_run_id) {
+        params.append("defined_contribution_run_id", String(defined_contribution_run_id));
       }
 
       const qs = params.toString();
@@ -70523,7 +70535,7 @@ async function saveEditModal() {
     }
 
     if(tab==="posting"){
-      loadPayrollSalaryPayableClearing().catch(error=>
+      loadPayrollLiabilityClearing().catch(error=>
         fail(
           error,
           "Salary payable clearing could not be loaded."
@@ -74360,8 +74372,21 @@ async function saveEditModal() {
     showPayrollStatus("Payroll posted successfully.", "success");
   }
 
-  async function loadPayrollSalaryPayableClearing() {
-    const runId = payrollState.selectedRun?.id;
+  async function loadPayrollLiabilityClearing({
+    liabilityType = "salary",
+    payrollRunId = null,
+    benefitPlanId = null,
+    definedContributionRunId = null,
+    prefix = "payrollSalaryPayment",
+    referencePrefix = "SALARY-PAY"
+  } = {}) {
+
+    const runId =
+      Number(
+        payrollRunId ||
+        payrollState.selectedRun?.id ||
+        0
+      );
 
     if (!runId) {
       return;
@@ -74369,14 +74394,38 @@ async function saveEditModal() {
 
     const companyId = cid();
 
-    const messageEl = $("payrollSalaryPaymentMessage");
-    const outstandingEl = $("payrollSalaryPaymentOutstanding");
-    const amountEl = $("payrollSalaryPaymentAmount");
-    const dateEl = $("payrollSalaryPaymentDate");
-    const bankEl = $("payrollSalaryPaymentBankAccount");
-    const referenceEl = $("payrollSalaryPaymentReference");
-    const previewEl = $("payrollSalaryPaymentPreview");
-    const postBtn = $("payrollSalaryPaymentPostBtn");
+    const messageEl =
+      $(`${prefix}Message`);
+
+    const recognizedEl =
+      $(`${prefix}RecognisedLiability`);
+
+    const historicalEl =
+      $(`${prefix}HistoricalPayments`);
+
+    const outstandingEl =
+      $(`${prefix}Outstanding`);
+
+    const clearingAccountEl =
+      $(`${prefix}ClearingAccount`);
+
+    const amountEl =
+      $(`${prefix}Amount`);
+
+    const dateEl =
+      $(`${prefix}Date`);
+
+    const bankEl =
+      $(`${prefix}BankAccount`);
+
+    const referenceEl =
+      $(`${prefix}Reference`);
+
+    const previewEl =
+      $(`${prefix}Preview`);
+
+    const postBtn =
+      $(`${prefix}PostBtn`);
 
     if (postBtn) {
       postBtn.disabled = true;
@@ -74388,22 +74437,25 @@ async function saveEditModal() {
 
     if (messageEl) {
       messageEl.textContent =
-        "Loading salary payable balance…";
+        "Loading liability balance…";
     }
 
     /*
-    * Load the existing company bank accounts.
-    *
-    * We deliberately reuse refreshBankAccounts()
-    * rather than creating another bank-account API call.
-    */
-    const banks = await refreshBankAccounts();
+     * Load the existing company bank accounts.
+     *
+     * This is required for the eventual payment, but the
+     * liability balance itself does NOT depend on a bank
+     * account being selected.
+     */
+    const banks =
+      await refreshBankAccounts();
 
     if (bankEl) {
       bankEl.innerHTML =
         `<option value="">-- Select bank account --</option>`;
 
       (banks || []).forEach(bank => {
+
         const id =
           bank.id ??
           bank.bank_account_id ??
@@ -74449,103 +74501,211 @@ async function saveEditModal() {
         const option =
           document.createElement("option");
 
-        option.value = String(id);
+        option.value =
+          String(id);
+
         option.textContent =
-          label || `Bank account ${id}`;
+          label ||
+          `Bank account ${id}`;
 
         bankEl.appendChild(option);
 
         /*
-        * Use the company's default payment bank
-        * when one exists.
-        */
+         * Use the company's default payment bank
+         * when one exists.
+         */
         if (
           bank.is_default_payments === true &&
           !bankEl.value
         ) {
-          bankEl.value = String(id);
+          bankEl.value =
+            String(id);
         }
       });
     }
 
     /*
-    * Default the payment date to the payroll run's
-    * scheduled payment date.
-    */
-    const run = payrollState.selectedRun || {};
+     * Determine the payroll run.
+     *
+     * For the normal payroll payment screen this comes
+     * from payrollState.selectedRun.
+     *
+     * For defined contributions it can come directly
+     * from the selected DC run.
+     */
+    const run =
+      payrollState.selectedRun ||
+      payrollState.employeeBenefits
+        ?.selectedDefinedContributionRun
+        ?.run ||
+      {};
 
+    /*
+     * Default the payment date.
+     */
     if (dateEl) {
       dateEl.value =
         normalizePayrollDate(
-          run.payment_date
+          run.payment_date ||
+          run.reporting_date ||
+          run.period_end
         );
     }
 
     /*
-    * Default the reference.
-    */
-    if (referenceEl && !referenceEl.value) {
+     * Default the payment reference.
+     */
+    if (
+      referenceEl &&
+      !referenceEl.value
+    ) {
       referenceEl.value =
-        `SALARY-PAY-${run.run_no || runId}`;
+        `${referencePrefix}-${run.run_no || runId}`;
     }
 
-    /*
-    * The salary liability preview endpoint calculates
-    * the actual outstanding amount from the payroll
-    * posting and previously posted salary payments.
-    *
-    * We use amount=outstanding only after the preview
-    * response gives us the balance.
-    */
     try {
-      const bankAccountId =
-        bankEl?.value || null;
 
-      if (!bankAccountId) {
-        if (messageEl) {
-          messageEl.textContent =
-            "Select a payment bank account to preview the salary payable balance.";
-        }
-        return;
+      /*
+       * Build the liability-balance request.
+       *
+       * This endpoint is the source of truth for:
+       *
+       * - recognised liability
+       * - historical payments
+       * - outstanding liability
+       * - liability account
+       */
+      const params = {
+        liability_type:
+          liabilityType
+      };
+
+      /*
+       * Defined-contribution liabilities need the
+       * specific contribution run and benefit plan.
+       */
+      if (
+        benefitPlanId !== null &&
+        benefitPlanId !== undefined &&
+        benefitPlanId !== ""
+      ) {
+        params.benefit_plan_id =
+          Number(benefitPlanId);
       }
 
-      const preview = await apiFetch(
-        ENDPOINTS.payroll.liabilityPaymentPreview(
-          companyId,
-          runId
-        ),
-        {
-          method: "POST",
-          body: JSON.stringify({
-            liability_type: "salary",
-            bank_account_id: Number(bankAccountId),
-            payment_date:
-              dateEl?.value ||
-              run.payment_date ||
-              null,
-          }),
-        }
-      );
+      if (
+        definedContributionRunId !== null &&
+        definedContributionRunId !== undefined &&
+        definedContributionRunId !== ""
+      ) {
+        params.defined_contribution_run_id =
+          Number(definedContributionRunId);
+      }
+
+      const balance =
+        await apiFetch(
+          ENDPOINTS.payroll.liabilityBalance(
+            companyId,
+            runId,
+            params
+          ),
+          {
+            method: "GET"
+          }
+        );
 
       const data =
-        preview?.preview ||
-        preview?.data ||
-        preview ||
+        balance?.balance ||
+        balance?.data ||
+        balance ||
         {};
+
+      const recognisedLiability =
+        Number(
+          data.recognized_amount ??
+          data.recognised_amount ??
+          data.liability_amount ??
+          0
+        );
+
+      const historicalPayments =
+        Number(
+          data.previously_paid ??
+          data.historical_paid_amount ??
+          data.paid_amount ??
+          data.previous_payments ??
+          0
+        );
 
       const outstanding =
         Number(
           data.outstanding_amount ??
           data.remaining_amount ??
-          data.amount ??
-          0
+          Math.max(
+            recognisedLiability -
+            historicalPayments,
+            0
+          )
         );
 
+      /*
+       * Store the complete balance in payroll state.
+       */
+      payrollState.employeeBenefits
+        .selectedDefinedContributionPayment
+        .liabilityPreview = {
+          ...data,
+
+          liabilityAmount:
+            recognisedLiability,
+
+          recognisedLiability:
+            recognisedLiability,
+
+          historicalPaidAmount:
+            historicalPayments,
+
+          historicalPayments:
+            historicalPayments,
+
+          outstandingAmount:
+            outstanding
+        };
+
+      /*
+       * Recognised Liability
+       */
+      if (recognizedEl) {
+        recognizedEl.value =
+          money(
+            recognisedLiability
+          );
+      }
+
+      /*
+       * Historical Payments
+       */
+      if (historicalEl) {
+        historicalEl.value =
+          money(
+            historicalPayments
+          );
+      }
+
+      /*
+       * Outstanding
+       */
       if (outstandingEl) {
         outstandingEl.value =
           money(outstanding);
       }
 
+      /*
+       * Prefill the payment amount with the
+       * current outstanding balance.
+       *
+       * This remains editable for partial payments.
+       */
       if (amountEl) {
         amountEl.value =
           outstanding > 0
@@ -74553,26 +74713,69 @@ async function saveEditModal() {
             : "";
       }
 
+      /*
+       * Liability / Clearing Account
+       */
+      if (clearingAccountEl) {
+
+        const liabilityAccount =
+          data.liability_account ||
+          {};
+
+        clearingAccountEl.value =
+          liabilityAccount.name ||
+          liabilityAccount.code ||
+          data.clearing_account_name ||
+          data.clearing_account ||
+          data.clearing_account_code ||
+          "";
+      }
+
+      /*
+       * Store the selected bank account.
+       */
+      if (
+        bankEl?.value &&
+        payrollState.employeeBenefits
+          .selectedDefinedContributionPayment
+      ) {
+        payrollState.employeeBenefits
+          .selectedDefinedContributionPayment
+          .selectedBankId =
+            Number(bankEl.value);
+      }
+
+      /*
+       * Display the balance status.
+       */
       if (messageEl) {
+
         if (outstanding > 0) {
+
           messageEl.innerHTML =
-            `Salary payable outstanding: <strong>${money(outstanding)}</strong>`;
+            `${liabilityType === "defined_contribution"
+              ? "Defined contribution payable"
+              : "Payroll liability"
+            } outstanding: <strong>${money(outstanding)}</strong>`;
+
         } else {
+
           messageEl.textContent =
-            "There is no outstanding salary payable for this payroll run.";
+            "There is no outstanding liability for this payroll run.";
         }
       }
 
     } catch (error) {
+
       console.warn(
-        "[payroll] salary payable clearing load failed:",
+        "[payroll] liability balance load failed:",
         error
       );
 
       if (messageEl) {
         messageEl.textContent =
           error?.message ||
-          "Salary payable balance could not be loaded.";
+          "Liability balance could not be loaded.";
       }
     }
   }
@@ -74940,7 +75143,12 @@ async function saveEditModal() {
       "disabled"
     );
 
-    await loadPayrollSalaryPayableClearing();
+    await loadPayrollLiabilityClearing({
+      liabilityType: "salary",
+      payrollRunId: payrollState.selectedRun?.id,
+      prefix: "payrollSalaryPayment",
+      referencePrefix: "SALARY-PAY"
+    });
 
     return result;
   }
@@ -83941,48 +84149,56 @@ async function saveEditModal() {
   async function loadPayrollStatutoryWorkspace(){
     const params={
         authority_code:
-            $("payrollStatutoryAuthorityFilter")?.value||"",
+            $("payrollStatutoryAuthorityFilter")?.value
+            || "",
         return_type:
-            $("payrollStatutoryTypeFilter")?.value||"",
+            $("payrollStatutoryTypeFilter")?.value
+            || "",
         status:
-            $("payrollStatutoryStatusFilter")?.value||"",
+            $("payrollStatutoryStatusFilter")?.value
+            || "",
     };
 
-    const [mappings,returns]=await Promise.all([
-        apiFetch(
-            ENDPOINTS.payroll.statutoryMappings(cid())
-        ),
-        apiFetch(
-            ENDPOINTS.payroll.statutoryReturns(
-                cid(),
-                params
-            )
-        ),
-    ]);
+    const companyId=cid();
 
-    payrollState.statutory.mappings=
-        mappings?.items||[];
+    try{
+        const response=
+            await apiFetch(
+                ENDPOINTS.payroll.statutoryWorkspace(
+                    companyId,
+                    params
+                ),
+                {
+                    method:"GET"
+                }
+            );
 
-    payrollState.statutory.returns=
-        returns?.items||[];
+        const data=
+            response?.data ||
+            response ||
+            {};
 
-    console.log(
-        "STATUTORY RETURNS RESPONSE",
-        returns
-    );
+        payrollState.statutory.workspace=
+            data;
 
-    console.log(
-        "STATUTORY RETURNS ITEMS",
-        payrollState.statutory.returns
-    );
+        payrollState.statutory.returns=
+            Array.isArray(data.returns)
+                ? data.returns
+                : [];
 
-    renderPayrollStatutoryDashboard();
+        renderPayrollStatutoryReturns();
 
-    if(
-        window.__taxFiling &&
-        typeof window.__taxFiling.init==="function"
-    ){
-        window.__taxFiling.init();
+    }catch(error){
+        console.error(
+            "[payroll] statutory workspace load failed:",
+            error
+        );
+
+        showPayrollStatus(
+            error?.message ||
+            "Unable to load statutory returns.",
+            "error"
+        );
     }
   }
 
@@ -84117,6 +84333,15 @@ async function saveEditModal() {
                                 `;
                             }).join("")}
                         </select>
+
+                      <div class="payroll-filter-group">
+                          <label for="payrollStatutoryTypeFilter">Return Type</label>
+                          <select id="payrollStatutoryTypeFilter">
+                              <option value="EMP201">EMP201 — Monthly Employer Declaration</option>
+                              <option value="EMP501">EMP501 — Employer Reconciliation</option>
+                              <option value="IRP5">IRP5 / IT3(a) — Tax Certificates</option>
+                          </select>
+                      </div>
                     </div>
 
                     <button
@@ -84235,10 +84460,10 @@ async function saveEditModal() {
     const items=payrollState.statutory.returns||[];
 
     const authorities=[
-        {
-            code:"SARS",
-            name:"South African Revenue Service",
-            description:"PAYE, UIF and SDL",
+        { 
+            code:"SARS", 
+            name:"South African Revenue Service", 
+            description:"EMP201, EMP501, IRP5 / IT3(a), PAYE, UIF, SDL and ETI", 
         },
         {
             code:"RSL",
@@ -84354,6 +84579,30 @@ async function saveEditModal() {
         return String(item.authority_code || "")
             .toUpperCase() === authority.toUpperCase();
     });
+
+    const returnTypeEl=
+        $("payrollStatutoryTypeFilter");
+
+    const selectedReturnType=
+        returnTypeEl
+            ? String(returnTypeEl.value || "")
+            : "";
+
+    if(selectedReturnType){
+        filteredItems=
+            filteredItems.filter(item=>{
+                const itemType=
+                    String(
+                        item.return_type ||
+                        item.return_code ||
+                        item.form_type ||
+                        ""
+                    ).toUpperCase();
+
+                return itemType ===
+                    selectedReturnType.toUpperCase();
+            });
+    }
 
     if (selectedYear) {
         filteredItems = filteredItems.filter(item => {
@@ -84612,10 +84861,13 @@ async function saveEditModal() {
         </div>
 
         ${
-            authority.toUpperCase() === "SARS" ||
+            (
+                authority.toUpperCase() === "SARS" &&
+                selectedReturnType.toUpperCase() === "EMP201"
+            ) ||
             authority.toUpperCase() === "RSL" ||
             authority.toUpperCase() === "BURS"
-                ? `
+                            ? `
                     <div
                         id="payrollPayeClearingSection"
                         style="margin-top:20px;"
@@ -84691,6 +84943,201 @@ async function saveEditModal() {
     ) {
         renderPayrollPayeClearingSelector();
     }
+  }
+
+  function renderPayrollSarsEmp201Preview(data){
+    const el=$("payrollStatutoryPreview");
+    if(!el)return;
+
+    const rows=
+        Array.isArray(data?.employees)
+            ? data.employees
+            : Array.isArray(data?.rows)
+                ? data.rows
+                : [];
+
+    const totals=
+        data?.totals ||
+        {};
+
+    el.innerHTML=`
+        <div class="payroll-card">
+
+            <div class="payroll-card-head">
+                <div>
+                    <h3>SARS EMP201</h3>
+
+                    <p class="payroll-muted">
+                        Monthly Employer Declaration
+                    </p>
+                </div>
+
+                <span class="payroll-pill">
+                    SARS
+                </span>
+            </div>
+
+            <div class="payroll-table-wrap">
+                <table class="payroll-preview-table">
+
+                    <thead>
+                        <tr>
+                            <th>Employee</th>
+                            <th>Gross Remuneration</th>
+                            <th>PAYE</th>
+                            <th>Employee UIF</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        ${
+                            rows.length
+                                ? rows.map(row=>`
+                                    <tr>
+
+                                        <td>
+                                            ${esc(
+                                                row.employee_name ||
+                                                row.employee ||
+                                                row.employee_no ||
+                                                ""
+                                            )}
+                                        </td>
+
+                                        <td class="num">
+                                            ${money(
+                                                row.gross_remuneration ??
+                                                row.gross_income ??
+                                                0
+                                            )}
+                                        </td>
+
+                                        <td class="num">
+                                            ${money(
+                                                row.paye ??
+                                                row.paye_deducted ??
+                                                0
+                                            )}
+                                        </td>
+
+                                        <td class="num">
+                                            ${money(
+                                                row.uif_employee ??
+                                                row.uif_deducted ??
+                                                0
+                                            )}
+                                        </td>
+
+                                    </tr>
+                                `).join("")
+                                :`
+                                    <tr>
+                                        <td colspan="4">
+                                            No employee payroll data
+                                            available for this EMP201.
+                                        </td>
+                                    </tr>
+                                `
+                        }
+                    </tbody>
+
+                </table>
+            </div>
+
+            <div
+                class="payroll-benefit-summary-grid"
+                style="margin-top:20px;"
+            >
+
+                <div>
+                    <span>PAYE</span>
+                    <strong>
+                        ${money(
+                            totals.paye ??
+                            totals.paye_deducted ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>UIF — Employee</span>
+                    <strong>
+                        ${money(
+                            totals.uif_employee ??
+                            totals.uif_deducted ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>UIF — Employer</span>
+                    <strong>
+                        ${money(
+                            totals.uif_employer ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>UIF Total</span>
+                    <strong>
+                        ${money(
+                            totals.uif_total ??
+                            (
+                                Number(
+                                    totals.uif_employee ??
+                                    totals.uif_deducted ??
+                                    0
+                                ) +
+                                Number(
+                                    totals.uif_employer ??
+                                    0
+                                )
+                            )
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>SDL</span>
+                    <strong>
+                        ${money(
+                            totals.sdl ??
+                            totals.sdl_deducted ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>ETI</span>
+                    <strong>
+                        ${money(
+                            totals.eti ??
+                            totals.eti_amount ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Total Amount Payable to SARS</span>
+                    <strong>
+                        ${money(
+                            totals.total_sars_liability ??
+                            totals.total_payable ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+            </div>
+
+        </div>
+    `;
   }
 
   async function renderPayrollPayeClearingSelector(){
@@ -85989,8 +86436,51 @@ function renderPayrollPayeRunClearing(
         });
   }
 
-window.openPayrollStatutoryReturn=
+  window.openPayrollStatutoryReturn=
     openPayrollStatutoryReturn;
+
+  function renderPayrollStatutoryPreview(data){
+    const authority=
+        String(
+            payrollState.statutory.selectedAuthority ||
+            ""
+        ).toUpperCase();
+
+    const returnType=
+        String(
+            $("payrollStatutoryTypeFilter")?.value ||
+            "EMP201"
+        ).toUpperCase();
+
+    if(authority==="SARS"){
+
+        if(returnType==="EMP201"){
+            renderPayrollSarsEmp201Preview(data);
+            return;
+        }
+
+        if(returnType==="EMP501"){
+            renderPayrollSarsEmp501Preview(data);
+            return;
+        }
+
+        if(returnType==="IRP5"){
+            renderPayrollSarsIrp5Preview(data);
+            return;
+        }
+
+    }
+
+    if(authority==="RSL"){
+        renderPayrollRslPayePreview(data);
+        return;
+    }
+
+    if(authority==="BURS"){
+        renderPayrollBursPayePreview(data);
+        return;
+    }
+  }
 
   function renderPayrollStatutoryWorkspace() {
       const el = $("payeTaxFilingSection");

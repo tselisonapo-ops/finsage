@@ -169260,24 +169260,174 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 /* Statutory / deductions */
                 COALESCE(pre.paye, 0) AS paye_deducted,
 
+                /*
+                 * UIF employee contribution.
+                 *
+                 * This is the employee deduction and must NOT be confused
+                 * with the employer UIF contribution.
+                 */
                 COALESCE((
                     SELECT SUM(prl.amount)
                     FROM {schema}.payroll_run_lines prl
                     WHERE prl.company_id = e.company_id
                     AND prl.payroll_run_id = pre.payroll_run_id
                     AND prl.employee_id = e.id
-                    AND LOWER(COALESCE(prl.code, '')) IN ('uif', 'uif_emp')
+                    AND LOWER(COALESCE(prl.code, '')) IN (
+                        'uif',
+                        'uif_emp',
+                        'uif_employee'
+                    )
+                    AND LOWER(COALESCE(prl.line_type, '')) = 'deduction'
+                ), 0) AS uif_employee,
+
+                /*
+                 * Backward-compatible alias used by existing payroll
+                 * tax-filing/export logic.
+                 */
+                COALESCE((
+                    SELECT SUM(prl.amount)
+                    FROM {schema}.payroll_run_lines prl
+                    WHERE prl.company_id = e.company_id
+                    AND prl.payroll_run_id = pre.payroll_run_id
+                    AND prl.employee_id = e.id
+                    AND LOWER(COALESCE(prl.code, '')) IN (
+                        'uif',
+                        'uif_emp',
+                        'uif_employee'
+                    )
                     AND LOWER(COALESCE(prl.line_type, '')) = 'deduction'
                 ), 0) AS uif_deducted,
 
+                /*
+                 * UIF employer contribution.
+                 *
+                 * This MUST come from an employer-side payroll line.
+                 * It must never be inferred by simply copying employee UIF.
+                 */
                 COALESCE((
                     SELECT SUM(prl.amount)
                     FROM {schema}.payroll_run_lines prl
                     WHERE prl.company_id = e.company_id
                     AND prl.payroll_run_id = pre.payroll_run_id
                     AND prl.employee_id = e.id
-                    AND LOWER(COALESCE(prl.code, '')) IN ('sdl')
+                    AND LOWER(COALESCE(prl.code, '')) IN (
+                        'uif_employer',
+                        'uif_er',
+                        'uif_employer_contribution'
+                    )
+                    AND LOWER(COALESCE(prl.line_type, '')) IN (
+                        'employer',
+                        'employer_cost',
+                        'employer_costs',
+                        'contribution'
+                    )
+                ), 0) AS uif_employer,
+
+                /*
+                 * Total UIF = employee UIF + employer UIF.
+                 */
+                (
+                    COALESCE((
+                        SELECT SUM(prl.amount)
+                        FROM {schema}.payroll_run_lines prl
+                        WHERE prl.company_id = e.company_id
+                        AND prl.payroll_run_id = pre.payroll_run_id
+                        AND prl.employee_id = e.id
+                        AND LOWER(COALESCE(prl.code, '')) IN (
+                            'uif',
+                            'uif_emp',
+                            'uif_employee'
+                        )
+                        AND LOWER(COALESCE(prl.line_type, '')) = 'deduction'
+                    ), 0)
+                    +
+                    COALESCE((
+                        SELECT SUM(prl.amount)
+                        FROM {schema}.payroll_run_lines prl
+                        WHERE prl.company_id = e.company_id
+                        AND prl.payroll_run_id = pre.payroll_run_id
+                        AND prl.employee_id = e.id
+                        AND LOWER(COALESCE(prl.code, '')) IN (
+                            'uif_employer',
+                            'uif_er',
+                            'uif_employer_contribution'
+                        )
+                        AND LOWER(COALESCE(prl.line_type, '')) IN (
+                            'employer',
+                            'employer_cost',
+                            'employer_costs',
+                            'contribution'
+                        )
+                    ), 0)
+                ) AS uif_total,
+
+                /*
+                 * SDL is an employer statutory liability, not an employee
+                 * deduction.
+                 */
+                COALESCE((
+                    SELECT SUM(prl.amount)
+                    FROM {schema}.payroll_run_lines prl
+                    WHERE prl.company_id = e.company_id
+                    AND prl.payroll_run_id = pre.payroll_run_id
+                    AND prl.employee_id = e.id
+                    AND LOWER(COALESCE(prl.code, '')) IN (
+                        'sdl',
+                        'sdl_employer',
+                        'sdl_er'
+                    )
+                ), 0) AS sdl,
+
+                /*
+                 * Backward-compatible alias.
+                 */
+                COALESCE((
+                    SELECT SUM(prl.amount)
+                    FROM {schema}.payroll_run_lines prl
+                    WHERE prl.company_id = e.company_id
+                    AND prl.payroll_run_id = pre.payroll_run_id
+                    AND prl.employee_id = e.id
+                    AND LOWER(COALESCE(prl.code, '')) IN (
+                        'sdl',
+                        'sdl_employer',
+                        'sdl_er'
+                    )
                 ), 0) AS sdl_deducted,
+
+                /*
+                 * Employment Tax Incentive.
+                 *
+                 * ETI reduces the EMP201 amount payable to SARS.
+                 */
+                COALESCE((
+                    SELECT SUM(prl.amount)
+                    FROM {schema}.payroll_run_lines prl
+                    WHERE prl.company_id = e.company_id
+                    AND prl.payroll_run_id = pre.payroll_run_id
+                    AND prl.employee_id = e.id
+                    AND LOWER(COALESCE(prl.code, '')) IN (
+                        'eti',
+                        'eti_amount',
+                        'employment_tax_incentive'
+                    )
+                ), 0) AS eti,
+
+                /*
+                 * Backward-compatible alias for export/data-mapper logic
+                 * that may still expect eti_amount.
+                 */
+                COALESCE((
+                    SELECT SUM(prl.amount)
+                    FROM {schema}.payroll_run_lines prl
+                    WHERE prl.company_id = e.company_id
+                    AND prl.payroll_run_id = pre.payroll_run_id
+                    AND prl.employee_id = e.id
+                    AND LOWER(COALESCE(prl.code, '')) IN (
+                        'eti',
+                        'eti_amount',
+                        'employment_tax_incentive'
+                    )
+                ), 0) AS eti_amount,
 
                 COALESCE((
                     SELECT SUM(prl.amount)

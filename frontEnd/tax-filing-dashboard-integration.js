@@ -333,11 +333,23 @@
                             </th>
 
                             <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
-                                UIF
+                                UIF Employee
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                UIF Employer
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                UIF Total
                             </th>
 
                             <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
                                 SDL
+                            </th>
+
+                            <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
+                                ETI
                             </th>
 
                             <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #e2e8f0;">
@@ -481,11 +493,41 @@
                         </td>
 
                         <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
-                            ${n(r.uif_deducted)}
+                            ${n(
+                                r.uif_employee ??
+                                r.uif_deducted ??
+                                0
+                            )}
                         </td>
 
                         <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
-                            ${n(r.sdl_deducted)}
+                            ${n(r.uif_employer)}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(
+                                r.uif_total ??
+                                (
+                                    Number(r.uif_employee ?? r.uif_deducted ?? 0) +
+                                    Number(r.uif_employer ?? 0)
+                                )
+                            )}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(
+                                r.sdl ??
+                                r.sdl_deducted ??
+                                0
+                            )}
+                        </td>
+
+                        <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
+                            ${n(
+                                r.eti ??
+                                r.eti_amount ??
+                                0
+                            )}
                         </td>
 
                         <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;">
@@ -536,6 +578,16 @@
                     0
                 );
 
+            const sumFirstAvailable = (...fields) =>
+                rows.reduce((sum, row) => {
+                    for (const field of fields) {
+                        if (row?.[field] !== undefined && row?.[field] !== null) {
+                            return sum + Number(row[field] || 0);
+                        }
+                    }
+                    return sum;
+                }, 0);
+
             const previewTotals = {
                 basic_salary: sumField("basic_salary"),
                 overtime_pay: sumField("overtime_pay"),
@@ -544,18 +596,70 @@
                 allowances: sumField("allowances"),
                 other_income: sumField("other_income"),
                 gross_income: sumField("gross_income"),
-                paye_deducted: sumField("paye_deducted"),
-                uif_deducted: sumField("uif_deducted"),
-                sdl_deducted: sumField("sdl_deducted"),
+
+                paye_deducted:
+                    sumFirstAvailable("paye_deducted", "paye"),
+
+                uif_employee:
+                    sumFirstAvailable("uif_employee", "uif_deducted"),
+
+                uif_employer:
+                    sumFirstAvailable("uif_employer"),
+
+                uif_total:
+                    rows.reduce((sum, row) => {
+                        const employee = Number(
+                            row?.uif_employee ??
+                            row?.uif_deducted ??
+                            0
+                        );
+
+                        const employer = Number(
+                            row?.uif_employer ??
+                            0
+                        );
+
+                        return sum + employee + employer;
+                    }, 0),
+
+                sdl:
+                    sumFirstAvailable("sdl", "sdl_deducted"),
+
+                eti:
+                    sumFirstAvailable("eti", "eti_amount"),
+
                 pension_fund_contributions:
                     sumField("pension_fund_contributions"),
+
                 retirement_annuity_contributions:
                     sumField("retirement_annuity_contributions"),
+
                 medical_scheme_contributions:
                     sumField("medical_scheme_contributions"),
-                other_deductions: sumField("other_deductions"),
-                net_pay: sumField("net_pay")
+
+                other_deductions:
+                    sumField("other_deductions"),
+
+                net_pay:
+                    sumField("net_pay")
             };
+
+            const backendStatutoryTotals =
+                totals?.statutory_totals ||
+                payload?.statutory_totals ||
+                {};
+
+            const totalSarsStatutoryLiability = Number(
+                backendStatutoryTotals.total_sars_statutory_liability ??
+                totals?.total_sars_statutory_liability ??
+                payload?.total_sars_statutory_liability ??
+                (
+                    previewTotals.paye_deducted +
+                    previewTotals.uif_total +
+                    previewTotals.sdl -
+                    previewTotals.eti
+                )
+            );
 
             if (totals) {
                 html += `
@@ -605,11 +709,23 @@
                         </td>
 
                         <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
-                            ${n(previewTotals.uif_deducted)}
+                            ${n(previewTotals.uif_employee)}
                         </td>
 
                         <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
-                            ${n(previewTotals.sdl_deducted)}
+                            ${n(previewTotals.uif_employer)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.uif_total)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.sdl)}
+                        </td>
+
+                        <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
+                            ${n(previewTotals.eti)}
                         </td>
 
                         <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
@@ -645,6 +761,168 @@
 
             html += `</table></div>`;
             showMsg(html);
+
+            if (authority === "SARS") {
+                const statutorySummary = `
+                    <div style="
+                        margin-top:16px;
+                        padding:18px;
+                        background:#f8fafc;
+                        border:1px solid #e2e8f0;
+                        border-radius:10px;
+                    ">
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            justify-content:space-between;
+                            gap:12px;
+                            margin-bottom:14px;
+                            flex-wrap:wrap;
+                        ">
+                            <div>
+                                <div style="
+                                    font-size:15px;
+                                    font-weight:700;
+                                    color:#0f172a;
+                                ">
+                                    SARS EMP201 Statutory Summary
+                                </div>
+
+                                <div style="
+                                    margin-top:3px;
+                                    font-size:12px;
+                                    color:#64748b;
+                                ">
+                                    Amount payable to SARS for ${h(filingMonth)}
+                                </div>
+                            </div>
+
+                            <div style="
+                                font-size:20px;
+                                font-weight:800;
+                                color:#0f172a;
+                            ">
+                                ${n(totalSarsStatutoryLiability)}
+                            </div>
+                        </div>
+
+                        <div style="
+                            display:grid;
+                            grid-template-columns:repeat(6,minmax(120px,1fr));
+                            gap:10px;
+                        ">
+
+                            <div style="
+                                padding:12px;
+                                background:#fff;
+                                border:1px solid #e2e8f0;
+                                border-radius:8px;
+                            ">
+                                <div style="font-size:11px;color:#64748b;">
+                                    PAYE
+                                </div>
+                                <div style="font-size:15px;font-weight:700;margin-top:4px;">
+                                    ${n(previewTotals.paye_deducted)}
+                                </div>
+                            </div>
+
+                            <div style="
+                                padding:12px;
+                                background:#fff;
+                                border:1px solid #e2e8f0;
+                                border-radius:8px;
+                            ">
+                                <div style="font-size:11px;color:#64748b;">
+                                    UIF Employee
+                                </div>
+                                <div style="font-size:15px;font-weight:700;margin-top:4px;">
+                                    ${n(previewTotals.uif_employee)}
+                                </div>
+                            </div>
+
+                            <div style="
+                                padding:12px;
+                                background:#fff;
+                                border:1px solid #e2e8f0;
+                                border-radius:8px;
+                            ">
+                                <div style="font-size:11px;color:#64748b;">
+                                    UIF Employer
+                                </div>
+                                <div style="font-size:15px;font-weight:700;margin-top:4px;">
+                                    ${n(previewTotals.uif_employer)}
+                                </div>
+                            </div>
+
+                            <div style="
+                                padding:12px;
+                                background:#fff;
+                                border:1px solid #e2e8f0;
+                                border-radius:8px;
+                            ">
+                                <div style="font-size:11px;color:#64748b;">
+                                    UIF Total
+                                </div>
+                                <div style="font-size:15px;font-weight:700;margin-top:4px;">
+                                    ${n(previewTotals.uif_total)}
+                                </div>
+                            </div>
+
+                            <div style="
+                                padding:12px;
+                                background:#fff;
+                                border:1px solid #e2e8f0;
+                                border-radius:8px;
+                            ">
+                                <div style="font-size:11px;color:#64748b;">
+                                    SDL
+                                </div>
+                                <div style="font-size:15px;font-weight:700;margin-top:4px;">
+                                    ${n(previewTotals.sdl)}
+                                </div>
+                            </div>
+
+                            <div style="
+                                padding:12px;
+                                background:#fff;
+                                border:1px solid #e2e8f0;
+                                border-radius:8px;
+                            ">
+                                <div style="font-size:11px;color:#64748b;">
+                                    ETI
+                                </div>
+                                <div style="font-size:15px;font-weight:700;margin-top:4px;">
+                                    ${n(previewTotals.eti)}
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <div style="
+                            margin-top:14px;
+                            padding:12px 14px;
+                            background:#fff;
+                            border:1px solid #e2e8f0;
+                            border-radius:8px;
+                            font-size:13px;
+                            color:#475569;
+                        ">
+                            <strong>EMP201 calculation:</strong>
+                            PAYE
+                            + UIF Employee
+                            + UIF Employer
+                            + SDL
+                            − ETI
+                            =
+                            <strong>${n(totalSarsStatutoryLiability)}</strong>
+                        </div>
+
+                    </div>
+                `;
+
+                area.insertAdjacentHTML("beforeend", statutorySummary);
+            }
 
             // ✅ SUCCESS ONLY → hide Preview, raise Validate + Exports to the top
             if (previewBtn) previewBtn.style.display = "none";
