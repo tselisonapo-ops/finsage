@@ -68557,8 +68557,7 @@ async function saveEditModal() {
         await refreshBankAccounts();
 
     console.log(
-        "[DC PAYMENT] BANK ACCOUNTS LOADED",
-        banks
+        "[DC PAYMENT] 3 - after bank accounts"
     );
 
     const paymentDate =
@@ -68567,6 +68566,11 @@ async function saveEditModal() {
             run.reporting_date ||
             run.period_end
         );
+
+    console.log(
+        "[DC PAYMENT] 4 - payment date",
+        paymentDate
+    );
 
     payrollState.employeeBenefits
         .selectedDefinedContributionPayment = {
@@ -68587,37 +68591,74 @@ async function saveEditModal() {
             paymentPreview: null
         };
 
-    renderPayrollDcPayment(); 
- 
-    const payment = 
-        payrollState.employeeBenefits 
-            .selectedDefinedContributionPayment; 
- 
-    if ( 
-        payment.selectedPlanId && 
-        payment.selectedBankId && 
-        payment.paymentDate 
-    ) { 
-        await loadPayrollLiabilityClearing({ 
-            liabilityType: 
-                "defined_contribution", 
+    console.log(
+        "[DC PAYMENT] 5 - payment state created",
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment
+    );
 
-            payrollRunId: 
-                payment.payrollRunId, 
+    renderPayrollDcPayment();
 
-            benefitPlanId: 
-                payment.selectedPlanId, 
+    console.log(
+        "[DC PAYMENT] 6 - renderPayrollDcPayment completed"
+    );
 
-            definedContributionRunId: 
-                payment.runId, 
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
 
-            prefix: 
-                "payrollDcPayment", 
+    console.log(
+        "[DC PAYMENT] 7 - payment state",
+        payment
+    );
 
-            referencePrefix: 
-                "DC-PAY" 
-        }); 
-    } 
+    if (
+        payment.selectedPlanId &&
+        payment.selectedBankId &&
+        payment.paymentDate
+    ) {
+        console.log(
+            "[DC PAYMENT] 8 - CALLING loadPayrollLiabilityClearing"
+        );
+
+        await loadPayrollLiabilityClearing({
+            liabilityType:
+                "defined_contribution",
+
+            payrollRunId:
+                payment.payrollRunId,
+
+            benefitPlanId:
+                payment.selectedPlanId,
+
+            definedContributionRunId:
+                payment.runId,
+
+            prefix:
+                "payrollDcPayment",
+
+            referencePrefix:
+                "DC-PAY"
+        });
+
+        console.log(
+            "[DC PAYMENT] 9 - loadPayrollLiabilityClearing completed"
+        );
+    } else {
+        console.log(
+            "[DC PAYMENT] 8 - LIABILITY NOT CALLED",
+            {
+                selectedPlanId:
+                    payment.selectedPlanId,
+
+                selectedBankId:
+                    payment.selectedBankId,
+
+                paymentDate:
+                    payment.paymentDate
+            }
+        );
+    }
   }
 
   function renderPayrollDcPayment() {
