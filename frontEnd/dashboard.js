@@ -66041,6 +66041,7 @@ async function saveEditModal() {
       <div class="payroll-posting-card">
         <div>
           <h3>${esc(r.run_no||"Contribution Run")}</h3>
+
           <p class="payroll-muted">
             ${esc(String(r.period_start||""))}
             —
@@ -66062,30 +66063,6 @@ async function saveEditModal() {
             Reconcile
           </button>
 
-          <button
-            id="payrollPreviewDcBtn"
-            class="payroll-secondary dark"
-            type="button"
-            ${lines.length?"":"disabled"}>
-            Preview Journal
-          </button>
-
-          <button
-            id="payrollPostDcBtn"
-            class="payroll-primary"
-            type="button"
-            ${locked||!lines.length?"disabled":""}>
-            Post Contributions
-          </button>
-
-          <button
-            id="payrollReverseDcBtn"
-            class="payroll-secondary dark"
-            type="button"
-            ${posted?"":"disabled"}>
-            Reverse
-          </button>
-
           ${
             posted
               ?`
@@ -66103,29 +66080,40 @@ async function saveEditModal() {
       </div>
 
       <div class="payroll-benefit-summary-grid">
+
         <div>
           <span>Pensionable pay</span>
-          <strong>${money(r.total_pensionable_remuneration)}</strong>
+          <strong>
+            ${money(r.total_pensionable_remuneration)}
+          </strong>
         </div>
 
         <div>
           <span>Employee</span>
-          <strong>${money(r.total_employee_contribution)}</strong>
+          <strong>
+            ${money(r.total_employee_contribution)}
+          </strong>
         </div>
 
         <div>
           <span>Employer</span>
-          <strong>${money(r.total_employer_contribution)}</strong>
+          <strong>
+            ${money(r.total_employer_contribution)}
+          </strong>
         </div>
 
         <div>
           <span>Total payable</span>
-          <strong>${money(r.total_payable)}</strong>
+          <strong>
+            ${money(r.total_payable)}
+          </strong>
         </div>
+
       </div>
 
       <div class="payroll-table-wrap payroll-dc-lines-scroll">
         <table class="payroll-preview-table">
+
           <thead>
             <tr>
               <th>Employee</th>
@@ -66142,6 +66130,7 @@ async function saveEditModal() {
               lines.length
                 ?lines.map(x=>`
                   <tr>
+
                     <td>
                       ${esc(x.employee_no||"")}
                       —
@@ -66154,10 +66143,30 @@ async function saveEditModal() {
                       ${esc(x.plan_name||"")}
                     </td>
 
-                    <td>${money(x.pensionable_remuneration)}</td>
-                    <td>${money(x.employee_contribution)}</td>
-                    <td>${money(x.employer_contribution)}</td>
-                    <td>${money(x.total_contribution)}</td>
+                    <td>
+                      ${money(
+                        x.pensionable_remuneration
+                      )}
+                    </td>
+
+                    <td>
+                      ${money(
+                        x.employee_contribution
+                      )}
+                    </td>
+
+                    <td>
+                      ${money(
+                        x.employer_contribution
+                      )}
+                    </td>
+
+                    <td>
+                      ${money(
+                        x.total_contribution
+                      )}
+                    </td>
+
                   </tr>
                 `).join("")
                 :`
@@ -66169,49 +66178,33 @@ async function saveEditModal() {
                 `
             }
           </tbody>
+
         </table>
       </div>
 
-      <div id="payrollDcJournalPreview"></div>
-
       <div
-          id="payrollDcPaymentSection"
-          style="margin-top:20px;"
-      ></div>     
+        id="payrollDcPaymentSection"
+        style="margin-top:20px;">
+      </div>
     `;
 
     $("payrollCalculateDcBtn")?.addEventListener(
       "click",
       ()=>calculatePayrollDcRun(r.id).catch(error=>{
-        showPayrollStatus(error.message,"error");
-      })
-    );
-
-    $("payrollPreviewDcBtn")?.addEventListener(
-        "click",
-        ()=>previewPayrollDcPayment(r.id).catch(error=>{
-            showPayrollStatus(error.message,"error");
-        })
-    );
-
-    $("payrollPostDcBtn")?.addEventListener(
-        "click",
-        ()=>postPayrollDcPayment(r.id).catch(error=>{
-            showPayrollStatus(error.message,"error");
-        })
-    );
-
-    $("payrollReverseDcBtn")?.addEventListener(
-      "click",
-      ()=>reversePayrollDcRun(r.id).catch(error=>{
-        showPayrollStatus(error.message,"error");
+        showPayrollStatus(
+          error.message,
+          "error"
+        );
       })
     );
 
     $("payrollPayDcBtn")?.addEventListener(
       "click",
       ()=>openPayrollDcPayment(r.id).catch(error=>{
-        showPayrollStatus(error.message,"error");
+        showPayrollStatus(
+          error.message,
+          "error"
+        );
       })
     );
   }
