@@ -162670,6 +162670,64 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payroll_run_id,
         )
 
+    def payroll_liability_payments_get(
+        self,
+        company_id: int,
+        payroll_run_id: int,
+        liability_type: str | None = None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        payroll_run_id = int(payroll_run_id)
+
+        schema = self.company_schema(company_id)
+
+        params = [
+            company_id,
+            payroll_run_id,
+        ]
+
+        liability_filter = ""
+
+        if liability_type:
+            liability_filter = """
+                AND LOWER(liability_type) = LOWER(%s)
+            """
+            params.append(liability_type.strip())
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                id,
+                company_id,
+                payroll_run_id,
+                liability_type,
+                liability_account_code,
+                bank_account_id,
+                bank_account_code,
+                payment_date,
+                amount,
+                status,
+                reference,
+                notes,
+                journal_id,
+                created_by,
+                created_at,
+                posted_at,
+                benefit_plan_id,
+                defined_contribution_run_id
+            FROM {schema}.payroll_liability_payments
+            WHERE company_id = %s
+            AND payroll_run_id = %s
+            {liability_filter}
+            ORDER BY
+                payment_date DESC,
+                id DESC
+            """,
+            tuple(params),
+        )
+
+        return rows or []
+
     def payroll_liability_payment_preview(
         self,
         company_id: int,
