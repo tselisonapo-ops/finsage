@@ -74448,7 +74448,13 @@ async function saveEditModal() {
      * account being selected.
      */
     const banks =
-      await refreshBankAccounts();
+        console.log("[DC PAYMENT] 1 - openPayrollDcPayment entered");
+
+        console.log("[DC PAYMENT] 2 - before refreshBankAccounts");
+        await refreshBankAccounts();
+        console.log("[DC PAYMENT] 3 - after refreshBankAccounts");
+
+        console.log("[DC PAYMENT] 4 - continuing payment setup");
 
     if (bankEl) {
       bankEl.innerHTML =
