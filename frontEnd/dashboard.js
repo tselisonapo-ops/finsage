@@ -74395,11 +74395,165 @@ async function saveEditModal() {
 
     payrollState.payeClearing.preview = null;
 
-    const [banks, history, balanceResponse] =
-      await Promise.all([
-        refreshBankAccounts(),
+    const messageEl =
+      $("payrollPayePaymentMessage");
 
-        apiFetch(
+    const outstandingEl =
+      $("payrollPayePaymentOutstanding");
+
+    const amountEl =
+      $("payrollPayeAmount");
+
+    const dateEl =
+      $("payrollPayePaymentDate");
+
+    const bankEl =
+      $("payrollPayeBankAccount");
+
+    const referenceEl =
+      $("payrollPayeReference");
+
+    const previewEl =
+      $("payrollPayePaymentPreview");
+
+    const postBtn =
+      $("payrollPayePaymentPostBtn");
+
+    if (postBtn) {
+      postBtn.disabled = true;
+    }
+
+    if (previewEl) {
+      previewEl.innerHTML = "";
+    }
+
+    if (messageEl) {
+      messageEl.textContent =
+        "Loading PAYE payable balance…";
+    }
+
+    /*
+    * Load the existing company bank accounts.
+    */
+    const banks =
+      await refreshBankAccounts();
+
+    payrollState.payeClearing.banks =
+      Array.isArray(banks)
+        ? banks
+        : [];
+
+    if (bankEl) {
+      bankEl.innerHTML =
+        `<option value="">-- Select bank account --</option>`;
+
+      (banks || []).forEach(bank => {
+        const id =
+          bank.id ??
+          bank.bank_account_id ??
+          null;
+
+        if (!id) {
+          return;
+        }
+
+        const bankName =
+          bank.bank_name ||
+          bank.bankName ||
+          bank.name ||
+          "Bank";
+
+        const accountName =
+          bank.account_name ||
+          bank.accountName ||
+          "";
+
+        const accountNumber =
+          bank.account_number ||
+          bank.accountNumber ||
+          "";
+
+        const currency =
+          bank.currency ||
+          bank.bank_currency ||
+          "";
+
+        const label = [
+          bankName,
+          accountName,
+          accountNumber
+            ? `(${accountNumber})`
+            : "",
+          currency
+            ? `• ${currency}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+
+        const option =
+          document.createElement("option");
+
+        option.value = String(id);
+
+        option.textContent =
+          label ||
+          `Bank account ${id}`;
+
+        bankEl.appendChild(option);
+
+        /*
+        * Use the company's default payment bank.
+        */
+        if (
+          bank.is_default_payments === true &&
+          !bankEl.value
+        ) {
+          bankEl.value =
+            String(id);
+        }
+      });
+    }
+
+    /*
+    * Get the selected payroll run.
+    */
+    const run =
+      payrollState.selectedRun ||
+      {};
+
+    /*
+    * Default the payment date to the
+    * payroll run payment date.
+    */
+    if (dateEl) {
+      dateEl.value =
+        String(
+          run.payment_date || ""
+        ).slice(0, 10);
+    }
+
+    /*
+    * Default the reference.
+    */
+    if (
+      referenceEl &&
+      !referenceEl.value
+    ) {
+      referenceEl.value =
+        `PAYE-PAY-${run.run_no || runId}`;
+    }
+
+    /*
+    * Load existing PAYE payment history.
+    *
+    * This is separate from calculating the
+    * outstanding PAYE liability.
+    */
+    try {
+      const history =
+        await apiFetch(
           ENDPOINTS.payroll.liabilityPayments(
             companyId,
             runId,
@@ -74407,48 +74561,138 @@ async function saveEditModal() {
               liability_type: "paye",
             }
           )
-        ),
+        );
 
-        apiFetch(
-          ENDPOINTS.payroll.liabilityBalance(
-            companyId,
-            runId,
-            {
-              liability_type: "paye",
-            }
-          )
-        ),
-      ]);
+      payrollState.payeClearing.history =
+        history?.items ||
+        history?.payments ||
+        [];
+    } catch (error) {
+      console.warn(
+        "[payroll] PAYE payment history load failed:",
+        error
+      );
 
-    payrollState.payeClearing.banks =
-      Array.isArray(banks)
-        ? banks
-        : [];
-
-    payrollState.payeClearing.history =
-      history?.items ||
-      history?.payments ||
-      [];
-
-    payrollState.payeClearing.balance =
-      balanceResponse?.balance ||
-      null;
-
-    const outstandingAmount =
-      Number(
-        balanceResponse?.balance?.outstanding_amount
-      ) || 0;
-
-    const amountInput =
-      $("payrollPayeAmount");
-
-    if (amountInput) {
-      amountInput.value =
-        outstandingAmount > 0
-          ? outstandingAmount.toFixed(2)
-          : "";
+      payrollState.payeClearing.history =
+        [];
     }
 
+    /*
+    * The liability preview endpoint calculates:
+    *
+    *   recognised PAYE
+    *   - previously paid PAYE
+    *   = outstanding PAYE
+    *
+    * We deliberately do NOT send amount here.
+    * The backend calculates the outstanding
+    * balance first.
+    */
+    try {
+      const bankAccountId =
+        bankEl?.value ||
+        null;
+
+      if (!bankAccountId) {
+        if (messageEl) {
+          messageEl.textContent =
+            "Select a payment bank account to preview the PAYE payable balance.";
+        }
+
+        renderPayrollPayeClearing(
+          payrollState.payeClearing.history
+        );
+
+        return;
+      }
+
+      const preview =
+        await apiFetch(
+          ENDPOINTS.payroll.liabilityPaymentPreview(
+            companyId,
+            runId
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify({
+              liability_type: "paye",
+
+              bank_account_id:
+                Number(bankAccountId),
+
+              payment_date:
+                dateEl?.value ||
+                run.payment_date ||
+                null,
+            }),
+          }
+        );
+
+      const data =
+        preview?.preview ||
+        preview?.data ||
+        preview ||
+        {};
+
+      payrollState.payeClearing.balance =
+        data;
+
+      const outstanding =
+        Number(
+          data.outstanding_amount ??
+          data.remaining_amount ??
+          data.amount ??
+          0
+        );
+
+      /*
+      * Display outstanding PAYE.
+      */
+      if (outstandingEl) {
+        outstandingEl.value =
+          money(outstanding);
+      }
+
+      /*
+      * Automatically prefill the payment amount.
+      */
+      if (amountEl) {
+        amountEl.value =
+          outstanding > 0
+            ? outstanding.toFixed(2)
+            : "";
+      }
+
+      /*
+      * Display status/message.
+      */
+      if (messageEl) {
+        if (outstanding > 0) {
+          messageEl.innerHTML =
+            `PAYE payable outstanding: <strong>${money(outstanding)}</strong>`;
+        } else {
+          messageEl.textContent =
+            "There is no outstanding PAYE payable for this payroll run.";
+        }
+      }
+
+    } catch (error) {
+      console.warn(
+        "[payroll] PAYE payable clearing load failed:",
+        error
+      );
+
+      if (messageEl) {
+        messageEl.textContent =
+          error?.message ||
+          "PAYE payable balance could not be loaded.";
+      }
+    }
+
+    /*
+    * Render payment history after both
+    * history and balance have been loaded.
+    */
     renderPayrollPayeClearing(
       payrollState.payeClearing.history
     );
