@@ -4064,7 +4064,11 @@ def api_payroll_liability_payment_preview(
         ).strip()
 
         bank_account_id = payload.get("bank_account_id")
+        benefit_plan_id = payload.get("benefit_plan_id")
 
+        defined_contribution_run_id = payload.get(
+            "defined_contribution_run_id"
+        )
         payment_date = payload.get("payment_date") or None
 
         amount = payload.get("amount")
@@ -4151,6 +4155,16 @@ def api_payroll_liability_payment_preview(
             reference=reference,
             user_id=user_id,
             notes=notes,
+            benefit_plan_id=(
+                int(benefit_plan_id)
+                if benefit_plan_id not in (None, "", "None")
+                else None
+            ),
+            defined_contribution_run_id=(
+                int(defined_contribution_run_id)
+                if defined_contribution_run_id not in (None, "", "None")
+                else None
+            ),
         )
 
         return jsonify({
