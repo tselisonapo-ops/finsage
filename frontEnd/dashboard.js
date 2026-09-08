@@ -84133,7 +84133,7 @@ async function saveEditModal() {
     }
   }
 
-async function renderPayrollPayeClearingSelector(){
+  async function renderPayrollPayeClearingSelector(){
     const el=$("payrollPayeClearingContent");
 
     if(!el){
@@ -84291,99 +84291,478 @@ async function renderPayrollPayeClearingSelector(){
             </div>
         `;
     }
-}
+  }
 
 
-async function loadPayrollPayeRunClearing(runId){
-    const target=$(
-        "payrollPayeRunClearing"
-    );
+  async function loadPayrollPayeRunClearing(runId) {
+    const companyId = cid();
 
-    if(!target){
-        return;
+    if (!runId) {
+        throw new Error("Select a payroll run first.");
     }
 
-    const companyId=cid();
+    payrollState.payeClearing =
+        payrollState.payeClearing || {};
 
-    payrollState.payeClearing=
-        payrollState.payeClearing||{};
-
-    payrollState.payeClearing.selectedRunId=
+    payrollState.payeClearing.selectedRunId =
         Number(runId);
 
-    payrollState.payeClearing.preview=null;
+    payrollState.payeClearing.preview =
+        null;
 
-    target.innerHTML=`
-        <div class="payroll-empty-state">
-            <strong>
-                Loading PAYE liability&hellip;
-            </strong>
+    payrollState.payeClearing.balance =
+        null;
 
-            <p>
-                Fetching recognised PAYE and previous payments.
-            </p>
-        </div>
-    `;
+    payrollState.payeClearing.history =
+        [];
 
-    try{
-        const runResponse=await apiFetch(
-            ENDPOINTS.payroll.run(
+    payrollState.payeClearing.banks =
+        [];
+
+    console.log(
+        "[PAYE CLEARING] START",
+        {
+            companyId,
+            runId
+        }
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 1. Load the payroll run.
+     * ---------------------------------------------------------
+     */
+
+    const runResponse =
+        await apiFetch(
+            ENDPOINTS.payroll.runs(
                 companyId,
                 runId
             )
         );
 
-        const run=
-            runResponse?.data||
-            runResponse?.run||
-            runResponse;
+    const run =
+        runResponse?.run ||
+        runResponse?.data ||
+        runResponse ||
+        {};
 
-        if(!run){
-            throw new Error(
-                "Payroll run could not be loaded."
-            );
-        }
+    payrollState.selectedRun =
+        run;
 
-        const [history,banks]=await Promise.all([
-            apiFetch(
+    console.log(
+        "[PAYE CLEARING] RUN LOADED",
+        run
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 2. Load existing PAYE payment history.
+     * ---------------------------------------------------------
+     */
+
+    let history = [];
+
+    try {
+        const historyResponse =
+            await apiFetch(
                 ENDPOINTS.payroll.liabilityPayments(
                     companyId,
                     runId,
                     {
-                        liability_type:"paye",
+                        liability_type: "paye"
                     }
                 )
-            ),
-            refreshBankAccounts(),
-        ]);
+            );
 
-        payrollState.payeClearing.history=
-            history?.items||
-            history?.payments||
+        history =
+            historyResponse?.items ||
+            historyResponse?.payments ||
+            historyResponse?.data ||
             [];
 
-        payrollState.payeClearing.banks=
-            Array.isArray(banks)
-                ? banks
-                : [];
+        if (!Array.isArray(history)) {
+            history = [];
+        }
 
-        renderPayrollPayeRunClearing(
-            run,
-            payrollState.payeClearing.history,
-            payrollState.payeClearing.banks
+        payrollState.payeClearing.history =
+            history;
+
+        console.log(
+            "[PAYE CLEARING] HISTORY LOADED",
+            history
         );
 
-    }catch(error){
-        target.innerHTML=`
-            <div class="notice error">
-                ${esc(
-                    error?.message||
-                    "PAYE clearing could not be loaded."
-                )}
-            </div>
-        `;
+    } catch (error) {
+
+        console.warn(
+            "[PAYE CLEARING] HISTORY LOAD FAILED",
+            error
+        );
+
+        history = [];
+
+        payrollState.payeClearing.history =
+            [];
     }
-}
+
+    /*
+     * ---------------------------------------------------------
+     * 3. Load bank accounts.
+     * ---------------------------------------------------------
+     */
+
+    let banks = [];
+
+    try {
+        const bankResponse =
+            await refreshBankAccounts();
+
+        banks =
+            Array.isArray(bankResponse)
+                ? bankResponse
+                : [];
+
+        payrollState.payeClearing.banks =
+            banks;
+
+        console.log(
+            "[PAYE CLEARING] BANKS LOADED",
+            banks
+        );
+
+    } catch (error) {
+
+        console.error(
+            "[PAYE CLEARING] BANK ACCOUNT LOAD FAILED",
+            error
+        );
+
+        throw error;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 4. Normalize payroll payment date.
+     *
+     * IMPORTANT:
+     *
+     * Do NOT use:
+     *
+     * String(run.payment_date).slice(0,10)
+     *
+     * because an RFC date such as:
+     *
+     * Tue, 29 Apr 2025 00:00:00 GMT
+     *
+     * becomes:
+     *
+     * Tue, 29 Ap
+     *
+     * which is invalid for input[type=date].
+     * ---------------------------------------------------------
+     */
+
+    const paymentDate =
+        normalizePayrollDate(
+            run?.payment_date
+        );
+
+    console.log(
+        "[PAYE CLEARING] PAYMENT DATE",
+        {
+            original:
+                run?.payment_date,
+
+            normalized:
+                paymentDate
+        }
+    );
+
+    if (!paymentDate) {
+        throw new Error(
+            "The payroll run does not have a valid payment date."
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 5. Select the bank account.
+     *
+     * We need a bank account because the backend preview
+     * calculates the actual Dr liability / Cr bank entry.
+     * ---------------------------------------------------------
+     */
+
+    const configuredBankAccountId =
+        payrollState.payeClearing.bankAccountId ||
+        "";
+
+    let bankAccountId =
+        configuredBankAccountId;
+
+    /*
+     * If no previously selected bank exists,
+     * use the first available bank account.
+     */
+    if (!bankAccountId && banks.length) {
+
+        bankAccountId =
+            banks[0]?.id ||
+            banks[0]?.account_id ||
+            "";
+    }
+
+    console.log(
+        "[PAYE CLEARING] BANK ACCOUNT SELECTED",
+        bankAccountId
+    );
+
+    if (!bankAccountId) {
+
+        console.warn(
+            "[PAYE CLEARING] No bank account available; liability preview cannot be calculated."
+        );
+
+        /*
+         * Render what we have so the user can select a bank.
+         */
+        renderPayrollPayeRunClearing(
+            run,
+            history,
+            banks
+        );
+
+        return;
+    }
+
+    payrollState.payeClearing.bankAccountId =
+        Number(bankAccountId);
+
+    /*
+     * ---------------------------------------------------------
+     * 6. NOW calculate the PAYE liability.
+     *
+     * THIS IS THE REQUEST THAT WAS MISSING.
+     *
+     * IMPORTANT:
+     * Do NOT send amount.
+     *
+     * The backend will calculate:
+     *
+     * recognized PAYE liability
+     * -
+     * previous PAYE payments
+     * =
+     * outstanding_amount
+     * ---------------------------------------------------------
+     */
+
+    console.log(
+        "[PAYE CLEARING] REQUESTING LIABILITY PREVIEW",
+        {
+            companyId,
+            runId,
+            liability_type: "paye",
+            bank_account_id:
+                Number(bankAccountId),
+            payment_date:
+                paymentDate
+        }
+    );
+
+    const liabilityResponse =
+        await apiFetch(
+            ENDPOINTS.payroll.liabilityPaymentPreview(
+                companyId,
+                runId
+            ),
+            {
+                method: "POST",
+
+                body: JSON.stringify({
+                    liability_type:
+                        "paye",
+
+                    bank_account_id:
+                        Number(bankAccountId),
+
+                    payment_date:
+                        paymentDate
+                })
+            }
+        );
+
+    console.log(
+        "[PAYE CLEARING] LIABILITY RESPONSE",
+        liabilityResponse
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 7. Extract preview.
+     * ---------------------------------------------------------
+     */
+
+    const preview =
+        liabilityResponse?.preview ||
+        liabilityResponse?.data ||
+        liabilityResponse ||
+        {};
+
+    payrollState.payeClearing.balance =
+        preview;
+
+    payrollState.payeClearing.preview =
+        preview;
+
+    const outstanding =
+        Number(
+            preview.outstanding_amount ??
+            preview.remaining_amount ??
+            0
+        );
+
+    console.log(
+        "[PAYE CLEARING] OUTSTANDING PAYE",
+        outstanding
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 8. Render the clearing screen.
+     * ---------------------------------------------------------
+     */
+
+    renderPayrollPayeRunClearing(
+        run,
+        history,
+        banks
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 9. Restore selected bank account.
+     * ---------------------------------------------------------
+     */
+
+    const bankEl =
+        $("payrollPayeBankAccount");
+
+    if (bankEl && bankAccountId) {
+        bankEl.value =
+            String(bankAccountId);
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 10. Set the payment date.
+     * ---------------------------------------------------------
+     */
+
+    const dateEl =
+        $("payrollPayePaymentDate");
+
+    if (dateEl) {
+        dateEl.value =
+            paymentDate;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 11. PREFILL PAYMENT AMOUNT.
+     * ---------------------------------------------------------
+     */
+
+    const amountEl =
+        $("payrollPayeAmount");
+
+    if (amountEl) {
+
+        amountEl.value =
+            outstanding > 0
+                ? outstanding.toFixed(2)
+                : "";
+
+        console.log(
+            "[PAYE CLEARING] AMOUNT PREFILLED",
+            amountEl.value
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 12. Update outstanding amount display if present.
+     * ---------------------------------------------------------
+     */
+
+    const outstandingEl =
+        $("payrollPayeClearingOutstanding");
+
+    if (outstandingEl) {
+
+        outstandingEl.innerHTML =
+            outstanding > 0
+
+                ? `
+                    <strong>
+                        PAYE outstanding amount
+                    </strong>
+
+                    <p>
+                        ${money(outstanding)}
+                    </p>
+                  `
+
+                : `
+                    <strong>
+                        No outstanding PAYE
+                    </strong>
+
+                    <p>
+                        There is no outstanding PAYE payable
+                        for this payroll run.
+                    </p>
+                  `;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 13. Update payment message.
+     * ---------------------------------------------------------
+     */
+
+    const messageEl =
+        $("payrollPayePaymentMessage");
+
+    if (messageEl) {
+
+        messageEl.innerHTML =
+            outstanding > 0
+
+                ? `
+                    PAYE payable outstanding:
+                    <strong>
+                        ${money(outstanding)}
+                    </strong>
+                  `
+
+                : `
+                    There is no outstanding PAYE
+                    payable for this payroll run.
+                  `;
+    }
+
+    console.log(
+        "[PAYE CLEARING] COMPLETE",
+        {
+            runId,
+            paymentDate,
+            bankAccountId,
+            outstanding
+        }
+    );
+  }
 
 
 function renderPayrollPayeRunClearing(
