@@ -25961,6 +25961,7 @@ async function refreshBankAccounts() {
     BANK_ACCOUNTS_INFLIGHT = null;
   }
 }
+window.refreshBankAccounts = refreshBankAccounts;
 
 async function loadCashbookForSelectedBank() {
   const cid = getActiveCompanyId();
@@ -68554,7 +68555,7 @@ async function saveEditModal() {
 
     console.log("[DC PAYMENT] BEFORE refreshBankAccounts");
 
-    await refreshBankAccounts();
+    window.refreshBankAccounts = refreshBankAccounts;
 
     console.log(
         "[DC PAYMENT] AFTER refreshBankAccounts",
