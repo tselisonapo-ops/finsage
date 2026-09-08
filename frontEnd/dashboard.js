@@ -66124,7 +66124,7 @@ async function saveEditModal() {
         </div>
       </div>
 
-      <div class="payroll-table-wrap">
+      <div class="payroll-table-wrap payroll-dc-lines-scroll">
         <table class="payroll-preview-table">
           <thead>
             <tr>
@@ -66173,6 +66173,16 @@ async function saveEditModal() {
       </div>
 
       <div id="payrollDcJournalPreview"></div>
+
+      <div
+          id="payrollDcPaymentSection"
+          style="margin-top:20px;"
+      ></div>
+
+      <div
+          id="payrollDcPaymentSection"
+          style="margin-top:20px;"
+      ></div>      
     `;
 
     $("payrollCalculateDcBtn")?.addEventListener(
@@ -68476,525 +68486,911 @@ async function saveEditModal() {
       .map(a=>[a.code,a.name]);
   }
 
-  async function openPayrollDcPayment(runId){
-    const d=payrollState.employeeBenefits.selectedDefinedContributionRun;
-    const r=d?.run||{};
-    const lines=d?.lines||[];
+  async function openPayrollDcPayment(runId) {
+    const detail =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionRun;
 
-    if(!r.id||Number(r.id)!==Number(runId)){
-      await openPayrollDcRun(runId);
+    if (
+        !detail ||
+        Number(detail.run?.id) !== Number(runId)
+    ) {
+        await openPayrollDcRun(runId);
     }
 
-    const current=payrollState.employeeBenefits.selectedDefinedContributionRun;
-    const run=current?.run||{};
-    const runLines=current?.lines||[];
+    const current =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionRun;
 
-    if(!run.id||Number(run.id)!==Number(runId)){
-      throw new Error(
-        "Unable to load the selected contribution run"
-      );
+    if (!current) {
+        throw new Error(
+            "Unable to load the contribution run."
+        );
     }
 
-    if(String(run.status||"").toLowerCase()!=="posted"){
-      throw new Error(
-        "Post the contribution run before making payment"
-      );
+    const run =
+        current.run || {};
+
+    const lines =
+        current.lines || [];
+
+    if (run.status !== "posted") {
+        throw new Error(
+            "Only posted contribution runs can be paid."
+        );
     }
 
-    /*
-    * The contribution run belongs to a payroll run.
-    *
-    * The generic liability-payment endpoint expects the
-    * PAYROLL RUN ID in its URL, while the body carries the
-    * DEFINED-CONTRIBUTION RUN ID.
-    */
-    const payrollRunId=Number(
-      run.payroll_run_id
-    );
+    const payrollRunId =
+        Number(run.payroll_run_id || 0);
 
-    if(!payrollRunId){
-      throw new Error(
-        "This contribution run is not linked to a payroll run"
-      );
+    if (!payrollRunId) {
+        throw new Error(
+            "This contribution run is not linked to a payroll run."
+        );
     }
 
-    /*
-    * Build the list of benefit plans contained in this
-    * contribution run.
-    */
-    const plans=[];
+    const plans =
+        [...new Map(
+            lines
+                .filter(line =>
+                    line.benefit_plan_id
+                )
+                .map(line => [
+                    Number(line.benefit_plan_id),
+                    {
+                        id:
+                            Number(
+                                line.benefit_plan_id
+                            ),
+                        code:
+                            line.benefit_plan_code ||
+                            "",
+                        name:
+                            line.benefit_plan_name ||
+                            ""
+                    }
+                ])
+        ).values()];
 
-    runLines.forEach(x=>{
-      const id=Number(x.plan_id);
+    await refreshBankAccounts();
 
-      if(!id)return;
+    const banks =
+        Array.isArray(
+            payrollState.bankAccounts
+        )
+            ? payrollState.bankAccounts
+            : [];
 
-      if(!plans.some(p=>Number(p.id)===id)){
-        plans.push({
-          id:id,
-          code:x.plan_code||"",
-          name:x.plan_name||"",
-        });
-      }
-    });
+    const paymentDate =
+        normalizePayrollDate(
+            run.payment_date ||
+            run.reporting_date ||
+            run.period_end
+        );
 
-    if(!plans.length){
-      throw new Error(
-        "No benefit plan was found on this contribution run"
-      );
+    payrollState.employeeBenefits
+        .selectedDefinedContributionPayment = {
+            runId: Number(runId),
+            payrollRunId,
+            plans,
+            banks,
+            paymentDate,
+            selectedPlanId:
+                plans.length === 1
+                    ? plans[0].id
+                    : null,
+            selectedBankId:
+                banks.length === 1
+                    ? Number(banks[0].id)
+                    : null,
+            liabilityPreview: null,
+            paymentPreview: null
+        };
+
+    renderPayrollDcPayment();
+
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    if (
+        payment.selectedPlanId &&
+        payment.selectedBankId &&
+        payment.paymentDate
+    ) {
+        await loadPayrollDcPaymentLiability();
+    }
+  }
+
+  function renderPayrollDcPayment() {
+    const el =
+        $("payrollDcPaymentSection");
+
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    if (!el || !payment) {
+        return;
     }
 
-    /*
-    * Load the existing company bank accounts.
-    */
-    const banks=await refreshBankAccounts();
+    const plans =
+        payment.plans || [];
 
-    const activeBanks=banks.filter(
-      x=>x.is_active!==false
-    );
+    const banks =
+        payment.banks || [];
 
-    if(!activeBanks.length){
-      throw new Error(
-        "No active bank accounts are available for payment"
-      );
+    const liability =
+        payment.liabilityPreview || {};
+
+    const paymentPreview =
+        payment.paymentPreview || {};
+
+    const outstanding =
+        Number(
+            liability.outstanding_amount || 0
+        );
+
+    const selectedPlanId =
+        payment.selectedPlanId || "";
+
+    const selectedBankId =
+        payment.selectedBankId || "";
+
+    const paymentDate =
+        payment.paymentDate || "";
+
+    el.innerHTML = `
+        <div class="payroll-posting-card">
+
+            <div class="payroll-card-head">
+
+                <div>
+                    <h3>Contribution Payment</h3>
+
+                    <p class="payroll-muted">
+                        Clear the contribution payable against the
+                        designated clearing account.
+                    </p>
+                </div>
+
+            </div>
+
+            <div class="payroll-benefit-summary-grid">
+
+                <div>
+                    <span>Clearing Account</span>
+                    <strong>
+                        ${esc(
+                            liability.clearing_account_code ||
+                            "—"
+                        )}
+                    </strong>
+
+                    <div class="payroll-muted">
+                        ${esc(
+                            liability.clearing_account_name ||
+                            ""
+                        )}
+                    </div>
+                </div>
+
+                <div>
+                    <span>Liability</span>
+                    <strong>
+                        ${money(
+                            liability.liability_amount
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Historical Payments</span>
+                    <strong>
+                        ${money(
+                            liability.historical_paid_amount
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Outstanding</span>
+                    <strong>
+                        ${money(
+                            liability.outstanding_amount
+                        )}
+                    </strong>
+                </div>
+
+            </div>
+
+            <div
+                class="payroll-form-grid"
+                style="margin-top:18px;"
+            >
+
+                ${
+                    plans.length > 1
+                        ? `
+                            <label>
+                                <span>Benefit Plan</span>
+
+                                <select
+                                    id="payrollDcPaymentPlan"
+                                >
+                                    <option value="">
+                                        Select benefit plan
+                                    </option>
+
+                                    ${plans.map(plan => `
+                                        <option
+                                            value="${plan.id}"
+                                            ${
+                                                Number(
+                                                    selectedPlanId
+                                                ) ===
+                                                Number(
+                                                    plan.id
+                                                )
+                                                    ? "selected"
+                                                    : ""
+                                            }
+                                        >
+                                            ${esc(
+                                                plan.code
+                                                    ? `${plan.code} — ${plan.name}`
+                                                    : plan.name
+                                            )}
+                                        </option>
+                                    `).join("")}
+                                </select>
+                            </label>
+                        `
+                        : `
+                            <input
+                                type="hidden"
+                                id="payrollDcPaymentPlan"
+                                value="${
+                                    plans[0]?.id || ""
+                                }"
+                            />
+                        `
+                }
+
+                <label>
+                    <span>Bank Account</span>
+
+                    <select
+                        id="payrollDcPaymentBank"
+                    >
+                        <option value="">
+                            Select bank account
+                        </option>
+
+                        ${banks.map(bank => `
+                            <option
+                                value="${bank.id}"
+                                ${
+                                    Number(
+                                        selectedBankId
+                                    ) ===
+                                    Number(bank.id)
+                                        ? "selected"
+                                        : ""
+                                }
+                            >
+                                ${esc(
+                                    bank.account_name ||
+                                    bank.name ||
+                                    bank.account_number ||
+                                    ""
+                                )}
+                            </option>
+                        `).join("")}
+                    </select>
+                </label>
+
+                <label>
+                    <span>Payment Date</span>
+
+                    <input
+                        type="date"
+                        id="payrollDcPaymentDate"
+                        value="${paymentDate}"
+                    />
+                </label>
+
+                <label>
+                    <span>Amount</span>
+
+                    <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        id="payrollDcPaymentAmount"
+                        value="${
+                            liability.outstanding_amount != null
+                                ? Number(
+                                    liability.outstanding_amount
+                                ).toFixed(2)
+                                : ""
+                        }"
+                    />
+                </label>
+
+                <label>
+                    <span>Reference</span>
+
+                    <input
+                        type="text"
+                        id="payrollDcPaymentReference"
+                        placeholder="Payment reference"
+                    />
+                </label>
+
+                <label>
+                    <span>Notes</span>
+
+                    <input
+                        type="text"
+                        id="payrollDcPaymentNotes"
+                        placeholder="Optional notes"
+                    />
+                </label>
+
+            </div>
+
+            <div
+                class="payroll-run-actions"
+                style="margin-top:18px;"
+            >
+
+                <button
+                    id="payrollLoadDcLiabilityBtn"
+                    class="payroll-secondary dark"
+                    type="button"
+                >
+                    Refresh Liability
+                </button>
+
+                <button
+                    id="payrollPreviewDcPaymentBtn"
+                    class="payroll-secondary dark"
+                    type="button"
+                    ${
+                        outstanding > 0
+                            ? ""
+                            : "disabled"
+                    }
+                >
+                    Preview Payment
+                </button>
+
+                <button
+                    id="payrollPostDcPaymentBtn"
+                    class="payroll-primary"
+                    type="button"
+                    ${
+                        paymentPreview.payment_amount > 0
+                            ? ""
+                            : "disabled"
+                    }
+                >
+                    Post Payment
+                </button>
+
+            </div>
+
+            <div
+                id="payrollDcPaymentStatus"
+                style="margin-top:12px;"
+            ></div>
+
+            <div
+                id="payrollDcPaymentPreview"
+                style="margin-top:18px;"
+            >
+                ${
+                    paymentPreview &&
+                    paymentPreview.journal
+                        ? renderPayrollDcPaymentJournal(
+                            paymentPreview
+                        )
+                        : ""
+                }
+            </div>
+
+        </div>
+    `;
+
+    $("payrollDcPaymentPlan")
+        ?.addEventListener(
+            "change",
+            async event => {
+                payment.selectedPlanId =
+                    Number(
+                        event.target.value
+                    ) || null;
+
+                payment.liabilityPreview =
+                    null;
+
+                payment.paymentPreview =
+                    null;
+
+                await loadPayrollDcPaymentLiability();
+            }
+        );
+
+    $("payrollDcPaymentBank")
+        ?.addEventListener(
+            "change",
+            async event => {
+                payment.selectedBankId =
+                    Number(
+                        event.target.value
+                    ) || null;
+
+                await loadPayrollDcPaymentLiability();
+            }
+        );
+
+    $("payrollDcPaymentDate")
+        ?.addEventListener(
+            "change",
+            async event => {
+                payment.paymentDate =
+                    event.target.value;
+
+                await loadPayrollDcPaymentLiability();
+            }
+        );
+
+    $("payrollLoadDcLiabilityBtn")
+        ?.addEventListener(
+            "click",
+            () =>
+                loadPayrollDcPaymentLiability()
+                    .catch(error => {
+                        showPayrollStatus(
+                            error.message,
+                            "error"
+                        );
+                    })
+        );
+
+    $("payrollPreviewDcPaymentBtn")
+        ?.addEventListener(
+            "click",
+            () =>
+                previewPayrollDcPayment()
+                    .catch(error => {
+                        showPayrollStatus(
+                            error.message,
+                            "error"
+                        );
+                    })
+        );
+
+    $("payrollPostDcPaymentBtn")
+        ?.addEventListener(
+            "click",
+            () =>
+                postPayrollDcPayment()
+                    .catch(error => {
+                        showPayrollStatus(
+                            error.message,
+                            "error"
+                        );
+                    })
+        );
+  }
+
+  async function loadPayrollDcPaymentLiability() {
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    if (!payment) {
+        return;
     }
 
-    const planOptions=plans.map(p=>[
-      p.id,
-      `${p.code}${p.code?" — ":""}${p.name}`,
-    ]);
+    const planId =
+        Number(
+            payment.selectedPlanId
+        );
 
-    const bankOptions=activeBanks.map(x=>[
-      x.id,
-      `${x.account_name||x.name||"Bank account"}`
-      +(
-        x.account_number
-          ?` — ${x.account_number}`
-          :""
-      ),
-    ]);
+    const bankId =
+        Number(
+            payment.selectedBankId
+        );
 
-    /*
-    * Step 1:
-    * Collect the payment information.
-    */
-    const payment=await payrollForm(
-      "Pay Defined Contribution",
-      [
-        {
-          name:"benefit_plan_id",
-          label:"Benefit plan",
-          type:"select",
-          required:true,
-          value:plans.length===1?plans[0].id:"",
-          options:planOptions,
-          placeholder:"Select benefit plan",
-        },
+    const paymentDate =
+        normalizePayrollDate(
+            payment.paymentDate
+        );
 
-        {
-          name:"bank_account_id",
-          label:"Bank account",
-          type:"select",
-          required:true,
-          options:bankOptions,
-          placeholder:"Select bank account",
-        },
-
-        {
-          name:"payment_date",
-          label:"Payment date",
-          type:"date",
-          required:true,
-          value:
-            run.payment_date
-            ||run.reporting_date
-            ||new Date().toISOString().slice(0,10),
-        },
-
-        {
-          name:"amount",
-          label:"Amount",
-          type:"number",
-          required:true,
-          step:"0.01",
-          min:0.01,
-          placeholder:"Enter payment amount",
-          value:"",
-        },
-
-        {
-          name:"reference",
-          label:"Payment reference",
-          value:
-            `${run.run_no||"DC"}-PAY`,
-        },
-
-        {
-          name:"notes",
-          label:"Notes",
-          type:"textarea",
-          value:"",
-        },
-      ],
-    );
-
-    if(!payment)return;
-
-    const selectedPlanId=Number(
-      payment.benefit_plan_id
-    );
-
-    if(!selectedPlanId){
-      throw new Error(
-        "Benefit plan is required"
-      );
+    if (!planId) {
+        return;
     }
 
-    const selectedBankId=Number(
-      payment.bank_account_id
-    );
-
-    if(!selectedBankId){
-      throw new Error(
-        "Bank account is required"
-      );
+    if (!bankId) {
+        return;
     }
 
-    const paymentAmount=Number(
-      payment.amount
-    );
-
-    if(!Number.isFinite(paymentAmount)||paymentAmount<=0){
-      throw new Error(
-        "Payment amount must be greater than zero"
-      );
+    if (!paymentDate) {
+        return;
     }
 
-    /*
-    * Step 2:
-    * Generate the official accounting preview.
-    *
-    * IMPORTANT:
-    *
-    * URL runId = PAYROLL RUN ID
-    *
-    * Body defined_contribution_run_id =
-    * CONTRIBUTION RUN ID
-    */
-    const previewResponse=await apiFetch(
-      ENDPOINTS.payroll.liabilityPaymentPreview(
-        cid(),
-        payrollRunId
-      ),
-      {
-        method:"POST",
-        body:JSON.stringify({
-          liability_type:"defined_contribution",
-
-          payroll_run_id:payrollRunId,
-
-          defined_contribution_run_id:Number(
-            runId
-          ),
-
-          benefit_plan_id:selectedPlanId,
-
-          bank_account_id:selectedBankId,
-
-          payment_date:
-            payment.payment_date,
-
-          amount:paymentAmount,
-
-          reference:
-            payment.reference||null,
-
-          notes:
-            payment.notes||null,
-        }),
-      }
-    );
-
-    const preview=previewResponse?.preview;
-
-    if(!preview){
-      throw new Error(
-        previewResponse?.error
-        ||"Unable to generate payment preview"
-      );
-    }
-
-    /*
-    * The backend may tell us that the liability has already
-    * been fully paid.
-    */
-    if(preview.ready_to_post===false){
-      throw new Error(
-        preview.message
-        ||"This contribution liability has already been fully paid"
-      );
-    }
-
-    const previewPlan=
-      preview.benefit_plan
-      ||plans.find(
-        p=>Number(p.id)===selectedPlanId
-      )
-      ||{};
-
-    const previewLiabilityAccount=
-      preview.liability_account||{};
-
-    const previewBank=
-      preview.bank_account||{};
-
-    const previewJournal=
-      preview.journal||{};
-
-    const previewLines=
-      previewJournal.lines||[];
-
-    /*
-    * Step 3:
-    * Show the actual accounting preview before posting.
-    */
-    const journalText=previewLines.length
-      ?previewLines.map(x=>
-          `${x.account_code}`
-          +` — ${x.description||""}`
-          +` | Dr ${money(x.debit)}`
-          +` | Cr ${money(x.credit)}`
-        ).join("\n")
-      :"No journal lines returned";
-
-    const confirmed=await payrollForm(
-      "Confirm Contribution Payment",
-      [
-        {
-          name:"benefit_plan",
-          label:"Benefit plan",
-          readonly:true,
-          value:
-            `${previewPlan.code||""}`
-            +(
-              previewPlan.code
-                ?" — "
-                :""
-            )
-            +(
-              previewPlan.name
-              ||""
+    const response =
+        await apiFetch(
+            ENDPOINTS.payroll.liabilityPaymentPreview(
+                COMPANY_ID,
+                payment.payrollRunId
             ),
-        },
+            {
+                method: "POST",
 
-        {
-          name:"payment_date",
-          label:"Payment date",
-          type:"date",
-          readonly:true,
-          value:
-            String(
-              preview.payment_date||""
-            ),
-        },
+                body: JSON.stringify({
+                    liability_type:
+                        "defined_contribution",
 
-        {
-          name:"contribution_run",
-          label:"Contribution run",
-          readonly:true,
-          value:
-            String(
-              preview.defined_contribution_run_id
-              ||runId
-            ),
-        },
+                    payroll_run_id:
+                        payment.payrollRunId,
 
-        {
-          name:"liability_account",
-          label:"Contribution payable",
-          readonly:true,
-          value:
-            `${previewLiabilityAccount.code||""}`
-            +(
-              previewLiabilityAccount.code
-                ?" — "
-                :""
-            )
-            +(
-              previewLiabilityAccount.name
-              ||""
-            ),
-        },
+                    defined_contribution_run_id:
+                        payment.runId,
 
-        {
-          name:"bank_account",
-          label:"Bank account",
-          readonly:true,
-          value:
-            `${previewBank.code||""}`
-            +(
-              previewBank.code
-                ?" — "
-                :""
-            )
-            +(
-              previewBank.name
-              ||""
-            ),
-        },
+                    benefit_plan_id:
+                        planId,
 
-        {
-          name:"recognized_amount",
-          label:"Recognized liability",
-          type:"number",
-          readonly:true,
-          value:
-            Number(
-              preview.recognized_amount||0
-            ).toFixed(2),
-        },
+                    bank_account_id:
+                        bankId,
 
-        {
-          name:"previously_paid",
-          label:"Previously paid",
-          type:"number",
-          readonly:true,
-          value:
-            Number(
-              preview.previously_paid||0
-            ).toFixed(2),
-        },
+                    payment_date:
+                        paymentDate
+                })
+            }
+        );
 
-        {
-          name:"outstanding_amount",
-          label:"Outstanding before payment",
-          type:"number",
-          readonly:true,
-          value:
-            Number(
-              preview.outstanding_amount||0
-            ).toFixed(2),
-        },
+    const preview =
+        response?.preview ||
+        response?.data?.preview ||
+        response?.data ||
+        response ||
+        {};
 
-        {
-          name:"payment_amount",
-          label:"Payment amount",
-          type:"number",
-          readonly:true,
-          value:
-            Number(
-              preview.payment_amount||0
-            ).toFixed(2),
-        },
-
-        {
-          name:"remaining_amount",
-          label:"Remaining after payment",
-          type:"number",
-          readonly:true,
-          value:
-            Number(
-              preview.remaining_amount||0
-            ).toFixed(2),
-        },
-
-        {
-          name:"journal",
-          label:"Accounting journal",
-          type:"textarea",
-          readonly:true,
-          value:
-            journalText
-            +"\n\n"
-            +`Debits: ${money(
-              previewJournal.debits
-            )}`
-            +"\n"
-            +`Credits: ${money(
-              previewJournal.credits
-            )}`
-            +"\n"
-            +`Difference: ${money(
-              previewJournal.difference
-            )}`,
-        },
-      ],
+    console.log(
+        "[DC PAYMENT] LIABILITY PREVIEW",
+        preview
     );
 
-    if(!confirmed)return;
+    payment.liabilityPreview =
+        preview;
 
-    /*
-    * Step 4:
-    * Post the payment.
-    *
-    * Again:
-    *
-    * URL runId = PAYROLL RUN ID
-    *
-    * body defined_contribution_run_id =
-    * CONTRIBUTION RUN ID
-    */
-    const postResponse=await apiFetch(
-      ENDPOINTS.payroll.liabilityPayment(
-        cid(),
-        payrollRunId
-      ),
-      {
-        method:"POST",
-        body:JSON.stringify({
-          liability_type:"defined_contribution",
+    payment.paymentPreview =
+        null;
 
-          payroll_run_id:payrollRunId,
+    renderPayrollDcPayment();
+  }
 
-          defined_contribution_run_id:Number(
-            runId
-          ),
+  async function previewPayrollDcPayment() {
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
 
-          benefit_plan_id:selectedPlanId,
-
-          bank_account_id:selectedBankId,
-
-          payment_date:
-            payment.payment_date,
-
-          amount:
-            Number(
-              preview.payment_amount
-            ),
-
-          reference:
-            preview.reference
-            ||payment.reference
-            ||null,
-
-          notes:
-            payment.notes||null,
-        }),
-      }
-    );
-
-    if(
-      !postResponse
-      ||postResponse.ok===false
-    ){
-      throw new Error(
-        postResponse?.error
-        ||"Defined-contribution payment could not be posted"
-      );
+    if (!payment) {
+        throw new Error(
+            "Contribution payment is not loaded."
+        );
     }
 
-    /*
-    * Refresh the contribution run so the UI reflects the
-    * newly posted payment.
-    */
-    await openPayrollDcRun(runId);
+    const planId =
+        Number(
+            payment.selectedPlanId
+        );
 
-    await loadPayrollBenefitPlans();
+    const bankId =
+        Number(
+            payment.selectedBankId
+        );
+
+    const paymentDate =
+        normalizePayrollDate(
+            $("payrollDcPaymentDate")?.value
+        );
+
+    const amount =
+        Number(
+            $("payrollDcPaymentAmount")?.value
+        );
+
+    if (!planId) {
+        throw new Error(
+            "Select a benefit plan."
+        );
+    }
+
+    if (!bankId) {
+        throw new Error(
+            "Select a bank account."
+        );
+    }
+
+    if (!paymentDate) {
+        throw new Error(
+            "Enter a valid payment date."
+        );
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error(
+            "Enter a valid payment amount."
+        );
+    }
+
+    const response =
+        await apiFetch(
+            ENDPOINTS.payroll.liabilityPaymentPreview(
+                COMPANY_ID,
+                payment.payrollRunId
+            ),
+            {
+                method: "POST",
+
+                body: JSON.stringify({
+                    liability_type:
+                        "defined_contribution",
+
+                    payroll_run_id:
+                        payment.payrollRunId,
+
+                    defined_contribution_run_id:
+                        payment.runId,
+
+                    benefit_plan_id:
+                        planId,
+
+                    bank_account_id:
+                        bankId,
+
+                    payment_date:
+                        paymentDate,
+
+                    amount,
+
+                    reference:
+                        $(
+                            "payrollDcPaymentReference"
+                        )?.value?.trim() ||
+                        null,
+
+                    notes:
+                        $(
+                            "payrollDcPaymentNotes"
+                        )?.value?.trim() ||
+                        null
+                })
+            }
+        );
+
+    const preview =
+        response?.preview ||
+        response?.data?.preview ||
+        response?.data ||
+        response ||
+        {};
+
+    payment.paymentPreview =
+        preview;
+
+    renderPayrollDcPayment();
+  }
+
+  async function postPayrollDcPayment() {
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    if (!payment) {
+        throw new Error(
+            "Contribution payment is not loaded."
+        );
+    }
+
+    const preview =
+        payment.paymentPreview;
+
+    if (!preview) {
+        throw new Error(
+            "Preview the payment before posting."
+        );
+    }
+
+    const amount =
+        Number(
+            preview.payment_amount
+        );
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error(
+            "There is no valid payment amount to post."
+        );
+    }
+
+    const paymentDate =
+        normalizePayrollDate(
+            $("payrollDcPaymentDate")?.value
+        );
+
+    const bankId =
+        Number(
+            $("payrollDcPaymentBank")?.value
+        );
+
+    const response =
+        await apiFetch(
+            ENDPOINTS.payroll.liabilityPayment(
+                COMPANY_ID,
+                payment.payrollRunId
+            ),
+            {
+                method: "POST",
+
+                body: JSON.stringify({
+                    liability_type:
+                        "defined_contribution",
+
+                    payroll_run_id:
+                        payment.payrollRunId,
+
+                    defined_contribution_run_id:
+                        payment.runId,
+
+                    benefit_plan_id:
+                        Number(
+                            payment.selectedPlanId
+                        ),
+
+                    bank_account_id:
+                        bankId,
+
+                    payment_date:
+                        paymentDate,
+
+                    amount,
+
+                    reference:
+                        $(
+                            "payrollDcPaymentReference"
+                        )?.value?.trim() ||
+                        null,
+
+                    notes:
+                        $(
+                            "payrollDcPaymentNotes"
+                        )?.value?.trim() ||
+                        null
+                })
+            }
+        );
+
+    console.log(
+        "[DC PAYMENT] POSTED",
+        response
+    );
 
     showPayrollStatus(
-      "Defined-contribution payment posted and liability cleared.",
-      "success"
+        "Contribution payment posted successfully.",
+        "success"
     );
+
+    await openPayrollDcRun(
+        payment.runId
+    );
+
+    await refreshPayrollBenefitPlans();
+  }
+
+  function renderPayrollDcPaymentJournal(preview) {
+    const journal =
+        preview?.journal || [];
+
+    if (!journal.length) {
+        return `
+            <div class="payroll-muted">
+                No payment journal lines returned.
+            </div>
+        `;
+    }
+
+    return `
+        <div class="payroll-card">
+
+            <div class="payroll-card-head">
+                <div>
+                    <h3>Payment Journal</h3>
+
+                    <p class="payroll-muted">
+                        Clearing the contribution payable
+                        against the selected bank account.
+                    </p>
+                </div>
+            </div>
+
+            <div class="payroll-table-wrap payroll-journal-scroll">
+
+                <table class="payroll-preview-table">
+
+                    <thead>
+                        <tr>
+                            <th>Account</th>
+                            <th>Description</th>
+                            <th>Debit</th>
+                            <th>Credit</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        ${journal.map(line => `
+                            <tr>
+                                <td>
+                                    ${esc(line.account_name || "")}
+                                </td>
+
+                                <td>
+                                    ${esc(
+                                        line.description ||
+                                        ""
+                                    )}
+                                </td>
+
+                                <td>
+                                    ${money(
+                                        line.debit
+                                    )}
+                                </td>
+
+                                <td>
+                                    ${money(
+                                        line.credit
+                                    )}
+                                </td>
+
+                            </tr>
+                        `).join("")}
+                    </tbody>
+
+                </table>
+
+            </div>
+
+            <div class="payroll-benefit-summary-grid">
+
+                <div>
+                    <span>Payment Amount</span>
+
+                    <strong>
+                        ${money(
+                            preview.payment_amount
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Remaining Liability</span>
+
+                    <strong>
+                        ${money(
+                            preview.remaining_amount
+                        )}
+                    </strong>
+                </div>
+
+            </div>
+
+        </div>
+    `;
   }
 
   function renderPayrollBenefitDisclosure(){
