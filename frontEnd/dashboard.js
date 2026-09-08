@@ -69420,6 +69420,22 @@ async function saveEditModal() {
         );
     }
 
+    const dcRunId =
+        Number(
+            payment.runId ??
+            payrollState.employeeBenefits
+                ?.selectedDefinedContributionRun
+                ?.run?.id
+        );
+
+    if (!Number.isFinite(dcRunId) || dcRunId <= 0) {
+        throw new Error(
+            "Contribution run id is missing. Re-open the contribution run and try again."
+        );
+    }
+
+    payment.runId = dcRunId;   /* repair state for Post as well */
+
     const planId =
         Number(
             payment.selectedPlanId
@@ -84448,59 +84464,54 @@ async function saveEditModal() {
   }
 
 
-  async function loadPayrollStatutoryWorkspace(){
-    const params={
+  async function loadPayrollStatutoryWorkspace() {
+    const params = {
         authority_code:
-            $("payrollStatutoryAuthorityFilter")?.value
-            || "",
+            $("payrollStatutoryAuthorityFilter")?.value || "",
+
         return_type:
-            $("payrollStatutoryTypeFilter")?.value
-            || "",
+            $("payrollStatutoryTypeFilter")?.value || "",
+
         status:
-            $("payrollStatutoryStatusFilter")?.value
-            || "",
+            $("payrollStatutoryStatusFilter")?.value || "",
     };
 
-    const companyId=cid();
+    const [mappings, returns] = await Promise.all([
+        apiFetch(
+            ENDPOINTS.payroll.statutoryMappings(cid())
+        ),
 
-    try{
-        const response=
-            await apiFetch(
-                ENDPOINTS.payroll.statutoryWorkspace(
-                    companyId,
-                    params
-                ),
-                {
-                    method:"GET"
-                }
-            );
+        apiFetch(
+            ENDPOINTS.payroll.statutoryReturns(
+                cid(),
+                params
+            )
+        ),
+    ]);
 
-        const data=
-            response?.data ||
-            response ||
-            {};
+    payrollState.statutory.mappings =
+        mappings?.items || [];
 
-        payrollState.statutory.workspace=
-            data;
+    payrollState.statutory.returns =
+        returns?.items || [];
 
-        payrollState.statutory.returns=
-            Array.isArray(data.returns)
-                ? data.returns
-                : [];
+    console.log(
+        "STATUTORY RETURNS RESPONSE",
+        returns
+    );
 
-        renderPayrollStatutoryReturns();
+    console.log(
+        "STATUTORY RETURNS ITEMS",
+        payrollState.statutory.returns
+    );
 
-    }catch(error){
-        console.error(
-            "[payroll] statutory workspace load failed:",
-            error
-        );
+    renderPayrollStatutoryDashboard();
 
-        showPayrollStatus(
-            error?.message ||
-            "Unable to load statutory returns.",
-            "error"
-        );
+    if (
+        window.__taxFiling &&
+        typeof window.__taxFiling.init === "function"
+    ) {
+        window.__taxFiling.init();
     }
   }
 
