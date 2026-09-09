@@ -68486,492 +68486,6 @@ async function saveEditModal() {
       .map(a=>[a.code,a.name]);
   }
 
-  function renderPayrollDcPayment() {
-    const el =
-        $("payrollDcPaymentSection");
-
-    const payment =
-        payrollState.employeeBenefits
-            .selectedDefinedContributionPayment;
-
-    if (!el || !payment) {
-        return;
-    }
-
-    const plans =
-        payment.plans || [];
-
-    const banks =
-        payment.banks || [];
-
-    const liability =
-        payment.liabilityPreview || {};
-
-    const paymentPreview =
-        payment.paymentPreview || {};
-
-    /*
-     * Clearing account = the selected BANK.
-     */
-    const selectedBank =
-        banks.find(
-            b => Number(b.id) === Number(payment.selectedBankId)
-        ) || null;
-
-    const clearingLabel = selectedBank
-        ? [
-              selectedBank.bank_name || selectedBank.bankName || selectedBank.name || "Bank",
-              selectedBank.account_name || selectedBank.accountName || "",
-              (selectedBank.account_number || selectedBank.accountNumber)
-                  ? `(${selectedBank.account_number || selectedBank.accountNumber})`
-                  : ""
-          ].filter(Boolean).join(" ")
-        : (liability.liability_account?.name || "—");
-
-    /*
-     * Normalise balance fields — loaders store camelCase,
-     * API may return snake_case. Derive outstanding if missing.
-     */
-    const recognised =
-        Number(
-            liability.recognized_amount ??
-            liability.recognised_amount ??
-            liability.recognisedLiability ??
-            liability.liabilityAmount ??
-            0
-        ) || 0;
-
-    const historical =
-        Number(
-            liability.previously_paid ??
-            liability.historical_paid_amount ??
-            liability.paid_amount ??
-            liability.historicalPaidAmount ??
-            liability.historicalPayments ??
-            0
-        ) || 0;
-
-    const reportedOutstanding =
-        Number(
-            liability.outstanding_amount ??
-            liability.remaining_amount ??
-            liability.outstandingAmount ??
-            NaN
-        );
-
-    const outstanding =
-        Number.isFinite(reportedOutstanding)
-            ? reportedOutstanding
-            : Math.max(recognised - historical, 0);
-
-    const selectedPlanId =
-        payment.selectedPlanId || "";
-
-    const selectedBankId =
-        payment.selectedBankId || "";
-
-    const paymentDate =
-        payment.paymentDate || "";
-
-    el.innerHTML = `
-        <div class="payroll-posting-card">
-
-            <div class="payroll-card-head">
-
-                <div>
-                    <h3>Contribution Payment</h3>
-
-                    <p class="payroll-muted">
-                        Clear the contribution payable against the
-                        designated clearing account.
-                    </p>
-                </div>
-
-            </div>
-
-            <div class="payroll-benefit-summary-grid">
-
-                <div>
-                    <span>Clearing Account</span>
-                    <strong>
-                        ${esc(clearingLabel)}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Liability</span>
-                    <strong>
-                        ${money(recognised)}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Historical Payments</span>
-                    <strong>
-                        ${money(historical)}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Outstanding</span>
-                    <strong>
-                        ${money(outstanding)}
-                    </strong>
-                </div>
-
-            </div>
-
-            <div
-                class="payroll-form-grid"
-                style="margin-top:18px;"
-            >
-
-                ${
-                    plans.length > 1
-                        ? `
-                            <label>
-                                <span>Benefit Plan</span>
-
-                                <select
-                                    id="payrollDcPaymentPlan"
-                                >
-                                    <option value="">
-                                        Select benefit plan
-                                    </option>
-
-                                    ${plans.map(plan => `
-                                        <option
-                                            value="${plan.id}"
-                                            ${
-                                                Number(
-                                                    selectedPlanId
-                                                ) ===
-                                                Number(
-                                                    plan.id
-                                                )
-                                                    ? "selected"
-                                                    : ""
-                                            }
-                                        >
-                                            ${esc(
-                                                plan.code
-                                                    ? `${plan.code} — ${plan.name}`
-                                                    : plan.name
-                                            )}
-                                        </option>
-                                    `).join("")}
-                                </select>
-                            </label>
-                        `
-                        : `
-                            <input
-                                type="hidden"
-                                id="payrollDcPaymentPlan"
-                                value="${
-                                    plans[0]?.id || ""
-                                }"
-                            />
-                        `
-                }
-
-                <label>
-                    <span>Bank Account</span>
-
-                    <select
-                        id="payrollDcPaymentBank"
-                    >
-                        <option value="">
-                            Select bank account
-                        </option>
-
-                        ${banks.map(bank => `
-                            <option
-                                value="${bank.id}"
-                                ${
-                                    Number(
-                                        selectedBankId
-                                    ) ===
-                                    Number(bank.id)
-                                        ? "selected"
-                                        : ""
-                                }
-                            >
-                                ${esc(
-                                    bank.account_name ||
-                                    bank.name ||
-                                    bank.account_number ||
-                                    ""
-                                )}
-                            </option>
-                        `).join("")}
-                    </select>
-                </label>
-
-                <label>
-                    <span>Payment Date</span>
-
-                    <input
-                        type="date"
-                        id="payrollDcPaymentDate"
-                        value="${paymentDate}"
-                    />
-                </label>
-
-                <label>
-                    <span>Amount</span>
-
-                    <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        id="payrollDcPaymentAmount"
-                        value="${
-                            outstanding > 0
-                                ? outstanding.toFixed(2)
-                                : ""
-                        }"
-                    />
-                </label>
-
-                <label>
-                    <span>Reference</span>
-
-                    <input
-                        type="text"
-                        id="payrollDcPaymentReference"
-                        placeholder="Payment reference"
-                    />
-                </label>
-
-                <label>
-                    <span>Notes</span>
-
-                    <input
-                        type="text"
-                        id="payrollDcPaymentNotes"
-                        placeholder="Optional notes"
-                    />
-                </label>
-
-            </div>
-
-            <div
-                class="payroll-run-actions"
-                style="margin-top:18px;"
-            >
-
-                <button
-                    id="payrollLoadDcLiabilityBtn"
-                    class="payroll-secondary dark"
-                    type="button"
-                >
-                    Refresh Liability
-                </button>
-
-                <button
-                    id="payrollPreviewDcPaymentBtn"
-                    class="payroll-secondary dark"
-                    type="button"
-                    ${
-                        outstanding > 0 && selectedBankId
-                            ? ""
-                            : "disabled"
-                    }
-                >
-                    Preview Payment
-                </button>
-
-                <button
-                    id="payrollPostDcPaymentBtn"
-                    class="payroll-primary"
-                    type="button"
-                    ${
-                        paymentPreview.payment_amount > 0
-                            ? ""
-                            : "disabled"
-                    }
-                >
-                    Post Payment
-                </button>
-
-            </div>
-
-            <div
-                id="payrollDcPaymentStatus"
-                style="margin-top:12px;"
-            ></div>
-
-            <div
-                id="payrollDcPaymentPreview"
-                style="margin-top:18px;"
-            >
-                ${
-                    paymentPreview &&
-                    paymentPreview.journal
-                        ? renderPayrollDcPaymentJournal(
-                            paymentPreview
-                        )
-                        : ""
-                }
-            </div>
-
-        </div>
-    `;
-
-    $("payrollDcPaymentPlan")
-        ?.addEventListener(
-            "change",
-            async event => {
-                payment.selectedPlanId =
-                    Number(
-                        event.target.value
-                    ) || null;
-
-                payment.liabilityPreview =
-                    null;
-
-                payment.paymentPreview =
-                    null;
-
-                await loadPayrollLiabilityClearing({
-                    liabilityType:
-                        "defined_contribution",
-
-                    payrollRunId:
-                        payment.payrollRunId,
-
-                    benefitPlanId:
-                        payment.selectedPlanId || null,
-
-                    definedContributionRunId:
-                        payment.runId,
-
-                    prefix:
-                        "payrollDcPayment",
-
-                    referencePrefix:
-                        "DC-PAY"
-                });
-
-                renderPayrollDcPayment();
-            }
-        );
-
-    $("payrollDcPaymentBank")
-        ?.addEventListener(
-            "change",
-            async event => {
-                payment.selectedBankId =
-                    Number(
-                        event.target.value
-                    ) || null;
-
-                /*
-                 * Bank = clearing account changed:
-                 * the old journal preview is stale.
-                 */
-                payment.paymentPreview =
-                    null;
-
-                renderPayrollDcPayment();
-
-                try {
-                    await loadPayrollLiabilityClearing({
-                        liabilityType:
-                            "defined_contribution",
-
-                        payrollRunId:
-                            payment.payrollRunId,
-
-                        benefitPlanId:
-                            payment.selectedPlanId || null,
-
-                        definedContributionRunId:
-                            payment.runId,
-
-                        prefix:
-                            "payrollDcPayment",
-
-                        referencePrefix:
-                            "DC-PAY"
-                    });
-                } finally {
-                    renderPayrollDcPayment();
-                }
-            }
-        );
-
-    $("payrollDcPaymentDate")
-        ?.addEventListener(
-            "change",
-            async event => {
-                payment.paymentDate =
-                    event.target.value;
-
-                renderPayrollDcPayment();
-            }
-        );
-
-    $("payrollLoadDcLiabilityBtn")
-        ?.addEventListener(
-            "click",
-            () =>
-                loadPayrollLiabilityClearing({
-                    liabilityType:
-                        "defined_contribution",
-
-                    payrollRunId:
-                        payment.payrollRunId,
-
-                    benefitPlanId:
-                        payment.selectedPlanId || null,
-
-                    definedContributionRunId:
-                        payment.runId,
-
-                    prefix:
-                        "payrollDcPayment",
-
-                    referencePrefix:
-                        "DC-PAY"
-                })
-                .then(() => {
-                    renderPayrollDcPayment();
-                })
-                .catch(error => {
-                    showPayrollStatus(
-                        error.message,
-                        "error"
-                    );
-                })
-        );
-
-    $("payrollPreviewDcPaymentBtn")
-        ?.addEventListener(
-            "click",
-            () =>
-                previewPayrollDcPayment()
-                    .catch(error => {
-                        showPayrollStatus(
-                            error.message,
-                            "error"
-                        );
-                    })
-        );
-
-    $("payrollPostDcPaymentBtn")
-        ?.addEventListener(
-            "click",
-            () =>
-                postPayrollDcPayment()
-                    .catch(error => {
-                        showPayrollStatus(
-                            error.message,
-                            "error"
-                        );
-                    })
-        );
-  }
 
   async function openPayrollDcPayment(runId) {
     const detail =
@@ -69688,11 +69202,504 @@ async function saveEditModal() {
     await refreshPayrollBenefitPlans();
   }
 
+  function renderPayrollDcPayment() {
+    const el =
+        $("payrollDcPaymentSection");
+
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    if (!el || !payment) {
+        return;
+    }
+
+    const plans =
+        payment.plans || [];
+
+    const banks =
+        payment.banks || [];
+
+    const liability =
+        payment.liabilityPreview || {};
+
+    const paymentPreview =
+        payment.paymentPreview || {};
+
+    /*
+     * Clearing account = the selected BANK.
+     */
+    const selectedBank =
+        banks.find(
+            b => Number(b.id) === Number(payment.selectedBankId)
+        ) || null;
+
+    const clearingLabel = selectedBank
+        ? [
+              selectedBank.bank_name || selectedBank.bankName || selectedBank.name || "Bank",
+              selectedBank.account_name || selectedBank.accountName || "",
+              (selectedBank.account_number || selectedBank.accountNumber)
+                  ? `(${selectedBank.account_number || selectedBank.accountNumber})`
+                  : ""
+          ].filter(Boolean).join(" ")
+        : (liability.liability_account?.name || "—");
+
+    /*
+     * Normalise balance fields — loaders store camelCase,
+     * API may return snake_case. Derive outstanding if missing.
+     */
+    const recognised =
+        Number(
+            liability.recognized_amount ??
+            liability.recognised_amount ??
+            liability.recognisedLiability ??
+            liability.liabilityAmount ??
+            0
+        ) || 0;
+
+    const historical =
+        Number(
+            liability.previously_paid ??
+            liability.historical_paid_amount ??
+            liability.paid_amount ??
+            liability.historicalPaidAmount ??
+            liability.historicalPayments ??
+            0
+        ) || 0;
+
+    const reportedOutstanding =
+        Number(
+            liability.outstanding_amount ??
+            liability.remaining_amount ??
+            liability.outstandingAmount ??
+            NaN
+        );
+
+    const outstanding =
+        Number.isFinite(reportedOutstanding)
+            ? reportedOutstanding
+            : Math.max(recognised - historical, 0);
+
+    const selectedPlanId =
+        payment.selectedPlanId || "";
+
+    const selectedBankId =
+        payment.selectedBankId || "";
+
+    const paymentDate =
+        payment.paymentDate || "";
+
+    el.innerHTML = `
+        <div class="payroll-posting-card">
+
+            <div class="payroll-card-head">
+
+                <div>
+                    <h3>Contribution Payment</h3>
+
+                    <p class="payroll-muted">
+                        Clear the contribution payable against the
+                        designated clearing account.
+                    </p>
+                </div>
+
+            </div>
+
+            <div class="payroll-benefit-summary-grid">
+
+                <div>
+                    <span>Clearing Account</span>
+                    <strong>
+                        ${esc(clearingLabel)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Liability</span>
+                    <strong>
+                        ${money(recognised)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Historical Payments</span>
+                    <strong>
+                        ${money(historical)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Outstanding</span>
+                    <strong>
+                        ${money(outstanding)}
+                    </strong>
+                </div>
+
+            </div>
+
+            <div
+                class="payroll-form-grid"
+                style="margin-top:18px;"
+            >
+
+                ${
+                    plans.length > 1
+                        ? `
+                            <label>
+                                <span>Benefit Plan</span>
+
+                                <select
+                                    id="payrollDcPaymentPlan"
+                                >
+                                    <option value="">
+                                        Select benefit plan
+                                    </option>
+
+                                    ${plans.map(plan => `
+                                        <option
+                                            value="${plan.id}"
+                                            ${
+                                                Number(
+                                                    selectedPlanId
+                                                ) ===
+                                                Number(
+                                                    plan.id
+                                                )
+                                                    ? "selected"
+                                                    : ""
+                                            }
+                                        >
+                                            ${esc(
+                                                plan.code
+                                                    ? `${plan.code} — ${plan.name}`
+                                                    : plan.name
+                                            )}
+                                        </option>
+                                    `).join("")}
+                                </select>
+                            </label>
+                        `
+                        : `
+                            <input
+                                type="hidden"
+                                id="payrollDcPaymentPlan"
+                                value="${
+                                    plans[0]?.id || ""
+                                }"
+                            />
+                        `
+                }
+
+                <label>
+                    <span>Bank Account</span>
+
+                    <select
+                        id="payrollDcPaymentBank"
+                    >
+                        <option value="">
+                            Select bank account
+                        </option>
+
+                        ${banks.map(bank => `
+                            <option
+                                value="${bank.id}"
+                                ${
+                                    Number(
+                                        selectedBankId
+                                    ) ===
+                                    Number(bank.id)
+                                        ? "selected"
+                                        : ""
+                                }
+                            >
+                                ${esc(
+                                    bank.account_name ||
+                                    bank.name ||
+                                    bank.account_number ||
+                                    ""
+                                )}
+                            </option>
+                        `).join("")}
+                    </select>
+                </label>
+
+                <label>
+                    <span>Payment Date</span>
+
+                    <input
+                        type="date"
+                        id="payrollDcPaymentDate"
+                        value="${paymentDate}"
+                    />
+                </label>
+
+                <label>
+                    <span>Amount</span>
+
+                    <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        id="payrollDcPaymentAmount"
+                        value="${
+                            outstanding > 0
+                                ? outstanding.toFixed(2)
+                                : ""
+                        }"
+                    />
+                </label>
+
+                <label>
+                    <span>Reference</span>
+
+                    <input
+                        type="text"
+                        id="payrollDcPaymentReference"
+                        placeholder="Payment reference"
+                    />
+                </label>
+
+                <label>
+                    <span>Notes</span>
+
+                    <input
+                        type="text"
+                        id="payrollDcPaymentNotes"
+                        placeholder="Optional notes"
+                    />
+                </label>
+
+            </div>
+
+            <div
+                class="payroll-run-actions"
+                style="margin-top:18px;"
+            >
+
+                <button
+                    id="payrollLoadDcLiabilityBtn"
+                    class="payroll-secondary dark"
+                    type="button"
+                >
+                    Refresh Liability
+                </button>
+
+                <button
+                    id="payrollPreviewDcPaymentBtn"
+                    class="payroll-secondary dark"
+                    type="button"
+                    ${
+                        outstanding > 0 && selectedBankId
+                            ? ""
+                            : "disabled"
+                    }
+                >
+                    Preview Payment
+                </button>
+
+                <button
+                    id="payrollPostDcPaymentBtn"
+                    class="payroll-primary"
+                    type="button"
+                    ${
+                        paymentPreview.payment_amount > 0
+                            ? ""
+                            : "disabled"
+                    }
+                >
+                    Post Payment
+                </button>
+
+            </div>
+
+            <div
+                id="payrollDcPaymentStatus"
+                style="margin-top:12px;"
+            ></div>
+
+            <div
+                id="payrollDcPaymentPreview"
+                style="margin-top:18px;"
+            >
+                ${
+                    paymentPreview &&
+                    paymentPreview.journal
+                        ? renderPayrollDcPaymentJournal(
+                            paymentPreview
+                        )
+                        : ""
+                }
+            </div>
+
+        </div>
+    `;
+
+    $("payrollDcPaymentPlan")
+        ?.addEventListener(
+            "change",
+            async event => {
+                payment.selectedPlanId =
+                    Number(
+                        event.target.value
+                    ) || null;
+
+                payment.liabilityPreview =
+                    null;
+
+                payment.paymentPreview =
+                    null;
+
+                await loadPayrollLiabilityClearing({
+                    liabilityType:
+                        "defined_contribution",
+
+                    payrollRunId:
+                        payment.payrollRunId,
+
+                    benefitPlanId:
+                        payment.selectedPlanId || null,
+
+                    definedContributionRunId:
+                        payment.runId,
+
+                    prefix:
+                        "payrollDcPayment",
+
+                    referencePrefix:
+                        "DC-PAY"
+                });
+
+                renderPayrollDcPayment();
+            }
+        );
+
+    $("payrollDcPaymentBank")
+        ?.addEventListener(
+            "change",
+            async event => {
+                payment.selectedBankId =
+                    Number(
+                        event.target.value
+                    ) || null;
+
+                /*
+                 * Bank = clearing account changed:
+                 * the old journal preview is stale.
+                 */
+                payment.paymentPreview =
+                    null;
+
+                renderPayrollDcPayment();
+
+                try {
+                    await loadPayrollLiabilityClearing({
+                        liabilityType:
+                            "defined_contribution",
+
+                        payrollRunId:
+                            payment.payrollRunId,
+
+                        benefitPlanId:
+                            payment.selectedPlanId || null,
+
+                        definedContributionRunId:
+                            payment.runId,
+
+                        prefix:
+                            "payrollDcPayment",
+
+                        referencePrefix:
+                            "DC-PAY"
+                    });
+                } finally {
+                    renderPayrollDcPayment();
+                }
+            }
+        );
+
+    $("payrollDcPaymentDate")
+        ?.addEventListener(
+            "change",
+            async event => {
+                payment.paymentDate =
+                    event.target.value;
+
+                renderPayrollDcPayment();
+            }
+        );
+
+    $("payrollLoadDcLiabilityBtn")
+        ?.addEventListener(
+            "click",
+            () =>
+                loadPayrollLiabilityClearing({
+                    liabilityType:
+                        "defined_contribution",
+
+                    payrollRunId:
+                        payment.payrollRunId,
+
+                    benefitPlanId:
+                        payment.selectedPlanId || null,
+
+                    definedContributionRunId:
+                        payment.runId,
+
+                    prefix:
+                        "payrollDcPayment",
+
+                    referencePrefix:
+                        "DC-PAY"
+                })
+                .then(() => {
+                    renderPayrollDcPayment();
+                })
+                .catch(error => {
+                    showPayrollStatus(
+                        error.message,
+                        "error"
+                    );
+                })
+        );
+
+    $("payrollPreviewDcPaymentBtn")
+        ?.addEventListener(
+            "click",
+            () =>
+                previewPayrollDcPayment()
+                    .catch(error => {
+                        showPayrollStatus(
+                            error.message,
+                            "error"
+                        );
+                    })
+        );
+
+    $("payrollPostDcPaymentBtn")
+        ?.addEventListener(
+            "click",
+            () =>
+                postPayrollDcPayment()
+                    .catch(error => {
+                        showPayrollStatus(
+                            error.message,
+                            "error"
+                        );
+                    })
+        );
+  }
+
+
   function renderPayrollDcPaymentJournal(preview) {
     const journal =
-        preview?.journal || [];
+        preview?.journal || {};
 
-    if (!journal.length) {
+    const lines =
+        Array.isArray(journal.lines)
+            ? journal.lines
+            : [];
+
+    if (!lines.length) {
         return `
             <div class="payroll-muted">
                 No payment journal lines returned.
@@ -69728,10 +69735,14 @@ async function saveEditModal() {
                     </thead>
 
                     <tbody>
-                        ${journal.map(line => `
+                        ${lines.map(line => `
                             <tr>
                                 <td>
-                                    ${esc(line.account_name || "")}
+                                    ${esc(
+                                        line.account_name ||
+                                        line.account_code ||
+                                        ""
+                                    )}
                                 </td>
 
                                 <td>
@@ -69752,7 +69763,6 @@ async function saveEditModal() {
                                         line.credit
                                     )}
                                 </td>
-
                             </tr>
                         `).join("")}
                     </tbody>
@@ -69788,7 +69798,6 @@ async function saveEditModal() {
         </div>
     `;
   }
-
   function renderPayrollBenefitDisclosure(){
     const el=$("payrollBenefitPanelDisclosures");
     const d=payrollState.employeeBenefits.disclosure||{};
