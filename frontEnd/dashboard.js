@@ -64647,22 +64647,22 @@ async function saveEditModal() {
   }
 
   async function loadPayrollEmployeeBenefitsWorkspace() {
-    const companyId = cid();
-    const reportingDate =
-      $("payrollBenefitReportingDate")?.value ||
+    const companyId=cid();
+    const reportingDate=$("payrollBenefitReportingDate")?.value||
       payrollState.employeeBenefits.reportingDate;
 
-    const res = await apiFetch(
+    const res=await apiFetch(
       ENDPOINTS.payroll.employeeBenefitsDashboard(
         companyId,
         reportingDate
       )
     );
 
-    payrollState.employeeBenefits.dashboard = res?.data || {};
-    payrollState.employeeBenefits.reportingDate = reportingDate;
-    payrollState.employeeBenefits.loaded = true;
+    payrollState.employeeBenefits.dashboard=res?.data||{};
+    payrollState.employeeBenefits.reportingDate=reportingDate;
+    payrollState.employeeBenefits.loaded=true;
 
+    await loadPayrollBenefitDisclosure();
     renderPayrollEmployeeBenefitsDashboard();
   }
 
@@ -68348,6 +68348,7 @@ async function saveEditModal() {
   async function loadPayrollBenefitDisclosure(){
     const reportingDate=$("payrollBenefitReportingDate")?.value||
       payrollState.employeeBenefits.reportingDate||
+      payrollState.reportingDate||
       new Date().toISOString().slice(0,10);
 
     const dateFrom=`${reportingDate.slice(0,4)}-01-01`;
@@ -68364,6 +68365,7 @@ async function saveEditModal() {
       })),
     ]);
 
+    payrollState.employeeBenefits.reportingDate=reportingDate;
     payrollState.employeeBenefits.disclosure=d?.data||{};
     payrollState.employeeBenefits.movementReport=m?.data||{};
     payrollState.employeeBenefits.benefitJournals=j?.items||[];
