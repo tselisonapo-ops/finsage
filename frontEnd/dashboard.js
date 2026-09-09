@@ -69778,58 +69778,96 @@ async function saveEditModal() {
     const postPaymentBtn =
         $("payrollPostDcPaymentBtn");
 
+    console.log(
+        "[DC PAYMENT] Post button lookup:",
+        postPaymentBtn
+    );
+
     if (postPaymentBtn) {
+
+        console.log(
+            "[DC PAYMENT] Attaching POST click handler"
+        );
 
         postPaymentBtn.addEventListener(
             "click",
-            async event => {
+            async function(event) {
 
                 event.preventDefault();
+                event.stopPropagation();
+
+                console.log(
+                    "[DC PAYMENT] ============================="
+                );
 
                 console.log(
                     "[DC PAYMENT] POST BUTTON CLICKED"
                 );
 
                 console.log(
-                    "[DC PAYMENT] payment state:",
+                    "[DC PAYMENT] Button disabled:",
+                    this.disabled
+                );
+
+                console.log(
+                    "[DC PAYMENT] Payment state:",
                     payment
                 );
 
                 console.log(
-                    "[DC PAYMENT] payment preview:",
+                    "[DC PAYMENT] Payment preview:",
                     payment.paymentPreview
                 );
 
                 try {
 
-                    await postPayrollDcPayment();
+                    console.log(
+                        "[DC PAYMENT] Calling postPayrollDcPayment()..."
+                    );
+
+                    const result =
+                        await postPayrollDcPayment();
 
                     console.log(
-                        "[DC PAYMENT] POST PAYMENT COMPLETED"
+                        "[DC PAYMENT] postPayrollDcPayment() returned:",
+                        result
                     );
 
                 } catch (error) {
 
                     console.error(
-                        "[DC PAYMENT] POST PAYMENT FAILED",
+                        "[DC PAYMENT] POST FAILED:",
                         error
                     );
 
+                    console.error(
+                        "[DC PAYMENT] Error message:",
+                        error?.message
+                    );
+
+                    console.error(
+                        "[DC PAYMENT] Error stack:",
+                        error?.stack
+                    );
+
                     showPayrollStatus(
-                        error.message ||
+                        error?.message ||
                         "Failed to post contribution payment.",
                         "error"
                     );
                 }
+
+                console.log(
+                    "[DC PAYMENT] ============================="
+                );
             }
         );
 
     } else {
 
         console.error(
-            "[DC PAYMENT] Post Payment button was not found"
+            "[DC PAYMENT] ❌ POST BUTTON NOT FOUND"
         );
-
     }
   }
 
