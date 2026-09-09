@@ -87571,7 +87571,28 @@ function renderPayrollPayeRunClearing(
         url.toString()
     );
 
-    const token = getToken();
+    /*
+     * Generate the signed export URL.
+     * This uses the existing report export-token
+     * mechanism instead of manually creating the token.
+     */
+    const signedUrl =
+        await getReportExportUrl(
+            companyId,
+            "payroll_statutory_return",
+            url.toString()
+        );
+
+    console.log(
+        "[EMP201 EXPORT SIGNED URL]",
+        signedUrl
+    );
+
+    const finalUrl =
+        toApiUrl(signedUrl);
+
+    const token =
+        getToken();
 
     const headers = {};
 
@@ -87580,14 +87601,15 @@ function renderPayrollPayeRunClearing(
             `Bearer ${token}`;
     }
 
-    const response = await fetch(
-        url.toString(),
-        {
-            method: "GET",
-            headers,
-            credentials: "include",
-        }
-    );
+    const response =
+        await fetch(
+            finalUrl,
+            {
+                method: "GET",
+                headers,
+                credentials: "include",
+            }
+        );
 
     const contentType =
         String(
@@ -87601,7 +87623,7 @@ function renderPayrollPayeRunClearing(
         {
             status: response.status,
             contentType,
-            url: url.toString(),
+            url: finalUrl,
         }
     );
 
@@ -87684,11 +87706,18 @@ function renderPayrollPayeRunClearing(
     const anchor =
         document.createElement("a");
 
-    anchor.href = objectUrl;
-    anchor.download = filename;
-    anchor.style.display = "none";
+    anchor.href =
+        objectUrl;
 
-    document.body.appendChild(anchor);
+    anchor.download =
+        filename;
+
+    anchor.style.display =
+        "none";
+
+    document.body.appendChild(
+        anchor
+    );
 
     anchor.click();
 
