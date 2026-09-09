@@ -69236,17 +69236,34 @@ async function saveEditModal() {
 
     const clearingLabel = selectedBank
         ? [
-              selectedBank.bank_name || selectedBank.bankName || selectedBank.name || "Bank",
-              selectedBank.account_name || selectedBank.accountName || "",
-              (selectedBank.account_number || selectedBank.accountNumber)
-                  ? `(${selectedBank.account_number || selectedBank.accountNumber})`
+              selectedBank.bank_name ||
+              selectedBank.bankName ||
+              selectedBank.name ||
+              "Bank",
+
+              selectedBank.account_name ||
+              selectedBank.accountName ||
+              "",
+
+              (
+                  selectedBank.account_number ||
+                  selectedBank.accountNumber
+              )
+                  ? `(${
+                        selectedBank.account_number ||
+                        selectedBank.accountNumber
+                    })`
                   : ""
-          ].filter(Boolean).join(" ")
-        : (liability.liability_account?.name || "—");
+          ]
+              .filter(Boolean)
+              .join(" ")
+        : (
+              liability.liability_account?.name ||
+              "—"
+          );
 
     /*
-     * Normalise balance fields — loaders store camelCase,
-     * API may return snake_case. Derive outstanding if missing.
+     * Normalise balance fields.
      */
     const recognised =
         Number(
@@ -69278,7 +69295,10 @@ async function saveEditModal() {
     const outstanding =
         Number.isFinite(reportedOutstanding)
             ? reportedOutstanding
-            : Math.max(recognised - historical, 0);
+            : Math.max(
+                  recognised - historical,
+                  0
+              );
 
     const selectedPlanId =
         payment.selectedPlanId || "";
@@ -69288,6 +69308,24 @@ async function saveEditModal() {
 
     const paymentDate =
         payment.paymentDate || "";
+
+    /*
+     * A payment preview is valid only when it
+     * contains a positive payment amount.
+     */
+    const previewAmount =
+        Number(
+            paymentPreview.payment_amount ??
+            paymentPreview.paymentAmount ??
+            0
+        ) || 0;
+
+    const hasPaymentPreview =
+        previewAmount > 0 &&
+        paymentPreview.journal &&
+        Array.isArray(
+            paymentPreview.journal.lines
+        );
 
     el.innerHTML = `
         <div class="payroll-posting-card">
@@ -69309,6 +69347,7 @@ async function saveEditModal() {
 
                 <div>
                     <span>Clearing Account</span>
+
                     <strong>
                         ${esc(clearingLabel)}
                     </strong>
@@ -69316,6 +69355,7 @@ async function saveEditModal() {
 
                 <div>
                     <span>Liability</span>
+
                     <strong>
                         ${money(recognised)}
                     </strong>
@@ -69323,6 +69363,7 @@ async function saveEditModal() {
 
                 <div>
                     <span>Historical Payments</span>
+
                     <strong>
                         ${money(historical)}
                     </strong>
@@ -69330,6 +69371,7 @@ async function saveEditModal() {
 
                 <div>
                     <span>Outstanding</span>
+
                     <strong>
                         ${money(outstanding)}
                     </strong>
@@ -69355,27 +69397,29 @@ async function saveEditModal() {
                                         Select benefit plan
                                     </option>
 
-                                    ${plans.map(plan => `
-                                        <option
-                                            value="${plan.id}"
-                                            ${
-                                                Number(
-                                                    selectedPlanId
-                                                ) ===
-                                                Number(
-                                                    plan.id
-                                                )
-                                                    ? "selected"
-                                                    : ""
-                                            }
-                                        >
-                                            ${esc(
-                                                plan.code
-                                                    ? `${plan.code} — ${plan.name}`
-                                                    : plan.name
-                                            )}
-                                        </option>
-                                    `).join("")}
+                                    ${plans
+                                        .map(plan => `
+                                            <option
+                                                value="${plan.id}"
+                                                ${
+                                                    Number(
+                                                        selectedPlanId
+                                                    ) ===
+                                                    Number(
+                                                        plan.id
+                                                    )
+                                                        ? "selected"
+                                                        : ""
+                                                }
+                                            >
+                                                ${esc(
+                                                    plan.code
+                                                        ? `${plan.code} — ${plan.name}`
+                                                        : plan.name
+                                                )}
+                                            </option>
+                                        `)
+                                        .join("")}
                                 </select>
                             </label>
                         `
@@ -69400,26 +69444,28 @@ async function saveEditModal() {
                             Select bank account
                         </option>
 
-                        ${banks.map(bank => `
-                            <option
-                                value="${bank.id}"
-                                ${
-                                    Number(
-                                        selectedBankId
-                                    ) ===
-                                    Number(bank.id)
-                                        ? "selected"
-                                        : ""
-                                }
-                            >
-                                ${esc(
-                                    bank.account_name ||
-                                    bank.name ||
-                                    bank.account_number ||
-                                    ""
-                                )}
-                            </option>
-                        `).join("")}
+                        ${banks
+                            .map(bank => `
+                                <option
+                                    value="${bank.id}"
+                                    ${
+                                        Number(
+                                            selectedBankId
+                                        ) ===
+                                        Number(bank.id)
+                                            ? "selected"
+                                            : ""
+                                    }
+                                >
+                                    ${esc(
+                                        bank.account_name ||
+                                        bank.name ||
+                                        bank.account_number ||
+                                        ""
+                                    )}
+                                </option>
+                            `)
+                            .join("")}
                     </select>
                 </label>
 
@@ -69489,7 +69535,8 @@ async function saveEditModal() {
                     class="payroll-secondary dark"
                     type="button"
                     ${
-                        outstanding > 0 && selectedBankId
+                        outstanding > 0 &&
+                        selectedBankId
                             ? ""
                             : "disabled"
                     }
@@ -69502,7 +69549,7 @@ async function saveEditModal() {
                     class="payroll-primary"
                     type="button"
                     ${
-                        paymentPreview.payment_amount > 0
+                        hasPaymentPreview
                             ? ""
                             : "disabled"
                     }
@@ -69522,11 +69569,10 @@ async function saveEditModal() {
                 style="margin-top:18px;"
             >
                 ${
-                    paymentPreview &&
-                    paymentPreview.journal
+                    hasPaymentPreview
                         ? renderPayrollDcPaymentJournal(
-                            paymentPreview
-                        )
+                              paymentPreview
+                          )
                         : ""
                 }
             </div>
@@ -69534,10 +69580,14 @@ async function saveEditModal() {
         </div>
     `;
 
+    /*
+     * Benefit plan.
+     */
     $("payrollDcPaymentPlan")
         ?.addEventListener(
             "change",
             async event => {
+
                 payment.selectedPlanId =
                     Number(
                         event.target.value
@@ -69557,7 +69607,8 @@ async function saveEditModal() {
                         payment.payrollRunId,
 
                     benefitPlanId:
-                        payment.selectedPlanId || null,
+                        payment.selectedPlanId ||
+                        null,
 
                     definedContributionRunId:
                         payment.runId,
@@ -69573,18 +69624,22 @@ async function saveEditModal() {
             }
         );
 
+    /*
+     * Bank account.
+     */
     $("payrollDcPaymentBank")
         ?.addEventListener(
             "change",
             async event => {
+
                 payment.selectedBankId =
                     Number(
                         event.target.value
                     ) || null;
 
                 /*
-                 * Bank = clearing account changed:
-                 * the old journal preview is stale.
+                 * Bank changed, therefore any
+                 * existing journal preview is stale.
                  */
                 payment.paymentPreview =
                     null;
@@ -69592,6 +69647,7 @@ async function saveEditModal() {
                 renderPayrollDcPayment();
 
                 try {
+
                     await loadPayrollLiabilityClearing({
                         liabilityType:
                             "defined_contribution",
@@ -69600,7 +69656,8 @@ async function saveEditModal() {
                             payment.payrollRunId,
 
                         benefitPlanId:
-                            payment.selectedPlanId || null,
+                            payment.selectedPlanId ||
+                            null,
 
                         definedContributionRunId:
                             payment.runId,
@@ -69611,16 +69668,23 @@ async function saveEditModal() {
                         referencePrefix:
                             "DC-PAY"
                     });
+
                 } finally {
+
                     renderPayrollDcPayment();
+
                 }
             }
         );
 
+    /*
+     * Payment date.
+     */
     $("payrollDcPaymentDate")
         ?.addEventListener(
             "change",
-            async event => {
+            event => {
+
                 payment.paymentDate =
                     event.target.value;
 
@@ -69628,67 +69692,146 @@ async function saveEditModal() {
             }
         );
 
+    /*
+     * Refresh liability.
+     */
     $("payrollLoadDcLiabilityBtn")
         ?.addEventListener(
             "click",
-            () =>
-                loadPayrollLiabilityClearing({
-                    liabilityType:
-                        "defined_contribution",
+            async () => {
 
-                    payrollRunId:
-                        payment.payrollRunId,
+                try {
 
-                    benefitPlanId:
-                        payment.selectedPlanId || null,
+                    await loadPayrollLiabilityClearing({
+                        liabilityType:
+                            "defined_contribution",
 
-                    definedContributionRunId:
-                        payment.runId,
+                        payrollRunId:
+                            payment.payrollRunId,
 
-                    prefix:
-                        "payrollDcPayment",
+                        benefitPlanId:
+                            payment.selectedPlanId ||
+                            null,
 
-                    referencePrefix:
-                        "DC-PAY"
-                })
-                .then(() => {
+                        definedContributionRunId:
+                            payment.runId,
+
+                        prefix:
+                            "payrollDcPayment",
+
+                        referencePrefix:
+                            "DC-PAY"
+                    });
+
                     renderPayrollDcPayment();
-                })
-                .catch(error => {
+
+                } catch (error) {
+
                     showPayrollStatus(
                         error.message,
                         "error"
                     );
-                })
+
+                }
+            }
         );
 
+    /*
+     * Preview payment.
+     */
     $("payrollPreviewDcPaymentBtn")
         ?.addEventListener(
             "click",
-            () =>
-                previewPayrollDcPayment()
-                    .catch(error => {
-                        showPayrollStatus(
-                            error.message,
-                            "error"
-                        );
-                    })
+            async () => {
+
+                console.log(
+                    "[DC PAYMENT] Preview button clicked"
+                );
+
+                try {
+
+                    await previewPayrollDcPayment();
+
+                    console.log(
+                        "[DC PAYMENT] Preview completed",
+                        payment.paymentPreview
+                    );
+
+                } catch (error) {
+
+                    console.error(
+                        "[DC PAYMENT] Preview failed",
+                        error
+                    );
+
+                    showPayrollStatus(
+                        error.message,
+                        "error"
+                    );
+                }
+            }
         );
 
-    $("payrollPostDcPaymentBtn")
-        ?.addEventListener(
+    /*
+     * POST PAYMENT.
+     */
+    const postPaymentBtn =
+        $("payrollPostDcPaymentBtn");
+
+    if (postPaymentBtn) {
+
+        postPaymentBtn.addEventListener(
             "click",
-            () =>
-                postPayrollDcPayment()
-                    .catch(error => {
-                        showPayrollStatus(
-                            error.message,
-                            "error"
-                        );
-                    })
-        );
-  }
+            async event => {
 
+                event.preventDefault();
+
+                console.log(
+                    "[DC PAYMENT] POST BUTTON CLICKED"
+                );
+
+                console.log(
+                    "[DC PAYMENT] payment state:",
+                    payment
+                );
+
+                console.log(
+                    "[DC PAYMENT] payment preview:",
+                    payment.paymentPreview
+                );
+
+                try {
+
+                    await postPayrollDcPayment();
+
+                    console.log(
+                        "[DC PAYMENT] POST PAYMENT COMPLETED"
+                    );
+
+                } catch (error) {
+
+                    console.error(
+                        "[DC PAYMENT] POST PAYMENT FAILED",
+                        error
+                    );
+
+                    showPayrollStatus(
+                        error.message ||
+                        "Failed to post contribution payment.",
+                        "error"
+                    );
+                }
+            }
+        );
+
+    } else {
+
+        console.error(
+            "[DC PAYMENT] Post Payment button was not found"
+        );
+
+    }
+  }
 
   function renderPayrollDcPaymentJournal(preview) {
     const journal =
