@@ -84794,6 +84794,24 @@ async function saveEditModal() {
       ),
     ]);
 
+    console.log(
+      "STATUTORY RETURNS RAW RESPONSE",
+      returns
+    );
+
+    console.log(
+      "STATUTORY CALENDAR RAW",
+      returns?.calendar
+    );
+
+    console.log(
+      "STATUTORY CALENDAR COUNT",
+      Array.isArray(returns?.calendar)
+        ? returns.calendar.length
+        : "NOT ARRAY"
+    );
+
+
     payrollState.statutory.mappings =
       mappings?.items || [];
 
