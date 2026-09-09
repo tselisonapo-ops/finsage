@@ -33,6 +33,7 @@ from BackEnd.Services.reporting.statement_exporters import (
     export_statement_pdf,
     export_statement_xlsx,
     export_fs_notes_pdf,
+    _export_payroll_statutory_return_xlsx
 )
 from BackEnd.Services.reporting.control_reports import (
     build_ap_aging_report,
@@ -2836,37 +2837,39 @@ def export_payroll_defined_benefit(
     methods=["GET"],
 )
 def export_payroll_statutory_return(
-    company_id:int,
-    return_id:int,
+    company_id: int,
+    return_id: int,
 ):
-    deny=_deny_report_export_access(
+    deny = _deny_report_export_access(
         company_id,
         "payroll_statutory_return",
     )
+
     if deny:
         return deny
 
     try:
-        db=_get_db()
-        payload=db.payroll_statutory_return_export_payload(
+        db = _get_db()
+
+        payload = db.payroll_statutory_return_export_payload(
             company_id,
             return_id,
         )
 
-        return _export_statement_payload(
-            payload,
-            f"statutory_return_{return_id}",
+        return _export_payroll_statutory_return_xlsx(
+            payload
         )
 
     except Exception as error:
         current_app.logger.exception(
             "statutory return export failed"
         )
-        return jsonify({
-            "ok":False,
-            "error":str(error),
-        }),400
 
+        return jsonify({
+            "ok": False,
+            "error": str(error),
+        }), 400
+    
 @report_bp.route(
     "/api/companies/<int:company_id>/disclosures/"
     "payroll/employee-benefits-pack/export",

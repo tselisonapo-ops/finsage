@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from typing import Any, Dict, List, Tuple
-
+from flask import send_file
 from flask import Response, request
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -1369,4 +1369,275 @@ def export_fs_notes_pdf(notes: List[Dict[str, Any]], filename: str = "financial_
         pdf_bytes,
         mimetype="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+def _export_payroll_statutory_return_xlsx(
+    payload: dict,
+):
+    meta = payload.get("meta") or {}
+    sections = payload.get("sections") or []
+    totals = payload.get("totals") or {}
+
+    workbook = Workbook()
+
+    worksheet = workbook.active
+    worksheet.title = "EMP201"
+
+    row_no = 1
+
+    worksheet.cell(
+        row=row_no,
+        column=1,
+        value=payload.get("title") or "EMP201",
+    )
+
+    worksheet.cell(
+        row=row_no,
+        column=1,
+    ).font = Font(
+        bold=True,
+        size=16,
+    )
+
+    row_no += 2
+
+    metadata = [
+        (
+            "Authority",
+            meta.get("authority_code"),
+        ),
+        (
+            "Return Type",
+            meta.get("return_type"),
+        ),
+        (
+            "Return Number",
+            meta.get("return_no"),
+        ),
+        (
+            "Company ID",
+            meta.get("company_id"),
+        ),
+        (
+            "Period Start",
+            meta.get("period_start"),
+        ),
+        (
+            "Period End",
+            meta.get("period_end"),
+        ),
+        (
+            "Status",
+            meta.get("status"),
+        ),
+    ]
+
+    for label, value in metadata:
+        worksheet.cell(
+            row=row_no,
+            column=1,
+            value=label,
+        ).font = Font(
+            bold=True
+        )
+
+        worksheet.cell(
+            row=row_no,
+            column=2,
+            value=value,
+        )
+
+        row_no += 1
+
+    row_no += 1
+
+    for section in sections:
+        title = (
+            section.get("title")
+            or "Statutory Return"
+        )
+
+        worksheet.cell(
+            row=row_no,
+            column=1,
+            value=title,
+        ).font = Font(
+            bold=True,
+            size=13,
+        )
+
+        row_no += 1
+
+        headers = [
+            "Employee No",
+            "Employee Name",
+            "Tax Number",
+            "Department",
+            "Source Code",
+            "Description",
+            "Gross Remuneration",
+            "Taxable Remuneration",
+            "Employee Amount",
+            "Employer Amount",
+            "Total",
+        ]
+
+        for column_no, header in enumerate(
+            headers,
+            start=1,
+        ):
+            cell = worksheet.cell(
+                row=row_no,
+                column=column_no,
+                value=header,
+            )
+
+            cell.font = Font(
+                bold=True
+            )
+
+            cell.alignment = Alignment(
+                horizontal="center"
+            )
+
+        row_no += 1
+
+        for item in section.get("rows") or []:
+            values = [
+                item.get("employee_no"),
+                item.get("employee_name"),
+                item.get("tax_number"),
+                item.get("department"),
+                item.get("source_code"),
+                item.get("description"),
+                item.get("gross_remuneration", 0),
+                item.get("taxable_remuneration", 0),
+                item.get("employee_amount", 0),
+                item.get("employer_amount", 0),
+                item.get("total_amount", 0),
+            ]
+
+            for column_no, value in enumerate(
+                values,
+                start=1,
+            ):
+                worksheet.cell(
+                    row=row_no,
+                    column=column_no,
+                    value=value,
+                )
+
+            row_no += 1
+
+        row_no += 1
+
+    worksheet.cell(
+        row=row_no,
+        column=1,
+        value="RETURN TOTALS",
+    ).font = Font(
+        bold=True,
+        size=13,
+    )
+
+    row_no += 1
+
+    totals_rows = [
+        (
+            "Employee Count",
+            totals.get("employee_count", 0),
+        ),
+        (
+            "Gross Remuneration",
+            totals.get("gross_remuneration", 0),
+        ),
+        (
+            "Taxable Remuneration",
+            totals.get("taxable_remuneration", 0),
+        ),
+        (
+            "Employee Amount",
+            totals.get("employee_amount", 0),
+        ),
+        (
+            "Employer Amount",
+            totals.get("employer_amount", 0),
+        ),
+        (
+            "Total Payable",
+            totals.get("total_payable", 0),
+        ),
+    ]
+
+    for label, value in totals_rows:
+        worksheet.cell(
+            row=row_no,
+            column=1,
+            value=label,
+        ).font = Font(
+            bold=True
+        )
+
+        worksheet.cell(
+            row=row_no,
+            column=2,
+            value=value,
+        )
+
+        row_no += 1
+
+    for column in worksheet.columns:
+        max_length = 0
+
+        column_letter = (
+            column[0].column_letter
+        )
+
+        for cell in column:
+            try:
+                value_length = len(
+                    str(cell.value)
+                )
+
+                if value_length > max_length:
+                    max_length = value_length
+
+            except Exception:
+                pass
+
+        worksheet.column_dimensions[
+            column_letter
+        ].width = min(
+            max(max_length + 2, 12),
+            40,
+        )
+
+    for row in worksheet.iter_rows():
+        for cell in row:
+            if isinstance(
+                cell.value,
+                (int, float),
+            ):
+                cell.number_format = (
+                    '#,##0.00'
+                )
+
+    output = BytesIO()
+
+    workbook.save(output)
+
+    output.seek(0)
+
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=(
+            f"EMP201_"
+            f"{meta.get('company_id')}_"
+            f"{meta.get('return_id')}.xlsx"
+        ),
+        mimetype=(
+            "application/vnd.openxmlformats-"
+            "officedocument.spreadsheetml.sheet"
+        ),
     )
