@@ -222,6 +222,27 @@
         // Keep these helpers outside try/catch so they are available everywhere.
         const h = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
         const n = (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const formatDisplayDate = (value) => {
+            if (!value) {
+                return "";
+            }
+
+            const date = new Date(value);
+
+            if (Number.isNaN(date.getTime())) {
+                return String(value);
+            }
+
+            return date.toLocaleDateString(
+                "en-GB",
+                {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                    timeZone: "UTC"
+                }
+            );
+        };
 
         try {
             const url = window.ENDPOINTS.taxFiling.preview(company, authority, filingMonth);
@@ -400,7 +421,58 @@
                     <tbody>
             `;
 
-            for (const r of rows) {
+            const visibleRows = rows.filter(r => {
+                const grossIncome =
+                    Number(r?.gross_income || 0);
+
+                const paye =
+                    Number(
+                        r?.paye_deducted ??
+                        r?.paye ??
+                        0
+                    );
+
+                const uifEmployee =
+                    Number(
+                        r?.uif_employee ??
+                        r?.uif_deducted ??
+                        0
+                    );
+
+                const uifEmployer =
+                    Number(
+                        r?.uif_employer || 0
+                    );
+
+                const sdl =
+                    Number(
+                        r?.sdl ??
+                        r?.sdl_deducted ??
+                        0
+                    );
+
+                const eti =
+                    Number(
+                        r?.eti ??
+                        r?.eti_amount ??
+                        0
+                    );
+
+                const netPay =
+                    Number(r?.net_pay || 0);
+
+                return (
+                    grossIncome !== 0 ||
+                    paye !== 0 ||
+                    uifEmployee !== 0 ||
+                    uifEmployer !== 0 ||
+                    sdl !== 0 ||
+                    eti !== 0 ||
+                    netPay !== 0
+                );
+            });
+
+            for (const r of visibleRows) {
 
                 const employeeName = [
                     r.first_name,
@@ -408,29 +480,21 @@
                 ].filter(Boolean).join(" ");
 
                 const periodStart =
-                    r.period_start_date
-                        ? String(r.period_start_date).slice(0, 10)
-                        : "";
+                    formatDisplayDate(r.period_start_date);
 
                 const periodEnd =
-                    r.period_end_date
-                        ? String(r.period_end_date).slice(0, 10)
-                        : "";
+                    formatDisplayDate(r.period_end_date);
 
                 const paymentDate =
-                    r.payment_date
-                        ? String(r.payment_date).slice(0, 10)
-                        : "";
+                    formatDisplayDate(r.payment_date);
 
                 const dob =
-                    r.date_of_birth
-                        ? String(r.date_of_birth).slice(0, 10)
-                        : "";
+                    formatDisplayDate(r.date_of_birth);
 
                 const employmentStart =
-                    r.employment_start_date
-                        ? String(r.employment_start_date).slice(0, 10)
-                        : "";
+                    formatDisplayDate(
+                        r.employment_start_date
+                    );
 
                 html += `
                     <tr>
@@ -580,13 +644,14 @@
             html += `</tbody>`;
 
             const sumField = (field) =>
-                rows.reduce(
-                    (sum, row) => sum + Number(row?.[field] || 0),
+                visibleRows.reduce(
+                    (sum, row) =>
+                        sum + Number(row?.[field] || 0),
                     0
                 );
 
             const sumFirstAvailable = (...fields) =>
-                rows.reduce((sum, row) => {
+                visibleRows.reduce((sum, row) => {
                     for (const field of fields) {
                         if (row?.[field] !== undefined && row?.[field] !== null) {
                             return sum + Number(row[field] || 0);
@@ -614,7 +679,7 @@
                     sumFirstAvailable("uif_employer"),
 
                 uif_total:
-                    rows.reduce((sum, row) => {
+                    visibleRows.reduce((sum, row) => {
                         const employee = Number(
                             row?.uif_employee ??
                             row?.uif_deducted ??
@@ -680,7 +745,7 @@
 
                         <td colspan="8"
                             style="padding:10px 12px;border-top:2px solid #e2e8f0;">
-                            TOTALS — ${rows.length} Employees
+                            TOTALS — ${visibleRows.length} Employees
                         </td>
 
                         <td style="padding:10px 12px;text-align:right;border-top:2px solid #e2e8f0;">
