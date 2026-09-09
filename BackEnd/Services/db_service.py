@@ -168502,15 +168502,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
     def payroll_statutory_return_calculate(
         self,
-        company_id:int,
-        return_id:int,
+        company_id: int,
+        return_id: int,
         user_id=None,
-    )->dict:
-        company_id=int(company_id)
-        return_id=int(return_id)
-        schema=self.company_schema(company_id)
+    ) -> dict:
 
-        statutory=self.payroll_statutory_return_get(
+        company_id = int(company_id)
+        return_id = int(return_id)
+        schema = self.company_schema(company_id)
+
+        statutory = self.payroll_statutory_return_get(
             company_id,
             return_id,
         )
@@ -168518,7 +168519,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not statutory:
             raise ValueError("Statutory return not found")
 
-        if statutory["status"] in(
+        if statutory["status"] in (
             "approved",
             "submitted",
             "accepted",
@@ -168529,7 +168530,46 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "cannot be recalculated"
             )
 
-        mappings=self.fetch_all(f"""
+        # ------------------------------------------------------------
+        # STATUTORY RETURN / MAPPING RESOLUTION
+        #
+        # The statutory return stores the actual external filing
+        # return type, e.g.:
+        #
+        #     SARS / EMP201
+        #
+        # The statutory item mappings use an internal payroll
+        # mapping group:
+        #
+        #     SARS / payroll_tax
+        #
+        # EMP201 therefore resolves to the payroll_tax mapping group.
+        #
+        # The statutory return record itself is NOT modified.
+        # ------------------------------------------------------------
+
+        statutory_return_type = str(
+            statutory.get("return_type") or ""
+        ).strip().lower()
+
+        statutory_authority_code = str(
+            statutory.get("authority_code") or ""
+        ).strip().upper()
+
+        mapping_return_type = statutory_return_type
+
+        if (
+            statutory_authority_code == "SARS"
+            and statutory_return_type == "emp201"
+        ):
+            mapping_return_type = "payroll_tax"
+
+        # ------------------------------------------------------------
+        # Load active mappings for this statutory return.
+        # ------------------------------------------------------------
+
+        mappings = self.fetch_all(
+            f"""
             SELECT *
             FROM {schema}.payroll_statutory_item_mappings
             WHERE company_id=%s
@@ -168539,33 +168579,68 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ORDER BY
                 display_order,
                 id;
-        """,(
-            company_id,
-            statutory["return_type"],
-            statutory["authority_code"],
-        ))
+            """,
+            (
+                company_id,
+                mapping_return_type,
+                statutory_authority_code,
+            ),
+        )
 
         if not mappings:
             raise ValueError(
                 "No statutory mappings are configured "
-                "for this return type"
+                f"for return type "
+                f"'{statutory_return_type}' "
+                f"under authority "
+                f"'{statutory_authority_code}' "
+                f"(mapping type '{mapping_return_type}')"
             )
 
-        self.execute_sql(f"""
+        # ------------------------------------------------------------
+        # Clear previously calculated statutory lines.
+        #
+        # This allows a draft return to be recalculated safely.
+        # ------------------------------------------------------------
+
+        self.execute_sql(
+            f"""
             DELETE FROM {schema}.payroll_statutory_return_lines
             WHERE company_id=%s
             AND statutory_return_run_id=%s;
-        """,(
-            company_id,
-            return_id,
-        ))
+            """,
+            (
+                company_id,
+                return_id,
+            ),
+        )
 
-        inserted=0
+        inserted = 0
+
+        # ------------------------------------------------------------
+        # Process each statutory mapping.
+        #
+        # For SARS EMP201 this will normally be:
+        #
+        #   PAYE
+        #   UIF_EMP
+        #   UIF_ER
+        #   SDL
+        #
+        # Each item is sourced from the posted payroll run lines.
+        # ------------------------------------------------------------
 
         for mapping in mappings:
-            source_code=mapping.get("source_code")
-            code_filter="AND l.code=%s" if source_code else ""
-            params=[
+
+            source_code = mapping.get("source_code")
+
+            code_filter = (
+                "AND l.code=%s"
+                if source_code
+                else ""
+            )
+
+            params = [
                 company_id,
                 statutory["period_start"],
                 statutory["period_end"],
@@ -168575,7 +168650,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if source_code:
                 params.append(source_code)
 
-            rows=self.fetch_all(f"""
+            rows = self.fetch_all(
+                f"""
                 SELECT
                     r.id AS payroll_run_id,
                     re.employee_id,
@@ -168586,8 +168662,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         e.last_name
                     ) AS employee_name,
                     e.tax_number,
-                    COALESCE(d.name,'Unassigned')
-                        AS department_name,
+                    COALESCE(
+                        d.name,
+                        'Unassigned'
+                    ) AS department_name,
                     re.gross_pay,
                     re.taxable_income,
                     l.code AS source_code,
@@ -168595,46 +168673,90 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     l.description AS source_description,
                     l.amount,
                     l.metadata
+
                 FROM {schema}.payroll_run_lines l
+
                 JOIN {schema}.payroll_runs r
                 ON r.company_id=l.company_id
                 AND r.id=l.payroll_run_id
+
                 JOIN {schema}.payroll_run_employees re
                 ON re.company_id=l.company_id
                 AND re.id=l.run_employee_id
+
                 JOIN {schema}.payroll_employees e
                 ON e.company_id=l.company_id
                 AND e.id=l.employee_id
+
                 LEFT JOIN {schema}.payroll_departments d
                 ON d.company_id=e.company_id
                 AND d.id=e.department_id
+
                 WHERE l.company_id=%s
+
                 AND r.period_start=%s
                 AND r.period_end=%s
+
                 AND r.status='posted'
+
                 AND l.line_type=%s
+
                 {code_filter}
+
                 ORDER BY
                     e.employee_no,
                     l.id;
-            """,tuple(params))
+                """,
+                tuple(params),
+            )
+
+            # --------------------------------------------------------
+            # Convert payroll lines into statutory return lines.
+            # --------------------------------------------------------
 
             for row in rows:
-                amount=_payroll_money(row.get("amount"))
-                employee_amount=(
-                    amount
-                    if mapping["source_line_type"]
-                    in("tax","deduction")
-                    else Decimal("0")
+
+                amount = _payroll_money(
+                    row.get("amount")
                 )
-                employer_amount=(
+
+                source_line_type = str(
+                    row.get("source_line_type")
+                    or mapping["source_line_type"]
+                    or ""
+                ).strip().lower()
+
+                # Employee-side statutory amounts:
+                #
+                # PAYE
+                # UIF Employee
+                #
+                employee_amount = (
                     amount
-                    if mapping["source_line_type"]
-                    =="employer_contribution"
+                    if source_line_type in (
+                        "tax",
+                        "deduction",
+                    )
                     else Decimal("0")
                 )
 
-                self.fetch_one(f"""
+                # Employer-side statutory amounts:
+                #
+                # UIF Employer
+                # SDL
+                #
+                employer_amount = (
+                    amount
+                    if source_line_type == "employer_contribution"
+                    else Decimal("0")
+                )
+
+                total_amount = _payroll_money(
+                    employee_amount + employer_amount
+                )
+
+                self.fetch_one(
+                    f"""
                     INSERT INTO {schema}.payroll_statutory_return_lines(
                         company_id,
                         statutory_return_run_id,
@@ -168660,114 +168782,237 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         %s,%s,%s,%s,%s,%s,%s,%s,%s
                     )
                     RETURNING id;
-                """,(
-                    company_id,
-                    return_id,
-                    row.get("payroll_run_id"),
-                    row.get("employee_id"),
-                    row.get("employee_no"),
-                    row.get("employee_name"),
-                    row.get("tax_number"),
-                    row.get("department_name"),
-                    mapping["schedule_section"],
-                    row.get("source_line_type")
-                    or mapping["source_line_type"],
-                    row.get("source_code"),
-                    row.get("source_description"),
-                    _payroll_money(row.get("gross_pay")),
-                    _payroll_money(
-                        row.get("taxable_income")
-                    ),
-                    employee_amount,
-                    employer_amount,
-                    _payroll_money(
-                        employee_amount+employer_amount
-                    ),
-                    Json(row.get("metadata") or {}),
-                ))
-                inserted+=1
+                    """,
+                    (
+                        company_id,
+                        return_id,
+                        row.get("payroll_run_id"),
+                        row.get("employee_id"),
+                        row.get("employee_no"),
+                        row.get("employee_name"),
+                        row.get("tax_number"),
+                        row.get("department_name"),
 
-        totals=self.fetch_one(f"""
+                        mapping["schedule_section"],
+
+                        source_line_type,
+                        row.get("source_code"),
+                        row.get("source_description"),
+
+                        _payroll_money(
+                            row.get("gross_pay")
+                        ),
+
+                        _payroll_money(
+                            row.get("taxable_income")
+                        ),
+
+                        employee_amount,
+                        employer_amount,
+                        total_amount,
+
+                        Json(
+                            row.get("metadata") or {}
+                        ),
+                    ),
+                )
+
+                inserted += 1
+
+        # ------------------------------------------------------------
+        # Calculate employee/remuneration totals.
+        #
+        # Gross and taxable remuneration must only be counted once
+        # per employee, even though an employee can have multiple
+        # statutory lines (PAYE, UIF, SDL, etc.).
+        # ------------------------------------------------------------
+
+        totals = self.fetch_one(
+            f"""
             SELECT
                 COUNT(DISTINCT employee_id)::INT
                     AS employee_count,
-                COALESCE(SUM(gross_remuneration),0)
-                    AS gross_remuneration,
-                COALESCE(SUM(taxable_remuneration),0)
-                    AS taxable_remuneration
+
+                COALESCE(
+                    SUM(gross_remuneration),
+                    0
+                ) AS gross_remuneration,
+
+                COALESCE(
+                    SUM(taxable_remuneration),
+                    0
+                ) AS taxable_remuneration
+
             FROM(
                 SELECT
                     employee_id,
-                    MAX(gross_remuneration) AS gross_remuneration,
-                    MAX(taxable_remuneration) AS taxable_remuneration
+
+                    MAX(gross_remuneration)
+                        AS gross_remuneration,
+
+                    MAX(taxable_remuneration)
+                        AS taxable_remuneration
+
                 FROM {schema}.payroll_statutory_return_lines
+
                 WHERE company_id=%s
                 AND statutory_return_run_id=%s
+
                 GROUP BY employee_id
             ) x;
-        """,(
-            company_id,
-            return_id,
-        )) or {}
+            """,
+            (
+                company_id,
+                return_id,
+            ),
+        ) or {}
 
-        amount_totals=self.fetch_one(f"""
+        # ------------------------------------------------------------
+        # Calculate statutory liability totals.
+        #
+        # Employee amount:
+        #     PAYE + employee UIF
+        #
+        # Employer amount:
+        #     employer UIF + SDL
+        #
+        # Total:
+        #     employee amount + employer amount
+        # ------------------------------------------------------------
+
+        amount_totals = self.fetch_one(
+            f"""
             SELECT
-                COALESCE(SUM(employee_amount),0)
-                    AS employee_amount,
-                COALESCE(SUM(employer_amount),0)
-                    AS employer_amount,
-                COALESCE(SUM(total_amount),0)
-                    AS total_payable
+
+                COALESCE(
+                    SUM(employee_amount),
+                    0
+                ) AS employee_amount,
+
+                COALESCE(
+                    SUM(employer_amount),
+                    0
+                ) AS employer_amount,
+
+                COALESCE(
+                    SUM(total_amount),
+                    0
+                ) AS total_payable
+
             FROM {schema}.payroll_statutory_return_lines
+
             WHERE company_id=%s
             AND statutory_return_run_id=%s;
-        """,(
-            company_id,
-            return_id,
-        )) or {}
+            """,
+            (
+                company_id,
+                return_id,
+            ),
+        ) or {}
 
-        totals["employee_amount"]=amount_totals.get("employee_amount")
-        totals["employer_amount"]=amount_totals.get("employer_amount")
-        totals["total_payable"]=amount_totals.get("total_payable")
+        totals["employee_amount"] = (
+            amount_totals.get(
+                "employee_amount"
+            )
+        )
 
-        self.fetch_one(f"""
+        totals["employer_amount"] = (
+            amount_totals.get(
+                "employer_amount"
+            )
+        )
+
+        totals["total_payable"] = (
+            amount_totals.get(
+                "total_payable"
+            )
+        )
+
+        # ------------------------------------------------------------
+        # Update the statutory return header.
+        # ------------------------------------------------------------
+
+        self.fetch_one(
+            f"""
             UPDATE {schema}.payroll_statutory_return_runs
+
             SET
                 status='calculated',
+
                 employee_count=%s,
+
                 gross_remuneration=%s,
+
                 taxable_remuneration=%s,
+
                 employee_amount=%s,
+
                 employer_amount=%s,
+
                 total_payable=%s,
+
                 calculated_by_user_id=%s,
+
                 calculated_at=NOW(),
+
                 updated_by_user_id=%s,
+
                 updated_at=NOW()
-            WHERE company_id=%s AND id=%s
+
+            WHERE company_id=%s
+            AND id=%s
+
             RETURNING id;
-        """,(
-            int(totals.get("employee_count") or 0),
-            _payroll_money(
-                totals.get("gross_remuneration")
+            """,
+            (
+                int(
+                    totals.get(
+                        "employee_count"
+                    ) or 0
+                ),
+
+                _payroll_money(
+                    totals.get(
+                        "gross_remuneration"
+                    )
+                ),
+
+                _payroll_money(
+                    totals.get(
+                        "taxable_remuneration"
+                    )
+                ),
+
+                _payroll_money(
+                    totals.get(
+                        "employee_amount"
+                    )
+                ),
+
+                _payroll_money(
+                    totals.get(
+                        "employer_amount"
+                    )
+                ),
+
+                _payroll_money(
+                    totals.get(
+                        "total_payable"
+                    )
+                ),
+
+                user_id,
+                user_id,
+
+                company_id,
+                return_id,
             ),
-            _payroll_money(
-                totals.get("taxable_remuneration")
-            ),
-            _payroll_money(
-                totals.get("employee_amount")
-            ),
-            _payroll_money(
-                totals.get("employer_amount")
-            ),
-            _payroll_money(
-                totals.get("total_payable")
-            ),
-            user_id,
-            user_id,
-            company_id,
-            return_id,
-        ))
+        )
+
+        # ------------------------------------------------------------
+        # A return with no matched payroll lines cannot be considered
+        # successfully calculated.
+        # ------------------------------------------------------------
 
         if not inserted:
             raise ValueError(
