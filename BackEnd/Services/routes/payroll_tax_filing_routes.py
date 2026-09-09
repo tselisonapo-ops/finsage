@@ -463,36 +463,33 @@ def export_tax_filing(company_id: int):
             period_end=period_end_date
         )
 
+        current_app.logger.warning("=== TAX FILING EXPORT DATA ===")
+        current_app.logger.warning("authority_code: %s", authority_code)
+        current_app.logger.warning("period_start: %s", period_start_date)
+        current_app.logger.warning("period_end: %s", period_end_date)
+        current_app.logger.warning("employees_loaded: %s", len(employees))
+        current_app.logger.warning("employees_validated: %s", len(valid_employees))
+        current_app.logger.warning("mapped_records: %s", len(mapped_data.get('records', [])))
+
         current_app.logger.warning(
-            "=== TAX FILING EXPORT DATA ==="
-        )
-        current_app.logger.warning(
-            "authority_code: %s",
-            authority_code
-        )
-        current_app.logger.warning(
-            "period_start: %s",
-            period_start_date
-        )
-        current_app.logger.warning(
-            "period_end: %s",
-            period_end_date
-        )
-        current_app.logger.warning(
-            "employees_loaded: %s",
-            len(employees)
-        )
-        current_app.logger.warning(
-            "employees_validated: %s",
-            len(valid_employees)
-        )
-        current_app.logger.warning(
-            "mapped_records: %s",
-            len(mapped_data.get('records', []))
+            "FIRST RAW EMPLOYEE: %s",
+            employees[0] if employees else None
         )
 
-        current_app.logger.warning("EXPORT EMPLOYER INFO: %s", mapping_employer_info)
-        
+        current_app.logger.warning(
+            "FIRST VALID EMPLOYEE: %s",
+            valid_employees[0] if valid_employees else None
+        )
+
+        current_app.logger.warning(
+            "FIRST MAPPED RECORD: %s",
+            (mapped_data.get('records') or [None])[0]
+        )
+
+        current_app.logger.warning(
+            "MAPPED DATA KEYS: %s",
+            list(mapped_data.keys())
+        )
         # Generate file content based on format
         file_content, filename, mime_type = generate_export_file(
             authority_code=authority_code,
