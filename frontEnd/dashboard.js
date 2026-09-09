@@ -84916,60 +84916,100 @@ async function saveEditModal() {
       {
         code:"SARS",
         name:"South African Revenue Service",
-        description:"EMP201, EMP501, IRP5 / IT3(a), PAYE, UIF, SDL and ETI"
+        description:"EMP201, EMP501, IRP5 / IT3(a), PAYE, UIF, SDL and ETI",
       },
       {
         code:"RSL",
         name:"Revenue Services Lesotho",
-        description:"PAYE"
+        description:"PAYE",
       },
       {
         code:"BURS",
         name:"Botswana Unified Revenue Service",
-        description:"PAYE"
-      }
+        description:"PAYE",
+      },
     ];
 
     el.innerHTML=`
-      <div class="section-header">
-        <div>
-          <h2>Statutory Payroll Returns</h2>
-          <p class="muted">Select a statutory authority to manage payroll returns.</p>
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Statutory Returns Dashboard</h3>
+            <p class="payroll-muted">
+              Select a statutory authority to manage its returns.
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div class="statutory-authority-grid">
-        ${authorities.map(a=>{
-          const count=items.filter(
-            r=>String(r.authority_code||"").toUpperCase()===a.code
-          ).length;
+        <div style="
+          display:grid;
+          grid-template-columns:
+            repeat(auto-fit,minmax(240px,1fr));
+          gap:16px;
+          margin-top:20px;
+        ">
+          ${authorities.map(a=>{
+            const count=items.filter(item=>
+              String(item.authority_code||"")
+                .toUpperCase()===a.code
+            ).length;
 
-          return `
-            <button
-              type="button"
-              class="statutory-authority-card"
-              data-statutory-authority="${esc(a.code)}"
-            >
-              <div class="statutory-authority-card-header">
-                <strong>${esc(a.code)}</strong>
-                <span class="badge">${count}</span>
-              </div>
-              <h3>${esc(a.name)}</h3>
-              <p>${esc(a.description)}</p>
-            </button>
-          `;
-        }).join("")}
+            return `
+              <button
+                type="button"
+                class="payroll-card"
+                data-statutory-authority="${a.code}"
+                style="
+                  text-align:left;
+                  cursor:pointer;
+                  border:1px solid #e2e8f0;
+                  background:#fff;
+                "
+              >
+                <div style="
+                  font-size:18px;
+                  font-weight:700;
+                  margin-bottom:6px;
+                ">
+                  ${esc(a.code)}
+                </div>
+
+                <div style="
+                  font-weight:600;
+                  color:#334155;
+                ">
+                  ${esc(a.name)}
+                </div>
+
+                <div class="payroll-muted">
+                  ${esc(a.description)}
+                </div>
+
+                <div style="
+                  margin-top:14px;
+                  font-size:13px;
+                  color:#64748b;
+                ">
+                  ${count}
+                  return${count===1?"":"s"}
+                </div>
+              </button>
+            `;
+          }).join("")}
+        </div>
       </div>
     `;
 
-    el.querySelectorAll("[data-statutory-authority]").forEach(btn=>{
-      btn.addEventListener(
-        "click",
-        ()=>openPayrollStatutoryAuthority(btn.dataset.statutoryAuthority)
-      );
+    el.querySelectorAll(
+      "[data-statutory-authority]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        openPayrollStatutoryAuthority(
+          btn.dataset.statutoryAuthority
+        );
+      });
     });
   }
-
 
   function renderPayrollStatutoryReturns(targetId){
     const el=$(targetId);
