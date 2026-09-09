@@ -155765,12 +155765,30 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             all_lines,
         )
 
+        print(
+            "PAYROLL DEBUG FINAL EMPLOYEE RESULT:",
+            employee_id,
+            {
+                "gross":str(gross),
+                "paye":str(paye),
+                "employee_uif":str(uif_employee),
+                "employer_uif":str(uif_employer),
+                "employer_contributions":
+                    str(employer_contributions),
+                "employer_cost":
+                    str(employer_cost),
+                "net_pay":
+                    str(net_pay),
+            },
+        )
+
         return{
             "skipped":False,
             "employee_id":employee_id,
             "run_employee_id":run_employee["id"],
             "gross":gross,
             "deductions":total_deductions,
+            "employer_contributions":employer_contributions,
             "employer":employer_contributions,
             "net":net_pay,
         }
