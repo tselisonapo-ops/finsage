@@ -84859,41 +84859,37 @@ async function saveEditModal() {
     const calendar =
       payrollState.statutory.calendar || [];
 
+    const periods = [...calendar]
+      .filter(period =>
+        period &&
+        period.period_start
+      )
+      .sort((a, b) => {
+        return String(a.period_start)
+          .slice(0, 10)
+          .localeCompare(
+            String(b.period_start)
+              .slice(0, 10)
+          );
+      });
+
     const months = [];
 
-    [...calendar]
-      .sort((a, b) => {
-        const dateA = String(
-          a.period_start ||
-          a.periodStart ||
-          ""
-        ).slice(0, 10);
+    periods.forEach(period => {
+      const periodStart =
+        String(period.period_start)
+          .slice(0, 10);
 
-        const dateB = String(
-          b.period_start ||
-          b.periodStart ||
-          ""
-        ).slice(0, 10);
+      const month =
+        periodStart.slice(0, 7);
 
-        return dateA.localeCompare(dateB);
-      })
-      .forEach(period => {
-        const periodStart = String(
-          period.period_start ||
-          period.periodStart ||
-          ""
-        ).slice(0, 10);
-
-        if (!periodStart) {
-          return;
-        }
-
-        const month = periodStart.slice(0, 7);
-
-        if (!months.includes(month)) {
-          months.push(month);
-        }
-      });
+      if (
+        month &&
+        !months.includes(month)
+      ) {
+        months.push(month);
+      }
+    });
 
     select.innerHTML = `
       <option value="">
@@ -84901,19 +84897,21 @@ async function saveEditModal() {
       </option>
 
       ${months.map(month => {
-        const [year, monthNumber] = month.split("-");
+        const [year, monthNumber] =
+          month.split("-");
 
-        const label = new Date(
-          Number(year),
-          Number(monthNumber) - 1,
-          1
-        ).toLocaleString(
-          "en-US",
-          {
-            month: "long",
-            year: "numeric"
-          }
-        );
+        const label =
+          new Date(
+            Number(year),
+            Number(monthNumber) - 1,
+            1
+          ).toLocaleString(
+            "en-US",
+            {
+              month: "long",
+              year: "numeric"
+            }
+          );
 
         return `
           <option value="${esc(month)}">
