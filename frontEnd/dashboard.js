@@ -87539,13 +87539,21 @@ function renderPayrollPayeRunClearing(
     );
   }
 
-  async function exportPayrollStatutoryReturn(item){
-    if(!item?.id)return;
+  async function downloadPayrollStatutoryReturn(
+    companyId,
+    returnId,
+    format = "xlsx"
+  ) {
+    if (!companyId || !returnId) {
+        throw new Error(
+            "Company ID and statutory return ID are required"
+        );
+    }
 
     const exportUrl =
         ENDPOINTS.reports.payrollStatutoryReturnExport(
-            cid(),
-            item.id
+            companyId,
+            returnId
         );
 
     const url = new URL(
@@ -87553,11 +87561,174 @@ function renderPayrollPayeRunClearing(
         window.location.origin
     );
 
-    url.searchParams.set("format","xlsx");
+    url.searchParams.set(
+        "format",
+        format
+    );
 
-    await downloadUrl(
+    console.log(
+        "[EMP201 EXPORT REQUEST]",
+        url.toString()
+    );
+
+    const token = getToken();
+
+    const headers = {};
+
+    if (token) {
+        headers.Authorization =
+            `Bearer ${token}`;
+    }
+
+    const response = await fetch(
         url.toString(),
-        "payroll_statutory_return"
+        {
+            method: "GET",
+            headers,
+            credentials: "include",
+        }
+    );
+
+    const contentType =
+        String(
+            response.headers.get(
+                "content-type"
+            ) || ""
+        ).toLowerCase();
+
+    console.log(
+        "[EMP201 EXPORT RESPONSE]",
+        {
+            status: response.status,
+            contentType,
+            url: url.toString(),
+        }
+    );
+
+    if (!response.ok) {
+        const text =
+            await response.text();
+
+        console.error(
+            "[EMP201 EXPORT FAILED]",
+            {
+                status: response.status,
+                body: text,
+            }
+        );
+
+        let message = text;
+
+        try {
+            const parsed =
+                JSON.parse(text);
+
+            message =
+                parsed.error ||
+                parsed.message ||
+                text;
+
+        } catch (_) {}
+
+        throw new Error(
+            `EMP201 export failed (${response.status}): ` +
+            `${String(message).slice(0, 500)}`
+        );
+    }
+
+    const blob =
+        await response.blob();
+
+    if (!blob || blob.size === 0) {
+        throw new Error(
+            "EMP201 export returned an empty file"
+        );
+    }
+
+    const objectUrl =
+        URL.createObjectURL(blob);
+
+    const disposition =
+        response.headers.get(
+            "content-disposition"
+        ) || "";
+
+    const utf8Match =
+        disposition.match(
+            /filename\*=UTF-8''([^;]+)/i
+        );
+
+    const normalMatch =
+        disposition.match(
+            /filename="?([^";]+)"?/i
+        );
+
+    let filename =
+        utf8Match?.[1] ||
+        normalMatch?.[1];
+
+    if (filename) {
+        try {
+            filename =
+                decodeURIComponent(
+                    filename
+                );
+        } catch (_) {}
+    }
+
+    if (!filename) {
+        filename =
+            `EMP201_${companyId}_${returnId}.${format}`;
+    }
+
+    const anchor =
+        document.createElement("a");
+
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    anchor.style.display = "none";
+
+    document.body.appendChild(anchor);
+
+    anchor.click();
+
+    anchor.remove();
+
+    setTimeout(() => {
+        URL.revokeObjectURL(
+            objectUrl
+        );
+    }, 30000);
+
+    console.log(
+        "[EMP201 EXPORT COMPLETE]",
+        filename
+    );
+
+    return {
+        ok: true,
+        filename,
+        size: blob.size,
+    };
+  }
+
+  async function exportPayrollStatutoryReturn(item) {
+    if (!item?.id) {
+        return;
+    }
+
+    const companyId = cid();
+
+    if (!companyId) {
+        throw new Error(
+            "No active company selected"
+        );
+    }
+
+    await downloadPayrollStatutoryReturn(
+        companyId,
+        item.id,
+        "xlsx"
     );
   }
 
