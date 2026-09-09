@@ -87542,22 +87542,23 @@ function renderPayrollPayeRunClearing(
   async function exportPayrollStatutoryReturn(item){
     if(!item?.id)return;
 
-    const token=await getReportExportToken(
-      "payroll_statutory_return"
-    );
+    const exportUrl =
+        ENDPOINTS.reports.payrollStatutoryReturnExport(
+            cid(),
+            item.id
+        );
 
-    const url=new URL(
-      ENDPOINTS.reports.payrollStatutoryReturnExport(
-        cid(),
-        item.id
-      ),
-      window.location.origin
+    const url = new URL(
+        exportUrl,
+        window.location.origin
     );
 
     url.searchParams.set("format","xlsx");
-    url.searchParams.set("export_token",token);
 
-    window.open(url.toString(),"_blank");
+    await downloadUrl(
+        url.toString(),
+        "payroll_statutory_return"
+    );
   }
 
   function bindPayrollReportsEvents() {
