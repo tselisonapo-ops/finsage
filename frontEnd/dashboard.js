@@ -84859,62 +84859,78 @@ async function saveEditModal() {
     const calendar =
       payrollState.statutory.calendar || [];
 
-    const periods = [...calendar]
+    const months = [];
+
+    [...calendar]
       .filter(period =>
         period &&
         period.period_start
       )
       .sort((a, b) => {
-        return String(a.period_start)
-          .slice(0, 10)
-          .localeCompare(
-            String(b.period_start)
-              .slice(0, 10)
-          );
+        const dateA =
+          new Date(a.period_start);
+
+        const dateB =
+          new Date(b.period_start);
+
+        return dateA - dateB;
+      })
+      .forEach(period => {
+        const date =
+          new Date(period.period_start);
+
+        if (Number.isNaN(date.getTime())) {
+          return;
+        }
+
+        const year =
+          date.getUTCFullYear();
+
+        const month =
+          String(
+            date.getUTCMonth() + 1
+          ).padStart(2, "0");
+
+        const monthValue =
+          `${year}-${month}`;
+
+        if (
+          !months.includes(monthValue)
+        ) {
+          months.push(monthValue);
+        }
       });
-
-    const months = [];
-
-    periods.forEach(period => {
-      const periodStart =
-        String(period.period_start)
-          .slice(0, 10);
-
-      const month =
-        periodStart.slice(0, 7);
-
-      if (
-        month &&
-        !months.includes(month)
-      ) {
-        months.push(month);
-      }
-    });
 
     select.innerHTML = `
       <option value="">
         All Filing Months
       </option>
 
-      ${months.map(month => {
-        const [year, monthNumber] =
-          month.split("-");
+      ${months.map(monthValue => {
+        const [year, month] =
+          monthValue.split("-");
+
+        const date =
+          new Date(
+            Date.UTC(
+              Number(year),
+              Number(month) - 1,
+              1
+            )
+          );
 
         const label =
-          new Date(
-            Number(year),
-            Number(monthNumber) - 1,
-            1
-          ).toLocaleString(
+          date.toLocaleString(
             "en-US",
             {
               month: "long",
-              year: "numeric"
+              year: "numeric",
+              timeZone: "UTC"
             }
           );
 
         return `
-          <option value="${esc(month)}">
+          <option value="${esc(monthValue)}">
             ${esc(label)}
           </option>
         `;
