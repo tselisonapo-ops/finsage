@@ -1018,21 +1018,33 @@
     };
 
     window.exportPayeFiling = async function (event, format) {
-        if (event && typeof event.preventDefault === "function") event.preventDefault();
+        if (event && typeof event.preventDefault === "function") {
+            event.preventDefault();
+        }
 
-        const fmt       = (format || "csv").toLowerCase();
-        const company   = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
-        const authority=
-            payrollState.statutory.selectedAuthority||
-            window.__taxFiling?.getSelectedAuthority?.()||
+        const fmt = (format || "csv").toLowerCase();
+
+        const company =
+            window.getActiveCompanyId?.() ||
+            window.CURRENT_COMPANY_ID ||
+            window.CURRENT_COMPANY?.id;
+
+        const authority =
+            window.__taxFiling?.getSelectedAuthority?.() ||
+            window.payrollState?.statutory?.selectedAuthority ||
             "SARS";
-        const results   = document.getElementById("taxFilingValidationResults");
 
-        let year  = document.getElementById("taxFilingYear")?.value || "";
-        let month = document.getElementById("taxFilingMonth")?.value || "";
+        const results =
+            document.getElementById("taxFilingValidationResults");
+
+        let year =
+            document.getElementById("taxFilingYear")?.value || "";
+
+        let month =
+            document.getElementById("taxFilingMonth")?.value || "";
 
         if (/^\d{4}-\d{2}$/.test(month)) {
-            year  = month.slice(0, 4);
+            year = month.slice(0, 4);
             month = month.slice(5, 7);
         }
 
@@ -1045,25 +1057,53 @@
             alert("Select a filing year and month first.");
             return;
         }
-        const previewPayload = previewResponse?.data || previewResponse;
-        const previewUrl = window.ENDPOINTS.taxFiling.preview(
-            company,
-            authority,
-            filingMonth
-        );
 
-        const previewResponse = await window.apiFetch(
-            previewUrl,
-            { method: "GET" }
-        );
+        const mm = String(month).padStart(2, "0");
 
-        const resolvedStart = normalizeTaxFilingDate(
-            previewPayload?.period?.start
-        );
+        if (
+            !/^\d{4}$/.test(String(year)) ||
+            !/^(0[1-9]|1[0-2])$/.test(mm)
+        ) {
+            alert("Select a valid filing year and month first.");
+            return;
+        }
 
-        const resolvedEnd = normalizeTaxFilingDate(
-            previewPayload?.period?.end
-        );
+        const filingMonth =
+            normalizeTaxFilingMonth(year, month);
+
+        if (!filingMonth) {
+            alert("Select a valid filing year and month first.");
+            return;
+        }
+
+        const previewUrl =
+            window.ENDPOINTS.taxFiling.preview(
+                company,
+                authority,
+                filingMonth
+            );
+
+        const previewResponse =
+            await window.apiFetch(
+                previewUrl,
+                {
+                    method: "GET"
+                }
+            );
+
+        const previewPayload =
+            previewResponse?.data ||
+            previewResponse;
+
+        const resolvedStart =
+            normalizeTaxFilingDate(
+                previewPayload?.period?.start
+            );
+
+        const resolvedEnd =
+            normalizeTaxFilingDate(
+                previewPayload?.period?.end
+            );
 
         if (!resolvedStart || !resolvedEnd) {
             throw new Error(
@@ -1071,30 +1111,18 @@
             );
         }
 
-        const mm = String(month).padStart(2, "0");
-
-        if (!/^\d{4}$/.test(String(year)) || !/^(0[1-9]|1[0-2])$/.test(mm)) {
-            alert("Select a valid filing year and month first.");
-            return;
-        }
-
-        const filingMonth = normalizeTaxFilingMonth(year, month);
-
-        if (!filingMonth) {
-            alert("Select a valid filing year and month first.");
-            return;
-}
         const btn = event?.currentTarget;
-        const oldLabel = btn ? btn.textContent : "";
+        const oldLabel =
+            btn ? btn.textContent : "";
 
-        const stateToken = Symbol("tfExport");
-        if (btn) btn.__tfToken = stateToken;
+        const stateToken =
+            Symbol("tfExport");
 
         if (btn) {
+            btn.__tfToken = stateToken;
             btn.disabled = true;
             btn.textContent = "⏳ Exporting…";
         }
-
 
         try {
             const payload = {
