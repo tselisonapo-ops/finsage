@@ -164286,7 +164286,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     payroll_run_id,
                     run_no,
                     status,
-                    reporting_date
+                    reporting_date,
+                    plan_id
                 FROM {schema}.payroll_defined_contribution_runs
                 WHERE company_id = %s
                 AND id = %s
@@ -164318,6 +164319,63 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "Defined-contribution run must be posted "
                     "before its liability can be cleared"
                 )
+
+            # ----------------------------------------------------
+            # Resolve the benefit plan for this contribution run.
+            #
+            # The caller is allowed to omit benefit_plan_id: the
+            # run's own data is authoritative. Posted contribution
+            # run lines are tagged with the plan they belong to,
+            # so the plan carrying the largest contribution total
+            # wins (deterministic for multi-plan runs, trivial
+            # for single-plan runs). The run header plan_id is
+            # used only as a last resort, since it can be NULL.
+            #
+            # The resolved id is echoed back to the frontend so
+            # the preview / post payment payloads can forward it.
+            # ----------------------------------------------------
+
+            if benefit_plan_id in (None, "", "None"):
+
+                plan_row = self.fetch_one(
+                    f"""
+                    SELECT
+                        plan_id,
+                        COALESCE(
+                            SUM(total_contribution),
+                            0
+                        ) AS plan_total
+                    FROM {schema}.payroll_defined_contribution_run_lines
+                    WHERE company_id = %s
+                    AND run_id = %s
+                    AND plan_id IS NOT NULL
+                    GROUP BY plan_id
+                    ORDER BY plan_total DESC
+                    LIMIT 1
+                    """,
+                    (
+                        company_id,
+                        defined_contribution_run_id,
+                    ),
+                )
+
+                benefit_plan_id = (
+                    int(plan_row.get("plan_id"))
+                    if plan_row
+                    and plan_row.get("plan_id") is not None
+                    else None
+                )
+
+                if benefit_plan_id is None:
+
+                    header_plan_id = dc_run.get("plan_id")
+
+                    if header_plan_id not in (None, "", "None"):
+                        benefit_plan_id = int(header_plan_id)
+
+            else:
+
+                benefit_plan_id = int(benefit_plan_id)
 
             # The posted payroll journal is the accounting source
             # of truth for the defined-contribution liability.

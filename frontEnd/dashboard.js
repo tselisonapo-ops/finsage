@@ -69436,10 +69436,31 @@ async function saveEditModal() {
 
     payment.runId = dcRunId;   /* repair state for Post as well */
 
+    /*
+     * CHANGED: benefit plan resolution.
+     *
+     * payment.selectedPlanId is unreliable — run headers can
+     * carry plan_id = NULL, so the derivation chain that was
+     * supposed to fill it ends at null, and the payload went
+     * out as benefit_plan_id: null ("Benefit plan is
+     * required for contribution payment").
+     *
+     * The balance endpoint now resolves the plan from the
+     * posted contribution-run lines and
+     * loadPayrollLiabilityClearing() stores it on the
+     * payment state — prefer that id, fall back to state.
+     */
     const planId =
-        Number(
-            payment.selectedPlanId
-        ) || null;
+        getResolvedDcBenefitPlanId() ??
+        (Number(payment.selectedPlanId) || null);
+
+    if (!planId) {
+        throw new Error(
+            "Benefit plan could not be resolved for this contribution run. Re-open the payment screen so the balance can load, then try again."
+        );
+    }
+
+    payment.selectedPlanId = planId;   /* repair state for Post as well */
 
     /*
      * Bank = clearing account.
@@ -69502,8 +69523,12 @@ async function saveEditModal() {
                     defined_contribution_run_id:
                         payment.runId,
 
+                    /*
+                     * CHANGED: the guard above guarantees this
+                     * now carries the resolved plan id.
+                     */
                     benefit_plan_id:
-                        planId || null,
+                        planId,
 
                     bank_account_id:
                         bankId,
@@ -69547,7 +69572,10 @@ async function saveEditModal() {
         await loadPayrollLiabilityClearing({
             liabilityType: "defined_contribution",
             payrollRunId: payment.payrollRunId,
-            benefitPlanId: payment.selectedPlanId || null,
+
+            /* CHANGED: forward the resolved id */
+            benefitPlanId: planId,
+
             definedContributionRunId: payment.runId,
             prefix: "payrollDcPayment",
             referencePrefix: "DC-PAY"
@@ -69618,9 +69646,7 @@ async function saveEditModal() {
                         payment.runId,
 
                     benefit_plan_id:
-                        Number(
-                            payment.selectedPlanId
-                        ),
+                      getResolvedDcBenefitPlanId(),
 
                     bank_account_id:
                         bankId,
@@ -74566,6 +74592,22 @@ async function saveEditModal() {
     showPayrollStatus("Payroll posted successfully.", "success");
   }
 
+  function getResolvedDcBenefitPlanId() {
+
+    const paymentState =
+      payrollState.employeeBenefits
+        ?.selectedDefinedContributionPayment;
+
+    const planId =
+      Number(
+        paymentState?.selectedBenefitPlanId ??
+        paymentState?.liabilityPreview?.benefit_plan_id ??
+        0
+      ) || 0;
+
+    return planId > 0 ? planId : undefined;
+  }
+
   async function loadPayrollLiabilityClearing({
     liabilityType = "salary",
     payrollRunId = null,
@@ -74882,13 +74924,30 @@ async function saveEditModal() {
           liabilityType
       };
 
-      if (
-        benefitPlanId !== null &&
-        benefitPlanId !== undefined &&
-        benefitPlanId !== ""
-      ) {
+      /*
+       * Forward the benefit plan id when we know it.
+       *
+       * First load: the caller may not have it yet — the
+       * backend resolves it from the contribution-run lines
+       * and echoes it back. Later loads: we replay the
+       * stored id explicitly so the request stays fully
+       * self-describing.
+       *
+       * DC-scoped only: salary/PAYE balance requests must
+       * never inherit a plan id from DC payment state.
+       */
+      const effectiveBenefitPlanId =
+        liabilityType === "defined_contribution"
+          ? Number(
+              benefitPlanId ??
+              paymentState?.selectedBenefitPlanId ??
+              0
+            ) || null
+          : (Number(benefitPlanId) || null);
+
+      if (effectiveBenefitPlanId) {
         params.benefit_plan_id =
-          Number(benefitPlanId);
+          effectiveBenefitPlanId;
       }
 
       if (
@@ -74926,6 +74985,50 @@ async function saveEditModal() {
         balance?.data ||
         balance ||
         {};
+
+      /*
+       * Capture the benefit plan the backend resolved for
+       * this contribution run.
+       *
+       * Run headers can carry plan_id = NULL while every
+       * posted contribution-run line is tagged with its
+       * plan, so this id is authoritative. It must ride
+       * along in the preview / post payment payloads —
+       * without it the server rejects the payment with
+       * "Benefit plan is required for contribution payment".
+       */
+      const resolvedBenefitPlanId =
+        liabilityType === "defined_contribution"
+          ? Number(
+              data.benefit_plan_id ??
+              data.benefitPlanId ??
+              benefitPlanId ??
+              paymentState?.selectedBenefitPlanId ??
+              0
+            ) || null
+          : null;
+
+      /*
+       * Store it for the payload builders.
+       * Write-only-when-resolved: a salary/PAYE balance
+       * load must never wipe a stored DC plan id.
+       */
+      if (paymentState && resolvedBenefitPlanId) {
+        paymentState.selectedBenefitPlanId =
+          resolvedBenefitPlanId;
+      }
+
+      if (
+        liabilityType === "defined_contribution" &&
+        !resolvedBenefitPlanId
+      ) {
+        console.warn(
+          "[payroll] balance response carried no benefit_plan_id — " +
+          "the contribution-run lines for this run are not tagged " +
+          "with a plan, so preview/post will be rejected until the " +
+          "run is tagged at creation time."
+        );
+      }
 
       const recognisedLiability =
         Number(
@@ -74969,6 +75072,12 @@ async function saveEditModal() {
       if (paymentState) {
         paymentState.liabilityPreview = {
           ...data,
+
+          benefit_plan_id:
+            resolvedBenefitPlanId,
+
+          benefitPlanId:
+            resolvedBenefitPlanId,
 
           liabilityAmount:
             recognisedLiability,
