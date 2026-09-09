@@ -69140,10 +69140,16 @@ async function saveEditModal() {
             $("payrollDcPaymentBank")?.value
         );
 
+    if (!Number.isFinite(bankId) || bankId <= 0) {
+        throw new Error(
+            "Please select a valid bank account."
+        );
+    }
+
     const response =
         await apiFetch(
             ENDPOINTS.payroll.liabilityPayment(
-                COMPANY_ID,
+                cid(),
                 payment.payrollRunId
             ),
             {
@@ -69160,7 +69166,7 @@ async function saveEditModal() {
                         payment.runId,
 
                     benefit_plan_id:
-                      getResolvedDcBenefitPlanId(),
+                        getResolvedDcBenefitPlanId(),
 
                     bank_account_id:
                         bankId,
@@ -69198,8 +69204,6 @@ async function saveEditModal() {
     await openPayrollDcRun(
         payment.runId
     );
-
-    await refreshPayrollBenefitPlans();
   }
 
   function renderPayrollDcPayment() {
