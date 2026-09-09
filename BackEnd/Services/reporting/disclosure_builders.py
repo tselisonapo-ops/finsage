@@ -4367,3 +4367,4 @@ def build_revenue_disclosure_multi_year(
     current["meta"]["comparison_years"] = comparison_years
 
     return current
+

@@ -469,8 +469,11 @@ def map_batch_for_export(
         r.get('eti', 0) or 0
         for r in records
     )
-    total_sdl = sum(r.get('sdl_deducted', 0) or 0 for r in records)
-    total_net = sum(r['net_pay'] for r in records)
+
+    total_net = sum(
+        r.get('net_pay', 0) or 0
+        for r in records
+    )
     
     summary = { 
         'authority_code': authority_code, 

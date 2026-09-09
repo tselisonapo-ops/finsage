@@ -33,7 +33,9 @@ from BackEnd.Services.reporting.statement_exporters import (
     export_statement_pdf,
     export_statement_xlsx,
     export_fs_notes_pdf,
-    _export_payroll_statutory_return_xlsx
+    _export_payroll_statutory_return_xlsx,
+    _export_payroll_statutory_return_csv,
+    _export_payroll_statutory_return_xml,
 )
 from BackEnd.Services.reporting.control_reports import (
     build_ap_aging_report,
@@ -2848,6 +2850,28 @@ def export_payroll_statutory_return(
     if deny:
         return deny
 
+    export_format = (
+        request.args.get("format") or "xlsx"
+    ).strip().lower()
+
+    builders = {
+        "xlsx": _export_payroll_statutory_return_xlsx,
+        "csv": _export_payroll_statutory_return_csv,
+        "xml": _export_payroll_statutory_return_xml,
+    }
+
+    builder = builders.get(export_format)
+
+    if builder is None:
+        return jsonify({
+            "ok": False,
+            "error": (
+                f"Unsupported export format "
+                f"'{export_format}'. Supported: "
+                f"{', '.join(sorted(builders))}"
+            ),
+        }), 400
+
     try:
         db = _get_db()
 
@@ -2856,9 +2880,13 @@ def export_payroll_statutory_return(
             return_id,
         )
 
-        return _export_payroll_statutory_return_xlsx(
-            payload
-        )
+        if export_format == "csv":
+            return builder(
+                payload,
+                layout=(request.args.get("layout") or "report"),
+            )
+
+        return builder(payload)
 
     except Exception as error:
         current_app.logger.exception(

@@ -169316,10 +169316,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
     def payroll_statutory_return_export_payload(
         self,
-        company_id:int,
-        return_id:int,
-    )->dict:
-        statutory=self.payroll_statutory_return_get(
+        company_id: int,
+        return_id: int,
+    ) -> dict:
+        statutory = self.payroll_statutory_return_get(
             company_id,
             return_id,
         )
@@ -169327,7 +169327,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not statutory:
             raise ValueError("Statutory return not found")
 
-        grouped={}
+        company = self.get_company(company_id) or {}
+
+        grouped = {}
 
         for line in statutory.get("lines") or []:
             grouped.setdefault(
@@ -169335,109 +169337,75 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 [],
             ).append(line)
 
-        sections=[]
+        sections = []
 
-        for title,rows in grouped.items():
+        for title, rows in grouped.items():
             sections.append({
-                "title":title,
-                "rows":[{
-                    "employee_no":row.get("employee_no"),
-                    "employee_name":row.get("employee_name"),
-                    "tax_number":row.get("tax_number"),
-                    "department":
-                        row.get("department_name"),
-                    "source_code":row.get("source_code"),
-                    "description":
-                        row.get("source_description"),
-                    "gross_remuneration":float(
-                        _payroll_money(
-                            row.get("gross_remuneration")
-                        )
-                    ),
-                    "taxable_remuneration":float(
-                        _payroll_money(
-                            row.get("taxable_remuneration")
-                        )
-                    ),
-                    "employee_amount":float(
-                        _payroll_money(
-                            row.get("employee_amount")
-                        )
-                    ),
-                    "employer_amount":float(
-                        _payroll_money(
-                            row.get("employer_amount")
-                        )
-                    ),
-                    "total_amount":float(
-                        _payroll_money(
-                            row.get("total_amount")
-                        )
-                    ),
+                "title": title,
+                "rows": [{
+                    "employee_no": row.get("employee_no"),
+                    "employee_name": row.get("employee_name"),
+                    "tax_number": row.get("tax_number"),
+                    "department": row.get("department_name"),
+                    "source_code": row.get("source_code"),
+                    "description": row.get("source_description"),
+                    "gross_remuneration": float(_payroll_money(row.get("gross_remuneration"))),
+                    "taxable_remuneration": float(_payroll_money(row.get("taxable_remuneration"))),
+                    "employee_amount": float(_payroll_money(row.get("employee_amount"))),
+                    "employer_amount": float(_payroll_money(row.get("employer_amount"))),
+                    "total_amount": float(_payroll_money(row.get("total_amount"))),
                 } for row in rows],
-                "amount_keys":[
-                    "gross_remuneration",
-                    "taxable_remuneration",
-                    "employee_amount",
-                    "employer_amount",
-                    "total_amount",
-                ],
-                "amount_labels":{
-                    "gross_remuneration":
-                        "Gross remuneration",
-                    "taxable_remuneration":
-                        "Taxable remuneration",
-                    "employee_amount":
-                        "Employee amount",
-                    "employer_amount":
-                        "Employer amount",
-                    "total_amount":"Total",
-                },
             })
 
-        return{
-            "meta":{
-                "report_key":
-                    "payroll_statutory_return",
-                "company_id":int(company_id),
-                "return_id":int(return_id),
-                "return_no":statutory["return_no"],
-                "authority_code":
-                    statutory["authority_code"],
-                "return_type":
-                    statutory["return_type"],
-                "period_start":
-                    statutory["period_start"],
-                "period_end":statutory["period_end"],
-                "status":statutory["status"],
-            },
-            "title":(
-                f"{statutory['authority_code']} "
-                f"{statutory['return_type'].replace('_',' ').title()}"
-            ),
-            "sections":sections,
-            "totals":{
-                "employee_count":
-                    statutory["employee_count"],
-                "gross_remuneration":float(
-                    statutory["gross_remuneration"]
-                ),
-                "taxable_remuneration":float(
-                    statutory["taxable_remuneration"]
-                ),
-                "employee_amount":float(
-                    statutory["employee_amount"]
-                ),
-                "employer_amount":float(
-                    statutory["employer_amount"]
-                ),
-                "total_payable":float(
-                    statutory["total_payable"]
-                ),
-            },
-            "return":statutory,
-        }
+        authority_title = (
+            f"{statutory['authority_code']} "
+            f"{statutory['return_type'].replace('_', ' ').title()}"
+        )
 
+        company_name = company.get("name")
+
+        return {
+            "meta": {
+                "report_key": "payroll_statutory_return",
+                "company_id": int(company_id),
+                "return_id": int(return_id),
+                "return_no": statutory["return_no"],
+                "authority_code": statutory["authority_code"],
+                "return_type": statutory["return_type"],
+                "period_start": statutory["period_start"],
+                "period_end": statutory["period_end"],
+                "status": statutory["status"],
+                "company": {
+                    "id": int(company_id),
+                    "name": company_name,
+                    "client_code": company.get("client_code"),
+                    "reg_no": company.get("company_reg_no"),
+                    "tin": company.get("tin"),
+                    "vat_number": company.get("vat"),
+                    "email": company.get("company_email"),
+                    "phone": company.get("company_phone"),
+                    "physical_address": company.get("physical_address"),
+                    "postal_address": company.get("postal_address"),
+                    "currency": company.get("currency"),
+                },
+            },
+            "title": (
+                f"{company_name} — {authority_title}"
+                if company_name
+                else authority_title
+            ),
+            "sections": sections,
+            "totals": {
+                "employee_count": statutory["employee_count"],
+                "gross_remuneration": float(statutory["gross_remuneration"]),
+                "taxable_remuneration": float(statutory["taxable_remuneration"]),
+                "employee_amount": float(statutory["employee_amount"]),
+                "employer_amount": float(statutory["employer_amount"]),
+                "total_payable": float(statutory["total_payable"]),
+            },
+            "return": statutory,
+        }
+    
     def get_payroll_records_for_filing(
         self,
         company_id: int,

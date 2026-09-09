@@ -1,4 +1,4 @@
-﻿(function hardTraceRedirects() {
+(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -64568,6 +64568,7 @@ async function saveEditModal() {
     selectedBonusRun: null,
     benefitPlans: [],
     selectedBenefitPlan:null,
+    openBenefitPlanRow:null,
     planMembers:[],
     actuarialValuations: [],
     selectedActuarialValuation: null,
@@ -64577,6 +64578,7 @@ async function saveEditModal() {
     loaded: false,
     definedContributionRuns:[],
     selectedDefinedContributionRun:null,
+    openDcRunRow:null,
     definedContributionPreview:null,
     definedBenefitPlans:[],
     actuarialReconciliation:null,
@@ -64682,6 +64684,9 @@ async function saveEditModal() {
     const runs=payrollState.employeeBenefits.definedContributionRuns||[];
     if(!el)return;
 
+    const openPlanRow=Number(payrollState.employeeBenefits.openBenefitPlanRow||0);
+    const openRunRow=Number(payrollState.employeeBenefits.openDcRunRow||0);
+
     el.innerHTML=`
       <div class="payroll-card">
         <div class="payroll-card-head">
@@ -64718,15 +64723,20 @@ async function saveEditModal() {
                   <td>${money(p.employer_contribution_percentage)}%</td>
                   <td>${Number(p.active_members||0)}</td>
                   <td>
-                    <button class="payroll-link" data-open-benefit-plan="${p.id}">Open</button>
+                    <button class="payroll-link" data-open-benefit-plan="${p.id}">${openPlanRow===Number(p.id)?"Close":"Open"}</button>
                   </td>
                 </tr>
+                ${openPlanRow===Number(p.id)?`
+                  <tr class="payroll-inline-detail-row">
+                    <td colspan="7">
+                      <div class="payroll-inline-detail" id="payrollBenefitPlanDetail"></div>
+                    </td>
+                  </tr>
+                `:""}
               `).join(""):`<tr><td colspan="7">No benefit plans configured.</td></tr>`}
             </tbody>
           </table>
         </div>
-
-        <div id="payrollBenefitPlanDetail"></div>
       </div>
 
       <div class="payroll-card">
@@ -64738,19 +64748,39 @@ async function saveEditModal() {
           <button id="payrollNewDcRunBtn" class="payroll-primary" type="button">+ Contribution Run</button>
         </div>
 
-        <div class="payroll-sublist">
-          ${runs.length?runs.map(r=>`
-            <div class="payroll-mini-row">
-              <strong>${esc(r.run_no)}</strong>
-              <span>${esc(String(r.reporting_date||""))}</span>
-              <span>${money(r.total_payable)}</span>
-              <span class="payroll-pill">${esc(r.status)}</span>
-              <button class="payroll-link" data-open-dc-run="${r.id}">Open</button>
-            </div>
-          `).join(""):`<p class="payroll-muted">No defined-contribution runs.</p>`}
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Reporting date</th>
+                <th class="num">Total payable</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${runs.length?runs.map(r=>`
+                <tr>
+                  <td><strong>${esc(r.run_no)}</strong></td>
+                  <td>${esc(String(r.reporting_date||""))}</td>
+                  <td class="num">${money(r.total_payable)}</td>
+                  <td><span class="payroll-pill">${esc(r.status)}</span></td>
+                  <td>
+                    <button class="payroll-link" data-open-dc-run="${r.id}">${openRunRow===Number(r.id)?"Close":"Open"}</button>
+                  </td>
+                </tr>
+                ${openRunRow===Number(r.id)?`
+                  <tr class="payroll-inline-detail-row">
+                    <td colspan="5">
+                      <div class="payroll-inline-detail" id="payrollDcRunDetail"></div>
+                    </td>
+                  </tr>
+                `:""}
+              `).join(""):`<tr><td colspan="5">No defined-contribution runs.</td></tr>`}
+            </tbody>
+          </table>
         </div>
-
-        <div id="payrollDcRunDetail"></div>
       </div>`;
 
     $("payrollNewBenefitPlanBtn")?.addEventListener("click",()=>editPayrollBenefitPlan());
@@ -64758,13 +64788,46 @@ async function saveEditModal() {
       "click",
       openPayrollDcRunSetup
     );
+
     el.querySelectorAll("[data-open-benefit-plan]").forEach(b=>
-      b.addEventListener("click",()=>openPayrollBenefitPlan(Number(b.dataset.openBenefitPlan)))
+      b.addEventListener("click",()=>{
+        const id=Number(b.dataset.openBenefitPlan);
+
+        if(payrollState.employeeBenefits.openBenefitPlanRow===id){
+          payrollState.employeeBenefits.openBenefitPlanRow=null;
+          renderPayrollBenefitPlans();
+          return;
+        }
+
+        openPayrollBenefitPlan(id);
+      })
     );
 
     el.querySelectorAll("[data-open-dc-run]").forEach(b=>
-      b.addEventListener("click",()=>openPayrollDcRun(Number(b.dataset.openDcRun)))
+      b.addEventListener("click",()=>{
+        const id=Number(b.dataset.openDcRun);
+
+        if(payrollState.employeeBenefits.openDcRunRow===id){
+          payrollState.employeeBenefits.openDcRunRow=null;
+          renderPayrollBenefitPlans();
+          return;
+        }
+
+        openPayrollDcRun(id);
+      })
     );
+
+    if(
+      payrollState.employeeBenefits.openBenefitPlanRow&&
+      Number(payrollState.employeeBenefits.selectedBenefitPlan?.id)===
+        openPlanRow
+    )renderPayrollBenefitPlanDetail();
+
+    if(
+      payrollState.employeeBenefits.openDcRunRow&&
+      Number(payrollState.employeeBenefits.selectedDefinedContributionRun?.run?.id)===
+        openRunRow
+    )renderPayrollDcRunDetail();
   }
 
   function payrollRunPresetRange(preset){
@@ -65476,6 +65539,7 @@ async function saveEditModal() {
     );
 
     await loadPayrollEmployeeBenefitsWorkspace();
+    await loadPayrollBenefitPlans();
 
     const run=res?.data||res;
     if(run?.id)await openPayrollDcRun(run.id);
@@ -66037,6 +66101,8 @@ async function saveEditModal() {
   async function openPayrollDcRun(runId){
     const r=await apiFetch(ENDPOINTS.payroll.definedContributionRun(cid(),runId));
     payrollState.employeeBenefits.selectedDefinedContributionRun=r?.data||null;
+    payrollState.employeeBenefits.openDcRunRow=Number(runId);
+    renderPayrollBenefitPlans();
     renderPayrollDcRunDetail();
   }
 
@@ -66430,6 +66496,8 @@ async function saveEditModal() {
     const r=await apiFetch(ENDPOINTS.payroll.benefitPlan(cid(),planId));
     payrollState.employeeBenefits.selectedBenefitPlan=r?.data?.plan||null;
     payrollState.employeeBenefits.planMembers=r?.data?.members||[];
+    payrollState.employeeBenefits.openBenefitPlanRow=Number(planId);
+    renderPayrollBenefitPlans();
     renderPayrollBenefitPlanDetail();
   }
 
@@ -85293,7 +85361,16 @@ async function saveEditModal() {
   }
 
   function renderPayrollStatutoryReturns(targetId) {
-    const el = $(targetId || "payeTaxFilingSection");
+    /*
+     * Default target is the returns list mount inside the
+     * authority view — NOT #payeTaxFilingSection, which is
+     * owned by renderPayrollStatutoryDashboard(). Bare calls
+     * (e.g. from tax-filing-dashboard-integration.js) can no
+     * longer overwrite the statutory dashboard; they only
+     * fill #statutoryReturnsList when the authority view is
+     * open. All element ids are untouched.
+     */
+    const el = $(targetId || "statutoryReturnsList");
     if (!el) return;
 
     const items = payrollState.statutory.returns || [];
@@ -87244,9 +87321,11 @@ function renderPayrollPayeRunClearing(
           return;
       }
 
-      renderPayrollStatutoryReturns(
-          "payeTaxFilingSection"
-      );
+      if (view === "list") {
+          renderPayrollStatutoryReturns(
+              "statutoryReturnsList"
+          );
+      }
   }
 
   window.renderPayrollStatutoryWorkspace =
@@ -87257,13 +87336,20 @@ function renderPayrollPayeRunClearing(
     const item=payrollState.statutory.selectedReturn;
     if(!el||!item)return;
 
+    const editableStatus = [
+        "draft",
+        "calculated",
+        "rejected",
+    ].includes(item.status);
+
     const actions=[];
 
-    if(["draft","calculated","rejected"].includes(item.status)){
-        actions.push(["Edit",()=>editPayrollStatutoryReturn(item)]);
-    }
+    if(editableStatus){
+        actions.push([
+            "Edit",
+            ()=>editPayrollStatutoryReturn(item),
+        ]);
 
-    if(["draft","calculated","rejected"].includes(item.status)){
         actions.push([
             "Calculate",
             ()=>calculatePayrollStatutoryReturn(item.id),
@@ -87320,10 +87406,39 @@ function renderPayrollPayeRunClearing(
         ]);
     }
 
-    actions.push([
-        "Export",
-        ()=>exportPayrollStatutoryReturn(item),
-    ]);
+    /*
+     * Export buttons — one per format. The third tuple
+     * element is rendered as extra attributes on the
+     * button so CSS can target exports via
+     * button[data-export-format] if needed.
+     */
+    actions.push(
+        [
+            "Export XLSX",
+            ()=>exportPayrollStatutoryReturn(
+                item,
+                "xlsx"
+            ),
+            { "data-export-format": "xlsx" },
+        ],
+        [
+            "Export CSV",
+            ()=>exportPayrollStatutoryReturn(
+                item,
+                "csv"
+            ),
+            { "data-export-format": "csv" },
+        ],
+        [
+            "Export XML",
+            ()=>exportPayrollStatutoryReturn(
+                item,
+                "xml"
+            ),
+            { "data-export-format": "xml" },
+        ],
+    );
+
     const lines=item.lines||[];
 
     el.innerHTML=`
@@ -87350,13 +87465,24 @@ function renderPayrollPayeRunClearing(
           </div>
 
           <div class="payroll-run-actions">
-            ${actions.map((action,index)=>`
-              <button type="button"
-                class="payroll-secondary"
-                data-statutory-action="${index}">
-                ${esc(action[0])}
-              </button>
-            `).join("")}
+            ${actions.map((action,index)=>{
+              const extraAttrs = action[2] || {};
+
+              const extraString = Object
+                .entries(extraAttrs)
+                .map(([name,value]) =>
+                  `${name}="${esc(value)}"`
+                )
+                .join(" ");
+
+              return `
+                <button type="button"
+                  class="payroll-secondary"
+                  data-statutory-action="${index}"
+                  ${extraString}>
+                  ${esc(action[0])}
+                </button>`;
+            }).join("")}
           </div>
         </div>
 
@@ -87423,22 +87549,78 @@ function renderPayrollPayeRunClearing(
     el.querySelectorAll(
       "[data-statutory-action]"
     ).forEach(btn=>{
-      btn.addEventListener("click",()=>{
-        actions[Number(btn.dataset.statutoryAction)]?.[1]?.();
+      btn.addEventListener("click", async ()=>{
+        const handler = actions[
+          Number(btn.dataset.statutoryAction)
+        ]?.[1];
+
+        if(typeof handler!=="function"){
+          return;
+        }
+
+        if(btn.disabled){
+          return;
+        }
+
+        /*
+         * Disable every action button while the
+         * handler runs — prevents double-clicking
+         * a slow export (or double-approving).
+         */
+        const allButtons = el.querySelectorAll(
+          "[data-statutory-action]"
+        );
+
+        allButtons.forEach(b=>{
+          b.disabled = true;
+        });
+
+        try{
+          await handler();
+        }catch(error){
+          console.error(
+            "[STATUTORY ACTION FAILED]",
+            error
+          );
+
+          /*
+           * Hook your toast/notification helper here,
+           * e.g. showToast(error.message, "error")
+           */
+        }finally{
+          allButtons.forEach(b=>{
+            b.disabled = false;
+          });
+        }
       });
     });
 
-  el.querySelector("[data-statutory-back]")
-    ?.addEventListener("click",()=>{
-      closePayrollStatutoryReturn();
-    });
+    el.querySelector("[data-statutory-back]")
+      ?.addEventListener("click",()=>{
+        closePayrollStatutoryReturn();
+      });
   }
 
   function closePayrollStatutoryReturn(){
     payrollState.statutory.selectedReturn=null;
     payrollState.statutory.view="list";
 
-    renderPayrollStatutoryReturns("payeTaxFilingSection");
+    /*
+     * Rebuild the view the user came from so every element
+     * id (taxFilingYear, taxFilingMonth, payrollStatutoryTypeFilter,
+     * taxFilingTopBar, taxFilingActions, taxFilingTopHint,
+     * taxFilingValidationResults, taxFilingPreview,
+     * statutoryReturnsList, payrollPayeClearing*) is restored,
+     * instead of a bare returns table overwriting the whole
+     * section and dropping those ids.
+     */
+    if(payrollState.statutory.selectedAuthority){
+      openPayrollStatutoryAuthority(
+        payrollState.statutory.selectedAuthority
+      );
+    }else{
+      renderPayrollStatutoryDashboard();
+    }
 
     $("payeTaxFilingSection")
         ?.scrollIntoView({
@@ -87547,6 +87729,23 @@ function renderPayrollPayeRunClearing(
     if (!companyId || !returnId) {
         throw new Error(
             "Company ID and statutory return ID are required"
+        );
+    }
+
+    format = String(format || "xlsx")
+        .trim()
+        .toLowerCase();
+
+    const SUPPORTED_FORMATS = [
+        "xlsx",
+        "csv",
+        "xml",
+    ];
+
+    if (!SUPPORTED_FORMATS.includes(format)) {
+        throw new Error(
+            `Unsupported export format '${format}'. ` +
+            `Supported: ${SUPPORTED_FORMATS.join(", ")}`
         );
     }
 

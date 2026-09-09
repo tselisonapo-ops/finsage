@@ -7,6 +7,15 @@ from flask import Response, request
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+import csv
+import re
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from io import BytesIO, StringIO
+import re
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from io import BytesIO
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -19,11 +28,28 @@ from reportlab.platypus import KeepTogether
 from xml.sax.saxutils import escape
 from BackEnd.Services.vat_pack_pdf_builder import _add_brand_header
 
+import re
+from datetime import date, datetime
+from openpyxl.worksheet.page import PageMargins
+from openpyxl.worksheet.properties import PageSetupProperties
+
 THIN = Side(style="thin", color="D9E2F3")
 HEADER_FILL = PatternFill("solid", fgColor="D9EAF7")
 SUBTOTAL_FILL = PatternFill("solid", fgColor="EEF4FB")
 TITLE_FILL = PatternFill("solid", fgColor="BFD7EA")
 
+MONEY_FORMAT = "#,##0.00"
+COUNT_FORMAT = "#,##0"
+DATE_FORMAT = "yyyy-mm-dd"
+
+# Gross / Taxable / Employee / Employer / Total columns in section tables
+MONEY_COLUMNS = {7, 8, 9, 10, 11}
+
+HEADER_FILL = PatternFill(
+    fill_type="solid",
+    start_color="FFD9D9D9",
+    end_color="FFD9D9D9",
+)
 
 def _pdf_amount(v):
     try:
@@ -1371,10 +1397,30 @@ def export_fs_notes_pdf(notes: List[Dict[str, Any]], filename: str = "financial_
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
+def _put(worksheet, row_no, column_no, value, kind=None):
+    """Write a cell — number formats applied only where they make sense."""
+    cell = worksheet.cell(
+        row=row_no,
+        column=column_no,
+        value=value,
+    )
+
+    if kind == "money" and isinstance(value, (int, float)):
+        cell.number_format = MONEY_FORMAT
+        cell.alignment = Alignment(horizontal="right")
+    elif kind == "count" and isinstance(value, (int, float)):
+        cell.number_format = COUNT_FORMAT
+    elif isinstance(value, (date, datetime)):
+        cell.number_format = DATE_FORMAT
+
+    return cell
+
+
 def _export_payroll_statutory_return_xlsx(
     payload: dict,
 ):
     meta = payload.get("meta") or {}
+    company = meta.get("company") or {}
     sections = payload.get("sections") or []
     totals = payload.get("totals") or {}
 
@@ -1385,51 +1431,66 @@ def _export_payroll_statutory_return_xlsx(
 
     row_no = 1
 
+    # -- Title --------------------------------------------------------
     worksheet.cell(
         row=row_no,
         column=1,
         value=payload.get("title") or "EMP201",
-    )
-
-    worksheet.cell(
-        row=row_no,
-        column=1,
-    ).font = Font(
-        bold=True,
-        size=16,
-    )
+    ).font = Font(bold=True, size=16)
 
     row_no += 2
 
+    # -- Company details ----------------------------------------------
+    worksheet.cell(
+        row=row_no,
+        column=1,
+        value="Company Details",
+    ).font = Font(bold=True, size=13)
+
+    row_no += 1
+
+    company_details = [
+        ("Company Name", company.get("name")),
+        ("Client Code", company.get("client_code")),
+        ("Company Reg No", company.get("reg_no")),
+        ("Tax Reference (TIN)", company.get("tin")),
+        ("VAT Number", company.get("vat_number")),
+        ("Company Email", company.get("email")),
+        ("Company Phone", company.get("phone")),
+        ("Physical Address", company.get("physical_address")),
+        ("Postal Address", company.get("postal_address")),
+        ("Currency", company.get("currency")),
+    ]
+
+    for label, value in company_details:
+        if value in (None, ""):
+            continue
+
+        worksheet.cell(
+            row=row_no,
+            column=1,
+            value=label,
+        ).font = Font(bold=True)
+
+        worksheet.cell(
+            row=row_no,
+            column=2,
+            value=str(value),
+        )
+
+        row_no += 1
+
+    row_no += 1
+
+    # -- Return details -------------------------------------------------
     metadata = [
-        (
-            "Authority",
-            meta.get("authority_code"),
-        ),
-        (
-            "Return Type",
-            meta.get("return_type"),
-        ),
-        (
-            "Return Number",
-            meta.get("return_no"),
-        ),
-        (
-            "Company ID",
-            meta.get("company_id"),
-        ),
-        (
-            "Period Start",
-            meta.get("period_start"),
-        ),
-        (
-            "Period End",
-            meta.get("period_end"),
-        ),
-        (
-            "Status",
-            meta.get("status"),
-        ),
+        ("Authority", meta.get("authority_code")),
+        ("Return Type", meta.get("return_type")),
+        ("Return Number", meta.get("return_no")),
+        ("Company ID", meta.get("company_id")),
+        ("Period Start", meta.get("period_start")),
+        ("Period End", meta.get("period_end")),
+        ("Status", meta.get("status")),
     ]
 
     for label, value in metadata:
@@ -1437,72 +1498,67 @@ def _export_payroll_statutory_return_xlsx(
             row=row_no,
             column=1,
             value=label,
-        ).font = Font(
-            bold=True
-        )
+        ).font = Font(bold=True)
 
-        worksheet.cell(
-            row=row_no,
-            column=2,
-            value=value,
-        )
+        _put(worksheet, row_no, 2, value)
 
         row_no += 1
 
     row_no += 1
 
+    # Keep header block visible while scrolling
+    worksheet.freeze_panes = f"A{row_no}"
+
+    # -- Sections -------------------------------------------------------
+    headers = [
+        "Employee No",
+        "Employee Name",
+        "Tax Number",
+        "Department",
+        "Source Code",
+        "Description",
+        "Gross Remuneration",
+        "Taxable Remuneration",
+        "Employee Amount",
+        "Employer Amount",
+        "Total",
+    ]
+
+    money_keys = (
+        "gross_remuneration",
+        "taxable_remuneration",
+        "employee_amount",
+        "employer_amount",
+        "total_amount",
+    )
+
     for section in sections:
-        title = (
-            section.get("title")
-            or "Statutory Return"
-        )
+        title = section.get("title") or "Statutory Return"
 
         worksheet.cell(
             row=row_no,
             column=1,
             value=title,
-        ).font = Font(
-            bold=True,
-            size=13,
-        )
+        ).font = Font(bold=True, size=13)
 
         row_no += 1
 
-        headers = [
-            "Employee No",
-            "Employee Name",
-            "Tax Number",
-            "Department",
-            "Source Code",
-            "Description",
-            "Gross Remuneration",
-            "Taxable Remuneration",
-            "Employee Amount",
-            "Employer Amount",
-            "Total",
-        ]
-
-        for column_no, header in enumerate(
-            headers,
-            start=1,
-        ):
+        for column_no, header in enumerate(headers, start=1):
             cell = worksheet.cell(
                 row=row_no,
                 column=column_no,
                 value=header,
             )
 
-            cell.font = Font(
-                bold=True
-            )
-
-            cell.alignment = Alignment(
-                horizontal="center"
-            )
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal="center")
+            cell.fill = HEADER_FILL
 
         row_no += 1
 
-        for item in section.get("rows") or []:
+        section_rows = section.get("rows") or []
+
+        for item in section_rows:
             values = [
                 item.get("employee_no"),
                 item.get("employee_name"),
@@ -1517,110 +1573,121 @@ def _export_payroll_statutory_return_xlsx(
                 item.get("total_amount", 0),
             ]
 
-            for column_no, value in enumerate(
-                values,
-                start=1,
-            ):
-                worksheet.cell(
-                    row=row_no,
-                    column=column_no,
-                    value=value,
+            for column_no, value in enumerate(values, start=1):
+                _put(
+                    worksheet,
+                    row_no,
+                    column_no,
+                    value,
+                    kind=(
+                        "money"
+                        if column_no in MONEY_COLUMNS
+                        else None
+                    ),
                 )
 
             row_no += 1
 
-        row_no += 1
+        if section_rows:
+            worksheet.cell(
+                row=row_no,
+                column=6,
+                value="Section Total",
+            ).font = Font(bold=True)
 
+            for offset, key in enumerate(money_keys, start=7):
+                section_total = sum(
+                    float(row.get(key) or 0)
+                    for row in section_rows
+                )
+
+                _put(
+                    worksheet,
+                    row_no,
+                    offset,
+                    section_total,
+                    kind="money",
+                ).font = Font(bold=True)
+
+            row_no += 2
+        else:
+            row_no += 1
+
+    # -- Return totals ----------------------------------------------------
     worksheet.cell(
         row=row_no,
         column=1,
         value="RETURN TOTALS",
-    ).font = Font(
-        bold=True,
-        size=13,
-    )
+    ).font = Font(bold=True, size=13)
 
     row_no += 1
 
     totals_rows = [
-        (
-            "Employee Count",
-            totals.get("employee_count", 0),
-        ),
-        (
-            "Gross Remuneration",
-            totals.get("gross_remuneration", 0),
-        ),
-        (
-            "Taxable Remuneration",
-            totals.get("taxable_remuneration", 0),
-        ),
-        (
-            "Employee Amount",
-            totals.get("employee_amount", 0),
-        ),
-        (
-            "Employer Amount",
-            totals.get("employer_amount", 0),
-        ),
-        (
-            "Total Payable",
-            totals.get("total_payable", 0),
-        ),
+        ("Employee Count", totals.get("employee_count", 0), "count"),
+        ("Gross Remuneration", totals.get("gross_remuneration", 0), "money"),
+        ("Taxable Remuneration", totals.get("taxable_remuneration", 0), "money"),
+        ("Employee Amount", totals.get("employee_amount", 0), "money"),
+        ("Employer Amount", totals.get("employer_amount", 0), "money"),
+        ("Total Payable", totals.get("total_payable", 0), "money"),
     ]
 
-    for label, value in totals_rows:
+    for label, value, kind in totals_rows:
         worksheet.cell(
             row=row_no,
             column=1,
             value=label,
-        ).font = Font(
-            bold=True
-        )
+        ).font = Font(bold=True)
 
-        worksheet.cell(
-            row=row_no,
-            column=2,
-            value=value,
-        )
+        _put(
+            worksheet,
+            row_no,
+            2,
+            value,
+            kind=kind,
+        ).font = Font(bold=True)
 
         row_no += 1
 
-    for column in worksheet.columns:
+    # -- Column widths (no global number-format pass anymore!) ------------
+    for column_cells in worksheet.columns:
         max_length = 0
 
-        column_letter = (
-            column[0].column_letter
+        column_letter = get_column_letter(
+            column_cells[0].column,
         )
 
-        for cell in column:
-            try:
-                value_length = len(
-                    str(cell.value)
+        for cell in column_cells:
+            if cell.value is not None:
+                max_length = max(
+                    max_length,
+                    len(str(cell.value)),
                 )
-
-                if value_length > max_length:
-                    max_length = value_length
-
-            except Exception:
-                pass
 
         worksheet.column_dimensions[
             column_letter
         ].width = min(
             max(max_length + 2, 12),
-            40,
+            45,
         )
 
-    for row in worksheet.iter_rows():
-        for cell in row:
-            if isinstance(
-                cell.value,
-                (int, float),
-            ):
-                cell.number_format = (
-                    '#,##0.00'
-                )
+    # -- Print setup: one page wide, landscape A4 --------------------------
+    worksheet.page_setup.orientation = "landscape"
+    worksheet.page_setup.paperSize = worksheet.PAPERSIZE_A4
+    worksheet.page_setup.fitToWidth = 1
+    worksheet.page_setup.fitToHeight = 0
+    worksheet.sheet_properties.pageSetUpPr = PageSetupProperties(
+        fitToPage=True,
+    )
+    worksheet.print_options.horizontalCentered = True
+    worksheet.page_margins = PageMargins(
+        left=0.4,
+        right=0.4,
+        top=0.6,
+        bottom=0.6,
+        header=0.2,
+        footer=0.2,
+    )
+    worksheet.oddFooter.right.text = "Page &P of &N"
 
     output = BytesIO()
 
@@ -1628,16 +1695,548 @@ def _export_payroll_statutory_return_xlsx(
 
     output.seek(0)
 
+    company_slug = re.sub(
+        r"[^A-Za-z0-9]+",
+        "-",
+        str(company.get("name") or "company"),
+    ).strip("-")
+
+    return_ref = (
+        meta.get("return_no")
+        or meta.get("return_id")
+        or "export"
+    )
+
     return send_file(
         output,
         as_attachment=True,
         download_name=(
-            f"EMP201_"
-            f"{meta.get('company_id')}_"
-            f"{meta.get('return_id')}.xlsx"
+            f"EMP201_{company_slug}_{return_ref}.xlsx"
         ),
         mimetype=(
             "application/vnd.openxmlformats-"
             "officedocument.spreadsheetml.sheet"
         ),
     )
+
+
+
+
+def _company_detail_rows(meta: dict) -> list:
+    company = meta.get("company") or {}
+
+    return [
+        ("Company Name", company.get("name")),
+        ("Client Code", company.get("client_code")),
+        ("Company Reg No", company.get("reg_no")),
+        ("Tax Reference (TIN)", company.get("tin")),
+        ("VAT Number", company.get("vat_number")),
+        ("Company Email", company.get("email")),
+        ("Company Phone", company.get("phone")),
+        ("Physical Address", company.get("physical_address")),
+        ("Postal Address", company.get("postal_address")),
+        ("Currency", company.get("currency")),
+    ]
+
+
+def _return_meta_rows(meta: dict) -> list:
+    return [
+        ("Authority", meta.get("authority_code")),
+        ("Return Type", meta.get("return_type")),
+        ("Return Number", meta.get("return_no")),
+        ("Company ID", meta.get("company_id")),
+        ("Period Start", meta.get("period_start")),
+        ("Period End", meta.get("period_end")),
+        ("Status", meta.get("status")),
+    ]
+
+
+def _export_download_name(meta: dict, extension: str) -> str:
+    company = meta.get("company") or {}
+
+    slug = re.sub(
+        r"[^A-Za-z0-9]+",
+        "-",
+        str(company.get("name") or "company"),
+    ).strip("-")
+
+    ref = (
+        meta.get("return_no")
+        or meta.get("return_id")
+        or "export"
+    )
+
+    return f"EMP201_{slug}_{ref}.{extension}"
+
+def _export_payroll_statutory_return_csv(
+    payload: dict,
+    layout: str = "report",
+):
+    meta = payload.get("meta") or {}
+    sections = payload.get("sections") or []
+    totals = payload.get("totals") or {}
+
+    include_meta = layout != "data"
+
+    buffer = StringIO()
+
+    writer = csv.writer(
+        buffer,
+        lineterminator="\r\n",
+    )
+
+    def money(value):
+        try:
+            return f"{float(value or 0):.2f}"
+        except (TypeError, ValueError):
+            return value
+
+    def count(value):
+        try:
+            return str(int(value or 0))
+        except (TypeError, ValueError):
+            return value
+
+    if include_meta:
+        writer.writerow(["EMP201 STATUTORY RETURN"])
+        writer.writerow([])
+
+        for label, value in _company_detail_rows(meta):
+            if value in (None, ""):
+                continue
+
+            writer.writerow([label, value])
+
+        writer.writerow([])
+
+        for label, value in _return_meta_rows(meta):
+            writer.writerow(
+                [label, value if value is not None else ""]
+            )
+
+        writer.writerow([])
+
+    headers = [
+        "Section",
+        "Employee No",
+        "Employee Name",
+        "Tax Number",
+        "Department",
+        "Source Code",
+        "Description",
+        "Gross Remuneration",
+        "Taxable Remuneration",
+        "Employee Amount",
+        "Employer Amount",
+        "Total",
+    ]
+
+    writer.writerow(headers)
+
+    for section in sections:
+        title = (
+            section.get("title")
+            or "Statutory Return"
+        )
+
+        for item in section.get("rows") or []:
+            writer.writerow([
+                title,
+                item.get("employee_no"),
+                item.get("employee_name"),
+                item.get("tax_number"),
+                item.get("department"),
+                item.get("source_code"),
+                item.get("description"),
+                money(item.get("gross_remuneration", 0)),
+                money(item.get("taxable_remuneration", 0)),
+                money(item.get("employee_amount", 0)),
+                money(item.get("employer_amount", 0)),
+                money(item.get("total_amount", 0)),
+            ])
+
+    if include_meta:
+        writer.writerow([])
+
+        writer.writerow(["RETURN TOTALS"])
+
+        totals_rows = [
+            ("Employee Count",
+                count(totals.get("employee_count", 0))),
+            ("Gross Remuneration",
+                money(totals.get("gross_remuneration", 0))),
+            ("Taxable Remuneration",
+                money(totals.get("taxable_remuneration", 0))),
+            ("Employee Amount",
+                money(totals.get("employee_amount", 0))),
+            ("Employer Amount",
+                money(totals.get("employer_amount", 0))),
+            ("Total Payable",
+                money(totals.get("total_payable", 0))),
+        ]
+
+        for label, value in totals_rows:
+            writer.writerow([label, value])
+
+    output = BytesIO()
+
+    output.write(
+        buffer.getvalue().encode("utf-8-sig")
+    )
+
+    output.seek(0)
+
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=_export_download_name(meta, "csv"),
+        mimetype="text/csv; charset=utf-8",
+    )
+
+def _xml_child(
+    parent,
+    tag: str,
+    value,
+    decimals: bool = False,
+    skip_empty: bool = False,
+):
+    text = value
+
+    if decimals:
+        try:
+            text = f"{float(value or 0):.2f}"
+        except (TypeError, ValueError):
+            text = str(value or 0)
+    elif value is not None and not isinstance(value, str):
+        text = str(value)
+
+    if skip_empty and (text is None or text == ""):
+        return None
+
+    element = ET.SubElement(parent, tag)
+
+    element.text = text
+
+    return element
+
+
+def _export_payroll_statutory_return_xml(
+    payload: dict,
+):
+    meta = payload.get("meta") or {}
+    company = meta.get("company") or {}
+    sections = payload.get("sections") or []
+    totals = payload.get("totals") or {}
+
+    root = ET.Element(
+        "StatutoryReturn",
+        {
+            "authority":
+                str(meta.get("authority_code") or ""),
+            "returnType":
+                str(meta.get("return_type") or ""),
+            "returnNo":
+                str(meta.get("return_no") or ""),
+            "periodStart":
+                str(meta.get("period_start") or ""),
+            "periodEnd":
+                str(meta.get("period_end") or ""),
+            "status":
+                str(meta.get("status") or ""),
+            "generatedAt": datetime.now(timezone.utc)
+                .strftime("%Y-%m-%dT%H:%M:%SZ"),
+        },
+    )
+
+    company_el = ET.SubElement(root, "Company")
+
+    company_el.set(
+        "id",
+        str(meta.get("company_id") or ""),
+    )
+
+    for tag, key in [
+        ("Name", "name"),
+        ("ClientCode", "client_code"),
+        ("RegistrationNumber", "reg_no"),
+        ("TaxReference", "tin"),
+        ("VatNumber", "vat_number"),
+        ("Email", "email"),
+        ("Phone", "phone"),
+        ("PhysicalAddress", "physical_address"),
+        ("PostalAddress", "postal_address"),
+        ("Currency", "currency"),
+    ]:
+        _xml_child(
+            company_el,
+            tag,
+            company.get(key),
+            skip_empty=True,
+        )
+
+    sections_el = ET.SubElement(root, "Sections")
+
+    for section in sections:
+        section_el = ET.SubElement(
+            sections_el,
+            "Section",
+            {
+                "title": str(
+                    section.get("title")
+                    or "Statutory Return"
+                ),
+            },
+        )
+
+        for item in section.get("rows") or []:
+            row_el = ET.SubElement(section_el, "Row")
+
+            _xml_child(row_el, "EmployeeNo",
+                item.get("employee_no"))
+            _xml_child(row_el, "EmployeeName",
+                item.get("employee_name"))
+            _xml_child(row_el, "TaxNumber",
+                item.get("tax_number"))
+            _xml_child(row_el, "Department",
+                item.get("department"))
+            _xml_child(row_el, "SourceCode",
+                item.get("source_code"))
+            _xml_child(row_el, "Description",
+                item.get("description"))
+
+            _xml_child(row_el, "GrossRemuneration",
+                item.get("gross_remuneration", 0),
+                decimals=True)
+            _xml_child(row_el, "TaxableRemuneration",
+                item.get("taxable_remuneration", 0),
+                decimals=True)
+            _xml_child(row_el, "EmployeeAmount",
+                item.get("employee_amount", 0),
+                decimals=True)
+            _xml_child(row_el, "EmployerAmount",
+                item.get("employer_amount", 0),
+                decimals=True)
+            _xml_child(row_el, "TotalAmount",
+                item.get("total_amount", 0),
+                decimals=True)
+
+    totals_el = ET.SubElement(root, "Totals")
+
+    _xml_child(totals_el, "EmployeeCount",
+        totals.get("employee_count", 0))
+    _xml_child(totals_el, "GrossRemuneration",
+        totals.get("gross_remuneration", 0),
+        decimals=True)
+    _xml_child(totals_el, "TaxableRemuneration",
+        totals.get("taxable_remuneration", 0),
+        decimals=True)
+    _xml_child(totals_el, "EmployeeAmount",
+        totals.get("employee_amount", 0),
+        decimals=True)
+    _xml_child(totals_el, "EmployerAmount",
+        totals.get("employer_amount", 0),
+        decimals=True)
+    _xml_child(totals_el, "TotalPayable",
+        totals.get("total_payable", 0),
+        decimals=True)
+
+    try:
+        ET.indent(root, space="  ")
+    except AttributeError:
+        pass  # Python < 3.9 — output stays valid, just unindented
+
+    xml_bytes = ET.tostring(
+        root,
+        encoding="UTF-8",
+        xml_declaration=True,
+    )
+
+    output = BytesIO(xml_bytes)
+
+    output.seek(0)
+
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=_export_download_name(meta, "xml"),
+        mimetype="application/xml",
+    )
+
+
+MONEY_KEYS = (
+    "gross_remuneration",
+    "taxable_remuneration",
+    "employee_amount",
+    "employer_amount",
+    "total_amount",
+)
+
+
+def _money(value) -> str:
+    try:
+        return f"{float(value or 0):.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+def _export_download_name(meta: dict, extension: str) -> str:
+    company = meta.get("company") or {}
+
+    slug = re.sub(
+        r"[^A-Za-z0-9]+",
+        "-",
+        str(company.get("name") or "company"),
+    ).strip("-")
+
+    ref = (
+        meta.get("return_no")
+        or meta.get("return_id")
+        or "export"
+    )
+
+    return f"EMP201_{slug}_{ref}.{extension}"
+
+
+def _xml_child(parent, tag: str, value, money: bool = False):
+    if money:
+        text = _money(value)
+    elif value is None:
+        text = ""
+    else:
+        text = str(value)
+
+    element = ET.SubElement(parent, tag)
+    element.text = text
+    return element
+
+
+def _xml_section_totals(section_el, rows: list):
+    totals_el = ET.SubElement(section_el, "SectionTotals")
+
+    _xml_child(totals_el, "RowCount", len(rows))
+
+    for key, tag in [
+        ("gross_remuneration", "GrossRemuneration"),
+        ("taxable_remuneration", "TaxableRemuneration"),
+        ("employee_amount", "EmployeeAmount"),
+        ("employer_amount", "EmployerAmount"),
+        ("total_amount", "TotalAmount"),
+    ]:
+        section_total = sum(
+            float(row.get(key) or 0)
+            for row in rows
+        )
+
+        _xml_child(
+            totals_el,
+            tag,
+            section_total,
+            money=True,
+        )
+
+
+def _export_payroll_statutory_return_xml(
+    payload: dict,
+):
+    meta = payload.get("meta") or {}
+    company = meta.get("company") or {}
+    sections = payload.get("sections") or []
+    totals = payload.get("totals") or {}
+
+    root = ET.Element("StatutoryReturn")
+    root.set("authority", str(meta.get("authority_code") or ""))
+    root.set("returnType", str(meta.get("return_type") or ""))
+    root.set("returnNo", str(meta.get("return_no") or ""))
+    root.set("periodStart", str(meta.get("period_start") or ""))
+    root.set("periodEnd", str(meta.get("period_end") or ""))
+    root.set("status", str(meta.get("status") or ""))
+    root.set(
+        "generatedAt",
+        datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+
+    # -- Company details: every tag always emitted (empty string if unset),
+    #    so downstream parsers can rely on presence -----------------------
+    company_el = ET.SubElement(root, "Company")
+    company_el.set("id", str(meta.get("company_id") or ""))
+
+    _xml_child(company_el, "Name", company.get("name"))
+    _xml_child(company_el, "ClientCode", company.get("client_code"))
+    _xml_child(company_el, "RegistrationNumber", company.get("reg_no"))
+    _xml_child(company_el, "TaxReference", company.get("tin"))
+    _xml_child(company_el, "VatNumber", company.get("vat_number"))
+    _xml_child(company_el, "Email", company.get("email"))
+    _xml_child(company_el, "Phone", company.get("phone"))
+    _xml_child(company_el, "PhysicalAddress", company.get("physical_address"))
+    _xml_child(company_el, "PostalAddress", company.get("postal_address"))
+    _xml_child(company_el, "Currency", company.get("currency"))
+
+    # -- Sections --------------------------------------------------------
+    sections_el = ET.SubElement(root, "Sections")
+
+    for section in sections:
+        title = section.get("title") or "Statutory Return"
+        rows = section.get("rows") or []
+
+        section_el = ET.SubElement(sections_el, "Section")
+        section_el.set("title", str(title))
+
+        for item in rows:
+            row_el = ET.SubElement(section_el, "Row")
+
+            _xml_child(row_el, "EmployeeNo", item.get("employee_no"))
+            _xml_child(row_el, "EmployeeName", item.get("employee_name"))
+            _xml_child(row_el, "TaxNumber", item.get("tax_number"))
+            _xml_child(row_el, "Department", item.get("department"))
+            _xml_child(row_el, "SourceCode", item.get("source_code"))
+            _xml_child(row_el, "Description", item.get("description"))
+
+            _xml_child(row_el, "GrossRemuneration",
+                item.get("gross_remuneration", 0), money=True)
+            _xml_child(row_el, "TaxableRemuneration",
+                item.get("taxable_remuneration", 0), money=True)
+            _xml_child(row_el, "EmployeeAmount",
+                item.get("employee_amount", 0), money=True)
+            _xml_child(row_el, "EmployerAmount",
+                item.get("employer_amount", 0), money=True)
+            _xml_child(row_el, "TotalAmount",
+                item.get("total_amount", 0), money=True)
+
+        _xml_section_totals(section_el, rows)
+
+    # -- Return totals ----------------------------------------------------
+    totals_el = ET.SubElement(root, "Totals")
+
+    _xml_child(totals_el, "EmployeeCount", totals.get("employee_count", 0))
+    _xml_child(totals_el, "GrossRemuneration",
+        totals.get("gross_remuneration", 0), money=True)
+    _xml_child(totals_el, "TaxableRemuneration",
+        totals.get("taxable_remuneration", 0), money=True)
+    _xml_child(totals_el, "EmployeeAmount",
+        totals.get("employee_amount", 0), money=True)
+    _xml_child(totals_el, "EmployerAmount",
+        totals.get("employer_amount", 0), money=True)
+    _xml_child(totals_el, "TotalPayable",
+        totals.get("total_payable", 0), money=True)
+
+    try:
+        ET.indent(root, space="  ")
+    except AttributeError:
+        pass  # Python < 3.9: output valid, just not indented
+
+    xml_bytes = ET.tostring(
+        root,
+        encoding="UTF-8",
+        xml_declaration=True,
+    )
+
+    output = BytesIO(xml_bytes)
+    output.seek(0)
+
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=_export_download_name(meta, "xml"),
+        mimetype="application/xml",
+    )
+
