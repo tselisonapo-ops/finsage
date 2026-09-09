@@ -3838,9 +3838,17 @@ def api_payroll_statutory_returns(company_id:int):
                 date_from=request.args.get("date_from"),
                 date_to=request.args.get("date_to"),
             )
+
+            calendar=db_service.payroll_pay_calendars_list(
+                company_id,
+                date_from=request.args.get("date_from"),
+                date_to=request.args.get("date_to"),
+            )
+
             return jsonify({
                 "ok":True,
                 "items":items,
+                "calendar":calendar,
             }),200
 
         out=db_service.payroll_statutory_return_save(
@@ -3848,6 +3856,7 @@ def api_payroll_statutory_returns(company_id:int):
             _payroll_body(),
             _jwt_user_id(),
         )
+
         return jsonify({
             "ok":True,
             "data":out,
@@ -3857,11 +3866,11 @@ def api_payroll_statutory_returns(company_id:int):
         current_app.logger.exception(
             "payroll statutory returns failed"
         )
+
         return jsonify({
             "ok":False,
             "error":str(error),
         }),400
-
 
 @payroll_bp.route(
     "/api/companies/<int:company_id>/payroll/"

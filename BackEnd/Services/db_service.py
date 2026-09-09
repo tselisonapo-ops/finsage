@@ -167954,6 +167954,45 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return bool(row)
 
+    def payroll_pay_calendars_list(
+        self,
+        company_id: int,
+        *,
+        status=None,
+        date_from=None,
+        date_to=None,
+    )->list[dict]:
+        schema=self.company_schema(company_id)
+
+        params=[int(company_id)]
+        where=[
+            "pc.company_id=%s",
+            "LOWER(COALESCE(pc.status,'')) <> 'closed'",
+        ]
+
+        if status:
+            where.append("pc.status=%s")
+            params.append(str(status).strip())
+
+        if date_from:
+            where.append("pc.period_end>=%s")
+            params.append(date_from)
+
+        if date_to:
+            where.append("pc.period_start<=%s")
+            params.append(date_to)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                pc.*
+            FROM {schema}.payroll_pay_calendars pc
+            WHERE {" AND ".join(where)}
+            ORDER BY pc.period_start ASC,pc.id ASC;
+            """,
+            tuple(params),
+        )
+
     def payroll_statutory_returns_list(
         self,
         company_id:int,
