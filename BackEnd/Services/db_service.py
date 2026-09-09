@@ -169367,6 +169367,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     )
                     AND LOWER(COALESCE(prl.line_type, '')) IN (
                         'employer',
+                        'employer_contribution',
                         'employer_cost',
                         'employer_costs',
                         'contribution'
