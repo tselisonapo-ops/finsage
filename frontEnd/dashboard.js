@@ -84771,57 +84771,140 @@ async function saveEditModal() {
 
   async function loadPayrollStatutoryWorkspace() {
     const params = {
-        authority_code:
-            $("payrollStatutoryAuthorityFilter")?.value || "",
+      authority_code:
+        $("payrollStatutoryAuthorityFilter")?.value || "",
 
-        return_type:
-            $("payrollStatutoryTypeFilter")?.value || "",
+      return_type:
+        $("payrollStatutoryTypeFilter")?.value || "",
 
-        status:
-            $("payrollStatutoryStatusFilter")?.value || "",
+      status:
+        $("payrollStatutoryStatusFilter")?.value || "",
     };
 
     const [mappings, returns] = await Promise.all([
-        apiFetch(
-            ENDPOINTS.payroll.statutoryMappings(cid())
-        ),
+      apiFetch(
+        ENDPOINTS.payroll.statutoryMappings(cid())
+      ),
 
-        apiFetch(
-            ENDPOINTS.payroll.statutoryReturns(
-                cid(),
-                params
-            )
-        ),
+      apiFetch(
+        ENDPOINTS.payroll.statutoryReturns(
+          cid(),
+          params
+        )
+      ),
     ]);
 
     payrollState.statutory.mappings =
-        mappings?.items || [];
+      mappings?.items || [];
 
     payrollState.statutory.returns =
-        returns?.items || [];
+      returns?.items || [];
+
+    payrollState.statutory.calendar =
+      returns?.calendar || [];
 
     console.log(
-        "STATUTORY RETURNS RESPONSE",
-        returns
+      "STATUTORY RETURNS RESPONSE",
+      returns
     );
 
     console.log(
-        "STATUTORY RETURNS ITEMS",
-        payrollState.statutory.returns
+      "STATUTORY RETURNS ITEMS",
+      payrollState.statutory.returns
+    );
+
+    console.log(
+      "PAYROLL STATUTORY CALENDAR",
+      payrollState.statutory.calendar
     );
 
     renderPayrollStatutoryDashboard();
 
     if (
-        window.__taxFiling &&
-        typeof window.__taxFiling.init === "function"
+      window.__taxFiling &&
+      typeof window.__taxFiling.init === "function"
     ) {
-        window.__taxFiling.init();
+      window.__taxFiling.init();
     }
   }
 
   window.loadPayrollStatutoryWorkspace=
     loadPayrollStatutoryWorkspace;
+
+  function populatePayrollStatutoryFilingMonths() {
+    const select = $("taxFilingMonth");
+
+    if (!select) {
+      return;
+    }
+
+    const calendar =
+      payrollState.statutory.calendar || [];
+
+    const months = [];
+
+    [...calendar]
+      .sort((a, b) => {
+        const dateA = String(
+          a.period_start ||
+          a.periodStart ||
+          ""
+        ).slice(0, 10);
+
+        const dateB = String(
+          b.period_start ||
+          b.periodStart ||
+          ""
+        ).slice(0, 10);
+
+        return dateA.localeCompare(dateB);
+      })
+      .forEach(period => {
+        const periodStart = String(
+          period.period_start ||
+          period.periodStart ||
+          ""
+        ).slice(0, 10);
+
+        if (!periodStart) {
+          return;
+        }
+
+        const month = periodStart.slice(0, 7);
+
+        if (!months.includes(month)) {
+          months.push(month);
+        }
+      });
+
+    select.innerHTML = `
+      <option value="">
+        All Filing Months
+      </option>
+
+      ${months.map(month => {
+        const [year, monthNumber] = month.split("-");
+
+        const label = new Date(
+          Number(year),
+          Number(monthNumber) - 1,
+          1
+        ).toLocaleString(
+          "en-US",
+          {
+            month: "long",
+            year: "numeric"
+          }
+        );
+
+        return `
+          <option value="${esc(month)}">
+            ${esc(label)}
+          </option>
+        `;
+      }).join("")}
+    `;
+  }
 
   function openPayrollStatutoryAuthority(authority){
     payrollState.statutory.selectedAuthority=authority;
@@ -85052,6 +85135,7 @@ async function saveEditModal() {
         </div>
     `;
 
+    populatePayrollStatutoryFilingMonths();
     el.querySelector("[data-statutory-dashboard]")
         ?.addEventListener("click",()=>{
             renderPayrollStatutoryDashboard();
