@@ -8009,22 +8009,107 @@ def _acc_dep_roles_for_asset(asset: dict) -> list[str]:
     ]
 
 def _dep_exp_roles_for_asset(asset: dict) -> list[str]:
-    g = str(asset.get("asset_class_group") or asset.get("asset_class") or "").lower()
+    g = str(
+        asset.get("asset_class_group")
+        or asset.get("asset_class")
+        or ""
+    ).lower()
 
-    if "building" in g or "land" in g:
-        return ["depreciation_expense_buildings", "depreciation_expense_ppe", "depreciation_expense"]
+    if "building" in g:
+        return [
+            "depreciation_expense_buildings",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
+
+    if "land" in g:
+        return [
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
+
+    if "construction" in g:
+        return [
+            "depreciation_expense_construction_equipment",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
+
+    if "mining" in g:
+        return [
+            "depreciation_expense_mining_equipment",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
+
+    if "manufacturing" in g or "machinery" in g or "plant" in g:
+        return [
+            "depreciation_expense_manufacturing_equipment",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
+
+    if "heavy vehicle" in g or "heavy vehicles" in g:
+        return [
+            "depreciation_expense_heavy_vehicles",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
+
+    if "truck" in g or "lorry" in g:
+        return [
+            "depreciation_expense_heavy_vehicles",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
+
+    if "vehicle" in g or "motor vehicle" in g or "motor vehicles" in g:
+        return [
+            "depreciation_expense_motor_vehicles",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
+
+    if "computer" in g:
+        return [
+            "depreciation_expense_computer_equipment",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
+
+    if "office equipment" in g:
+        return [
+            "depreciation_expense_office_equipment",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
 
     if "furniture" in g or "fittings" in g:
-        return ["depreciation_expense_furniture", "depreciation_expense_office_furniture", "depreciation_expense_ppe", "depreciation_expense"]
+        return [
+            "depreciation_expense_office_furniture",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
 
-    if "vehicle" in g or "truck" in g or "lorry" in g:
-        return ["depreciation_expense_heavy_vehicles", "depreciation_expense_motor_vehicles", "depreciation_expense_ppe", "depreciation_expense"]
+    if "tools" in g or "small equipment" in g:
+        return [
+            "depreciation_expense_tools",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
 
-    if "computer" in g or "office equipment" in g:
-        return ["depreciation_expense_computer_equipment", "depreciation_expense_office_equipment", "depreciation_expense_ppe", "depreciation_expense"]
+    if "leasehold" in g or "improvement" in g:
+        return [
+            "depreciation_expense_leasehold_improvements",
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ]
 
-    return ["depreciation_expense_equipment", "depreciation_expense_ppe", "depreciation_expense"]
-
+    return [
+        "depreciation_expense_equipment",
+        "depreciation_expense_ppe",
+        "depreciation_expense",
+    ]
 def _coa_find_by_code(cur, schema: str, company_id: int, code: str | None, *, include_non_posting: bool = False) -> str | None:
     code = (code or "").strip()
     if not code:
