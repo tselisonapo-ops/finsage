@@ -70285,17 +70285,95 @@ class DatabaseService:
             )"""
         )
 
-        date_filter = ""
-        params = [
-            int(company_id),  # latest_paid
-            int(company_id),  # next_schedule
-        ]
-
         if as_of:
-            date_filter = "AND s.period_end >= %s"
-            params.append(as_of)
+            sql = f"""
+            SELECT
+                s.id AS schedule_id,
+                s.company_id,
+                s.lease_id,
+                s.period_no,
+                s.period_start,
+                s.period_end,
+                s.interest,
+                s.principal,
+                s.payment,
+                s.depreciation,
+                s.vat_portion,
+                s.net_payment,
 
-        params.append(int(company_id))  # leases JOIN
+                l.lease_name,
+                l.lessor_id,
+                ls.name AS lessor_name,
+
+                {posted_expr} AS posted,
+
+                EXISTS (
+                    SELECT 1
+                    FROM {schema}.lease_payments p
+                    WHERE p.company_id = s.company_id
+                    AND p.lease_id = s.lease_id
+                    AND p.schedule_id = s.id
+                    AND COALESCE(p.status, '') IN ('draft','posted')
+                ) AS paid,
+
+                (
+                    SELECT p.id
+                    FROM {schema}.lease_payments p
+                    WHERE p.company_id = s.company_id
+                    AND p.lease_id = s.lease_id
+                    AND p.schedule_id = s.id
+                    ORDER BY p.id DESC
+                    LIMIT 1
+                ) AS payment_id,
+
+                (
+                    SELECT p.status
+                    FROM {schema}.lease_payments p
+                    WHERE p.company_id = s.company_id
+                    AND p.lease_id = s.lease_id
+                    AND p.schedule_id = s.id
+                    ORDER BY p.id DESC
+                    LIMIT 1
+                ) AS payment_status,
+
+                (
+                    SELECT p.posted_journal_id
+                    FROM {schema}.lease_payments p
+                    WHERE p.company_id = s.company_id
+                    AND p.lease_id = s.lease_id
+                    AND p.schedule_id = s.id
+                    ORDER BY p.id DESC
+                    LIMIT 1
+                ) AS payment_journal_id,
+
+                s.posted_journal_id,
+                s.posted_at
+
+            FROM {schema}.lease_schedule s
+
+            JOIN {schema}.leases l
+                ON l.id = s.lease_id
+                AND l.company_id = %s
+
+            LEFT JOIN {schema}.lessors ls
+                ON ls.id = l.lessor_id
+
+            WHERE s.company_id = %s
+            AND COALESCE(s.is_active, TRUE) = TRUE
+            AND s.period_end >= %s
+
+            ORDER BY s.period_end ASC, l.id ASC
+            """
+
+            return self.fetch_all(
+                sql,
+                (
+                    int(company_id),
+                    int(company_id),
+                    as_of,
+                ),
+                cur=cur,
+            )
 
         sql = f"""
         WITH latest_paid AS (
@@ -70311,7 +70389,7 @@ class DatabaseService:
                 WHERE p.company_id = s.company_id
                 AND p.lease_id = s.lease_id
                 AND p.schedule_id = s.id
-                AND COALESCE(p.status, '') IN ('draft', 'posted')
+                AND COALESCE(p.status, '') = 'posted'
             )
             GROUP BY s.lease_id
         ),
@@ -70324,11 +70402,12 @@ class DatabaseService:
                     ORDER BY s.period_no ASC, s.period_end ASC, s.id ASC
                 ) AS rn
             FROM {schema}.lease_schedule s
+
             LEFT JOIN latest_paid lp
                 ON lp.lease_id = s.lease_id
+
             WHERE s.company_id = %s
             AND COALESCE(s.is_active, TRUE) = TRUE
-            {date_filter}
             AND (
                 lp.latest_paid_period IS NULL
                 OR s.period_no > lp.latest_paid_period
@@ -70413,7 +70492,11 @@ class DatabaseService:
 
         return self.fetch_all(
             sql,
-            tuple(params),
+            (
+                int(company_id),
+                int(company_id),
+                int(company_id),
+            ),
             cur=cur,
         )
 
