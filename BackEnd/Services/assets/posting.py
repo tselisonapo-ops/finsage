@@ -8219,8 +8219,36 @@ def get_class_policy(cur, schema: str, company_id: int, asset_class: str | None)
     """), (company_id, asset_class))
     return cur.fetchone() or {}
 
-def build_dep_preview_journal_lines(cur, schema: str, company_id: int, asset_row: dict, dep_row: dict) -> list[dict]:
-    amt = dep_row.get("depreciation_amount") or dep_row.get("amount") or 0
+def build_dep_preview_journal_lines(
+    cur,
+    schema: str,
+    company_id: int,
+    asset_row: dict,
+    dep_row: dict,
+) -> list[dict]:
+
+    # -------------------------------------------------
+    # Only build depreciation journals for PPE / ROU
+    # assets. The accounting_standard comes directly
+    # from the assets table.
+    # -------------------------------------------------
+    accounting_standard = str(
+        asset_row.get("accounting_standard") or ""
+    ).strip().lower()
+
+    is_ppe_standard = (
+        "ias 16" in accounting_standard
+        or "ifrs 16" in accounting_standard
+    )
+
+    if not is_ppe_standard:
+        return []
+
+    amt = (
+        dep_row.get("depreciation_amount")
+        or dep_row.get("amount")
+        or 0
+    )
 
     try:
         amt = Decimal(str(amt))
@@ -8240,11 +8268,57 @@ def build_dep_preview_journal_lines(cur, schema: str, company_id: int, asset_row
     dep_exp_code = dep_exp_code or "MISSING_DEP_EXPENSE_ACCT"
     acc_dep_code = acc_dep_code or "MISSING_ACC_DEP_ACCT"
 
+    # -------------------------------------------------
+    # Resolve account names for display.
+    # Codes remain the actual posting identifiers.
+    # -------------------------------------------------
+    account_codes = [
+        dep_exp_code,
+        acc_dep_code,
+    ]
+
+    account_names = {}
+
+    real_codes = [
+        code
+        for code in account_codes
+        if code
+        and not str(code).startswith("MISSING_")
+    ]
+
+    if real_codes:
+        cur.execute(
+            f"""
+            SELECT code, name
+            FROM {schema}.coa
+            WHERE company_id = %s
+              AND code = ANY(%s)
+            """,
+            (
+                company_id,
+                real_codes,
+            ),
+        )
+
+        for row in fetchall(cur):
+            account_names[row["code"]] = row["name"]
+
+    dep_exp_name = account_names.get(
+        dep_exp_code,
+        dep_exp_code,
+    )
+
+    acc_dep_name = account_names.get(
+        acc_dep_code,
+        acc_dep_code,
+    )
+
     return [
         {
             "asset_id": dep_row.get("asset_id"),
             "dep_id": dep_row.get("id"),
             "account_code": dep_exp_code,
+            "account_name": dep_exp_name,
             "debit": str(amt),
             "credit": "0.00",
             "line_type": "depreciation_expense",
@@ -8253,6 +8327,7 @@ def build_dep_preview_journal_lines(cur, schema: str, company_id: int, asset_row
             "asset_id": dep_row.get("asset_id"),
             "dep_id": dep_row.get("id"),
             "account_code": acc_dep_code,
+            "account_name": acc_dep_name,
             "debit": "0.00",
             "credit": str(amt),
             "line_type": "accumulated_depreciation",
