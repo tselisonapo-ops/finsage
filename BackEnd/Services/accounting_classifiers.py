@@ -879,7 +879,7 @@ def _coa_role_from_text(
 
     is_rou = any(k in text for k in (
         "right-of-use", "right of use", "rou", "ifrs 16", "lease amort"
-
+        ))
     # ----------------------------
     # IAS 41 Agriculture
     # Must run before generic inventory, sales, fair-value and PPE rules
