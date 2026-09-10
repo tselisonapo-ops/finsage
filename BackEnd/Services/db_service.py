@@ -64729,8 +64729,8 @@ class DatabaseService:
         3. Provision a compatible account from public.coa_pool.
         4. Verify the provisioned account carries the requested role.
 
-        The caller supplies the semantic role. The master COA pool does NOT need
-        a role column; pool rows are classified through _coa_role_from_text().
+        public.coa_pool does not need a role column. Pool rows are classified
+        through _coa_role_from_text().
         """
 
         company_id = int(company_id)
@@ -64743,14 +64743,23 @@ class DatabaseService:
 
         if not requested_role:
             if required:
-                raise ValueError("ensure_required_coa_account requires a non-empty role.")
+                raise ValueError(
+                    "ensure_required_coa_account requires a non-empty role."
+                )
             return None
 
         schema = self.company_schema(company_id)
 
+        def _row_dict(_cur, row):
+            if row is None:
+                return None
+            if isinstance(row, dict):
+                return dict(row)
+            return dict(zip([d[0] for d in _cur.description], row))
+
         def _existing_account(_cur):
             # ------------------------------------------------------------
-            # 1. Exact role already assigned in company COA
+            # 1. Exact role already assigned.
             # ------------------------------------------------------------
             _cur.execute(
                 f"""
@@ -64758,9 +64767,7 @@ class DatabaseService:
                 FROM {schema}.coa
                 WHERE COALESCE(posting, TRUE) = TRUE
                 AND LOWER(TRIM(COALESCE(role, ''))) = %s
-                ORDER BY
-                    CASE WHEN COALESCE(is_general, FALSE) = TRUE THEN 0 ELSE 1 END,
-                    id
+                ORDER BY id
                 LIMIT 1
                 """,
                 (requested_role,),
@@ -64769,16 +64776,11 @@ class DatabaseService:
             row = _cur.fetchone()
 
             if row:
-                if isinstance(row, dict):
-                    return dict(row)
-
-                columns = [d[0] for d in _cur.description]
-                return dict(zip(columns, row))
+                return _row_dict(_cur, row)
 
             # ------------------------------------------------------------
-            # 2. Existing company account may have the correct semantics
-            #    but a missing role. Let the normal semantic repair function
-            #    handle that case.
+            # 2. Existing account may have the correct semantics but
+            #    no role. Let the normal role-repair mechanism handle it.
             # ------------------------------------------------------------
             repaired = self.ensure_coa_role_for_posting(
                 company_id,
@@ -64837,16 +64839,15 @@ class DatabaseService:
         """
         Provision a missing system/subledger posting account from public.coa_pool.
 
-        IMPORTANT:
-        - public.coa_pool has no role column.
-        - Roles are derived semantically from the pool row using
-            _coa_role_from_text().
-        - A specific role may fall back to a compatible generic role.
-        - Expense and accumulated-depreciation families are kept separate.
+        coa_pool has no role column. The semantic role is inferred using
+        _coa_role_from_text().
+
+        A specific role may fall back to a compatible generic role, but an
+        expense role can never fall back to accumulated depreciation and vice
+        versa.
         """
 
         company_id = int(company_id)
-        schema = self.company_schema(company_id)
 
         requested_role = (
             " ".join(str(requested_role or "").split())
@@ -64858,12 +64859,10 @@ class DatabaseService:
         if not requested_role:
             return None
 
+        schema = self.company_schema(company_id)
+
         # ------------------------------------------------------------
-        # Role fallback hierarchy.
-        #
-        # Specific asset-class roles may not exist in the generic master
-        # COA pool. In that case, use a semantically compatible generic
-        # PPE role rather than failing.
+        # Specific role -> compatible generic fallback.
         # ------------------------------------------------------------
         fallback_roles = {
             "depreciation_expense_buildings": [
@@ -64974,13 +64973,11 @@ class DatabaseService:
         )
 
         # ------------------------------------------------------------
-        # Never allow an expense role to fall back to an accumulated
-        # depreciation role, or accumulated depreciation to an expense.
+        # Hard separation between expense and accumulated roles.
         # ------------------------------------------------------------
-        requested_is_accum = requested_role.startswith(
-            "accumulated_depreciation"
-        ) or requested_role.startswith(
-            "accumulated_amortization"
+        requested_is_accum = (
+            requested_role.startswith("accumulated_depreciation")
+            or requested_role.startswith("accumulated_amortization")
         )
 
         requested_is_expense = (
@@ -65009,8 +65006,7 @@ class DatabaseService:
             ]
 
         # ------------------------------------------------------------
-        # Load master COA pool.
-        # No role column is expected here.
+        # Read master COA pool.
         # ------------------------------------------------------------
         cur.execute(
             """
@@ -65021,6 +65017,7 @@ class DatabaseService:
         )
 
         pool_rows = cur.fetchall()
+        pool_columns = [d[0] for d in cur.description]
 
         if not pool_rows:
             raise ValueError(
@@ -65028,15 +65025,14 @@ class DatabaseService:
                 f"required role '{requested_role}' can be provisioned."
             )
 
-        columns = [d[0] for d in cur.description]
-
         pool = []
 
         for row in pool_rows:
-            if isinstance(row, dict):
-                item = dict(row)
-            else:
-                item = dict(zip(columns, row))
+            item = (
+                dict(row)
+                if isinstance(row, dict)
+                else dict(zip(pool_columns, row))
+            )
 
             semantic_role = self._coa_role_from_text(
                 item.get("name", ""),
@@ -65055,11 +65051,10 @@ class DatabaseService:
             )
 
             item["_semantic_role"] = semantic_role
-
             pool.append(item)
 
         # ------------------------------------------------------------
-        # Find the first compatible semantic role in the fallback chain.
+        # Find exact semantic role first, then compatible fallback.
         # ------------------------------------------------------------
         selected_role = None
         candidates = []
@@ -65084,12 +65079,10 @@ class DatabaseService:
             )
 
         # ------------------------------------------------------------
-        # Additional safety:
-        # the actual pool ACCOUNT NAME must agree with the accounting family.
+        # Name-level safety check.
         #
-        # This prevents a badly described pool row from turning a normal
-        # depreciation expense account into accumulated depreciation, or
-        # the reverse.
+        # The account NAME is the strongest protection against assigning
+        # depreciation expense to accumulated depreciation, or vice versa.
         # ------------------------------------------------------------
         def _name_is_accumulated(name):
             name_text = " ".join(
@@ -65111,8 +65104,9 @@ class DatabaseService:
         safe_candidates = []
 
         for row in candidates:
-            name = row.get("name", "")
-            name_is_accum = _name_is_accumulated(name)
+            name_is_accum = _name_is_accumulated(
+                row.get("name")
+            )
 
             if requested_is_accum and not name_is_accum:
                 continue
@@ -65128,29 +65122,13 @@ class DatabaseService:
             raise ValueError(
                 f"Master COA pool contains semantic matches for "
                 f"'{requested_role}', but none has a compatible account name. "
-                f"This prevents an expense/accumulated-depreciation role mismatch."
+                "Expense and accumulated-depreciation roles are kept separate."
             )
 
         # ------------------------------------------------------------
-        # Prefer general templates.
-        # ------------------------------------------------------------
-        candidates.sort(
-            key=lambda row: (
-                0 if row.get("is_general") else 1,
-                str(
-                    row.get("template_code_scoped")
-                    or row.get("template_code")
-                    or row.get("id")
-                    or ""
-                ),
-            )
-        )
-
-        # ------------------------------------------------------------
-        # Deduplicate template identities.
+        # Deduplicate template identity.
         # ------------------------------------------------------------
         unique = []
-
         seen = set()
 
         for row in candidates:
@@ -65186,8 +65164,7 @@ class DatabaseService:
         pool_row = candidates[0]
 
         # ------------------------------------------------------------
-        # Before inserting, check whether an existing company account
-        # already semantically matches the selected pool role.
+        # Check existing company accounts by semantic meaning.
         # ------------------------------------------------------------
         cur.execute(
             f"""
@@ -65203,19 +65180,20 @@ class DatabaseService:
         semantic_matches = []
 
         for row in company_rows:
-            if isinstance(row, dict):
-                company_row = dict(row)
-            else:
-                company_row = dict(zip(company_columns, row))
+            company_row = (
+                dict(row)
+                if isinstance(row, dict)
+                else dict(zip(company_columns, row))
+            )
 
-            company_role = (
+            existing_role = (
                 " ".join(str(company_row.get("role") or "").split())
                 .strip()
                 .lower()
                 .replace(" ", "_")
             )
 
-            if company_role == requested_role:
+            if existing_role == requested_role:
                 semantic_matches.append(company_row)
                 continue
 
@@ -65241,15 +65219,16 @@ class DatabaseService:
         if len(semantic_matches) == 1:
             existing = semantic_matches[0]
 
-            existing_id = existing.get("id")
-
             cur.execute(
                 f"""
                 UPDATE {schema}.coa
                 SET role = %s
                 WHERE id = %s
                 """,
-                (requested_role, existing_id),
+                (
+                    requested_role,
+                    existing.get("id"),
+                ),
             )
 
             cur.execute(
@@ -65258,15 +65237,16 @@ class DatabaseService:
                 FROM {schema}.coa
                 WHERE id = %s
                 """,
-                (existing_id,),
+                (existing.get("id"),),
             )
 
             row = cur.fetchone()
 
-            if isinstance(row, dict):
-                return dict(row)
-
-            return dict(zip([d[0] for d in cur.description], row))
+            return (
+                dict(row)
+                if isinstance(row, dict)
+                else dict(zip([d[0] for d in cur.description], row))
+            )
 
         if len(semantic_matches) > 1:
             details = ", ".join(
@@ -65280,10 +65260,8 @@ class DatabaseService:
             )
 
         # ------------------------------------------------------------
-        # Prevent dangerous canonical-code collisions.
-        #
-        # A pool template code such as 1590 may already have a different
-        # canonical identity in the company COA. Do not blindly insert it.
+        # Do not blindly reuse a code already belonging to another
+        # company COA account.
         # ------------------------------------------------------------
         pool_code = (
             pool_row.get("code")
@@ -65304,36 +65282,33 @@ class DatabaseService:
                 (pool_code,),
             )
 
-            code_collision = cur.fetchone()
+            collision = cur.fetchone()
 
-            if code_collision:
-                if isinstance(code_collision, dict):
-                    collision = dict(code_collision)
-                else:
-                    collision = dict(
-                        zip([d[0] for d in cur.description], code_collision)
-                    )
+            if collision:
+                collision = (
+                    dict(collision)
+                    if isinstance(collision, dict)
+                    else dict(zip([d[0] for d in cur.description], collision))
+                )
 
                 raise ValueError(
-                    f"Cannot provision master COA account '{pool_row.get('name')}' "
-                    f"using code '{pool_code}' because company {company_id} "
-                    f"already has that code assigned to "
-                    f"'{collision.get('name')}'."
+                    f"Cannot provision master COA account "
+                    f"'{pool_row.get('name')}' using code '{pool_code}' "
+                    f"because company {company_id} already uses that code "
+                    f"for '{collision.get('name')}'."
                 )
 
         # ------------------------------------------------------------
-        # Prepare insertion payload.
+        # Insert the master account.
         #
-        # The pool row itself has no role. We assign the REQUESTED role only
-        # after the row has been semantically validated above.
+        # The pool row has no role. We assign the requested role only after
+        # semantic validation has succeeded.
         # ------------------------------------------------------------
         pool_payload = dict(pool_row)
-
         pool_payload.pop("_semantic_role", None)
-
         pool_payload["role"] = requested_role
 
-        inserted = self.insert_coa(
+        self.insert_coa(
             company_id,
             [pool_payload],
             dedupe_after=False,
@@ -65341,7 +65316,7 @@ class DatabaseService:
         )
 
         # ------------------------------------------------------------
-        # Verify the actual company COA now contains the required role.
+        # Final verification.
         # ------------------------------------------------------------
         cur.execute(
             f"""
@@ -65359,15 +65334,15 @@ class DatabaseService:
 
         if not row:
             raise ValueError(
-                f"COA account provisioning completed for role "
-                f"'{requested_role}', but the account could not be verified "
-                f"in {schema}.coa."
+                f"COA provisioning completed for role '{requested_role}', "
+                f"but the account could not be verified in {schema}.coa."
             )
 
-        if isinstance(row, dict):
-            result = dict(row)
-        else:
-            result = dict(zip([d[0] for d in cur.description], row))
+        result = (
+            dict(row)
+            if isinstance(row, dict)
+            else dict(zip([d[0] for d in cur.description], row))
+        )
 
         current_app.logger.info(
             "Provisioned required COA account: company=%s role=%s "
