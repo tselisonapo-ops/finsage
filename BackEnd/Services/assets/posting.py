@@ -7509,19 +7509,142 @@ def is_rou_asset_record(asset: dict) -> bool:
     )
 
 
+ASSET_CLASS_DEPRECIATION_ROLES = {
+    # IAS 16 — non-depreciable
+    "land": (None, None),
+    "assets under construction": (None, None),
+
+    # IAS 16 — PPE
+    "buildings": (
+        "depreciation_expense_buildings",
+        "accumulated_depreciation_buildings",
+    ),
+    "land and buildings": (
+        "depreciation_expense_buildings",
+        "accumulated_depreciation_buildings",
+    ),
+    "plant and machinery": (
+        "depreciation_expense_plant_machinery",
+        "accumulated_depreciation_plant_machinery",
+    ),
+    "vehicles": (
+        "depreciation_expense_vehicles",
+        "accumulated_depreciation_vehicles",
+    ),
+    "motorcycles / bikes": (
+        "depreciation_expense_vehicles",
+        "accumulated_depreciation_vehicles",
+    ),
+    "bicycles": (
+        "depreciation_expense_vehicles",
+        "accumulated_depreciation_vehicles",
+    ),
+    "scooters": (
+        "depreciation_expense_vehicles",
+        "accumulated_depreciation_vehicles",
+    ),
+    "heavy vehicles": (
+        "depreciation_expense_vehicles",
+        "accumulated_depreciation_vehicles",
+    ),
+    "construction equipment": (
+        "depreciation_expense_construction_equipment",
+        "accumulated_depreciation_construction_equipment",
+    ),
+    "mining equipment": (
+        "depreciation_expense_mining_equipment",
+        "accumulated_depreciation_mining_equipment",
+    ),
+    "manufacturing equipment": (
+        "depreciation_expense_manufacturing_equipment",
+        "accumulated_depreciation_manufacturing_equipment",
+    ),
+    "computer equipment": (
+        "depreciation_expense_computer_equipment",
+        "accumulated_depreciation_computer_equipment",
+    ),
+    "office equipment": (
+        "depreciation_expense_office_equipment",
+        "accumulated_depreciation_office_equipment",
+    ),
+    "furniture and fittings": (
+        "depreciation_expense_furniture",
+        "accumulated_depreciation_furniture",
+    ),
+    "tools and small equipment": (
+        "depreciation_expense_tools",
+        "accumulated_depreciation_tools",
+    ),
+    "leasehold improvements": (
+        "depreciation_expense_leasehold_improvements",
+        "accumulated_depreciation_leasehold_improvements",
+    ),
+    "other ppe": (
+        "depreciation_expense_ppe",
+        "accumulated_depreciation_ppe",
+    ),
+
+    # IAS 40
+    "investment property - land": (None, None),
+    "investment property - buildings": (
+        "depreciation_expense_investment_property",
+        "accumulated_depreciation_investment_property",
+    ),
+    "investment property - under construction": (None, None),
+
+    # IAS 38
+    "goodwill": (None, None),
+    "patents": (
+        "amortisation_expense",
+        "accumulated_amortization",
+    ),
+    "copyrights": (
+        "amortisation_expense",
+        "accumulated_amortization",
+    ),
+    "trademarks": (
+        "amortisation_expense",
+        "accumulated_amortization",
+    ),
+    "software": (
+        "amortisation_expense",
+        "accumulated_amortization",
+    ),
+    "licences": (
+        "amortisation_expense",
+        "accumulated_amortization",
+    ),
+    "franchises": (
+        "amortisation_expense",
+        "accumulated_amortization",
+    ),
+    "customer lists": (
+        "amortisation_expense",
+        "accumulated_amortization",
+    ),
+    "research and development": (
+        "amortisation_expense",
+        "accumulated_amortization",
+    ),
+    "other intangible assets": (
+        "amortisation_expense",
+        "accumulated_amortization",
+    ),
+}
+
+
 def resolve_depreciation_accounts(
     cur, schema: str, company_id: int, asset: dict
 ) -> tuple[str | None, str | None]:
     """
-    Resolves depreciation/amortisation expense + accumulated depreciation accounts.
+    Resolve system-generated depreciation/amortisation accounts.
 
     Priority:
-    1) Asset-specific overrides
-    2) ROU-specific role defaults (if ROU)
-    3) PPE-specific role defaults
-    4) PPE-specific account/name fallback
-    5) Generic role fallback
-    6) Generic name fallback
+    1) Explicit asset account overrides
+    2) ROU-specific required roles
+    3) Asset-class-specific required roles
+    4) Existing generic role repair
+    5) Semantic/name fallback
     """
 
     dep_exp = (asset.get("dep_expense_account_code") or "").strip() or None
@@ -7541,30 +7664,31 @@ def resolve_depreciation_accounts(
 
     rou = is_rou_asset_record(asset)
 
-    def ensure_role(role):
-        row = db_service.ensure_coa_role_for_posting(
+    def ensure_required_role(role):
+        if not role:
+            return None
+
+        row = db_service.ensure_required_coa_account(
+            company_id,
+            role,
+            cur=cur,
+            required=True,
+        )
+
+        return (row.get("code") or "").strip() if row else None
+
+    def ensure_optional_role(role):
+        if not role:
+            return None
+
+        row = db_service.ensure_required_coa_account(
             company_id,
             role,
             cur=cur,
             required=False,
         )
+
         return (row.get("code") or "").strip() if row else None
-
-    # -------------------------------------------------
-    # Class/group-driven role defaults
-    # -------------------------------------------------
-    if not rou:
-        if not acc_dep_code:
-            for role in _acc_dep_roles_for_asset(asset):
-                acc_dep_code = ensure_role(role)
-                if acc_dep_code:
-                    break
-
-        if not dep_exp_code:
-            for role in _dep_exp_roles_for_asset(asset):
-                dep_exp_code = ensure_role(role)
-                if dep_exp_code:
-                    break
 
     def first_code_by_name(
         patterns,
@@ -7592,10 +7716,11 @@ def resolve_depreciation_accounts(
         where.append(f"({like_sql})")
         params.extend(patterns)
 
-        ex = [p for p in (exclude_patterns or []) if (p or "").strip()]
-        for p in ex:
+        for pattern in (
+            p for p in (exclude_patterns or []) if (p or "").strip()
+        ):
             where.append("name NOT ILIKE %s")
-            params.append(p)
+            params.append(pattern)
 
         cur.execute(
             _q(
@@ -7634,7 +7759,8 @@ def resolve_depreciation_accounts(
                 """
                 SELECT name
                 FROM {schema}.coa
-                WHERE company_id=%s AND code=%s
+                WHERE company_id=%s
+                AND code=%s
                 LIMIT 1
                 """
             ),
@@ -7663,50 +7789,63 @@ def resolve_depreciation_accounts(
                 "depreciation_expense_rou",
                 "lease_amortization",
             ):
-                dep_exp_code = ensure_role(role)
+                dep_exp_code = ensure_required_role(role)
                 if dep_exp_code:
                     break
-
-            if not dep_exp_code:
-                dep_exp_code = first_code_by_name(
-                    [
-                        "%lease amort%",
-                        "%lease amortis%",
-                        "%rou amort%",
-                        "%amort%right-of-use%",
-                        "%right-of-use%amort%",
-                        "%right of use%amort%",
-                    ],
-                    section="Expense",
-                    is_contra=False,
-                )
 
         if not acc_dep_code:
             for role in (
                 "accumulated_depreciation_rou",
                 "accumulated_amortization_rou",
             ):
-                acc_dep_code = ensure_role(role)
+                acc_dep_code = ensure_required_role(role)
                 if acc_dep_code:
                     break
-
-            if not acc_dep_code:
-                acc_dep_code = first_code_by_name(
-                    [
-                        "%accum%depr%right-of-use%",
-                        "%accum%depr%right of use%",
-                        "%accum%depr%rou%",
-                        "%accumulated depreciation%right-of-use%",
-                        "%accumulated depreciation%rou%",
-                    ],
-                    section="Asset",
-                    is_contra=True,
-                )
 
         return dep_exp_code, acc_dep_code
 
     # -------------------------------------------------
-    # 2) PPE-specific matching
+    # 2) Asset-class-driven accounting requirement
+    # -------------------------------------------------
+    asset_class = str(
+        asset.get("asset_class") or ""
+    ).strip().lower()
+
+    class_roles = ASSET_CLASS_DEPRECIATION_ROLES.get(asset_class)
+
+    if class_roles is not None:
+        class_dep_role, class_acc_role = class_roles
+
+        # Explicitly non-depreciable/non-amortising class.
+        if not class_dep_role and not class_acc_role:
+            return dep_exp_code, acc_dep_code
+
+        if not dep_exp_code and class_dep_role:
+            dep_exp_code = ensure_required_role(class_dep_role)
+
+        if not acc_dep_code and class_acc_role:
+            acc_dep_code = ensure_required_role(class_acc_role)
+
+        if dep_exp_code and acc_dep_code:
+            return dep_exp_code, acc_dep_code
+
+    # -------------------------------------------------
+    # 3) Existing generic role resolver
+    # -------------------------------------------------
+    if not acc_dep_code:
+        for role in _acc_dep_roles_for_asset(asset):
+            acc_dep_code = ensure_optional_role(role)
+            if acc_dep_code:
+                break
+
+    if not dep_exp_code:
+        for role in _dep_exp_roles_for_asset(asset):
+            dep_exp_code = ensure_optional_role(role)
+            if dep_exp_code:
+                break
+
+    # -------------------------------------------------
+    # 4) PPE-specific name fallback
     # -------------------------------------------------
     specific_patterns = []
 
@@ -7752,6 +7891,8 @@ def resolve_depreciation_accounts(
         or "crane" in asset_text
     ):
         specific_patterns += [
+            "%accum%depr%construction equipment%",
+            "%accumulated depreciation%construction equipment%",
             "%accum%depr%equipment%",
             "%accumulated depreciation%equipment%",
             "%accum%depr%machinery%",
@@ -7767,18 +7908,6 @@ def resolve_depreciation_accounts(
             "%accumulated depreciation%building%",
         ]
 
-    # -------------------------------------------------
-    # 3) PPE-specific role repair
-    # -------------------------------------------------
-    if not acc_dep_code:
-        for role in _acc_dep_roles_for_asset(asset):
-            acc_dep_code = ensure_role(role)
-            if acc_dep_code:
-                break
-
-    # -------------------------------------------------
-    # 4) PPE-specific name fallback
-    # -------------------------------------------------
     if not acc_dep_code and specific_patterns:
         acc_dep_code = first_code_by_name(
             specific_patterns,
@@ -7788,10 +7917,12 @@ def resolve_depreciation_accounts(
         )
 
     # -------------------------------------------------
-    # 5) Generic accumulated depreciation role repair
+    # 5) Generic accumulated depreciation role
     # -------------------------------------------------
     if not acc_dep_code:
-        acc_dep_code = ensure_role("accumulated_depreciation_ppe")
+        acc_dep_code = ensure_optional_role(
+            "accumulated_depreciation_ppe"
+        )
 
     # -------------------------------------------------
     # 6) Generic accumulated depreciation name fallback
@@ -7808,23 +7939,26 @@ def resolve_depreciation_accounts(
         )
 
     # -------------------------------------------------
-    # 7) Depreciation expense
+    # 7) Generic depreciation expense
     # -------------------------------------------------
     if not dep_exp_code:
         for role in (
             "depreciation_expense_ppe",
             "depreciation_expense",
         ):
-            dep_exp_code = ensure_role(role)
+            dep_exp_code = ensure_optional_role(role)
             if dep_exp_code:
                 break
 
-        if not dep_exp_code:
-            dep_exp_code = first_code_by_name(
-                ["%depreciation%"],
-                section="Expense",
-                is_contra=False,
-            )
+    # -------------------------------------------------
+    # 8) Generic depreciation expense name fallback
+    # -------------------------------------------------
+    if not dep_exp_code:
+        dep_exp_code = first_code_by_name(
+            ["%depreciation%"],
+            section="Expense",
+            is_contra=False,
+        )
 
     return dep_exp_code, acc_dep_code
     

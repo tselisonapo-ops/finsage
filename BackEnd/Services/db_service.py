@@ -64711,6 +64711,506 @@ class DatabaseService:
 
         return count
 
+    def ensure_required_coa_account(
+        self,
+        company_id: int,
+        role: str,
+        *,
+        cur=None,
+        required: bool = True,
+    ) -> dict | None:
+        """
+        Guarantee that a required system/subledger posting account exists.
+
+        Resolution order:
+        1. Existing company COA account with the requested role.
+        2. Existing company COA account that can be repaired semantically.
+        3. Matching canonical account from public.coa_pool.
+        4. Provision the pool account through insert_coa().
+        5. Re-read and return the resulting company COA account.
+
+        Intended for system-generated/subledger journals.
+
+        Manual journals should continue using normal user-selected
+        Chart of Accounts accounts.
+        """
+
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        requested_role = str(role or "").strip()
+
+        if not requested_role:
+            if required:
+                raise ValueError(
+                    "Required COA posting role is missing"
+                )
+            return None
+
+        requested_norm = requested_role.lower()
+
+        def _existing_account(_cur):
+            # ------------------------------------------------------------
+            # 1. Existing correctly assigned role
+            # ------------------------------------------------------------
+            row = self.fetch_one(
+                f"""
+                SELECT
+                    id,
+                    company_id,
+                    code,
+                    name,
+                    section,
+                    category,
+                    subcategory,
+                    description,
+                    reporting_description,
+                    standard,
+                    posting,
+                    role,
+                    template_code,
+                    template_code_scoped,
+                    template_code_base,
+                    code_family,
+                    code_numeric,
+                    cf_section,
+                    cf_bucket,
+                    is_working_capital,
+                    is_cash_equiv,
+                    is_non_cash_addback,
+                    is_contra
+                FROM {schema}.coa
+                WHERE company_id = %s
+                AND COALESCE(posting, TRUE) = TRUE
+                AND LOWER(TRIM(COALESCE(role, ''))) = %s
+                ORDER BY id
+                LIMIT 1
+                """,
+                (
+                    company_id,
+                    requested_norm,
+                ),
+                cur=_cur,
+            )
+
+            if row:
+                return row
+
+            # ------------------------------------------------------------
+            # 2. Existing account with missing/wrong role.
+            #
+            # This deliberately delegates to the existing repair
+            # mechanism rather than duplicating its logic.
+            # ------------------------------------------------------------
+            repaired = self.ensure_coa_role_for_posting(
+                company_id,
+                requested_role,
+                cur=_cur,
+                required=False,
+            )
+
+            if repaired:
+                return repaired
+
+            return None
+
+        # ------------------------------------------------------------
+        # Caller already owns transaction/cursor.
+        # ------------------------------------------------------------
+        if cur is not None:
+            existing = _existing_account(cur)
+
+            if existing:
+                return existing
+
+            return self._provision_required_coa_account_from_pool(
+                company_id,
+                requested_role,
+                cur=cur,
+                required=required,
+            )
+
+        # ------------------------------------------------------------
+        # Standalone transaction.
+        # ------------------------------------------------------------
+        with self._conn_cursor() as (conn, cursor):
+            existing = _existing_account(cursor)
+
+            if existing:
+                return existing
+
+            return self._provision_required_coa_account_from_pool(
+                company_id,
+                requested_role,
+                cur=cursor,
+                required=required,
+            )
+
+    def _provision_required_coa_account_from_pool(
+        self,
+        company_id: int,
+        role: str,
+        *,
+        cur=None,
+        required: bool = True,
+    ) -> dict | None:
+        """
+        Resolve a required system-posting role from public.coa_pool
+        and provision the selected account into the company COA.
+
+        The pool is searched broadly. Selection is semantic rather
+        than based on a hard-coded account-code list.
+
+        Matching considers the role returned by _coa_role_from_text()
+        across:
+
+        name
+        section
+        category
+        subcategory
+        standard
+        description
+
+        General master accounts are preferred over industry-specific
+        accounts.
+
+        Ambiguous matches are never guessed.
+        """
+
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        requested_role = str(role or "").strip()
+
+        if not requested_role:
+            if required:
+                raise ValueError(
+                    "Required COA role is missing"
+                )
+            return None
+
+        requested_norm = requested_role.lower()
+
+        # ------------------------------------------------------------
+        # 1. Load ALL posting master COA candidates.
+        #
+        # Do not restrict this to a small list of account names/codes.
+        # ------------------------------------------------------------
+        pool_rows = self.fetch_all(
+            """
+            SELECT
+                id,
+                template_code,
+                template_code_scoped,
+                name,
+                code,
+                section,
+                category,
+                subcategory,
+                description,
+                standard,
+                industry,
+                sub_industry,
+                is_general,
+                posting
+            FROM public.coa_pool
+            WHERE COALESCE(posting, TRUE) = TRUE
+            ORDER BY id
+            """,
+            cur=cur,
+        ) or []
+
+        # ------------------------------------------------------------
+        # 2. Semantically classify every master account.
+        # ------------------------------------------------------------
+        matches = []
+
+        for row in pool_rows:
+            detected_role = ac._coa_role_from_text(
+                row.get("name", ""),
+                row.get("section", ""),
+                row.get("category", ""),
+                row.get("subcategory", ""),
+                row.get("standard", ""),
+                row.get("description", ""),
+            )
+
+            detected_role = str(
+                detected_role or ""
+            ).strip()
+
+            if detected_role.lower() != requested_norm:
+                continue
+
+            matches.append(row)
+
+        if not matches:
+            if required:
+                raise ValueError(
+                    f"No master COA account could be resolved for "
+                    f"required posting role '{requested_role}'. "
+                    f"The role is not represented in public.coa_pool."
+                )
+
+            return None
+
+        # ------------------------------------------------------------
+        # 3. Prefer general master accounts.
+        #
+        # This prevents an arbitrary industry-specific account from
+        # being selected when the pool has a general canonical account.
+        # ------------------------------------------------------------
+        general_matches = [
+            row
+            for row in matches
+            if bool(row.get("is_general"))
+        ]
+
+        candidates = (
+            general_matches
+            if general_matches
+            else matches
+        )
+
+        # ------------------------------------------------------------
+        # 4. Remove exact duplicate master identities.
+        #
+        # template_code_scoped is preferred because raw numeric
+        # template codes are not necessarily globally unique.
+        # ------------------------------------------------------------
+        unique = {}
+
+        for row in candidates:
+            identity = (
+                str(
+                    row.get("template_code_scoped")
+                    or ""
+                ).strip()
+                or str(
+                    row.get("template_code")
+                    or ""
+                ).strip()
+                or f"POOL:{row.get('id')}"
+            )
+
+            unique[identity] = row
+
+        candidates = list(unique.values())
+
+        # ------------------------------------------------------------
+        # 5. Never guess between multiple canonical accounts.
+        # ------------------------------------------------------------
+        if len(candidates) > 1:
+            details = ", ".join(
+                (
+                    f"{row.get('template_code_scoped') "
+                    f"or row.get('template_code')}"
+                    f" | {row.get('code')}"
+                    f" | {row.get('name')}"
+                    for row in candidates
+                )
+            )
+
+            raise ValueError(
+                f"Multiple master COA accounts match required role "
+                f"'{requested_role}': {details}. "
+                f"Configure the master COA so this role resolves "
+                f"unambiguously."
+            )
+
+        pool_row = candidates[0]
+
+        # ------------------------------------------------------------
+        # 6. Before creating anything, check whether the company
+        # already has a semantically matching account.
+        #
+        # This catches accounts that exist but have no role.
+        # ------------------------------------------------------------
+        company_rows = self.fetch_all(
+            f"""
+            SELECT
+                id,
+                company_id,
+                code,
+                name,
+                section,
+                category,
+                subcategory,
+                description,
+                reporting_description,
+                standard,
+                posting,
+                role,
+                template_code,
+                template_code_scoped,
+                template_code_base,
+                code_family,
+                code_numeric,
+                cf_section,
+                cf_bucket,
+                is_working_capital,
+                is_cash_equiv,
+                is_non_cash_addback,
+                is_contra
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND COALESCE(posting, TRUE) = TRUE
+            ORDER BY id
+            """,
+            (company_id,),
+            cur=cur,
+        ) or []
+
+        semantic_matches = []
+
+        for row in company_rows:
+            detected_role = ac._coa_role_from_text(
+                row.get("name", ""),
+                row.get("section", ""),
+                row.get("category", ""),
+                row.get("subcategory", ""),
+                row.get("standard", ""),
+                row.get("description", ""),
+            )
+
+            if (
+                str(detected_role or "").strip().lower()
+                == requested_norm
+            ):
+                semantic_matches.append(row)
+
+        # Exactly one existing semantic match.
+        if len(semantic_matches) == 1:
+            repaired = self.ensure_coa_role_for_posting(
+                company_id,
+                requested_role,
+                cur=cur,
+                required=True,
+            )
+
+            return repaired or semantic_matches[0]
+
+        # More than one existing semantic match is unsafe.
+        if len(semantic_matches) > 1:
+            details = ", ".join(
+                f"{row.get('code')} - {row.get('name')}"
+                for row in semantic_matches
+            )
+
+            raise ValueError(
+                f"Multiple company COA accounts already match required "
+                f"role '{requested_role}': {details}. "
+                f"Posting cannot safely select an account."
+            )
+
+        # ------------------------------------------------------------
+        # 7. Prepare the master-pool row for the existing canonical
+        #    COA insertion mechanism.
+        #
+        # DO NOT manually INSERT into company_X.coa here.
+        #
+        # insert_coa() already owns:
+        #   - reporting-code generation
+        #   - template identities
+        #   - reserved accounts
+        #   - contra metadata
+        #   - role resolution
+        #   - UPSERT behavior
+        # ------------------------------------------------------------
+        pool_payload = dict(pool_row)
+
+        pool_payload.setdefault(
+            "template_code_scoped",
+            pool_row.get("template_code_scoped"),
+        )
+
+        pool_payload["role"] = requested_role
+
+        # ------------------------------------------------------------
+        # 8. Provision through the existing seeding mechanism.
+        # ------------------------------------------------------------
+        self.insert_coa(
+            company_id,
+            [pool_payload],
+            dedupe_after=False,
+            cur=cur,
+        )
+
+        # ------------------------------------------------------------
+        # 9. Re-read the account after provisioning.
+        # ------------------------------------------------------------
+        created = self.fetch_one(
+            f"""
+            SELECT
+                id,
+                company_id,
+                code,
+                name,
+                section,
+                category,
+                subcategory,
+                description,
+                reporting_description,
+                standard,
+                posting,
+                role,
+                template_code,
+                template_code_scoped,
+                template_code_base,
+                code_family,
+                code_numeric,
+                cf_section,
+                cf_bucket,
+                is_working_capital,
+                is_cash_equiv,
+                is_non_cash_addback,
+                is_contra
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND COALESCE(posting, TRUE) = TRUE
+            AND LOWER(TRIM(COALESCE(role, ''))) = %s
+            ORDER BY id
+            LIMIT 1
+            """,
+            (
+                company_id,
+                requested_norm,
+            ),
+            cur=cur,
+        )
+
+        if created:
+            try:
+                current_app.logger.warning(
+                    "[COA-POOL-PROVISION] "
+                    "company=%s role=%s "
+                    "pool_template=%s "
+                    "pool_code=%s "
+                    "pool_name=%s "
+                    "company_code=%s",
+                    company_id,
+                    requested_role,
+                    (
+                        pool_row.get("template_code_scoped")
+                        or pool_row.get("template_code")
+                    ),
+                    pool_row.get("code"),
+                    pool_row.get("name"),
+                    created.get("code"),
+                )
+            except Exception:
+                pass
+
+            return created
+
+        if required:
+            raise ValueError(
+                f"Required COA role '{requested_role}' was resolved "
+                f"from public.coa_pool but could not be provisioned "
+                f"into {schema}.coa."
+            )
+
+        return None
 
     def upsert_coa_pool(self, rows):
         print("[DEBUG] ✅ using the ONLY upsert_coa_pool() version")
