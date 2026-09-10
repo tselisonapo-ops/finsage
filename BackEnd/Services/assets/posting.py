@@ -7201,6 +7201,8 @@ def preview_depreciation_run(
           a.asset_code,
           a.asset_name,
           a.asset_class,
+          a.asset_class_group,
+          a.accounting_standard,
           a.depreciation_method,
           a.acquisition_date,
           a.available_for_use_date,
