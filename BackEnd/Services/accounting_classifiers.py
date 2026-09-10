@@ -857,6 +857,11 @@ def _coa_role_from_text(
         "accum amort",
     ))
 
+    is_depreciation_adjustment = has_any(
+        "depreciation adjustment",
+        "depreciation adjustments",
+    )
+
     is_expense = (
         ("expense" in sec)
         or ("depreciation" in text)
@@ -2531,7 +2536,7 @@ def _coa_role_from_text(
         if "amort" in text and is_intangible:
             return "amortisation_expense"
 
-        if "depreciation" in text or "depr" in text:
+        if ("depreciation" in text or "depr" in text) and not is_depreciation_adjustment:
             if is_buildings:
                 return "depreciation_expense_buildings"
             if is_heavy_vehicles:
@@ -2555,7 +2560,6 @@ def _coa_role_from_text(
             if is_leasehold:
                 return "depreciation_expense_leasehold_improvements"
             return "depreciation_expense_ppe"
-
     # ----------------------------
     # PPE asset cost side
     # ----------------------------
