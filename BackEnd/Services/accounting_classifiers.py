@@ -849,24 +849,30 @@ def _coa_role_from_text(
     # ----------------------------
     # helpers
     # ----------------------------
-    is_accum = any(k in text for k in (
+    name_text = (name or "").strip().lower()
+
+    is_accum = any(k in name_text for k in (
         "accumulated depreciation",
         "accum depreciation",
         "accum dep",
-        "accumulated amort",
-        "accum amort",
+        "accumulated amortization",
+        "accumulated amortisation",
+        "accum amortization",
+        "accum amortisation",
     ))
 
-    is_depreciation_adjustment = has_any(
+    is_depreciation_adjustment = any(k in name_text for k in (
         "depreciation adjustment",
         "depreciation adjustments",
-    )
+    ))
 
     is_expense = (
         ("expense" in sec)
-        or ("depreciation" in text)
-        or ("amort" in text)
-    ) and not is_accum
+        or ("depreciation" in name_text)
+        or ("depr" in name_text)
+        or ("amortization" in name_text)
+        or ("amortisation" in name_text)
+    ) and not is_accum and not is_depreciation_adjustment
 
     is_asset = (
         ("asset" in sec)
