@@ -37488,7 +37488,7 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
     }
   });
 
-  const loadBtn = mount.querySelector("#lmLoadBtn");
+  const loadBtn = mount.querySelector("#btnLmLoad");
   if (loadBtn) loadBtn.click();
 };
 

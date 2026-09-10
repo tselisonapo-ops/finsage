@@ -70258,7 +70258,7 @@ class DatabaseService:
                 conn.rollback()
                 raise
 
-    def list_lease_schedule_for_month(self, company_id: int, as_of: date, cur=None):
+    def list_lease_schedule_for_month(self, company_id: int, as_of: date = None, cur=None):
         schema = f"company_{int(company_id)}"
 
         has_posted_cols = bool(self.fetch_one(
@@ -70284,6 +70284,18 @@ class DatabaseService:
                 AND j.source_id = s.id
             )"""
         )
+
+        date_filter = ""
+        params = [int(company_id)]
+
+        if as_of:
+            date_filter = "AND s.period_end >= %s"
+            params.append(as_of)
+
+        params.extend([
+            int(company_id),
+            int(company_id),
+        ])
 
         sql = f"""
         WITH latest_paid AS (
@@ -70316,7 +70328,7 @@ class DatabaseService:
                 ON lp.lease_id = s.lease_id
             WHERE s.company_id = %s
             AND COALESCE(s.is_active, TRUE) = TRUE
-            AND s.period_end >= %s
+            {date_filter}
             AND (
                 lp.latest_paid_period IS NULL
                 OR s.period_no > lp.latest_paid_period
@@ -70401,12 +70413,7 @@ class DatabaseService:
 
         return self.fetch_all(
             sql,
-            (
-                int(company_id),
-                int(company_id),
-                as_of,
-                int(company_id),
-            ),
+            tuple(params),
             cur=cur,
         )
 
