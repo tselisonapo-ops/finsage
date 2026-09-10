@@ -1,4 +1,4 @@
-(function hardTraceRedirects() {
+﻿(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -37487,6 +37487,9 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
       showLeaseMsg(msgEl, e?.message || "Failed to load monthly due");
     }
   });
+
+  const loadBtn = mount.querySelector("#lmLoadBtn");
+  if (loadBtn) loadBtn.click();
 };
 
 function showLeaseMsg(el, msg, type="error") {
