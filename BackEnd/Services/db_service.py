@@ -65003,8 +65003,7 @@ class DatabaseService:
         if len(candidates) > 1:
             details = ", ".join(
                 (
-                    f"{row.get('template_code_scoped') "
-                    f"or row.get('template_code')}"
+                    f"{row.get('template_code_scoped') or row.get('template_code')}"
                     f" | {row.get('code')}"
                     f" | {row.get('name')}"
                     for row in candidates
