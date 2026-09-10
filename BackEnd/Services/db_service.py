@@ -70259,13 +70259,7 @@ class DatabaseService:
                 raise
 
     def list_lease_schedule_for_month(self, company_id: int, as_of: date, cur=None):
-        schema = f"company_{company_id}"
-
-        month_start = as_of.replace(day=1)
-        if month_start.month == 12:
-            next_month_start = month_start.replace(year=month_start.year + 1, month=1, day=1)
-        else:
-            next_month_start = month_start.replace(month=month_start.month + 1, day=1)
+        schema = f"company_{int(company_id)}"
 
         has_posted_cols = bool(self.fetch_one(
             """
@@ -70292,6 +70286,20 @@ class DatabaseService:
         )
 
         sql = f"""
+        WITH first_unposted AS (
+            SELECT
+                s.*,
+                ROW_NUMBER() OVER (
+                    PARTITION BY s.lease_id
+                    ORDER BY s.period_end ASC, s.period_no ASC, s.id ASC
+                ) AS rn
+            FROM {schema}.lease_schedule s
+            WHERE s.company_id = %s
+            AND COALESCE(s.is_active, TRUE) = TRUE
+            AND s.period_end >= %s
+            AND NOT ({posted_expr})
+        )
+
         SELECT
             s.id AS schedule_id,
             s.company_id,
@@ -70310,64 +70318,72 @@ class DatabaseService:
             l.lessor_id,
             ls.name AS lessor_name,
 
-            {posted_expr} AS posted,
+            FALSE AS posted,
 
-        EXISTS (
-            SELECT 1
-            FROM {schema}.lease_payments p
-            WHERE p.company_id = s.company_id
-            AND p.lease_id = s.lease_id
-            AND p.schedule_id = s.id
-            AND COALESCE(p.status, '') IN ('draft','posted')
-        ) AS paid,
+            EXISTS (
+                SELECT 1
+                FROM {schema}.lease_payments p
+                WHERE p.company_id = s.company_id
+                AND p.lease_id = s.lease_id
+                AND p.schedule_id = s.id
+                AND COALESCE(p.status, '') IN ('draft','posted')
+            ) AS paid,
 
-        (
-            SELECT p.id
-            FROM {schema}.lease_payments p
-            WHERE p.company_id = s.company_id
-            AND p.lease_id = s.lease_id
-            AND p.schedule_id = s.id
-            ORDER BY p.id DESC
-            LIMIT 1
-        ) AS payment_id,
+            (
+                SELECT p.id
+                FROM {schema}.lease_payments p
+                WHERE p.company_id = s.company_id
+                AND p.lease_id = s.lease_id
+                AND p.schedule_id = s.id
+                ORDER BY p.id DESC
+                LIMIT 1
+            ) AS payment_id,
 
-        (
-            SELECT p.status
-            FROM {schema}.lease_payments p
-            WHERE p.company_id = s.company_id
-            AND p.lease_id = s.lease_id
-            AND p.schedule_id = s.id
-            ORDER BY p.id DESC
-            LIMIT 1
-        ) AS payment_status,
+            (
+                SELECT p.status
+                FROM {schema}.lease_payments p
+                WHERE p.company_id = s.company_id
+                AND p.lease_id = s.lease_id
+                AND p.schedule_id = s.id
+                ORDER BY p.id DESC
+                LIMIT 1
+            ) AS payment_status,
 
-        (
-            SELECT p.posted_journal_id
-            FROM {schema}.lease_payments p
-            WHERE p.company_id = s.company_id
-            AND p.lease_id = s.lease_id
-            AND p.schedule_id = s.id
-            ORDER BY p.id DESC
-            LIMIT 1
-        ) AS payment_journal_id
+            (
+                SELECT p.posted_journal_id
+                FROM {schema}.lease_payments p
+                WHERE p.company_id = s.company_id
+                AND p.lease_id = s.lease_id
+                AND p.schedule_id = s.id
+                ORDER BY p.id DESC
+                LIMIT 1
+            ) AS payment_journal_id,
 
-        FROM {schema}.lease_schedule s
+            s.posted_journal_id,
+            s.posted_at
+
+        FROM first_unposted s
+
         JOIN {schema}.leases l
             ON l.id = s.lease_id
-        AND l.company_id = %s
+            AND l.company_id = %s
+
         LEFT JOIN {schema}.lessors ls
             ON ls.id = l.lessor_id
-        WHERE s.company_id = %s
-        AND COALESCE(s.is_active, TRUE) = TRUE
-        AND s.period_end >= %s
-        AND s.period_end < %s
+
+        WHERE s.rn = 1
+
         ORDER BY s.period_end ASC, l.id ASC
         """
 
         return self.fetch_all(
             sql,
-            (int(company_id), int(company_id), month_start, next_month_start),
-            cur=cur
+            (
+                int(company_id),
+                as_of,
+                int(company_id),
+            ),
+            cur=cur,
         )
 
     def build_monthly_lease_journal_lines(
@@ -73249,7 +73265,7 @@ class DatabaseService:
     ) -> None:
         schema = f"company_{int(company_id)}"
 
-        self.execute_sql(
+        result = self.execute_sql(
             f"""
             UPDATE {schema}.lease_schedule
             SET posted_journal_id = %s,
