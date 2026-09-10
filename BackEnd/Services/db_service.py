@@ -64756,7 +64756,7 @@ class DatabaseService:
                 f"""
                 SELECT *
                 FROM {schema}.coa
-                WHERE COALESCE(is_posting, TRUE) = TRUE
+                WHERE COALESCE(posting, TRUE) = TRUE
                 AND LOWER(TRIM(COALESCE(role, ''))) = %s
                 ORDER BY
                     CASE WHEN COALESCE(is_general, FALSE) = TRUE THEN 0 ELSE 1 END,
@@ -65016,7 +65016,7 @@ class DatabaseService:
             """
             SELECT *
             FROM public.coa_pool
-            WHERE COALESCE(is_posting, TRUE) = TRUE
+            WHERE COALESCE(posting, TRUE) = TRUE
             """
         )
 
@@ -65193,7 +65193,7 @@ class DatabaseService:
             f"""
             SELECT *
             FROM {schema}.coa
-            WHERE COALESCE(is_posting, TRUE) = TRUE
+            WHERE COALESCE(posting, TRUE) = TRUE
             """
         )
 
@@ -65347,7 +65347,7 @@ class DatabaseService:
             f"""
             SELECT *
             FROM {schema}.coa
-            WHERE COALESCE(is_posting, TRUE) = TRUE
+            WHERE COALESCE(posting, TRUE) = TRUE
             AND LOWER(TRIM(COALESCE(role, ''))) = %s
             ORDER BY id DESC
             LIMIT 1
