@@ -7637,7 +7637,7 @@ ASSET_CLASS_DEPRECIATION_ROLES = {
 
 
 def resolve_depreciation_accounts(
-    cur, schema: str, company_id: int, asset: dict
+    cur, schema: str, company_id: int, asset: dict, *, persist=True
 ) -> tuple[str | None, str | None]:
     """
     Resolve system-generated depreciation/amortisation accounts.
@@ -7648,6 +7648,14 @@ def resolve_depreciation_accounts(
     3) Asset-class-specific required roles
     4) Existing generic role repair
     5) Semantic/name fallback
+
+    persist=True:
+        Missing required COA accounts may be provisioned into the company COA.
+
+    persist=False:
+        Existing company accounts are used/repaired, but missing accounts are
+        resolved from public.coa_pool as preview-only proposed accounts. No new
+        company COA account is inserted.
     """
 
     dep_exp = (asset.get("dep_expense_account_code") or "").strip() or None
@@ -7676,6 +7684,7 @@ def resolve_depreciation_accounts(
             role,
             cur=cur,
             required=True,
+            persist=persist,
         )
 
         return (row.get("code") or "").strip() if row else None
@@ -7689,6 +7698,7 @@ def resolve_depreciation_accounts(
             role,
             cur=cur,
             required=False,
+            persist=persist,
         )
 
         return (row.get("code") or "").strip() if row else None
@@ -7763,7 +7773,7 @@ def resolve_depreciation_accounts(
                 SELECT name
                 FROM {schema}.coa
                 WHERE company_id=%s
-                AND code=%s
+                  AND code=%s
                 LIMIT 1
                 """
             ),
