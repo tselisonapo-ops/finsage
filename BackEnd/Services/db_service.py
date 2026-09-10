@@ -65034,7 +65034,7 @@ class DatabaseService:
                 else dict(zip(pool_columns, row))
             )
 
-            semantic_role = self._coa_role_from_text(
+            semantic_role = ac._coa_role_from_text(
                 item.get("name", ""),
                 item.get("section", ""),
                 item.get("category", ""),
@@ -65197,7 +65197,7 @@ class DatabaseService:
                 semantic_matches.append(company_row)
                 continue
 
-            inferred_role = self._coa_role_from_text(
+            inferred_role = ac._coa_role_from_text(
                 company_row.get("name", ""),
                 company_row.get("section", ""),
                 company_row.get("category", ""),
