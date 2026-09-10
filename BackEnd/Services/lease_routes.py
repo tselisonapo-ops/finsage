@@ -1123,13 +1123,13 @@ def leases_monthly_due(company_id: int):
     review_required = bool(lease_action_review_required(pol, "monthly"))
     mode = (pol.get("mode") or "owner_managed").strip().lower()
 
-    # as_of defaults to today
     as_of_s = (request.args.get("as_of") or "").strip()
+
     try:
-        as_of = datetime.strptime(as_of_s, "%Y-%m-%d").date() if as_of_s else date.today()
+        as_of = datetime.strptime(as_of_s, "%Y-%m-%d").date() if as_of_s else None
     except Exception:
         return jsonify({"error": "as_of must be YYYY-MM-DD"}), 400
-
+        
     try:
         rows = db_service.list_lease_schedule_for_month(int(company_id), as_of) or []
 
@@ -1216,8 +1216,11 @@ def leases_monthly_due(company_id: int):
 
             out.append(item)
 
-        return jsonify({"ok": True, "as_of": as_of.isoformat(), "due": out}), 200
-
+        return jsonify({
+            "ok": True,
+            "as_of": as_of.isoformat() if as_of else None,
+            "due": out,
+        }), 200
     except Exception as e:
         current_app.logger.exception("leases_monthly_due error")
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
