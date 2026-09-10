@@ -1,519 +1,1287 @@
-# FinSage Control — Schema Migration Runner
+# BackEnd/Services/service_control/migrations.py
 """
-Ensures the `control.*` schema exists before the Flask app serves any request.
+FinSage Control — Database Schema Migrations
 
-The entire DDL lives inline in `ensure_control_schema()` below as an f-string,
-so the schema name (`control`) is parameterised in ONE place and substituted
-everywhere via `{schema}`. No external .sql file is read at runtime — this
-module is fully self-contained.
+Control is a system-level application inside the main FinSage Flask app.
 
-Idempotent: safe to call on every startup. Probes information_schema first
-and skips the migration if `control.support_agents` already exists.
-
-WHO CALLS THIS
---------------
-`ensure_control_schema(db_service)` is called from EXACTLY ONE place:
-`ControlService.ensure_schema()` (a method on the ControlService class in
-`backend/services/control_service.py`). Nothing else in the codebase calls
-this function directly.
-
-`register_control_blueprints(app)` in `backend/__init__.py` calls
-`ControlService(db_service).ensure_schema()` once per Flask process at app
-startup, right after all the blueprints are registered. That function runs
-exactly once when the Flask app is created in your app factory, so the
-migration runs once per process boot — and thanks to the idempotency probe,
-it is a no-op on subsequent restarts once the schema is in place.
-
-MULTI-WORKER NOTE
------------------
-If you run gunicorn with `--workers 4`, all 4 workers will call this on
-startup. The migration itself is safe under concurrent execution (every
-CREATE uses IF NOT EXISTS, every INSERT uses ON CONFLICT DO NOTHING, every
-TRIGGER is guarded by a pg_trigger probe), so concurrent runs will not
-corrupt anything. For real migration orchestration (serialised, versioned,
-with a migration_log table), switch to Alembic or Flyway later.
+IMPORTANT:
+- Control authentication is independent of public.users.
+- Control users live in control.control_users.
+- Control does not automatically create users during login.
+- Operational FinSage/Nexus tables are READ-ONLY to Control.
+- Control writes only to control.*.
+- Migrations are versioned through control.schema_migrations.
 """
+
 from __future__ import annotations
 
-import logging
+from typing import Any
 
-logger = logging.getLogger(__name__)
 
+CONTROL_SCHEMA = "control"
+
+
+# ============================================================
+# PUBLIC ENTRY POINT
+# ============================================================
 
 def ensure_control_schema(db_service) -> None:
     """
-    Create the `control.*` schema, tables, enums, functions, triggers and seed
-    data if they don't already exist. Runs the full migration exactly once per
-    database; subsequent calls are a no-op.
+    Apply all pending Control migrations.
 
-    The schema name is parameterised as `schema = "control"` so you can rename
-    it in one place if you ever need to (e.g. `control_staging` for tests).
+    Safe to call at application startup.
 
-    Requirements on `db_service`:
-      - `fetch_one(sql, params=None)` returning a dict (or None)
-      - `execute_ddl(sql)` accepting a multi-statement SQL string.
-        psycopg2's `cursor.execute` does this natively. If your db_service
-        only exposes `execute_sql(sql, params=None)`, rename the call below
-        (one line).
+    Unlike the old implementation, this does NOT use the existence
+    of a single table as proof that the entire schema is current.
     """
-    schema = "control"
 
-    # ── Idempotency probe ─────────────────────────────────────────────
-    # Pick `support_agents` as the migration marker — it is the very first
-    # table the migration creates, so if it exists, the migration has either
-    # fully run before or is mid-way through (in which case the SQL's own
-    # IF NOT EXISTS / ON CONFLICT DO NOTHING clauses make a re-run safe).
-    try:
-        row = db_service.fetch_one(f"""
-            SELECT EXISTS (
-                SELECT 1 FROM information_schema.tables
-                WHERE table_schema = '{schema}'
-                  AND table_name   = 'support_agents'
-            ) AS exists
-        """)
-        if row and row.get("exists"):
-            logger.info(
-                "ensure_control_schema: %s.support_agents already exists — "
-                "skipping migration", schema
-            )
-            return
-    except Exception as exc:
-        logger.warning(
-            "ensure_control_schema: probe failed (%s); attempting migration "
-            "anyway", exc
+    _ensure_schema_migrations_table(db_service)
+
+    applied = {
+        row["version"]
+        for row in db_service.fetch_all(
+            """
+            SELECT version
+            FROM control.schema_migrations
+            """
+        )
+    }
+
+    migrations = [
+        ("001_initial_control_schema", _migration_001_initial_control_schema),
+    ]
+
+    for version, migration_fn in migrations:
+        if version in applied:
+            continue
+
+        migration_fn(db_service)
+
+        db_service.execute_sql(
+            """
+            INSERT INTO control.schema_migrations
+                (version, applied_at)
+            VALUES
+                (%s, NOW())
+            ON CONFLICT (version) DO NOTHING
+            """,
+            (version,),
         )
 
-    # ── Full migration DDL ────────────────────────────────────────────
-    # NOTE on the f-string: PL/pgSQL uses `$$ ... $$` delimiters (not braces)
-    # for function bodies and anonymous DO blocks, so the only `{` `}` in
-    # this string are the intended `{schema}` substitutions. No escaping
-    # needed.
-    sql = f"""
--- ============================================================
--- FinSage Control — Release 1 MVP Database Schema
--- Schema: {schema}  (separate from FinSage operational data)
--- ============================================================
 
-CREATE SCHEMA IF NOT EXISTS {schema};
+# ============================================================
+# MIGRATION TRACKING
+# ============================================================
 
--- ────────────────────────────────────────────
--- ENUMS
--- ────────────────────────────────────────────
+def _ensure_schema_migrations_table(db_service) -> None:
+    db_service.execute_sql(
+        """
+        CREATE SCHEMA IF NOT EXISTS control;
 
-DO $$ BEGIN
-    CREATE TYPE {schema}.ticket_type AS ENUM (
-        'support', 'bug', 'feature_request', 'access_issue',
-        'billing', 'incident', 'training'
+        CREATE TABLE IF NOT EXISTS control.schema_migrations (
+            id          SERIAL PRIMARY KEY,
+            version     VARCHAR(150) NOT NULL UNIQUE,
+            applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """
+    )
+
+
+# ============================================================
+# 001 — INITIAL CONTROL SCHEMA
+# ============================================================
+
+def _migration_001_initial_control_schema(db_service) -> None:
+    """
+    Initial Control schema.
+
+    This creates the complete foundation for:
+      - Control authentication
+      - Control RBAC
+      - support teams
+      - tickets
+      - ticket messages
+      - internal notes
+      - ticket history
+      - customer snapshots
+      - notifications
+      - system events
+      - system checks
+      - subscription monitoring
+      - Control audit logging
+    """
+
+    sql = """
+    -- ========================================================
+    -- SCHEMA
+    -- ========================================================
+
+    CREATE SCHEMA IF NOT EXISTS control;
+
+
+    -- ========================================================
+    -- ENUM TYPES
+    -- PostgreSQL 9.6 compatible
+    -- ========================================================
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE t.typname = 'ticket_type'
+              AND n.nspname = 'control'
+        ) THEN
+            CREATE TYPE control.ticket_type AS ENUM (
+                'support',
+                'system_error',
+                'bug',
+                'feature_request',
+                'billing',
+                'account',
+                'security',
+                'data_issue',
+                'other'
+            );
+        END IF;
+    END
+    $$;
+
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE t.typname = 'ticket_status'
+              AND n.nspname = 'control'
+        ) THEN
+            CREATE TYPE control.ticket_status AS ENUM (
+                'new',
+                'triaged',
+                'assigned',
+                'in_progress',
+                'waiting_customer',
+                'resolved',
+                'closed'
+            );
+        END IF;
+    END
+    $$;
+
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE t.typname = 'priority_level'
+              AND n.nspname = 'control'
+        ) THEN
+            CREATE TYPE control.priority_level AS ENUM (
+                'p1_critical',
+                'p2_high',
+                'p3_medium',
+                'p4_low'
+            );
+        END IF;
+    END
+    $$;
+
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE t.typname = 'message_channel'
+              AND n.nspname = 'control'
+        ) THEN
+            CREATE TYPE control.message_channel AS ENUM (
+                'portal',
+                'email',
+                'system',
+                'phone',
+                'other'
+            );
+        END IF;
+    END
+    $$;
+
+
+    -- ========================================================
+    -- CONTROL USERS
+    --
+    -- Completely independent from public.users.
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.control_users (
+        id                  SERIAL PRIMARY KEY,
+
+        email               VARCHAR(320) NOT NULL UNIQUE,
+        password_hash       TEXT NOT NULL,
+
+        display_name        VARCHAR(200) NOT NULL,
+
+        role                VARCHAR(50) NOT NULL DEFAULT 'agent',
+
+        team_id             INTEGER,
+
+        max_tickets         INTEGER NOT NULL DEFAULT 15,
+
+        is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+
+        last_login_at       TIMESTAMPTZ,
+
+        created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
 
-DO $$ BEGIN
-    CREATE TYPE {schema}.ticket_status AS ENUM (
-        'new', 'triaged', 'assigned', 'in_progress',
-        'waiting_customer', 'resolved', 'closed'
+
+    -- ========================================================
+    -- TEAMS
+    -- Created BEFORE control_users.team_id FK.
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.teams (
+        id              SERIAL PRIMARY KEY,
+
+        name            VARCHAR(150) NOT NULL UNIQUE,
+        description     TEXT,
+
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
 
-DO $$ BEGIN
-    CREATE TYPE {schema}.priority_level AS ENUM (
-        'p1_critical', 'p2_high', 'p3_medium', 'p4_low'
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint
+            WHERE conname = 'control_users_team_id_fkey'
+        ) THEN
+            ALTER TABLE control.control_users
+                ADD CONSTRAINT control_users_team_id_fkey
+                FOREIGN KEY (team_id)
+                REFERENCES control.teams(id)
+                ON DELETE SET NULL;
+        END IF;
+    END
+    $$;
+
+
+    -- ========================================================
+    -- RBAC
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.roles (
+        id              SERIAL PRIMARY KEY,
+
+        code            VARCHAR(80) NOT NULL UNIQUE,
+        name            VARCHAR(150) NOT NULL,
+        description     TEXT,
+
+        is_system_role  BOOLEAN NOT NULL DEFAULT TRUE,
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
 
-DO $$ BEGIN
-    CREATE TYPE {schema}.message_channel AS ENUM (
-        'customer', 'internal'
+
+    CREATE TABLE IF NOT EXISTS control.permissions (
+        id              SERIAL PRIMARY KEY,
+
+        code            VARCHAR(120) NOT NULL UNIQUE,
+        name            VARCHAR(200) NOT NULL,
+        description     TEXT,
+
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
 
-DO $$ BEGIN
-    CREATE TYPE {schema}.agent_role AS ENUM (
-        'admin', 'senior_agent', 'agent', 'viewer'
+
+    CREATE TABLE IF NOT EXISTS control.user_roles (
+        control_user_id INTEGER NOT NULL
+            REFERENCES control.control_users(id)
+            ON DELETE CASCADE,
+
+        role_id         INTEGER NOT NULL
+            REFERENCES control.roles(id)
+            ON DELETE CASCADE,
+
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        PRIMARY KEY (control_user_id, role_id)
     );
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
 
--- ────────────────────────────────────────────
--- 1. SUPPORT AGENTS (Control users)
--- ────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS {schema}.support_agents (
-    id              SERIAL PRIMARY KEY,
-    user_id         INTEGER NOT NULL REFERENCES public.users(id),
-    display_name    VARCHAR(200) NOT NULL,
-    role            {schema}.agent_role NOT NULL DEFAULT 'agent',
-    team_id         INTEGER REFERENCES {schema}.teams(id),
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    max_tickets     INTEGER DEFAULT 15,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(user_id)
-);
+    CREATE TABLE IF NOT EXISTS control.role_permissions (
+        role_id         INTEGER NOT NULL
+            REFERENCES control.roles(id)
+            ON DELETE CASCADE,
 
--- ────────────────────────────────────────────
--- 2. TEAMS
--- ────────────────────────────────────────────
+        permission_id   INTEGER NOT NULL
+            REFERENCES control.permissions(id)
+            ON DELETE CASCADE,
 
-CREATE TABLE IF NOT EXISTS {schema}.teams (
-    id              SERIAL PRIMARY KEY,
-    name            VARCHAR(200) NOT NULL UNIQUE,
-    description     TEXT,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
--- ────────────────────────────────────────────
--- 3. TICKET CATEGORIES
--- ────────────────────────────────────────────
+        PRIMARY KEY (role_id, permission_id)
+    );
 
-CREATE TABLE IF NOT EXISTS {schema}.categories (
-    id              SERIAL PRIMARY KEY,
-    name            VARCHAR(200) NOT NULL UNIQUE,
-    description     TEXT,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    sort_order      INTEGER DEFAULT 0,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 
--- ────────────────────────────────────────────
--- 4. SLA DEFINITIONS
--- ────────────────────────────────────────────
+    -- ========================================================
+    -- TICKET CATEGORIES
+    -- ========================================================
 
-CREATE TABLE IF NOT EXISTS {schema}.slas (
-    id              SERIAL PRIMARY KEY,
-    name            VARCHAR(200) NOT NULL UNIQUE,
-    priority        {schema}.priority_level NOT NULL,
-    response_minutes INTEGER NOT NULL DEFAULT 60,
-    resolution_hours  INTEGER NOT NULL DEFAULT 24,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+    CREATE TABLE IF NOT EXISTS control.categories (
+        id              SERIAL PRIMARY KEY,
 
--- ────────────────────────────────────────────
--- 5. TICKETS (core table)
--- ────────────────────────────────────────────
+        name            VARCHAR(150) NOT NULL UNIQUE,
+        description     TEXT,
 
-CREATE TABLE IF NOT EXISTS {schema}.tickets (
-    id                  SERIAL PRIMARY KEY,
-    ticket_number       VARCHAR(50) NOT NULL UNIQUE,
-    ticket_type         {schema}.ticket_type NOT NULL DEFAULT 'support',
-    subject             VARCHAR(500) NOT NULL,
-    description         TEXT NOT NULL,
+        sort_order      INTEGER NOT NULL DEFAULT 0,
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
 
-    -- Customer context (READ from FinSage, not written)
-    company_id          INTEGER,                  -- public.companies.id
-    company_name        VARCHAR(500),             -- denormalised for speed
-    user_id             INTEGER,                  -- public.users.id (who reported)
-    user_email          VARCHAR(500),             -- denormalised
-    user_name           VARCHAR(500),             -- denormalised
-    product             VARCHAR(50) DEFAULT 'finsage',  -- 'finsage' | 'nexus'
-    module_code         VARCHAR(100),             -- e.g. 'general_ledger'
-    page_code           VARCHAR(200),             -- e.g. 'journal_entry'
-    action_code         VARCHAR(100),             -- e.g. 'post'
-    transaction_ref     VARCHAR(200),             -- e.g. 'JV-2026-00452'
-    error_ref           VARCHAR(200),             -- e.g. 'ERR-91X72'
-    app_version         VARCHAR(50),              -- e.g. '3.4.2'
-    support_context     JSONB,                    -- full context snapshot
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
 
-    -- Ticket management
-    status              {schema}.ticket_status NOT NULL DEFAULT 'new',
-    priority            {schema}.priority_level NOT NULL DEFAULT 'p3_medium',
-    category_id         INTEGER REFERENCES {schema}.categories(id),
-    assigned_agent_id   INTEGER REFERENCES {schema}.support_agents(id),
-    sla_id              INTEGER REFERENCES {schema}.slas(id),
 
-    -- Timestamps
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    triaged_at          TIMESTAMPTZ,
-    assigned_at         TIMESTAMPTZ,
-    first_response_at   TIMESTAMPTZ,
-    resolved_at         TIMESTAMPTZ,
-    closed_at           TIMESTAMPTZ,
+    -- ========================================================
+    -- SLA DEFINITIONS
+    -- ========================================================
 
-    -- Meta
-    created_by          INTEGER REFERENCES {schema}.support_agents(id),
-    resolution_notes    TEXT,
-    tags                TEXT[],
-    is_deleted          BOOLEAN NOT NULL DEFAULT FALSE
-);
+    CREATE TABLE IF NOT EXISTS control.slas (
+        id                  SERIAL PRIMARY KEY,
 
--- Indexes for common queries
-CREATE INDEX IF NOT EXISTS idx_tickets_status ON {schema}.tickets(status) WHERE is_deleted = FALSE;
-CREATE INDEX IF NOT EXISTS idx_tickets_assigned ON {schema}.tickets(assigned_agent_id) WHERE is_deleted = FALSE;
-CREATE INDEX IF NOT EXISTS idx_tickets_company ON {schema}.tickets(company_id) WHERE is_deleted = FALSE;
-CREATE INDEX IF NOT EXISTS idx_tickets_priority ON {schema}.tickets(priority) WHERE is_deleted = FALSE;
-CREATE INDEX IF NOT EXISTS idx_tickets_created ON {schema}.tickets(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_tickets_type ON {schema}.tickets(ticket_type) WHERE is_deleted = FALSE;
-CREATE INDEX IF NOT EXISTS idx_tickets_number ON {schema}.tickets(ticket_number);
+        name                VARCHAR(150) NOT NULL,
+        priority            control.priority_level NOT NULL UNIQUE,
 
--- ────────────────────────────────────────────
--- 6. TICKET MESSAGES (customer-visible)
--- ────────────────────────────────────────────
+        response_minutes    INTEGER NOT NULL DEFAULT 240,
+        resolution_hours    INTEGER NOT NULL DEFAULT 48,
 
-CREATE TABLE IF NOT EXISTS {schema}.ticket_messages (
-    id              SERIAL PRIMARY KEY,
-    ticket_id       INTEGER NOT NULL REFERENCES {schema}.tickets(id) ON DELETE CASCADE,
-    is_from_customer BOOLEAN NOT NULL DEFAULT TRUE,
-    sender_name     VARCHAR(200) NOT NULL,
-    sender_email    VARCHAR(500),
-    body            TEXT NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by      INTEGER   -- NULL if customer, agent id if from support
-);
+        is_active           BOOLEAN NOT NULL DEFAULT TRUE,
 
-CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket ON {schema}.ticket_messages(ticket_id, created_at);
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
 
--- ────────────────────────────────────────────
--- 7. TICKET NOTES (internal only)
--- ────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS {schema}.ticket_notes (
-    id              SERIAL PRIMARY KEY,
-    ticket_id       INTEGER NOT NULL REFERENCES {schema}.tickets(id) ON DELETE CASCADE,
-    agent_id        INTEGER NOT NULL REFERENCES {schema}.support_agents(id),
-    body            TEXT NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+    -- ========================================================
+    -- TICKETS
+    -- ========================================================
 
-CREATE INDEX IF NOT EXISTS idx_ticket_notes_ticket ON {schema}.ticket_notes(ticket_id, created_at);
+    CREATE SEQUENCE IF NOT EXISTS control.ticket_number_seq
+        START WITH 1
+        INCREMENT BY 1
+        MINVALUE 1;
 
--- ────────────────────────────────────────────
--- 8. TICKET ATTACHMENTS
--- ────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS {schema}.ticket_attachments (
-    id              SERIAL PRIMARY KEY,
-    ticket_id       INTEGER NOT NULL REFERENCES {schema}.tickets(id) ON DELETE CASCADE,
-    file_name       VARCHAR(500) NOT NULL,
-    file_type       VARCHAR(100),
-    file_size       INTEGER,
-    file_url        TEXT NOT NULL,
-    uploaded_by     INTEGER,              -- agent_id or NULL for customer
-    is_internal     BOOLEAN NOT NULL DEFAULT FALSE,  -- TRUE = internal note attachment
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+    CREATE TABLE IF NOT EXISTS control.tickets (
+        id                  SERIAL PRIMARY KEY,
 
--- ────────────────────────────────────────────
--- 9. TICKET HISTORY (audit trail)
--- ────────────────────────────────────────────
+        ticket_number       VARCHAR(50) NOT NULL UNIQUE,
 
-CREATE TABLE IF NOT EXISTS {schema}.ticket_history (
-    id              SERIAL PRIMARY KEY,
-    ticket_id       INTEGER NOT NULL REFERENCES {schema}.tickets(id) ON DELETE CASCADE,
-    field           VARCHAR(100) NOT NULL,    -- e.g. 'status', 'assigned_agent_id', 'priority'
-    old_value       TEXT,
-    new_value       TEXT,
-    changed_by      INTEGER NOT NULL REFERENCES {schema}.support_agents(id),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+        ticket_type         control.ticket_type NOT NULL DEFAULT 'support',
 
-CREATE INDEX IF NOT EXISTS idx_ticket_history_ticket ON {schema}.ticket_history(ticket_id, created_at);
+        subject             VARCHAR(500) NOT NULL,
+        description         TEXT NOT NULL,
 
--- ────────────────────────────────────────────
--- 10. TICKET-LINKS (incident linking, later)
--- ────────────────────────────────────────────
+        status              control.ticket_status NOT NULL DEFAULT 'new',
+        priority            control.priority_level NOT NULL DEFAULT 'p3_medium',
 
-CREATE TABLE IF NOT EXISTS {schema}.ticket_links (
-    id              SERIAL PRIMARY KEY,
-    source_ticket_id   INTEGER NOT NULL REFERENCES {schema}.tickets(id),
-    target_ticket_id   INTEGER NOT NULL REFERENCES {schema}.tickets(id),
-    link_type       VARCHAR(50) NOT NULL DEFAULT 'related',  -- 'related', 'duplicate', 'incident'
-    created_by      INTEGER REFERENCES {schema}.support_agents(id),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(source_ticket_id, target_ticket_id, link_type)
-);
+        -- FinSage company context
+        company_id          INTEGER,
+        company_name        VARCHAR(300),
 
--- ────────────────────────────────────────────
--- 11. CUSTOMER SNAPSHOT (read model for fast loading)
--- ────────────────────────────────────────────
+        -- FinSage user context.
+        -- These are references for context only; there is deliberately
+        -- NO foreign key into public.users.
+        user_id             INTEGER,
+        user_email          VARCHAR(320),
+        user_name           VARCHAR(250),
 
-CREATE TABLE IF NOT EXISTS {schema}.customer_snapshot (
-    id                  SERIAL PRIMARY KEY,
-    company_id          INTEGER NOT NULL,           -- public.companies.id
-    company_name        VARCHAR(500) NOT NULL,
-    product             VARCHAR(50) DEFAULT 'finsage',
-    status              VARCHAR(50),                -- active/inactive
-    account_type        VARCHAR(100),
-    user_count          INTEGER DEFAULT 0,
-    active_user_count   INTEGER DEFAULT 0,
-    enabled_modules     JSONB DEFAULT '[]',
-    last_login_at       TIMESTAMPTZ,
-    last_transaction_at TIMESTAMPTZ,
-    last_error_at       TIMESTAMPTZ,
-    open_ticket_count   INTEGER DEFAULT 0,
-    total_ticket_count  INTEGER DEFAULT 0,
-    app_version         VARCHAR(50),
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(company_id, product)
-);
+        product             VARCHAR(100) NOT NULL DEFAULT 'finsage',
+        module_code         VARCHAR(150),
+        page_code           VARCHAR(150),
+        action_code         VARCHAR(150),
 
-CREATE INDEX IF NOT EXISTS idx_customer_snapshot_name ON {schema}.customer_snapshot(company_name);
-CREATE INDEX IF NOT EXISTS idx_customer_snapshot_product ON {schema}.customer_snapshot(product);
+        transaction_ref     VARCHAR(250),
+        error_ref           VARCHAR(250),
+        app_version         VARCHAR(100),
 
--- ────────────────────────────────────────────
--- 12. NOTIFICATION LOG (for customer comms tracking)
--- ────────────────────────────────────────────
+        support_context     JSONB,
+        tags                JSONB,
 
-CREATE TABLE IF NOT EXISTS {schema}.notification_log (
-    id              SERIAL PRIMARY KEY,
-    ticket_id       INTEGER REFERENCES {schema}.tickets(id),
-    company_id      INTEGER,
-    channel         VARCHAR(50) NOT NULL,         -- 'email', 'in_app', 'sms'
-    recipient       VARCHAR(500) NOT NULL,
-    subject         VARCHAR(500),
-    body            TEXT,
-    status          VARCHAR(50) DEFAULT 'sent',   -- 'sent', 'failed', 'pending'
-    sent_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+        category_id         INTEGER
+            REFERENCES control.categories(id)
+            ON DELETE SET NULL,
 
--- ────────────────────────────────────────────
--- SEED DATA
--- ────────────────────────────────────────────
+        sla_id              INTEGER
+            REFERENCES control.slas(id)
+            ON DELETE SET NULL,
 
--- Default categories
-INSERT INTO {schema}.categories (name, description, sort_order) VALUES
-    ('General Ledger', 'GL, journals, chart of accounts, trial balance', 1),
-    ('Accounts Payable', 'Vendor invoices, payments, age analysis', 2),
-    ('Accounts Receivable', 'Customer invoices, receipts, statements', 3),
-    ('Payroll', 'Employees, payroll runs, tax filings', 4),
-    ('Fixed Assets', 'Asset register, depreciation', 5),
-    ('IFRS 16 Leases', 'Lessee/Lessor lease accounting', 6),
-    ('Revenue (IFRS 15)', 'Contracts, obligations, recognition', 7),
-    ('IFRS 9 / IAS 12', 'Financial instruments, ECL, deferred tax', 8),
-    ('Banking', 'Bank accounts, reconciliation, payments', 9),
-    ('Reporting', 'Financial statements, disclosures', 10),
-    ('User Access', 'Permissions, roles, login issues', 11),
-    ('Billing', 'Subscriptions, payments, invoices', 12),
-    ('Procurement', 'Purchase orders, requisitions, vendors (Nexus)', 13),
-    ('Data Import/Export', 'CSV/Excel imports, data migration', 14),
-    ('Other', 'Unclassified issues', 99)
-ON CONFLICT (name) DO NOTHING;
+        -- Control user IDs
+        assigned_agent_id   INTEGER
+            REFERENCES control.control_users(id)
+            ON DELETE SET NULL,
 
--- Default SLAs
-INSERT INTO {schema}.slas (name, priority, response_minutes, resolution_hours) VALUES
-    ('P1 Critical', 'p1_critical', 15, 4),
-    ('P2 High',     'p2_high',     60, 8),
-    ('P3 Medium',   'p3_medium',   240, 24),
-    ('P4 Low',      'p4_low',      1440, 72)
-ON CONFLICT (name) DO NOTHING;
+        created_by          INTEGER
+            REFERENCES control.control_users(id)
+            ON DELETE SET NULL,
 
--- Default teams
-INSERT INTO {schema}.teams (name, description) VALUES
-    ('Support',       'Front-line customer support'),
-    ('Engineering',   'Bug investigation and fixes'),
-    ('Product',       'Feature requests and roadmap'),
-    ('Billing',       'Subscription and payment issues')
-ON CONFLICT (name) DO NOTHING;
+        resolution_notes    TEXT,
 
--- Ticket number sequence
-CREATE SEQUENCE IF NOT EXISTS {schema}.ticket_number_seq
-    START WITH 1
-    INCREMENT BY 1;
+        is_deleted          BOOLEAN NOT NULL DEFAULT FALSE,
 
--- Function to generate ticket numbers: FS-2026-000001
-CREATE OR REPLACE FUNCTION {schema}.generate_ticket_number()
-RETURNS VARCHAR(50) AS $$
-DECLARE
-    next_num INTEGER;
-    year_part VARCHAR(4);
-    num_part  VARCHAR(10);
-BEGIN
-    year_part := TO_CHAR(NOW(), 'YYYY');
-    next_num  := nextval('{schema}.ticket_number_seq');
-    num_part  := LPAD(next_num::TEXT, 6, '0');
-    RETURN 'FS-' || year_part || '-' || num_part;
-END;
-$$ LANGUAGE plpgsql;
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
--- ────────────────────────────────────────────
--- GRANTS (adjust roles as needed)
--- ────────────────────────────────────────────
+        triaged_at          TIMESTAMPTZ,
+        assigned_at         TIMESTAMPTZ,
+        first_response_at   TIMESTAMPTZ,
+        resolved_at         TIMESTAMPTZ,
+        closed_at           TIMESTAMPTZ
+    );
 
--- Read access to FinSage public schema for Control
-GRANT USAGE ON SCHEMA public TO CURRENT_USER;
-GRANT SELECT ON public.companies TO CURRENT_USER;
-GRANT SELECT ON public.users TO CURRENT_USER;
-GRANT SELECT ON public.company_users TO CURRENT_USER;
-GRANT SELECT ON public.roles TO CURRENT_USER;
-GRANT SELECT ON public.user_roles TO CURRENT_USER;
 
--- Full access on {schema} schema
-GRANT ALL ON SCHEMA {schema} TO CURRENT_USER;
-GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO CURRENT_USER;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA {schema} TO CURRENT_USER;
+    -- ========================================================
+    -- TICKET MESSAGES
+    -- ========================================================
 
--- ────────────────────────────────────────────
--- UPDATED_AT TRIGGER FUNCTION
--- ────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS control.ticket_messages (
+        id                  SERIAL PRIMARY KEY,
 
-CREATE OR REPLACE FUNCTION {schema}.update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+        ticket_id           INTEGER NOT NULL
+            REFERENCES control.tickets(id)
+            ON DELETE CASCADE,
 
--- NOTE: PostgreSQL has no "CREATE TRIGGER IF NOT EXISTS".
--- Each trigger below is wrapped in a DO block that checks pg_trigger first,
--- so the whole migration is safely re-runnable.
+        is_from_customer    BOOLEAN NOT NULL DEFAULT FALSE,
 
-DO $$ BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger
-        WHERE tgname = 'trg_tickets_updated'
-          AND tgrelid = '{schema}.tickets'::regclass
-    ) THEN
-        CREATE TRIGGER trg_tickets_updated
-            BEFORE UPDATE ON {schema}.tickets
-            FOR EACH ROW EXECUTE FUNCTION {schema}.update_updated_at();
-    END IF;
-END $$;
+        sender_name         VARCHAR(250) NOT NULL,
+        sender_email        VARCHAR(320),
 
-DO $$ BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger
-        WHERE tgname = 'trg_ticket_notes_updated'
-          AND tgrelid = '{schema}.ticket_notes'::regclass
-    ) THEN
-        CREATE TRIGGER trg_ticket_notes_updated
-            BEFORE UPDATE ON {schema}.ticket_notes
-            FOR EACH ROW EXECUTE FUNCTION {schema}.update_updated_at();
-    END IF;
-END $$;
+        body                TEXT NOT NULL,
 
-DO $$ BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger
-        WHERE tgname = 'trg_customer_snapshot_updated'
-          AND tgrelid = '{schema}.customer_snapshot'::regclass
-    ) THEN
-        CREATE TRIGGER trg_customer_snapshot_updated
-            BEFORE UPDATE ON {schema}.customer_snapshot
-            FOR EACH ROW EXECUTE FUNCTION {schema}.update_updated_at();
-    END IF;
-END $$;
+        channel             control.message_channel NOT NULL DEFAULT 'portal',
 
-DO $$ BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger
-        WHERE tgname = 'trg_support_agents_updated'
-          AND tgrelid = '{schema}.support_agents'::regclass
-    ) THEN
-        CREATE TRIGGER trg_support_agents_updated
-            BEFORE UPDATE ON {schema}.support_agents
-            FOR EACH ROW EXECUTE FUNCTION {schema}.update_updated_at();
-    END IF;
-END $$;
-"""
+        created_by          INTEGER
+            REFERENCES control.control_users(id)
+            ON DELETE SET NULL,
 
-    logger.info("ensure_control_schema: running migration for schema '%s'", schema)
-    db_service.execute_ddl(sql)
-    logger.info("ensure_control_schema: migration complete")
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+
+    -- ========================================================
+    -- INTERNAL TICKET NOTES
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.ticket_notes (
+        id                  SERIAL PRIMARY KEY,
+
+        ticket_id           INTEGER NOT NULL
+            REFERENCES control.tickets(id)
+            ON DELETE CASCADE,
+
+        agent_id            INTEGER NOT NULL
+            REFERENCES control.control_users(id)
+            ON DELETE RESTRICT,
+
+        body                TEXT NOT NULL,
+
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+
+    -- ========================================================
+    -- TICKET HISTORY
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.ticket_history (
+        id                  SERIAL PRIMARY KEY,
+
+        ticket_id           INTEGER NOT NULL
+            REFERENCES control.tickets(id)
+            ON DELETE CASCADE,
+
+        field               VARCHAR(150) NOT NULL,
+
+        old_value           TEXT,
+        new_value           TEXT,
+
+        changed_by          INTEGER
+            REFERENCES control.control_users(id)
+            ON DELETE SET NULL,
+
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+
+    -- ========================================================
+    -- TICKET ATTACHMENTS
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.ticket_attachments (
+        id                  SERIAL PRIMARY KEY,
+
+        ticket_id           INTEGER NOT NULL
+            REFERENCES control.tickets(id)
+            ON DELETE CASCADE,
+
+        file_name           VARCHAR(500) NOT NULL,
+        file_path           TEXT,
+        mime_type           VARCHAR(200),
+        file_size           BIGINT,
+
+        uploaded_by         INTEGER
+            REFERENCES control.control_users(id)
+            ON DELETE SET NULL,
+
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+
+    -- ========================================================
+    -- TICKET LINKS
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.ticket_links (
+        id                  SERIAL PRIMARY KEY,
+
+        ticket_id           INTEGER NOT NULL
+            REFERENCES control.tickets(id)
+            ON DELETE CASCADE,
+
+        linked_ticket_id    INTEGER
+            REFERENCES control.tickets(id)
+            ON DELETE CASCADE,
+
+        relationship        VARCHAR(80) NOT NULL DEFAULT 'related',
+
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        UNIQUE(ticket_id, linked_ticket_id, relationship)
+    );
+
+
+    -- ========================================================
+    -- CUSTOMER SNAPSHOT
+    --
+    -- Control can maintain an operational snapshot without modifying
+    -- FinSage operational tables.
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.customer_snapshot (
+        id                  SERIAL PRIMARY KEY,
+
+        company_id          INTEGER NOT NULL,
+        product             VARCHAR(100) NOT NULL DEFAULT 'finsage',
+
+        enabled_modules     JSONB,
+        app_version         VARCHAR(100),
+
+        last_login_at       TIMESTAMPTZ,
+        last_transaction_at TIMESTAMPTZ,
+        last_error_at       TIMESTAMPTZ,
+
+        open_ticket_count   INTEGER NOT NULL DEFAULT 0,
+        total_ticket_count  INTEGER NOT NULL DEFAULT 0,
+
+        subscription_status VARCHAR(80),
+        subscription_plan   VARCHAR(150),
+        subscription_end    DATE,
+
+        snapshot_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        UNIQUE(company_id, product)
+    );
+
+
+    -- ========================================================
+    -- NOTIFICATION LOG
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.notification_log (
+        id                  SERIAL PRIMARY KEY,
+
+        ticket_id           INTEGER
+            REFERENCES control.tickets(id)
+            ON DELETE SET NULL,
+
+        recipient_email     VARCHAR(320),
+        channel             VARCHAR(50) NOT NULL DEFAULT 'email',
+
+        subject             TEXT,
+        status              VARCHAR(50) NOT NULL DEFAULT 'pending',
+
+        provider_message_id VARCHAR(300),
+        error_message       TEXT,
+
+        sent_at             TIMESTAMPTZ,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+
+    -- ========================================================
+    -- SYSTEM EVENTS
+    --
+    -- Receives application/system failures and important events.
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.system_events (
+        id                  BIGSERIAL PRIMARY KEY,
+
+        event_code          VARCHAR(200) NOT NULL,
+
+        severity            control.priority_level
+                            NOT NULL DEFAULT 'p3_medium',
+
+        status              VARCHAR(50)
+                            NOT NULL DEFAULT 'open',
+
+        source              VARCHAR(150),
+        product             VARCHAR(100)
+                            NOT NULL DEFAULT 'finsage',
+
+        module_code         VARCHAR(150),
+        page_code           VARCHAR(150),
+        action_code         VARCHAR(150),
+
+        company_id          INTEGER,
+        company_name        VARCHAR(300),
+
+        user_id             INTEGER,
+        user_email          VARCHAR(320),
+
+        error_ref           VARCHAR(250),
+        transaction_ref     VARCHAR(250),
+
+        message             TEXT,
+        exception_type      VARCHAR(300),
+        stack_trace         TEXT,
+
+        context             JSONB,
+
+        occurrence_count    INTEGER NOT NULL DEFAULT 1,
+
+        first_seen_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_seen_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        resolved_at         TIMESTAMPTZ,
+
+        ticket_id           INTEGER
+            REFERENCES control.tickets(id)
+            ON DELETE SET NULL,
+
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+
+    -- ========================================================
+    -- EVENT OCCURRENCES
+    --
+    -- Stores individual occurrences without forcing every occurrence
+    -- to become its own ticket.
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.event_occurrences (
+        id                  BIGSERIAL PRIMARY KEY,
+
+        event_id            BIGINT NOT NULL
+            REFERENCES control.system_events(id)
+            ON DELETE CASCADE,
+
+        occurred_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        company_id          INTEGER,
+
+        request_path        TEXT,
+        http_method         VARCHAR(20),
+        http_status         INTEGER,
+
+        error_message       TEXT,
+
+        context             JSONB
+    );
+
+
+    -- ========================================================
+    -- SYSTEM CHECK DEFINITIONS
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.system_checks (
+        id                  SERIAL PRIMARY KEY,
+
+        code                VARCHAR(150) NOT NULL UNIQUE,
+        name                VARCHAR(250) NOT NULL,
+        description         TEXT,
+
+        check_type          VARCHAR(80) NOT NULL DEFAULT 'system',
+
+        interval_minutes    INTEGER NOT NULL DEFAULT 60,
+
+        is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+
+        creates_ticket      BOOLEAN NOT NULL DEFAULT FALSE,
+
+        priority            control.priority_level
+                            NOT NULL DEFAULT 'p3_medium',
+
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+
+    -- ========================================================
+    -- SYSTEM CHECK RUNS
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.system_check_runs (
+        id                  BIGSERIAL PRIMARY KEY,
+
+        check_id            INTEGER NOT NULL
+            REFERENCES control.system_checks(id)
+            ON DELETE CASCADE,
+
+        status              VARCHAR(50) NOT NULL,
+
+        result_summary      TEXT,
+        result_data         JSONB,
+
+        started_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        completed_at        TIMESTAMPTZ,
+
+        duration_ms         INTEGER,
+
+        error_message       TEXT,
+
+        ticket_id           INTEGER
+            REFERENCES control.tickets(id)
+            ON DELETE SET NULL
+    );
+
+
+    -- ========================================================
+    -- SUBSCRIPTION SNAPSHOT
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.subscription_snapshot (
+        id                  BIGSERIAL PRIMARY KEY,
+
+        company_id          INTEGER NOT NULL UNIQUE,
+        company_name        VARCHAR(300),
+
+        subscription_status VARCHAR(80),
+        plan_code           VARCHAR(100),
+        plan_name           VARCHAR(200),
+
+        trial_start_date    DATE,
+        trial_end_date      DATE,
+
+        subscription_start  DATE,
+        subscription_end    DATE,
+
+        is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+
+        amount               NUMERIC(18,2),
+        currency             VARCHAR(10),
+
+        last_payment_at      TIMESTAMPTZ,
+
+        snapshot_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        metadata             JSONB
+    );
+
+
+    -- ========================================================
+    -- CONTROL AUDIT LOG
+    -- ========================================================
+
+    CREATE TABLE IF NOT EXISTS control.audit_log (
+        id                  BIGSERIAL PRIMARY KEY,
+
+        control_user_id     INTEGER
+            REFERENCES control.control_users(id)
+            ON DELETE SET NULL,
+
+        action               VARCHAR(150) NOT NULL,
+
+        entity_type          VARCHAR(100),
+        entity_id            BIGINT,
+
+        description          TEXT,
+
+        ip_address           INET,
+        user_agent           TEXT,
+
+        before_data          JSONB,
+        after_data           JSONB,
+        metadata             JSONB,
+
+        created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+
+    -- ========================================================
+    -- INDEXES
+    -- ========================================================
+
+    CREATE INDEX IF NOT EXISTS idx_control_users_active
+        ON control.control_users(is_active);
+
+    CREATE INDEX IF NOT EXISTS idx_control_users_team
+        ON control.control_users(team_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_user_roles_user
+        ON control.user_roles(control_user_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_role_permissions_role
+        ON control.role_permissions(role_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_tickets_status
+        ON control.tickets(status);
+
+    CREATE INDEX IF NOT EXISTS idx_control_tickets_priority
+        ON control.tickets(priority);
+
+    CREATE INDEX IF NOT EXISTS idx_control_tickets_company
+        ON control.tickets(company_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_tickets_assigned_agent
+        ON control.tickets(assigned_agent_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_tickets_created_at
+        ON control.tickets(created_at);
+
+    CREATE INDEX IF NOT EXISTS idx_control_ticket_messages_ticket
+        ON control.ticket_messages(ticket_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_ticket_notes_ticket
+        ON control.ticket_notes(ticket_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_ticket_history_ticket
+        ON control.ticket_history(ticket_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_system_events_code
+        ON control.system_events(event_code);
+
+    CREATE INDEX IF NOT EXISTS idx_control_system_events_company
+        ON control.system_events(company_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_system_events_last_seen
+        ON control.system_events(last_seen_at);
+
+    CREATE INDEX IF NOT EXISTS idx_control_event_occurrences_event
+        ON control.event_occurrences(event_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_check_runs_check
+        ON control.system_check_runs(check_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_check_runs_started
+        ON control.system_check_runs(started_at);
+
+    CREATE INDEX IF NOT EXISTS idx_control_audit_log_user
+        ON control.audit_log(control_user_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_audit_log_created
+        ON control.audit_log(created_at);
+
+
+    -- ========================================================
+    -- TICKET NUMBER FUNCTION
+    -- ========================================================
+
+    CREATE OR REPLACE FUNCTION control.generate_ticket_number()
+    RETURNS TEXT
+    LANGUAGE plpgsql
+    AS $func$
+    DECLARE
+        next_number BIGINT;
+    BEGIN
+        next_number := nextval('control.ticket_number_seq');
+
+        RETURN 'FS-' ||
+               TO_CHAR(CURRENT_DATE, 'YYYY') ||
+               '-' ||
+               LPAD(next_number::TEXT, 6, '0');
+    END;
+    $func$;
+
+
+    -- ========================================================
+    -- UPDATED_AT FUNCTION
+    -- ========================================================
+
+    CREATE OR REPLACE FUNCTION control.set_updated_at()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $func$
+    BEGIN
+        NEW.updated_at = NOW();
+        RETURN NEW;
+    END;
+    $func$;
+
+
+    -- ========================================================
+    -- UPDATED_AT TRIGGERS
+    -- ========================================================
+
+    DROP TRIGGER IF EXISTS trg_control_users_updated_at
+        ON control.control_users;
+
+    CREATE TRIGGER trg_control_users_updated_at
+    BEFORE UPDATE ON control.control_users
+    FOR EACH ROW
+    EXECUTE PROCEDURE control.set_updated_at();
+
+
+    DROP TRIGGER IF EXISTS trg_control_teams_updated_at
+        ON control.teams;
+
+    CREATE TRIGGER trg_control_teams_updated_at
+    BEFORE UPDATE ON control.teams
+    FOR EACH ROW
+    EXECUTE PROCEDURE control.set_updated_at();
+
+
+    DROP TRIGGER IF EXISTS trg_control_categories_updated_at
+        ON control.categories;
+
+    CREATE TRIGGER trg_control_categories_updated_at
+    BEFORE UPDATE ON control.categories
+    FOR EACH ROW
+    EXECUTE PROCEDURE control.set_updated_at();
+
+
+    DROP TRIGGER IF EXISTS trg_control_slas_updated_at
+        ON control.slas;
+
+    CREATE TRIGGER trg_control_slas_updated_at
+    BEFORE UPDATE ON control.slas
+    FOR EACH ROW
+    EXECUTE PROCEDURE control.set_updated_at();
+
+
+    DROP TRIGGER IF EXISTS trg_control_tickets_updated_at
+        ON control.tickets;
+
+    CREATE TRIGGER trg_control_tickets_updated_at
+    BEFORE UPDATE ON control.tickets
+    FOR EACH ROW
+    EXECUTE PROCEDURE control.set_updated_at();
+
+
+    DROP TRIGGER IF EXISTS trg_control_ticket_notes_updated_at
+        ON control.ticket_notes;
+
+    CREATE TRIGGER trg_control_ticket_notes_updated_at
+    BEFORE UPDATE ON control.ticket_notes
+    FOR EACH ROW
+    EXECUTE PROCEDURE control.set_updated_at();
+
+
+    DROP TRIGGER IF EXISTS trg_control_system_checks_updated_at
+        ON control.system_checks;
+
+    CREATE TRIGGER trg_control_system_checks_updated_at
+    BEFORE UPDATE ON control.system_checks
+    FOR EACH ROW
+    EXECUTE PROCEDURE control.set_updated_at();
+
+
+    -- ========================================================
+    -- SEED TEAMS
+    -- ========================================================
+
+    INSERT INTO control.teams
+        (name, description)
+    VALUES
+        ('Support', 'General FinSage customer support'),
+        ('Technical', 'Technical and application support'),
+        ('Finance', 'Accounting and finance support'),
+        ('Management', 'Control management and escalation')
+    ON CONFLICT (name) DO NOTHING;
+
+
+    -- ========================================================
+    -- SEED ROLES
+    -- ========================================================
+
+    INSERT INTO control.roles
+        (code, name, description, is_system_role)
+    VALUES
+        (
+            'admin',
+            'Administrator',
+            'Full Control system access',
+            TRUE
+        ),
+        (
+            'manager',
+            'Manager',
+            'Manage tickets, agents, teams and support operations',
+            TRUE
+        ),
+        (
+            'agent',
+            'Agent',
+            'Work and resolve support tickets',
+            TRUE
+        ),
+        (
+            'viewer',
+            'Viewer',
+            'Read-only Control access',
+            TRUE
+        )
+    ON CONFLICT (code) DO NOTHING;
+
+
+    -- ========================================================
+    -- SEED PERMISSIONS
+    -- ========================================================
+
+    INSERT INTO control.permissions
+        (code, name, description)
+    VALUES
+        ('dashboard.view', 'View Dashboard', 'View Control dashboard'),
+        ('tickets.view', 'View Tickets', 'View support tickets'),
+        ('tickets.create', 'Create Tickets', 'Create support tickets'),
+        ('tickets.edit', 'Edit Tickets', 'Edit support tickets'),
+        ('tickets.delete', 'Delete Tickets', 'Soft-delete tickets'),
+        ('tickets.assign', 'Assign Tickets', 'Assign tickets to Control users'),
+        ('tickets.resolve', 'Resolve Tickets', 'Resolve support tickets'),
+        ('tickets.notes', 'Ticket Notes', 'Create and manage internal notes'),
+        ('customers.view', 'View Customers', 'View customer/company information'),
+        ('agents.view', 'View Agents', 'View Control users'),
+        ('agents.manage', 'Manage Agents', 'Create and manage Control users'),
+        ('teams.view', 'View Teams', 'View support teams'),
+        ('teams.manage', 'Manage Teams', 'Create and manage support teams'),
+        ('categories.manage', 'Manage Categories', 'Manage ticket categories'),
+        ('sla.view', 'View SLAs', 'View SLA configuration'),
+        ('sla.manage', 'Manage SLAs', 'Manage SLA configuration'),
+        ('settings.view', 'View Settings', 'View Control settings'),
+        ('settings.manage', 'Manage Settings', 'Manage Control settings'),
+        ('system_events.view', 'View System Events', 'View application system events'),
+        ('system_checks.view', 'View System Checks', 'View system health checks'),
+        ('system_checks.run', 'Run System Checks', 'Run system health checks'),
+        ('audit.view', 'View Audit Log', 'View Control audit history')
+    ON CONFLICT (code) DO NOTHING;
+
+
+    -- ========================================================
+    -- ROLE → PERMISSIONS
+    -- ========================================================
+
+    INSERT INTO control.role_permissions (role_id, permission_id)
+    SELECT r.id, p.id
+    FROM control.roles r
+    CROSS JOIN control.permissions p
+    WHERE r.code = 'admin'
+    ON CONFLICT DO NOTHING;
+
+
+    INSERT INTO control.role_permissions (role_id, permission_id)
+    SELECT r.id, p.id
+    FROM control.roles r
+    JOIN control.permissions p
+      ON p.code IN (
+          'dashboard.view',
+          'tickets.view',
+          'tickets.create',
+          'tickets.edit',
+          'tickets.assign',
+          'tickets.resolve',
+          'tickets.notes',
+          'customers.view',
+          'agents.view',
+          'agents.manage',
+          'teams.view',
+          'teams.manage',
+          'categories.manage',
+          'sla.view',
+          'sla.manage',
+          'settings.view',
+          'system_events.view',
+          'system_checks.view',
+          'system_checks.run',
+          'audit.view'
+      )
+    WHERE r.code = 'manager'
+    ON CONFLICT DO NOTHING;
+
+
+    INSERT INTO control.role_permissions (role_id, permission_id)
+    SELECT r.id, p.id
+    FROM control.roles r
+    JOIN control.permissions p
+      ON p.code IN (
+          'dashboard.view',
+          'tickets.view',
+          'tickets.create',
+          'tickets.edit',
+          'tickets.resolve',
+          'tickets.notes',
+          'customers.view',
+          'agents.view',
+          'teams.view',
+          'sla.view',
+          'system_events.view',
+          'system_checks.view'
+      )
+    WHERE r.code = 'agent'
+    ON CONFLICT DO NOTHING;
+
+
+    INSERT INTO control.role_permissions (role_id, permission_id)
+    SELECT r.id, p.id
+    FROM control.roles r
+    JOIN control.permissions p
+      ON p.code IN (
+          'dashboard.view',
+          'tickets.view',
+          'customers.view',
+          'agents.view',
+          'teams.view',
+          'sla.view',
+          'system_events.view',
+          'system_checks.view'
+      )
+    WHERE r.code = 'viewer'
+    ON CONFLICT DO NOTHING;
+
+
+    -- ========================================================
+    -- DEFAULT SLAs
+    -- ========================================================
+
+    INSERT INTO control.slas
+        (name, priority, response_minutes, resolution_hours)
+    VALUES
+        ('Critical', 'p1_critical', 15, 4),
+        ('High', 'p2_high', 60, 12),
+        ('Medium', 'p3_medium', 240, 48),
+        ('Low', 'p4_low', 480, 120)
+    ON CONFLICT (priority) DO NOTHING;
+
+
+    -- ========================================================
+    -- DEFAULT CATEGORIES
+    -- ========================================================
+
+    INSERT INTO control.categories
+        (name, description, sort_order)
+    VALUES
+        ('Application Error', 'Errors generated by the FinSage application', 10),
+        ('Accounting', 'Accounting and financial reporting issues', 20),
+        ('Payroll', 'Payroll and statutory processing issues', 30),
+        ('Inventory', 'Inventory and stock-related issues', 40),
+        ('Fixed Assets', 'IAS 16, IAS 40 and IAS 38 issues', 50),
+        ('Leases', 'IFRS 16 lease issues', 60),
+        ('Tax', 'Tax and statutory issues', 70),
+        ('User Account', 'User authentication and account issues', 80),
+        ('Subscription', 'Subscription and billing issues', 90),
+        ('Data Issue', 'Data integrity or migration issues', 100),
+        ('Other', 'Other support matters', 999)
+    ON CONFLICT (name) DO NOTHING;
+
+
+    -- ========================================================
+    -- DEFAULT SYSTEM CHECKS
+    -- ========================================================
+
+    INSERT INTO control.system_checks
+        (code, name, description, check_type, interval_minutes, creates_ticket, priority)
+    VALUES
+        (
+            'database_connectivity',
+            'Database Connectivity',
+            'Verify that the FinSage database is reachable',
+            'database',
+            5,
+            TRUE,
+            'p1_critical'
+        ),
+        (
+            'company_count',
+            'Company Count',
+            'Monitor the number of active FinSage companies',
+            'companies',
+            60,
+            FALSE,
+            'p3_medium'
+        ),
+        (
+            'subscription_status',
+            'Subscription Status',
+            'Monitor active, trial and expired subscriptions',
+            'subscriptions',
+            60,
+            FALSE,
+            'p2_high'
+        ),
+        (
+            'recent_system_errors',
+            'Recent System Errors',
+            'Check for recurring application errors',
+            'system_events',
+            15,
+            TRUE,
+            'p2_high'
+        )
+    ON CONFLICT (code) DO NOTHING;
+
+
+    -- ========================================================
+    -- CONTROL READ ACCESS TO OPERATIONAL DATA
+    --
+    -- These are intentionally SELECT-only.
+    -- ========================================================
+
+    GRANT USAGE ON SCHEMA public TO CURRENT_USER;
+
+    GRANT SELECT ON
+        public.companies,
+        public.users,
+        public.company_users
+    TO CURRENT_USER;
+
+
+    -- ========================================================
+    -- CONTROL SCHEMA PRIVILEGES
+    -- ========================================================
+
+    GRANT USAGE ON SCHEMA control TO CURRENT_USER;
+
+    GRANT SELECT, INSERT, UPDATE, DELETE
+    ON ALL TABLES IN SCHEMA control
+    TO CURRENT_USER;
+
+    GRANT USAGE, SELECT
+    ON ALL SEQUENCES IN SCHEMA control
+    TO CURRENT_USER;
+
+
+    -- ========================================================
+    -- FUTURE DEFAULT PRIVILEGES
+    -- ========================================================
+
+    ALTER DEFAULT PRIVILEGES IN SCHEMA control
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO CURRENT_USER;
+
+    ALTER DEFAULT PRIVILEGES IN SCHEMA control
+        GRANT USAGE, SELECT ON SEQUENCES TO CURRENT_USER;
+    """
+
+    db_service.execute_sql(sql)

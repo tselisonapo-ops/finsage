@@ -7531,25 +7531,29 @@ def resolve_depreciation_accounts(
 
     rou = is_rou_asset_record(asset)
 
+    def ensure_role(role):
+        row = db_service.ensure_coa_role_for_posting(
+            company_id,
+            role,
+            cur=cur,
+            required=False,
+        )
+        return (row.get("code") or "").strip() if row else None
     # -------------------------------------------------
     # Class/group-driven role defaults
     # -------------------------------------------------
     if not rou:
         if not acc_dep_code:
-            acc_dep_code = _first_coa_role(
-                cur,
-                schema,
-                company_id,
-                _acc_dep_roles_for_asset(asset),
-            )
+            for role in _acc_dep_roles_for_asset(asset):
+                acc_dep_code = ensure_role(role)
+                if acc_dep_code:
+                    break
 
         if not dep_exp_code:
-            dep_exp_code = _first_coa_role(
-                cur,
-                schema,
-                company_id,
-                _dep_exp_roles_for_asset(asset),
-            )
+            for role in _dep_exp_roles_for_asset(asset):
+                dep_exp_code = ensure_role(role)
+                if dep_exp_code:
+                    break
 
     def first_code_by_name(patterns, *, section=None, is_contra=None, exclude_patterns=None):
         patterns = [p for p in (patterns or []) if (p or "").strip()]
@@ -7630,11 +7634,17 @@ def resolve_depreciation_accounts(
     # -------------------------
     if rou:
         if not dep_exp_code:
-            dep_exp_code = (
-                coa_first_by_role(cur, schema, company_id, "amortisation_expense_rou")
-                or coa_first_by_role(cur, schema, company_id, "depreciation_expense_rou")
-                or coa_first_by_role(cur, schema, company_id, "lease_amortization")
-                or first_code_by_name(
+            for role in (
+                "amortisation_expense_rou",
+                "depreciation_expense_rou",
+                "lease_amortization",
+            ):
+                dep_exp_code = ensure_role(role)
+                if dep_exp_code:
+                    break
+
+            if not dep_exp_code:
+                dep_exp_code = first_code_by_name(
                     [
                         "%lease amort%",
                         "%lease amortis%",
@@ -7649,10 +7659,16 @@ def resolve_depreciation_accounts(
             )
 
         if not acc_dep_code:
-            acc_dep_code = (
-                coa_first_by_role(cur, schema, company_id, "accumulated_depreciation_rou")
-                or coa_first_by_role(cur, schema, company_id, "accumulated_amortization_rou")
-                or first_code_by_name(
+            for role in (
+                "accumulated_depreciation_rou",
+                "accumulated_amortization_rou",
+            ):
+                acc_dep_code = ensure_role(role)
+                if acc_dep_code:
+                    break
+
+            if not acc_dep_code:
+                acc_dep_code = first_code_by_name(
                     [
                         "%accum%depr%right-of-use%",
                         "%accum%depr%right of use%",
@@ -7727,12 +7743,11 @@ def resolve_depreciation_accounts(
 
     # Generic PPE role only after specific matching
     if not acc_dep_code:
-        acc_dep_code = _first_coa_role(
-            cur,
-            schema,
-            company_id,
-            _acc_dep_roles_for_asset(asset),
-        )
+        for role in _acc_dep_roles_for_asset(asset):
+            acc_dep_code = ensure_role(role)
+            if acc_dep_code:
+                break
+
     # Then generic name fallback excluding ROU
     if not acc_dep_code:
         acc_dep_code = first_code_by_name(
@@ -7744,15 +7759,20 @@ def resolve_depreciation_accounts(
 
     # Depreciation expense
     if not dep_exp_code:
-        dep_exp_code = (
-            coa_first_by_role(cur, schema, company_id, "depreciation_expense_ppe")
-            or coa_first_by_role(cur, schema, company_id, "depreciation_expense")
-            or first_code_by_name(
+        for role in (
+            "depreciation_expense_ppe",
+            "depreciation_expense",
+        ):
+            dep_exp_code = ensure_role(role)
+            if dep_exp_code:
+                break
+
+        if not dep_exp_code:
+            dep_exp_code = first_code_by_name(
                 ["%depreciation%"],
                 section="Expense",
                 is_contra=False,
             )
-        )
 
     return dep_exp_code, acc_dep_code
 

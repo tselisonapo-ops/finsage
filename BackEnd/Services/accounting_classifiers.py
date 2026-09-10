@@ -849,8 +849,26 @@ def _coa_role_from_text(
     # ----------------------------
     # helpers
     # ----------------------------
-    is_expense = ("expense" in sec) or ("depreciation" in text) or ("amort" in text)
-    is_asset = ("asset" in sec) or ("accum" in text) or ("contra" in text)
+    is_accum = any(k in text for k in (
+        "accumulated depreciation",
+        "accum depreciation",
+        "accum dep",
+        "accumulated amort",
+        "accum amort",
+    ))
+
+    is_expense = (
+        ("expense" in sec)
+        or ("depreciation" in text)
+        or ("amort" in text)
+    ) and not is_accum
+
+    is_asset = (
+        ("asset" in sec)
+        or ("accum" in text)
+        or ("contra" in text)
+    )
+
     is_liability = (
         "liability" in sec
         or "liab" in sec
@@ -861,7 +879,6 @@ def _coa_role_from_text(
 
     is_rou = any(k in text for k in (
         "right-of-use", "right of use", "rou", "ifrs 16", "lease amort"
-    ))
 
     # ----------------------------
     # IAS 41 Agriculture
@@ -1272,14 +1289,6 @@ def _coa_role_from_text(
         ):
             return "ias41_subcontracted_service_cost"
         
-    is_accum = any(k in text for k in (
-        "accumulated depreciation",
-        "accum depreciation",
-        "accum dep",
-        "accumulated amort",
-        "accum amort",
-    ))
-
     # --- AR / cash / bank / VAT ---
     if any(k in text for k in ("accounts receivable", "trade receivable", "debtors")):
         return "ar"
