@@ -7528,25 +7528,26 @@ ASSET_CLASS_DEPRECIATION_ROLES = {
         "accumulated_depreciation_plant_machinery",
     ),
     "vehicles": (
-        "depreciation_expense_vehicles",
-        "accumulated_depreciation_vehicles",
+        "depreciation_expense_motor_vehicles",
+        "accumulated_depreciation_motor_vehicles",
     ),
     "motorcycles / bikes": (
-        "depreciation_expense_vehicles",
-        "accumulated_depreciation_vehicles",
+        "depreciation_expense_motor_vehicles",
+        "accumulated_depreciation_motor_vehicles",
     ),
     "bicycles": (
-        "depreciation_expense_vehicles",
-        "accumulated_depreciation_vehicles",
+        "depreciation_expense_motor_vehicles",
+        "accumulated_depreciation_motor_vehicles",
     ),
     "scooters": (
-        "depreciation_expense_vehicles",
-        "accumulated_depreciation_vehicles",
+        "depreciation_expense_motor_vehicles",
+        "accumulated_depreciation_motor_vehicles",
     ),
     "heavy vehicles": (
-        "depreciation_expense_vehicles",
-        "accumulated_depreciation_vehicles",
+        "depreciation_expense_heavy_vehicles",
+        "accumulated_depreciation_heavy_vehicles",
     ),
+
     "construction equipment": (
         "depreciation_expense_construction_equipment",
         "accumulated_depreciation_construction_equipment",
