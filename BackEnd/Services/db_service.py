@@ -70286,16 +70286,16 @@ class DatabaseService:
         )
 
         date_filter = ""
-        params = [int(company_id)]
+        params = [
+            int(company_id),  # latest_paid
+            int(company_id),  # next_schedule
+        ]
 
         if as_of:
             date_filter = "AND s.period_end >= %s"
             params.append(as_of)
 
-        params.extend([
-            int(company_id),
-            int(company_id),
-        ])
+        params.append(int(company_id))  # leases JOIN
 
         sql = f"""
         WITH latest_paid AS (
