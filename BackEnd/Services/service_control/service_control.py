@@ -4,24 +4,22 @@ All database operations for the Control module.
 Reads from FinSage/Nexus operational tables (READ-ONLY).
 Writes only to the control.* schema.
 
-BUGFIXES vs. the previous version:
-  B. add_ticket_note() now returns agent_name as a string, not a dict.
-  C. update_ticket_note / delete_ticket_note now take ticket_id and
-     include it in the WHERE clause, so a note can't be moved between
-     tickets by passing a mismatched note_id.
-  D. generate_ticket_number() raises if the SQL returns no row, instead
-     of silently returning "FS-2026-000000" which would collide.
-  E. get_ticket_history() uses LEFT JOIN to support future system-side
-     changes (changed_by = NULL).
-  F. update_ticket() now serialises list/dict field values (tags,
-     support_context) with json.dumps instead of str() — history rows
-     are now parseable.
+Control identity:
+  - control.control_users is the source of truth for Control users.
+  - Control users are NOT public.users.
+  - Control users are NOT auto-created on login.
+
+BUGFIXES preserved:
+  B. add_ticket_note() returns agent_name as a string.
+  C. update_ticket_note / delete_ticket_note require ticket_id.
+  D. generate_ticket_number() raises if SQL returns no value.
+  E. get_ticket_history() uses LEFT JOIN for system-side history.
+  F. update_ticket() serialises list/dict history values with json.dumps.
 """
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 class ControlService:
@@ -31,21 +29,15 @@ class ControlService:
         self.db = db_service
 
     # ────────────────────────────────────────
-    # SCHEMA ENSURE — single entry point for DB migration
+    # SCHEMA ENSURE
     # ────────────────────────────────────────
 
     def ensure_schema(self) -> None:
         """
-        Ensure the `control.*` schema, tables, enums, functions, triggers
-        and seed data exist. Idempotent — no-op on the second call.
+        Ensure the control.* schema, tables, enums, functions, triggers
+        and seed data exist.
 
-        This is the ONLY method in the codebase that calls
-        `ensure_control_schema()` from `backend.migrations`. Everything
-        else (blueprint registration, request handlers, tests) goes through
-        this method, so the migration has exactly one caller.
-
-        Called once per Flask process at startup by
-        `register_control_blueprints(app)` in `backend/__init__.py`.
+        This is the single entry point for Control schema migration.
         """
         from BackEnd.Services.service_control.migrations import ensure_control_schema
         ensure_control_schema(self.db)
@@ -56,21 +48,20 @@ class ControlService:
 
     def generate_ticket_number(self) -> str:
         """
-        Generate a new ticket number via the SQL function
-        control.generate_ticket_number().
+        Generate a new ticket number via the SQL function.
 
-        Raises RuntimeError if the function returns no row or a NULL value —
-        a silent fallback like "FS-2026-000000" would violate the
-        UNIQUE(ticket_number) constraint on the tickets table if multiple
-        tickets were created while the DB was unreachable, so it is safer
-        to surface the failure as a 500 to the caller.
+        Raises RuntimeError if the function returns no value.
         """
-        row = self.db.fetch_one("SELECT control.generate_ticket_number() AS num")
+        row = self.db.fetch_one(
+            "SELECT control.generate_ticket_number() AS num"
+        )
+
         if not row or not row.get("num"):
             raise RuntimeError(
                 "control.generate_ticket_number() returned no value "
-                "— check the DB connection and the function definition"
+                "— check the DB connection and function definition"
             )
+
         return row["num"]
 
     # ────────────────────────────────────────
@@ -79,23 +70,62 @@ class ControlService:
 
     def get_dashboard_stats(self) -> Dict[str, Any]:
         """Aggregate stats for the Control dashboard."""
+
         stats = self.db.fetch_one("""
             SELECT
-                COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed') AND is_deleted = FALSE) AS open_tickets,
-                COUNT(*) FILTER (WHERE priority = 'p1_critical' AND status NOT IN ('resolved','closed') AND is_deleted = FALSE) AS critical_tickets,
-                COUNT(*) FILTER (WHERE status = 'new' AND is_deleted = FALSE) AS new_tickets,
-                COUNT(*) FILTER (WHERE status = 'in_progress' AND is_deleted = FALSE) AS in_progress,
-                COUNT(*) FILTER (WHERE status = 'waiting_customer' AND is_deleted = FALSE) AS waiting_customer,
-                COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE AND is_deleted = FALSE) AS created_today,
-                COUNT(*) FILTER (WHERE DATE(resolved_at) = CURRENT_DATE AND is_deleted = FALSE) AS resolved_today,
-                COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed') AND is_deleted = FALSE
-                    AND first_response_at IS NULL) AS unresponded,
-                COUNT(*) FILTER (WHERE is_deleted = FALSE) AS total_tickets,
-                COUNT(DISTINCT company_id) FILTER (WHERE is_deleted = FALSE) AS total_companies_served
+                COUNT(*) FILTER (
+                    WHERE status NOT IN ('resolved','closed')
+                    AND is_deleted = FALSE
+                ) AS open_tickets,
+
+                COUNT(*) FILTER (
+                    WHERE priority = 'p1_critical'
+                    AND status NOT IN ('resolved','closed')
+                    AND is_deleted = FALSE
+                ) AS critical_tickets,
+
+                COUNT(*) FILTER (
+                    WHERE status = 'new'
+                    AND is_deleted = FALSE
+                ) AS new_tickets,
+
+                COUNT(*) FILTER (
+                    WHERE status = 'in_progress'
+                    AND is_deleted = FALSE
+                ) AS in_progress,
+
+                COUNT(*) FILTER (
+                    WHERE status = 'waiting_customer'
+                    AND is_deleted = FALSE
+                ) AS waiting_customer,
+
+                COUNT(*) FILTER (
+                    WHERE DATE(created_at) = CURRENT_DATE
+                    AND is_deleted = FALSE
+                ) AS created_today,
+
+                COUNT(*) FILTER (
+                    WHERE DATE(resolved_at) = CURRENT_DATE
+                    AND is_deleted = FALSE
+                ) AS resolved_today,
+
+                COUNT(*) FILTER (
+                    WHERE status NOT IN ('resolved','closed')
+                    AND is_deleted = FALSE
+                    AND first_response_at IS NULL
+                ) AS unresponded,
+
+                COUNT(*) FILTER (
+                    WHERE is_deleted = FALSE
+                ) AS total_tickets,
+
+                COUNT(DISTINCT company_id) FILTER (
+                    WHERE is_deleted = FALSE
+                ) AS total_companies_served
+
             FROM control.tickets
         """)
 
-        # Top modules
         modules = self.db.fetch_all("""
             SELECT
                 COALESCE(module_code, 'Unspecified') AS module,
@@ -107,7 +137,6 @@ class ControlService:
             LIMIT 8
         """)
 
-        # Ticket type breakdown
         types = self.db.fetch_all("""
             SELECT ticket_type, COUNT(*) AS count
             FROM control.tickets
@@ -116,40 +145,65 @@ class ControlService:
             ORDER BY count DESC
         """)
 
-        # Recent tickets
         recent = self.db.fetch_all("""
-            SELECT id, ticket_number, subject, status, priority,
-                   company_name, created_at
+            SELECT
+                id,
+                ticket_number,
+                subject,
+                status,
+                priority,
+                company_name,
+                created_at
             FROM control.tickets
             WHERE is_deleted = FALSE
             ORDER BY created_at DESC
             LIMIT 10
         """)
 
-        # Agent workload
+        # Control workload now comes directly from control_users.
         agents = self.db.fetch_all("""
             SELECT
-                sa.display_name,
-                COUNT(t.id) FILTER (WHERE t.status NOT IN ('resolved','closed') AND t.is_deleted = FALSE) AS open_count
-            FROM control.support_agents sa
-            LEFT JOIN control.tickets t ON t.assigned_agent_id = sa.id
-            WHERE sa.is_active = TRUE
-            GROUP BY sa.id, sa.display_name
+                cu.id,
+                cu.display_name,
+                cu.email,
+                cu.role,
+                COUNT(t.id) FILTER (
+                    WHERE t.status NOT IN ('resolved','closed')
+                    AND t.is_deleted = FALSE
+                ) AS open_count
+            FROM control.control_users cu
+            LEFT JOIN control.tickets t
+                ON t.assigned_agent_id = cu.id
+            WHERE cu.is_active = TRUE
+            GROUP BY
+                cu.id,
+                cu.display_name,
+                cu.email,
+                cu.role
             ORDER BY open_count DESC
         """)
 
-        # SLA compliance (simple: tickets where first_response_at <= created_at + sla.response_minutes)
         sla_stats = self.db.fetch_one("""
             SELECT
                 COUNT(*) FILTER (
                     WHERE t.first_response_at IS NOT NULL
-                    AND t.created_at + (s.response_minutes || ' minutes')::INTERVAL >= t.first_response_at
+                    AND t.created_at
+                        + (s.response_minutes || ' minutes')::INTERVAL
+                        >= t.first_response_at
                     AND t.is_deleted = FALSE
-                )::FLOAT / NULLIF(
-                    COUNT(*) FILTER (WHERE t.first_response_at IS NOT NULL AND t.is_deleted = FALSE), 0
+                )::FLOAT
+                /
+                NULLIF(
+                    COUNT(*) FILTER (
+                        WHERE t.first_response_at IS NOT NULL
+                        AND t.is_deleted = FALSE
+                    ),
+                    0
                 ) * 100 AS sla_compliance_pct
+
             FROM control.tickets t
-            LEFT JOIN control.slas s ON s.id = t.sla_id
+            LEFT JOIN control.slas s
+                ON s.id = t.sla_id
         """)
 
         return {
@@ -163,7 +217,10 @@ class ControlService:
             "unresponded": stats["unresponded"] or 0,
             "total_tickets": stats["total_tickets"] or 0,
             "total_companies_served": stats["total_companies_served"] or 0,
-            "sla_compliance_pct": round(sla_stats["sla_compliance_pct"] or 100, 1),
+            "sla_compliance_pct": round(
+                sla_stats["sla_compliance_pct"] or 100,
+                1
+            ),
             "top_modules": modules,
             "ticket_types": types,
             "recent_tickets": recent,
@@ -171,53 +228,90 @@ class ControlService:
         }
 
     # ────────────────────────────────────────
-    # CUSTOMERS (read from FinSage public schema)
+    # CUSTOMERS
     # ────────────────────────────────────────
 
-    def get_customers(self, search: str = "", page: int = 1, per_page: int = 20) -> Dict[str, Any]:
-        """List companies from FinSage with Control metadata overlaid."""
+    def get_customers(
+        self,
+        search: str = "",
+        page: int = 1,
+        per_page: int = 20
+    ) -> Dict[str, Any]:
+        """List FinSage companies with Control metadata."""
+
         offset = (page - 1) * per_page
         params: list = []
         where = ["c.is_active = TRUE"]
 
         if search:
-            where.append("(c.name ILIKE %s OR c.id::TEXT ILIKE %s)")
+            where.append(
+                "(c.name ILIKE %s OR c.id::TEXT ILIKE %s)"
+            )
             s = f"%{search}%"
             params.extend([s, s])
 
         where_clause = " AND ".join(where)
 
         total = self.db.fetch_one(
-            f"SELECT COUNT(*) AS cnt FROM public.companies c WHERE {where_clause}",
+            f"""
+                SELECT COUNT(*) AS cnt
+                FROM public.companies c
+                WHERE {where_clause}
+            """,
             tuple(params)
         )["cnt"]
 
-        rows = self.db.fetch_all(f"""
-            SELECT
-                c.id AS company_id,
-                c.name AS company_name,
-                c.industry,
-                c.sub_industry,
-                c.currency,
-                c.created_at AS company_created_at,
-                c.is_active,
-                (SELECT COUNT(*) FROM public.company_users cu WHERE cu.company_id = c.id AND cu.is_active = TRUE) AS user_count,
-                cs.open_ticket_count,
-                cs.total_ticket_count,
-                cs.last_login_at,
-                cs.enabled_modules,
-                cs.app_version
-            FROM public.companies c
-            LEFT JOIN control.customer_snapshot cs ON cs.company_id = c.id AND cs.product = 'finsage'
-            WHERE {where_clause}
-            ORDER BY c.name ASC
-            LIMIT %s OFFSET %s
-        """, tuple(params + [per_page, offset]))
+        rows = self.db.fetch_all(
+            f"""
+                SELECT
+                    c.id AS company_id,
+                    c.name AS company_name,
+                    c.industry,
+                    c.sub_industry,
+                    c.currency,
+                    c.created_at AS company_created_at,
+                    c.is_active,
 
-        return {"customers": rows, "total": total, "page": page, "per_page": per_page}
+                    (
+                        SELECT COUNT(*)
+                        FROM public.company_users cu
+                        WHERE cu.company_id = c.id
+                        AND cu.is_active = TRUE
+                    ) AS user_count,
 
-    def get_customer_360(self, company_id: int) -> Optional[Dict[str, Any]]:
+                    cs.open_ticket_count,
+                    cs.total_ticket_count,
+                    cs.last_login_at,
+                    cs.enabled_modules,
+                    cs.app_version
+
+                FROM public.companies c
+
+                LEFT JOIN control.customer_snapshot cs
+                    ON cs.company_id = c.id
+                    AND cs.product = 'finsage'
+
+                WHERE {where_clause}
+
+                ORDER BY c.name ASC
+                LIMIT %s OFFSET %s
+            """,
+            tuple(params + [per_page, offset])
+        )
+
+        return {
+            "customers": rows,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        }
+
+    def get_customer_360(
+        self,
+        company_id: int
+    ) -> Optional[Dict[str, Any]]:
         """Full Customer 360 view for a single company."""
+
         company = self.db.fetch_one("""
             SELECT
                 c.id AS company_id,
@@ -228,6 +322,7 @@ class ControlService:
                 c.is_active,
                 c.created_at AS company_created_at,
                 c.owner_user_id,
+
                 cs.enabled_modules,
                 cs.app_version,
                 cs.last_login_at,
@@ -235,15 +330,19 @@ class ControlService:
                 cs.last_error_at,
                 cs.open_ticket_count,
                 cs.total_ticket_count
+
             FROM public.companies c
-            LEFT JOIN control.customer_snapshot cs ON cs.company_id = c.id AND cs.product = 'finsage'
+
+            LEFT JOIN control.customer_snapshot cs
+                ON cs.company_id = c.id
+                AND cs.product = 'finsage'
+
             WHERE c.id = %s
         """, (company_id,))
 
         if not company:
             return None
 
-        # Users
         users = self.db.fetch_all("""
             SELECT
                 u.id AS user_id,
@@ -254,32 +353,62 @@ class ControlService:
                 cu.user_role,
                 cu.is_active AS company_user_active,
                 cu.last_login_at
+
             FROM public.company_users cu
-            JOIN public.users u ON u.id = cu.user_id
+            JOIN public.users u
+                ON u.id = cu.user_id
+
             WHERE cu.company_id = %s
+
             ORDER BY u.first_name, u.last_name
         """, (company_id,))
 
-        # Open tickets for this company
         tickets = self.db.fetch_all("""
-            SELECT id, ticket_number, subject, status, priority,
-                   ticket_type, module_code, created_at, assigned_agent_id,
-                   (SELECT display_name FROM control.support_agents WHERE id = assigned_agent_id) AS agent_name
-            FROM control.tickets
-            WHERE company_id = %s AND is_deleted = FALSE
-            ORDER BY created_at DESC
+            SELECT
+                t.id,
+                t.ticket_number,
+                t.subject,
+                t.status,
+                t.priority,
+                t.ticket_type,
+                t.module_code,
+                t.created_at,
+                t.assigned_agent_id,
+                cu.display_name AS agent_name
+
+            FROM control.tickets t
+
+            LEFT JOIN control.control_users cu
+                ON cu.id = t.assigned_agent_id
+
+            WHERE t.company_id = %s
+            AND t.is_deleted = FALSE
+
+            ORDER BY t.created_at DESC
             LIMIT 50
         """, (company_id,))
 
-        # Ticket stats
         ticket_stats = self.db.fetch_one("""
             SELECT
-                COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed')) AS open,
-                COUNT(*) FILTER (WHERE status = 'new') AS new,
-                COUNT(*) FILTER (WHERE priority = 'p1_critical' AND status NOT IN ('resolved','closed')) AS critical,
+                COUNT(*) FILTER (
+                    WHERE status NOT IN ('resolved','closed')
+                ) AS open,
+
+                COUNT(*) FILTER (
+                    WHERE status = 'new'
+                ) AS new,
+
+                COUNT(*) FILTER (
+                    WHERE priority = 'p1_critical'
+                    AND status NOT IN ('resolved','closed')
+                ) AS critical,
+
                 COUNT(*) AS total
+
             FROM control.tickets
-            WHERE company_id = %s AND is_deleted = FALSE
+
+            WHERE company_id = %s
+            AND is_deleted = FALSE
         """, (company_id,))
 
         return {
@@ -293,8 +422,14 @@ class ControlService:
     # TICKETS
     # ────────────────────────────────────────
 
-    def get_tickets(self, filters: Dict[str, Any] = None, page: int = 1, per_page: int = 20) -> Dict[str, Any]:
+    def get_tickets(
+        self,
+        filters: Dict[str, Any] = None,
+        page: int = 1,
+        per_page: int = 20
+    ) -> Dict[str, Any]:
         """List tickets with filtering."""
+
         filters = filters or {}
         offset = (page - 1) * per_page
         params: list = []
@@ -325,86 +460,191 @@ class ControlService:
             params.append(int(filters["company_id"]))
 
         if filters.get("search"):
-            where.append("(t.subject ILIKE %s OR t.ticket_number ILIKE %s OR t.company_name ILIKE %s)")
+            where.append("""
+                (
+                    t.subject ILIKE %s
+                    OR t.ticket_number ILIKE %s
+                    OR t.company_name ILIKE %s
+                )
+            """)
             s = f"%{filters['search']}%"
             params.extend([s, s, s])
 
         where_clause = " AND ".join(where)
 
         total = self.db.fetch_one(
-            f"SELECT COUNT(*) AS cnt FROM control.tickets t WHERE {where_clause}",
+            f"""
+                SELECT COUNT(*) AS cnt
+                FROM control.tickets t
+                WHERE {where_clause}
+            """,
             tuple(params)
         )["cnt"]
 
-        rows = self.db.fetch_all(f"""
-            SELECT
-                t.id, t.ticket_number, t.ticket_type, t.subject, t.description,
-                t.status, t.priority, t.company_id, t.company_name,
-                t.user_name, t.user_email, t.product, t.module_code,
-                t.page_code, t.transaction_ref, t.error_ref, t.app_version,
-                t.assigned_agent_id, t.category_id,
-                t.created_at, t.updated_at, t.triaged_at, t.assigned_at,
-                t.first_response_at, t.resolved_at, t.closed_at,
-                t.support_context, t.tags,
-                sa.display_name AS agent_name,
-                cat.name AS category_name
-            FROM control.tickets t
-            LEFT JOIN control.support_agents sa ON sa.id = t.assigned_agent_id
-            LEFT JOIN control.categories cat ON cat.id = t.category_id
-            WHERE {where_clause}
-            ORDER BY
-                CASE t.priority
-                    WHEN 'p1_critical' THEN 1
-                    WHEN 'p2_high' THEN 2
-                    WHEN 'p3_medium' THEN 3
-                    WHEN 'p4_low' THEN 4
-                END,
-                t.created_at DESC
-            LIMIT %s OFFSET %s
-        """, tuple(params + [per_page, offset]))
+        rows = self.db.fetch_all(
+            f"""
+                SELECT
+                    t.id,
+                    t.ticket_number,
+                    t.ticket_type,
+                    t.subject,
+                    t.description,
+                    t.status,
+                    t.priority,
+                    t.company_id,
+                    t.company_name,
+                    t.user_name,
+                    t.user_email,
+                    t.product,
+                    t.module_code,
+                    t.page_code,
+                    t.transaction_ref,
+                    t.error_ref,
+                    t.app_version,
+                    t.assigned_agent_id,
+                    t.category_id,
+                    t.created_at,
+                    t.updated_at,
+                    t.triaged_at,
+                    t.assigned_at,
+                    t.first_response_at,
+                    t.resolved_at,
+                    t.closed_at,
+                    t.support_context,
+                    t.tags,
 
-        return {"tickets": rows, "total": total, "page": page, "per_page": per_page}
+                    cu.display_name AS agent_name,
+                    cat.name AS category_name
 
-    def get_ticket(self, ticket_id: int) -> Optional[Dict[str, Any]]:
+                FROM control.tickets t
+
+                LEFT JOIN control.control_users cu
+                    ON cu.id = t.assigned_agent_id
+
+                LEFT JOIN control.categories cat
+                    ON cat.id = t.category_id
+
+                WHERE {where_clause}
+
+                ORDER BY
+                    CASE t.priority
+                        WHEN 'p1_critical' THEN 1
+                        WHEN 'p2_high' THEN 2
+                        WHEN 'p3_medium' THEN 3
+                        WHEN 'p4_low' THEN 4
+                    END,
+                    t.created_at DESC
+
+                LIMIT %s OFFSET %s
+            """,
+            tuple(params + [per_page, offset])
+        )
+
+        return {
+            "tickets": rows,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        }
+
+    def get_ticket(
+        self,
+        ticket_id: int
+    ) -> Optional[Dict[str, Any]]:
         """Get a single ticket with full details."""
-        ticket = self.db.fetch_one("""
-            SELECT
-                t.*, sa.display_name AS agent_name, cat.name AS category_name
-            FROM control.tickets t
-            LEFT JOIN control.support_agents sa ON sa.id = t.assigned_agent_id
-            LEFT JOIN control.categories cat ON cat.id = t.category_id
-            WHERE t.id = %s AND t.is_deleted = FALSE
-        """, (ticket_id,))
-        return ticket
 
-    def create_ticket(self, data: Dict[str, Any], agent_id: Optional[int] = None) -> Dict[str, Any]:
+        return self.db.fetch_one("""
+            SELECT
+                t.*,
+                cu.display_name AS agent_name,
+                cat.name AS category_name
+
+            FROM control.tickets t
+
+            LEFT JOIN control.control_users cu
+                ON cu.id = t.assigned_agent_id
+
+            LEFT JOIN control.categories cat
+                ON cat.id = t.category_id
+
+            WHERE t.id = %s
+            AND t.is_deleted = FALSE
+        """, (ticket_id,))
+
+    def create_ticket(
+        self,
+        data: Dict[str, Any],
+        agent_id: Optional[int] = None
+    ) -> Dict[str, Any]:
         """Create a new ticket."""
+
         ticket_number = self.generate_ticket_number()
 
-        # Auto-assign SLA based on priority
         sla_id = None
+
         if data.get("priority"):
             sla = self.db.fetch_one(
-                "SELECT id FROM control.slas WHERE priority = %s AND is_active = TRUE LIMIT 1",
+                """
+                    SELECT id
+                    FROM control.slas
+                    WHERE priority = %s
+                    AND is_active = TRUE
+                    LIMIT 1
+                """,
                 (data["priority"],)
             )
+
             if sla:
                 sla_id = sla["id"]
 
+        support_context = data.get("support_context")
+        if support_context is not None:
+            support_context = json.dumps(
+                support_context,
+                default=str
+            )
+
+        tags = data.get("tags")
+        if tags is not None:
+            tags = json.dumps(
+                tags,
+                default=str
+            )
+
         row = self.db.fetch_one("""
             INSERT INTO control.tickets (
-                ticket_number, ticket_type, subject, description,
-                company_id, company_name, user_id, user_email, user_name,
-                product, module_code, page_code, action_code,
-                transaction_ref, error_ref, app_version, support_context,
-                status, priority, category_id, sla_id, created_by, tags
-            ) VALUES (
+                ticket_number,
+                ticket_type,
+                subject,
+                description,
+                company_id,
+                company_name,
+                user_id,
+                user_email,
+                user_name,
+                product,
+                module_code,
+                page_code,
+                action_code,
+                transaction_ref,
+                error_ref,
+                app_version,
+                support_context,
+                status,
+                priority,
+                category_id,
+                sla_id,
+                created_by,
+                tags
+            )
+            VALUES (
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s
-            ) RETURNING *
+            )
+            RETURNING *
         """, (
             ticket_number,
             data.get("ticket_type", "support"),
@@ -422,43 +662,66 @@ class ControlService:
             data.get("transaction_ref"),
             data.get("error_ref"),
             data.get("app_version"),
-            json.dumps(data.get("support_context")) if data.get("support_context") else None,
+            support_context,
             data.get("status", "new"),
             data.get("priority", "p3_medium"),
             data.get("category_id"),
             sla_id,
             agent_id,
-            data.get("tags"),
+            tags,
         ))
 
         return row
 
     @staticmethod
-    def _serialise_history_value(v: Any) -> Optional[str]:
+    def _serialise_history_value(
+        v: Any
+    ) -> Optional[str]:
         """
-        Convert a field value to a TEXT string suitable for ticket_history.
+        Convert a field value to TEXT for ticket_history.
 
-        Lists and dicts are JSON-encoded so they remain parseable later
-        (str() on a Python list produces "['a', 'b']" which is not valid
-        JSON). Scalars are stringified. None stays None.
+        Lists and dicts are JSON encoded.
+        None remains None.
+        Scalars are converted to strings.
         """
         if v is None:
             return None
+
         if isinstance(v, (list, dict)):
             return json.dumps(v, default=str)
+
         return str(v)
 
-    def update_ticket(self, ticket_id: int, data: Dict[str, Any], agent_id: int) -> Optional[Dict[str, Any]]:
+    def update_ticket(
+        self,
+        ticket_id: int,
+        data: Dict[str, Any],
+        agent_id: int
+    ) -> Optional[Dict[str, Any]]:
         """Update a ticket and record history for changed fields."""
+
         ticket = self.get_ticket(ticket_id)
+
         if not ticket:
             return None
 
         allowed_fields = {
-            "status", "priority", "subject", "description",
-            "assigned_agent_id", "category_id", "resolution_notes",
-            "tags", "module_code", "page_code", "transaction_ref",
-            "error_ref", "company_id", "company_name", "user_name", "user_email",
+            "status",
+            "priority",
+            "subject",
+            "description",
+            "assigned_agent_id",
+            "category_id",
+            "resolution_notes",
+            "tags",
+            "module_code",
+            "page_code",
+            "transaction_ref",
+            "error_ref",
+            "company_id",
+            "company_name",
+            "user_name",
+            "user_email",
         }
 
         updates = []
@@ -468,34 +731,69 @@ class ControlService:
         for field, new_value in data.items():
             if field not in allowed_fields:
                 continue
+
             old_value = ticket.get(field)
+
             if old_value != new_value:
+                db_value = new_value
+
+                if field == "tags" and new_value is not None:
+                    db_value = json.dumps(
+                        new_value,
+                        default=str
+                    )
+
                 updates.append(f"{field} = %s")
-                params.append(new_value if new_value is not None else None)
+                params.append(db_value)
+
                 history_entries.append((
                     field,
                     self._serialise_history_value(old_value),
                     self._serialise_history_value(new_value),
                 ))
 
-        # Auto-set timestamps
+        # Auto-set timestamps.
         if "status" in data:
             new_status = data["status"]
-            if new_status == "triaged" and not ticket["triaged_at"]:
+
+            if (
+                new_status == "triaged"
+                and not ticket["triaged_at"]
+            ):
                 updates.append("triaged_at = NOW()")
-            if "assigned_agent_id" in data and new_status in ("assigned", "in_progress") and not ticket["assigned_at"]:
+
+            if (
+                "assigned_agent_id" in data
+                and new_status in ("assigned", "in_progress")
+                and not ticket["assigned_at"]
+            ):
                 updates.append("assigned_at = NOW()")
-            if new_status == "resolved" and not ticket["resolved_at"]:
+
+            if (
+                new_status == "resolved"
+                and not ticket["resolved_at"]
+            ):
                 updates.append("resolved_at = NOW()")
-            if new_status == "closed" and not ticket["closed_at"]:
+
+            if (
+                new_status == "closed"
+                and not ticket["closed_at"]
+            ):
                 updates.append("closed_at = NOW()")
 
-        # Auto-assign SLA on priority change
+        # Auto-assign SLA on priority change.
         if "priority" in data:
             sla = self.db.fetch_one(
-                "SELECT id FROM control.slas WHERE priority = %s AND is_active = TRUE LIMIT 1",
+                """
+                    SELECT id
+                    FROM control.slas
+                    WHERE priority = %s
+                    AND is_active = TRUE
+                    LIMIT 1
+                """,
                 (data["priority"],)
             )
+
             if sla:
                 updates.append("sla_id = %s")
                 params.append(sla["id"])
@@ -504,50 +802,122 @@ class ControlService:
             return ticket
 
         params.append(ticket_id)
+
         self.db.execute_sql(
-            f"UPDATE control.tickets SET {', '.join(updates)} WHERE id = %s",
+            f"""
+                UPDATE control.tickets
+                SET {', '.join(updates)}
+                WHERE id = %s
+            """,
             tuple(params)
         )
 
-        # Write history
+        # Write history.
         for field, old_val, new_val in history_entries:
             self.db.execute_sql("""
-                INSERT INTO control.ticket_history (ticket_id, field, old_value, new_value, changed_by)
+                INSERT INTO control.ticket_history (
+                    ticket_id,
+                    field,
+                    old_value,
+                    new_value,
+                    changed_by
+                )
                 VALUES (%s, %s, %s, %s, %s)
-            """, (ticket_id, field, old_val, new_val, agent_id))
+            """, (
+                ticket_id,
+                field,
+                old_val,
+                new_val,
+                agent_id
+            ))
 
         return self.get_ticket(ticket_id)
 
-    def delete_ticket(self, ticket_id: int, agent_id: int) -> bool:
+    def delete_ticket(
+        self,
+        ticket_id: int,
+        agent_id: int
+    ) -> bool:
         """Soft-delete a ticket."""
+
         self.db.execute_sql(
-            "UPDATE control.tickets SET is_deleted = TRUE WHERE id = %s",
+            """
+                UPDATE control.tickets
+                SET is_deleted = TRUE
+                WHERE id = %s
+            """,
             (ticket_id,)
         )
+
         self.db.execute_sql("""
-            INSERT INTO control.ticket_history (ticket_id, field, old_value, new_value, changed_by)
-            VALUES (%s, 'is_deleted', 'FALSE', 'TRUE', %s)
+            INSERT INTO control.ticket_history (
+                ticket_id,
+                field,
+                old_value,
+                new_value,
+                changed_by
+            )
+            VALUES (
+                %s,
+                'is_deleted',
+                'FALSE',
+                'TRUE',
+                %s
+            )
         """, (ticket_id, agent_id))
+
         return True
 
     # ────────────────────────────────────────
-    # TICKET MESSAGES (customer-visible)
+    # TICKET MESSAGES
     # ────────────────────────────────────────
 
-    def get_ticket_messages(self, ticket_id: int) -> List[Dict[str, Any]]:
+    def get_ticket_messages(
+        self,
+        ticket_id: int
+    ) -> List[Dict[str, Any]]:
         return self.db.fetch_all("""
-            SELECT id, ticket_id, is_from_customer, sender_name, sender_email,
-                   body, created_at, created_by
+            SELECT
+                id,
+                ticket_id,
+                is_from_customer,
+                sender_name,
+                sender_email,
+                body,
+                created_at,
+                created_by
             FROM control.ticket_messages
             WHERE ticket_id = %s
             ORDER BY created_at ASC
         """, (ticket_id,))
 
-    def add_ticket_message(self, ticket_id: int, data: Dict[str, Any], agent_id: Optional[int] = None) -> Dict[str, Any]:
-        """Add a message. If agent_id is set, it's from support. Otherwise from customer."""
+    def add_ticket_message(
+        self,
+        ticket_id: int,
+        data: Dict[str, Any],
+        agent_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a message.
+
+        agent_id supplied:
+            Control user / support message.
+
+        agent_id is None:
+            Customer/system-originated message.
+        """
+
         from_customer = agent_id is None
+
         row = self.db.fetch_one("""
-            INSERT INTO control.ticket_messages (ticket_id, is_from_customer, sender_name, sender_email, body, created_by)
+            INSERT INTO control.ticket_messages (
+                ticket_id,
+                is_from_customer,
+                sender_name,
+                sender_email,
+                body,
+                created_by
+            )
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING *
         """, (
@@ -559,150 +929,321 @@ class ControlService:
             agent_id,
         ))
 
-        # Update first_response_at if this is the first agent reply
         if not from_customer and agent_id:
             self.db.execute_sql("""
                 UPDATE control.tickets
                 SET first_response_at = NOW()
-                WHERE id = %s AND first_response_at IS NULL
+                WHERE id = %s
+                AND first_response_at IS NULL
             """, (ticket_id,))
 
         return row
 
     # ────────────────────────────────────────
-    # TICKET NOTES (internal only)
+    # TICKET NOTES
     # ────────────────────────────────────────
 
-    def get_ticket_notes(self, ticket_id: int) -> List[Dict[str, Any]]:
+    def get_ticket_notes(
+        self,
+        ticket_id: int
+    ) -> List[Dict[str, Any]]:
         return self.db.fetch_all("""
-            SELECT n.id, n.ticket_id, n.body, n.created_at, n.updated_at,
-                   sa.display_name AS agent_name, sa.id AS agent_id
+            SELECT
+                n.id,
+                n.ticket_id,
+                n.body,
+                n.created_at,
+                n.updated_at,
+                cu.display_name AS agent_name,
+                cu.id AS agent_id
+
             FROM control.ticket_notes n
-            JOIN control.support_agents sa ON sa.id = n.agent_id
+
+            JOIN control.control_users cu
+                ON cu.id = n.agent_id
+
             WHERE n.ticket_id = %s
+
             ORDER BY n.created_at ASC
         """, (ticket_id,))
 
-    def add_ticket_note(self, ticket_id: int, body: str, agent_id: int) -> Dict[str, Any]:
+    def add_ticket_note(
+        self,
+        ticket_id: int,
+        body: str,
+        agent_id: int
+    ) -> Dict[str, Any]:
         """
         Insert an internal note.
 
-        Returns the note row with `agent_name` set to a plain string
-        (matching the shape returned by get_ticket_notes). Previously this
-        attached a dict like {"display_name": "..."} to the agent_name key,
-        which made the API shape inconsistent between "freshly-added"
-        and "reloaded" notes.
+        Returns agent_name as a plain string.
         """
+
         row = self.db.fetch_one("""
-            INSERT INTO control.ticket_notes (ticket_id, agent_id, body)
+            INSERT INTO control.ticket_notes (
+                ticket_id,
+                agent_id,
+                body
+            )
             VALUES (%s, %s, %s)
             RETURNING *
-        """, (ticket_id, agent_id, body))
+        """, (
+            ticket_id,
+            agent_id,
+            body
+        ))
+
         agent = self.db.fetch_one(
-            "SELECT display_name FROM control.support_agents WHERE id = %s",
+            """
+                SELECT display_name
+                FROM control.control_users
+                WHERE id = %s
+            """,
             (agent_id,)
         )
-        row["agent_name"] = agent["display_name"] if agent else None
+
+        row["agent_name"] = (
+            agent["display_name"]
+            if agent
+            else None
+        )
+
         return row
 
     def update_ticket_note(
-        self, ticket_id: int, note_id: int, body: str, agent_id: int
+        self,
+        ticket_id: int,
+        note_id: int,
+        body: str,
+        agent_id: int
     ) -> Optional[Dict[str, Any]]:
         """
         Update an internal note.
 
-        Both ticket_id and note_id are required in the WHERE clause so a
-        caller cannot update a note belonging to a different ticket by
-        passing a mismatched note_id from the URL of another ticket.
-        Also restricts to the original author (agent_id) so agents can't
-        edit each other's notes.
+        Requires:
+            - ticket_id
+            - note_id
+            - original agent_id
         """
+
         self.db.execute_sql(
-            "UPDATE control.ticket_notes SET body = %s "
-            "WHERE id = %s AND ticket_id = %s AND agent_id = %s",
-            (body, note_id, ticket_id, agent_id)
+            """
+                UPDATE control.ticket_notes
+                SET body = %s
+                WHERE id = %s
+                AND ticket_id = %s
+                AND agent_id = %s
+            """,
+            (
+                body,
+                note_id,
+                ticket_id,
+                agent_id
+            )
         )
+
         return self.db.fetch_one(
-            "SELECT * FROM control.ticket_notes WHERE id = %s AND ticket_id = %s",
-            (note_id, ticket_id)
+            """
+                SELECT *
+                FROM control.ticket_notes
+                WHERE id = %s
+                AND ticket_id = %s
+            """,
+            (
+                note_id,
+                ticket_id
+            )
         )
 
     def delete_ticket_note(
-        self, ticket_id: int, note_id: int, agent_id: int
+        self,
+        ticket_id: int,
+        note_id: int,
+        agent_id: int
     ) -> bool:
         """
-        Delete an internal note. Same ticket_id + agent_id ownership rule
-        as update_ticket_note.
+        Delete an internal note.
+
+        Requires ticket_id + note_id + original author.
         """
+
         self.db.execute_sql(
-            "DELETE FROM control.ticket_notes "
-            "WHERE id = %s AND ticket_id = %s AND agent_id = %s",
-            (note_id, ticket_id, agent_id)
+            """
+                DELETE FROM control.ticket_notes
+                WHERE id = %s
+                AND ticket_id = %s
+                AND agent_id = %s
+            """,
+            (
+                note_id,
+                ticket_id,
+                agent_id
+            )
         )
+
         return True
 
     # ────────────────────────────────────────
     # TICKET HISTORY
     # ────────────────────────────────────────
 
-    def get_ticket_history(self, ticket_id: int) -> List[Dict[str, Any]]:
+    def get_ticket_history(
+        self,
+        ticket_id: int
+    ) -> List[Dict[str, Any]]:
         """
         Audit trail for a ticket.
 
-        LEFT JOIN to support_agents (not INNER JOIN) so that history rows
-        with changed_by = NULL — e.g. future system-side changes — still
-        appear in the response instead of being silently dropped.
+        LEFT JOIN is intentional because changed_by may be NULL for
+        system-generated changes.
         """
+
         return self.db.fetch_all("""
-            SELECT h.id, h.field, h.old_value, h.new_value, h.created_at,
-                   sa.display_name AS changed_by_name
+            SELECT
+                h.id,
+                h.field,
+                h.old_value,
+                h.new_value,
+                h.created_at,
+                cu.display_name AS changed_by_name
+
             FROM control.ticket_history h
-            LEFT JOIN control.support_agents sa ON sa.id = h.changed_by
+
+            LEFT JOIN control.control_users cu
+                ON cu.id = h.changed_by
+
             WHERE h.ticket_id = %s
+
             ORDER BY h.created_at ASC
         """, (ticket_id,))
 
     # ────────────────────────────────────────
-    # SETTINGS: AGENTS
+    # SETTINGS: CONTROL USERS
     # ────────────────────────────────────────
 
-    def get_agents(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
-        q = """
-            SELECT sa.*, t.name AS team_name, u.email AS user_email
-            FROM control.support_agents sa
-            LEFT JOIN control.teams t ON t.id = sa.team_id
-            LEFT JOIN public.users u ON u.id = sa.user_id
+    def get_agents(
+        self,
+        include_inactive: bool = False
+    ) -> List[Dict[str, Any]]:
         """
+        Return Control users for assignment/workload management.
+
+        Kept as get_agents() for frontend compatibility.
+        The underlying identity is now control.control_users.
+        """
+
+        q = """
+            SELECT
+                cu.*,
+                t.name AS team_name
+            FROM control.control_users cu
+
+            LEFT JOIN control.teams t
+                ON t.id = cu.team_id
+        """
+
         if not include_inactive:
-            q += " WHERE sa.is_active = TRUE"
-        q += " ORDER BY sa.display_name"
+            q += " WHERE cu.is_active = TRUE"
+
+        q += """
+            ORDER BY
+                cu.display_name NULLS LAST,
+                cu.email
+        """
+
         return self.db.fetch_all(q)
 
-    def create_agent(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_agent(
+        self,
+        data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Create a Control user.
+
+        Kept as create_agent() for existing frontend/API compatibility.
+        """
+
         return self.db.fetch_one("""
-            INSERT INTO control.support_agents (user_id, display_name, role, team_id, max_tickets)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO control.control_users (
+                email,
+                password_hash,
+                display_name,
+                first_name,
+                last_name,
+                role,
+                team_id,
+                max_tickets,
+                is_active
+            )
+            VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s
+            )
             RETURNING *
         """, (
-            data["user_id"], data["display_name"],
-            data.get("role", "agent"), data.get("team_id"), data.get("max_tickets", 15)
+            data["email"],
+            data["password_hash"],
+            data.get("display_name"),
+            data.get("first_name"),
+            data.get("last_name"),
+            data.get("role", "agent"),
+            data.get("team_id"),
+            data.get("max_tickets", 15),
+            data.get("is_active", True),
         ))
 
-    def update_agent(self, agent_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def update_agent(
+        self,
+        agent_id: int,
+        data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Update a Control user."""
+
         sets = []
         params = []
-        for f in ("display_name", "role", "team_id", "max_tickets", "is_active"):
+
+        for f in (
+            "email",
+            "display_name",
+            "first_name",
+            "last_name",
+            "role",
+            "team_id",
+            "max_tickets",
+            "is_active",
+        ):
             if f in data:
                 sets.append(f"{f} = %s")
                 params.append(data[f])
+
+        if "password_hash" in data and data["password_hash"]:
+            sets.append("password_hash = %s")
+            params.append(data["password_hash"])
+
         if not sets:
             return None
+
+        sets.append("updated_at = CURRENT_TIMESTAMP")
+
         params.append(agent_id)
+
         self.db.execute_sql(
-            f"UPDATE control.support_agents SET {', '.join(sets)} WHERE id = %s",
+            f"""
+                UPDATE control.control_users
+                SET {', '.join(sets)}
+                WHERE id = %s
+            """,
             tuple(params)
         )
-        return self.db.fetch_one("SELECT * FROM control.support_agents WHERE id = %s", (agent_id,))
+
+        return self.db.fetch_one(
+            """
+                SELECT *
+                FROM control.control_users
+                WHERE id = %s
+            """,
+            (agent_id,)
+        )
 
     # ────────────────────────────────────────
     # SETTINGS: TEAMS
@@ -710,34 +1251,77 @@ class ControlService:
 
     def get_teams(self) -> List[Dict[str, Any]]:
         return self.db.fetch_all("""
-            SELECT t.*, COUNT(sa.id) AS agent_count
+            SELECT
+                t.*,
+                COUNT(cu.id) AS agent_count
+
             FROM control.teams t
-            LEFT JOIN control.support_agents sa ON sa.team_id = t.id AND sa.is_active = TRUE
+
+            LEFT JOIN control.control_users cu
+                ON cu.team_id = t.id
+                AND cu.is_active = TRUE
+
             GROUP BY t.id
+
             ORDER BY t.name
         """)
 
-    def create_team(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_team(
+        self,
+        data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         return self.db.fetch_one("""
-            INSERT INTO control.teams (name, description)
+            INSERT INTO control.teams (
+                name,
+                description
+            )
             VALUES (%s, %s)
             RETURNING *
-        """, (data["name"], data.get("description")))
+        """, (
+            data["name"],
+            data.get("description")
+        ))
 
-    def update_team(self, team_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        sets, params = [], []
-        for f in ("name", "description", "is_active"):
+    def update_team(
+        self,
+        team_id: int,
+        data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        sets = []
+        params = []
+
+        for f in (
+            "name",
+            "description",
+            "is_active"
+        ):
             if f in data:
                 sets.append(f"{f} = %s")
                 params.append(data[f])
+
         if not sets:
             return None
+
+        sets.append("updated_at = CURRENT_TIMESTAMP")
         params.append(team_id)
+
         self.db.execute_sql(
-            f"UPDATE control.teams SET {', '.join(sets)} WHERE id = %s",
+            f"""
+                UPDATE control.teams
+                SET {', '.join(sets)}
+                WHERE id = %s
+            """,
             tuple(params)
         )
-        return self.db.fetch_one("SELECT * FROM control.teams WHERE id = %s", (team_id,))
+
+        return self.db.fetch_one(
+            """
+                SELECT *
+                FROM control.teams
+                WHERE id = %s
+            """,
+            (team_id,)
+        )
 
     # ────────────────────────────────────────
     # SETTINGS: CATEGORIES
@@ -745,76 +1329,175 @@ class ControlService:
 
     def get_categories(self) -> List[Dict[str, Any]]:
         return self.db.fetch_all("""
-            SELECT c.*, COUNT(t.id) AS ticket_count
+            SELECT
+                c.*,
+                COUNT(t.id) AS ticket_count
+
             FROM control.categories c
-            LEFT JOIN control.tickets t ON t.category_id = c.id AND t.is_deleted = FALSE
+
+            LEFT JOIN control.tickets t
+                ON t.category_id = c.id
+                AND t.is_deleted = FALSE
+
             GROUP BY c.id
-            ORDER BY c.sort_order, c.name
+
+            ORDER BY
+                c.sort_order,
+                c.name
         """)
 
-    def create_category(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_category(
+        self,
+        data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         return self.db.fetch_one("""
-            INSERT INTO control.categories (name, description, sort_order)
+            INSERT INTO control.categories (
+                name,
+                description,
+                sort_order
+            )
             VALUES (%s, %s, %s)
             RETURNING *
-        """, (data["name"], data.get("description"), data.get("sort_order", 0)))
+        """, (
+            data["name"],
+            data.get("description"),
+            data.get("sort_order", 0)
+        ))
 
-    def update_category(self, cat_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        sets, params = [], []
-        for f in ("name", "description", "is_active", "sort_order"):
+    def update_category(
+        self,
+        cat_id: int,
+        data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        sets = []
+        params = []
+
+        for f in (
+            "name",
+            "description",
+            "is_active",
+            "sort_order"
+        ):
             if f in data:
                 sets.append(f"{f} = %s")
                 params.append(data[f])
+
         if not sets:
             return None
+
+        sets.append("updated_at = CURRENT_TIMESTAMP")
         params.append(cat_id)
+
         self.db.execute_sql(
-            f"UPDATE control.categories SET {', '.join(sets)} WHERE id = %s",
+            f"""
+                UPDATE control.categories
+                SET {', '.join(sets)}
+                WHERE id = %s
+            """,
             tuple(params)
         )
-        return self.db.fetch_one("SELECT * FROM control.categories WHERE id = %s", (cat_id,))
+
+        return self.db.fetch_one(
+            """
+                SELECT *
+                FROM control.categories
+                WHERE id = %s
+            """,
+            (cat_id,)
+        )
 
     # ────────────────────────────────────────
     # SETTINGS: SLAS
     # ────────────────────────────────────────
 
     def get_slas(self) -> List[Dict[str, Any]]:
-        return self.db.fetch_all("SELECT * FROM control.slas ORDER BY priority")
+        return self.db.fetch_all("""
+            SELECT *
+            FROM control.slas
+            ORDER BY priority
+        """)
 
-    def update_sla(self, sla_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        sets, params = [], []
-        for f in ("name", "response_minutes", "resolution_hours", "is_active"):
+    def update_sla(
+        self,
+        sla_id: int,
+        data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        sets = []
+        params = []
+
+        for f in (
+            "name",
+            "response_minutes",
+            "resolution_hours",
+            "is_active"
+        ):
             if f in data:
                 sets.append(f"{f} = %s")
                 params.append(data[f])
+
         if not sets:
             return None
+
+        sets.append("updated_at = CURRENT_TIMESTAMP")
         params.append(sla_id)
+
         self.db.execute_sql(
-            f"UPDATE control.slas SET {', '.join(sets)} WHERE id = %s",
+            f"""
+                UPDATE control.slas
+                SET {', '.join(sets)}
+                WHERE id = %s
+            """,
             tuple(params)
         )
-        return self.db.fetch_one("SELECT * FROM control.slas WHERE id = %s", (sla_id,))
+
+        return self.db.fetch_one(
+            """
+                SELECT *
+                FROM control.slas
+                WHERE id = %s
+            """,
+            (sla_id,)
+        )
 
     # ────────────────────────────────────────
-    # AUTH HELPERS
+    # CONTROL AUTH HELPERS
     # ────────────────────────────────────────
 
-    def get_agent_by_user_id(self, user_id: int) -> Optional[Dict[str, Any]]:
-        return self.db.fetch_one("""
-            SELECT sa.*, t.name AS team_name
-            FROM control.support_agents sa
-            LEFT JOIN control.teams t ON t.id = sa.team_id
-            WHERE sa.user_id = %s AND sa.is_active = TRUE
-        """, (user_id,))
+    def get_control_user(
+        self,
+        control_user_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """Get an active Control user by Control identity ID."""
 
-    def register_agent(self, user_id: int, display_name: str) -> Dict[str, Any]:
-        """Auto-register a user as a support agent (first login)."""
-        existing = self.get_agent_by_user_id(user_id)
-        if existing:
-            return existing
         return self.db.fetch_one("""
-            INSERT INTO control.support_agents (user_id, display_name, role)
-            VALUES (%s, %s, 'agent')
-            RETURNING *
-        """, (user_id, display_name))
+            SELECT
+                cu.*,
+                t.name AS team_name
+
+            FROM control.control_users cu
+
+            LEFT JOIN control.teams t
+                ON t.id = cu.team_id
+
+            WHERE cu.id = %s
+            AND cu.is_active = TRUE
+        """, (int(control_user_id),))
+
+    def get_agent_by_user_id(
+        self,
+        user_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compatibility wrapper.
+
+        Control no longer uses public.users. The argument is now treated
+        as a Control user ID so existing callers do not immediately break.
+        """
+
+        return self.get_control_user(user_id)
+
+    # register_agent() intentionally removed.
+    #
+    # Control users must be explicitly provisioned in
+    # control.control_users. A normal FinSage user must never become
+    # a Control user automatically by logging in.

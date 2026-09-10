@@ -102,6 +102,28 @@ def make_pos_jwt(*, company_id, company_user_id, user_id, employee_code, pos_rol
 
     return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
 
+def make_control_jwt(
+    control_user_id: int,
+    email: str,
+    role: str = "agent",
+    permissions: dict | None = None,
+) -> str:
+    now = datetime.now(timezone.utc)
+
+    payload = {
+        "sub": str(control_user_id),
+        "control_user_id": int(control_user_id),
+        "email": (email or "").strip().lower(),
+        "role": (role or "agent").strip().lower(),
+        "token_type": "control",
+        "access_scope": "control",
+        "permissions": permissions or {},
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(days=JWT_EXP_DAYS)).timestamp()),
+    }
+
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
 def decode_jwt(token: str) -> Dict[str, Any]:
     return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
 

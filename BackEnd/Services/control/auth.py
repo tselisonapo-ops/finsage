@@ -1,35 +1,60 @@
 # FinSage Control — Auth Routes
 """
 Control login / session endpoints.
-Reuses the main FinSage auth for JWT generation,
-then checks/creates the agent record.
-"""
-from flask import Blueprint, request, jsonify, g, current_app
 
-control_auth_bp = Blueprint('control_auth', __name__, url_prefix='/control/api')
+Control authentication is separate from normal FinSage authentication.
+Control identities are stored in control.control_users.
+"""
+
+from flask import Blueprint, request, jsonify, g
+
+
+control_auth_bp = Blueprint(
+    'control_auth',
+    __name__,
+    url_prefix='/control/api'
+)
 
 
 @control_auth_bp.route('/auth/login', methods=['POST'])
 def control_login():
     """
     Login to FinSage Control.
-    Accepts email + password, authenticates via main FinSage auth,
-    then checks/creates the control.support_agents record.
-    Returns a JWT token and agent profile.
+
+    Authenticates against control.control_users and issues
+    a dedicated Control JWT.
     """
     data = request.get_json(silent=True) or {}
+
     email = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
 
     if not email or not password:
         return jsonify({"error": "Email and password required"}), 400
 
-    # Authenticate against main FinSage users table
     from BackEnd.Services.db_service import db_service
-    from werkzeug.security import check_password_hash
+    from BackEnd.Services.auth_service import (
+        verify_password,
+        make_control_jwt,
+    )
 
     user = db_service.fetch_one(
-        "SELECT id, email, first_name, last_name, password_hash, is_active FROM public.users WHERE email = %s",
+        """
+        SELECT
+            cu.id,
+            cu.email,
+            cu.password_hash,
+            cu.display_name,
+            cu.role,
+            cu.team_id,
+            cu.is_active,
+            t.name AS team_name
+        FROM control.control_users cu
+        LEFT JOIN control.teams t
+            ON t.id = cu.team_id
+        WHERE LOWER(cu.email) = %s
+        LIMIT 1
+        """,
         (email,)
     )
 
@@ -39,56 +64,64 @@ def control_login():
     if not user.get('is_active'):
         return jsonify({"error": "Account is disabled"}), 403
 
-    if not check_password_hash(user['password_hash'] or '', password):
+    if not verify_password(
+        password,
+        user.get('password_hash') or ''
+    ):
         return jsonify({"error": "Invalid credentials"}), 401
 
-    # Generate JWT using the main app's method
-    from BackEnd.Services.auth_service import generate_jwt
-    from BackEnd.Services.service_control.service_control import ControlService
+    control_user_id = int(user['id'])
+    role = (user.get('role') or 'agent').strip().lower()
 
-    user_id = user['id']
-    payload = {
-        'sub': user_id,
-        'email': user['email'],
-        'first_name': user.get('first_name'),
-        'last_name': user.get('last_name'),
-        'access_scope': 'control',
-    }
-    token = generate_jwt(payload)
+    # Permissions will be loaded from Control RBAC as that layer is connected.
+    permissions = {}
 
-    # Register/check agent
-    cs = ControlService(db_service)
-    display_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
-    agent = cs.register_agent(user_id, display_name)
+    token = make_control_jwt(
+        control_user_id=control_user_id,
+        email=user['email'],
+        role=role,
+        permissions=permissions,
+    )
+
+    db_service.execute_sql(
+        """
+        UPDATE control.control_users
+        SET last_login_at = NOW(),
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (control_user_id,)
+    )
 
     return jsonify({
         "token": token,
-        "agent": {
-            "id": agent['id'],
-            "user_id": agent['user_id'],
-            "display_name": agent['display_name'],
-            "role": agent['role'],
-            "team_id": agent['team_id'],
-            "team_name": agent.get('team_name'),
+        "control_user": {
+            "id": control_user_id,
+            "email": user['email'],
+            "display_name": user.get('display_name'),
+            "role": role,
+            "team_id": user.get('team_id'),
+            "team_name": user.get('team_name'),
         }
     })
 
 
 @control_auth_bp.route('/auth/me', methods=['GET'])
 def control_me():
-    """Return the current agent's profile (requires auth)."""
+    """Return the current Control user's profile."""
     from BackEnd.Services.control_auth import require_control_auth
 
     @require_control_auth
     def _inner():
-        agent = g.control_agent
+        user = g.control_user
+
         return jsonify({
-            "id": agent['id'],
-            "user_id": agent['user_id'],
-            "display_name": agent['display_name'],
-            "role": agent['role'],
-            "team_id": agent['team_id'],
-            "team_name": agent.get('team_name'),
+            "id": int(user['id']),
+            "email": user.get('email'),
+            "display_name": user.get('display_name'),
+            "role": user.get('role'),
+            "team_id": user.get('team_id'),
+            "team_name": user.get('team_name'),
         })
 
     return _inner()

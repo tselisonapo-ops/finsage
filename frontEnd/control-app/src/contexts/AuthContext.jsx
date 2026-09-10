@@ -9,21 +9,29 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const token = localStorage.getItem('control_token')
+
     if (!token) {
       setLoading(false)
       return
     }
-    api.get('/auth/me').then(data => {
-      setAgent(data)
-    }).catch(() => {
-      localStorage.removeItem('control_token')
-    }).finally(() => setLoading(false))
+
+    api.get('/auth/me')
+      .then(data => {
+        setAgent(data)
+      })
+      .catch(() => {
+        localStorage.removeItem('control_token')
+        setAgent(null)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   const login = async (email, password) => {
     const data = await api.post('/auth/login', { email, password })
+
     localStorage.setItem('control_token', data.token)
-    setAgent(data.agent)
+    setAgent(data.control_user)
+
     return data
   }
 
@@ -33,7 +41,15 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ agent, loading, login, logout, isAdmin: agent?.role === 'admin' }}>
+    <AuthContext.Provider
+      value={{
+        agent,
+        loading,
+        login,
+        logout,
+        isAdmin: agent?.role === 'admin'
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
@@ -41,6 +57,10 @@ export function AuthProvider({ children }) {
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be inside AuthProvider')
+
+  if (!ctx) {
+    throw new Error('useAuth must be inside AuthProvider')
+  }
+
   return ctx
 }
