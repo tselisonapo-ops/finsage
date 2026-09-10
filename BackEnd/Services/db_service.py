@@ -65013,6 +65013,7 @@ class DatabaseService:
             SELECT *
             FROM public.coa_pool
             WHERE COALESCE(posting, TRUE) = TRUE
+            AND template_code_scoped LIKE 'G::%'
             """
         )
 
