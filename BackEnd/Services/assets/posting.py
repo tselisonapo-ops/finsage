@@ -8227,21 +8227,36 @@ def build_dep_preview_journal_lines(
     dep_row: dict,
 ) -> list[dict]:
 
-    # -------------------------------------------------
-    # Only build depreciation journals for PPE / ROU
-    # assets. The accounting_standard comes directly
-    # from the assets table.
-    # -------------------------------------------------
     accounting_standard = str(
         asset_row.get("accounting_standard") or ""
     ).strip().lower()
 
-    is_ppe_standard = (
-        "ias 16" in accounting_standard
-        or "ifrs 16" in accounting_standard
-    )
+    depreciation_method = str(
+        asset_row.get("depreciation_method") or ""
+    ).strip().upper()
 
-    if not is_ppe_standard:
+    asset_class = str(
+        asset_row.get("asset_class")
+        or asset_row.get("asset_class_group")
+        or ""
+    ).strip().lower()
+
+    # Only IAS 16 assets are handled by this depreciation builder.
+    if accounting_standard != "ias16":
+        return []
+
+    # APP = appreciation / non-depreciating asset.
+    if depreciation_method in ("APP", "NONE", "NOT_DEPRECIATED"):
+        return []
+
+    roles = ASSET_CLASS_DEPRECIATION_ROLES.get(asset_class)
+
+    if roles is None:
+        return []
+
+    dep_role, acc_dep_role = roles
+
+    if not dep_role or not acc_dep_role:
         return []
 
     amt = (
@@ -8268,10 +8283,6 @@ def build_dep_preview_journal_lines(
     dep_exp_code = dep_exp_code or "MISSING_DEP_EXPENSE_ACCT"
     acc_dep_code = acc_dep_code or "MISSING_ACC_DEP_ACCT"
 
-    # -------------------------------------------------
-    # Resolve account names for display.
-    # Codes remain the actual posting identifiers.
-    # -------------------------------------------------
     account_codes = [
         dep_exp_code,
         acc_dep_code,
