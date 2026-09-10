@@ -7656,7 +7656,6 @@ def resolve_depreciation_accounts(
                     section="Expense",
                     is_contra=False,
                 )
-            )
 
         if not acc_dep_code:
             for role in (
@@ -7668,23 +7667,24 @@ def resolve_depreciation_accounts(
                     break
 
             if not acc_dep_code:
-                acc_dep_code = first_code_by_name(
-                    [
-                        "%accum%depr%right-of-use%",
-                        "%accum%depr%right of use%",
-                        "%accum%depr%rou%",
-                        "%accumulated depreciation%right-of-use%",
-                        "%accumulated depreciation%rou%",
-                    ],
-                    section="Asset",
-                    is_contra=True,
+                acc_dep_code = (
+                    first_code_by_name(
+                        [
+                            "%accum%depr%right-of-use%",
+                            "%accum%depr%right of use%",
+                            "%accum%depr%rou%",
+                            "%accumulated depreciation%right-of-use%",
+                            "%accumulated depreciation%rou%",
+                        ],
+                        section="Asset",
+                        is_contra=True,
+                    )
+                    or first_code_by_name(
+                        ["%accum%depr%", "%accumulated depreciation%"],
+                        section="Asset",
+                        is_contra=True,
+                    )
                 )
-                or first_code_by_name(
-                    ["%accum%depr%", "%accumulated depreciation%"],
-                    section="Asset",
-                    is_contra=True,
-                )
-            )
 
         return dep_exp_code, acc_dep_code
 
