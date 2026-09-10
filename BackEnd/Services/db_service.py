@@ -70286,18 +70286,41 @@ class DatabaseService:
         )
 
         sql = f"""
-        WITH first_unposted AS (
+        WITH latest_paid AS (
+            SELECT
+                s.lease_id,
+                MAX(s.period_no) AS latest_paid_period
+            FROM {schema}.lease_schedule s
+            WHERE s.company_id = %s
+            AND COALESCE(s.is_active, TRUE) = TRUE
+            AND EXISTS (
+                SELECT 1
+                FROM {schema}.lease_payments p
+                WHERE p.company_id = s.company_id
+                AND p.lease_id = s.lease_id
+                AND p.schedule_id = s.id
+                AND COALESCE(p.status, '') IN ('draft', 'posted')
+            )
+            GROUP BY s.lease_id
+        ),
+
+        next_schedule AS (
             SELECT
                 s.*,
                 ROW_NUMBER() OVER (
                     PARTITION BY s.lease_id
-                    ORDER BY s.period_end ASC, s.period_no ASC, s.id ASC
+                    ORDER BY s.period_no ASC, s.period_end ASC, s.id ASC
                 ) AS rn
             FROM {schema}.lease_schedule s
+            LEFT JOIN latest_paid lp
+                ON lp.lease_id = s.lease_id
             WHERE s.company_id = %s
             AND COALESCE(s.is_active, TRUE) = TRUE
             AND s.period_end >= %s
-            AND NOT ({posted_expr})
+            AND (
+                lp.latest_paid_period IS NULL
+                OR s.period_no > lp.latest_paid_period
+            )
         )
 
         SELECT
@@ -70318,7 +70341,7 @@ class DatabaseService:
             l.lessor_id,
             ls.name AS lessor_name,
 
-            FALSE AS posted,
+            {posted_expr} AS posted,
 
             EXISTS (
                 SELECT 1
@@ -70362,7 +70385,7 @@ class DatabaseService:
             s.posted_journal_id,
             s.posted_at
 
-        FROM first_unposted s
+        FROM next_schedule s
 
         JOIN {schema}.leases l
             ON l.id = s.lease_id
@@ -70379,6 +70402,7 @@ class DatabaseService:
         return self.fetch_all(
             sql,
             (
+                int(company_id),
                 int(company_id),
                 as_of,
                 int(company_id),
