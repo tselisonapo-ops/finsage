@@ -1,4 +1,4 @@
-const API_BASE = '/control/api'
+const API_BASE = '/api/control'
 
 function getToken() {
   return localStorage.getItem('control_token')
