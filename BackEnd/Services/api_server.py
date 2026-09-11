@@ -374,7 +374,11 @@ def log_and_handle_preflight():
     if request.method == "OPTIONS":
         resp = app.make_default_options_response()
         return _corsify(resp)
-    
+
+@app.get("/api/control-test-error")
+def control_test_error():
+    raise RuntimeError("FinSage Control error-monitor test")
+
 @app.errorhandler(Exception)
 def handle_any_exception(e):
     if isinstance(e, HTTPException):
