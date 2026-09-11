@@ -108,7 +108,7 @@ from BackEnd.Services.reporting.balance_sheet_templates import get_balance_sheet
 from BackEnd.Services import accounting_classifiers as ac
 from BackEnd.Services.reporting.reporting_helpers import parse_date_arg
 from .reporting import reporting_helpers as rh
-from BackEnd.Services.invoice_pdf_service import generate_invoice_pdf
+from BackEnd.Services.invoice_pdf_service import generate_invoice_pdf, generate_quote_pdf
 from BackEnd.Services.bank_service import BankService
 from BackEnd.Services.coa_seed_service import seed_company_coa_once
 from BackEnd.Services.industry_profiles import get_industry_profile
@@ -9295,25 +9295,7 @@ def email_quote(company_id: int, quote_id: int):
     # ==============================
     # ✅ Fetch company (same as invoice)
     # ==============================
-    company = db_service.fetch_one(
-        """
-        SELECT
-          id,
-          name,
-          company_reg_no,
-          vat,
-          tin,
-          company_email,
-          company_phone,
-          physical_address,
-          postal_address,
-          logo_url
-        FROM public.companies
-        WHERE id = %s
-        LIMIT 1;
-        """,
-        (company_id,),
-    ) or {}
+    company = db_service.get_company(company_id) or {}
 
     tenant_company_email = (
         company.get("company_email")
@@ -9385,7 +9367,7 @@ def email_quote(company_id: int, quote_id: int):
     # ✅ Generate PDF attachment
     # ==============================
     quote["branding"] = db_service.get_company_branding(company_id) or {}
-    pdf_bytes = generate_invoice_pdf(quote, company)
+    pdf_bytes = generate_quote_pdf(quote, company)
 
     attachments = [(f"quote-{q_no}.pdf", pdf_bytes, "application/pdf")]
 
