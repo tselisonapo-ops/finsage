@@ -660,8 +660,19 @@
 
     if (btnClose) {
       btnClose.addEventListener("click", () => {
+        const host = window.location.hostname;
+        const isLocalhost =
+          host === "localhost" ||
+          host === "127.0.0.1" ||
+          host === "::1";
+
+        if (isLocalhost) {
+          alert("The FinSage app is only available on the production server. Please open this quote from the production environment.");
+          return;
+        }
+
         const cid = companyId || "";
-        window.location.href = `/dashboard.html?company_id=${cid}`;
+        window.location.href = `/app/?company_id=${encodeURIComponent(cid)}`;
       });
     }
   });
