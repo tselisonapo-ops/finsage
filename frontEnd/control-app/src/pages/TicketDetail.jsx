@@ -124,7 +124,7 @@ export default function TicketDetail() {
     <div className="p-6 max-w-7xl mx-auto">
       {/* Back */}
       <button
-        onClick={() => navigate('/control/tickets')}
+        onClick={() => navigate('/tickets')}
         className="flex items-center gap-1.5 text-sm text-surface-300 hover:text-surface-100 mb-4 transition-colors"
       >
         <ArrowLeft className="w-4 h-4" /> Back to tickets
@@ -402,7 +402,7 @@ export default function TicketDetail() {
             <h3 className="text-xs font-semibold text-surface-400 uppercase tracking-wide mb-3">Customer</h3>
             {ticket.company_name ? (
               <button
-                onClick={() => navigate(`/control/customers/${ticket.company_id}`)}
+                onClick={() => navigate(`/customers/${ticket.company_id}`)}
                 className="text-left w-full"
               >
                 <div className="flex items-center gap-2 mb-2">

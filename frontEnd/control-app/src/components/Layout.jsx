@@ -6,10 +6,10 @@ import {
 import { useState } from 'react'
 
 const NAV = [
-  { to: '/control', icon: LayoutDashboard, label: 'Dashboard', end: true },
-  { to: '/control/tickets', icon: Ticket, label: 'Tickets' },
-  { to: '/control/customers', icon: Users, label: 'Customers' },
-  { to: '/control/settings', icon: Settings, label: 'Settings' },
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
+  { to: '/tickets', icon: Ticket, label: 'Tickets' },
+  { to: '/customers', icon: Users, label: 'Customers' },
+  { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
 export default function Layout() {
@@ -19,7 +19,7 @@ export default function Layout() {
 
   const handleLogout = () => {
     logout()
-    navigate('/control/login')
+    navigate('/login')
   }
 
   return (

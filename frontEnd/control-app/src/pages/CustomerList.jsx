@@ -95,7 +95,7 @@ export default function CustomerList() {
                   return (
                     <tr
                       key={c.company_id}
-                      onClick={() => navigate(`/control/customers/${c.company_id}`)}
+                      onClick={() => navigate(`/customers/${c.company_id}`)}
                       className="hover:bg-surface-700/50 cursor-pointer transition-colors"
                     >
                       <td className="px-4 py-3">

@@ -72,7 +72,7 @@ export default function NewTicket() {
       else payload.assigned_agent_id = parseInt(payload.assigned_agent_id)
 
       const ticket = await api.post('/tickets', payload)
-      navigate(`/control/tickets/${ticket.id}`)
+      navigate(`/tickets/${ticket.id}`)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -83,7 +83,7 @@ export default function NewTicket() {
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <button
-        onClick={() => navigate('/control/tickets')}
+        onClick={() => navigate('/tickets')}
         className="flex items-center gap-1.5 text-sm text-surface-300 hover:text-surface-100 mb-4"
       >
         <ArrowLeft className="w-4 h-4" /> Back to tickets
@@ -260,7 +260,7 @@ export default function NewTicket() {
         <div className="flex justify-end gap-3 pt-2">
           <button
             type="button"
-            onClick={() => navigate('/control/tickets')}
+            onClick={() => navigate('/tickets')}
             className="px-4 py-2 text-sm text-surface-200 hover:text-surface-100 hover:bg-surface-700 rounded-lg transition-colors"
           >Cancel</button>
           <button

@@ -135,7 +135,7 @@ export default function Dashboard() {
       <div className="bg-surface-800 rounded-xl border border-surface-600">
         <div className="px-4 py-3 border-b border-surface-600 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-surface-100">Recent Tickets</h3>
-          <button onClick={() => navigate('/control/tickets')} className="text-xs text-accent hover:text-accent-hover flex items-center gap-1">
+          <button onClick={() => navigate('/tickets')} className="text-xs text-accent hover:text-accent-hover flex items-center gap-1">
             View all <ArrowUpRight className="w-3 h-3" />
           </button>
         </div>
@@ -146,7 +146,7 @@ export default function Dashboard() {
           {stats.recent_tickets?.map(t => (
             <button
               key={t.id}
-              onClick={() => navigate(`/control/tickets/${t.id}`)}
+              onClick={() => navigate(`/tickets/${t.id}`)}
               className="w-full px-4 py-3 flex items-center gap-3 hover:bg-surface-700/50 transition-colors text-left"
             >
               <StatusBadge status={t.status} />

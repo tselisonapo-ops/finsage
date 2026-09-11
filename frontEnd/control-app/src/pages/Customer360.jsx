@@ -29,7 +29,7 @@ export default function Customer360() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <button
-        onClick={() => navigate('/control/customers')}
+        onClick={() => navigate('/customers')}
         className="flex items-center gap-1.5 text-sm text-surface-300 hover:text-surface-100 mb-4"
       >
         <ArrowLeft className="w-4 h-4" /> Back to customers
@@ -170,7 +170,7 @@ export default function Customer360() {
               {customer.tickets?.map(t => (
                 <button
                   key={t.id}
-                  onClick={() => navigate(`/control/tickets/${t.id}`)}
+                  onClick={() => navigate(`/tickets/${t.id}`)}
                   className="w-full px-4 py-3 flex items-center gap-3 hover:bg-surface-700/50 transition-colors text-left"
                 >
                   <PriorityBadge priority={t.priority} />

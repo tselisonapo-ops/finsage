@@ -80,7 +80,7 @@ export default function TicketList() {
           <p className="text-sm text-surface-300">{total} ticket{total !== 1 ? 's' : ''} total</p>
         </div>
         <button
-          onClick={() => navigate('/control/tickets/new')}
+          onClick={() => navigate('/tickets/new')}
           className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" /> New Ticket
@@ -185,7 +185,7 @@ export default function TicketList() {
               {tickets.map(t => (
                 <button
                   key={t.id}
-                  onClick={() => navigate(`/control/tickets/${t.id}`)}
+                  onClick={() => navigate(`/tickets/${t.id}`)}
                   className="w-full px-4 py-3 flex items-center gap-3 hover:bg-surface-700/50 transition-colors text-left"
                 >
                   <PriorityBadge priority={t.priority} />
