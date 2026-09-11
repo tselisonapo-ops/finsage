@@ -100571,8 +100571,15 @@ class DatabaseService:
         # store combined discount amount (line + header)
         discount_total = money(line_discount_total + header_discount_amt)
 
+        # Resolve quote currency from the company context
+        company = self.get_company(company_id) or {}
+        company_currency = (
+            str(company.get("currency") or "").strip().upper()
+            or "USD"
+        )
+        header["currency"] = company_currency
+
         # defaults
-        header.setdefault("currency", None)
         header.setdefault("notes", None)
         header.setdefault("terms", None)
         header.setdefault("valid_until", None)
@@ -100747,6 +100754,14 @@ class DatabaseService:
         grand_total = money(subtotal_after + vat_total)
 
         discount_total = money(line_discount_total + header_discount_amt)
+
+        # Resolve quote currency from the company
+        company = self.get_company(company_id) or {}
+        company_currency = (
+            str(company.get("currency") or "").strip().upper()
+            or "USD"
+        )
+        header["currency"] = company_currency
 
         # if status is issued and issued_at not provided, you can set it automatically
         issued_at = header.get("issued_at")

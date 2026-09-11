@@ -785,10 +785,19 @@ def quote_view(company_id: int, quote_id: int):
     pdf_url = url_for("quotes.quote_pdf", company_id=company_id, quote_id=quote_id, t=token, _external=True)
 
     company = db_service.get_company_profile(company_id) or {}
+    company_currency = (
+        str(company.get("currency") or "").strip().upper()
+        or "USD"
+    )
 
-    html = render_template("quote_pdf.html", quote=quote, company=company, pdf_url=pdf_url)
+    html = render_template(
+        "quote_pdf.html",
+        quote=quote,
+        company=company,
+        company_currency=company_currency,
+        pdf_url=pdf_url,
+    )
     return html, 200
-
 
 # -----------------------------
 # PDF (token-secured, no auth)
