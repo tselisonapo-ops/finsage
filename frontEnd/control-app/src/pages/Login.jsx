@@ -18,7 +18,7 @@ export default function Login() {
     setLoading(true)
     try {
       await login(email, password)
-      navigate('/control')
+      navigate('/')
     } catch (err) {
       setError(err.message)
     } finally {
