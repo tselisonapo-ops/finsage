@@ -17,16 +17,24 @@ BUGFIXES preserved:
   F. update_ticket() serialises list/dict history values with json.dumps.
 """
 from __future__ import annotations
-
+import os
 import json
 from typing import Any, Dict, List, Optional
-
-
+from datetime import datetime, timezone
+from BackEnd.Services.control.notifications import NotificationService
+from BackEnd.Services.control.audit import AuditService
+from BackEnd.Services.control.automation import AutomationService
 class ControlService:
     """Service layer for FinSage Control operations."""
 
     def __init__(self, db_service):
         self.db = db_service
+        self.notification_service = NotificationService(self.db)
+        self.audit_service = AuditService(self.db)
+        self.automation_service = AutomationService(
+            self.db,
+            self,
+        )
 
     # ────────────────────────────────────────
     # SCHEMA ENSURE
@@ -241,7 +249,1076 @@ class ControlService:
             # Monitoring must NEVER replace or interfere with
             # the original application error.
             return None
-        
+
+    def get_system_errors(
+        self,
+        *,
+        limit: int = 50,
+        unresolved_only: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return recent Control system errors.
+
+        System events contain the grouped error information while
+        the latest occurrence provides the most recent request details.
+        """
+
+        limit = max(1, min(int(limit or 50), 200))
+
+        status_clause = "WHERE se.status = 'open'" if unresolved_only else ""
+
+        return self.db.fetch_all(
+            f"""
+            SELECT
+                se.id,
+                se.event_code,
+                se.severity,
+                se.status,
+                se.source,
+                se.product,
+                se.module_code,
+                se.page_code,
+                se.action_code,
+                se.company_id,
+                se.company_name,
+                se.user_id,
+                se.user_email,
+                se.error_ref,
+                se.transaction_ref,
+                se.message,
+                se.exception_type,
+                se.stack_trace,
+                se.context,
+                se.occurrence_count,
+                se.first_seen_at,
+                se.last_seen_at,
+                se.resolved_at,
+                se.ticket_id,
+                (
+                    SELECT json_build_object(
+                        'id', eo.id,
+                        'occurred_at', eo.occurred_at,
+                        'request_path', eo.request_path,
+                        'http_method', eo.http_method,
+                        'http_status', eo.http_status,
+                        'error_message', eo.error_message
+                    )
+                    FROM control.event_occurrences eo
+                    WHERE eo.event_id = se.id
+                    ORDER BY eo.id DESC
+                    LIMIT 1
+                ) AS latest_occurrence
+            FROM control.system_events se
+            {status_clause}
+            ORDER BY se.last_seen_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+
+    def get_system_errors(
+        self,
+        *,
+        limit: int = 50,
+        unresolved_only: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return recent system errors.
+
+        system_events stores the grouped error while the latest
+        occurrence provides the most recent request information.
+        """
+
+        limit = max(1, min(int(limit or 50), 200))
+
+        status_clause = (
+            "WHERE se.status = 'open'"
+            if unresolved_only
+            else ""
+        )
+
+        return self.db.fetch_all(
+            f"""
+            SELECT
+                se.id,
+                se.event_code,
+                se.severity,
+                se.status,
+                se.source,
+                se.product,
+                se.module_code,
+                se.page_code,
+                se.action_code,
+                se.company_id,
+                se.company_name,
+                se.user_id,
+                se.user_email,
+                se.error_ref,
+                se.transaction_ref,
+                se.message,
+                se.exception_type,
+                se.stack_trace,
+                se.context,
+                se.occurrence_count,
+                se.first_seen_at,
+                se.last_seen_at,
+                se.resolved_at,
+                se.ticket_id,
+                (
+                    SELECT json_build_object(
+                        'id', eo.id,
+                        'occurred_at', eo.occurred_at,
+                        'request_path', eo.request_path,
+                        'http_method', eo.http_method,
+                        'http_status', eo.http_status,
+                        'error_message', eo.error_message,
+                        'context', eo.context
+                    )
+                    FROM control.event_occurrences eo
+                    WHERE eo.event_id = se.id
+                    ORDER BY eo.id DESC
+                    LIMIT 1
+                ) AS latest_occurrence
+            FROM control.system_events se
+            {status_clause}
+            ORDER BY se.last_seen_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+
+
+    def get_system_error(
+        self,
+        event_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Return a single system error together with its latest occurrence.
+        """
+
+        return self.db.fetch_one(
+            """
+            SELECT
+                se.id,
+                se.event_code,
+                se.severity,
+                se.status,
+                se.source,
+                se.product,
+                se.module_code,
+                se.page_code,
+                se.action_code,
+                se.company_id,
+                se.company_name,
+                se.user_id,
+                se.user_email,
+                se.error_ref,
+                se.transaction_ref,
+                se.message,
+                se.exception_type,
+                se.stack_trace,
+                se.context,
+                se.occurrence_count,
+                se.first_seen_at,
+                se.last_seen_at,
+                se.resolved_at,
+                se.ticket_id,
+                (
+                    SELECT json_build_object(
+                        'id', eo.id,
+                        'occurred_at', eo.occurred_at,
+                        'request_path', eo.request_path,
+                        'http_method', eo.http_method,
+                        'http_status', eo.http_status,
+                        'error_message', eo.error_message,
+                        'context', eo.context
+                    )
+                    FROM control.event_occurrences eo
+                    WHERE eo.event_id = se.id
+                    ORDER BY eo.id DESC
+                    LIMIT 1
+                ) AS latest_occurrence
+            FROM control.system_events se
+            WHERE se.id = %s
+            LIMIT 1
+            """,
+            (event_id,),
+        )
+
+
+    def get_system_error_occurrences(
+        self,
+        event_id: int,
+        *,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return individual occurrences for a grouped system error.
+        """
+
+        limit = max(1, min(int(limit or 100), 500))
+
+        return self.db.fetch_all(
+            """
+            SELECT
+                id,
+                event_id,
+                occurred_at,
+                company_id,
+                request_path,
+                http_method,
+                http_status,
+                error_message,
+                context
+            FROM control.event_occurrences
+            WHERE event_id = %s
+            ORDER BY occurred_at DESC
+            LIMIT %s
+            """,
+            (
+                event_id,
+                limit,
+            ),
+        )
+
+
+    def resolve_system_error(
+        self,
+        event_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Mark a system error as resolved.
+        """
+
+        self.db.execute_sql(
+            """
+            UPDATE control.system_events
+            SET
+                status = 'resolved',
+                resolved_at = NOW()
+            WHERE id = %s
+            """,
+            (event_id,),
+        )
+
+        return self.get_system_error(event_id)
+
+
+    def reopen_system_error(
+        self,
+        event_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Reopen a previously resolved system error.
+        """
+
+        self.db.execute_sql(
+            """
+            UPDATE control.system_events
+            SET
+                status = 'open',
+                resolved_at = NULL
+            WHERE id = %s
+            """,
+            (event_id,),
+        )
+
+        return self.get_system_error(event_id)
+
+    # ============================================================
+    # PHASE 7 — SYSTEM HEALTH
+    # ============================================================
+
+    def get_system_checks(self, active_only=True):
+        """
+        Return configured Control system-health checks.
+        """
+
+        where = "WHERE is_active = TRUE" if active_only else ""
+
+        return self.db.fetch_all(
+            f"""
+            SELECT
+                id,
+                code,
+                name,
+                description,
+                check_type,
+                interval_minutes,
+                is_active,
+                creates_ticket,
+                priority,
+                created_at,
+                updated_at
+            FROM control.system_checks
+            {where}
+            ORDER BY id
+            """
+        )
+
+
+    def get_system_check(self, check_code):
+        """
+        Return one configured system-health check.
+        """
+
+        return self.db.fetch_one(
+            """
+            SELECT
+                id,
+                code,
+                name,
+                description,
+                check_type,
+                interval_minutes,
+                is_active,
+                creates_ticket,
+                priority,
+                created_at,
+                updated_at
+            FROM control.system_checks
+            WHERE code = %s
+            LIMIT 1
+            """,
+            (check_code,),
+        )
+
+
+    def get_latest_system_check_runs(self):
+        """
+        Return the latest run for every configured system-health check.
+        """
+
+        return self.db.fetch_all(
+            """
+            SELECT
+                sc.id AS check_id,
+                sc.code,
+                sc.name,
+                sc.description,
+                sc.check_type,
+                sc.interval_minutes,
+                sc.is_active,
+                sc.creates_ticket,
+                sc.priority,
+                scr.id AS run_id,
+                scr.status,
+                scr.result_summary,
+                scr.result_data,
+                scr.started_at,
+                scr.completed_at,
+                scr.duration_ms,
+                scr.error_message,
+                scr.ticket_id
+            FROM control.system_checks sc
+            LEFT JOIN LATERAL (
+                SELECT
+                    id,
+                    status,
+                    result_summary,
+                    result_data,
+                    started_at,
+                    completed_at,
+                    duration_ms,
+                    error_message,
+                    ticket_id
+                FROM control.system_check_runs
+                WHERE check_id = sc.id
+                ORDER BY started_at DESC
+                LIMIT 1
+            ) scr ON TRUE
+            WHERE sc.is_active = TRUE
+            ORDER BY sc.id
+            """
+        )
+
+
+    def get_system_check_runs(self, check_id=None, limit=50):
+        """
+        Return recent health-check execution history.
+        """
+
+        limit = max(1, min(int(limit or 50), 500))
+
+        if check_id:
+            return self.db.fetch_all(
+                """
+                SELECT
+                    id,
+                    check_id,
+                    status,
+                    result_summary,
+                    result_data,
+                    started_at,
+                    completed_at,
+                    duration_ms,
+                    error_message,
+                    ticket_id
+                FROM control.system_check_runs
+                WHERE check_id = %s
+                ORDER BY started_at DESC
+                LIMIT %s
+                """,
+                (check_id, limit),
+            )
+
+        return self.db.fetch_all(
+            """
+            SELECT
+                scr.id,
+                scr.check_id,
+                sc.code,
+                sc.name,
+                scr.status,
+                scr.result_summary,
+                scr.result_data,
+                scr.started_at,
+                scr.completed_at,
+                scr.duration_ms,
+                scr.error_message,
+                scr.ticket_id
+            FROM control.system_check_runs scr
+            JOIN control.system_checks sc
+                ON sc.id = scr.check_id
+            ORDER BY scr.started_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+
+
+    def _system_health_database_check(self):
+        """
+        Check database connectivity and response time.
+        """
+
+        started = datetime.now(timezone.utc)
+
+        try:
+            row = self.db.fetch_one(
+                """
+                SELECT
+                    1 AS connected,
+                    NOW() AS database_time
+                """
+            )
+
+            completed = datetime.now(timezone.utc)
+            duration_ms = int(
+                (completed - started).total_seconds() * 1000
+            )
+
+            return {
+                "status": "healthy",
+                "summary": "Database connection is healthy.",
+                "data": {
+                    "connected": bool(row),
+                    "database_time": (
+                        row.get("database_time")
+                        if row else None
+                    ),
+                    "response_time_ms": duration_ms,
+                },
+                "error": None,
+            }
+
+        except Exception as exc:
+            completed = datetime.now(timezone.utc)
+            duration_ms = int(
+                (completed - started).total_seconds() * 1000
+            )
+
+            return {
+                "status": "failed",
+                "summary": "Database connectivity check failed.",
+                "data": {
+                    "response_time_ms": duration_ms,
+                },
+                "error": str(exc),
+            }
+
+
+    def _system_health_company_count_check(self):
+        """
+        Monitor the number of active FinSage companies.
+        """
+
+        row = self.db.fetch_one(
+            """
+            SELECT
+                COUNT(*) AS total_companies
+            FROM public.companies
+            WHERE COALESCE(is_active, TRUE) = TRUE
+            """
+        )
+
+        total = int(row["total_companies"] or 0) if row else 0
+
+        return {
+            "status": "healthy",
+            "summary": f"{total} active companies.",
+            "data": {
+                "active_companies": total,
+            },
+            "error": None,
+        }
+
+
+    def _system_health_subscription_check(self):
+        """
+        Monitor subscription visibility.
+
+        This check remains safe while Phase 5 subscription tables
+        are being introduced. A missing table is reported as a
+        warning rather than crashing the health runner.
+        """
+
+        exists = self.db.fetch_one(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'company_subscriptions'
+            ) AS exists
+            """
+        )
+
+        if not exists or not exists["exists"]:
+            return {
+                "status": "warning",
+                "summary": "Subscription table is not available yet.",
+                "data": {
+                    "table_available": False,
+                },
+                "error": None,
+            }
+
+        row = self.db.fetch_one(
+            """
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE status IN ('active', 'trialing')
+                ) AS active_or_trial,
+                COUNT(*) FILTER (
+                    WHERE status = 'active'
+                ) AS active,
+                COUNT(*) FILTER (
+                    WHERE status = 'trialing'
+                ) AS trialing,
+                COUNT(*) FILTER (
+                    WHERE status = 'expired'
+                ) AS expired,
+                COUNT(*) AS total
+            FROM public.company_subscriptions
+            """
+        )
+
+        data = {
+            "table_available": True,
+            "total": int(row["total"] or 0),
+            "active": int(row["active"] or 0),
+            "trialing": int(row["trialing"] or 0),
+            "expired": int(row["expired"] or 0),
+        }
+
+        return {
+            "status": "healthy",
+            "summary": (
+                f"{data['active']} active, "
+                f"{data['trialing']} trial, "
+                f"{data['expired']} expired subscriptions."
+            ),
+            "data": data,
+            "error": None,
+        }
+
+
+    def _system_health_recent_errors_check(self):
+        """
+        Check for recurring open system errors.
+        """
+
+        row = self.db.fetch_one(
+            """
+            SELECT
+                COUNT(*) AS open_errors,
+                COALESCE(
+                    SUM(occurrence_count),
+                    0
+                ) AS total_occurrences
+            FROM control.system_events
+            WHERE status = 'open'
+            """
+        )
+
+        open_errors = int(row["open_errors"] or 0) if row else 0
+        total_occurrences = (
+            int(row["total_occurrences"] or 0)
+            if row else 0
+        )
+
+        if open_errors == 0:
+            status = "healthy"
+            summary = "No open system errors."
+        elif open_errors <= 5:
+            status = "warning"
+            summary = f"{open_errors} open system errors."
+        else:
+            status = "failed"
+            summary = f"{open_errors} open system errors."
+
+        return {
+            "status": status,
+            "summary": summary,
+            "data": {
+                "open_errors": open_errors,
+                "total_occurrences": total_occurrences,
+            },
+            "error": None,
+        }
+
+
+    def _run_system_health_check(self, check):
+        """
+        Execute one configured system-health check.
+        """
+
+        check_type = check["check_type"]
+
+        if check_type == "database":
+            return self._system_health_database_check()
+
+        if check_type == "companies":
+            return self._system_health_company_count_check()
+
+        if check_type == "subscriptions":
+            return self._system_health_subscription_check()
+
+        if check_type == "system_events":
+            return self._system_health_recent_errors_check()
+
+        return {
+            "status": "failed",
+            "summary": f"Unsupported health check type: {check_type}",
+            "data": {
+                "check_type": check_type,
+            },
+            "error": f"Unsupported health check type: {check_type}",
+        }
+
+
+    def _system_health_create_ticket(
+        self,
+        check,
+        result,
+        run_id,
+        agent_id=None,
+    ):
+        """
+        Create a Control ticket for a failed health check when
+        the check definition allows ticket creation.
+        """
+
+        if not check.get("creates_ticket"):
+            return None
+
+        if result["status"] not in ("failed", "warning"):
+            return None
+
+        existing = self.db.fetch_one(
+            """
+            SELECT id
+            FROM control.tickets
+            WHERE is_deleted = FALSE
+              AND ticket_type = 'system_error'
+              AND support_context->>'source' = 'system_health'
+              AND support_context->>'check_code' = %s
+              AND status NOT IN ('resolved', 'closed')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (check["code"],),
+        )
+
+        if existing:
+            return existing["id"]
+
+        ticket = self.create_ticket(
+            {
+                "ticket_type": "system_error",
+                "subject": f"System Health: {check['name']}",
+                "description": result["summary"],
+                "priority": check["priority"],
+                "product": "finsage",
+                "module": "system_health",
+                "page": "system_health",
+                "error_ref": f"health_check:{check['code']}",
+                "support_context": {
+                    "source": "system_health",
+                    "check_code": check["code"],
+                    "check_name": check["name"],
+                    "run_id": run_id,
+                    "result": result,
+                },
+                "tags": [
+                    "system_health",
+                    check["code"],
+                ],
+            },
+            agent_id=agent_id,
+        )
+
+        return ticket["id"] if ticket else None
+
+
+    def run_system_health_checks(
+        self,
+        *,
+        check_code=None,
+        force=False,
+        agent_id=None,
+    ):
+        """
+        Execute active system-health checks and record every run.
+
+        If check_code is supplied, only that check is executed.
+        Otherwise all active checks are executed.
+
+        When force=False, a check is skipped if it has already
+        been successfully/unsuccessfully executed within its
+        configured interval.
+        """
+
+        if check_code:
+            checks = [
+                self.get_system_check(check_code)
+            ]
+
+            checks = [
+                check for check in checks
+                if check and check["is_active"]
+            ]
+        else:
+            checks = self.get_system_checks(active_only=True)
+
+        results = []
+
+        for check in checks:
+            now = datetime.now(timezone.utc)
+
+            if not force:
+                recent = self.db.fetch_one(
+                    """
+                    SELECT started_at
+                    FROM control.system_check_runs
+                    WHERE check_id = %s
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                    """,
+                    (check["id"],),
+                )
+
+                if recent and recent.get("started_at"):
+                    elapsed_minutes = (
+                        now - recent["started_at"]
+                    ).total_seconds() / 60
+
+                    if elapsed_minutes < check["interval_minutes"]:
+                        results.append({
+                            "check_id": check["id"],
+                            "code": check["code"],
+                            "status": "skipped",
+                            "summary": (
+                                "Check skipped because its "
+                                "configured interval has not elapsed."
+                            ),
+                        })
+                        continue
+
+            started_at = datetime.now(timezone.utc)
+
+            run = self.db.fetch_one(
+                """
+                INSERT INTO control.system_check_runs (
+                    check_id,
+                    status,
+                    result_summary,
+                    result_data,
+                    started_at
+                )
+                VALUES (
+                    %s,
+                    'running',
+                    %s,
+                    %s::JSONB,
+                    %s
+                )
+                RETURNING id
+                """,
+                (
+                    check["id"],
+                    "Health check started.",
+                    json.dumps({
+                        "check_code": check["code"],
+                    }, default=str),
+                    started_at,
+                ),
+            )
+
+            run_id = run["id"]
+
+            try:
+                result = self._run_system_health_check(check)
+
+                completed_at = datetime.now(timezone.utc)
+                duration_ms = int(
+                    (
+                        completed_at - started_at
+                    ).total_seconds() * 1000
+                )
+
+                ticket_id = self._system_health_create_ticket(
+                    check,
+                    result,
+                    run_id,
+                    agent_id=agent_id,
+                )
+
+                notification_id = (
+                    self._system_health_create_notification(
+                        check,
+                        result,
+                        run_id,
+                        ticket_id=ticket_id,
+                        agent_id=agent_id,
+                    )
+                )
+
+                self.db.execute_sql(
+                    """
+                    UPDATE control.system_check_runs
+                    SET
+                        status = %s,
+                        result_summary = %s,
+                        result_data = %s::JSONB,
+                        completed_at = %s,
+                        duration_ms = %s,
+                        error_message = %s,
+                        ticket_id = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        result["status"],
+                        result["summary"],
+                        json.dumps(
+                            result.get("data") or {},
+                            default=str,
+                        ),
+                        completed_at,
+                        duration_ms,
+                        result.get("error"),
+                        ticket_id,
+                        run_id,
+                    ),
+                )
+
+                results.append({
+                    "run_id": run_id,
+                    "check_id": check["id"],
+                    "code": check["code"],
+                    "status": result["status"],
+                    "summary": result["summary"],
+                    "data": result.get("data") or {},
+                    "duration_ms": duration_ms,
+                    "ticket_id": ticket_id,
+                    "notification_id": notification_id,
+                })
+
+            except Exception as exc:
+                completed_at = datetime.now(timezone.utc)
+                duration_ms = int(
+                    (
+                        completed_at - started_at
+                    ).total_seconds() * 1000
+                )
+
+                error_message = str(exc)
+
+                self.db.execute_sql(
+                    """
+                    UPDATE control.system_check_runs
+                    SET
+                        status = 'failed',
+                        result_summary = %s,
+                        result_data = %s::JSONB,
+                        completed_at = %s,
+                        duration_ms = %s,
+                        error_message = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        "System health check execution failed.",
+                        json.dumps({
+                            "check_code": check["code"],
+                        }),
+                        completed_at,
+                        duration_ms,
+                        error_message,
+                        run_id,
+                    ),
+                )
+
+                results.append({
+                    "run_id": run_id,
+                    "check_id": check["id"],
+                    "code": check["code"],
+                    "status": "failed",
+                    "summary": (
+                        "System health check execution failed."
+                    ),
+                    "duration_ms": duration_ms,
+                    "error": error_message,
+                })
+
+        return {
+            "results": results,
+            "count": len(results),
+        }
+
+
+    def get_system_health(self):
+        """
+        Return the current System Health dashboard state.
+        """
+
+        checks = self.get_latest_system_check_runs()
+
+        healthy = sum(
+            1 for row in checks
+            if row.get("status") == "healthy"
+        )
+
+        warnings = sum(
+            1 for row in checks
+            if row.get("status") == "warning"
+        )
+
+        failed = sum(
+            1 for row in checks
+            if row.get("status") == "failed"
+        )
+
+        not_run = sum(
+            1 for row in checks
+            if not row.get("run_id")
+        )
+
+        if failed:
+            overall_status = "failed"
+        elif warnings:
+            overall_status = "warning"
+        elif not_run:
+            overall_status = "not_run"
+        else:
+            overall_status = "healthy"
+
+        return {
+            "overall_status": overall_status,
+            "summary": {
+                "total": len(checks),
+                "healthy": healthy,
+                "warning": warnings,
+                "failed": failed,
+                "not_run": not_run,
+            },
+            "checks": checks,
+        }
+
+    def _system_health_create_notification(
+        self,
+        check,
+        result,
+        run_id,
+        ticket_id=None,
+        agent_id=None,
+    ):
+        if result["status"] not in (
+            "failed",
+            "warning",
+        ):
+            return None
+
+        notification_type = (
+            "system_health_failed"
+            if result["status"] == "failed"
+            else "system_health_warning"
+        )
+
+        severity = (
+            "critical"
+            if result["status"] == "failed"
+            else "warning"
+        )
+
+        title = (
+            "System Health Alert: "
+            f"{check['name']}"
+        )
+
+        message = result["summary"]
+
+        metadata = {
+            "source": "system_health",
+            "check_code": check["code"],
+            "check_name": check["name"],
+            "run_id": run_id,
+            "result": result,
+        }
+
+        existing = self.db.fetch_one(
+            """
+            SELECT id
+            FROM control.notifications
+            WHERE notification_type = %s
+            AND metadata->>'check_code' = %s
+            AND metadata->>'run_id' = %s
+            LIMIT 1
+            """,
+            (
+                notification_type,
+                check["code"],
+                str(run_id),
+            ),
+        )
+
+        if existing:
+            return existing["id"]
+
+        recipient_email = os.getenv(
+            "FINSAGE_ALERT_EMAIL"
+        )
+
+        notification = (
+            self.notification_service.create_notification(
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                severity=severity,
+                control_user_id=agent_id,
+                ticket_id=ticket_id,
+                metadata=metadata,
+                send_email=bool(recipient_email),
+                recipient_email=recipient_email,
+            )
+        )
+
+        return (
+            notification["id"]
+            if notification
+            else None
+        )
+
     # ────────────────────────────────────────
     # TICKET NUMBER GENERATION
     # ────────────────────────────────────────
@@ -510,18 +1587,38 @@ class ControlService:
         self,
         company_id: int
     ) -> Optional[Dict[str, Any]]:
-        """Full Customer 360 view for a single company."""
+        """Read-only Customer / Company 360 ecosystem view."""
 
         company = self.db.fetch_one("""
             SELECT
                 c.id AS company_id,
                 c.name AS company_name,
+                c.client_code,
+                c.system_company_code,
                 c.industry,
                 c.sub_industry,
                 c.currency,
+                c.country,
+                c.organization_type,
+                c.entity_kind,
+
+                c.company_reg_no,
+                c.tin,
+                c.vat,
+
+                c.company_email,
+                c.company_phone,
+                c.physical_address,
+                c.postal_address,
+                c.logo_url,
+
                 c.is_active,
                 c.created_at AS company_created_at,
                 c.owner_user_id,
+
+                c.created_via,
+                c.source_customer_company_id,
+                c.provisioning_context,
 
                 cs.enabled_modules,
                 cs.app_version,
@@ -543,6 +1640,10 @@ class ControlService:
         if not company:
             return None
 
+        # ---------------------------------------------------------
+        # Users
+        # ---------------------------------------------------------
+
         users = self.db.fetch_all("""
             SELECT
                 u.id AS user_id,
@@ -555,13 +1656,21 @@ class ControlService:
                 cu.last_login_at
 
             FROM public.company_users cu
+
             JOIN public.users u
                 ON u.id = cu.user_id
 
             WHERE cu.company_id = %s
 
-            ORDER BY u.first_name, u.last_name
+            ORDER BY
+                u.first_name,
+                u.last_name,
+                u.email
         """, (company_id,))
+
+        # ---------------------------------------------------------
+        # Control tickets
+        # ---------------------------------------------------------
 
         tickets = self.db.fetch_all("""
             SELECT
@@ -573,6 +1682,7 @@ class ControlService:
                 t.ticket_type,
                 t.module_code,
                 t.created_at,
+                t.updated_at,
                 t.assigned_agent_id,
                 cu.display_name AS agent_name
 
@@ -585,13 +1695,14 @@ class ControlService:
             AND t.is_deleted = FALSE
 
             ORDER BY t.created_at DESC
+
             LIMIT 50
         """, (company_id,))
 
         ticket_stats = self.db.fetch_one("""
             SELECT
                 COUNT(*) FILTER (
-                    WHERE status NOT IN ('resolved','closed')
+                    WHERE status NOT IN ('resolved', 'closed')
                 ) AS open,
 
                 COUNT(*) FILTER (
@@ -600,7 +1711,7 @@ class ControlService:
 
                 COUNT(*) FILTER (
                     WHERE priority = 'p1_critical'
-                    AND status NOT IN ('resolved','closed')
+                    AND status NOT IN ('resolved', 'closed')
                 ) AS critical,
 
                 COUNT(*) AS total
@@ -611,11 +1722,464 @@ class ControlService:
             AND is_deleted = FALSE
         """, (company_id,))
 
+        # ---------------------------------------------------------
+        # Corporate relationships
+        #
+        # IMPORTANT:
+        # These are NOT provisioning relationships.
+        # ---------------------------------------------------------
+
+        related_parties = self.db.fetch_all("""
+            SELECT
+                cr.id AS relationship_id,
+
+                CASE
+                    WHEN cr.parent_company_id = %s
+                        THEN 'outbound'
+                    ELSE 'inbound'
+                END AS relationship_direction,
+
+                CASE
+                    WHEN cr.parent_company_id = %s
+                        THEN cr.child_company_id
+                    ELSE cr.parent_company_id
+                END AS related_company_id,
+
+                CASE
+                    WHEN cr.parent_company_id = %s
+                        THEN child.name
+                    ELSE parent.name
+                END AS related_company_name,
+
+                cr.relationship_type,
+                cr.ownership_percent,
+                cr.voting_percent,
+                cr.effective_interest_percent,
+                cr.nci_percent,
+                cr.control_basis,
+                cr.consolidation_method,
+                cr.effective_from,
+                cr.effective_to,
+                cr.acquisition_date,
+                cr.disposal_date,
+                cr.reporting_currency,
+                cr.functional_currency,
+                cr.include_in_group_reporting,
+                cr.is_direct_ownership,
+                cr.ultimate_parent_company_id,
+                cr.last_reviewed_at
+
+            FROM public.company_relationships cr
+
+            JOIN public.companies parent
+                ON parent.id = cr.parent_company_id
+
+            JOIN public.companies child
+                ON child.id = cr.child_company_id
+
+            WHERE (
+                cr.parent_company_id = %s
+                OR cr.child_company_id = %s
+            )
+
+            AND cr.is_active = TRUE
+
+            ORDER BY
+                related_company_name ASC
+        """, (
+            company_id,
+            company_id,
+            company_id,
+            company_id,
+            company_id,
+        ))
+
+        # ---------------------------------------------------------
+        # Companies provisioned by this company
+        #
+        # This is deliberately separate from corporate
+        # company_relationships.
+        # ---------------------------------------------------------
+
+        provisioned_companies = self.db.fetch_all("""
+            SELECT
+                c.id AS company_id,
+                c.name AS company_name,
+                c.system_company_code,
+                c.client_code,
+                c.industry,
+                c.sub_industry,
+                c.currency,
+                c.country,
+                c.organization_type,
+                c.entity_kind,
+                c.is_active,
+                c.created_at AS company_created_at,
+                c.created_via,
+                c.source_customer_company_id,
+                c.provisioning_context
+
+            FROM public.companies c
+
+            WHERE c.source_customer_company_id = %s
+            AND c.created_via = 'firm_client_provisioning'
+
+            ORDER BY
+                c.name ASC
+        """, (company_id,))
+
+        # ---------------------------------------------------------
+        # Source company / provisioning parent
+        # ---------------------------------------------------------
+
+        source_company = None
+
+        if company.get("source_customer_company_id"):
+            source_company = self.db.fetch_one("""
+                SELECT
+                    c.id AS company_id,
+                    c.name AS company_name,
+                    c.system_company_code,
+                    c.client_code,
+                    c.industry,
+                    c.sub_industry,
+                    c.currency,
+                    c.country,
+                    c.organization_type,
+                    c.entity_kind,
+                    c.is_active,
+                    c.created_at AS company_created_at
+                FROM public.companies c
+                WHERE c.id = %s
+            """, (
+                company["source_customer_company_id"],
+            ))
+
+        # ---------------------------------------------------------
+        # Internal branches
+        # ---------------------------------------------------------
+
+        branches = self.db.fetch_all("""
+            SELECT
+                b.id AS branch_id,
+                b.name,
+                b.code,
+                b.country,
+                b.address,
+                b.phone,
+                b.email,
+                b.manager_user_id,
+                b.is_active,
+                b.created_at
+
+            FROM public.company_branches b
+
+            WHERE b.company_id = %s
+
+            ORDER BY
+                b.name ASC
+        """, (company_id,))
+
+        # ---------------------------------------------------------
+        # Company segments
+        # ---------------------------------------------------------
+
+        segments = self.db.fetch_all("""
+            SELECT
+                s.id AS segment_id,
+                s.name,
+                s.code,
+                s.segment_type,
+                s.description,
+                s.is_active,
+                s.created_at
+
+            FROM public.company_segments s
+
+            WHERE s.company_id = %s
+
+            ORDER BY
+                s.segment_type ASC,
+                s.name ASC
+        """, (company_id,))
+
+        # ---------------------------------------------------------
+        # Engagements
+        #
+        # Engagements live in the company's own schema.
+        # Example: company_34.engagements
+        # ---------------------------------------------------------
+
+        engagements = []
+
+        engagement_schema = f"company_{int(company_id)}"
+
+        schema_exists = self.db.fetch_one("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.schemata
+                WHERE schema_name = %s
+            ) AS exists
+        """, (engagement_schema,))
+
+        if schema_exists and schema_exists.get("exists"):
+            table_exists = self.db.fetch_one("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = %s
+                    AND table_name = 'engagements'
+                ) AS exists
+            """, (engagement_schema,))
+
+            if table_exists and table_exists.get("exists"):
+                engagements = self.db.fetch_all(f"""
+                    SELECT
+                        id,
+                        company_id,
+                        customer_id,
+                        target_company_id,
+                        engagement_code,
+                        engagement_name,
+                        engagement_type,
+                        status,
+                        governance_mode,
+                        reporting_cycle,
+                        due_date,
+                        start_date,
+                        end_date,
+                        manager_user_id,
+                        partner_user_id,
+                        created_by_user_id,
+                        updated_by_user_id,
+                        description,
+                        scope_summary,
+                        fiscal_year_end,
+                        priority,
+                        workflow_stage,
+                        is_active,
+                        created_at,
+                        updated_at,
+                        requires_workspace,
+                        workspace_status,
+                        workspace_source,
+                        target_company_source
+
+                    FROM "{engagement_schema}".engagements
+
+                    WHERE is_active = TRUE
+
+                    ORDER BY
+                        due_date ASC NULLS LAST,
+                        created_at DESC
+
+                    LIMIT 100
+                """)
+
+        # ---------------------------------------------------------
+        # Final Customer 360 response
+        # ---------------------------------------------------------
+
         return {
-            **company,
+            "company": company,
             "users": users,
             "tickets": tickets,
-            "ticket_stats": ticket_stats,
+            "customer_support_tickets": self.get_company_support_tickets(company_id),
+            "ticket_stats": ticket_stats or {
+                "open": 0,
+                "new": 0,
+                "critical": 0,
+                "total": 0,
+            },
+            "related_parties": related_parties,
+            "provisioned_companies": provisioned_companies,
+            "source_company": source_company,
+            "branches": branches,
+            "segments": segments,
+            "engagements": engagements,
+        }
+
+    def get_company_subscription(
+        self,
+        company_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """Read the current subscription for a company."""
+
+        row = self.db.fetch_one("""
+            SELECT
+                cs.id AS subscription_id,
+                cs.company_id,
+
+                sp.id AS plan_id,
+                sp.plan_code,
+                sp.plan_name,
+                sp.description AS plan_description,
+
+                cs.status,
+                cs.billing_status,
+                cs.billing_interval,
+
+                cs.currency,
+                cs.amount,
+
+                cs.started_at,
+                cs.trial_ends_at,
+
+                cs.current_period_start,
+                cs.current_period_end,
+                cs.next_billing_at,
+
+                cs.cancelled_at,
+                cs.cancellation_effective_at,
+
+                cs.suspended_at,
+                cs.resumed_at,
+
+                cs.external_subscription_id,
+                cs.external_customer_id,
+                cs.payment_provider,
+
+                cs.metadata,
+
+                cs.created_at,
+                cs.updated_at
+
+            FROM public.company_subscriptions cs
+
+            JOIN public.subscription_plans sp
+                ON sp.id = cs.plan_id
+
+            WHERE cs.company_id = %s
+
+            ORDER BY
+                cs.created_at DESC
+
+            LIMIT 1
+        """, (company_id,))
+
+        return row
+
+    def get_subscription_billing(
+        self,
+        company_id: int,
+        limit: int = 20
+    ) -> List[Dict[str, Any]]:
+        """Read subscription billing history for a company."""
+
+        limit = min(max(limit, 1), 100)
+
+        return self.db.fetch_all("""
+            SELECT
+                sb.id AS billing_id,
+                sb.subscription_id,
+                sb.company_id,
+
+                sb.billing_reference,
+                sb.invoice_reference,
+
+                sb.billing_status,
+
+                sb.amount,
+                sb.currency,
+
+                sb.billing_period_start,
+                sb.billing_period_end,
+
+                sb.due_at,
+                sb.paid_at,
+                sb.failed_at,
+
+                sb.payment_provider,
+                sb.external_payment_id,
+
+                sb.failure_reason,
+
+                sb.created_at,
+                sb.updated_at
+
+            FROM public.subscription_billing sb
+
+            WHERE sb.company_id = %s
+
+            ORDER BY
+                sb.created_at DESC
+
+            LIMIT %s
+        """, (company_id, limit))
+
+    def get_subscription_events(
+        self,
+        company_id: int,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Read subscription lifecycle events for a company."""
+
+        limit = min(max(limit, 1), 100)
+
+        return self.db.fetch_all("""
+            SELECT
+                se.id AS event_id,
+                se.subscription_id,
+                se.company_id,
+
+                se.event_type,
+                se.event_status,
+                se.event_reference,
+
+                se.occurred_at,
+                se.effective_at,
+
+                se.description,
+                se.metadata,
+
+                se.created_at
+
+            FROM public.subscription_events se
+
+            WHERE se.company_id = %s
+
+            ORDER BY
+                se.occurred_at DESC
+
+            LIMIT %s
+        """, (company_id, limit))
+
+    def get_subscription_visibility(
+        self,
+        company_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """Complete read-only subscription visibility for a company."""
+
+        company = self.db.fetch_one("""
+            SELECT
+                id AS company_id,
+                name AS company_name,
+                currency,
+                is_active
+            FROM public.companies
+            WHERE id = %s
+        """, (company_id,))
+
+        if not company:
+            return None
+
+        subscription = self.get_company_subscription(company_id)
+
+        billing = self.get_subscription_billing(
+            company_id,
+            limit=20
+        )
+
+        events = self.get_subscription_events(
+            company_id,
+            limit=50
+        )
+
+        return {
+            "company": company,
+            "subscription": subscription,
+            "billing": billing,
+            "events": events,
         }
 
     # ────────────────────────────────────────
@@ -771,6 +2335,212 @@ class ControlService:
             AND t.is_deleted = FALSE
         """, (ticket_id,))
 
+    def get_company_support_tickets(
+        self,
+        company_id: int,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Read customer-created support tickets from the company's schema."""
+
+        schema = f"company_{int(company_id)}"
+
+        exists = self.db.fetch_one(
+            """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = %s
+                    AND table_name = 'support_tickets'
+                ) AS exists
+            """,
+            (schema,)
+        )
+
+        if not exists or not exists["exists"]:
+            return []
+
+        limit = max(1, min(int(limit), 100))
+
+        return self.db.fetch_all(
+            f"""
+                SELECT
+                    id,
+                    company_id,
+                    user_id,
+                    email,
+                    subject,
+                    description,
+                    status,
+                    priority,
+                    assigned_to,
+                    resolved_at,
+                    notes,
+                    created_by,
+                    created_at,
+                    updated_at
+                FROM {schema}.support_tickets
+                WHERE company_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+            """,
+            (company_id, limit)
+        )
+
+    def create_ticket_from_customer_ticket(
+        self,
+        company_id: int,
+        support_ticket_id: int,
+        agent_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """Create a Control ticket from a customer-side support ticket."""
+
+        schema = f"company_{int(company_id)}"
+
+        exists = self.db.fetch_one(
+            """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = %s
+                    AND table_name = 'support_tickets'
+                ) AS exists
+            """,
+            (schema,)
+        )
+
+        if not exists or not exists["exists"]:
+            return None
+
+        source = self.db.fetch_one(
+            f"""
+                SELECT
+                    id,
+                    company_id,
+                    user_id,
+                    email,
+                    subject,
+                    description,
+                    status,
+                    priority,
+                    assigned_to,
+                    notes,
+                    created_by,
+                    created_at,
+                    updated_at
+                FROM {schema}.support_tickets
+                WHERE id = %s
+                AND company_id = %s
+            """,
+            (support_ticket_id, company_id)
+        )
+
+        if not source:
+            return None
+
+        company = self.db.fetch_one(
+            """
+                SELECT id, name
+                FROM public.companies
+                WHERE id = %s
+            """,
+            (company_id,)
+        )
+
+        priority_map = {
+            "low": "p4_low",
+            "normal": "p3_medium",
+            "high": "p2_high",
+            "urgent": "p1_critical",
+        }
+
+        ticket_data = {
+            "ticket_type": "support",
+            "subject": source["subject"],
+            "description": source["description"] or "Customer support request.",
+            "company_id": company_id,
+            "company_name": company["name"] if company else None,
+            "user_id": source["user_id"],
+            "user_email": source["email"],
+            "user_name": None,
+            "product": "finsage",
+            "priority": priority_map.get(
+                source["priority"],
+                "p3_medium"
+            ),
+            "support_context": {
+                "source": "customer_support_ticket",
+                "source_schema": schema,
+                "source_ticket_id": source["id"],
+            },
+        }
+
+        return self.create_ticket(
+            ticket_data,
+            agent_id=agent_id
+        )
+
+    def create_ticket_from_system_error(self, event_id, agent_id):
+        event_id = int(event_id)
+
+        event = self.get_system_error(event_id)
+
+        if not event:
+            raise ValueError("System error not found")
+
+        if event.get("ticket_id"):
+            return self.get_ticket(event["ticket_id"])
+
+        occurrence = event.get("latest_occurrence") or {}
+
+        ticket_data = {
+            "ticket_type": "system_error",
+            "subject": (
+                event.get("message")
+                or event.get("event_code")
+                or f"System error #{event_id}"
+            ),
+            "description": event.get("message"),
+            "priority": event.get("severity", "p2_high"),
+            "company_id": event.get("company_id"),
+            "company_name": event.get("company_name"),
+            "user_id": event.get("user_id"),
+            "user_email": event.get("user_email"),
+            "product": event.get("product", "finsage"),
+            "module_code": event.get("module_code"),
+            "page_code": event.get("page_code"),
+            "action_code": event.get("action_code"),
+            "transaction_ref": event.get("transaction_ref"),
+            "error_ref": event.get("error_ref"),
+            "support_context": {
+                "source": "system_error",
+                "system_event_id": event_id,
+                "event_code": event.get("event_code"),
+                "exception_type": event.get("exception_type"),
+                "occurrence_count": event.get("occurrence_count"),
+                "request_path": occurrence.get("request_path"),
+                "http_method": occurrence.get("http_method"),
+                "http_status": occurrence.get("http_status"),
+            },
+        }
+
+        ticket = self.create_ticket(
+            ticket_data,
+            agent_id=agent_id,
+        )
+
+        self.db.execute(
+            """
+            UPDATE control.system_events
+            SET
+                ticket_id = %s,
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (ticket["id"], event_id),
+        )
+
+        return ticket
+
     def create_ticket(
         self,
         data: Dict[str, Any],
@@ -810,7 +2580,7 @@ class ControlService:
                 tags,
                 default=str
             )
-
+        assigned_agent_id = data.get("assigned_agent_id")
         row = self.db.fetch_one("""
             INSERT INTO control.tickets (
                 ticket_number,
@@ -834,15 +2604,18 @@ class ControlService:
                 priority,
                 category_id,
                 sla_id,
+                assigned_agent_id,
                 created_by,
-                tags
+                tags,
+                assigned_at
             )
             VALUES (
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s
             )
             RETURNING *
         """, (
@@ -867,9 +2640,12 @@ class ControlService:
             data.get("priority", "p3_medium"),
             data.get("category_id"),
             sla_id,
+            data.get("assigned_agent_id"),
             agent_id,
             tags,
+            datetime.now(timezone.utc) if data.get("assigned_agent_id") else None,
         ))
+
 
         return row
 
@@ -1695,6 +3471,50 @@ class ControlService:
         """
 
         return self.get_control_user(user_id)
+
+    def audit(
+        self,
+        *,
+        action,
+        entity_type=None,
+        entity_id=None,
+        description=None,
+        before_data=None,
+        after_data=None,
+        metadata=None,
+        request=None,
+        control_user_id=None,
+    ):
+        if request is not None:
+            ip_address = request.headers.get(
+                "X-Forwarded-For",
+                request.remote_addr,
+            )
+
+            if ip_address and "," in ip_address:
+                ip_address = (
+                    ip_address.split(",")[0].strip()
+                )
+
+            user_agent = request.headers.get(
+                "User-Agent"
+            )
+        else:
+            ip_address = None
+            user_agent = None
+
+        return self.audit_service.record(
+            control_user_id=control_user_id,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            description=description,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            before_data=before_data,
+            after_data=after_data,
+            metadata=metadata,
+        )
 
     # register_agent() intentionally removed.
     #

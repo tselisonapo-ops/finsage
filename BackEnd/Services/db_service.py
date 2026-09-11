@@ -2485,6 +2485,242 @@ class DatabaseService:
         FOR EACH ROW
         EXECUTE PROCEDURE public.validate_company_relationship_consolidation();
 
+        -- ============================================================
+        -- FinSage Subscription Schema
+        -- Phase 5 — Subscription Visibility
+        --
+        -- IMPORTANT:
+        -- These tables are the future subscription source of truth.
+        -- Control only READS from them.
+        -- Do not add ControlService insert/update functions.
+        -- ============================================================
+
+
+        -- ------------------------------------------------------------
+        -- Subscription plans
+        -- ------------------------------------------------------------
+
+        CREATE TABLE IF NOT EXISTS public.subscription_plans (
+            id BIGSERIAL PRIMARY KEY,
+
+            plan_code VARCHAR(100) NOT NULL UNIQUE,
+            plan_name VARCHAR(200) NOT NULL,
+
+            description TEXT,
+
+            currency VARCHAR(10) NOT NULL DEFAULT 'LSL',
+
+            monthly_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+            annual_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+
+            billing_model VARCHAR(50) NOT NULL DEFAULT 'subscription',
+
+            trial_days INTEGER NOT NULL DEFAULT 0,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            features JSONB NOT NULL DEFAULT '{}'::jsonb,
+            limits JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+
+        -- ------------------------------------------------------------
+        -- Company subscriptions
+        -- ------------------------------------------------------------
+
+        CREATE TABLE IF NOT EXISTS public.company_subscriptions (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INTEGER NOT NULL,
+
+            plan_id BIGINT NOT NULL,
+
+            status VARCHAR(50) NOT NULL DEFAULT 'trialing',
+
+            billing_status VARCHAR(50) NOT NULL DEFAULT 'pending',
+
+            billing_interval VARCHAR(20) NOT NULL DEFAULT 'monthly',
+
+            currency VARCHAR(10) NOT NULL DEFAULT 'LSL',
+
+            amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+
+            started_at TIMESTAMPTZ,
+            trial_ends_at TIMESTAMPTZ,
+
+            current_period_start TIMESTAMPTZ,
+            current_period_end TIMESTAMPTZ,
+
+            next_billing_at TIMESTAMPTZ,
+
+            cancelled_at TIMESTAMPTZ,
+            cancellation_effective_at TIMESTAMPTZ,
+
+            suspended_at TIMESTAMPTZ,
+            resumed_at TIMESTAMPTZ,
+
+            external_subscription_id VARCHAR(255),
+            external_customer_id VARCHAR(255),
+
+            payment_provider VARCHAR(100),
+
+            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_company_subscriptions_company
+                FOREIGN KEY (company_id)
+                REFERENCES public.companies(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_company_subscriptions_plan
+                FOREIGN KEY (plan_id)
+                REFERENCES public.subscription_plans(id)
+                ON DELETE RESTRICT
+        );
+
+
+        -- ------------------------------------------------------------
+        -- Billing records
+        -- ------------------------------------------------------------
+
+        CREATE TABLE IF NOT EXISTS public.subscription_billing (
+            id BIGSERIAL PRIMARY KEY,
+
+            subscription_id BIGINT NOT NULL,
+
+            company_id INTEGER NOT NULL,
+
+            billing_reference VARCHAR(255),
+
+            invoice_reference VARCHAR(255),
+
+            billing_status VARCHAR(50) NOT NULL DEFAULT 'pending',
+
+            amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+
+            currency VARCHAR(10) NOT NULL DEFAULT 'LSL',
+
+            billing_period_start TIMESTAMPTZ,
+            billing_period_end TIMESTAMPTZ,
+
+            due_at TIMESTAMPTZ,
+            paid_at TIMESTAMPTZ,
+
+            failed_at TIMESTAMPTZ,
+
+            payment_provider VARCHAR(100),
+            external_payment_id VARCHAR(255),
+
+            failure_reason TEXT,
+
+            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_subscription_billing_subscription
+                FOREIGN KEY (subscription_id)
+                REFERENCES public.company_subscriptions(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_subscription_billing_company
+                FOREIGN KEY (company_id)
+                REFERENCES public.companies(id)
+                ON DELETE CASCADE
+        );
+
+
+        -- ------------------------------------------------------------
+        -- Subscription event history
+        -- ------------------------------------------------------------
+
+        CREATE TABLE IF NOT EXISTS public.subscription_events (
+            id BIGSERIAL PRIMARY KEY,
+
+            subscription_id BIGINT NOT NULL,
+
+            company_id INTEGER NOT NULL,
+
+            event_type VARCHAR(100) NOT NULL,
+
+            event_status VARCHAR(50),
+
+            event_reference VARCHAR(255),
+
+            occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            effective_at TIMESTAMPTZ,
+
+            description TEXT,
+
+            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_subscription_events_subscription
+                FOREIGN KEY (subscription_id)
+                REFERENCES public.company_subscriptions(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_subscription_events_company
+                FOREIGN KEY (company_id)
+                REFERENCES public.companies(id)
+                ON DELETE CASCADE
+        );
+
+
+        -- ------------------------------------------------------------
+        -- Indexes
+        -- ------------------------------------------------------------
+
+        CREATE INDEX IF NOT EXISTS idx_subscription_plans_active
+            ON public.subscription_plans(is_active);
+
+
+        CREATE INDEX IF NOT EXISTS idx_company_subscriptions_company
+            ON public.company_subscriptions(company_id);
+
+
+        CREATE INDEX IF NOT EXISTS idx_company_subscriptions_status
+            ON public.company_subscriptions(status);
+
+
+        CREATE INDEX IF NOT EXISTS idx_company_subscriptions_billing_status
+            ON public.company_subscriptions(billing_status);
+
+
+        CREATE INDEX IF NOT EXISTS idx_company_subscriptions_next_billing
+            ON public.company_subscriptions(next_billing_at);
+
+
+        CREATE INDEX IF NOT EXISTS idx_subscription_billing_company
+            ON public.subscription_billing(company_id);
+
+
+        CREATE INDEX IF NOT EXISTS idx_subscription_billing_subscription
+            ON public.subscription_billing(subscription_id);
+
+
+        CREATE INDEX IF NOT EXISTS idx_subscription_billing_status
+            ON public.subscription_billing(billing_status);
+
+
+        CREATE INDEX IF NOT EXISTS idx_subscription_events_company
+            ON public.subscription_events(company_id);
+
+
+        CREATE INDEX IF NOT EXISTS idx_subscription_events_subscription
+            ON public.subscription_events(subscription_id);
+
+
+        CREATE INDEX IF NOT EXISTS idx_subscription_events_occurred
+            ON public.subscription_events(occurred_at);
+            
         -- =========================================================
         -- GROUP CONSOLIDATION RUNS
         -- =========================================================

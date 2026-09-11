@@ -630,6 +630,80 @@ def _migration_001_initial_control_schema(db_service) -> None:
         created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    -- ============================================================
+    -- PHASE 8 — NOTIFICATIONS
+    -- ============================================================
+
+    CREATE TABLE IF NOT EXISTS control.notifications (
+        id                          BIGSERIAL PRIMARY KEY,
+
+        notification_type          VARCHAR(100) NOT NULL,
+        title                       TEXT NOT NULL,
+        message                     TEXT NOT NULL,
+
+        severity                    VARCHAR(30) NOT NULL DEFAULT 'info',
+
+        control_user_id             INTEGER NULL,
+
+        ticket_id                   INTEGER NULL
+            REFERENCES control.tickets(id)
+            ON DELETE SET NULL,
+
+        system_event_id             INTEGER NULL
+            REFERENCES control.system_events(id)
+            ON DELETE SET NULL,
+
+        company_id                  INTEGER NULL,
+
+        metadata                    JSONB NOT NULL DEFAULT '{}'::JSONB,
+
+        is_read                     BOOLEAN NOT NULL DEFAULT FALSE,
+        read_at                     TIMESTAMPTZ NULL,
+
+        created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_control_notifications_user
+        ON control.notifications(control_user_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_notifications_unread
+        ON control.notifications(control_user_id, is_read);
+
+    CREATE INDEX IF NOT EXISTS idx_control_notifications_created
+        ON control.notifications(created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_control_notifications_type
+        ON control.notifications(notification_type);
+
+    CREATE INDEX IF NOT EXISTS idx_control_notifications_ticket
+        ON control.notifications(ticket_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_notifications_system_event
+        ON control.notifications(system_event_id);
+
+
+    CREATE TABLE IF NOT EXISTS control.notification_preferences (
+        id                          BIGSERIAL PRIMARY KEY,
+
+        control_user_id             INTEGER NOT NULL,
+
+        email_enabled               BOOLEAN NOT NULL DEFAULT TRUE,
+        in_app_enabled              BOOLEAN NOT NULL DEFAULT TRUE,
+
+        system_health_enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+        ticket_enabled              BOOLEAN NOT NULL DEFAULT TRUE,
+        subscription_enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+        security_enabled            BOOLEAN NOT NULL DEFAULT TRUE,
+
+        created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        CONSTRAINT uq_control_notification_preferences_user
+            UNIQUE (control_user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_control_notification_preferences_user
+        ON control.notification_preferences(control_user_id);
 
     -- ========================================================
     -- SYSTEM EVENTS
@@ -896,6 +970,21 @@ def _migration_001_initial_control_schema(db_service) -> None:
     CREATE INDEX IF NOT EXISTS idx_control_audit_log_created
         ON control.audit_log(created_at);
 
+    -- ============================================================
+    -- PHASE 9 — AUDIT TRAIL INDEXES
+    -- ============================================================
+
+    CREATE INDEX IF NOT EXISTS idx_control_audit_log_action
+        ON control.audit_log(action);
+
+    CREATE INDEX IF NOT EXISTS idx_control_audit_log_entity
+        ON control.audit_log(entity_type, entity_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_audit_log_user_created
+        ON control.audit_log(control_user_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_control_audit_log_created_desc
+        ON control.audit_log(created_at DESC);
 
     -- ========================================================
     -- TICKET NUMBER FUNCTION
@@ -1282,6 +1371,82 @@ def _migration_001_initial_control_schema(db_service) -> None:
 
     ALTER DEFAULT PRIVILEGES IN SCHEMA control
         GRANT USAGE, SELECT ON SEQUENCES TO CURRENT_USER;
+
+    CREATE TABLE IF NOT EXISTS control.slas (
+        id                  SERIAL PRIMARY KEY,
+        name                VARCHAR(150) NOT NULL,
+        priority            control.priority_level NOT NULL,
+        first_response_minutes INTEGER NOT NULL DEFAULT 60,
+        resolution_minutes    INTEGER NOT NULL DEFAULT 1440,
+        escalation_minutes    INTEGER NOT NULL DEFAULT 30,
+        warning_minutes       INTEGER NOT NULL DEFAULT 30,
+        is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_control_slas_priority_active
+        ON control.slas(priority)
+        WHERE is_active = TRUE;
+
+
+    CREATE TABLE IF NOT EXISTS control.automation_jobs (
+        id                  SERIAL PRIMARY KEY,
+        job_code            VARCHAR(100) NOT NULL UNIQUE,
+        name                VARCHAR(150) NOT NULL,
+        description         TEXT,
+        interval_minutes   INTEGER NOT NULL DEFAULT 5,
+        is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+        last_run_at         TIMESTAMPTZ,
+        next_run_at         TIMESTAMPTZ,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+
+    CREATE TABLE IF NOT EXISTS control.automation_runs (
+        id                  BIGSERIAL PRIMARY KEY,
+        job_id              INTEGER REFERENCES control.automation_jobs(id)
+                            ON DELETE SET NULL,
+        status              VARCHAR(30) NOT NULL DEFAULT 'running',
+        started_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        completed_at        TIMESTAMPTZ,
+        duration_ms         INTEGER,
+        result_data         JSONB NOT NULL DEFAULT '{}'::JSONB,
+        error_message       TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_control_automation_runs_job
+        ON control.automation_runs(job_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_automation_runs_started
+        ON control.automation_runs(started_at DESC);
+
+
+    CREATE TABLE IF NOT EXISTS control.ticket_escalations (
+        id                  BIGSERIAL PRIMARY KEY,
+        ticket_id           INTEGER NOT NULL
+                            REFERENCES control.tickets(id)
+                            ON DELETE CASCADE,
+        escalation_level    INTEGER NOT NULL DEFAULT 1,
+        reason              VARCHAR(100) NOT NULL,
+        previous_agent_id   INTEGER
+                            REFERENCES control.control_users(id)
+                            ON DELETE SET NULL,
+        new_agent_id        INTEGER
+                            REFERENCES control.control_users(id)
+                            ON DELETE SET NULL,
+        previous_priority   control.priority_level,
+        new_priority        control.priority_level,
+        notes               TEXT,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_control_ticket_escalations_ticket
+        ON control.ticket_escalations(ticket_id);
+
+    CREATE INDEX IF NOT EXISTS idx_control_ticket_escalations_created
+        ON control.ticket_escalations(created_at DESC);
     """
 
     db_service.execute_sql(sql)

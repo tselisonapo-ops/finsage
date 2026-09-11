@@ -112,12 +112,28 @@ export default function TicketDetail() {
     { key: 'history', label: 'History', icon: History, count: history.length },
   ]
 
+  const sourceContext = ticket.support_context || {}
   const contextFields = [
     ticket.module_code && { icon: Cpu, label: 'Module', value: ticket.module_code?.replace(/_/g, ' ') },
     ticket.page_code && { icon: FileText, label: 'Page', value: ticket.page_code },
     ticket.transaction_ref && { icon: FileText, label: 'Reference', value: ticket.transaction_ref },
     ticket.error_ref && { icon: AlertCircle, label: 'Error', value: ticket.error_ref },
     ticket.app_version && { icon: Cpu, label: 'Version', value: ticket.app_version },
+    sourceContext.source && {
+      icon: FileText,
+      label: 'Source',
+      value: sourceContext.source.replace(/_/g, ' '),
+    },
+    sourceContext.system_event_id && {
+      icon: AlertCircle,
+      label: 'System Error',
+      value: `#${sourceContext.system_event_id}`,
+    },
+    sourceContext.source_ticket_id && {
+      icon: FileText,
+      label: 'Customer Ticket',
+      value: `#${sourceContext.source_ticket_id}`,
+    },
   ].filter(Boolean)
 
   return (
@@ -437,6 +453,34 @@ export default function TicketDetail() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {ticket.support_context?.source && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-500">
+                Ticket Source
+              </div>
+
+              <div className="mt-2 text-sm text-white">
+                {ticket.support_context.source === "customer_support_ticket"
+                  ? "Customer Support Ticket"
+                  : ticket.support_context.source === "system_error"
+                  ? "System Error"
+                  : ticket.support_context.source}
+              </div>
+
+              {ticket.support_context.source_ticket_id && (
+                <div className="mt-1 text-xs text-slate-400">
+                  Customer ticket #{ticket.support_context.source_ticket_id}
+                </div>
+              )}
+
+              {ticket.support_context.system_event_id && (
+                <div className="mt-1 text-xs text-slate-400">
+                  System event #{ticket.support_context.system_event_id}
+                </div>
+              )}
             </div>
           )}
 

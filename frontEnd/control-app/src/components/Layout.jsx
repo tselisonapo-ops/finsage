@@ -1,14 +1,28 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
-  LayoutDashboard, Ticket, Users, Settings, LogOut, Command, ChevronLeft, ChevronRight
+  LayoutDashboard,
+  Ticket,
+  Users,
+  Settings,
+  Activity,
+  ScrollText,
+  Zap,
+  LogOut,
+  Command,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { useState } from 'react'
+import NotificationBell from "../pages/NotificationBell";
 
 const NAV = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/tickets', icon: Ticket, label: 'Tickets' },
   { to: '/customers', icon: Users, label: 'Customers' },
+  { to: '/system/health', icon: Activity, label: 'System Health' },
+  { to: '/audit', icon: ScrollText, label: 'Audit Trail' },
+  { to: '/automation', icon: Zap, label: 'Automation' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
@@ -25,10 +39,15 @@ export default function Layout() {
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
-      <aside className={`${collapsed ? 'w-16' : 'w-56'} bg-surface-800 border-r border-surface-600 flex flex-col transition-all duration-200 shrink-0`}>
+      <aside
+        className={`${
+          collapsed ? 'w-16' : 'w-56'
+        } bg-surface-800 border-r border-surface-600 flex flex-col transition-all duration-200 shrink-0`}
+      >
         {/* Logo */}
         <div className="h-14 flex items-center gap-2 px-4 border-b border-surface-600">
           <Command className="w-6 h-6 text-accent shrink-0" />
+
           {!collapsed && (
             <span className="font-semibold text-sm tracking-wide text-surface-100">
               FINSAGE CONTROL
@@ -63,15 +82,27 @@ export default function Layout() {
             onClick={() => setCollapsed(!collapsed)}
             className="flex items-center gap-2 px-2 py-1.5 text-xs text-surface-300 hover:text-surface-100 rounded hover:bg-surface-700"
           >
-            {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+            {collapsed ? (
+              <ChevronRight className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronLeft className="w-3.5 h-3.5" />
+            )}
+
             {!collapsed && 'Collapse'}
           </button>
+
           {!collapsed && (
             <div className="px-2 py-1.5">
-              <div className="text-xs font-medium text-surface-100 truncate">{agent?.display_name}</div>
-              <div className="text-xs text-surface-300 capitalize">{agent?.role}</div>
+              <div className="text-xs font-medium text-surface-100 truncate">
+                {agent?.display_name}
+              </div>
+
+              <div className="text-xs text-surface-300 capitalize">
+                {agent?.role}
+              </div>
             </div>
           )}
+
           <button
             onClick={handleLogout}
             className="flex items-center gap-2 px-2 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded"
@@ -83,8 +114,16 @@ export default function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto bg-surface-900">
-        <Outlet />
+      <main className="flex-1 overflow-hidden bg-surface-900 flex flex-col">
+        {/* Top bar */}
+        <header className="h-14 shrink-0 border-b border-surface-600 bg-surface-800 flex items-center justify-end px-5">
+          <NotificationBell />
+        </header>
+
+        {/* Page content */}
+        <div className="flex-1 overflow-auto">
+          <Outlet />
+        </div>
       </main>
     </div>
   )

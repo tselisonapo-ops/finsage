@@ -168,3 +168,59 @@ def delete_note(ticket_id, note_id):
 def get_history(ticket_id):
     history = g.control_service.get_ticket_history(ticket_id)
     return jsonify(history)
+
+@tickets_bp.route(
+    '/tickets/from-system-error/<int:event_id>',
+    methods=['POST']
+)
+@require_control_auth
+def create_ticket_from_system_error(event_id):
+    agent = g.control_agent
+
+    ticket = g.control_service.create_ticket_from_system_error(
+        event_id,
+        agent_id=agent['id']
+    )
+
+    if not ticket:
+        return jsonify({
+            "error": "System error not found"
+        }), 404
+
+    return jsonify(ticket), 201
+
+@tickets_bp.route(
+    '/customers/<int:company_id>/support-tickets/<int:support_ticket_id>/escalate',
+    methods=['POST']
+)
+@require_control_auth
+def escalate_customer_ticket(company_id, support_ticket_id):
+    agent = g.control_agent
+
+    ticket = g.control_service.create_ticket_from_customer_ticket(
+        company_id,
+        support_ticket_id,
+        agent_id=agent['id']
+    )
+
+    if not ticket:
+        return jsonify({
+            "error": "Customer support ticket not found"
+        }), 404
+
+    return jsonify(ticket), 201
+
+@tickets_bp.get("/customers/<int:company_id>/support-tickets")
+@require_control_auth
+def get_customer_support_tickets(company_id):
+    limit = request.args.get("limit", 50, type=int)
+
+    tickets = g.control_service.get_company_support_tickets(
+        company_id,
+        limit=limit,
+    )
+
+    return jsonify({
+        "tickets": tickets,
+        "company_id": company_id,
+    })

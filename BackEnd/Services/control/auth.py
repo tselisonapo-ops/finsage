@@ -29,14 +29,30 @@ def control_login():
     email = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
 
-    if not email or not password:
-        return jsonify({"error": "Email and password required"}), 400
-
     from BackEnd.Services.db_service import db_service
+    from BackEnd.Services.service_control.service_control import ControlService
     from BackEnd.Services.auth_service import (
         verify_password,
         make_control_jwt,
     )
+
+    cs = ControlService(db_service)
+
+    if not email or not password:
+        cs.audit(
+            action="auth.login_failed",
+            entity_type="control_user",
+            description=(
+                "Control administrator login attempt failed "
+                "because credentials were incomplete."
+            ),
+            metadata={"email": email} if email else None,
+            request=request,
+        )
+
+        return jsonify({
+            "error": "Email and password required"
+        }), 400
 
     user = db_service.fetch_one(
         """
@@ -59,18 +75,53 @@ def control_login():
     )
 
     if not user:
-        return jsonify({"error": "Invalid credentials"}), 401
+        cs.audit(
+            action="auth.login_failed",
+            entity_type="control_user",
+            description="Failed Control administrator login attempt.",
+            metadata={"email": email},
+            request=request,
+        )
+
+        return jsonify({
+            "error": "Invalid credentials"
+        }), 401
+
+    control_user_id = int(user['id'])
 
     if not user.get('is_active'):
-        return jsonify({"error": "Account is disabled"}), 403
+        cs.audit(
+            action="auth.login_failed",
+            entity_type="control_user",
+            entity_id=control_user_id,
+            description=(
+                "Control administrator login attempt failed "
+                "because the account is disabled."
+            ),
+            request=request,
+        )
+
+        return jsonify({
+            "error": "Account is disabled"
+        }), 403
 
     if not verify_password(
         password,
         user.get('password_hash') or ''
     ):
-        return jsonify({"error": "Invalid credentials"}), 401
+        cs.audit(
+            action="auth.login_failed",
+            entity_type="control_user",
+            entity_id=control_user_id,
+            description="Failed Control administrator login attempt.",
+            request=request,
+            control_user_id=control_user_id,
+        )
 
-    control_user_id = int(user['id'])
+        return jsonify({
+            "error": "Invalid credentials"
+        }), 401
+
     role = (user.get('role') or 'agent').strip().lower()
 
     # Permissions will be loaded from Control RBAC as that layer is connected.
@@ -91,6 +142,19 @@ def control_login():
         WHERE id = %s
         """,
         (control_user_id,)
+    )
+
+    cs.audit(
+        action="auth.login",
+        entity_type="control_user",
+        entity_id=control_user_id,
+        description="Control administrator logged in.",
+        metadata={
+            "role": role,
+            "team_id": user.get('team_id'),
+        },
+        request=request,
+        control_user_id=control_user_id,
     )
 
     return jsonify({

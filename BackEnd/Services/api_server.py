@@ -246,6 +246,14 @@ from BackEnd.Services.control.customers import customers_bp
 from BackEnd.Services.control.settings import settings_bp
 from BackEnd.Services.control.tickets import tickets_bp
 from BackEnd.Services.control.dashboard import dashboard_bp
+from BackEnd.Services.control.control_system_health import control_system_health_bp
+from BackEnd.Services.control.control_notifications import (
+    control_notifications_bp
+)
+from BackEnd.Services.control.control_audit import (
+    control_audit_bp
+)
+from BackEnd.Services.control.control_automation import control_automation_bp
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
 # ────────────────────────────────────────────────────────────────
@@ -513,6 +521,11 @@ app.register_blueprint(customers_bp)
 app.register_blueprint(settings_bp)
 app.register_blueprint(tickets_bp)
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(control_system_health_bp)
+app.register_blueprint(control_notifications_bp)
+app.register_blueprint(control_audit_bp)
+app.register_blueprint(control_automation_bp)
+
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 

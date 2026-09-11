@@ -28,3 +28,22 @@ def get_customer(company_id):
     if not customer:
         return jsonify({"error": "Company not found"}), 404
     return jsonify(customer)
+
+@customers_bp.route(
+    '/customers/<int:company_id>/subscription',
+    methods=['GET']
+)
+@require_control_auth
+def get_customer_subscription(company_id):
+    """Read-only subscription visibility for a company."""
+
+    subscription = g.control_service.get_subscription_visibility(
+        company_id
+    )
+
+    if not subscription:
+        return jsonify({
+            "error": "Company not found"
+        }), 404
+
+    return jsonify(subscription)
