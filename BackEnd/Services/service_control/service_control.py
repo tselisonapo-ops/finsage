@@ -43,6 +43,206 @@ class ControlService:
         ensure_control_schema(self.db)
 
     # ────────────────────────────────────────
+    # SYSTEM ERROR MONITORING
+    # ────────────────────────────────────────
+
+    def record_system_error(
+        self,
+        *,
+        event_code: str,
+        severity: str = "p2_high",
+        source: str = "flask",
+        product: str = "finsage",
+        module_code: Optional[str] = None,
+        page_code: Optional[str] = None,
+        action_code: Optional[str] = None,
+        company_id: Optional[int] = None,
+        company_name: Optional[str] = None,
+        user_id: Optional[int] = None,
+        user_email: Optional[str] = None,
+        error_ref: Optional[str] = None,
+        transaction_ref: Optional[str] = None,
+        message: Optional[str] = None,
+        exception_type: Optional[str] = None,
+        stack_trace: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+        request_path: Optional[str] = None,
+        http_method: Optional[str] = None,
+        http_status: Optional[int] = 500,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Record an application/system error in Control.
+
+        Repeated failures are grouped into an open system event,
+        while every individual occurrence is preserved in
+        control.event_occurrences.
+
+        Monitoring failures must never interfere with the
+        original application request/error.
+        """
+
+        try:
+            context_json = (
+                json.dumps(context, default=str)
+                if context is not None
+                else None
+            )
+
+            event = self.db.fetch_one(
+                """
+                SELECT id
+                FROM control.system_events
+                WHERE event_code = %s
+                  AND COALESCE(exception_type, '') = COALESCE(%s, '')
+                  AND COALESCE(module_code, '') = COALESCE(%s, '')
+                  AND status = 'open'
+                ORDER BY last_seen_at DESC
+                LIMIT 1
+                """,
+                (
+                    event_code,
+                    exception_type,
+                    module_code,
+                )
+            )
+
+            if event:
+                event_id = event["id"]
+
+                self.db.execute_sql(
+                    """
+                    UPDATE control.system_events
+                    SET
+                        occurrence_count = occurrence_count + 1,
+                        last_seen_at = NOW(),
+                        company_id = COALESCE(%s, company_id),
+                        company_name = COALESCE(%s, company_name),
+                        user_id = COALESCE(%s, user_id),
+                        user_email = COALESCE(%s, user_email),
+                        message = COALESCE(%s, message),
+                        stack_trace = COALESCE(%s, stack_trace),
+                        context = COALESCE(%s::JSONB, context)
+                    WHERE id = %s
+                    """,
+                    (
+                        company_id,
+                        company_name,
+                        user_id,
+                        user_email,
+                        message,
+                        stack_trace,
+                        context_json,
+                        event_id,
+                    )
+                )
+
+            else:
+                event = self.db.fetch_one(
+                    """
+                    INSERT INTO control.system_events (
+                        event_code,
+                        severity,
+                        status,
+                        source,
+                        product,
+                        module_code,
+                        page_code,
+                        action_code,
+                        company_id,
+                        company_name,
+                        user_id,
+                        user_email,
+                        error_ref,
+                        transaction_ref,
+                        message,
+                        exception_type,
+                        stack_trace,
+                        context,
+                        occurrence_count
+                    )
+                    VALUES (
+                        %s, %s, 'open', %s, %s,
+                        %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s,
+                        %s, %s, %s,
+                        %s::JSONB,
+                        1
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        event_code,
+                        severity,
+                        source,
+                        product,
+                        module_code,
+                        page_code,
+                        action_code,
+                        company_id,
+                        company_name,
+                        user_id,
+                        user_email,
+                        error_ref,
+                        transaction_ref,
+                        message,
+                        exception_type,
+                        stack_trace,
+                        context_json,
+                    )
+                )
+
+                event_id = event["id"]
+
+            self.db.execute_sql(
+                """
+                INSERT INTO control.event_occurrences (
+                    event_id,
+                    occurred_at,
+                    company_id,
+                    request_path,
+                    http_method,
+                    http_status,
+                    error_message,
+                    context
+                )
+                VALUES (
+                    %s,
+                    NOW(),
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s::JSONB
+                )
+                """,
+                (
+                    event_id,
+                    company_id,
+                    request_path,
+                    http_method,
+                    http_status,
+                    message,
+                    context_json,
+                )
+            )
+
+            return self.db.fetch_one(
+                """
+                SELECT *
+                FROM control.system_events
+                WHERE id = %s
+                """,
+                (event_id,)
+            )
+
+        except Exception:
+            # Monitoring must NEVER replace or interfere with
+            # the original application error.
+            return None
+        
+    # ────────────────────────────────────────
     # TICKET NUMBER GENERATION
     # ────────────────────────────────────────
 

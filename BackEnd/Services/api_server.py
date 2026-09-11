@@ -167,8 +167,9 @@ from BackEnd.Services.reporting.reporting_helpers import (
     shift_year,
     want_export,
 )
+from BackEnd.Services.service_control.service_control import ControlService
 from BackEnd.Services.utils.industry_utils import normalize_industry_pair, slugify, TEMPLATE_INDUSTRY_ALIASES
-
+from BackEnd.Services.service_control.service_control import ControlService
 from BackEnd.Services.industry_profiles import get_industry_profile
 from BackEnd.Services.reporting.reporting_helpers import build_income_statement_template, choose_layout
 from BackEnd.Services.utils.view_token import create_invoice_pdf_token, verify_invoice_pdf_token, make_invoice_view_token, verify_quote_pdf_token, create_quote_pdf_token
@@ -336,6 +337,7 @@ app.logger.setLevel(logging.INFO)
 print(f"[BOOT] Signup debug log: {signup_log_path}")
 
 bank_service = BankService(db_service)
+control_service = ControlService(db_service)
 
 origins = app.config.get("FRONTEND_ORIGINS", [])
 print("[BOOT] FRONTEND_ORIGINS:", origins)
@@ -376,14 +378,74 @@ def log_and_handle_preflight():
 @app.errorhandler(Exception)
 def handle_any_exception(e):
     if isinstance(e, HTTPException):
-        resp = jsonify({"ok": False, "error": e.description, "type": e.__class__.__name__})
-        resp.status_code = e.code or 500
-        return resp
+        status_code = e.code or 500
 
+        # Expected client errors such as 400/401/403/404
+        # are not recorded as backend system errors.
+        if status_code >= 500:
+            try:
+                control_service.record_system_error(
+                    event_code=f"http.{status_code}:{request.path}",
+                    severity="p2_high",
+                    source="flask",
+                    product="finsage",
+                    message=str(e),
+                    exception_type=e.__class__.__name__,
+                    stack_trace=traceback.format_exc(),
+                    context={
+                        "request_path": request.path,
+                        "http_method": request.method,
+                        "http_status": status_code,
+                    },
+                    request_path=request.path,
+                    http_method=request.method,
+                    http_status=status_code,
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "Failed to record Control system error"
+                )
+
+        return jsonify({
+            "ok": False,
+            "error": e.description,
+            "type": e.__class__.__name__,
+        }), status_code
+
+    # Log the original unhandled exception exactly as before.
     current_app.logger.exception("Unhandled server error")
-    resp = jsonify({"ok": False, "error": str(e), "type": e.__class__.__name__})
-    resp.status_code = 500
-    return resp
+
+    # Send the exception to the Control system monitor.
+    try:
+        control_service.record_system_error(
+            event_code=f"backend.unhandled_exception:{request.path}",
+            severity="p2_high",
+            source="flask",
+            product="finsage",
+            message=str(e),
+            exception_type=e.__class__.__name__,
+            stack_trace=traceback.format_exc(),
+            context={
+                "request_path": request.path,
+                "http_method": request.method,
+                "http_status": 500,
+            },
+            request_path=request.path,
+            http_method=request.method,
+            http_status=500,
+        )
+    except Exception:
+        # Control monitoring must never break the original
+        # error response.
+        current_app.logger.exception(
+            "Failed to record Control system error"
+        )
+
+    return jsonify({
+        "ok": False,
+        "error": str(e),
+        "type": e.__class__.__name__,
+    }), 500
 
 
 app.register_blueprint(leases_bp)
