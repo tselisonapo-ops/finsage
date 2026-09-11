@@ -610,7 +610,7 @@ async function resolveCompanyProfile(currentUser) {
     if (invCur && !invCur.value && cur) invCur.value = cur;
 
     const quoteCur = document.getElementById("quoteCurrency");
-    if (quoteCur && !quoteCur.value && cur) quoteCur.value = cur;
+    if (quoteCur) quoteCur.value = resolveCurrency(cur);
   };
 
   // If user payload already contains company object, prefer it
@@ -111214,7 +111214,7 @@ function collectQuoteFromForm() {
   const quoteId      = idInput?.value ? parseInt(idInput.value, 10) : null;
   const customerName = custInput?.value?.trim() || "";
   const number       = (numInput?.value || "").trim(); // draft-friendly (may be empty)
-  const currency     = (currInput?.value || "USD").trim();
+  const currency = resolveCurrency(currInput?.value);
 
   if (!customerName) throw new Error("Customer is required.");
 
@@ -111996,7 +111996,7 @@ function wireQuotesScreen() {
     safeValue(getEl("quoteDate"), today);
     safeValue(getEl("quoteValidUntil"), "");
     safeValue(getEl("quoteValidDays"), "30");
-    safeValue(getEl("quoteCurrency"), "USD");
+    safeValue(getEl("quoteCurrency"), resolveCurrency());
 
     // discount / notes / terms
     safeValue(getEl("quoteDisc"), "0");
@@ -112492,7 +112492,7 @@ window.openQuoteInForm = async function openQuoteInForm(quoteId) {
   document.getElementById("quoteValidUntil").value = (quote.valid_until || "").slice(0, 10);
 
   // currency + notes
-  document.getElementById("quoteCurrency").value = quote.currency || "USD";
+  document.getElementById("quoteCurrency").value = resolveCurrency(quote.currency);
   document.getElementById("quoteNotes").value = quote.notes || "";
   document.getElementById("quoteTerms").value = quote.terms || "";
 

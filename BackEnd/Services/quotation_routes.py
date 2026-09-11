@@ -96,7 +96,9 @@ def update_quote(company_id: int, quote_id: int):
 
     # allow UI to send either "quotation_date" or "quote_date"
     quotation_date = (raw.get("quotation_date") or raw.get("quote_date") or str(date.today()))[:10]
-    currency = (raw.get("currency") or "USD").strip() or "USD"
+    ctx = company_policy(company_id)
+    company_currency = (str(ctx.get("currency") or "").strip().upper() or "USD")
+    currency = company_currency
     notes = raw.get("notes") or ""
     terms = raw.get("terms") or ""
     status = (raw.get("status") or "draft").strip().lower() or "draft"
@@ -193,6 +195,7 @@ def issue_quote(company_id: int, quote_id: int):
 
     ctx = company_policy(company_id)
     company_profile = ctx.get("company") or {}
+    company_currency = (str(ctx.get("currency") or "").strip().upper() or "USD")
     policy = ctx.get("policy") or {}  # ✅ use normalized policy
 
     if not can_issue_quote(user, company_profile):
@@ -212,9 +215,9 @@ def issue_quote(company_id: int, quote_id: int):
             full0 = db_service.get_quote_full(company_id, quote_id) or {}
             ref0 = (full0.get("number") or f"QUOTE-{quote_id}")
             total0 = float(full0.get("total_amount") or full0.get("total") or 0.0)
-            cur0 = (full0.get("currency") or "USD")
+            cur0 = (str(full0.get("currency") or "").strip().upper() or company_currency)
         except Exception:
-            ref0, total0, cur0 = f"QUOTE-{quote_id}", 0.0, "USD"
+            ref0, total0, cur0 = f"QUOTE-{quote_id}", 0.0, company_currency
 
         rid = db_service.create_approval_request(
             company_id,
@@ -360,6 +363,7 @@ def accept_quote(company_id: int, quote_id: int):
     mode = (ctx.get("mode") or "").strip().lower()
     policy = ctx.get("policy") or {}
     company_profile = ctx.get("company") or {}
+    company_currency = (str(ctx.get("currency") or "").strip().upper() or "USD")
 
     if not can_accept_quote(user, company_profile):
         return jsonify({"error": "Not allowed"}), 403
@@ -377,9 +381,9 @@ def accept_quote(company_id: int, quote_id: int):
             full0 = db_service.get_quote_full(company_id, quote_id) or {}
             ref0 = (full0.get("number") or f"QUOTE-{quote_id}")
             total0 = float(full0.get("total_amount") or full0.get("total") or 0.0)
-            cur0 = (full0.get("currency") or "USD")
+            cur0 = (str(full0.get("currency") or "").strip().upper() or company_currency)
         except Exception:
-            ref0, total0, cur0 = f"QUOTE-{quote_id}", 0.0, "USD"
+            ref0, total0, cur0 = f"QUOTE-{quote_id}", 0.0, company_currency
 
         rid = db_service.create_approval_request(
             company_id,
@@ -849,6 +853,7 @@ def quotes_root(company_id: int):
     if request.method == "POST":
         ctx = company_policy(company_id)
         company_profile = ctx.get("company") or {}
+        company_currency = (str(ctx.get("currency") or "").strip().upper() or "USD")
 
         if not can_create_quote(user, company_profile):
             return jsonify({"error": "Not allowed to create quotations"}), 403
@@ -874,7 +879,7 @@ def quotes_root(company_id: int):
             "customer_id": customer_id,
             "status": (body.get("status") or "draft").strip().lower(),
             "quotation_date": (body.get("quotation_date") or body.get("quote_date") or str(date.today()))[:10],
-            "currency": (body.get("currency") or "USD").strip() or "USD",
+            "currency": company_currency,
             "notes": body.get("notes") or "",
             "terms": body.get("terms") or "",
             "discount_rate": float(body.get("discount_rate") or body.get("discountRate") or 0.0),
