@@ -6,9 +6,8 @@ from BackEnd.Services.control_auth import require_control_auth, require_control_
 settings_bp = Blueprint(
     'control_settings',
     __name__,
-    url_prefix='/control/api/settings'
+    url_prefix='/api/control/settings'
 )
-
 
 # ────────────────────────────────────────
 # CONTROL USERS

@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 
 from BackEnd.Services.control_auth import require_control_auth
 
-customers_bp = Blueprint('control_customers', __name__, url_prefix='/control/api')
+customers_bp = Blueprint('control_customers', __name__, url_prefix='/api/control')
 
 
 @customers_bp.route('/customers', methods=['GET'])

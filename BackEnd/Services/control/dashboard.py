@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, g
 
 from BackEnd.Services.control_auth import require_control_auth
 
-dashboard_bp = Blueprint('control_dashboard', __name__, url_prefix='/control/api')
+dashboard_bp = Blueprint('control_dashboard', __name__, url_prefix='/api/control')
 
 
 @dashboard_bp.route('/dashboard', methods=['GET'])

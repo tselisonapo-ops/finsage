@@ -12,7 +12,7 @@ from flask import Blueprint, request, jsonify, g
 control_auth_bp = Blueprint(
     'control_auth',
     __name__,
-    url_prefix='/control/api'
+    url_prefix='/api/control'
 )
 
 
