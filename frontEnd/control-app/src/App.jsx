@@ -13,14 +13,14 @@ import Settings from './pages/Settings'
 function ProtectedRoute({ children }) {
   const { agent, loading } = useAuth()
   if (loading) return <div className="min-h-screen bg-surface-900 flex items-center justify-center text-surface-400">Loading...</div>
-  if (!agent) return <Navigate to="/control/login" replace />
+  if (!agent) return <Navigate to="/login" replace />
   return children
 }
 
 function PublicRoute({ children }) {
   const { agent, loading } = useAuth()
   if (loading) return null
-  if (agent) return <Navigate to="/control" replace />
+  if (agent) return <Navigate to="/" replace />
   return children
 }
 
