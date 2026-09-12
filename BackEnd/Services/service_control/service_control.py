@@ -2528,7 +2528,7 @@ class ControlService:
             agent_id=agent_id,
         )
 
-        self.db.execute(
+        self.db.execute_sql(
             """
             UPDATE control.system_events
             SET
