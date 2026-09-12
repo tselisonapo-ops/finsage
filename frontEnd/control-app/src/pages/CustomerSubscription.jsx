@@ -1,32 +1,38 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
   CreditCard,
   CalendarDays,
   Receipt,
   Activity,
-} from 'lucide-react';
+} from 'lucide-react'
 
-import { api } from '../api/client';
-import { formatDateTime } from '../utils/formatters';
+import { api } from '../api/client'
+import { formatDateTime } from '../utils/formatters'
 
 function valueOrDash(value) {
   return value === null || value === undefined || value === ''
     ? '—'
-    : value;
+    : value
 }
 
 function StatusBadge({ value }) {
   if (!value) {
-    return <span className="text-slate-500">—</span>;
+    return (
+      <span className="text-surface-400">
+        —
+      </span>
+    )
   }
+
+  const normalized = String(value).toLowerCase()
 
   const positive = [
     'active',
     'paid',
     'trialing',
-  ].includes(String(value).toLowerCase());
+  ].includes(normalized)
 
   const negative = [
     'failed',
@@ -34,205 +40,436 @@ function StatusBadge({ value }) {
     'suspended',
     'cancelled',
     'expired',
-  ].includes(String(value).toLowerCase());
+  ].includes(normalized)
 
   return (
     <span
-      className={`inline-flex px-2.5 py-1 rounded-full text-xs ${
-        positive
-          ? 'bg-emerald-500/10 text-emerald-400'
-          : negative
-            ? 'bg-red-500/10 text-red-400'
-            : 'bg-slate-800 text-slate-400'
-      }`}
+      className={`
+        inline-flex
+        px-2.5 py-1
+        rounded-full
+        text-xs
+        font-medium
+        ${
+          positive
+            ? 'bg-success/10 text-success'
+            : negative
+              ? 'bg-error/10 text-error'
+              : 'bg-surface-700 text-surface-300'
+        }
+      `}
     >
       {value}
     </span>
-  );
+  )
 }
 
 function Card({ title, icon: Icon, children }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Icon size={18} />
-        <h2 className="font-semibold">{title}</h2>
+    <div className="
+      bg-surface-800
+      border border-surface-600
+      rounded-xl
+      p-5
+    ">
+      <div className="
+        flex
+        items-center
+        gap-2
+        mb-4
+      ">
+        <div className="
+          w-8 h-8
+          rounded-lg
+          bg-accent-muted
+          flex
+          items-center
+          justify-center
+        ">
+          <Icon
+            size={17}
+            className="text-accent"
+          />
+        </div>
+
+        <h2 className="
+          font-semibold
+          text-surface-100
+        ">
+          {title}
+        </h2>
       </div>
 
       {children}
     </div>
-  );
+  )
 }
 
 function InfoRow({ label, value }) {
   return (
-    <div className="flex justify-between gap-4 py-2 border-b border-slate-800 last:border-b-0">
-      <span className="text-sm text-slate-500">
+    <div className="
+      flex
+      flex-col
+      sm:flex-row
+      sm:items-center
+      sm:justify-between
+      gap-1 sm:gap-4
+      py-2.5
+      border-b
+      border-surface-600
+      last:border-b-0
+    ">
+      <span className="
+        text-sm
+        text-surface-400
+      ">
         {label}
       </span>
 
-      <span className="text-sm text-slate-200 text-right">
+      <span className="
+        text-sm
+        text-surface-200
+        sm:text-right
+      ">
         {valueOrDash(value)}
       </span>
     </div>
-  );
+  )
 }
 
 export default function CustomerSubscription() {
-  const { companyId } = useParams();
-  const navigate = useNavigate();
+  const { companyId } = useParams()
+  const navigate = useNavigate()
 
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    let mounted = true;
+    let mounted = true
 
     async function load() {
-      setLoading(true);
-      setError('');
+      setLoading(true)
+      setError('')
 
       try {
         const result = await api.get(
           `/customers/${companyId}/subscription`
-        );
+        )
 
         if (mounted) {
-          setData(result);
+          setData(result)
         }
       } catch (err) {
         console.error(
           'Failed to load subscription:',
           err
-        );
+        )
 
         if (mounted) {
           setError(
             err?.response?.data?.error ||
             err?.message ||
             'Unable to load subscription'
-          );
+          )
         }
       } finally {
         if (mounted) {
-          setLoading(false);
+          setLoading(false)
         }
       }
     }
 
-    load();
+    load()
 
     return () => {
-      mounted = false;
-    };
-  }, [companyId]);
+      mounted = false
+    }
+  }, [companyId])
 
   if (loading) {
     return (
-      <div className="p-6 text-slate-400">
-        Loading subscription...
+      <div className="
+        w-full
+        min-h-full
+        p-5 lg:p-6
+      ">
+        <div className="
+          finsage-card-dark
+          p-8
+          text-center
+          text-sm
+          text-surface-400
+        ">
+          Loading subscription...
+        </div>
       </div>
-    );
+    )
   }
 
   if (error) {
     return (
-      <div className="p-6">
+      <div className="
+        w-full
+        min-h-full
+        p-5 lg:p-6
+        space-y-6
+      ">
         <button
           type="button"
           onClick={() =>
             navigate(`/customers/${companyId}`)
           }
-          className="flex items-center gap-2 text-sm text-slate-400 hover:text-white mb-6"
+          className="
+            flex
+            items-center
+            gap-2
+            text-sm
+            text-surface-400
+            hover:text-surface-100
+            transition-colors
+          "
         >
           <ArrowLeft size={16} />
           Back to company
         </button>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8">
-          <h1 className="font-semibold mb-2">
+        <div className="
+          bg-surface-800
+          border border-error/30
+          rounded-xl
+          p-8
+        ">
+          <div className="
+            w-10 h-10
+            rounded-lg
+            bg-error/10
+            flex
+            items-center
+            justify-center
+            mb-4
+          ">
+            <Activity
+              size={20}
+              className="text-error"
+            />
+          </div>
+
+          <h1 className="
+            font-semibold
+            text-surface-100
+            mb-2
+          ">
             Subscription unavailable
           </h1>
 
-          <p className="text-sm text-slate-400">
+          <p className="
+            text-sm
+            text-surface-400
+          ">
             {error}
           </p>
         </div>
       </div>
-    );
+    )
   }
 
-  const company = data?.company;
-  const subscription = data?.subscription;
-  const billing = data?.billing || [];
-  const events = data?.events || [];
+  const company = data?.company
+  const subscription = data?.subscription
+  const billing = data?.billing || []
+  const events = data?.events || []
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="
+      w-full
+      min-h-full
+      p-5 lg:p-6
+      space-y-6
+    ">
+
+      {/* Back */}
       <button
         type="button"
         onClick={() =>
           navigate(`/customers/${companyId}`)
         }
-        className="flex items-center gap-2 text-sm text-slate-400 hover:text-white"
+        className="
+          flex
+          items-center
+          gap-2
+          text-sm
+          text-surface-400
+          hover:text-surface-100
+          transition-colors
+        "
       >
         <ArrowLeft size={16} />
         Back to company
       </button>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-        <div className="text-sm text-slate-500">
-          Subscription
-        </div>
+      {/* Header */}
+      <div className="
+        bg-surface-800
+        border border-surface-600
+        rounded-xl
+        p-5 lg:p-6
+      ">
+        <div className="
+          flex
+          flex-col
+          sm:flex-row
+          sm:items-center
+          gap-4
+        ">
+          <div className="
+            w-11 h-11
+            rounded-xl
+            bg-accent-muted
+            border border-accent/20
+            flex
+            items-center
+            justify-center
+            shrink-0
+          ">
+            <CreditCard
+              size={22}
+              className="text-accent"
+            />
+          </div>
 
-        <h1 className="text-xl font-semibold mt-1">
-          {company?.company_name}
-        </h1>
+          <div>
+            <div className="
+              text-xs
+              font-medium
+              uppercase
+              tracking-wide
+              text-accent
+            ">
+              Subscription
+            </div>
 
-        <div className="text-sm text-slate-500 mt-1">
-          Company #{company?.company_id}
+            <h1 className="
+              text-xl
+              font-semibold
+              text-surface-100
+              mt-1
+            ">
+              {company?.company_name}
+            </h1>
+
+            <div className="
+              text-sm
+              text-surface-400
+              mt-1
+            ">
+              Company #{company?.company_id}
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* No Subscription */}
       {!subscription ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8">
-          <h2 className="font-semibold">
+        <div className="
+          bg-surface-800
+          border border-surface-600
+          rounded-xl
+          p-8
+        ">
+          <div className="
+            w-10 h-10
+            rounded-lg
+            bg-surface-700
+            flex
+            items-center
+            justify-center
+            mb-4
+          ">
+            <CreditCard
+              size={19}
+              className="text-surface-300"
+            />
+          </div>
+
+          <h2 className="
+            font-semibold
+            text-surface-100
+          ">
             No subscription recorded
           </h2>
 
-          <p className="text-sm text-slate-500 mt-2">
+          <p className="
+            text-sm
+            text-surface-400
+            mt-2
+          ">
             This company does not currently have a
             subscription record.
           </p>
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card title="Plan" icon={CreditCard}>
-              <div className="text-xl font-semibold">
-                {subscription.plan_name}
+          {/* Summary Cards */}
+          <div className="
+            grid
+            grid-cols-1
+            sm:grid-cols-2
+            xl:grid-cols-4
+            gap-4
+          ">
+            <Card
+              title="Plan"
+              icon={CreditCard}
+            >
+              <div className="
+                text-xl
+                font-semibold
+                text-surface-100
+              ">
+                {valueOrDash(
+                  subscription.plan_name
+                )}
               </div>
 
-              <div className="text-xs text-slate-500 mt-1">
-                {subscription.plan_code}
+              <div className="
+                text-xs
+                text-surface-400
+                mt-1
+              ">
+                {valueOrDash(
+                  subscription.plan_code
+                )}
               </div>
             </Card>
 
-            <Card title="Status" icon={Activity}>
+            <Card
+              title="Status"
+              icon={Activity}
+            >
               <StatusBadge
                 value={subscription.status}
               />
             </Card>
 
-            <Card title="Billing" icon={Receipt}>
+            <Card
+              title="Billing"
+              icon={Receipt}
+            >
               <StatusBadge
-                value={subscription.billing_status}
+                value={
+                  subscription.billing_status
+                }
               />
             </Card>
 
-            <Card title="Next billing" icon={CalendarDays}>
-              <div className="text-sm">
+            <Card
+              title="Next billing"
+              icon={CalendarDays}
+            >
+              <div className="
+                text-sm
+                text-surface-200
+              ">
                 {formatDateTime(
                   subscription.next_billing_at
                 )}
@@ -240,7 +477,11 @@ export default function CustomerSubscription() {
             </Card>
           </div>
 
-          <Card title="Subscription details" icon={CreditCard}>
+          {/* Subscription Details */}
+          <Card
+            title="Subscription details"
+            icon={CreditCard}
+          >
             <InfoRow
               label="Plan"
               value={subscription.plan_name}
@@ -258,12 +499,16 @@ export default function CustomerSubscription() {
 
             <InfoRow
               label="Billing status"
-              value={subscription.billing_status}
+              value={
+                subscription.billing_status
+              }
             />
 
             <InfoRow
               label="Billing interval"
-              value={subscription.billing_interval}
+              value={
+                subscription.billing_interval
+              }
             />
 
             <InfoRow
@@ -294,7 +539,11 @@ export default function CustomerSubscription() {
               value={
                 subscription.current_period_start &&
                 subscription.current_period_end
-                  ? `${formatDateTime(subscription.current_period_start)} → ${formatDateTime(subscription.current_period_end)}`
+                  ? `${formatDateTime(
+                      subscription.current_period_start
+                    )} → ${formatDateTime(
+                      subscription.current_period_end
+                    )}`
                   : null
               }
             />
@@ -322,15 +571,25 @@ export default function CustomerSubscription() {
 
             <InfoRow
               label="Payment provider"
-              value={subscription.payment_provider}
+              value={
+                subscription.payment_provider
+              }
             />
           </Card>
         </>
       )}
 
-      <Card title="Billing history" icon={Receipt}>
+      {/* Billing History */}
+      <Card
+        title="Billing history"
+        icon={Receipt}
+      >
         {billing.length === 0 ? (
-          <div className="text-sm text-slate-500">
+          <div className="
+            text-sm
+            text-surface-400
+            py-2
+          ">
             No billing records available.
           </div>
         ) : (
@@ -338,18 +597,39 @@ export default function CustomerSubscription() {
             {billing.map((item) => (
               <div
                 key={item.billing_id}
-                className="border border-slate-800 rounded-lg p-4"
+                className="
+                  bg-surface-900/50
+                  border border-surface-600
+                  rounded-lg
+                  p-4
+                  hover:border-surface-500
+                  transition-colors
+                "
               >
-                <div className="flex justify-between gap-4">
+                <div className="
+                  flex
+                  flex-col
+                  sm:flex-row
+                  sm:items-start
+                  sm:justify-between
+                  gap-3
+                ">
                   <div>
-                    <div className="font-medium">
+                    <div className="
+                      font-medium
+                      text-surface-100
+                    ">
                       {valueOrDash(
                         item.invoice_reference ||
                         item.billing_reference
                       )}
                     </div>
 
-                    <div className="text-xs text-slate-500 mt-1">
+                    <div className="
+                      text-xs
+                      text-surface-400
+                      mt-1
+                    ">
                       {formatDateTime(
                         item.created_at
                       )}
@@ -361,46 +641,94 @@ export default function CustomerSubscription() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
+                <div className="
+                  grid
+                  grid-cols-2
+                  md:grid-cols-4
+                  gap-4
+                  mt-4
+                ">
                   <div>
-                    <div className="text-xs text-slate-500">
+                    <div className="
+                      text-xs
+                      text-surface-400
+                    ">
                       Amount
                     </div>
-                    <div>
+
+                    <div className="
+                      text-sm
+                      text-surface-200
+                      mt-1
+                    ">
                       {item.currency} {item.amount}
                     </div>
                   </div>
 
                   <div>
-                    <div className="text-xs text-slate-500">
+                    <div className="
+                      text-xs
+                      text-surface-400
+                    ">
                       Due
                     </div>
-                    <div>
+
+                    <div className="
+                      text-sm
+                      text-surface-200
+                      mt-1
+                    ">
                       {formatDateTime(item.due_at)}
                     </div>
                   </div>
 
                   <div>
-                    <div className="text-xs text-slate-500">
+                    <div className="
+                      text-xs
+                      text-surface-400
+                    ">
                       Paid
                     </div>
-                    <div>
+
+                    <div className="
+                      text-sm
+                      text-surface-200
+                      mt-1
+                    ">
                       {formatDateTime(item.paid_at)}
                     </div>
                   </div>
 
                   <div>
-                    <div className="text-xs text-slate-500">
+                    <div className="
+                      text-xs
+                      text-surface-400
+                    ">
                       Failed
                     </div>
-                    <div>
-                      {formatDateTime(item.failed_at)}
+
+                    <div className="
+                      text-sm
+                      text-surface-200
+                      mt-1
+                    ">
+                      {formatDateTime(
+                        item.failed_at
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {item.failure_reason && (
-                  <div className="text-sm text-red-400 mt-3">
+                  <div className="
+                    mt-3
+                    rounded-lg
+                    border border-error/20
+                    bg-error/10
+                    px-3 py-2
+                    text-sm
+                    text-error
+                  ">
                     {item.failure_reason}
                   </div>
                 )}
@@ -410,9 +738,17 @@ export default function CustomerSubscription() {
         )}
       </Card>
 
-      <Card title="Subscription history" icon={Activity}>
+      {/* Subscription History */}
+      <Card
+        title="Subscription history"
+        icon={Activity}
+      >
         {events.length === 0 ? (
-          <div className="text-sm text-slate-500">
+          <div className="
+            text-sm
+            text-surface-400
+            py-2
+          ">
             No subscription events recorded.
           </div>
         ) : (
@@ -420,22 +756,49 @@ export default function CustomerSubscription() {
             {events.map((event) => (
               <div
                 key={event.event_id}
-                className="border border-slate-800 rounded-lg p-4"
+                className="
+                  bg-surface-900/50
+                  border border-surface-600
+                  rounded-lg
+                  p-4
+                  hover:border-surface-500
+                  transition-colors
+                "
               >
-                <div className="flex justify-between gap-4">
+                <div className="
+                  flex
+                  flex-col
+                  sm:flex-row
+                  sm:items-start
+                  sm:justify-between
+                  gap-3
+                ">
                   <div>
-                    <div className="font-medium">
-                      {event.event_type}
+                    <div className="
+                      font-medium
+                      text-surface-100
+                    ">
+                      {valueOrDash(
+                        event.event_type
+                      )}
                     </div>
 
                     {event.description && (
-                      <div className="text-sm text-slate-400 mt-1">
+                      <div className="
+                        text-sm
+                        text-surface-400
+                        mt-1
+                      ">
                         {event.description}
                       </div>
                     )}
                   </div>
 
-                  <div className="text-xs text-slate-500">
+                  <div className="
+                    text-xs
+                    text-surface-400
+                    shrink-0
+                  ">
                     {formatDateTime(
                       event.occurred_at
                     )}
@@ -455,5 +818,5 @@ export default function CustomerSubscription() {
         )}
       </Card>
     </div>
-  );
+  )
 }

@@ -19,7 +19,7 @@ export default function NotificationSettings() {
     } catch (err) {
       setMessage(
         err?.message ||
-        "Unable to load notification preferences."
+          "Unable to load notification preferences."
       );
     }
   }
@@ -34,9 +34,7 @@ export default function NotificationSettings() {
         preferences
       );
 
-      setPreferences(
-        data.preferences
-      );
+      setPreferences(data.preferences);
 
       setMessage(
         "Notification preferences saved."
@@ -44,7 +42,7 @@ export default function NotificationSettings() {
     } catch (err) {
       setMessage(
         err?.message ||
-        "Unable to save notification preferences."
+          "Unable to save notification preferences."
       );
     } finally {
       setSaving(false);
@@ -64,56 +62,151 @@ export default function NotificationSettings() {
 
   if (!preferences) {
     return (
-      <div className="p-6 text-slate-400">
-        Loading notification preferences...
+      <div className="w-full min-h-full p-5 lg:p-6">
+        <div className="text-sm text-surface-300">
+          Loading notification preferences...
+        </div>
       </div>
     );
   }
 
+  const alertCategories = [
+    [
+      "system_health_enabled",
+      "System health",
+      "Database, application and platform health alerts.",
+    ],
+    [
+      "ticket_enabled",
+      "Tickets",
+      "Ticket creation, assignment and escalation alerts.",
+    ],
+    [
+      "subscription_enabled",
+      "Subscriptions",
+      "Subscription and billing-related alerts.",
+    ],
+    [
+      "security_enabled",
+      "Security",
+      "Security and account-related alerts.",
+    ],
+  ];
+
   return (
-    <div className="p-6 space-y-6">
+    <div className="w-full min-h-full p-5 lg:p-6 space-y-6">
+      {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-white">
+        <h1 className="text-2xl font-semibold text-surface-100">
           Notifications
         </h1>
 
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-sm text-surface-300 mt-1">
           Configure Control alerts and notification delivery.
         </p>
       </div>
 
+      {/* Status Message */}
       {message && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 text-sm text-slate-300">
+        <div className="
+          rounded-xl
+          border border-surface-600
+          bg-surface-800
+          p-4
+          text-sm
+          text-surface-200
+        ">
           {message}
         </div>
       )}
 
-      <div className="rounded-xl border border-slate-700 bg-slate-900 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-700 flex items-center gap-3">
-          <Bell size={18} />
+      {/* Delivery Settings */}
+      <div className="
+        rounded-xl
+        border border-surface-600
+        bg-surface-800
+        overflow-hidden
+      ">
+        <div className="
+          px-5 py-4
+          border-b border-surface-600
+          flex items-center gap-3
+        ">
+          <div className="
+            w-9 h-9
+            rounded-lg
+            bg-accent-muted
+            text-accent
+            flex
+            items-center
+            justify-center
+            shrink-0
+          ">
+            <Bell size={18} />
+          </div>
 
           <div>
-            <h2 className="font-semibold text-white">
+            <h2 className="
+              font-semibold
+              text-surface-100
+            ">
               Delivery
             </h2>
 
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="
+              text-xs
+              text-surface-400
+              mt-1
+            ">
               Choose how Control notifications are delivered.
             </p>
           </div>
         </div>
 
-        <div className="divide-y divide-slate-800">
-          <label className="flex items-center justify-between p-5 cursor-pointer">
-            <div className="flex items-center gap-3">
-              <Bell size={18} />
+        <div className="divide-y divide-surface-600">
+          {/* In-App Notifications */}
+          <label className="
+            flex
+            items-center
+            justify-between
+            gap-4
+            p-5
+            cursor-pointer
+            hover:bg-surface-700/40
+            transition-colors
+          ">
+            <div className="
+              flex
+              items-center
+              gap-3
+              min-w-0
+            ">
+              <div className="
+                w-9 h-9
+                rounded-lg
+                bg-surface-700
+                text-accent
+                flex
+                items-center
+                justify-center
+                shrink-0
+              ">
+                <Bell size={18} />
+              </div>
 
-              <div>
-                <div className="text-white">
+              <div className="min-w-0">
+                <div className="
+                  text-surface-100
+                  font-medium
+                ">
                   In-app notifications
                 </div>
 
-                <div className="text-xs text-slate-500">
+                <div className="
+                  text-xs
+                  text-surface-400
+                  mt-1
+                ">
                   Show notifications in the Control application.
                 </div>
               </div>
@@ -125,19 +218,58 @@ export default function NotificationSettings() {
               onChange={() =>
                 toggle("in_app_enabled")
               }
+              className="
+                h-4 w-4
+                shrink-0
+                accent-accent
+                cursor-pointer
+              "
             />
           </label>
 
-          <label className="flex items-center justify-between p-5 cursor-pointer">
-            <div className="flex items-center gap-3">
-              <Mail size={18} />
+          {/* Email Notifications */}
+          <label className="
+            flex
+            items-center
+            justify-between
+            gap-4
+            p-5
+            cursor-pointer
+            hover:bg-surface-700/40
+            transition-colors
+          ">
+            <div className="
+              flex
+              items-center
+              gap-3
+              min-w-0
+            ">
+              <div className="
+                w-9 h-9
+                rounded-lg
+                bg-surface-700
+                text-accent
+                flex
+                items-center
+                justify-center
+                shrink-0
+              ">
+                <Mail size={18} />
+              </div>
 
-              <div>
-                <div className="text-white">
+              <div className="min-w-0">
+                <div className="
+                  text-surface-100
+                  font-medium
+                ">
                   Email notifications
                 </div>
 
-                <div className="text-xs text-slate-500">
+                <div className="
+                  text-xs
+                  text-surface-400
+                  mt-1
+                ">
                   Send supported alerts by email.
                 </div>
               </div>
@@ -149,52 +281,73 @@ export default function NotificationSettings() {
               onChange={() =>
                 toggle("email_enabled")
               }
+              className="
+                h-4 w-4
+                shrink-0
+                accent-accent
+                cursor-pointer
+              "
             />
           </label>
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-700 bg-slate-900 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-700">
-          <h2 className="font-semibold text-white">
+      {/* Alert Categories */}
+      <div className="
+        rounded-xl
+        border border-surface-600
+        bg-surface-800
+        overflow-hidden
+      ">
+        <div className="
+          px-5 py-4
+          border-b border-surface-600
+        ">
+          <h2 className="
+            font-semibold
+            text-surface-100
+          ">
             Alert categories
           </h2>
+
+          <p className="
+            text-xs
+            text-surface-400
+            mt-1
+          ">
+            Select which types of alerts you want to receive.
+          </p>
         </div>
 
-        <div className="divide-y divide-slate-800">
-          {[
-            [
-              "system_health_enabled",
-              "System health",
-              "Database, application and platform health alerts.",
-            ],
-            [
-              "ticket_enabled",
-              "Tickets",
-              "Ticket creation, assignment and escalation alerts.",
-            ],
-            [
-              "subscription_enabled",
-              "Subscriptions",
-              "Subscription and billing-related alerts.",
-            ],
-            [
-              "security_enabled",
-              "Security",
-              "Security and account-related alerts.",
-            ],
-          ].map(
+        <div className="divide-y divide-surface-600">
+          {alertCategories.map(
             ([key, title, description]) => (
               <label
                 key={key}
-                className="flex items-center justify-between p-5 cursor-pointer"
+                className="
+                  flex
+                  items-center
+                  justify-between
+                  gap-4
+                  p-5
+                  cursor-pointer
+                  hover:bg-surface-700/40
+                  transition-colors
+                "
               >
-                <div>
-                  <div className="text-white">
+                <div className="min-w-0">
+                  <div className="
+                    text-surface-100
+                    font-medium
+                  ">
                     {title}
                   </div>
 
-                  <div className="text-xs text-slate-500 mt-1">
+                  <div className="
+                    text-xs
+                    text-surface-400
+                    mt-1
+                  ">
                     {description}
                   </div>
                 </div>
@@ -203,6 +356,12 @@ export default function NotificationSettings() {
                   type="checkbox"
                   checked={!!preferences[key]}
                   onChange={() => toggle(key)}
+                  className="
+                    h-4 w-4
+                    shrink-0
+                    accent-accent
+                    cursor-pointer
+                  "
                 />
               </label>
             )
@@ -210,18 +369,39 @@ export default function NotificationSettings() {
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={save}
-        disabled={saving}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50"
-      >
-        <Save size={16} />
+      {/* Save */}
+      <div className="
+        flex
+        justify-end
+      ">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="
+            inline-flex
+            items-center
+            justify-center
+            gap-2
+            px-4
+            py-2.5
+            rounded-lg
+            bg-accent
+            text-surface-900
+            font-medium
+            hover:bg-accent-hover
+            disabled:opacity-50
+            disabled:cursor-not-allowed
+            transition-colors
+          "
+        >
+          <Save size={16} />
 
-        {saving
-          ? "Saving..."
-          : "Save Preferences"}
-      </button>
+          {saving
+            ? "Saving..."
+            : "Save Preferences"}
+        </button>
+      </div>
     </div>
   );
 }

@@ -58,8 +58,8 @@ export default function Dashboard() {
       label: 'New',
       value: stats.new_tickets,
       icon: Clock,
-      color: 'text-blue-400',
-      bg: 'bg-blue-500/10'
+      color: 'text-info',
+      bg: 'bg-info/10'
     },
     {
       label: 'SLA Compliance',
@@ -71,10 +71,13 @@ export default function Dashboard() {
   ]
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="w-full min-h-full p-5 lg:p-6">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-surface-100">FinSage Control</h1>
+        <h1 className="text-xl font-bold text-surface-100">
+          FinSage Control
+        </h1>
+
         <p className="text-sm text-surface-300 mt-0.5">
           Welcome back, {agent?.display_name}
         </p>

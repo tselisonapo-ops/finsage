@@ -1,45 +1,244 @@
+
 @import "tailwindcss";
 
-/* ── FinSage Control Theme ── */
+/* ─────────────────────────────────────────
+   FinSage Core Theme
+   Navy + Teal
+   ───────────────────────────────────────── */
+
 @theme {
-  --color-surface-900: #0a0c10;
-  --color-surface-800: #111318;
-  --color-surface-700: #1a1d25;
-  --color-surface-600: #23272f;
-  --color-surface-500: #2e333c;
-  --color-surface-400: #3d434e;
-  --color-surface-300: #565d6a;
-  --color-surface-200: #8b929e;
-  --color-surface-100: #c5c9d0;
 
-  --color-accent: #6366f1;
-  --color-accent-hover: #818cf8;
-  --color-accent-muted: rgba(99, 102, 241, 0.15);
+  /* ── Light App Background ── */
 
-  --color-p1: #ef4444;
-  --color-p2: #f97316;
-  --color-p3: #eab308;
-  --color-p4: #22c55e;
+  --color-app: #f4f7f8;
+  --color-app-subtle: #e8eef0;
+  --color-app-muted: #d7e1e4;
+
+
+  /* ── Dark Surfaces ── */
+
+  --color-surface-900: #071114;
+  --color-surface-800: #0d1b1f;
+  --color-surface-700: #13262b;
+  --color-surface-600: #1b343a;
+  --color-surface-500: #25434a;
+  --color-surface-400: #35565e;
+  --color-surface-300: #53747c;
+  --color-surface-200: #91a9ae;
+  --color-surface-100: #d8e4e6;
+
+
+  /* ── Light UI Text ── */
+
+  --color-text-primary: #102024;
+  --color-text-secondary: #60777c;
+  --color-text-muted: #8da1a5;
+  --color-text-inverse: #ffffff;
+
+
+  /* ── Borders ── */
+
+  --color-border: #d9e3e5;
+  --color-border-subtle: #e8eef0;
+  --color-border-strong: #c2d0d3;
+
+
+  /* ── Brand Accent ── */
+
+  --color-accent: #14b8a6;
+  --color-accent-hover: #2dd4bf;
+  --color-accent-muted: rgba(20, 184, 166, 0.14);
+
+
+  /* ── Portfolio / Chart Palette ── */
+
+  --color-p1: #f87171;
+  --color-p2: #fb923c;
+  --color-p3: #facc15;
+  --color-p4: #34d399;
+
+
+  /* ── Semantic Colors ── */
 
   --color-success: #22c55e;
-  --color-warning: #eab308;
+  --color-warning: #f59e0b;
   --color-error: #ef4444;
-  --color-info: #3b82f6;
+  --color-info: #38bdf8;
+
+
+  /* ── Typography ── */
+
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+
+
+  /* ── Radius ── */
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
 }
 
+
+/* ─────────────────────────────────────────
+   Base
+   ───────────────────────────────────────── */
+
 * {
+  box-sizing: border-box;
+
   scrollbar-width: thin;
-  scrollbar-color: var(--color-surface-500) transparent;
+  scrollbar-color: #35565e transparent;
+}
+
+html {
+  background: var(--color-app);
 }
 
 body {
   margin: 0;
-  background: var(--color-surface-900);
-  color: var(--color-surface-100);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+
+  background: var(--color-app);
+  color: var(--color-text-primary);
+
+  font-family: var(--font-sans);
+
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
   min-height: 100vh;
 }
+
+
+/* ─────────────────────────────────────────
+   Selection
+   ───────────────────────────────────────── */
+
+::selection {
+  background: var(--color-accent-muted);
+  color: var(--color-text-primary);
+}
+
+
+/* ─────────────────────────────────────────
+   Focus
+   ───────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+
+/* ─────────────────────────────────────────
+   FinSage Utility Classes
+   ───────────────────────────────────────── */
+
+.finsage-card {
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+
+  box-shadow: 0 1px 3px rgba(7, 17, 20, 0.05);
+}
+
+.finsage-card-dark {
+  background: var(--color-surface-800);
+  color: var(--color-surface-100);
+
+  border: 1px solid var(--color-surface-600);
+  border-radius: var(--radius-lg);
+}
+
+.finsage-input {
+  background: #ffffff;
+  color: var(--color-text-primary);
+
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.finsage-input:focus {
+  border-color: var(--color-accent);
+
+  box-shadow: 0 0 0 3px var(--color-accent-muted);
+
+  outline: none;
+}
+
+.finsage-button {
+  background: var(--color-accent);
+  color: white;
+
+  border: 0;
+  border-radius: var(--radius-md);
+
+  transition:
+    background 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.finsage-button:hover {
+  background: var(--color-accent-hover);
+}
+
+.finsage-button:active {
+  transform: translateY(1px);
+}
+
+
+/* ─────────────────────────────────────────
+   Status
+   ───────────────────────────────────────── */
+
+.status-success {
+  color: var(--color-success);
+  background: rgba(34, 197, 94, 0.10);
+}
+
+.status-warning {
+  color: #b7791f;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.status-error {
+  color: var(--color-error);
+  background: rgba(239, 68, 68, 0.10);
+}
+
+.status-info {
+  color: var(--color-info);
+  background: rgba(56, 189, 248, 0.10);
+}
+
+
+/* ─────────────────────────────────────────
+   Scrollbar
+   ───────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #35565e;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #53747c;
+}
+
