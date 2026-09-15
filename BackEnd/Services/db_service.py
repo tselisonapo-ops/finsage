@@ -65871,9 +65871,9 @@ class DatabaseService:
             )
 
             existing_codes = {
-                str(row[0]).strip()
-                for row in _cur.fetchall()
-                if row[0]
+                str(row.get("code")).strip()
+                for row in fetchall(cur)
+                if row.get("code")
             }
 
             # Use the normal COA normalization logic so preview gets the same
