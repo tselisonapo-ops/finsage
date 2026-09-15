@@ -65872,7 +65872,7 @@ class DatabaseService:
 
             existing_codes = {
                 str(row.get("code")).strip()
-                for row in fetchall(cur)
+                for row in cur.fetchall()
                 if row.get("code")
             }
 
