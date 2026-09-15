@@ -43761,9 +43761,12 @@ async function postLeaseJournal(lease) {
 
       for (const l of glines) {
         const code = String(l.account_code || "").trim();
-        const coaRow = window.COA_BY_CODE ? window.COA_BY_CODE[code] : null;
-        const acctLabel = (coaRow && coaRow.name) ? String(coaRow.name) : (code || "—");
-
+        const acctLabel = String(
+          l.account_name ||
+          l.name ||
+          code ||
+          "—"
+        ).trim();
         const dr = Number(l.debit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const cr = Number(l.credit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -43804,8 +43807,18 @@ async function postLeaseJournal(lease) {
     tb.innerHTML = rows.map(r => {
       const asset = String(r.asset_name || r.asset_code || r.asset_id || "—");
       const cls   = String(r.asset_class || "—");
-      const ps    = String(r.period_start || "").slice(0, 10);
-      const pe    = String(r.period_end || "").slice(0, 10);
+      const fmtDate = v => {
+        if (!v) return "—";
+        const d = new Date(String(v).slice(0, 10) + "T00:00:00");
+        return isNaN(d) ? String(v).slice(0, 10) : d.toLocaleDateString(undefined, {
+          day: "2-digit",
+          month: "short",
+          year: "numeric"
+        });
+      };
+
+      const ps = fmtDate(r.period_start);
+      const pe = fmtDate(r.period_end);
 
       const depAmt = Number(r.depreciation_amount || 0)
         .toLocaleString(undefined, { minimumFractionDigits: 2 });
