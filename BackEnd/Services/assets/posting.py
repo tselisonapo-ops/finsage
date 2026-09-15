@@ -8290,6 +8290,7 @@ def build_dep_preview_journal_lines(
         schema,
         company_id,
         asset_row,
+        persist=False,
     )
 
     dep_exp_code = dep_exp_code or "MISSING_DEP_EXPENSE_ACCT"
