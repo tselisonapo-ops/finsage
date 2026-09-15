@@ -7776,6 +7776,36 @@ def resolve_depreciation_accounts(
         row = cur.fetchone()
         return row["code"] if row else None
 
+    def finish():
+        if not return_names:
+            return dep_exp_code, acc_dep_code
+
+        for code in (dep_exp_code, acc_dep_code):
+            if code and code not in resolved_names:
+                cur.execute(
+                    _q(
+                        schema,
+                        """
+                        SELECT name
+                        FROM {schema}.coa
+                        WHERE company_id=%s
+                          AND code=%s
+                        LIMIT 1
+                        """
+                    ),
+                    (company_id, code),
+                )
+                row = cur.fetchone()
+                if row and row.get("name"):
+                    resolved_names[code] = row["name"]
+
+        return (
+            dep_exp_code,
+            acc_dep_code,
+            resolved_names.get(dep_exp_code),
+            resolved_names.get(acc_dep_code),
+        )
+    
     def get_asset_text():
         return " ".join([
             str(asset.get("asset_class") or ""),
@@ -7839,7 +7869,7 @@ def resolve_depreciation_accounts(
                 if acc_dep_code:
                     break
 
-        return dep_exp_code, acc_dep_code
+        return finish()
 
     # -------------------------------------------------
     # 2) Asset-class-driven accounting requirement
@@ -7855,7 +7885,7 @@ def resolve_depreciation_accounts(
 
         # Explicitly non-depreciable/non-amortising class.
         if not class_dep_role and not class_acc_role:
-            return dep_exp_code, acc_dep_code
+                return finish()
 
         if not dep_exp_code and class_dep_role:
             dep_exp_code = ensure_required_role(class_dep_role)
@@ -7864,7 +7894,7 @@ def resolve_depreciation_accounts(
             acc_dep_code = ensure_required_role(class_acc_role)
 
         if dep_exp_code and acc_dep_code:
-            return dep_exp_code, acc_dep_code
+                return finish()
 
     # -------------------------------------------------
     # 3) Existing generic role resolver
@@ -7997,34 +8027,7 @@ def resolve_depreciation_accounts(
             is_contra=False,
         )
 
-    if return_names:
-        for code in (dep_exp_code, acc_dep_code):
-            if code and code not in resolved_names:
-                cur.execute(
-                    _q(
-                        schema,
-                        """
-                        SELECT name
-                        FROM {schema}.coa
-                        WHERE company_id=%s
-                          AND code=%s
-                        LIMIT 1
-                        """
-                    ),
-                    (company_id, code),
-                )
-                row = cur.fetchone()
-                if row and row.get("name"):
-                    resolved_names[code] = row["name"]
-
-        return (
-            dep_exp_code,
-            acc_dep_code,
-            resolved_names.get(dep_exp_code),
-            resolved_names.get(acc_dep_code),
-        )
-
-    return dep_exp_code, acc_dep_code
+    return finish()
     
 def _first_coa_role(cur, schema: str, company_id: int, roles: list[str]) -> str | None:
     for role in roles:
