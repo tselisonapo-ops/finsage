@@ -7644,6 +7644,7 @@ def resolve_depreciation_accounts(
     *,
     persist=True,
     return_names=False,
+    required_roles=None,
 ) -> tuple:
     """
     Resolve system-generated depreciation/amortisation accounts.
@@ -7840,12 +7841,32 @@ def resolve_depreciation_accounts(
     asset_text = get_asset_text()
     asset_account_name = get_asset_account_name().lower()
 
+    required_dep_role = None
+    required_acc_role = None
+
+    if required_roles:
+        required_dep_role, required_acc_role = required_roles
+
     ROU_EXCLUDES = [
         "%right-of-use%",
         "%right of use%",
         "%rou%",
     ]
 
+    # -------------------------------------------------
+    # Explicit depreciation roles supplied by the
+    # depreciation journal builder
+    # -------------------------------------------------
+    if required_roles:
+        if not dep_exp_code and required_dep_role:
+            dep_exp_code = ensure_required_role(required_dep_role)
+
+        if not acc_dep_code and required_acc_role:
+            acc_dep_code = ensure_required_role(required_acc_role)
+
+        if dep_exp_code and acc_dep_code:
+            return finish()
+        
     # -------------------------------------------------
     # 1) ROU branch
     # -------------------------------------------------
@@ -8364,6 +8385,7 @@ def build_dep_preview_journal_lines(
             asset_row,
             persist=False,
             return_names=True,
+            required_roles=(dep_role, acc_dep_role),
         )
     )
 
