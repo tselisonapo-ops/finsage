@@ -135232,12 +135232,14 @@ async function populateProjectCustomerDropdown() {
 
 function projectPostingAccounts(kind = "all") {
   const rows =
-    window.COA_CACHE ||
-    window.COMPANY_COA ||
-    window.CHART_OF_ACCOUNTS ||
+    Array.isArray(window.CURRENT_COA) ? window.CURRENT_COA :
+    Array.isArray(window.COA) ? window.COA :
+    Array.isArray(window.COA_CACHE) ? window.COA_CACHE :
+    Array.isArray(window.COMPANY_COA) ? window.COMPANY_COA :
+    Array.isArray(window.CHART_OF_ACCOUNTS) ? window.CHART_OF_ACCOUNTS :
     [];
 
-  const accounts = (Array.isArray(rows) ? rows : [])
+  const accounts = rows
     .map(account => {
       const code = String(
         account.code ||
@@ -135254,16 +135256,14 @@ function projectPostingAccounts(kind = "all") {
       ).trim();
 
       const posting =
-        account.posting === undefined ||
-        account.posting === null
+        account.posting == null
           ? true
           : !["false", "0", "no"].includes(
               String(account.posting).toLowerCase()
             );
 
       const active =
-        account.is_active === undefined ||
-        account.is_active === null
+        account.is_active == null
           ? true
           : !["false", "0", "no"].includes(
               String(account.is_active).toLowerCase()
@@ -135285,84 +135285,42 @@ function projectPostingAccounts(kind = "all") {
     );
 
   const filtered = accounts.filter(account => {
-    const section = String(
-      account.section ||
-      account.account_section ||
-      ""
-    ).toLowerCase();
-
-    const category = String(
-      account.category ||
-      account.account_category ||
-      ""
-    ).toLowerCase();
-
-    const type = String(
-      account.account_type ||
-      account.type ||
-      ""
-    ).toLowerCase();
-
-    const role = String(
-      account.role || ""
-    ).toLowerCase();
-
-    const name = String(
-      account.name || ""
-    ).toLowerCase();
+    if (kind === "all") return true;
 
     const text = [
-      section,
-      category,
-      type,
-      role,
-      name,
-    ].join(" ");
-
-    if (kind === "all") {
-      return true;
-    }
+      account.section,
+      account.account_section,
+      account.category,
+      account.account_category,
+      account.account_type,
+      account.type,
+      account.role,
+      account.name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
 
     if (kind === "asset") {
-      return (
-        section.includes("asset") ||
-        category.includes("asset") ||
-        type.includes("asset") ||
-        /asset|work in progress|\bwip\b|construction in progress|\bcip\b|inventory/.test(text)
-      );
+      return /asset|work in progress|\bwip\b|construction in progress|\bcip\b|inventory/.test(text);
     }
 
     if (kind === "revenue") {
-      return (
-        section.includes("revenue") ||
-        category.includes("revenue") ||
-        type.includes("revenue") ||
-        /revenue|income|sales|contract revenue/.test(text)
-      );
+      return /revenue|income|sales|contract revenue/.test(text);
     }
 
     if (kind === "expense") {
-      return (
-        section.includes("expense") ||
-        category.includes("expense") ||
-        type.includes("expense") ||
-        /expense|cost|cost of sales|materials|labour|subcontract/.test(text)
-      );
+      return /expense|cost|cost of sales|materials|labour|subcontract/.test(text);
     }
 
     return true;
   });
 
   return (filtered.length ? filtered : accounts)
-    .sort((a, b) => {
-      const nameCompare = a.name.localeCompare(b.name);
-
-      if (nameCompare !== 0) {
-        return nameCompare;
-      }
-
-      return a.code.localeCompare(b.code);
-    });
+    .sort((a, b) =>
+      a.name.localeCompare(b.name) ||
+      a.code.localeCompare(b.code)
+    );
 }
 
 function fillProjectAccountSelect(
