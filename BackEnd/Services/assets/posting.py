@@ -7858,11 +7858,13 @@ def resolve_depreciation_accounts(
     # depreciation journal builder
     # -------------------------------------------------
     if required_roles:
+        required_dep_role, required_acc_dep_role = required_roles
+
         if not dep_exp_code and required_dep_role:
             dep_exp_code = ensure_required_role(required_dep_role)
 
-        if not acc_dep_code and required_acc_role:
-            acc_dep_code = ensure_required_role(required_acc_role)
+        if not acc_dep_code and required_acc_dep_role:
+            acc_dep_code = ensure_required_role(required_acc_dep_role)
 
         if dep_exp_code and acc_dep_code:
             return finish()
@@ -8353,14 +8355,76 @@ def build_dep_preview_journal_lines(
     if depreciation_method in ("APP", "NONE", "NOT_DEPRECIATED"):
         return []
 
-    roles = ASSET_CLASS_DEPRECIATION_ROLES.get(asset_class)
+    # ------------------------------------------------------------
+    # AUTHORITATIVE IAS 16 ASSET-CLASS DISPATCH
+    # ------------------------------------------------------------
+    #
+    # This is deliberately explicit. Once an asset class is
+    # identified here, the resolver must use these exact roles.
+    #
 
-    if roles is None:
+    if asset_class in ("land",):
+        # Land is not depreciated under IAS 16.
         return []
 
-    dep_role, acc_dep_role = roles
+    elif asset_class in ("assets under construction",):
+        return []
 
-    if not dep_role or not acc_dep_role:
+    elif asset_class in ("buildings", "land and buildings"):
+        dep_role = "depreciation_expense_buildings"
+        acc_dep_role = "accumulated_depreciation_buildings"
+
+    elif asset_class in ("plant and machinery",):
+        dep_role = "depreciation_expense_plant_machinery"
+        acc_dep_role = "accumulated_depreciation_plant_machinery"
+
+    elif asset_class in (
+        "vehicles",
+        "motorcycles / bikes",
+        "bicycles",
+        "scooters",
+    ):
+        dep_role = "depreciation_expense_motor_vehicles"
+        acc_dep_role = "accumulated_depreciation_motor_vehicles"
+
+    elif asset_class in ("heavy vehicles",):
+        dep_role = "depreciation_expense_heavy_vehicles"
+        acc_dep_role = "accumulated_depreciation_heavy_vehicles"
+
+    elif asset_class in ("construction equipment",):
+        dep_role = "depreciation_expense_construction_equipment"
+        acc_dep_role = "accumulated_depreciation_construction_equipment"
+
+    elif asset_class in ("mining equipment",):
+        dep_role = "depreciation_expense_mining_equipment"
+        acc_dep_role = "accumulated_depreciation_mining_equipment"
+
+    elif asset_class in ("manufacturing equipment",):
+        dep_role = "depreciation_expense_manufacturing_equipment"
+        acc_dep_role = "accumulated_depreciation_manufacturing_equipment"
+
+    elif asset_class in ("computer equipment",):
+        dep_role = "depreciation_expense_computer_equipment"
+        acc_dep_role = "accumulated_depreciation_computer_equipment"
+
+    elif asset_class in ("office equipment",):
+        dep_role = "depreciation_expense_office_equipment"
+        acc_dep_role = "accumulated_depreciation_office_equipment"
+
+    elif asset_class in ("furniture and fittings",):
+        dep_role = "depreciation_expense_furniture"
+        acc_dep_role = "accumulated_depreciation_furniture"
+
+    elif asset_class in ("tools and small equipment",):
+        dep_role = "depreciation_expense_tools"
+        acc_dep_role = "accumulated_depreciation_tools"
+
+    elif asset_class in ("leasehold improvements",):
+        dep_role = "depreciation_expense_leasehold_improvements"
+        acc_dep_role = "accumulated_depreciation_leasehold_improvements"
+
+    else:
+        # Do not silently fall back to generic PPE accounts.
         return []
 
     amt = (
