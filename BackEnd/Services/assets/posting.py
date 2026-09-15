@@ -7637,8 +7637,14 @@ ASSET_CLASS_DEPRECIATION_ROLES = {
 
 
 def resolve_depreciation_accounts(
-    cur, schema: str, company_id: int, asset: dict, *, persist=True
-) -> tuple[str | None, str | None]:
+    cur,
+    schema: str,
+    company_id: int,
+    asset: dict,
+    *,
+    persist=True,
+    return_names=False,
+) -> tuple:
     """
     Resolve system-generated depreciation/amortisation accounts.
 
@@ -7672,7 +7678,7 @@ def resolve_depreciation_accounts(
         if acc_dep and coa_exists(cur, schema, company_id, acc_dep)
         else None
     )
-
+    resolved_names = {}
     rou = is_rou_asset_record(asset)
 
     def ensure_required_role(role):
@@ -7687,7 +7693,16 @@ def resolve_depreciation_accounts(
             persist=persist,
         )
 
-        return (row.get("code") or "").strip() if row else None
+        if not row:
+            return None
+
+        code = (row.get("code") or "").strip() or None
+        name = (row.get("name") or "").strip()
+
+        if code and name:
+            resolved_names[code] = name
+
+        return code
 
     def ensure_optional_role(role):
         if not role:
@@ -7701,7 +7716,16 @@ def resolve_depreciation_accounts(
             persist=persist,
         )
 
-        return (row.get("code") or "").strip() if row else None
+        if not row:
+            return None
+
+        code = (row.get("code") or "").strip() or None
+        name = (row.get("name") or "").strip()
+
+        if code and name:
+            resolved_names[code] = name
+
+        return code
 
     def first_code_by_name(
         patterns,
@@ -7971,6 +7995,33 @@ def resolve_depreciation_accounts(
             ["%depreciation%"],
             section="Expense",
             is_contra=False,
+        )
+
+    if return_names:
+        for code in (dep_exp_code, acc_dep_code):
+            if code and code not in resolved_names:
+                cur.execute(
+                    _q(
+                        schema,
+                        """
+                        SELECT name
+                        FROM {schema}.coa
+                        WHERE company_id=%s
+                          AND code=%s
+                        LIMIT 1
+                        """
+                    ),
+                    (company_id, code),
+                )
+                row = cur.fetchone()
+                if row and row.get("name"):
+                    resolved_names[code] = row["name"]
+
+        return (
+            dep_exp_code,
+            acc_dep_code,
+            resolved_names.get(dep_exp_code),
+            resolved_names.get(acc_dep_code),
         )
 
     return dep_exp_code, acc_dep_code
@@ -8285,12 +8336,15 @@ def build_dep_preview_journal_lines(
     if amt <= 0:
         amt = Decimal("0.00")
 
-    dep_exp_code, acc_dep_code = resolve_depreciation_accounts(
-        cur,
-        schema,
-        company_id,
-        asset_row,
-        persist=False,
+    dep_exp_code, acc_dep_code, dep_exp_name, acc_dep_name = (
+        resolve_depreciation_accounts(
+            cur,
+            schema,
+            company_id,
+            asset_row,
+            persist=False,
+            return_names=True,
+        )
     )
 
     dep_exp_code = dep_exp_code or "MISSING_DEP_EXPENSE_ACCT"
@@ -8327,14 +8381,16 @@ def build_dep_preview_journal_lines(
         for row in fetchall(cur):
             account_names[row["code"]] = row["name"]
 
-    dep_exp_name = account_names.get(
-        dep_exp_code,
-        dep_exp_code,
+    dep_exp_name = (
+        account_names.get(dep_exp_code)
+        or dep_exp_name
+        or dep_exp_code
     )
 
-    acc_dep_name = account_names.get(
-        acc_dep_code,
-        acc_dep_code,
+    acc_dep_name = (
+        account_names.get(acc_dep_code)
+        or acc_dep_name
+        or acc_dep_code
     )
 
     return [

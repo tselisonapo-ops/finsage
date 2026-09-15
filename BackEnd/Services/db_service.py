@@ -65928,6 +65928,7 @@ class DatabaseService:
                 )
 
             return result
+        
     def upsert_coa_pool(self, rows):
         print("[DEBUG] ✅ using the ONLY upsert_coa_pool() version")
 
