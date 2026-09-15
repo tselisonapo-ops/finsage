@@ -8038,24 +8038,41 @@ def _first_coa_role(cur, schema: str, company_id: int, roles: list[str]) -> str 
 
 
 def _acc_dep_roles_for_asset(asset: dict) -> list[str]:
-    g = str(asset.get("asset_class_group") or asset.get("asset_class") or "").lower()
+    g = str(
+        asset.get("asset_class_group")
+        or asset.get("asset_class")
+        or ""
+    ).lower()
 
     if "building" in g or "land" in g:
         return [
             "accumulated_depreciation_buildings",
         ]
 
+    if "heavy vehicle" in g or "heavy vehicles" in g:
+        return [
+            "accumulated_depreciation_heavy_vehicles",
+            "accumulated_depreciation_motor_vehicles",
+            "accumulated_depreciation_equipment",
+        ]
+
+    if "truck" in g or "lorry" in g:
+        return [
+            "accumulated_depreciation_heavy_vehicles",
+            "accumulated_depreciation_motor_vehicles",
+            "accumulated_depreciation_equipment",
+        ]
+
+    if "vehicle" in g or "motor vehicle" in g or "motor vehicles" in g:
+        return [
+            "accumulated_depreciation_motor_vehicles",
+            "accumulated_depreciation_equipment",
+        ]
+
     if "furniture" in g or "fittings" in g:
         return [
             "accumulated_depreciation_furniture",
             "accumulated_depreciation_office_furniture",
-            "accumulated_depreciation_equipment",
-        ]
-
-    if "vehicle" in g or "truck" in g or "lorry" in g:
-        return [
-            "accumulated_depreciation_heavy_vehicles",
-            "accumulated_depreciation_motor_vehicles",
             "accumulated_depreciation_equipment",
         ]
 
