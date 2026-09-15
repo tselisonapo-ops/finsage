@@ -64947,6 +64947,526 @@ class DatabaseService:
 
         return count
 
+    def _provision_required_coa_account_from_pool(
+        self,
+        company_id: int,
+        requested_role: str,
+        *,
+        cur,
+    ) -> dict | None:
+        """
+        Provision a missing system/subledger posting account from
+        public.coa_pool.
+
+        The pool has no role column. Semantic roles are inferred through
+        _coa_role_from_text().
+
+        Specific roles may fall back to compatible generic roles, but
+        depreciation expense and accumulated depreciation are always kept
+        separate.
+        """
+
+        company_id = int(company_id)
+
+        requested_role = (
+            " ".join(str(requested_role or "").split())
+            .strip()
+            .lower()
+            .replace(" ", "_")
+        )
+
+        if not requested_role:
+            return None
+
+        schema = self.company_schema(company_id)
+
+        fallback_roles = {
+            "depreciation_expense_buildings": [
+                "depreciation_expense_buildings",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_plant_machinery": [
+                "depreciation_expense_plant_machinery",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_heavy_vehicles": [
+                "depreciation_expense_heavy_vehicles",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_motor_vehicles": [
+                "depreciation_expense_motor_vehicles",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_vehicles": [
+                "depreciation_expense_vehicles",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_mining_equipment": [
+                "depreciation_expense_mining_equipment",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_construction_equipment": [
+                "depreciation_expense_construction_equipment",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_manufacturing_equipment": [
+                "depreciation_expense_manufacturing_equipment",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_computer_equipment": [
+                "depreciation_expense_computer_equipment",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_office_equipment": [
+                "depreciation_expense_office_equipment",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_office_furniture": [
+                "depreciation_expense_office_furniture",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_furniture": [
+                "depreciation_expense_furniture",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_tools": [
+                "depreciation_expense_tools",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_leasehold_improvements": [
+                "depreciation_expense_leasehold_improvements",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_investment_property": [
+                "depreciation_expense_investment_property",
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense_ppe": [
+                "depreciation_expense_ppe",
+            ],
+            "depreciation_expense": [
+                "depreciation_expense",
+                "depreciation_expense_ppe",
+            ],
+
+            "accumulated_depreciation_buildings": [
+                "accumulated_depreciation_buildings",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_plant_machinery": [
+                "accumulated_depreciation_plant_machinery",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_heavy_vehicles": [
+                "accumulated_depreciation_heavy_vehicles",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_motor_vehicles": [
+                "accumulated_depreciation_motor_vehicles",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_vehicles": [
+                "accumulated_depreciation_vehicles",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_mining_equipment": [
+                "accumulated_depreciation_mining_equipment",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_construction_equipment": [
+                "accumulated_depreciation_construction_equipment",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_manufacturing_equipment": [
+                "accumulated_depreciation_manufacturing_equipment",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_computer_equipment": [
+                "accumulated_depreciation_computer_equipment",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_office_equipment": [
+                "accumulated_depreciation_office_equipment",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_office_furniture": [
+                "accumulated_depreciation_office_furniture",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_furniture": [
+                "accumulated_depreciation_furniture",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_tools": [
+                "accumulated_depreciation_tools",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_leasehold_improvements": [
+                "accumulated_depreciation_leasehold_improvements",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_investment_property": [
+                "accumulated_depreciation_investment_property",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation_ppe": [
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_depreciation": [
+                "accumulated_depreciation",
+                "accumulated_depreciation_ppe",
+            ],
+
+            "depreciation_expense_rou": [
+                "depreciation_expense_rou",
+                "depreciation_expense_ppe",
+            ],
+            "amortisation_expense_rou": [
+                "amortisation_expense_rou",
+                "amortisation_expense",
+            ],
+            "accumulated_depreciation_rou": [
+                "accumulated_depreciation_rou",
+                "accumulated_depreciation_ppe",
+            ],
+            "accumulated_amortization_rou": [
+                "accumulated_amortization_rou",
+                "accumulated_amortization",
+            ],
+        }
+
+        candidate_roles = fallback_roles.get(
+            requested_role,
+            [requested_role],
+        )
+
+        requested_is_accum = (
+            requested_role.startswith("accumulated_depreciation")
+            or requested_role.startswith("accumulated_amortization")
+            or requested_role.startswith("accumulated_amortisation")
+        )
+
+        requested_is_expense = (
+            requested_role.startswith("depreciation_expense")
+            or requested_role.startswith("amortisation_expense")
+            or requested_role.startswith("amortization_expense")
+        )
+
+        if requested_is_accum:
+            candidate_roles = [
+                r for r in candidate_roles
+                if (
+                    r.startswith("accumulated_depreciation")
+                    or r.startswith("accumulated_amortization")
+                    or r.startswith("accumulated_amortisation")
+                )
+            ]
+        elif requested_is_expense:
+            candidate_roles = [
+                r for r in candidate_roles
+                if (
+                    r.startswith("depreciation_expense")
+                    or r.startswith("amortisation_expense")
+                    or r.startswith("amortization_expense")
+                )
+            ]
+
+        cur.execute(
+            """
+            SELECT *
+            FROM public.coa_pool
+            WHERE COALESCE(posting, TRUE) = TRUE
+            AND template_code_scoped LIKE 'G::%'
+            """
+        )
+
+        pool_rows = cur.fetchall()
+        pool_columns = [d[0] for d in cur.description]
+
+        if not pool_rows:
+            raise ValueError(
+                "public.coa_pool contains no general posting accounts."
+            )
+
+        pool = []
+
+        for row in pool_rows:
+            item = (
+                dict(row)
+                if isinstance(row, dict)
+                else dict(zip(pool_columns, row))
+            )
+
+            semantic_role = ac._coa_role_from_text(
+                item.get("name", ""),
+                item.get("description", ""),
+                item.get("section", ""),
+                item.get("category", ""),
+                item.get("subcategory", ""),
+                item.get("standard", ""),
+            )
+
+            semantic_role = (
+                " ".join(str(semantic_role or "").split())
+                .strip()
+                .lower()
+                .replace(" ", "_")
+            )
+
+            item["_semantic_role"] = semantic_role
+            pool.append(item)
+
+        selected_role = None
+        candidates = []
+
+        for role_candidate in candidate_roles:
+            matches = [
+                row
+                for row in pool
+                if row.get("_semantic_role") == role_candidate
+            ]
+
+            if matches:
+                selected_role = role_candidate
+                candidates = matches
+                break
+
+        if not candidates:
+            raise ValueError(
+                f"No master COA account could be resolved for required "
+                f"posting role '{requested_role}'. "
+                f"Compatible pool roles checked: {candidate_roles}."
+            )
+
+        def _name_is_accumulated(name):
+            name_text = " ".join(
+                str(name or "").lower().split()
+            )
+
+            return any(
+                marker in name_text
+                for marker in (
+                    "accumulated depreciation",
+                    "accum depreciation",
+                    "accum dep",
+                    "accumulated amortization",
+                    "accumulated amortisation",
+                    "accum amort",
+                )
+            )
+
+        safe_candidates = []
+
+        for row in candidates:
+            name_is_accum = _name_is_accumulated(
+                row.get("name")
+            )
+
+            if requested_is_accum and not name_is_accum:
+                continue
+
+            if requested_is_expense and name_is_accum:
+                continue
+
+            safe_candidates.append(row)
+
+        candidates = safe_candidates
+
+        if not candidates:
+            raise ValueError(
+                f"Master COA pool contains semantic matches for "
+                f"'{requested_role}', but none has a compatible account name. "
+                "Expense and accumulated-depreciation roles are kept separate."
+            )
+
+        unique = []
+        seen = set()
+
+        for row in candidates:
+            identity = (
+                row.get("template_code_scoped")
+                or row.get("template_code")
+                or row.get("id")
+            )
+
+            if identity in seen:
+                continue
+
+            seen.add(identity)
+            unique.append(row)
+
+        candidates = unique
+
+        if len(candidates) > 1:
+            details = ", ".join(
+                (
+                    f"{row.get('name')}"
+                    f" | {row.get('template_code_scoped') or row.get('template_code') or row.get('id')}"
+                    f" | {row.get('_semantic_role')}"
+                )
+                for row in candidates
+            )
+
+            raise ValueError(
+                f"Multiple master COA accounts could satisfy required role "
+                f"'{requested_role}' via pool role '{selected_role}': {details}"
+            )
+
+        pool_row = candidates[0]
+
+        # ------------------------------------------------------------
+        # Existing company semantic account
+        # ------------------------------------------------------------
+        cur.execute(
+            f"""
+            SELECT *
+            FROM {schema}.coa
+            WHERE COALESCE(posting, TRUE) = TRUE
+            """
+        )
+
+        company_rows = cur.fetchall()
+        company_columns = [d[0] for d in cur.description]
+
+        semantic_matches = []
+
+        for row in company_rows:
+            company_row = (
+                dict(row)
+                if isinstance(row, dict)
+                else dict(zip(company_columns, row))
+            )
+
+            existing_role = (
+                " ".join(str(company_row.get("role") or "").split())
+                .strip()
+                .lower()
+                .replace(" ", "_")
+            )
+
+            if existing_role == requested_role:
+                semantic_matches.append(company_row)
+                continue
+
+            inferred_role = ac._coa_role_from_text(
+                company_row.get("name", ""),
+                company_row.get("description", ""),
+                company_row.get("section", ""),
+                company_row.get("category", ""),
+                company_row.get("subcategory", ""),
+                company_row.get("standard", ""),
+            )
+
+            inferred_role = (
+                " ".join(str(inferred_role or "").split())
+                .strip()
+                .lower()
+                .replace(" ", "_")
+            )
+
+            if inferred_role in candidate_roles:
+                semantic_matches.append(company_row)
+
+        if len(semantic_matches) == 1:
+            existing = semantic_matches[0]
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.coa
+                SET role = %s
+                WHERE id = %s
+                """,
+                (
+                    requested_role,
+                    existing.get("id"),
+                ),
+            )
+
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.coa
+                WHERE id = %s
+                """,
+                (existing.get("id"),),
+            )
+
+            row = cur.fetchone()
+
+            return (
+                dict(row)
+                if isinstance(row, dict)
+                else dict(zip([d[0] for d in cur.description], row))
+            )
+
+        if len(semantic_matches) > 1:
+            details = ", ".join(
+                f"{r.get('code')} | {r.get('name')} | {r.get('role')}"
+                for r in semantic_matches
+            )
+
+            raise ValueError(
+                f"Multiple existing company COA accounts could satisfy "
+                f"required role '{requested_role}': {details}"
+            )
+
+        # ------------------------------------------------------------
+        # Provision the selected general master account.
+        # insert_coa() is responsible for collision-safe reporting-code
+        # allocation, including cases such as G::1590 -> BS_NCA_1102.
+        # ------------------------------------------------------------
+        pool_payload = dict(pool_row)
+        pool_payload.pop("_semantic_role", None)
+        pool_payload["role"] = requested_role
+
+        self.insert_coa(
+            company_id,
+            [pool_payload],
+            dedupe_after=False,
+            cur=cur,
+        )
+
+        # ------------------------------------------------------------
+        # Verify
+        # ------------------------------------------------------------
+        cur.execute(
+            f"""
+            SELECT *
+            FROM {schema}.coa
+            WHERE COALESCE(posting, TRUE) = TRUE
+            AND LOWER(TRIM(COALESCE(role, ''))) = %s
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (requested_role,),
+        )
+
+        row = cur.fetchone()
+
+        if not row:
+            raise ValueError(
+                f"COA provisioning completed for role '{requested_role}', "
+                f"but the account could not be verified in {schema}.coa."
+            )
+
+        result = (
+            dict(row)
+            if isinstance(row, dict)
+            else dict(zip([d[0] for d in cur.description], row))
+        )
+
+        current_app.logger.info(
+            "Provisioned required COA account: company=%s role=%s "
+            "pool_role=%s name=%s code=%s",
+            company_id,
+            requested_role,
+            selected_role,
+            result.get("name"),
+            result.get("code"),
+        )
+
+        return result
+
     def ensure_required_coa_account(
         self,
         company_id: int,
@@ -65263,7 +65783,7 @@ class DatabaseService:
                 pool_subcategory = str(row.get("subcategory") or "")
                 pool_standard = str(row.get("standard") or "")
 
-                inferred_role = self._coa_role_from_text(
+                inferred_role = ac._coa_role_from_text(
                     pool_name,
                     pool_description,
                     pool_section,
