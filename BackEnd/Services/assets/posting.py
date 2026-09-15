@@ -7841,12 +7841,6 @@ def resolve_depreciation_accounts(
     asset_text = get_asset_text()
     asset_account_name = get_asset_account_name().lower()
 
-    required_dep_role = None
-    required_acc_role = None
-
-    if required_roles:
-        required_dep_role, required_acc_role = required_roles
-
     ROU_EXCLUDES = [
         "%right-of-use%",
         "%right of use%",
@@ -7854,20 +7848,31 @@ def resolve_depreciation_accounts(
     ]
 
     # -------------------------------------------------
-    # Explicit depreciation roles supplied by the
-    # depreciation journal builder
+    # AUTHORITATIVE ROLES SUPPLIED BY THE
+    # DEPRECIATION JOURNAL BUILDER
     # -------------------------------------------------
+    #
+    # When the builder has already classified the asset,
+    # those roles are authoritative. Do not allow an asset's
+    # old/generic account codes or the generic resolver below
+    # to override the class-specific decision.
+    #
     if required_roles:
         required_dep_role, required_acc_dep_role = required_roles
 
-        if not dep_exp_code and required_dep_role:
-            dep_exp_code = ensure_required_role(required_dep_role)
+        dep_exp_code = (
+            ensure_required_role(required_dep_role)
+            if required_dep_role
+            else None
+        )
 
-        if not acc_dep_code and required_acc_dep_role:
-            acc_dep_code = ensure_required_role(required_acc_dep_role)
+        acc_dep_code = (
+            ensure_required_role(required_acc_dep_role)
+            if required_acc_dep_role
+            else None
+        )
 
-        if dep_exp_code and acc_dep_code:
-            return finish()
+        return finish()
         
     # -------------------------------------------------
     # 1) ROU branch
