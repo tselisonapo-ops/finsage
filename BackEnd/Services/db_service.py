@@ -64953,6 +64953,7 @@ class DatabaseService:
         requested_role: str,
         *,
         cur,
+        strict_role=False,
     ) -> dict | None:
         """
         Provision a missing system/subledger posting account from
@@ -65135,10 +65136,13 @@ class DatabaseService:
             ],
         }
 
-        candidate_roles = fallback_roles.get(
-            requested_role,
-            [requested_role],
-        )
+        if strict_role:
+            candidate_roles = [requested_role]
+        else:
+            candidate_roles = fallback_roles.get(
+                requested_role,
+                [requested_role],
+            )
 
         requested_is_accum = (
             requested_role.startswith("accumulated_depreciation")
@@ -65476,6 +65480,7 @@ class DatabaseService:
         cur=None,
         required=True,
         persist=True,
+        strict_role=False,
     ) -> dict | None:
         """
         Guarantee or resolve a posting account for the requested semantic role.
@@ -65638,10 +65643,13 @@ class DatabaseService:
                     "accumulated_depreciation_ppe",
             }
 
-            candidate_roles = [requested_role]
-            fallback_role = fallback_roles.get(requested_role)
-            if fallback_role and fallback_role not in candidate_roles:
-                candidate_roles.append(fallback_role)
+            if strict_role:
+                candidate_roles = [requested_role]
+            else:
+                candidate_roles = [requested_role]
+                fallback_role = fallback_roles.get(requested_role)
+                if fallback_role and fallback_role not in candidate_roles:
+                    candidate_roles.append(fallback_role)
 
             _cur.execute(
                 """
@@ -65786,6 +65794,7 @@ class DatabaseService:
                     company_id,
                     requested_role,
                     cur=_cur,
+                    strict_role=strict_role,
                 )
 
             return _preview_pool_account(_cur)

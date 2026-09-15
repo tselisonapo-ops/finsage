@@ -7692,6 +7692,7 @@ def resolve_depreciation_accounts(
             cur=cur,
             required=True,
             persist=persist,
+            strict_role=True,
         )
 
         if not row:
