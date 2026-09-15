@@ -65878,7 +65878,7 @@ class DatabaseService:
 
             # Use the normal COA normalization logic so preview gets the same
             # collision-safe reporting code that actual provisioning would get.
-            normalized = self._normalize_coa_rows_codes(
+            normalized = _normalize_coa_rows_codes(
                 [proposed],
                 reserved_codes=set(),
                 existing_codes=existing_codes,
