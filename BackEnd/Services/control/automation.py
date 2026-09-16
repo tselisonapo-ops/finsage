@@ -59,7 +59,7 @@ class AutomationService:
         if not sla:
             return ticket
 
-        self.db.execute(
+        self.db.execute_sql(
             """
             UPDATE control.tickets
             SET sla_id = %s
@@ -136,7 +136,7 @@ class AutomationService:
         )
 
         if existing:
-            self.db.execute(
+            self.db.execute_sql(
                 """
                 UPDATE control.system_events
                 SET ticket_id = %s
@@ -183,7 +183,7 @@ class AutomationService:
         if not ticket_id:
             return None
 
-        self.db.execute(
+        self.db.execute_sql(
             """
             UPDATE control.system_events
             SET ticket_id = %s
@@ -378,7 +378,7 @@ class AutomationService:
 
         new_sla = self.get_sla(next_priority)
 
-        self.db.execute(
+        self.db.execute_sql(
             """
             UPDATE control.tickets
             SET
@@ -525,7 +525,7 @@ class AutomationService:
                     (completed - started).total_seconds() * 1000
                 )
 
-                self.db.execute(
+                self.db.execute_sql(
                     """
                     UPDATE control.automation_runs
                     SET
@@ -543,7 +543,7 @@ class AutomationService:
                     ),
                 )
 
-                self.db.execute(
+                self.db.execute_sql(
                     """
                     UPDATE control.automation_jobs
                     SET
@@ -575,7 +575,7 @@ class AutomationService:
                     (completed - started).total_seconds() * 1000
                 )
 
-                self.db.execute(
+                self.db.execute_sql(
                     """
                     UPDATE control.automation_runs
                     SET

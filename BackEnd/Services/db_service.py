@@ -131013,6 +131013,29 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not task_name:
             raise ValueError("task_name is required")
 
+        existing_task = self.fetch_one(
+            f"""
+            SELECT id, task_name
+            FROM {schema}.project_tasks
+            WHERE company_id = %s
+            AND project_id = %s
+            AND LOWER(TRIM(task_name)) = LOWER(TRIM(%s))
+            AND COALESCE(is_archived, FALSE) = FALSE
+            LIMIT 1
+            """,
+            (
+                int(company_id),
+                int(project_id),
+                task_name,
+            ),
+        )
+
+        if existing_task:
+            raise ValueError(
+                f"TASK_ALREADY_EXISTS: A task named '{task_name}' already exists "
+                f"for this project."
+            )
+
         if task_type not in {"phase", "task", "milestone"}:
             raise ValueError("Invalid task_type")
 

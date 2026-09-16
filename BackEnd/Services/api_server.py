@@ -169,7 +169,6 @@ from BackEnd.Services.reporting.reporting_helpers import (
 )
 from BackEnd.Services.service_control.service_control import ControlService
 from BackEnd.Services.utils.industry_utils import normalize_industry_pair, slugify, TEMPLATE_INDUSTRY_ALIASES
-from BackEnd.Services.service_control.service_control import ControlService
 from BackEnd.Services.industry_profiles import get_industry_profile
 from BackEnd.Services.reporting.reporting_helpers import build_income_statement_template, choose_layout
 from BackEnd.Services.utils.view_token import create_invoice_pdf_token, verify_invoice_pdf_token, make_invoice_view_token, verify_quote_pdf_token, create_quote_pdf_token
@@ -389,6 +388,13 @@ def control_test_error():
 
 @app.errorhandler(Exception)
 def handle_any_exception(e):
+    current_app.logger.error(
+        "[GLOBAL ERROR HANDLER] %s %s -> %s: %s",
+        request.method,
+        request.path,
+        e.__class__.__name__,
+        str(e),
+    )
     if isinstance(e, HTTPException):
         status_code = e.code or 500
 
