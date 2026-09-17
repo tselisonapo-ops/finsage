@@ -39376,11 +39376,11 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
     try {
       const [paymentsRes, scheduleRes] = await Promise.all([
         window.apiFetch(
-          window.endpoints.leases.payments.list(cid, leaseId),
+          ENDPOINTS.leases.payments.list(cid, leaseId),
           { method: "GET" }
         ),
         window.apiFetch(
-          window.endpoints.leases.schedule.list(cid, leaseId),
+          ENDPOINTS.leases.listSchedule(cid, leaseId),
           { method: "GET" }
         ),
       ]);
@@ -39410,7 +39410,10 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
     } catch (e) {
       clearInterval(loadingTimer);
 
-      console.error("Failed to load lease payments & amortizations:", e);
+      console.error(
+        "Failed to load lease payments & amortizations:",
+        e
+      );
 
       showMsg(
         msgEl,
@@ -39418,6 +39421,7 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
       );
     }
   }
+
   // ============================================================
   // MONTHLY DUE TAB: filters + table + post actions
   // ============================================================
