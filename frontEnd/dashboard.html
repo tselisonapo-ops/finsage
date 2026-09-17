@@ -30068,7 +30068,8 @@ window.safeRedirect = function (url, mode = "href") {
 <script>
 (() => {
   const protectedModals = [
-    "faSettingsModal"
+    "faSettingsModal",
+    "leaseWizardDrawer"
   ];
 
   function protectModals() {
@@ -30096,7 +30097,7 @@ window.safeRedirect = function (url, mode = "href") {
       subtree: true
     });
 
-    console.log("[Modal Guard] watching protected modals");
+    console.log("[Modal Guard] watching protected modals:", protectedModals);
   });
 })();
 </script>

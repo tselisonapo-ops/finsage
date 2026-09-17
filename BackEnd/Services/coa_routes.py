@@ -117,6 +117,101 @@ def _get_coa_normalised(rows: list[dict]):
         "role": (r.get("role") or "").strip(),
         "is_contra": bool(r.get("is_contra", False)),
     } for r in (rows or [])]
+
+def _validate_coa_specialist_metadata(
+    *,
+    category: str,
+    role: str | None,
+    code: str | None,
+    standard: str | None,
+    cf_bucket: str | None,
+) -> str | None:
+    category_l = str(category or "").strip().lower()
+    role_l = str(role or "").strip().lower()
+    code_u = str(code or "").strip().upper()
+    standard_u = str(standard or "").strip().upper()
+    bucket_l = str(cf_bucket or "").strip().lower()
+
+    is_maintenance_or_repair = (
+        role_l in {"maintenance_expense", "repair_expense"}
+        or "maintenance" in role_l
+        or "repair" in role_l
+        or "upkeep" in role_l
+    )
+
+    is_expense = (
+        category_l == "expense"
+        or code_u.startswith("PL_")
+    )
+
+    # These buckets are specialist accounting-standard buckets.
+    bucket_standard = {
+        "ppe": "IAS 16",
+        "intangible": "IAS 38",
+        "investment_property": "IAS 40",
+        "held_for_sale": "IFRS 5",
+        "rou_asset": "IFRS 16",
+        "lease_rou_accum_depr": "IFRS 16",
+        "lease_receivable": "IFRS 16",
+    }
+
+    required_standard = bucket_standard.get(bucket_l)
+
+    if required_standard:
+        # A specialist asset bucket must always carry its standard.
+        if not standard_u:
+            return (
+                f"Accounting standard tagging is required for cf_bucket "
+                f"'{bucket_l}'. Expected standard: {required_standard}."
+            )
+
+        # Prevent a bucket/standard mismatch.
+        if standard_u != required_standard:
+            return (
+                f"Invalid COA metadata: cf_bucket '{bucket_l}' requires "
+                f"standard '{required_standard}', not '{standard_u}'."
+            )
+
+        # Prevent expense accounts from masquerading as specialist assets.
+        if is_maintenance_or_repair or is_expense:
+            return (
+                "Maintenance, repair, and expense accounts cannot use "
+                f"specialist asset cf_bucket '{bucket_l}'."
+            )
+
+    # Explicit specialist standards must also have a compatible bucket
+    # when a specialist bucket is supplied.
+    specialist_standards = {
+        "IAS 16",
+        "IAS 38",
+        "IAS 40",
+        "IFRS 5",
+        "IFRS 16",
+    }
+
+    if standard_u in specialist_standards and bucket_l:
+        compatible_buckets = {
+            "IAS 16": {"ppe"},
+            "IAS 38": {"intangible"},
+            "IAS 40": {"investment_property"},
+            "IFRS 5": {"held_for_sale"},
+            "IFRS 16": {
+                "rou_asset",
+                "lease_rou_accum_depr",
+                "lease_receivable",
+            },
+        }
+
+        allowed = compatible_buckets.get(standard_u, set())
+
+        if bucket_l not in allowed:
+            return (
+                f"Invalid COA metadata: standard '{standard_u}' is not "
+                f"compatible with cf_bucket '{bucket_l}'."
+            )
+
+    return None
+
 # ------------------------------------------------------------
 # COA LIST
 # ------------------------------------------------------------
@@ -223,6 +318,22 @@ def create_company_coa_account(cid: int):
 
         reporting_description = (data.get("reporting_description") or "").strip()
         posting_rules         = (data.get("posting_rules") or "").strip()
+
+        metadata_error = _validate_coa_specialist_metadata(
+            category=category,
+            role=role,
+            code=requested_code or data.get("code"),
+            standard=standard_value,
+            cf_bucket=cf_bucket,
+        )
+
+        if metadata_error:
+            return jsonify({
+                "ok": False,
+                "error": metadata_error,
+                "field": "standard",
+                "cf_bucket": cf_bucket,
+            }), 400
 
         schema = f"company_{company_id}"
 
@@ -373,6 +484,29 @@ def update_company_coa_account(cid: int, coa_id: int):
         )
         if not before:
             return jsonify({"ok": False, "error": "Account not found"}), 404
+
+        merged = dict(before)
+        merged.update(data)
+
+        metadata_error = _validate_coa_specialist_metadata(
+            category=merged.get("category"),
+            role=merged.get("role"),
+            code=merged.get("code"),
+            standard=(
+                merged.get("ifrs_tag")
+                or merged.get("standard")
+                or ""
+            ),
+            cf_bucket=merged.get("cf_bucket"),
+        )
+
+        if metadata_error:
+            return jsonify({
+                "ok": False,
+                "error": metadata_error,
+                "field": "standard",
+                "cf_bucket": merged.get("cf_bucket"),
+            }), 400
 
         updated = db_service.update_coa_account(company_id, coa_id, data)
         if not updated:
