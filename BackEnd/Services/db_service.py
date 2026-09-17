@@ -122311,7 +122311,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             if settlement_pattern in {"billing_before_revenue", "cash_before_service", "cash_before_revenue"}:
                 # Update billed_to_date normally
-                cur.execute("""
+                cur.execute(f"""
                     UPDATE {schema}.revenue_contracts
                     SET billed_to_date = COALESCE((
                             SELECT SUM(amount)
@@ -122324,7 +122324,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 """, (contract_id, contract_id))
             else:
                 # For revenue-before-billing, billed_to_date should not exceed recognized revenue
-                cur.execute("""
+                cur.execute(f"""
                     UPDATE {schema}.revenue_contracts
                     SET billed_to_date = LEAST(
                             COALESCE((

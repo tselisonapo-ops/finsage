@@ -175,6 +175,7 @@ from BackEnd.Services.utils.view_token import create_invoice_pdf_token, verify_i
 from BackEnd.Services.periods import parse_date_maybe
 from BackEnd.Services.reporting.statement_renderer import render_statement_html
 from BackEnd.Services.config import Config
+from BackEnd.Services.control.exception_handler import ControlExceptionHandler
 # ────────────────────────────────────────────────────────────────
 # Blueprints
 # ────────────────────────────────────────────────────────────────
@@ -346,6 +347,9 @@ print(f"[BOOT] Signup debug log: {signup_log_path}")
 bank_service = BankService(db_service)
 control_service = ControlService(db_service)
 
+control_exception_handler = ControlExceptionHandler(control_service)
+app.logger.addHandler(control_exception_handler)
+
 origins = app.config.get("FRONTEND_ORIGINS", [])
 print("[BOOT] FRONTEND_ORIGINS:", origins)
 
@@ -395,6 +399,7 @@ def handle_any_exception(e):
         e.__class__.__name__,
         str(e),
     )
+
     if isinstance(e, HTTPException):
         status_code = e.code or 500
 
@@ -429,6 +434,10 @@ def handle_any_exception(e):
             "error": e.description,
             "type": e.__class__.__name__,
         }), status_code
+
+    # Prevent the centralized logging handler from recording
+    # this same exception a second time.
+    g._control_error_already_recorded = True
 
     # Log the original unhandled exception exactly as before.
     current_app.logger.exception("Unhandled server error")
