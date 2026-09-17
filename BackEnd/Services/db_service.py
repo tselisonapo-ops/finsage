@@ -97162,6 +97162,41 @@ class DatabaseService:
 
         return inv
 
+    def lock_invoice_for_posting(self, company_id: int, invoice_id: int):
+        """
+        Atomically lock the invoice row for the duration of the current DB
+        transaction and return its current state.
+
+        IMPORTANT:
+        The caller must execute the subsequent posting/update operations
+        in the same database transaction/connection.
+        """
+        return self.fetch_one(
+            f"""
+            SELECT
+                id,
+                status,
+                posted_journal_id,
+                customer_id,
+                revenue_contract_id,
+                number,
+                currency,
+                subtotal_amount,
+                discount_amount,
+                other_amount,
+                vat_amount,
+                total_amount
+            FROM company_{int(company_id)}.invoices
+            WHERE company_id = %s
+            AND id = %s
+            FOR UPDATE
+            """,
+            (
+                int(company_id),
+                int(invoice_id),
+            ),
+        )
+        
     def post_invoice_to_gl(
         self,
         company_id: int,

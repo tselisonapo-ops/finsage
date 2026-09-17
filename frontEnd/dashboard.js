@@ -23396,15 +23396,16 @@ function detectFutureModuleHint(acct) {
     acct.reporting_description,
   ].join(" "));
 
-  const code = String(acct.code || acct.account_code || "").toUpperCase();
+  const code = String(acct.code || acct.account_code || "").trim().toUpperCase();
   const category = String(acct.category || "").trim().toLowerCase();
   const role = String(acct.role || "").trim().toLowerCase();
   const standard = String(acct.standard || "").trim().toUpperCase();
+  const cfBucket = String(acct.cf_bucket || "").trim().toLowerCase();
 
   // ════════════════════════════════════════════════════
-  // EXCLUSIONS (check BEFORE positive matches)
+  // EXCLUSIONS
   // ════════════════════════════════════════════════════
-  
+
   const isMaintenanceOrRepair =
     role === "maintenance_expense" ||
     role === "repair_expense" ||
@@ -23417,13 +23418,10 @@ function detectFutureModuleHint(acct) {
     code.startsWith("PL_");
 
   // ════════════════════════════════════════════════════
-  // LOAN SUBLEDGER DETECTION (MUST come before IFRS 9!)
-  // 
-  // These are DISTINCT from IFRS 9 financial instruments.
-  // Loan accounts have their own register/screen.
-  // Based on _coa_role_from_text() lines 1342-1478
+  // LOAN SUBLEDGER
+  // MUST come before IFRS 9
   // ════════════════════════════════════════════════════
-  
+
   const loanSubledgerRoles = [
     "loan_payable_current",
     "loan_payable_noncurrent",
@@ -23434,77 +23432,75 @@ function detectFutureModuleHint(acct) {
     "loan_fees_expense",
   ];
 
-  const isLoanAccount = 
+  const isLoanAccount =
     loanSubledgerRoles.includes(role) ||
-    // Additional text-based detection for loan-specific accounts
     (txt.includes("loan payable") && !role.startsWith("ifrs9")) ||
     (txt.includes("loan interest") && !role.startsWith("ifrs9")) ||
-    (txt.includes("borrowing") && (
-      role.includes("loan_") || 
-      txt.includes("loan fee") || 
-      txt.includes("deferred loan")
-    ));
+    (
+      txt.includes("borrowing") &&
+      (
+        role.includes("loan_") ||
+        txt.includes("loan fee") ||
+        txt.includes("deferred loan")
+      )
+    );
 
   if (isLoanAccount) {
-    console.log("[AD DETECT] → loan", { code: acct.code, name: acct.name, role: acct.role });
+    console.log("[AD DETECT] → loan", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+    });
     return "loan";
   }
 
   // ════════════════════════════════════════════════════
-  // IFRS 9 FINANCIAL INSTRUMENTS DETECTION
-  //
-  // These come AFTER loan roles have been caught.
-  // Only true IFRS 9 financial instrument accounts here.
-  // Based on _coa_role_from_text() lines 1480-1640+
+  // IFRS 9 FINANCIAL INSTRUMENTS
   // ════════════════════════════════════════════════════
-  
+
   const ifrs9InstrumentRoles = [
-    // ECL / Impairment
     "ifrs9_ecl_allowance_trade_receivables",
     "ifrs9_ecl_impairment_loss",
     "ifrs9_bad_debt_writeoff",
-    
-    // Financial Assets - FVOCI
     "ifrs9_fair_value_oci_reserve",
     "ifrs9_financial_asset_fvoci",
-    "deferred_tax_fvoci_reserve",  // OCI reserve from FVOCI reclass
-    
-    // Financial Assets - FVPL
+    "deferred_tax_fvoci_reserve",
     "ifrs9_financial_asset_fvpl",
     "ifrs9_fair_value_loss_fvpl",
-    
-    // Interest Income (investment securities, NOT loan interest)
     "ifrs9_interest_income_amortised_cost",
-    
-    // Interest Expense (generic only - excludes "loan" keyword per Python fn)
     "ifrs9_interest_expense_amortised_cost",
-    
-    // Modification / Derecognition
     "ifrs9_modification_gain",
     "ifrs9_modification_loss",
     "ifrs9_derecognition_gain",
     "ifrs9_derecognition_loss",
-    
-    // Financial Liabilities (amortised cost, excluding loans)
     "ifrs9_financial_liability_amortised_cost",
   ];
 
-  const isIFRS9Instrument = 
-    ifrs9InstrumentRoles.some(r => role === r || role.startsWith(r.replace("_gain", "").replace("_loss", ""))) ||
+  const isIFRS9Instrument =
+    ifrs9InstrumentRoles.some(
+      r =>
+        role === r ||
+        role.startsWith(
+          r.replace("_gain", "").replace("_loss", "")
+        )
+    ) ||
     (standard === "IFRS 9" && !isLoanAccount) ||
     (role.startsWith("ifrs9_") && !isLoanAccount);
 
   if (isIFRS9Instrument) {
-    console.log("[AD DETECT] → ifrs9", { code: acct.code, name: acct.name, role: acct.role });
+    console.log("[AD DETECT] → ifrs9", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+    });
     return "ifrs9";
   }
 
   // ════════════════════════════════════════════════════
-  // PAYROLL DETECTION (IAS 19)
+  // PAYROLL / IAS 19
   // ════════════════════════════════════════════════════
-  
+
   const payrollRoles = [
-    // Payables
     "payroll_bonus_payable",
     "payroll_leave_provision",
     "payroll_net_salary_payable",
@@ -23514,14 +23510,8 @@ function detectFutureModuleHint(acct) {
     "payroll_termination_benefit_liability",
     "payroll_defined_benefit_liability",
     "payroll_long_term_benefit_liability",
-    
-    // Assets
     "payroll_defined_benefit_asset",
-    
-    // OCI
     "payroll_defined_benefit_oci",
-    
-    // Expenses
     "payroll_salary_expense",
     "payroll_employer_contribution_expense",
     "payroll_bonus_expense",
@@ -23530,53 +23520,56 @@ function detectFutureModuleHint(acct) {
     "payroll_defined_benefit_expense",
     "payroll_long_term_benefit_expense",
     "payroll_termination_benefit_expense",
-    
-    // Employee receivables (advance from employee)
     "employee_salary_advance_receivable",
     "employee_loans_receivable",
   ];
 
-  const isPayrollAccount = 
+  const isPayrollAccount =
     payrollRoles.includes(role) ||
     role.startsWith("payroll_") ||
     standard === "IAS 19" ||
     (txt.includes("payroll") && !txt.includes("loan"));
 
   if (isPayrollAccount) {
-    console.log("[AD DETECT] → payroll", { code: acct.code, name: acct.name, role: acct.role });
+    console.log("[AD DETECT] → payroll", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+    });
     return "payroll";
   }
 
   // ════════════════════════════════════════════════════
-  // DEFERRED TAX DETECTION (IAS 12)
+  // DEFERRED TAX / IAS 12
   // ════════════════════════════════════════════════════
-  
+
   const deferredTaxRoles = [
     "deferred_tax_fvoci_reserve",
     "deferred_tax_revaluation_reserve",
-    // Add more deferred tax roles as needed from your COA
   ];
 
-  const isDeferredTax = 
+  const isDeferredTax =
     deferredTaxRoles.includes(role) ||
     role.startsWith("deferred_tax") ||
     standard === "IAS 12" ||
     txt.includes("deferred tax");
 
   if (isDeferredTax) {
-    console.log("[AD DETECT] → deferred_tax", { code: acct.code, name: acct.name, role: acct.role });
+    console.log("[AD DETECT] → deferred_tax", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+    });
     return "deferred_tax";
   }
 
   // ════════════════════════════════════════════════════
-  // IAS 41 AGRICULTURE DETECTION
-  //
-  // Must run before generic inventory, sales, fair-value and PPE rules
-  // Based on _coa_role_from_text() lines 42-270+
+  // IAS 41 AGRICULTURE
+  // MUST come before generic asset routing
   // ════════════════════════════════════════════════════
-  
+
   const isIAS41 = standard === "IAS 41";
-  
+
   const ias41BiologicalAssetRoles = [
     "ias41_biological_asset_noncurrent",
     "ias41_biological_asset_current",
@@ -23618,69 +23611,221 @@ function detectFutureModuleHint(acct) {
     "ias41_support_service_revenue",
   ];
 
-  const isIAS41Account = 
+  const isIAS41Account =
     isIAS41 ||
     ias41BiologicalAssetRoles.includes(role) ||
     ias41ProduceInventoryRoles.includes(role) ||
     ias41IncomeRoles.includes(role) ||
     role.startsWith("ias41_") ||
-    // Text-based detection matching Python function
     (txt.includes("biological asset") && !txt.includes("non-current")) ||
-    (txt.includes("growing crops") || txt.includes("growing crop")) ||
+    txt.includes("growing crops") ||
+    txt.includes("growing crop") ||
     (txt.includes("livestock") && txt.includes("biological")) ||
-    (txt.includes("agricultural produce")) ||
+    txt.includes("agricultural produce") ||
     (txt.includes("fair value gain") && txt.includes("biological"));
 
   if (isIAS41Account) {
-    console.log("[AD DETECT] → ias41", { code: acct.code, name: acct.name, role: acct.role, standard: acct.standard });
+    console.log("[AD DETECT] → ias41", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+      standard: acct.standard,
+    });
     return "ias41";
   }
 
   // ════════════════════════════════════════════════════
-  // PPE DETECTION (with exclusions)
+  // COA METADATA — SPECIALIST ASSET ROUTING
+  //
+  // standard + cf_bucket are authoritative.
+  // Do NOT use account-name text to classify PPE,
+  // ROU, intangible, investment property, etc.
   // ════════════════════════════════════════════════════
-  
-  const isPPE =
-    (txt.includes("property plant") ||
-     txt.includes("equipment") ||
-     txt.includes("ppe") ||
-     txt.includes("motor vehicle") ||
-     txt.includes("vehicles") ||
-     txt.includes("computer equipment") ||
-     txt.includes("furniture") ||
-     txt.includes("machinery")) &&
-    !isMaintenanceOrRepair &&
-    !isExpenseCategory;
 
-  const isLease =
-    txt.includes("lease") ||
-    txt.includes("right-of-use") ||
-    txt.includes("rou") ||
-    standard === "IFRS 16";
+  const SUPPORTED_ASSET_STANDARDS = new Set([
+    "IAS 16",
+    "IAS 38",
+    "IAS 40",
+    "IFRS 5",
+    "IFRS 16",
+  ]);
+
+  const isIFRS16 =
+    standard === "IFRS 16" ||
+    (
+      !isMaintenanceOrRepair &&
+      !isExpenseCategory &&
+      (
+        cfBucket === "rou_asset" ||
+        cfBucket === "lease_rou_accum_depr" ||
+        cfBucket === "lease_receivable"
+      )
+    );
+
+  const isIAS40 =
+    standard === "IAS 40" ||
+    (
+      !isMaintenanceOrRepair &&
+      !isExpenseCategory &&
+      cfBucket === "investment_property"
+    );
+
+  const isIAS38 =
+    standard === "IAS 38" ||
+    (
+      !isMaintenanceOrRepair &&
+      !isExpenseCategory &&
+      (
+        cfBucket === "intangible" ||
+        role === "amortisation_expense"
+      )
+    );
+
+  const isIAS16 =
+    standard === "IAS 16" ||
+    (
+      !isMaintenanceOrRepair &&
+      !isExpenseCategory &&
+      (
+        cfBucket === "ppe" ||
+        role.startsWith("ppe_") ||
+        role.startsWith("accumulated_depreciation_")
+      )
+    );
+
+  const isIFRS5 =
+    standard === "IFRS 5" ||
+    (
+      !isMaintenanceOrRepair &&
+      !isExpenseCategory &&
+      cfBucket === "held_for_sale"
+    );
+
+  const isDepreciationRelated =
+    category === "accumulated depreciation" ||
+    role.startsWith("accumulated_depreciation_") ||
+    cfBucket === "lease_rou_accum_depr";
+
+  const isImpairmentRelated =
+    role.includes("impairment") ||
+    cfBucket.includes("impairment");
+
+  const isSpecialistAssetAccount =
+    isIFRS16 ||
+    isIAS40 ||
+    isIAS38 ||
+    isIAS16 ||
+    isIFRS5 ||
+    isDepreciationRelated ||
+    isImpairmentRelated;
+
+  // Unsupported standard
+  if (
+    isSpecialistAssetAccount &&
+    standard &&
+    !SUPPORTED_ASSET_STANDARDS.has(standard)
+  ) {
+    console.warn("[AD DETECT] → unsupported_standard", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+      role: acct.role,
+    });
+
+    return "unsupported_standard";
+  }
+
+  // ════════════════════════════════════════════════════
+  // SPECIALIST ROUTING
+  //
+  // IFRS 16 MUST come before IAS 16.
+  // ════════════════════════════════════════════════════
+
+  if (isIFRS16) {
+    console.log("[AD DETECT] → lease", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+    });
+    return "lease";
+  }
+
+  if (isIAS40) {
+    console.log("[AD DETECT] → investment_property", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+    });
+    return "investment_property";
+  }
+
+  if (isIAS38) {
+    console.log("[AD DETECT] → amort", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+    });
+    return "amort";
+  }
+
+  if (isIFRS5) {
+    console.log("[AD DETECT] → held_for_sale", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+    });
+    return "held_for_sale";
+  }
+
+  if (isIAS16) {
+    console.log("[AD DETECT] → ppe", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+    });
+    return "ppe";
+  }
+
+  // Related depreciation / impairment routing
+  if (isDepreciationRelated || isImpairmentRelated) {
+    if (standard === "IFRS 16") return "lease";
+    if (standard === "IAS 16") return "ppe";
+    if (standard === "IAS 38") return "amort";
+    if (standard === "IAS 40") return "investment_property";
+  }
+
+  // ════════════════════════════════════════════════════
+  // REVENUE / IFRS 15
+  // ════════════════════════════════════════════════════
 
   const isRevenue =
     code.startsWith("PL_REV") &&
     category.includes("revenue") &&
     (
-      role === "CONTRACT_REVENUE" ||
+      role === "contract_revenue" ||
       standard === "IFRS 15"
     );
 
-  const isAmort =
-    txt.includes("amort") ||
-    txt.includes("intangible");
-
-  console.log("[AD DETECT]", {
-    code: acct.code,
-    name: acct.name,
-    role: acct.role,
-    roleLower: role,
-  });
+  if (isRevenue) {
+    console.log("[AD DETECT] → revenue", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+      standard: acct.standard,
+    });
+    return "revenue";
+  }
 
   // ════════════════════════════════════════════════════
-  // ACCRUALS & DEFERRALS DETECTION
+  // ACCRUALS & DEFERRALS
   // ════════════════════════════════════════════════════
-  
+
   const adRoles = [
     "prepaid_expense",
     "deferred_expense",
@@ -23709,18 +23854,24 @@ function detectFutureModuleHint(acct) {
     txt.includes("received in advance");
 
   if (isAccrualDeferralAccount) {
+    console.log("[AD DETECT] → accrual_deferral", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+    });
     return "accrual_deferral";
   }
 
-  // Return detections in priority order
-  if (isPPE) return "ppe";
-  if (isLease) return "lease";
-  if (isAmort) return "amort";
-  if (isRevenue) return "revenue";
+  console.log("[AD DETECT] → none", {
+    code: acct.code,
+    name: acct.name,
+    role: acct.role,
+    standard: acct.standard,
+    cf_bucket: acct.cf_bucket,
+  });
 
   return null;
 }
-
 
 function getPostingMode(moduleKey, ctx = {}) {
   const companyId =
@@ -23977,22 +24128,34 @@ async function openJournalModulePrompt({ hint, acct }) {
 window.openJournalModulePrompt = openJournalModulePrompt;
 
 async function redirectJournalGuardToModule({ hint, acct, side }) {
-  // ─── Existing Handlers ──────────────────────────────────
-  
+  // ════════════════════════════════════════════════════
+  // IAS 16 — PROPERTY, PLANT & EQUIPMENT
+  // ════════════════════════════════════════════════════
+
   if (hint === "ppe") {
     await window.switchScreen?.("fixed-assets-register");
+
     window.openFixedAssetModal?.({
       mode: "acquire",
       source: "journal_guard",
       journalSide: side,
       accountCode: acct?.code || "",
       accountName: acct?.name || "",
+      standard: acct?.standard || "IAS 16",
+      cf_bucket: acct?.cf_bucket || "",
+      role: acct?.role || "",
     });
+
     return;
   }
 
+  // ════════════════════════════════════════════════════
+  // IFRS 16 — LEASES / RIGHT-OF-USE
+  // ════════════════════════════════════════════════════
+
   if (hint === "lease") {
     await window.switchScreen?.("ifrs16-lease-wizard");
+
     window.openLeaseWizard?.({
       side,
       account: acct,
@@ -24000,121 +24163,229 @@ async function redirectJournalGuardToModule({ hint, acct, side }) {
       standard: "IFRS 16",
       cf_bucket: acct?.cf_bucket || "",
       cf_section: acct?.cf_section || "",
+      role: acct?.role || "",
     });
+
     return;
   }
+
+  // ════════════════════════════════════════════════════
+  // IAS 38 — INTANGIBLES / AMORTISATION
+  // ════════════════════════════════════════════════════
+
+  if (hint === "amort") {
+    await window.switchScreen?.("fixed-assets-register");
+
+    window.openFixedAssetModal?.({
+      mode: "acquire",
+      source: "journal_guard",
+      journalSide: side,
+      accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+      standard: acct?.standard || "IAS 38",
+      cf_bucket: acct?.cf_bucket || "intangible",
+      role: acct?.role || "",
+    });
+
+    return;
+  }
+
+  // ════════════════════════════════════════════════════
+  // IAS 40 — INVESTMENT PROPERTY
+  // ════════════════════════════════════════════════════
+
+  if (hint === "investment_property") {
+    await window.switchScreen?.("fixed-assets-register");
+
+    window.openFixedAssetModal?.({
+      mode: "acquire",
+      source: "journal_guard",
+      journalSide: side,
+      accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+      standard: "IAS 40",
+      cf_bucket: acct?.cf_bucket || "investment_property",
+      role: acct?.role || "",
+    });
+
+    return;
+  }
+
+  // ════════════════════════════════════════════════════
+  // IFRS 5 — NON-CURRENT ASSETS HELD FOR SALE
+  // ════════════════════════════════════════════════════
+
+  if (hint === "held_for_sale") {
+    await window.switchScreen?.("fixed-assets-register");
+
+    window.openFixedAssetModal?.({
+      mode: "acquire",
+      source: "journal_guard",
+      journalSide: side,
+      accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+      standard: "IFRS 5",
+      cf_bucket: acct?.cf_bucket || "",
+      role: acct?.role || "",
+    });
+
+    return;
+  }
+
+  // ════════════════════════════════════════════════════
+  // IFRS 15 — REVENUE
+  // ════════════════════════════════════════════════════
 
   if (hint === "revenue") {
     await window.switchScreen?.("revenue-desk");
     return;
   }
 
-  if (hint === "amort") {
-    await window.switchScreen?.("fixed-assets-register");
+  // ════════════════════════════════════════════════════
+  // UNSUPPORTED ACCOUNTING STANDARD
+  // Do not redirect to another module.
+  // Journal Guard can handle the warning/rejection upstream.
+  // ════════════════════════════════════════════════════
+
+  if (hint === "unsupported_standard") {
+    console.warn("[JOURNAL GUARD] Unsupported accounting standard", {
+      accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+      standard: acct?.standard || "",
+      cf_bucket: acct?.cf_bucket || "",
+      role: acct?.role || "",
+    });
+
     return;
   }
 
+  // ════════════════════════════════════════════════════
+  // ACCRUALS & DEFERRALS
+  // ════════════════════════════════════════════════════
+
   if (hint === "accrual_deferral") {
     await window.switchScreen?.("accrual-deferrals");
-    
-    // Open new accrual/deferral modal pre-filled with account info
+
     setTimeout(() => {
       window.openNewAccrualDeferralModal?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
       });
     }, 300);
-    
+
     return;
   }
 
-  // ─── NEW Handlers ──────────────────────────────────────
+  // ════════════════════════════════════════════════════
+  // LOAN SUBLEDGER
+  // ════════════════════════════════════════════════════
 
-  // 📗 LOAN SUBLEDGER
   if (hint === "loan") {
     await window.switchScreen?.("loans");
-    
+
     setTimeout(() => {
-      // If there's a loan modal/function, open it with context
       window.openLoanModal?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
         accountCode: acct?.code || "",
         accountName: acct?.name || "",
       });
     }, 300);
-    
+
     return;
   }
 
-  // 💎 IFRS 9 FINANCIAL INSTRUMENTS
+  // ════════════════════════════════════════════════════
+  // IFRS 9 FINANCIAL INSTRUMENTS
+  // ════════════════════════════════════════════════════
+
   if (hint === "ifrs9") {
     await window.switchScreen?.("ifrs9");
-    
+
     setTimeout(() => {
       window.openIFRS9Modal?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
         accountCode: acct?.code || "",
         accountName: acct?.name || "",
       });
     }, 300);
-    
+
     return;
   }
 
-  // 💼 PAYROLL
+  // ════════════════════════════════════════════════════
+  // PAYROLL / IAS 19
+  // ════════════════════════════════════════════════════
+
   if (hint === "payroll") {
     await window.switchScreen?.("payroll");
-    
+
     setTimeout(() => {
       window.openPayrollRun?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
       });
     }, 300);
-    
+
     return;
   }
 
-  // 🏛️ DEFERRED TAX
+  // ════════════════════════════════════════════════════
+  // DEFERRED TAX / IAS 12
+  // ════════════════════════════════════════════════════
+
   if (hint === "deferred_tax") {
     await window.switchScreen?.("deferred-tax");
-    
+
     setTimeout(() => {
       window.openDeferredTaxAdjustment?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
         accountCode: acct?.code || "",
         accountName: acct?.name || "",
       });
     }, 300);
-    
+
     return;
   }
 
-  // 🌾 IAS 41 AGRICULTURE
+  // ════════════════════════════════════════════════════
+  // IAS 41 — AGRICULTURE
+  // ════════════════════════════════════════════════════
+
   if (hint === "ias41") {
     await window.switchScreen?.("ias41");
-    
+
     setTimeout(() => {
       window.openIAS41Event?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
         accountCode: acct?.code || "",
         accountName: acct?.name || "",
       });
     }, 300);
-    
+
     return;
   }
+
+  // ════════════════════════════════════════════════════
+  // NO MODULE
+  // ════════════════════════════════════════════════════
+
+  console.log("[JOURNAL GUARD] No module redirect", {
+    hint,
+    accountCode: acct?.code || "",
+    accountName: acct?.name || "",
+  });
 }
+
 window.redirectJournalGuardToModule = redirectJournalGuardToModule;
 
 async function enforceJournalAccountGuard({ side, code }) {

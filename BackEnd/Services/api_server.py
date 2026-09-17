@@ -8611,53 +8611,132 @@ def post_invoice(cid: int, invoice_id: int):
         return jsonify({"error": "Not allowed to post invoices", "mode": mode, "role": role}), 403
 
     try:
-        inv = db_service.get_invoice_with_lines(company_id, invoice_id)
+        # ==========================================================
+        # LOAD + LOCK INVOICE
+        # ==========================================================
+        #
+        # IMPORTANT:
+        # lock_invoice_for_posting() must use the same DB transaction
+        # that is eventually used by post_invoice_to_gl() and the
+        # status update below.
+        #
+        inv = db_service.lock_invoice_for_posting(
+            company_id=company_id,
+            invoice_id=int(invoice_id),
+        )
+
         if not inv:
             return jsonify({"error": "Invoice not found"}), 404
 
         status = (inv.get("status") or "").strip().lower()
 
-        if status == "posted":
-            return jsonify({"error": "Invoice already posted"}), 409
+        # ==========================================================
+        # DOUBLE POST / DOUBLE BILLING GUARD
+        # ==========================================================
+
+        # Hard stop if this invoice has already been posted.
+        if status == "posted" or inv.get("posted_journal_id"):
+            return jsonify({
+                "ok": False,
+                "error": "invoice_already_posted",
+                "message": "Invoice has already been posted and cannot be posted again.",
+                "invoice_id": int(invoice_id),
+                "posted_journal_id": inv.get("posted_journal_id"),
+            }), 409
 
         # ==========================================================
         # REVIEW FLOW
         # ==========================================================
+
         if review_enabled and mode in {"assisted", "controlled"}:
 
-            # ✅ ASSISTED: owner can bypass review and post straight from draft
+            # ASSISTED: owner can bypass review
             if mode == "assisted" and is_owner:
                 if status == "pending_approval":
-                    db_service.approve_invoice(company_id, invoice_id, user.get("id"))
+                    db_service.approve_invoice(
+                        company_id,
+                        invoice_id,
+                        user.get("id"),
+                    )
                     status = "approved"
+
                 elif status == "draft":
-                    # optional but clean: mark approved before posting
-                    db_service.approve_invoice(company_id, invoice_id, user.get("id"))
+                    db_service.approve_invoice(
+                        company_id,
+                        invoice_id,
+                        user.get("id"),
+                    )
                     status = "approved"
 
-            # ✅ CONTROLLED: strict SoD (no bypass)
+            # CONTROLLED: strict SoD
             else:
-                # Maker must submit first
                 if status == "draft":
-                    return jsonify({"error": "Invoice must be submitted for approval first", "status": status}), 409
+                    return jsonify({
+                        "error": "Invoice must be submitted for approval first",
+                        "status": status,
+                    }), 409
 
-                # Approver can approve+post in one click
                 if status == "pending_approval":
-                    db_service.approve_invoice(company_id, invoice_id, user.get("id"))
+                    db_service.approve_invoice(
+                        company_id,
+                        invoice_id,
+                        user.get("id"),
+                    )
                     status = "approved"
 
                 if status != "approved":
-                    return jsonify({"error": "Invoice cannot be posted in its current status", "status": status}), 409
+                    return jsonify({
+                        "error": "Invoice cannot be posted in its current status",
+                        "status": status,
+                    }), 409
 
         else:
-            # Review disabled or owner-managed: can post draft/approved/pending_approval
-            if status not in {"draft", "approved", "pending_approval"}:
-                return jsonify({"error": f"Invoice status '{status}' cannot be posted"}), 409
+            # Review disabled / owner-managed
+            if status not in {
+                "draft",
+                "approved",
+                "pending_approval",
+            }:
+                return jsonify({
+                    "error": f"Invoice status '{status}' cannot be posted"
+                }), 409
 
             if status == "pending_approval":
-                db_service.approve_invoice(company_id, invoice_id, user.get("id"))
+                db_service.approve_invoice(
+                    company_id,
+                    invoice_id,
+                    user.get("id"),
+                )
                 status = "approved"
 
+        # ==========================================================
+        # RELOAD AFTER APPROVAL
+        # ==========================================================
+        #
+        # approve_invoice() may modify the invoice. Keep the locked
+        # row as the authoritative posting record.
+        #
+        inv = db_service.get_invoice_with_lines(
+            company_id,
+            invoice_id,
+        )
+
+        if not inv:
+            return jsonify({"error": "Invoice not found"}), 404
+
+        # Defensive second check.
+        if (
+            (inv.get("status") or "").strip().lower() == "posted"
+            or inv.get("posted_journal_id")
+        ):
+            return jsonify({
+                "ok": False,
+                "error": "invoice_already_posted",
+                "message": "Invoice has already been posted and cannot be posted again.",
+                "invoice_id": int(invoice_id),
+                "posted_journal_id": inv.get("posted_journal_id"),
+            }), 409
+        
         # ==========================================================
         # CREDIT ENFORCEMENT
         # ==========================================================
@@ -8665,6 +8744,41 @@ def post_invoice(cid: int, invoice_id: int):
         can_override = role in {"cfo", "admin"} or is_owner
         enforce_credit = not can_override
 
+        # ==========================================================
+        # REVENUE BILLING DOUBLE-BILLING GUARD
+        # ==========================================================
+
+        revenue_contract_id = inv.get("revenue_contract_id")
+
+        if revenue_contract_id:
+            existing_billing = db_service.fetch_one(
+                f"""
+                SELECT id
+                FROM company_{int(company_id)}.revenue_billing_events
+                WHERE contract_id = %s
+                  AND source_invoice_id = %s
+                  AND event_type = 'invoice'
+                LIMIT 1
+                """,
+                (
+                    int(revenue_contract_id),
+                    int(invoice_id),
+                ),
+            )
+
+            if existing_billing:
+                return jsonify({
+                    "ok": False,
+                    "error": "revenue_billing_already_recorded",
+                    "message": (
+                        "Revenue billing has already been recorded "
+                        "for this invoice."
+                    ),
+                    "invoice_id": int(invoice_id),
+                    "revenue_contract_id": int(revenue_contract_id),
+                    "billing_event_id": existing_billing.get("id"),
+                }), 409
+            
         # ==========================================================
         # POST TO GL
         # ==========================================================
@@ -8678,6 +8792,35 @@ def post_invoice(cid: int, invoice_id: int):
             require_approved=require_approved,
         )
 
+        # ==========================================================
+        # MARK INVOICE POSTED
+        # ==========================================================
+
+        affected = db_service.execute_sql(
+            f"""
+            UPDATE company_{int(company_id)}.invoices
+            SET
+                status = 'posted',
+                posted_journal_id = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            AND status <> 'posted'
+            AND posted_journal_id IS NULL
+            """,
+            (
+                int(journal_id),
+                int(company_id),
+                int(invoice_id),
+            ),
+        )
+
+        if affected != 1:
+            raise RuntimeError(
+                f"Invoice {invoice_id} could not be marked posted "
+                f"after GL posting; possible duplicate posting."
+            )
+        
         try:
             record_invoice_revenue_billing_and_allocation(
                 company_id=company_id,
