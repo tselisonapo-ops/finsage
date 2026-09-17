@@ -232,7 +232,33 @@ class BankService:
                 "fingerprint": fp,
             })
 
-        self.db.insert_bank_statement_lines(company_id, import_id, lines)
+        inserted = self.db.insert_bank_statement_lines(
+            company_id,
+            import_id,
+            lines,
+        )
+
+        dated_lines = [
+            x["line_date"]
+            for x in lines
+            if x.get("line_date") is not None
+        ]
+
+        start_date = min(dated_lines) if dated_lines else None
+        end_date = max(dated_lines) if dated_lines else None
+
+        if inserted > 0:
+            self.db.mark_bank_import_parsed(
+                import_id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        else:
+            self.db.mark_bank_import_failed(
+                import_id,
+                "No statement lines were imported",
+            )
+
         return import_id
 
     def auto_match_reconciliation(self, *, company_id: int, reconciliation_id: int):

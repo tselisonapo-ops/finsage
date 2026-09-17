@@ -146,65 +146,125 @@ def import_bank_statement(company_id: int):
     if not bank_account_id:
         return jsonify({"error": "bank_account_id is required"}), 400
 
-    mapping_json = request.form.get("mapping")  # JSON string (optional)
+    mapping_json = request.form.get("mapping")
 
     file_name = f.filename or "statement.csv"
     data = f.read()
+
     ext = ("." + file_name.rsplit(".", 1)[-1].lower()) if "." in file_name else ""
     if ext != ".csv":
         return jsonify({"error": "Only CSV supported for now"}), 400
 
-    # ✅ Let the service decide currency (explicit -> bank account -> company -> fallback)
-    import_id = bank_service.ingest_statement_csv(
-        company_id=company_id,
-        bank_account_id=bank_account_id,
-        file_name=file_name,
-        file_bytes=data,
-        uploaded_by=user_id,
-        mapping_json=mapping_json,
-        currency=None,  # ✅ IMPORTANT: don't override
-    )
-
-    # Option A (best): fetch the import to return actual currency used
-    imp = db_service.fetch_one(
-        "SELECT id, currency FROM public.bank_statement_imports WHERE id=%s AND company_id=%s",
-        (import_id, company_id),
-    ) or {}
-
-    imp = db_service.fetch_one(
-        "SELECT id, currency FROM public.bank_statement_imports WHERE id=%s AND company_id=%s",
-        (import_id, company_id),
-    ) or {}
-
-    # ✅ AUDIT (bank statement import)
     try:
-        db_service.audit_log(
+        import_id = bank_service.ingest_statement_csv(
             company_id=company_id,
-            actor_user_id=int(user_id or 0),
-            module="bank",
-            action="import",
-            severity="info",
-            entity_type="bank_statement_import",
-            entity_id=str(import_id),
-            entity_ref=str(file_name or f"import-{import_id}"),
-            before_json={},
-            after_json={
-                "bank_account_id": int(bank_account_id),
-                "file_name": file_name,
-                "currency": imp.get("currency"),
-                "mapping_present": bool(mapping_json),
-            },
-            message="Bank statement imported",
-            source="api",
+            bank_account_id=bank_account_id,
+            file_name=file_name,
+            file_bytes=data,
+            uploaded_by=user_id,
+            mapping_json=mapping_json,
+            currency=None,
         )
-    except Exception:
-        current_app.logger.exception("audit_log failed (import_bank_statement)")
 
-    return jsonify({
-        "import_id": import_id,
-        "currency": imp.get("currency"),  # actual used
-    }), 201
+        imp = db_service.fetch_one(
+            """
+            SELECT
+                id,
+                currency,
+                status,
+                statement_start_date,
+                statement_end_date,
+                error
+            FROM public.bank_statement_imports
+            WHERE id=%s
+              AND company_id=%s
+            """,
+            (import_id, company_id),
+        )
 
+        if not imp:
+            current_app.logger.error(
+                "Bank import returned import_id=%s but no bank_statement_imports row exists",
+                import_id,
+            )
+            return jsonify({
+                "error": "Bank import was not persisted",
+                "import_id": import_id,
+            }), 500
+
+        line_count_row = db_service.fetch_one(
+            """
+            SELECT COUNT(*)::int AS n
+            FROM public.bank_statement_lines
+            WHERE company_id=%s
+              AND import_id=%s
+            """,
+            (company_id, import_id),
+        ) or {}
+
+        line_count = int(line_count_row.get("n") or 0)
+
+        if line_count == 0:
+            current_app.logger.error(
+                "Bank import %s created but contains zero statement lines",
+                import_id,
+            )
+            return jsonify({
+                "error": "Bank statement imported but no transaction lines were created",
+                "import_id": import_id,
+                "currency": imp.get("currency"),
+                "status": imp.get("status"),
+                "import_error": imp.get("error"),
+                "line_count": 0,
+            }), 422
+
+        try:
+            db_service.audit_log(
+                company_id=company_id,
+                actor_user_id=int(user_id or 0),
+                module="bank",
+                action="import",
+                severity="info",
+                entity_type="bank_statement_import",
+                entity_id=str(import_id),
+                entity_ref=str(file_name or f"import-{import_id}"),
+                before_json={},
+                after_json={
+                    "bank_account_id": int(bank_account_id),
+                    "file_name": file_name,
+                    "currency": imp.get("currency"),
+                    "mapping_present": bool(mapping_json),
+                    "line_count": line_count,
+                    "status": imp.get("status"),
+                },
+                message="Bank statement imported",
+                source="api",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "audit_log failed (import_bank_statement)"
+            )
+
+        return jsonify({
+            "import_id": import_id,
+            "currency": imp.get("currency"),
+            "status": imp.get("status"),
+            "statement_start_date": imp.get("statement_start_date"),
+            "statement_end_date": imp.get("statement_end_date"),
+            "line_count": line_count,
+        }), 201
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "Bank statement import failed: company_id=%s bank_account_id=%s file=%s",
+            company_id,
+            bank_account_id,
+            file_name,
+        )
+        return jsonify({
+            "error": "Bank statement import failed",
+            "details": str(exc),
+        }), 500
 
 @bank_bp.route("/api/companies/<int:company_id>/bank_reconciliations", methods=["POST"])
 @require_auth
