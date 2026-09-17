@@ -5342,32 +5342,52 @@ const ENDPOINTS = {
     health: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/health`,
 
     // --- Banking ---
-    bankAccounts: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts`,
+    bankAccounts: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts`,
+
     bankAccountById: (companyId, bankAccountId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts/${encodeURIComponent(bankAccountId)}`,
+
     bankAccountUpdate: (companyId, bankAccountId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts/${encodeURIComponent(bankAccountId)}`,
 
-    bankStatements: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements`,
+    bankStatements: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements`,
+
     bankStatementLines: (companyId, stmtId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/${encodeURIComponent(stmtId)}`,
-    bankStatementImport: (companyId, bankAccountId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/import?bank_account_id=${encodeURIComponent(bankAccountId)}`,
+
+    bankStatementsPreview: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/preview`,
+
+    bankStatementImport: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/import`,
+
     bankStatementPost: (companyId, stmtId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/${encodeURIComponent(stmtId)}/post`,
+
+    bankStatementCreateReconciliation: (companyId, importId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/${encodeURIComponent(importId)}/create_reconciliation`,
+
     // --- Bank Reconciliation ---
     bankReconsCreate: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations`,
+
     bankReconItems: (companyId, reconId, status = "") =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/${encodeURIComponent(reconId)}/items` +
       (status ? `?status=${encodeURIComponent(status)}` : ""),
+
     bankReconAutoMatch: (companyId, reconId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/${encodeURIComponent(reconId)}/auto_match`,
 
     bankReconExcludeItem: (companyId, reconItemId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/items/${encodeURIComponent(reconItemId)}/exclude`,
+
     bankReconAttachJournal: (companyId, reconItemId) =>
-     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/items/${encodeURIComponent(reconItemId)}/attach_journal`,
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/items/${encodeURIComponent(reconItemId)}/attach_journal`,
+
+    bankReconItemMatch: (companyId, reconId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/${encodeURIComponent(reconId)}/items/${encodeURIComponent(itemId)}/match`,
 
   loans: {
     list: (companyId, { status = "", q = "", limit = 200 } = {}) => {
@@ -26394,47 +26414,102 @@ async function startReconciliationFromImport(importId) {
 async function importBankCsv(file) {
   const cid = getActiveCompanyId();
   const bankId = document.getElementById("bankAccountSelect")?.value;
+
   if (!cid || !bankId) {
     alert("Select a bank account first.");
     return;
   }
 
-  // 1) Preview
-  const formPrev = new FormData();
-  formPrev.append("file", file);
-
-  const preview = await apiFetch(ENDPOINTS.bankStatementsPreview(cid), {
-    method: "POST",
-    body: formPrev,
-  });
-
-  if (preview?.error) {
-    alert(preview.error);
+  if (!file) {
+    alert("Select a bank statement CSV file.");
     return;
   }
 
-  // 2) Ask user to confirm mapping (for now: use suggested mapping automatically)
-  // Later you’ll build a modal UI here.
-  const mapping = preview.suggested_mapping || {};
-
-  // 3) Import with mapping + bank_account_id
-  const form = new FormData();
-  form.append("file", file);
-  form.append("bank_account_id", bankId);
-  form.append("mapping", JSON.stringify(mapping));
-
-  const res = await apiFetch(ENDPOINTS.bankStatementsImport(cid), {
-    method: "POST",
-    body: form,
+  console.log("[importBankCsv] starting", {
+    companyId: cid,
+    bankAccountId: bankId,
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type,
   });
 
-  if (res?.error) {
-    alert(res.error);
-    return;
-  }
+  try {
+    // 1) Preview
+    const formPrev = new FormData();
+    formPrev.append("file", file);
 
-  alert("Bank statement imported.");
-  await loadBankStatements();
+    console.log(
+      "[importBankCsv] preview:",
+      ENDPOINTS.bankStatementsPreview(cid)
+    );
+
+    const preview = await apiFetch(
+      ENDPOINTS.bankStatementsPreview(cid),
+      {
+        method: "POST",
+        body: formPrev,
+      }
+    );
+
+    console.log("[importBankCsv] preview response:", preview);
+
+    if (preview?.error) {
+      alert(preview.error);
+      return;
+    }
+
+    // 2) Use suggested mapping automatically
+    const mapping = preview?.suggested_mapping || {};
+
+    console.log("[importBankCsv] mapping:", mapping);
+
+    // 3) Import
+    const form = new FormData();
+    form.append("file", file);
+    form.append("bank_account_id", String(bankId));
+    form.append("mapping", JSON.stringify(mapping));
+
+    console.log(
+      "[importBankCsv] import:",
+      ENDPOINTS.bankStatementImport(cid)
+    );
+
+    const res = await apiFetch(
+      ENDPOINTS.bankStatementImport(cid),
+      {
+        method: "POST",
+        body: form,
+      }
+    );
+
+    console.log("[importBankCsv] import response:", res);
+
+    if (res?.error) {
+      alert(
+        res.details
+          ? `${res.error}\n\n${res.details}`
+          : res.error
+      );
+      return;
+    }
+
+    alert(
+      `Bank statement imported successfully.\n\n` +
+      `Import #${res.import_id}\n` +
+      `Lines: ${res.line_count ?? 0}`
+    );
+
+    // 4) Refresh statement list from database
+    await loadBankStatements();
+
+  } catch (err) {
+    console.error("[importBankCsv] FAILED:", err);
+
+    alert(
+      `Bank statement upload failed.\n\n` +
+      `${err?.message || err}`
+    );
+  }
 }
 
 // ✅ UPDATED renderReconItems (your version + small safety tweaks)

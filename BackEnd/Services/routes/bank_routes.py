@@ -697,3 +697,37 @@ def create_reconciliation_from_import(company_id: int, import_id: int):
         "period_start": str(period_start),
         "period_end": str(period_end),
     }), 201
+
+@bank_bp.route(
+    "/api/companies/<int:company_id>/bank_reconciliations",
+    methods=["GET"],
+)
+@require_auth
+def list_bank_reconciliations(company_id: int):
+    payload = request.jwt_payload
+
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    bank_account_id = request.args.get("bank_account_id")
+
+    try:
+        bank_account_id = (
+            int(bank_account_id)
+            if bank_account_id not in (None, "")
+            else None
+        )
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid bank_account_id"}), 400
+
+    rows = db_service.list_bank_reconciliations(
+        company_id=company_id,
+        bank_account_id=bank_account_id,
+    )
+
+    return jsonify(rows), 200

@@ -100384,6 +100384,54 @@ class DatabaseService:
         """
         return self.fetch_all(sql, (company_id, recon_id, status, status))
 
+    def list_bank_reconciliations(self, company_id: int, bank_account_id: int | None = None):
+        sql = """
+        SELECT
+            r.id AS reconciliation_id,
+            r.company_id,
+            r.bank_account_id,
+            r.period_start,
+            r.period_end,
+            r.status,
+            r.created_by,
+            r.created_at,
+            r.updated_at,
+            COUNT(i.id)::int AS item_count,
+            COUNT(i.id) FILTER (
+                WHERE i.match_status = 'matched'
+            )::int AS matched_count,
+            COUNT(i.id) FILTER (
+                WHERE i.match_status = 'unmatched'
+            )::int AS unmatched_count,
+            COUNT(i.id) FILTER (
+                WHERE i.match_status = 'partial'
+            )::int AS partial_count,
+            COUNT(i.id) FILTER (
+                WHERE i.match_status = 'excluded'
+            )::int AS excluded_count
+        FROM public.bank_reconciliations r
+        LEFT JOIN public.bank_recon_items i
+            ON i.reconciliation_id = r.id
+            AND i.company_id = r.company_id
+        WHERE r.company_id = %s
+        AND (%s IS NULL OR r.bank_account_id = %s)
+        GROUP BY
+            r.id,
+            r.company_id,
+            r.bank_account_id,
+            r.period_start,
+            r.period_end,
+            r.status,
+            r.created_by,
+            r.created_at,
+            r.updated_at
+        ORDER BY r.period_end DESC NULLS LAST, r.id DESC;
+        """
+        return self.fetch_all(
+            sql,
+            (company_id, bank_account_id, bank_account_id),
+        )
+
     def get_import_date_range(self, company_id: int, import_id: int):
         return self.fetch_one("""
         SELECT
