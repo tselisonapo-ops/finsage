@@ -39360,10 +39360,12 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
 
     let dots = 0;
 
-    showMsg(
-      msgEl,
-      `Loading lease payments & amortizations<span id="lpLoadingDots" class="inline-block w-[24px] text-left">·</span>`
-    );
+    msgEl.classList.remove("hidden");
+    msgEl.className = "text-sm";
+    msgEl.innerHTML = `
+      <span>Loading lease payments & amortizations</span>
+      <span id="lpLoadingDots" class="inline-block w-[24px] text-left ml-1">·</span>
+    `;
 
     const loadingTimer = setInterval(() => {
       const dotsEl = $("lpLoadingDots");
