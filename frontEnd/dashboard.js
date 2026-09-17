@@ -39125,12 +39125,12 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
   // ============================================================
   function renderPaymentsUI(mount) {
     mount.innerHTML = `
-    <div class="flex items-center justify-between gap-3 mb-3">
-      <div class="text-sm font-semibold">Lease Payments</div>
-      <div class="flex items-center gap-2">
-        <button id="btnLpExportCsv" class="px-3 py-1.5 rounded border text-sm bg-white">Export CSV</button>
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <div class="text-sm font-semibold">Lease Payments & Amortizations</div>
+        <div class="flex items-center gap-2">
+          <button id="btnLpExportCsv" class="px-3 py-1.5 rounded border text-sm bg-white">Export CSV</button>
+        </div>
       </div>
-    </div>
 
       <div class="border rounded-xl p-3 bg-slate-50 mb-3">
         <div class="grid grid-cols-1 md:grid-cols-6 gap-2">
@@ -39161,7 +39161,11 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
         </div>
       </div>
 
-      <div class="border rounded-xl overflow-hidden">
+      <div class="border rounded-xl overflow-hidden mb-4">
+        <div class="px-3 py-2 bg-slate-50 border-b text-sm font-semibold">
+          Lease Payments
+        </div>
+
         <div class="overflow-x-auto">
           <table class="min-w-[820px] w-full text-sm">
             <thead class="bg-slate-50 border-b">
@@ -39178,58 +39182,168 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
           </table>
         </div>
       </div>
-      <div id="leasePaymentsMsg" class="text-sm hidden"></div>
+
+      <div class="border rounded-xl overflow-hidden">
+        <div class="px-3 py-2 bg-slate-50 border-b text-sm font-semibold">
+          Posted Amortizations
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-[1180px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 w-[70px] whitespace-nowrap">Period</th>
+                <th class="text-left p-2 w-[220px] whitespace-nowrap">Period</th>
+                <th class="text-right p-2 w-[145px] whitespace-nowrap">Opening Liability</th>
+                <th class="text-right p-2 w-[120px] whitespace-nowrap">Interest</th>
+                <th class="text-right p-2 w-[120px] whitespace-nowrap">Payment</th>
+                <th class="text-right p-2 w-[120px] whitespace-nowrap">Principal</th>
+                <th class="text-right p-2 w-[145px] whitespace-nowrap">Closing Liability</th>
+                <th class="text-right p-2 w-[120px] whitespace-nowrap">Depreciation</th>
+                <th class="text-left p-2 w-[120px] whitespace-nowrap">Journal</th>
+              </tr>
+            </thead>
+            <tbody id="lpAmortizationTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="leasePaymentsMsg" class="text-sm hidden mt-2"></div>
     `;
   }
 
-  function renderPaymentsTable(rows, { q = "" } = {}) {
+  function renderPaymentsTable(rows, { q = "", from = "", to = "" } = {}) {
     const body = $("lpTableBody");
-    if (!body) return;
+    const amortBody = $("lpAmortizationTableBody");
+
+    if (!body || !amortBody) return;
 
     const qq = String(q || "").trim().toLowerCase();
+    const fromDate = String(from || "").trim();
+    const toDate = String(to || "").trim();
 
     const filtered = (Array.isArray(rows) ? rows : []).filter((r) => {
+      const paymentDate = String(r.payment_date || r.date || "").slice(0, 10);
+
+      if (fromDate && paymentDate && paymentDate < fromDate) return false;
+      if (toDate && paymentDate && paymentDate > toDate) return false;
+
       if (!qq) return true;
+
       const t = [
         r.reference,
         r.description,
         r.memo,
         r.notes,
         r.journal_id,
+        r.posted_journal_id,
       ].join(" ").toLowerCase();
+
       return t.includes(qq);
     });
 
     if (!filtered.length) {
-      body.innerHTML = `<tr><td colspan="6" class="p-3 text-xs text-slate-500">No payments found</td></tr>`;
-      return;
-    }
-
-    body.innerHTML = filtered.map((r) => {
-      const jid = r.journal_id || r.posted_journal_id || "";
-      return `
-        <tr class="border-t">
-          <td class="p-2 whitespace-nowrap">${esc(fmtDate(r.payment_date || r.date))}</td>
-          <td class="p-2 text-slate-700">${esc(String(r.reference || ""))}</td>
-          <td class="p-2 text-right tabular-nums">${fmtMoney(r.amount_gross ?? r.amount ?? 0)}</td>
-          <td class="p-2 text-right tabular-nums">${fmtMoney(r.interest_amount ?? 0)}</td>
-          <td class="p-2 text-right tabular-nums">${fmtMoney(r.principal_amount ?? 0)}</td>
-          <td class="p-2">
-            ${jid ? `<button class="text-[11px] text-blue-600 hover:underline" data-journal="${esc(String(jid))}">${esc(String(jid))}</button>` : ""}
+      body.innerHTML = `
+        <tr>
+          <td colspan="6" class="p-3 text-xs text-slate-500">
+            No payments found
           </td>
         </tr>
       `;
-    }).join("");
+    } else {
+      body.innerHTML = filtered.map((r) => {
+        const jid = r.journal_id || r.posted_journal_id || "";
 
-    body.querySelectorAll("[data-journal]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const jid = btn.getAttribute("data-journal");
-        if (!jid) return;
-        window.switchScreen?.("journal");
-        window.fetchJournalDetail?.(jid);
-      });
+        return `
+          <tr class="border-t">
+            <td class="p-2 whitespace-nowrap">${esc(fmtDate(r.payment_date || r.date))}</td>
+            <td class="p-2 text-slate-700">${esc(String(r.reference || ""))}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.amount_gross ?? r.amount ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.interest_amount ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.principal_amount ?? 0)}</td>
+            <td class="p-2">
+              ${jid
+                ? `<button class="text-[11px] text-blue-600 hover:underline" data-journal="${esc(String(jid))}">${esc(String(jid))}</button>`
+                : ""}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    const amortRows = (Array.isArray(window.__leaseAmortizationRows)
+      ? window.__leaseAmortizationRows
+      : []
+    ).filter((r) => {
+      if (!r?.posted_journal_id) return false;
+
+      const periodStart = String(r.period_start || "").slice(0, 10);
+      const periodEnd = String(r.period_end || "").slice(0, 10);
+
+      if (fromDate && periodEnd && periodEnd < fromDate) return false;
+      if (toDate && periodStart && periodStart > toDate) return false;
+
+      if (!qq) return true;
+
+      const t = [
+        r.period_no,
+        r.period_start,
+        r.period_end,
+        r.posted_journal_id,
+        r.posted_at,
+      ].join(" ").toLowerCase();
+
+      return t.includes(qq);
     });
-  }
+
+    if (!amortRows.length) {
+      amortBody.innerHTML = `
+        <tr>
+          <td colspan="9" class="p-3 text-xs text-slate-500">
+            No posted amortizations found
+          </td>
+        </tr>
+      `;
+    } else {
+      amortBody.innerHTML = amortRows.map((r) => {
+        const jid = r.posted_journal_id || "";
+
+        const periodLabel = [
+          r.period_start ? fmtDate(r.period_start) : "",
+          r.period_end ? fmtDate(r.period_end) : "",
+        ].filter(Boolean).join(" – ");
+
+        return `
+          <tr class="border-t">
+            <td class="p-2 whitespace-nowrap">${esc(String(r.period_no ?? ""))}</td>
+            <td class="p-2 whitespace-nowrap">${esc(periodLabel)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.opening_liability ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.interest ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.payment ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.principal ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.closing_liability ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.depreciation ?? 0)}</td>
+            <td class="p-2">
+              ${jid
+                ? `<button class="text-[11px] text-blue-600 hover:underline" data-journal="${esc(String(jid))}">${esc(String(jid))}</button>`
+                : ""}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    document.querySelectorAll("#lpTableBody [data-journal], #lpAmortizationTableBody [data-journal]")
+      .forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const jid = btn.getAttribute("data-journal");
+          if (!jid) return;
+
+          window.switchScreen?.("journal");
+          window.fetchJournalDetail?.(jid);
+        });
+      });
+    }
 
   async function loadPayments() {
     const msgEl = $("leasePaymentsMsg");
@@ -39238,22 +39352,72 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
     const cid = window.getActiveCompanyId?.();
     const leaseId = Number(($("lpFilterLeaseId")?.value || "").trim() || 0);
     const q = $("lpFilterQ")?.value || "";
+    const from = $("lpFilterFrom")?.value || "";
+    const to = $("lpFilterTo")?.value || "";
 
     if (!cid) return showMsg(msgEl, "No company selected");
     if (!leaseId) return showMsg(msgEl, "Lease ID is required");
 
-    // backend list: GET /leases/<lease_id>/payments
-    const res = await window.apiFetch(
-      window.endpoints.leases.payments.list(cid, leaseId),
-      { method: "GET" }
+    let dots = 0;
+
+    showMsg(
+      msgEl,
+      `Loading lease payments & amortizations<span id="lpLoadingDots" class="inline-block w-[24px] text-left">·</span>`
     );
 
-    const rows = res?.payments || res?.rows || (Array.isArray(res) ? res : []);
-    renderPaymentsTable(rows, { q });
-    showMsg(msgEl, "Loaded.", "ok");
-    setTimeout(() => showMsg(msgEl, ""), 900);
-  }
+    const loadingTimer = setInterval(() => {
+      const dotsEl = $("lpLoadingDots");
+      if (!dotsEl) return;
 
+      dots = (dots + 1) % 4;
+      dotsEl.textContent = "·".repeat(dots || 1);
+    }, 350);
+
+    try {
+      const [paymentsRes, scheduleRes] = await Promise.all([
+        window.apiFetch(
+          window.endpoints.leases.payments.list(cid, leaseId),
+          { method: "GET" }
+        ),
+        window.apiFetch(
+          window.endpoints.leases.schedule.list(cid, leaseId),
+          { method: "GET" }
+        ),
+      ]);
+
+      const paymentRows =
+        paymentsRes?.payments ||
+        paymentsRes?.rows ||
+        (Array.isArray(paymentsRes) ? paymentsRes : []);
+
+      const scheduleRows =
+        scheduleRes?.rows ||
+        (Array.isArray(scheduleRes) ? scheduleRes : []);
+
+      window.__leaseAmortizationRows = scheduleRows;
+
+      clearInterval(loadingTimer);
+
+      renderPaymentsTable(paymentRows, {
+        q,
+        from,
+        to,
+      });
+
+      showMsg(msgEl, "Loaded.", "ok");
+      setTimeout(() => showMsg(msgEl, ""), 900);
+
+    } catch (e) {
+      clearInterval(loadingTimer);
+
+      console.error("Failed to load lease payments & amortizations:", e);
+
+      showMsg(
+        msgEl,
+        "Failed to load lease payments & amortizations."
+      );
+    }
+  }
   // ============================================================
   // MONTHLY DUE TAB: filters + table + post actions
   // ============================================================
