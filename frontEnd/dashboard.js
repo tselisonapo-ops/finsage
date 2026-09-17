@@ -22991,55 +22991,84 @@ async function renderRecentJournals() {
     return;
   }
 
-  // ✅ server-side filter url (supports from/to/limit/q)
-  const url = buildRecentJournalUrl(cid);
-  const data = await apiFetch(url, { method: "GET" });
+  const preset = document.getElementById("jrnlFilterPreset")?.value?.trim() || "current_month";
+  const from = document.getElementById("jrnlFrom")?.value?.trim() || "";
+  const to = document.getElementById("jrnlTo")?.value?.trim() || "";
 
-  // ✅ normalize: allow either [] OR {rows: []}
-  const headers = Array.isArray(data) ? data : (data?.rows || data?.items || []);
+  const loadingText =
+    preset === "custom" && (from || to)
+      ? "Loading requested period journals"
+      : "Loading recent journals";
 
-  const detailed = await Promise.all(
-    headers.map(async (h) => {
-      try {
-        const det = await fetchJournalDetail(cid, h.id);
-        return { ...h, ...det };
-      } catch (e) {
-        return { ...h, lines: [] };
-      }
-    })
-  );
+  let loadingDots = 0;
 
-  // flatten to rows + mark first line per journal
-  const rows = [];
-  for (const j of detailed) {
-    const jDate = String(j.date || "").slice(0, 10);
-    const jRef  = String(j.ref || "");
-    let jDesc   = String(j.description || "");
-    const jid   = j.id;
+  host.innerHTML = `
+    <div class="flex items-center justify-center py-8 text-sm text-slate-500">
+      <span>${esc(loadingText)}</span>
+      <span id="jrnlLoadingDots" class="inline-block w-[24px] text-left ml-1">·</span>
+    </div>
+  `;
 
-    // ✅ capture source so we can gate reversal
-    const jSource = String(j.source || "").trim();
+  const loadingTimer = setInterval(() => {
+    const dots = document.getElementById("jrnlLoadingDots");
+    if (!dots) return;
 
-    // 🔧 TEMP UI PATCH: if backend still stores "Invoice posted: INV-..."
-    if (/^invoice posted:/i.test(jDesc)) jDesc = "";
+    loadingDots = (loadingDots + 1) % 4;
+    dots.textContent = "·".repeat(loadingDots || 1);
+  }, 350);
 
-    const lines = sortJournalLines(j.lines || []);
-    lines.forEach((ln, idx) => {
-      rows.push({
-        jid,
-        source: jSource,      // ✅ NEW
-        isFirst: idx === 0,
-        date: jDate,
-        ref: jRef,
-        description: jDesc,
-        account_code: ln.account_code,
-        account_label: lineAccountLabel(ln.account_code),
-        debit: +ln.debit || 0,
-        credit: +ln.credit || 0,
-        is_vat: !!ln.is_vat
+  try {
+    // ✅ server-side filter url (supports from/to/limit/q)
+    const url = buildRecentJournalUrl(cid);
+    const data = await apiFetch(url, { method: "GET" });
+
+    // ✅ normalize: allow either [] OR {rows: []}
+    const headers = Array.isArray(data) ? data : (data?.rows || data?.items || []);
+
+    const detailed = await Promise.all(
+      headers.map(async (h) => {
+        try {
+          const det = await fetchJournalDetail(cid, h.id);
+          return { ...h, ...det };
+        } catch (e) {
+          return { ...h, lines: [] };
+        }
+      })
+    );
+
+    // flatten to rows + mark first line per journal
+    const rows = [];
+    for (const j of detailed) {
+      const jDate = String(j.date || "").slice(0, 10);
+      const jRef  = String(j.ref || "");
+      let jDesc   = String(j.description || "");
+      const jid   = j.id;
+
+      // ✅ capture source so we can gate reversal
+      const jSource = String(j.source || "").trim();
+
+      // 🔧 TEMP UI PATCH: if backend still stores "Invoice posted: INV-..."
+      if (/^invoice posted:/i.test(jDesc)) jDesc = "";
+
+      const lines = sortJournalLines(j.lines || []);
+      lines.forEach((ln, idx) => {
+        rows.push({
+          jid,
+          source: jSource,
+          isFirst: idx === 0,
+          date: jDate,
+          ref: jRef,
+          description: jDesc,
+          account_code: ln.account_code,
+          account_label: lineAccountLabel(ln.account_code),
+          debit: +ln.debit || 0,
+          credit: +ln.credit || 0,
+          is_vat: !!ln.is_vat
+        });
       });
-    });
-  }
+    }
+
+    clearInterval(loadingTimer);
 
   host.innerHTML = `
     <div class="flex items-center justify-between gap-3 mb-3">
@@ -23179,7 +23208,22 @@ async function renderRecentJournals() {
   });
 
   // reverse wiring (will only exist for manual journals now)
-  if (typeof wireReverseJournalClicks === "function") wireReverseJournalClicks(host);
+    // reverse wiring (will only exist for manual journals now)
+    if (typeof wireReverseJournalClicks === "function") {
+      wireReverseJournalClicks(host);
+    }
+
+  } catch (e) {
+    clearInterval(loadingTimer);
+
+    console.error("Failed to load recent journals:", e);
+
+    host.innerHTML = `
+      <div class="px-3 py-3 text-xs text-red-600">
+        Failed to load journals. Please try again.
+      </div>
+    `;
+  }
 }
 
 function loadJournalIntoLines(det, { mode = "replace" } = {}) {
