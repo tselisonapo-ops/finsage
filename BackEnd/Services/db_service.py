@@ -6190,6 +6190,8 @@ class DatabaseService:
 
             file_name TEXT,
             file_ext TEXT,
+            file_hash TEXT,
+            uploaded_by INT NULL,
 
             uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -6206,6 +6208,8 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS bank_account_id INT,
             ADD COLUMN IF NOT EXISTS file_name TEXT,
             ADD COLUMN IF NOT EXISTS file_ext TEXT,
+            ADD COLUMN IF NOT EXISTS file_hash TEXT,
+            ADD COLUMN IF NOT EXISTS uploaded_by INT,
             ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMPTZ,
             ADD COLUMN IF NOT EXISTS statement_start_date DATE,
             ADD COLUMN IF NOT EXISTS statement_end_date DATE,
@@ -6230,7 +6234,8 @@ class DatabaseService:
         DO $$
         BEGIN
             IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
+                SELECT 1
+                FROM pg_constraint
                 WHERE conname = 'bank_statement_imports_status_ck'
             ) THEN
                 ALTER TABLE public.bank_statement_imports
@@ -6239,7 +6244,8 @@ class DatabaseService:
             END IF;
 
             IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
+                SELECT 1
+                FROM pg_constraint
                 WHERE conname = 'bank_statement_imports_period_ck'
             ) THEN
                 ALTER TABLE public.bank_statement_imports
@@ -6252,7 +6258,13 @@ class DatabaseService:
             END IF;
         END $$;
 
-        -- helps dedupe obvious re-imports
+        -- Dedupe imports by company + file hash.
+        -- This matches db_service.create_bank_import():
+        -- ON CONFLICT (company_id, file_hash)
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_statement_imports_company_file_hash_uq
+        ON public.bank_statement_imports(company_id, file_hash);
+
+        -- Existing indexes
         CREATE UNIQUE INDEX IF NOT EXISTS bank_statement_imports_company_bank_file_uploaded_uq
         ON public.bank_statement_imports(company_id, bank_account_id, file_name, uploaded_at);
 
@@ -6268,7 +6280,6 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS bank_statement_imports_status_idx
         ON public.bank_statement_imports(company_id, status, uploaded_at DESC);
 
-
         -- ==================================================
         -- BANK STATEMENT LINES
         -- ==================================================
@@ -6276,7 +6287,9 @@ class DatabaseService:
             id BIGSERIAL PRIMARY KEY,
 
             company_id INT NOT NULL,
-            import_id BIGINT NOT NULL REFERENCES public.bank_statement_imports(id) ON DELETE CASCADE,
+            import_id BIGINT NOT NULL
+                REFERENCES public.bank_statement_imports(id)
+                ON DELETE CASCADE,
 
             line_date DATE,
             value_date DATE,
@@ -6288,7 +6301,9 @@ class DatabaseService:
             reference TEXT,
             counterparty TEXT,
 
-            running_balance NUMERIC(18,2)
+            running_balance NUMERIC(18,2),
+
+            fingerprint TEXT
         );
 
         ALTER TABLE public.bank_statement_lines
@@ -6301,20 +6316,16 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS description TEXT,
             ADD COLUMN IF NOT EXISTS reference TEXT,
             ADD COLUMN IF NOT EXISTS counterparty TEXT,
-            ADD COLUMN IF NOT EXISTS running_balance NUMERIC(18,2);
+            ADD COLUMN IF NOT EXISTS running_balance NUMERIC(18,2),
+            ADD COLUMN IF NOT EXISTS fingerprint TEXT;
 
         CREATE UNIQUE INDEX IF NOT EXISTS bank_statement_lines_id_company_uq
         ON public.bank_statement_lines(id, company_id);
 
-        -- dedupe likely duplicate parsed lines within the same import
-        CREATE UNIQUE INDEX IF NOT EXISTS bank_statement_lines_import_line_uq
-        ON public.bank_statement_lines(
-            import_id,
-            COALESCE(line_date, DATE '1900-01-01'),
-            COALESCE(amount, 0),
-            COALESCE(reference, ''),
-            COALESCE(description, '')
-        );
+        -- Matches insert_bank_statement_lines():
+        -- ON CONFLICT (import_id, fingerprint) DO NOTHING
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_statement_lines_import_fingerprint_uq
+        ON public.bank_statement_lines(import_id, fingerprint);
 
         CREATE INDEX IF NOT EXISTS bank_statement_lines_import_idx
         ON public.bank_statement_lines(import_id);
@@ -6324,7 +6335,6 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS bank_statement_lines_company_date_idx
         ON public.bank_statement_lines(company_id, line_date, value_date);
-
 
         -- ==================================================
         -- BANK RECON ITEMS
@@ -68135,18 +68145,7 @@ class DatabaseService:
                         reversal_payment_id,
                         original_payment_id,
                     ))
-                reversal_payment_id = cur.fetchone()[0]
 
-                # ---- 3. Update original payment ----
-                cur.execute(f"""
-                    UPDATE {schema}.lease_payments
-                    SET
-                        status = 'reversed',
-                        reversed_by_payment_id = %s,
-                        posted_journal_id = NULL,
-                        posted_at = NULL
-                    WHERE id = %s
-                """, (reversal_payment_id, original_payment_id))
 
             elif source == "lease_monthly" and source_id:
                 cur.execute(f"""
@@ -68157,6 +68156,41 @@ class DatabaseService:
                     WHERE company_id = %s
                     AND id = %s
                 """, (company_id, source_id))
+
+            elif source == "bill" and source_id:
+                bill_id = int(source_id)
+
+                # --------------------------------------------------
+                # Vendor Bill — mark original bill as reversed
+                # --------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.bills
+                    SET
+                        status = 'reversed',
+                        posted_journal_id = NULL,
+                        reversed_journal_id = %s,
+                        reversed_at = NOW(),
+                        reversal_reason = %s,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                      AND id = %s
+                      AND posted_journal_id = %s
+                    """,
+                    (
+                        int(reversal_journal_id),
+                        reason,
+                        int(company_id),
+                        bill_id,
+                        int(journal_id),
+                    ),
+                )
+
+                if cur.rowcount != 1:
+                    raise ValueError(
+                        f"VENDOR_BILL_REVERSAL_UPDATE_FAILED|"
+                        f"bill_id={bill_id}|journal_id={journal_id}"
+                    )
 
             elif source == "loan_payment":
                 cur.execute(f"""
