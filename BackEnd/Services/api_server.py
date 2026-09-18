@@ -12138,6 +12138,183 @@ def list_inventory_tx(cid: int):
     rows = db_service.fetch_all(sql, tuple(params)) or []
     return jsonify({"items": rows, "limit": limit, "offset": offset}), 200
 
+@app.route("/api/companies/<int:cid>/inventory/write-downs/reasons", methods=["GET"])
+@require_auth
+def list_inventory_write_down_reasons(cid: int):
+    company_id = int(cid)
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        active_only = request.args.get("active_only", "1").strip().lower() in ("1", "true", "yes")
+        reasons = db_service.list_write_down_reasons(company_id, active_only=active_only)
+        return jsonify(reasons), 200
+    except Exception as e:
+        current_app.logger.exception("list_inventory_write_down_reasons failed")
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/companies/<int:cid>/inventory/write-down", methods=["POST"])
+@require_auth
+def write_down_inventory(cid: int):
+    company_id = int(cid)
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        auth_ctx = getattr(g, "auth_context", {}) or {}
+
+        if auth_ctx.get("is_delegated_company_access"):
+            payload["source_company_id"] = auth_ctx.get("source_company_id")
+            payload["engagement_company_id"] = auth_ctx.get("source_company_id")
+            payload["engagement_id"] = auth_ctx.get("engagement_id")
+
+        payload["created_by_user_id"] = user.get("id")
+        payload["updated_by_user_id"] = user.get("id")
+
+        tx_date = payload.get("tx_date") or payload.get("date")
+        ref = (payload.get("ref") or "").strip()
+        reason_code = (payload.get("reason_code") or "").strip().upper()
+        notes = payload.get("notes")
+        lines = payload.get("lines") or []
+
+        if not tx_date:
+            return jsonify({"error": "tx_date is required"}), 400
+        if not ref:
+            return jsonify({"error": "ref is required (e.g. WD-2026-001)"}), 400
+        if not reason_code:
+            return jsonify({"error": "reason_code is required (e.g. OBSOLESCENCE, DAMAGE, EXPIRY, SHRINKAGE)"}), 400
+        if not isinstance(lines, list) or not lines:
+            return jsonify({"error": "lines[] is required"}), 400
+
+        schema = f"company_{company_id}"
+
+        # ------------------------------------
+        # Idempotency check
+        # ------------------------------------
+        existing = db_service.fetch_one(
+            f"""
+            SELECT id
+            FROM {schema}.inventory_tx
+            WHERE company_id=%s
+              AND lower(tx_type)=lower('write_down')
+              AND lower(trim(ref))=lower(trim(%s))
+            LIMIT 1
+            """,
+            (company_id, ref),
+        )
+        if existing:
+            tx_id = int(existing["id"] if isinstance(existing, dict) else existing[0])
+            tx = db_service.fetch_one(
+                f"SELECT * FROM {schema}.inventory_tx WHERE company_id=%s AND id=%s",
+                (company_id, tx_id),
+            ) or {}
+            tx_lines = db_service.fetch_all(
+                f"""
+                SELECT * FROM {schema}.inventory_tx_lines
+                WHERE company_id=%s AND tx_id=%s
+                ORDER BY line_no
+                """,
+                (company_id, tx_id),
+            ) or []
+            if isinstance(tx, dict):
+                tx["lines"] = tx_lines
+
+            db_service.audit_log(
+                company_id=company_id,
+                actor_user_id=int(user.get("id") or 0),
+                module="inventory",
+                action="write_down_duplicate",
+                severity="info",
+                entity_type="inventory_tx",
+                entity_id=str(tx_id),
+                entity_ref=ref,
+                after_json={"tx_id": tx_id, "ref": ref, "status": "returned_existing"},
+                message="Inventory write-down already existed (idempotent return)",
+            )
+            return jsonify(tx), 200
+
+        # ------------------------------------
+        # Validate lines
+        # ------------------------------------
+        for i, ln in enumerate(lines, start=1):
+            item_id = int(ln.get("item_id") or 0)
+            qty = float(ln.get("qty") or ln.get("quantity") or 0.0)
+
+            if item_id <= 0:
+                return jsonify({"error": f"line {i} missing item_id", "line": ln}), 400
+            if qty <= 0:
+                return jsonify({"error": f"line {i} qty must be > 0", "line": ln}), 400
+
+        # ------------------------------------
+        # Execute Write-Down
+        # ------------------------------------
+        tx_id = db_service.write_down_inventory_stock(
+            company_id,
+            tx_date=tx_date,
+            ref=ref,
+            notes=notes,
+            reason_code=reason_code,
+            lines=lines,
+            created_by=user.get("id"),
+            source_company_id=payload.get("source_company_id"),
+            engagement_company_id=payload.get("engagement_company_id"),
+            engagement_id=payload.get("engagement_id"),
+            updated_by_user_id=payload.get("updated_by_user_id"),
+        )
+
+        tx = db_service.fetch_one(
+            f"SELECT * FROM {schema}.inventory_tx WHERE company_id=%s AND id=%s",
+            (company_id, tx_id),
+        ) or {}
+
+        tx_lines = db_service.fetch_all(
+            f"""
+            SELECT * FROM {schema}.inventory_tx_lines
+            WHERE company_id=%s AND tx_id=%s
+            ORDER BY line_no
+            """,
+            (company_id, tx_id),
+        ) or []
+
+        if isinstance(tx, dict):
+            tx["lines"] = tx_lines
+
+        total_value = sum(
+            float(l.get("qty") or 0) * float(l.get("unit_cost") or 0) for l in (tx_lines or [])
+        )
+
+        db_service.audit_log(
+            company_id=company_id,
+            actor_user_id=int(user.get("id") or 0),
+            module="inventory",
+            action="write_down_create",
+            severity="warning",
+            entity_type="inventory_tx",
+            entity_id=str(tx_id),
+            entity_ref=ref,
+            amount=float(total_value),
+            currency=None,
+            after_json={
+                "tx_id": tx_id,
+                "tx_date": str(tx_date),
+                "ref": ref,
+                "reason_code": reason_code,
+                "lines_count": len(lines),
+                "total_loss": total_value,
+            },
+            message=f"Inventory write-down created ({reason_code})",
+        )
+
+        return jsonify(tx), 201
+
+    except Exception as e:
+        current_app.logger.exception("write_down_inventory failed")
+        return jsonify({"error": str(e)}), 400
+    
 @app.route("/api/companies/<int:cid>/ap/grni/open", methods=["GET"])
 @require_auth
 def list_open_grni(cid: int):

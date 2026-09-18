@@ -52831,6 +52831,43 @@ class DatabaseService:
         AND source_line_id IS NOT NULL;
 
         -- ============================================================
+        -- INVENTORY WRITE-DOWN REASONS TABLE & AUDIT HOOKS
+        -- ============================================================
+        CREATE TABLE IF NOT EXISTS {schema}.inventory_write_down_reasons (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT NULL,
+            default_account_code TEXT NULL, -- Optional GL override per reason
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(company_id, code)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_iwd_reasons_idx 
+        ON {schema}.inventory_write_down_reasons(company_id, is_active);
+
+        -- Ensure inventory_tx and inventory_tx_lines support write-down metadata
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS write_down_reason_code TEXT NULL;
+
+        ALTER TABLE {schema}.inventory_tx_lines
+        ADD COLUMN IF NOT EXISTS write_down_reason_code TEXT NULL;
+
+        -- Pre-seed default industry write-down reasons (idempotent)
+        INSERT INTO {schema}.inventory_write_down_reasons (company_id, code, name, description)
+        VALUES
+            ({company_id}, 'OBSOLESCENCE', 'Obsolescence / Slow Moving', 'Goods expired, outmoded, or discontinued with zero/diminished utility'),
+            ({company_id}, 'DAMAGE', 'Physical Damage / Breakage', 'Stock broken, dropped, crushed, water-damaged, or ruined during handling'),
+            ({company_id}, 'EXPIRY', 'Expired Product', 'Perishable, pharmaceutical, chemical, or consumable past safe consumption date'),
+            ({company_id}, 'SHRINKAGE', 'Shrinkage / Theft / Unexplained Loss', 'Discrepancy identified during stock-take or security loss incident'),
+            ({company_id}, 'SCRAP', 'Scrapped / Production Waste', 'Sub-standard production materials deemed unusable and written off'),
+            ({company_id}, 'NRV_ADJUSTMENT', 'Lower of Cost and Net Realisable Value (NRV)', 'Market price drop below carrying book value')
+        ON CONFLICT (company_id, code) DO NOTHING;
+
+        -- ============================================================
         -- PROJECT MANAGEMENT / JOB COSTING
         -- ============================================================
         CREATE TABLE IF NOT EXISTS {schema}.projects (
@@ -83885,7 +83922,428 @@ class DatabaseService:
                             )
                             self.update_trial_balance(company_id, {"account_code": inv_code, "debit": 0.0, "credit": float(alloc_consumed)}, cur=cur)
 
+    def find_default_inventory_write_down_account_code(
+        self, company_id: int, *, cur=None
+    ) -> str | None:
+        """
+        Resolves an Inventory Write-Down / Loss account code.
+        Priority:
+        1. Company Control setting: WRITE_DOWN_CONTROL or INVENTORY_ADJUSTMENT_CONTROL
+        2. COA role 'inventory_write_down' or 'inventory_shrinkage'
+        3. Name / category heuristics in COA
+        """
+        schema = f"company_{company_id}"
 
+        # 1. Company Control
+        control = self.get_control_account_code(company_id, "WRITE_DOWN_CONTROL")
+        if not control:
+            control = self.get_control_account_code(company_id, "INVENTORY_ADJUSTMENT_CONTROL")
+        if control:
+            return control.strip()
+
+        def _query(c):
+            # 2. Check roles
+            c.execute(
+                f"""
+                SELECT code FROM {schema}.coa
+                WHERE company_id=%s AND posting=true
+                  AND role IN ('inventory_write_down', 'inventory_shrinkage', 'inventory_adjustment')
+                ORDER BY CASE role
+                    WHEN 'inventory_write_down' THEN 1
+                    WHEN 'inventory_shrinkage' THEN 2
+                    ELSE 3
+                END, id ASC
+                LIMIT 1
+                """,
+                (int(company_id),),
+            )
+            row = c.fetchone()
+            if row:
+                return (row.get("code") if isinstance(row, dict) else row[0]) or None
+
+            # 3. Name / category search
+            c.execute(
+                f"""
+                SELECT code, name FROM {schema}.coa
+                WHERE company_id=%s AND posting=true
+                ORDER BY
+                CASE
+                    WHEN lower(coalesce(name,'')) LIKE '%%inventory write-down%%' THEN 1
+                    WHEN lower(coalesce(name,'')) LIKE '%%write-down%%' THEN 2
+                    WHEN lower(coalesce(name,'')) LIKE '%%inventory write-off%%' THEN 3
+                    WHEN lower(coalesce(name,'')) LIKE '%%inventory loss%%' THEN 4
+                    WHEN lower(coalesce(name,'')) LIKE '%%shrinkage%%' THEN 5
+                    WHEN lower(coalesce(name,'')) LIKE '%%spoilage%%' THEN 6
+                    WHEN lower(coalesce(name,'')) LIKE '%%inventory adjustment%%' THEN 7
+                    ELSE 999
+                END,
+                id ASC
+                LIMIT 1
+                """,
+                (int(company_id),),
+            )
+            r2 = c.fetchone()
+            if r2:
+                return (r2.get("code") if isinstance(r2, dict) else r2[0]) or None
+            return None
+
+        if cur:
+            return _query(cur)
+        with self._conn_cursor() as (_, _cur):
+            return _query(_cur)
+
+    def list_write_down_reasons(self, company_id: int, active_only: bool = True) -> list[dict]:
+        schema = f"company_{company_id}"
+        sql = f"""
+        SELECT id, code, name, description, default_account_code, is_active
+        FROM {schema}.inventory_write_down_reasons
+        WHERE company_id=%s {"AND is_active=true" if active_only else ""}
+        ORDER BY id ASC
+        """
+        return self.fetch_all(sql, (int(company_id),)) or []
+
+    def write_down_inventory_stock(
+        self,
+        company_id: int,
+        *,
+        tx_date,
+        ref: str,
+        notes: str = None,
+        reason_code: str,
+        lines: list[dict],
+        created_by: int = None,
+        source_company_id: int | None = None,
+        engagement_company_id: int | None = None,
+        engagement_id: int | None = None,
+        updated_by_user_id: int | None = None,
+        cur=None,
+    ) -> int:
+        """
+        Processes an Inventory Write-down:
+        - Depletes stock using FIFO or Weighted Average (AVG)
+        - Creates an inventory_tx (tx_type='write_down')
+        - Creates inventory_tx_lines
+        - Posts GL Journal: Dr Write-Down / Loss Expense, Cr Inventory Asset
+        """
+        from decimal import Decimal, ROUND_HALF_UP
+
+        def money(x) -> float:
+            return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+        def _to_float(x, d=0.0):
+            try:
+                if x is None:
+                    return d
+                if isinstance(x, str):
+                    x = x.replace(",", "").strip()
+                return float(x)
+            except Exception:
+                return d
+
+        schema = f"company_{company_id}"
+
+        if not lines or not isinstance(lines, list):
+            raise ValueError("lines required")
+
+        if hasattr(tx_date, "isoformat"):
+            tx_date = tx_date.isoformat()[:10]
+        else:
+            tx_date = str(tx_date)[:10]
+
+        ref = (ref or "").strip()
+        if not ref:
+            raise ValueError("ref is required (e.g. WD-2026-001)")
+
+        def _run(_cur):
+            # 1. Check Idempotency by ref
+            _cur.execute(
+                f"""
+                SELECT id FROM {schema}.inventory_tx
+                WHERE company_id=%s
+                  AND lower(tx_type)=lower('write_down')
+                  AND lower(trim(ref))=lower(trim(%s))
+                LIMIT 1
+                """,
+                (int(company_id), ref),
+            )
+            ex = _cur.fetchone()
+            if ex:
+                return int(ex.get("id") if isinstance(ex, dict) else ex[0])
+
+            # 2. Validate Reason Code
+            _cur.execute(
+                f"""
+                SELECT code, default_account_code 
+                FROM {schema}.inventory_write_down_reasons
+                WHERE company_id=%s AND lower(code)=lower(%s) AND is_active=true
+                LIMIT 1
+                """,
+                (int(company_id), reason_code),
+            )
+            r_row = _cur.fetchone() or {}
+            if not r_row:
+                raise ValueError(f"INVALID_WRITE_DOWN_REASON_CODE|{reason_code}")
+
+            reason_account_override = (r_row.get("default_account_code") or "").strip()
+
+            # 3. Create header
+            _cur.execute(
+                f"""
+                INSERT INTO {schema}.inventory_tx
+                (
+                    company_id, tx_date, tx_type, status, ref, notes,
+                    source, source_id, created_by,
+                    source_company_id, engagement_company_id, engagement_id,
+                    updated_by_user_id, write_down_reason_code,
+                    created_at, updated_at
+                )
+                VALUES
+                (
+                    %s, %s, 'write_down', 'draft', %s, %s,
+                    'manual', NULL, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    NOW(), NOW()
+                )
+                RETURNING id;
+                """,
+                (
+                    int(company_id),
+                    tx_date,
+                    ref,
+                    notes or None,
+                    created_by or None,
+                    int(source_company_id) if source_company_id else None,
+                    int(engagement_company_id) if engagement_company_id else None,
+                    int(engagement_id) if engagement_id else None,
+                    int(updated_by_user_id) if updated_by_user_id else None,
+                    reason_code,
+                ),
+            )
+            row = _cur.fetchone()
+            tx_id = int((row.get("id") if isinstance(row, dict) else row[0]) or 0)
+            if tx_id <= 0:
+                raise ValueError("Failed to create inventory_tx")
+
+            # 4. Resolve default write-down expense account
+            default_loss_account = reason_account_override or self.find_default_inventory_write_down_account_code(
+                company_id, cur=_cur
+            )
+            if not default_loss_account:
+                # Fallback to general COGS
+                default_loss_account = self.find_default_cogs_account_code(company_id, cur=_cur)
+
+            if not default_loss_account:
+                raise ValueError("WRITE_DOWN_EXPENSE_ACCOUNT_NOT_FOUND|Configure WRITE_DOWN_CONTROL")
+
+            inv_credit_totals: dict[str, float] = {}
+            loss_debit_totals: dict[str, float] = {}
+
+            # 5. Process write-down lines
+            for i, ln in enumerate(lines, start=1):
+                item_id = int(ln.get("item_id") or 0)
+                qty = _to_float(ln.get("qty") or ln.get("quantity") or 0.0)
+                line_reason = (ln.get("reason_code") or reason_code).strip()
+                memo = (ln.get("memo") or notes or f"Write-down: {line_reason}").strip()
+
+                if item_id <= 0:
+                    raise ValueError(f"line {i}: item_id required")
+                if qty <= 0:
+                    raise ValueError(f"line {i}: qty must be > 0")
+
+                # Lock & inspect item
+                _cur.execute(
+                    f"""
+                    SELECT is_active, track_stock, inventory_account, valuation_method
+                    FROM {schema}.inventory_items
+                    WHERE company_id=%s AND id=%s
+                    LIMIT 1
+                    """,
+                    (int(company_id), item_id),
+                )
+                it = _cur.fetchone() or {}
+                if not it:
+                    raise ValueError(f"INVENTORY_ITEM_NOT_FOUND|item_id={item_id}")
+                if it.get("is_active") is False:
+                    raise ValueError(f"INVENTORY_ITEM_INACTIVE|item_id={item_id}")
+
+                inv_acct_raw = (it.get("inventory_account") or "").strip()
+                if not inv_acct_raw:
+                    inv_acct_raw = (self.get_control_account_code(company_id, "INVENTORY_CONTROL") or "").strip()
+                if not inv_acct_raw:
+                    inv_acct_raw = (self.find_default_inventory_account_code(company_id, cur=_cur) or "").strip()
+                if not inv_acct_raw:
+                    raise ValueError(f"INVENTORY_ACCOUNT_MISSING|item_id={item_id}")
+
+                inv_row = self.get_account_row_for_posting(company_id, inv_acct_raw)
+                inv_acct = (inv_row[1] if inv_row else inv_acct_raw) or inv_acct_raw
+
+                valuation_method = (it.get("valuation_method") or "AVG").strip().upper()
+                if valuation_method not in ("AVG", "FIFO"):
+                    valuation_method = "AVG"
+
+                # Check on-hand stock
+                onhand = self._inventory_onhand_cur(company_id, item_id, _cur)
+                if qty > onhand:
+                    raise ValueError(
+                        f"Cannot write-down item {item_id}. Available on-hand is {onhand}, requested {qty}."
+                    )
+
+                # Cost depletion logic
+                line_cost = 0.0
+                unit_cost = 0.0
+
+                if valuation_method == "FIFO":
+                    # FIFO consume writes inventory_fifo_allocations & updates inbound layers.qty_out
+                    line_cost = money(
+                        self.fifo_consume(
+                            company_id,
+                            item_id=item_id,
+                            qty_out=qty,
+                            tx_date=tx_date,
+                            source="inventory_write_down",
+                            source_id=int(tx_id),
+                            posted_journal_id=0,
+                            cur=_cur,
+                        )
+                    )
+                    unit_cost = money(line_cost / qty) if qty > 0 else 0.0
+                else:
+                    # AVG: calculate weighted average cost and add stock-out layer
+                    unit_cost = money(self._inventory_avg_cost_cur(company_id, item_id, _cur))
+                    if unit_cost <= 0:
+                        raise ValueError(f"ZERO_OR_MISSING_COST|item_id={item_id}")
+                    line_cost = money(qty * unit_cost)
+
+                    _cur.execute(
+                        f"""
+                        INSERT INTO {schema}.inventory_layers
+                        (
+                            company_id, item_id, tx_date, qty_in, qty_out, unit_cost,
+                            ref, source, source_id, tx_id
+                        )
+                        VALUES (%s, %s, %s, 0, %s, %s, %s, 'inventory_write_down', %s, %s)
+                        """,
+                        (
+                            int(company_id),
+                            item_id,
+                            tx_date,
+                            float(qty),
+                            float(unit_cost),
+                            ref,
+                            int(tx_id),
+                            int(tx_id),
+                        ),
+                    )
+
+                if line_cost <= 0:
+                    raise ValueError(f"COMPUTED_WRITE_DOWN_COST_ZERO|item_id={item_id}")
+
+                # Insert line
+                _cur.execute(
+                    f"""
+                    INSERT INTO {schema}.inventory_tx_lines
+                    (
+                        company_id, tx_id, line_no, item_id, qty, unit_cost, unit_price,
+                        memo, write_down_reason_code, created_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, NOW())
+                    """,
+                    (
+                        int(company_id),
+                        tx_id,
+                        i,
+                        item_id,
+                        float(qty),
+                        float(unit_cost),
+                        memo,
+                        line_reason,
+                    ),
+                )
+
+                # Accumulate for GL postings
+                inv_credit_totals[inv_acct] = money(inv_credit_totals.get(inv_acct, 0.0) + line_cost)
+                loss_debit_totals[default_loss_account] = money(
+                    loss_debit_totals.get(default_loss_account, 0.0) + line_cost
+                )
+
+            # 6. Post GL Journal Entry
+            journal_lines = []
+            for acct, amt in loss_debit_totals.items():
+                if amt > 0:
+                    journal_lines.append({
+                        "account_code": acct,
+                        "debit": amt,
+                        "credit": 0.0,
+                        "memo": f"Inventory Write-Down: {reason_code}",
+                    })
+            for acct, amt in inv_credit_totals.items():
+                if amt > 0:
+                    journal_lines.append({
+                        "account_code": acct,
+                        "debit": 0.0,
+                        "credit": amt,
+                        "memo": f"Stock written off ({ref})",
+                    })
+
+            journal_id = self.post_journal(
+                company_id,
+                {
+                    "date": tx_date,
+                    "ref": ref,
+                    "description": f"Inventory Write-Down #{tx_id} ({reason_code})",
+                    "source": "inventory",
+                    "source_id": int(tx_id),
+                    "module_name": "inventory",
+                    "event_type": "inventory_write_down_posted",
+                    "source_table": "inventory_tx",
+                    "engagement_company_id": engagement_company_id or source_company_id,
+                    "engagement_id": engagement_id,
+                    "lines": journal_lines,
+                },
+                cur=_cur,
+            )
+
+            if not journal_id:
+                raise ValueError("FAILED_TO_CREATE_WRITE_DOWN_JOURNAL")
+
+            # 7. Stamp journal into transaction header & layers
+            _cur.execute(
+                f"""
+                UPDATE {schema}.inventory_tx
+                SET posted_journal_id=%s, posted_at=NOW(), status='posted', posted_by=%s, updated_at=NOW()
+                WHERE id=%s AND company_id=%s
+                """,
+                (int(journal_id), created_by or None, int(tx_id), int(company_id)),
+            )
+
+            _cur.execute(
+                f"""
+                UPDATE {schema}.inventory_layers
+                SET posted_journal_id=%s
+                WHERE company_id=%s AND tx_id=%s AND source='inventory_write_down'
+                """,
+                (int(journal_id), int(company_id), int(tx_id)),
+            )
+
+            _cur.execute(
+                f"""
+                UPDATE {schema}.inventory_fifo_allocations
+                SET posted_journal_id=%s
+                WHERE company_id=%s AND source='inventory_write_down' AND source_id=%s
+                """,
+                (int(journal_id), int(company_id), int(tx_id)),
+            )
+
+            return tx_id
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, _cur):
+            tx_id = _run(_cur)
+            conn.commit()
+            return tx_id
     def pos_ensure_packing_queue_item(self, company_id: int, order_id: int) -> int:
         schema = self.company_schema(company_id)
 
@@ -135431,13 +135889,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 f"""
                 INSERT INTO {schema}.inventory_tx (
                     company_id, tx_date, tx_type, status, ref, notes,
-                    source, source_id, created_by,
+                    created_by,
                     project_id, task_id, cost_code_id, usage_type,
                     created_at, updated_at
                 )
                 VALUES (
                     %s,%s,'issue_to_project','draft',%s,%s,
-                    'project',%s,%s,
+                    %s,
                     %s,%s,%s,%s,
                     NOW(),NOW()
                 )
@@ -135448,7 +135906,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     tx_date,
                     ref,
                     notes,
-                    int(project_id),
                     created_by,
                     int(project_id),
                     header_task_id,

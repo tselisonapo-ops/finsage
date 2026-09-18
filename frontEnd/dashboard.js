@@ -4745,6 +4745,13 @@ const ENDPOINTS = {
 
     purchaseOrderReceive: (cid, poId) =>
       `/api/companies/${cid}/purchase-orders/${poId}/receive`,
+
+    // Write-Downs
+    writeDown: (cid) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/write-down`,
+
+    writeDownReasons: (cid, qs = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/write-downs/reasons${qs ? `?${qs}` : ""}`,
   },
 
   stocktake: {
@@ -8644,6 +8651,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         { name: "Inventory Items", screen: "inventory-items", icon: "📦", feature: "inventory-module" },
         { name: "Service Items", screen: "service-items", icon: "🧰", feature: "service-billing" },
         { name: "Stock Movements", screen: "inventory-movements", icon: "🚚", feature: "inventory-module", minRole: "assistant" },
+        { name: "Write-Downs", screen: "inventory-write-downs", icon: "📉", feature: "inventory-module", minRole: "assistant" }, // ✅ Added
         { name: "Stocktake", screen: "stocktake", icon: "📋", feature: "inventory-module", minRole: "assistant" },
         { name: "Reorder Alerts", screen: "reorder", icon: "🚨", feature: "inventory-module" },
         { name: "Inventory Valuation", screen: "inventory-valuation", icon: "💰", feature: "inventory-module", minRole: "assistant" },
@@ -10616,16 +10624,17 @@ const SCREEN_POLICY = {
   // Inventory (feature flags later)
   inventory: { auth: "private", minRole: "clerk", feature: "inventory-module" },
   services:  { auth: "private", minRole: "clerk", feature: "service-billing" },
+
   // Inventory (Catalog Studio)
   "inventory-items":      { auth: "private", minRole: "clerk",     feature: "inventory-module" },
-  "inventory-movements":  { auth: "private", minRole: "clerk", feature: "inventory-module" },
-  "stocktake":            { auth: "private", minRole: "clerk", feature: "inventory-module" },
-  "inventory-valuation":  { auth: "private", minRole: "clerk", feature: "inventory-module" },
+  "inventory-movements":  { auth: "private", minRole: "clerk",     feature: "inventory-module" },
+  "inventory-write-downs":{ auth: "private", minRole: "assistant", feature: "inventory-module" }, // ✅ Added
+  "stocktake":            { auth: "private", minRole: "clerk",     feature: "inventory-module" },
+  "inventory-valuation":  { auth: "private", minRole: "clerk",     feature: "inventory-module" },
   "reorder":              { auth: "private", minRole: "clerk",     feature: "inventory-module" },
-  "purchase-orders": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
-
-  "goods-receipts": { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
-  "service-items": { auth: "private", minRole: "clerk",     feature: "service-billing" },
+  "purchase-orders":      { auth: "private", minRole: "clerk",     permission: "can_manage_ap" },
+  "goods-receipts":       { auth: "private", minRole: "clerk",     permission: "can_manage_ap" },
+  "service-items":        { auth: "private", minRole: "clerk",     feature: "service-billing" },
 
   projects: { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
   "project-detail": { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
@@ -12876,6 +12885,7 @@ function isInventoryRoute(name) {
   return [
     "inventory-items",
     "inventory-movements",
+    "inventory-write-downs", // ✅ added
     "stocktake",
     "reorder",
     "inventory-valuation",
@@ -12959,6 +12969,16 @@ function renderCatalogScreen(name) {
         bindInventoryMovementsUI?.();
         applyInventoryMovementContextLabels?.();
         loadInventoryMovements?.();
+      },
+    },
+
+  // Add the route to renderCatalogScreen(name)
+  // Inside the `routes` dictionary:
+    "inventory-write-downs": {
+      tpl: "tpl-inventory-write-downs",
+      enter: () => {
+        bindInventoryWriteDownsUI?.();
+        loadInventoryWriteDowns?.();
       },
     },
 
@@ -108145,6 +108165,7 @@ async function postDeferredTaxJournal(dt) {
 function applyInvItemModalContextLabels(isEdit = false) {
   const ctx = getInventoryContextMode();
 
+  // Modal Title
   const title = document.getElementById("invItemModalTitle");
   if (title) {
     title.textContent = ctx.isProjectMaterial
@@ -108152,6 +108173,7 @@ function applyInvItemModalContextLabels(isEdit = false) {
       : (isEdit ? "Edit Inventory Item" : "New Inventory Item");
   }
 
+  // Sales Price / Issue Rate Label
   const salesLabel = document.getElementById("invItemSalesPriceLabel");
   if (salesLabel) {
     salesLabel.textContent = ctx.isProjectMaterial
@@ -108159,13 +108181,64 @@ function applyInvItemModalContextLabels(isEdit = false) {
       : "Sell price";
   }
 
+  // Purchase / Acquisition Cost Label
+  const costLabel = document.getElementById("invItemCostPriceLabel");
+  if (costLabel) {
+    costLabel.textContent = ctx.isProjectMaterial
+      ? "Standard Material Unit Cost"
+      : "Purchase cost";
+  }
+
+  // Save Button
   const saveBtn = document.getElementById("invItemSaveBtn");
   if (saveBtn) {
     saveBtn.textContent = ctx.isProjectMaterial
-      ? "Save Material"
-      : "Save Item";
+      ? (isEdit ? "Update Material" : "Save Material")
+      : (isEdit ? "Update Item" : "Save Item");
+  }
+
+  // Track Stock checkbox label
+  const trackLabel = document.getElementById("invItemTrackStockLabel");
+  if (trackLabel) {
+    trackLabel.textContent = ctx.isProjectMaterial
+      ? "Track material warehouse on-hand balances"
+      : "Track stock balance";
   }
 }
+window.applyInvItemModalContextLabels = applyInvItemModalContextLabels;
+
+// ✅ Write-Down Modal Terminology Context
+function applyWriteDownModalContextLabels() {
+  const ctx = getInventoryContextMode();
+
+  const title = document.getElementById("writeDownModalTitle");
+  if (title) {
+    title.textContent = ctx.isProjectMaterial
+      ? "New Material Write-Down / Disposal"
+      : "New Stock Write-Down";
+  }
+
+  const screenTitle = document.getElementById("wdScreenTitle");
+  if (screenTitle) {
+    screenTitle.textContent = ctx.isProjectMaterial
+      ? "Material Write-Downs & Scrappage"
+      : "Inventory Write-Downs & Write-Offs";
+  }
+
+  const newBtn = document.getElementById("wdNewBtn");
+  if (newBtn) {
+    newBtn.textContent = ctx.isProjectMaterial ? "+ New Material Write-Down" : "+ New Write-Down";
+  }
+
+  const submitBtn = document.getElementById("wdSubmitBtn");
+  if (submitBtn) {
+    submitBtn.textContent = ctx.isProjectMaterial
+      ? "Post Material Write-Down"
+      : "Post Write-Down";
+  }
+}
+window.applyWriteDownModalContextLabels = applyWriteDownModalContextLabels;
+
 
 function showInvItemModalMsg(text = "", kind = "info") {
   const el = document.getElementById("invItemModalMsg");
@@ -123806,15 +123879,25 @@ function getInventoryContextMode() {
     newItemLabel: isProjectMaterial
       ? "+ New Material"
       : "+ New Item",
+    writeDownLabel: isProjectMaterial
+      ? "📉 Material Write-Downs"
+      : "📉 Stock Write-Downs",
+    newWriteDownLabel: isProjectMaterial
+      ? "+ New Material Write-Down"
+      : "+ New Write-Down",
   };
 }
 
 function applyInventoryContextLabels() {
   const ctx = getInventoryContextMode();
 
+  // Screen header title
   const title = document.querySelector("#screen-inventory h3");
-  if (title) title.textContent = ctx.isProjectMaterial ? "Materials & Inventory" : "Catalog Studio";
+  if (title) {
+    title.textContent = ctx.isProjectMaterial ? "Materials & Inventory" : "Catalog Studio";
+  }
 
+  // Quick tab buttons
   document.querySelectorAll('[data-nav="inventory-items"]').forEach(btn => {
     btn.textContent = ctx.itemLabel;
   });
@@ -123823,10 +123906,36 @@ function applyInventoryContextLabels() {
     btn.textContent = ctx.movementLabel;
   });
 
+  document.querySelectorAll('[data-nav="stocktake"]').forEach(btn => {
+    btn.textContent = ctx.countLabel;
+  });
+
+  document.querySelectorAll('[data-nav="reorder"]').forEach(btn => {
+    btn.textContent = ctx.reorderLabel;
+  });
+
+  document.querySelectorAll('[data-nav="inventory-valuation"]').forEach(btn => {
+    btn.textContent = ctx.valuationLabel;
+  });
+
+  // ✅ Write-Downs Quick-Tab Button
+  document.querySelectorAll('[data-nav="inventory-write-downs"]').forEach(btn => {
+    btn.textContent = ctx.writeDownLabel || (ctx.isProjectMaterial ? "📉 Material Write-Downs" : "📉 Stock Write-Downs");
+  });
+
+  // ✅ Sidebar navigation items (if using data-screen or data-nav)
+  document.querySelectorAll('[data-screen="inventory-write-downs"], [data-nav="inventory-write-downs"]').forEach(el => {
+    const textEl = el.querySelector(".nav-label, span") || el;
+    if (textEl && textEl.textContent.includes("Write-Down")) {
+      textEl.textContent = ctx.isProjectMaterial ? "Material Write-Downs" : "Stock Write-Downs";
+    }
+  });
+
+  // Mode banner text
   const modeText = document.getElementById("catalogCompanyModeText");
   if (modeText) {
     modeText.textContent = ctx.isProjectMaterial
-      ? `Mode: Materials for ${ctx.workUnit}`
+      ? `Mode: Materials (Job / Project WIP)`
       : modeText.textContent;
   }
 }
@@ -124684,6 +124793,423 @@ function applyReceiveColumnPolicy() {
   m.querySelectorAll("[data-cell='expiry']").forEach(el => el.style.display = showExpiry ? "" : "none");
 }
 
+// =====================================================
+// Inventory Write-Downs Controller
+// =====================================================
+
+window._WD_REASONS_CACHE = [];
+
+async function ensureWriteDownReasonsCache() {
+  if (window._WD_REASONS_CACHE.length) return window._WD_REASONS_CACHE;
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return [];
+
+  try {
+    const reasons = await apiFetch(ENDPOINTS.inventory.writeDownReasons(cid));
+    window._WD_REASONS_CACHE = Array.isArray(reasons) ? reasons : [];
+  } catch (err) {
+    console.warn("[Write-Down] failed to load reasons:", err);
+    window._WD_REASONS_CACHE = [];
+  }
+  return window._WD_REASONS_CACHE;
+}
+
+function bindInventoryWriteDownsUI() {
+  bindWriteDownModalOnce();
+
+  const refBtn = document.getElementById("wdRefreshBtn");
+  if (refBtn && refBtn.dataset.bound !== "1") {
+    refBtn.dataset.bound = "1";
+    refBtn.addEventListener("click", () => loadInventoryWriteDowns());
+  }
+
+  const newBtn = document.getElementById("wdNewBtn");
+  if (newBtn && newBtn.dataset.bound !== "1") {
+    newBtn.dataset.bound = "1";
+    newBtn.addEventListener("click", () => openWriteDownModal());
+  }
+
+  const ctx = getInventoryContextMode();
+  if (newBtn) newBtn.textContent = ctx.newWriteDownLabel || "+ New Write-Down";
+
+  ["wdFilterFrom", "wdFilterTo"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && el.dataset.bound !== "1") {
+      el.dataset.bound = "1";
+      el.addEventListener("change", () => loadInventoryWriteDowns());
+    }
+  });
+
+  const search = document.getElementById("wdFilterSearch");
+  if (search && search.dataset.bound !== "1") {
+    search.dataset.bound = "1";
+    search.addEventListener("input", debounce(() => loadInventoryWriteDowns(), 250));
+  }
+}
+
+async function loadInventoryWriteDowns({ limit = 50, offset = 0 } = {}) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const mount = document.getElementById("writeDownsTable");
+  if (mount) mount.innerHTML = `<div class="text-xs text-slate-500">Loading write-downs…</div>`;
+
+  const dateFrom = document.getElementById("wdFilterFrom")?.value || "";
+  const dateTo = document.getElementById("wdFilterTo")?.value || "";
+  const q = (document.getElementById("wdFilterSearch")?.value || "").trim();
+
+  const params = new URLSearchParams();
+  params.set("tx_type", "write_down");
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  if (dateFrom) params.set("from", dateFrom);
+  if (dateTo) params.set("to", dateTo);
+  if (q) params.set("q", q);
+
+  try {
+    const data = await apiFetch(ENDPOINTS.inventory.txList(cid, params.toString()));
+    const items = data?.items || data?.rows || [];
+    renderWriteDownsTable(items);
+  } catch (err) {
+    if (mount) mount.innerHTML = renderApiError(err);
+  }
+}
+
+function renderWriteDownsTable(items) {
+  const mount = document.getElementById("writeDownsTable");
+  if (!mount) return;
+
+  if (!items.length) {
+    mount.innerHTML = `<div class="text-xs text-slate-500">No write-down movements recorded.</div>`;
+    return;
+  }
+
+  const row = (r) => `
+    <tr class="border-b hover:bg-slate-50 cursor-pointer" onclick="openMovementDetail?.(${Number(r.id)})">
+      <td class="px-2 py-2 font-medium">${esc(String(r.ref || `WD-${r.id}`))}</td>
+      <td class="px-2 py-2">${esc(String(r.tx_date || "").slice(0, 10))}</td>
+      <td class="px-2 py-2">
+        <span class="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-semibold text-[10px]">
+          ${esc(r.write_down_reason_code || "WRITE-DOWN")}
+        </span>
+      </td>
+      <td class="px-2 py-2 text-slate-600">${esc(r.notes || "—")}</td>
+      <td class="px-2 py-2 text-center">
+        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] ${
+          r.status === "posted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"
+        }">
+          ${esc(r.status || "posted")}
+        </span>
+      </td>
+      <td class="px-2 py-2 text-right">${r.posted_journal_id ? "✅ Posted" : "—"}</td>
+    </tr>
+  `;
+
+  mount.innerHTML = `
+    <div class="overflow-auto border rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr class="text-slate-600">
+            <th class="text-left px-2 py-2">Ref</th>
+            <th class="text-left px-2 py-2">Date</th>
+            <th class="text-left px-2 py-2">Reason</th>
+            <th class="text-left px-2 py-2">Notes</th>
+            <th class="text-center px-2 py-2">Status</th>
+            <th class="text-right px-2 py-2">GL Post</th>
+          </tr>
+        </thead>
+        <tbody>${items.map(row).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function bindWriteDownModalOnce() {
+  const m = document.getElementById("invWriteDownModal");
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("wdModalCloseBtn")?.addEventListener("click", closeWriteDownModal);
+  document.getElementById("wdCancelBtn")?.addEventListener("click", closeWriteDownModal);
+
+  document.getElementById("wdAddLineBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    addWriteDownLine();
+  });
+
+  document.getElementById("wdSubmitBtn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    await submitWriteDownStock();
+  });
+}
+
+function showWriteDownMsg(text = "", kind = "info") {
+  const el = document.getElementById("wdModalMsg");
+  if (!el) return;
+  const cls =
+    kind === "error" ? "text-red-600 font-semibold" :
+    kind === "ok" ? "text-emerald-600 font-semibold" :
+    "text-slate-600";
+  el.className = `text-xs my-2 ${cls}`;
+  el.textContent = text || "";
+}
+
+function closeWriteDownModal() {
+  const m = document.getElementById("invWriteDownModal");
+  if (m) m.classList.add("hidden");
+}
+
+async function openWriteDownModal() {
+  const m = document.getElementById("invWriteDownModal");
+  if (!m) return;
+ applyWriteDownModalContextLabels();
+  showWriteDownMsg("");
+
+  // Default date to today
+  document.getElementById("wdDate").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("wdRef").value = `WD-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(100 + Math.random() * 900)}`;
+  document.getElementById("wdNotes").value = "";
+
+  // Load Reasons Dropdown
+  const reasonSel = document.getElementById("wdReason");
+  reasonSel.innerHTML = `<option value="">Loading reasons...</option>`;
+
+  try {
+    const reasons = await ensureWriteDownReasonsCache();
+    if (reasons.length) {
+      reasonSel.innerHTML = `<option value="">— Select write-down reason —</option>` +
+        reasons.map(r => `<option value="${esc(r.code)}">${esc(r.name)}</option>`).join("");
+    } else {
+      reasonSel.innerHTML = `
+        <option value="OBSOLESCENCE">Obsolescence / Slow Moving</option>
+        <option value="DAMAGE">Physical Damage / Breakage</option>
+        <option value="EXPIRY">Expired Product</option>
+        <option value="SHRINKAGE">Shrinkage / Theft / Stocktake Loss</option>
+        <option value="SCRAP">Scrapped / Waste</option>
+      `;
+    }
+  } catch (_) {
+    reasonSel.innerHTML = `<option value="OBSOLESCENCE">Obsolescence</option>`;
+  }
+
+  // Pre-fetch items cache & on-hand snapshot
+  await ensureInvItemCache();
+
+  const tbody = document.getElementById("wdLinesTbody");
+  if (tbody) tbody.innerHTML = "";
+
+  addWriteDownLine();
+  m.classList.remove("hidden");
+}
+
+function addWriteDownLine(line = {}) {
+  const tbody = document.getElementById("wdLinesTbody");
+  if (!tbody) return;
+
+  const items = window._INV_ITEM_CACHE?.items || [];
+
+  const options = [`<option value="">Select item…</option>`].concat(
+    items.map(it =>
+      `<option value="${it.id}" data-sku="${esc(it.sku || "")}">
+        ${esc(it.sku)} — ${esc(it.name)}
+      </option>`
+    )
+  ).join("");
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b hover:bg-slate-50";
+  tr.innerHTML = `
+    <!-- Barcode / SKU scan -->
+    <td class="px-2 py-2">
+      <input
+        class="w-full border rounded px-2 py-1 text-xs wd-line-sku"
+        placeholder="Scan / SKU"
+        value="${esc(line.sku || "")}"
+      />
+    </td>
+
+    <!-- Item Select -->
+    <td class="px-2 py-2">
+      <select class="w-full border rounded px-2 py-1 text-xs wd-line-item">
+        ${options}
+      </select>
+    </td>
+
+    <!-- On Hand (Auto-loaded) -->
+    <td class="px-2 py-2 text-right">
+      <span class="wd-line-onhand text-slate-500 font-medium">0</span>
+    </td>
+
+    <!-- Qty to Write Off -->
+    <td class="px-2 py-2">
+      <input type="number" step="0.0001" min="0.0001"
+        class="w-full border rounded px-2 py-1 text-xs text-right font-semibold text-red-600 wd-line-qty"
+        placeholder="0.00" value="${esc(line.qty ?? "")}">
+    </td>
+
+    <!-- Memo -->
+    <td class="px-2 py-2">
+      <input type="text"
+        class="w-full border rounded px-2 py-1 text-xs wd-line-memo"
+        placeholder="Specific line memo"
+        value="${esc(line.memo || "")}">
+    </td>
+
+    <!-- Delete line button -->
+    <td class="px-2 py-2 text-center">
+      <button type="button" class="text-xs text-red-600 hover:text-red-800 wd-line-del">✕</button>
+    </td>
+  `;
+
+  const sel = tr.querySelector(".wd-line-item");
+  const skuInp = tr.querySelector(".wd-line-sku");
+  const onhandEl = tr.querySelector(".wd-line-onhand");
+  const qtyInp = tr.querySelector(".wd-line-qty");
+
+  const updateOnHandForItem = async (itemId) => {
+    if (!itemId) {
+      onhandEl.textContent = "0";
+      return;
+    }
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    try {
+      const snap = await apiFetch(ENDPOINTS.inventory.onHand(cid, `item_id=${itemId}`));
+      const itemRow = (snap?.items || []).find(x => Number(x.item_id) === Number(itemId));
+      const onHandVal = Number(itemRow?.on_hand ?? 0);
+      onhandEl.textContent = String(onHandVal);
+      if (onHandVal <= 0) {
+        onhandEl.classList.add("text-red-500");
+      } else {
+        onhandEl.classList.remove("text-red-500");
+      }
+    } catch (_) {
+      onhandEl.textContent = "—";
+    }
+  };
+
+  // Sync SKU when dropdown changes
+  sel.addEventListener("change", () => {
+    const opt = sel.selectedOptions?.[0];
+    const sku = opt?.getAttribute("data-sku") || "";
+    if (skuInp && sku) skuInp.value = sku;
+    updateOnHandForItem(sel.value);
+  });
+
+  // Sync dropdown when SKU/Barcode entered
+  skuInp.addEventListener("change", () => {
+    const val = String(skuInp.value || "").trim().toLowerCase();
+    if (!val) return;
+    const match = items.find(it =>
+      String(it.sku || "").toLowerCase() === val ||
+      String(it.barcode || "").toLowerCase() === val
+    );
+    if (match) {
+      sel.value = String(match.id);
+      updateOnHandForItem(match.id);
+    }
+  });
+
+  // Warn if qty exceeds on-hand
+  qtyInp.addEventListener("input", () => {
+    const req = Number(qtyInp.value || 0);
+    const avail = Number(onhandEl.textContent || 0);
+    if (avail > 0 && req > avail) {
+      qtyInp.classList.add("border-red-500", "bg-red-50");
+    } else {
+      qtyInp.classList.remove("border-red-500", "bg-red-50");
+    }
+  });
+
+  tr.querySelector(".wd-line-del")?.addEventListener("click", () => tr.remove());
+  tbody.appendChild(tr);
+
+  if (line.item_id) {
+    sel.value = String(line.item_id);
+    updateOnHandForItem(line.item_id);
+  }
+}
+
+async function submitWriteDownStock() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  showWriteDownMsg("");
+
+  const tx_date = normalizeToISODate(document.getElementById("wdDate")?.value);
+  const ref = (document.getElementById("wdRef")?.value || "").trim();
+  const reason_code = (document.getElementById("wdReason")?.value || "").trim();
+  const notes = (document.getElementById("wdNotes")?.value || "").trim() || null;
+
+  if (!tx_date) return showWriteDownMsg("Transaction date is required (YYYY-MM-DD).", "error");
+  if (!ref) return showWriteDownMsg("Reference / Doc # is required.", "error");
+  if (!reason_code) return showWriteDownMsg("Please select a primary write-down reason.", "error");
+
+  const tbody = document.getElementById("wdLinesTbody");
+  const rows = Array.from(tbody?.querySelectorAll("tr") || []);
+  const lines = [];
+
+  for (const tr of rows) {
+    const itemId = Number(tr.querySelector(".wd-line-item")?.value || 0);
+    const qty = Number(String(tr.querySelector(".wd-line-qty")?.value || "0").replace(/,/g, ""));
+    const memo = (tr.querySelector(".wd-line-memo")?.value || "").trim() || null;
+    const avail = Number(tr.querySelector(".wd-line-onhand")?.textContent || 0);
+
+    if (!itemId || qty <= 0) continue;
+
+    if (qty > avail) {
+      return showWriteDownMsg(
+        `Quantity (${qty}) exceeds available stock (${avail}) for one of the items. Adjust quantity before posting.`,
+        "error"
+      );
+    }
+
+    lines.push({
+      item_id: itemId,
+      qty,
+      memo,
+      reason_code,
+    });
+  }
+
+  if (!lines.length) {
+    return showWriteDownMsg("Add at least one valid line with Item and Qty > 0.", "error");
+  }
+
+  if (!confirm(`Are you sure you want to write down stock for ${lines.length} item(s)? This will credit inventory and debit loss expense.`)) {
+    return;
+  }
+
+  const btn = document.getElementById("wdSubmitBtn");
+  const oldText = btn?.textContent || "Post Write-Down";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Posting...";
+  }
+
+  try {
+    await apiFetch(ENDPOINTS.inventory.writeDown(cid), {
+      method: "POST",
+      body: JSON.stringify({
+        tx_date,
+        ref,
+        reason_code,
+        notes,
+        lines,
+      }),
+    });
+
+    closeWriteDownModal();
+    showToast?.("Write-down posted successfully", "ok");
+    loadInventoryWriteDowns();
+  } catch (err) {
+    showWriteDownMsg(err?.message || "Write-down failed.", "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+}
 // =====================================================
 // Reorder Alerts (Frontend)
 // =====================================================
