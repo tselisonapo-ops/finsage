@@ -17272,7 +17272,6 @@ label:has(#projectTeamUserSearch) {
             </div>
 
             <!-- button data-nav="service-items">Service Items</button -->
-
             <!-- Quick tabs (optional UI; nav already exists, but this helps inside screen) -->
             <div class="flex flex-wrap gap-2 border-b pb-2">
               <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="inventory-items">Inventory Items</button>
@@ -17280,27 +17279,12 @@ label:has(#projectTeamUserSearch) {
               <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="stocktake">Stocktake</button>
               <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="reorder">Reorder Alerts</button>
               <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="inventory-valuation">Inventory Valuation</button>
-              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="manufacturing">
-                Inventory Write-Down
-              </button>
-              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="manufacturing">
-                Manufacturing
-              </button>
-              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50"
-                      data-nav="purchase-orders">
-                Purchase Orders
-              </button>
-
-              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50"
-                      data-nav="goods-receipts">
-                Goods Receipts
-              </button>
+              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="inventory-write-downs">Inventory Write-Downs</button>
+              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="manufacturing">Manufacturing</button>
+              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="purchase-orders">Purchase Orders</button>
+              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="goods-receipts">Goods Receipts</button>
+              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="service-items">Service Items</button>
             </div>
-
-            <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50"
-                    data-nav="service-items">
-              Service Items
-            </button>
 
             <!-- Subscreen mount: JS swaps content here based on route -->
             <div id="catalogMount" class="min-h-[320px]"></div>
@@ -17430,11 +17414,6 @@ label:has(#projectTeamUserSearch) {
                 </div>
               </div>
             </template>
-
-            <!-- Add this tab button inside your quick tabs container in #screen-inventory -->
-            <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="inventory-write-downs">
-              Write-Downs
-            </button>
 
             <!-- =====================================================
                 1) Inventory Write-Downs Subscreen Template

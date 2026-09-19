@@ -21,7 +21,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": False,
         "default_inventory_mode": "none",
         "default_valuation": None,
+        "pnl_labels": {"revenue": "Professional service income"},
+        "uses_manufacturing": False,
     },
+
     "Management Services": {
         "pnl_layout": "service_simple",
         "is_service_only": True,
@@ -29,6 +32,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": False,
         "default_inventory_mode": "none",
         "default_valuation": None,
+        "pnl_labels": {"revenue": "Management service income"},
+        "uses_manufacturing": False,
     },
     "Banking & Financial Services": {
         "pnl_layout": "service_simple",
@@ -37,6 +42,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": False,
         "default_inventory_mode": "none",
         "default_valuation": None,
+        "pnl_labels": {"revenue": "Interest & service income"},
+        "uses_manufacturing": False,
     },
     "Body Corporate": {
         "pnl_layout": "service_simple",
@@ -46,6 +53,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "none",
         "default_valuation": None,
         "pnl_labels": {"revenue": "Levy income"},
+        "uses_manufacturing": False,
     },
     "Property Management": {
         "pnl_layout": "service_simple",
@@ -54,16 +62,17 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": False,
         "default_inventory_mode": "none",
         "default_valuation": None,
+        "uses_manufacturing": False,
     },
     "NPO Education": {
         "pnl_layout": "npo_performance",
         "is_service_only": True,
-        "uses_inventory": True,                    # ← CHANGED from False
+        "uses_inventory": True,
         "uses_cogs": False,
-        "default_inventory_mode": "service",         # ← CHANGED from "none"
+        "default_inventory_mode": "service",
         "default_valuation": None,
-        
-        # New school flags
+        "pnl_labels": {"revenue": "Education income"},
+        "uses_manufacturing": False,
         "is_school": True,
         "school_type": "npo_education",
         "work_unit_label": "Learner",
@@ -78,6 +87,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": False,
         "default_inventory_mode": "none",
         "default_valuation": None,
+        "pnl_labels": {"revenue": "IT service income"},
+        "uses_manufacturing": False,
     },
 
     # -----------------------------
@@ -91,6 +102,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "none",
         "default_valuation": None,
         "pnl_labels": {"cogs": "Cost of revenue"},
+        "uses_manufacturing": False,
     },
     "IT & Technology": {
         "pnl_layout": "service_gross_margin",
@@ -100,6 +112,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cost of service"},
+        "uses_manufacturing": False,
     },
     "Engineering & Technical": {
         "pnl_layout": "project_wip",
@@ -109,6 +122,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Direct project costs"},
+        "uses_manufacturing": False,
     },
 
     "Construction": {
@@ -119,6 +133,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Direct project costs"},
+        "uses_manufacturing": False,
     },
 
     "Mining": {
@@ -129,6 +144,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "retail",
+        "pnl_labels": {"cogs": "Cost of mining operations"},
+        "uses_manufacturing": False,
     },
 
     "Transport": {
@@ -139,6 +156,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cost of revenue"},
+        "uses_manufacturing": False,
     },
 
     "NPO Transport": {
@@ -148,6 +166,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": False,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pnl_labels": {"revenue": "Transport income"},
+        "uses_manufacturing": False,
     },
 
     # -----------------------------
@@ -161,6 +181,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pnl_labels": {"cogs": "Direct design & project costs"},
+        "uses_manufacturing": False,
     },
 
     "Architecture": {
@@ -170,6 +192,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "none",
         "default_valuation": None,
+        "pnl_labels": {"cogs": "Direct architectural project costs"},
+        "uses_manufacturing": False,
     },
 
     "Graphic Design": {
@@ -182,6 +206,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "pnl_labels": {
             "cogs": "Production costs"
         },
+        "uses_manufacturing": False,
     },
 
     "Advertising Agency": {
@@ -194,6 +219,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "pnl_labels": {
             "cogs": "Campaign costs"
         },
+        "uses_manufacturing": False,
     },
 
     "Creative Studio": {
@@ -203,6 +229,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "none",
         "default_valuation": None,
+        "pnl_labels": {"cogs": "Creative production costs"},
+        "uses_manufacturing": False,
     },
 
     "Landscape Design": {
@@ -212,6 +240,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "uses_manufacturing": False,
     },
 
     # -----------------------------
@@ -226,7 +255,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_valuation": None,                    # No valuation needed
         "pos_mode": None,                             # ← CHANGED from "retail"!
         "manufacturer_dealer_lessor_capable": False,
-        "pnl_labels": {"revenue": "Income"},          # Changed from cogs
+        "pnl_labels": {"revenue": "Income"},    
+        "uses_manufacturing": False,      # Changed from cogs
         
         # ══════════════════════════════════════════════════
         # School-specific fields (NEW!)
@@ -239,8 +269,9 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_projects": True,                        # Capital projects enabled
         "uses_material_costing": False,               # Non-material projects only
         "uses_boq_budgeting": False,                  # No BOQ needed
+        "uses_manufacturing": False,
     },
-    "Public School": {
+    "Private School": {
         "pnl_layout": "service_gross_margin",
         "is_service_only": False,
         "uses_inventory": True,
@@ -249,6 +280,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cost of goods / supplies"},
         "pos_mode": "retail",
+        "uses_manufacturing": False,
     },
 
     "College / Training Center": {
@@ -259,6 +291,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "weighted_avg",
         "pnl_labels": {"cogs": "Cost of service"},
+        "uses_manufacturing": False,
     },
 
     "Clubs & Associations": {
@@ -269,6 +302,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "club",
+        "uses_manufacturing": False,
     },
 
     "Private Healthcare": {
@@ -280,16 +314,17 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cost of service"},
         "pos_mode": "retail",
+        "uses_manufacturing": False,
     },
     "NPO Healthcare": {
         "pnl_layout": "npo_performance",
         "is_service_only": False,
         "uses_inventory": True,
         "uses_cogs": False,
-        # If you truly want uses_inventory=True but inventory disabled, keep "none".
-        # Otherwise set to "internal".
         "default_inventory_mode": "none",
         "default_valuation": None,
+        "pnl_labels": {"revenue": "Healthcare income"},
+        "uses_manufacturing": False,
     },
 
     "Retail & Wholesale": {
@@ -300,7 +335,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "retail",
+        "pnl_labels": {"cogs": "Cost of goods sold"},
+        "uses_manufacturing": False,
     },
+
     "Car Dealership": {
         "pnl_layout": "trading_hunter",
         "is_service_only": False,
@@ -310,7 +348,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_valuation": "fifo",
         "pos_mode": "retail",
         "manufacturer_dealer_lessor_capable": True,
+        "pnl_labels": {"cogs": "Cost of vehicles sold"},
+        "uses_manufacturing": False,
     },
+
     "Restaurant": {
         "pnl_layout": "trading_hunter",
         "is_service_only": False,
@@ -319,7 +360,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "restaurant",
+        "pnl_labels": {"cogs": "Food & beverage costs"},
+        "uses_manufacturing": False,
     },
+
     "Hospitality": {
         "pnl_layout": "service_gross_margin",
         "is_service_only": False,
@@ -328,7 +372,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "restaurant",
+        "pnl_labels": {"cogs": "Hospitality operating costs"},
+        "uses_manufacturing": False,
     },
+
     "Automotive Services": {
         "pnl_layout": "service_gross_margin",
         "is_service_only": False,
@@ -337,7 +384,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "retail",
+        "pnl_labels": {"cogs": "Vehicle service & parts costs"},
+        "uses_manufacturing": False,
     },
+
     "Security Services": {
         "pnl_layout": "service_gross_margin",
         "is_service_only": False,
@@ -346,7 +396,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "retail",
+        "pnl_labels": {"cogs": "Security service delivery costs"},
+        "uses_manufacturing": False,
     },
+
     "Telecommunications": {
         "pnl_layout": "service_gross_margin",
         "is_service_only": False,
@@ -355,6 +408,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "retail",
+        "pnl_labels": {"cogs": "Network & service delivery costs"},
+        "uses_manufacturing": False,
     },
     "Manufacturing": {
         "pnl_layout": "trading_hunter",
@@ -365,6 +420,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_valuation": "fifo",
         "pos_mode": "retail",
         "manufacturer_dealer_lessor_capable": True,
+        "pnl_labels": {"cogs": "Cost of goods manufactured"},
+        "uses_manufacturing": True,
     },
     "Agriculture": {
         "pnl_layout": "trading_hunter",
@@ -374,8 +431,9 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "retail",
+        "pnl_labels": {"cogs": "Cost of agricultural production"},
+        "uses_manufacturing": False,
     },
-
     "Personal Care & Beauty Services": {
         "pnl_layout": "trading_hunter",
         "is_service_only": False,
@@ -385,6 +443,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_valuation": "fifo",
         "pos_mode": "retail",
         "pnl_labels": {"cogs": "Service consumables & product costs"},
+        "uses_manufacturing": False,
     },
 
     "Health & Fitness": {
@@ -396,6 +455,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_valuation": "fifo",
         "pos_mode": "retail",
         "pnl_labels": {"cogs": "Trainer, class & product costs"},
+        "uses_manufacturing": False,
     },
 
     "Education & Training": {
@@ -406,6 +466,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Training delivery costs"},
+        "uses_manufacturing": False,
     },
 
     "Cleaning Services": {
@@ -416,6 +477,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cleaning job costs"},
+        "uses_manufacturing": False,
     },
 
     "Logistics & Transport": {
@@ -426,6 +488,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cost of revenue"},
+        "uses_manufacturing": False,
     },
 
     "Personal Trainer": {
@@ -436,6 +499,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "none",
         "default_valuation": None,
         "pnl_labels": {"cogs": "Training delivery costs"},
+        "uses_manufacturing": False,
     },
 
     "Tutoring Services": {
@@ -446,6 +510,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "none",
         "default_valuation": None,
         "pnl_labels": {"cogs": "Tutor delivery costs"},
+        "uses_manufacturing": False,
     },
     
     "Design & Creative Services": {
@@ -458,6 +523,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "pnl_labels": {
             "cogs": "Direct project costs"
         },
+        "uses_manufacturing": False,
     },
 
     # -----------------------------
@@ -472,6 +538,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_valuation": "fifo",
         "pnl_labels": {"revenue": "Revenue", "cogs": "Cost of revenue"},
         "pos_mode": "retail",
+        "uses_manufacturing": False,
     },
 }
 
@@ -507,7 +574,9 @@ def get_industry_profile(industry: Optional[str], sub_industry: Optional[str]) -
         "pnl_layout": profile.get("pnl_layout"),
         "pnl_labels": profile.get("pnl_labels") or {},
         "pos_mode": profile.get("pos_mode"),
-
+        "uses_manufacturing": bool(
+            profile.get("uses_manufacturing", False)
+        ),
         "uses_material_costing": project_uses_material_costing(industry, sub_industry),
         "uses_boq_budgeting": project_uses_boq_budgeting(industry, sub_industry),
         "work_unit_label": project_work_unit_label(industry, sub_industry),
