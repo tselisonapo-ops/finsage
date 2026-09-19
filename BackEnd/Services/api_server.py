@@ -13241,7 +13241,375 @@ def post_stocktake(cid: int, session_id: int):
         current_app.logger.exception("post_stocktake failed")
         return jsonify({"error": "Server error", "detail": str(e)}), 500
 
+# ================================================================
+# MANUFACTURING — BOM CREATE / LIST
+# ================================================================
 
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/boms",
+    methods=["GET", "POST"]
+)
+@require_auth
+def manufacturing_boms(cid: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        schema = f"company_{company_id}"
+
+        if request.method == "GET":
+            item_id = request.args.get("item_id", type=int)
+            status = request.args.get("status")
+
+            boms = db_service.list_manufacturing_boms(
+                company_id=company_id,
+                item_id=item_id,
+                status=status,
+            )
+
+            return jsonify({
+                "ok": True,
+                "boms": boms or [],
+            }), 200
+
+        payload = request.get_json(silent=True) or {}
+
+        payload["created_by_user_id"] = user.get("id")
+        payload["updated_by_user_id"] = user.get("id")
+
+        bom_id = db_service.create_manufacturing_bom(
+            company_id=company_id,
+            data=payload,
+            user_id=int(user.get("id") or 0) or None,
+        )
+
+        bom = db_service.get_manufacturing_bom(
+            company_id=company_id,
+            bom_id=bom_id,
+        )
+
+        return jsonify({
+            "ok": True,
+            "bom": bom,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "manufacturing_boms failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+
+# ================================================================
+# MANUFACTURING — BOM GET
+# ================================================================
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/boms/<int:bom_id>",
+    methods=["GET"]
+)
+@require_auth
+def get_manufacturing_bom(cid: int, bom_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        bom = db_service.get_manufacturing_bom(
+            company_id=company_id,
+            bom_id=int(bom_id),
+        )
+
+        if not bom:
+            return jsonify({
+                "error": "Manufacturing BOM not found",
+            }), 404
+
+        return jsonify({
+            "ok": True,
+            "bom": bom,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "get_manufacturing_bom failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+
+# ================================================================
+# MANUFACTURING — BOM LINE ADD
+# ================================================================
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/boms/<int:bom_id>/lines",
+    methods=["POST"]
+)
+@require_auth
+def add_manufacturing_bom_line(cid: int, bom_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        payload["created_by_user_id"] = user.get("id")
+
+        line_id = db_service.add_manufacturing_bom_line(
+            company_id=company_id,
+            bom_id=int(bom_id),
+            data=payload,
+            user_id=int(user.get("id") or 0) or None,
+        )
+
+        return jsonify({
+            "ok": True,
+            "line_id": line_id,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "add_manufacturing_bom_line failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+
+# ================================================================
+# MANUFACTURING — ORDER CREATE / LIST
+# ================================================================
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders",
+    methods=["GET", "POST"]
+)
+@require_auth
+def manufacturing_orders(cid: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        if request.method == "GET":
+            status = request.args.get("status")
+            item_id = request.args.get("item_id", type=int)
+            date_from = request.args.get("date_from")
+            date_to = request.args.get("date_to")
+
+            orders = db_service.list_manufacturing_orders(
+                company_id=company_id,
+                status=status,
+                item_id=item_id,
+                date_from=date_from,
+                date_to=date_to,
+            )
+
+            return jsonify({
+                "ok": True,
+                "orders": orders or [],
+            }), 200
+
+        payload = request.get_json(silent=True) or {}
+
+        payload["created_by_user_id"] = user.get("id")
+        payload["updated_by_user_id"] = user.get("id")
+
+        order_id = db_service.create_manufacturing_order(
+            company_id=company_id,
+            data=payload,
+            user_id=int(user.get("id") or 0) or None,
+        )
+
+        order = db_service.get_manufacturing_order(
+            company_id=company_id,
+            manufacturing_order_id=order_id,
+        )
+
+        return jsonify({
+            "ok": True,
+            "order": order,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "manufacturing_orders failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+
+# ================================================================
+# MANUFACTURING — ORDER GET / UPDATE
+# ================================================================
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>",
+    methods=["GET", "PUT", "PATCH"]
+)
+@require_auth
+def manufacturing_order(cid: int, order_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        if request.method == "GET":
+            order = db_service.get_manufacturing_order(
+                company_id=company_id,
+                manufacturing_order_id=int(order_id),
+            )
+
+            if not order:
+                return jsonify({
+                    "error": "Manufacturing order not found",
+                }), 404
+
+            return jsonify({
+                "ok": True,
+                "order": order,
+            }), 200
+
+        payload = request.get_json(silent=True) or {}
+
+        payload["updated_by_user_id"] = user.get("id")
+
+        result = db_service.update_manufacturing_order(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            data=payload,
+            user_id=int(user.get("id") or 0) or None,
+        )
+
+        order = db_service.get_manufacturing_order(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+        )
+
+        return jsonify({
+            "ok": True,
+            "order": order or result,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "manufacturing_order failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+
+# ================================================================
+# MANUFACTURING — MATERIAL USAGE / POSTING
+# ================================================================
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/material-usage",
+    methods=["POST"]
+)
+@require_auth
+def post_manufacturing_material_usage(cid: int, order_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        auth_ctx = getattr(g, "auth_context", {}) or {}
+
+        if auth_ctx.get("is_delegated_company_access"):
+            payload["source_company_id"] = auth_ctx.get("source_company_id")
+            payload["engagement_company_id"] = auth_ctx.get("source_company_id")
+            payload["engagement_id"] = auth_ctx.get("engagement_id")
+
+        result = db_service.post_manufacturing_material_usage(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            user_id=int(user.get("id") or 0) or None,
+            payload=payload,
+        )
+
+        db_service.audit_log(
+            company_id=company_id,
+            actor_user_id=int(user.get("id") or 0),
+            module="inventory",
+            action="manufacturing_material_usage_post",
+            severity="info",
+            entity_type="manufacturing_order",
+            entity_id=str(order_id),
+            entity_ref=str(
+                result.get("ref")
+                or result.get("inventory_tx_id")
+                or order_id
+            ),
+            after_json=result,
+            message="Manufacturing material usage posted",
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "post_manufacturing_material_usage failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+    
 @app.route("/api/companies/<int:cid>/services/items", methods=["POST"])
 @require_auth
 def create_service_item(cid: int):

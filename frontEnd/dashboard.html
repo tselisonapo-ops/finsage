@@ -17280,6 +17280,12 @@ label:has(#projectTeamUserSearch) {
               <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="stocktake">Stocktake</button>
               <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="reorder">Reorder Alerts</button>
               <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="inventory-valuation">Inventory Valuation</button>
+              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="manufacturing">
+                Inventory Write-Down
+              </button>
+              <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50" data-nav="manufacturing">
+                Manufacturing
+              </button>
               <button class="px-3 py-1 text-xs border rounded hover:bg-slate-50"
                       data-nav="purchase-orders">
                 Purchase Orders
@@ -17626,6 +17632,68 @@ label:has(#projectTeamUserSearch) {
                 <div id="valuationTable" class="border rounded p-2 text-xs text-slate-500">
                   Valuation report mount (coming soon)
                 </div>
+              </div>
+            </template>
+
+            <!-- =====================================================
+                Manufacturing Template
+            ====================================================== -->
+            <template id="tpl-manufacturing">
+              <div class="border rounded p-3">
+
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-semibold">Manufacturing</div>
+                    <div class="text-xs text-slate-500">
+                      Recipes, production batches, material usage, and finished goods
+                    </div>
+                  </div>
+
+                  <div class="flex items-center gap-2">
+                    <button id="mfgNewBomBtn"
+                            class="px-3 py-1 text-xs border rounded hover:bg-slate-50">
+                      + New BOM
+                    </button>
+
+                    <button id="mfgNewOrderBtn"
+                            class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded">
+                      + Production Order
+                    </button>
+
+                    <button id="mfgRefreshBtn"
+                            class="px-3 py-1 text-xs border rounded">
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2 border-b pb-2 mb-3">
+                  <button id="mfgTabBoms"
+                          class="px-3 py-1 text-xs border rounded hover:bg-slate-50">
+                    BOMs / Recipes
+                  </button>
+
+                  <button id="mfgTabOrders"
+                          class="px-3 py-1 text-xs border rounded hover:bg-slate-50">
+                    Production Orders
+                  </button>
+
+                  <button id="mfgTabUsage"
+                          class="px-3 py-1 text-xs border rounded hover:bg-slate-50">
+                    Material Usage
+                  </button>
+
+                  <button id="mfgTabHistory"
+                          class="px-3 py-1 text-xs border rounded hover:bg-slate-50">
+                    Production History
+                  </button>
+                </div>
+
+                <div id="manufacturingMount"
+                     class="min-h-[320px] text-xs text-slate-500">
+                  Loading manufacturing workspace...
+                </div>
+
               </div>
             </template>
 

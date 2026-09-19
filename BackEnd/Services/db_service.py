@@ -41036,6 +41036,11 @@ class DatabaseService:
                         ''project_material_issue'',
                         ''project_material_return'',
 
+                        ''manufacturing_material_usage'',
+                        ''manufacturing_material_usage_reversal'',
+                        ''manufacturing_output'',
+                        ''manufacturing_output_reversal'',
+
                         ''asset'',
                         ''asset_reversal'',
                         ''asset_acquisition'',
@@ -52829,6 +52834,229 @@ class DatabaseService:
         WHERE source IS NOT NULL
         AND source_id IS NOT NULL
         AND source_line_id IS NOT NULL;
+
+        -- ==================================================
+        -- MANUFACTURING
+        -- ==================================================
+
+        -- 1) BILL OF MATERIALS / RECIPE HEADER
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_boms (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            item_id INT NOT NULL
+                REFERENCES {schema}.inventory_items(id)
+                ON DELETE RESTRICT,
+
+            bom_code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT NULL,
+
+            version_no INT NOT NULL DEFAULT 1,
+
+            batch_qty NUMERIC(18,4) NOT NULL DEFAULT 1,
+            batch_unit TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            effective_from DATE NULL,
+            effective_to DATE NULL,
+
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id, bom_code, version_no),
+
+            CHECK (batch_qty > 0),
+
+            CHECK (
+                status IN (
+                    'draft',
+                    'active',
+                    'inactive'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_boms_company_item_idx
+        ON {schema}.manufacturing_boms(company_id, item_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_boms_company_status_idx
+        ON {schema}.manufacturing_boms(company_id, status, is_active);
+
+
+        -- 2) BILL OF MATERIALS / RECIPE LINES
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_bom_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            bom_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_boms(id)
+                ON DELETE CASCADE,
+
+            line_no INT NOT NULL,
+
+            item_id INT NOT NULL
+                REFERENCES {schema}.inventory_items(id)
+                ON DELETE RESTRICT,
+
+            quantity NUMERIC(18,6) NOT NULL DEFAULT 0,
+            unit TEXT NULL,
+
+            scrap_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+
+            is_optional BOOLEAN NOT NULL DEFAULT FALSE,
+
+            memo TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(bom_id, line_no),
+
+            CHECK (quantity > 0),
+            CHECK (scrap_percent >= 0 AND scrap_percent <= 100)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_bom_lines_company_bom_idx
+        ON {schema}.manufacturing_bom_lines(company_id, bom_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_bom_lines_company_item_idx
+        ON {schema}.manufacturing_bom_lines(company_id, item_id);
+
+
+        -- 3) MANUFACTURING ORDERS / PRODUCTION BATCHES
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_orders (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            mo_no TEXT NOT NULL,
+
+            bom_id INT NULL
+                REFERENCES {schema}.manufacturing_boms(id)
+                ON DELETE RESTRICT,
+
+            item_id INT NOT NULL
+                REFERENCES {schema}.inventory_items(id)
+                ON DELETE RESTRICT,
+
+            tx_date DATE NOT NULL DEFAULT CURRENT_DATE,
+
+            planned_qty NUMERIC(18,4) NOT NULL DEFAULT 0,
+            actual_qty NUMERIC(18,4) NOT NULL DEFAULT 0,
+
+            unit TEXT NULL,
+
+            location TEXT NULL,
+
+            batch_no TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            notes TEXT NULL,
+
+            material_tx_id INT NULL
+                REFERENCES {schema}.inventory_tx(id)
+                ON DELETE SET NULL,
+
+            output_tx_id INT NULL
+                REFERENCES {schema}.inventory_tx(id)
+                ON DELETE SET NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id, mo_no),
+
+            CHECK (planned_qty >= 0),
+            CHECK (actual_qty >= 0),
+
+            CHECK (
+                status IN (
+                    'draft',
+                    'released',
+                    'in_progress',
+                    'completed',
+                    'cancelled'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_orders_company_date_idx
+        ON {schema}.manufacturing_orders(company_id, tx_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_orders_company_status_idx
+        ON {schema}.manufacturing_orders(company_id, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_orders_company_item_idx
+        ON {schema}.manufacturing_orders(company_id, item_id);
+
+
+        -- 4) ACTUAL MATERIAL USAGE
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_materials (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            manufacturing_order_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_orders(id)
+                ON DELETE CASCADE,
+
+            bom_line_id INT NULL
+                REFERENCES {schema}.manufacturing_bom_lines(id)
+                ON DELETE SET NULL,
+
+            item_id INT NOT NULL
+                REFERENCES {schema}.inventory_items(id)
+                ON DELETE RESTRICT,
+
+            line_no INT NOT NULL,
+
+            planned_qty NUMERIC(18,6) NOT NULL DEFAULT 0,
+            actual_qty NUMERIC(18,6) NOT NULL DEFAULT 0,
+
+            unit TEXT NULL,
+
+            unit_cost NUMERIC(18,6) NOT NULL DEFAULT 0,
+            total_cost NUMERIC(18,6) NOT NULL DEFAULT 0,
+
+            inventory_tx_id INT NULL
+                REFERENCES {schema}.inventory_tx(id)
+                ON DELETE SET NULL,
+
+            inventory_tx_line_id INT NULL
+                REFERENCES {schema}.inventory_tx_lines(id)
+                ON DELETE SET NULL,
+
+            memo TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(manufacturing_order_id, line_no),
+
+            CHECK (planned_qty >= 0),
+            CHECK (actual_qty >= 0),
+            CHECK (unit_cost >= 0),
+            CHECK (total_cost >= 0)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_materials_company_mo_idx
+        ON {schema}.manufacturing_order_materials(company_id, manufacturing_order_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_materials_company_item_idx
+        ON {schema}.manufacturing_order_materials(company_id, item_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_materials_tx_idx
+        ON {schema}.manufacturing_order_materials(company_id, inventory_tx_id);
 
         -- ============================================================
         -- INVENTORY WRITE-DOWN REASONS TABLE & AUDIT HOOKS
@@ -68240,7 +68468,7 @@ class DatabaseService:
                     AND status = 'posted'
                 """, (company_id, journal_id))
 
-            elif source=="payroll_run":
+            elif source == "payroll_run":
                 cur.execute(f"""
                     SELECT id
                     FROM {schema}.payroll_runs
@@ -68292,6 +68520,192 @@ class DatabaseService:
                         int(payroll_run_id),
                     ))
 
+            elif source == "manufacturing_material_usage" and source_id:
+                manufacturing_order_id = int(source_id)
+
+                # --------------------------------------------------
+                # 1. Find original manufacturing inventory transaction
+                # --------------------------------------------------
+                cur.execute(f"""
+                    SELECT id, status
+                    FROM {schema}.inventory_tx
+                    WHERE company_id = %s
+                      AND tx_type = 'material_usage'
+                      AND source = 'manufacturing_order'
+                      AND source_id = %s
+                      AND posted_journal_id = %s
+                    LIMIT 1
+                    FOR UPDATE
+                """, (
+                    int(company_id),
+                    manufacturing_order_id,
+                    int(journal_id),
+                ))
+
+                tx_row = cur.fetchone()
+
+                if tx_row:
+                    tx = tx_row if isinstance(tx_row, dict) else {
+                        "id": tx_row[0],
+                        "status": tx_row[1],
+                    }
+
+                    inventory_tx_id = int(tx["id"])
+
+                    # --------------------------------------------------
+                    # 2. Restore FIFO quantities
+                    # --------------------------------------------------
+                    cur.execute(f"""
+                        SELECT
+                            id,
+                            item_id,
+                            layer_id,
+                            qty
+                        FROM {schema}.inventory_fifo_allocations
+                        WHERE company_id = %s
+                          AND source = 'manufacturing_order'
+                          AND source_id = %s
+                          AND posted_journal_id IS NOT NULL
+                        FOR UPDATE
+                    """, (
+                        int(company_id),
+                        inventory_tx_id,
+                    ))
+
+                    fifo_rows = cur.fetchall() or []
+
+                    for fr in fifo_rows:
+                        alloc = fr if isinstance(fr, dict) else {
+                            "id": fr[0],
+                            "item_id": fr[1],
+                            "layer_id": fr[2],
+                            "qty": fr[3],
+                        }
+
+                        qty = float(alloc["qty"] or 0)
+
+                        if qty <= 0:
+                            continue
+
+                        cur.execute(f"""
+                            UPDATE {schema}.inventory_layers
+                            SET qty_out = GREATEST(qty_out - %s, 0)
+                            WHERE company_id = %s
+                              AND id = %s
+                        """, (
+                            qty,
+                            int(company_id),
+                            int(alloc["layer_id"]),
+                        ))
+
+                        cur.execute(f"""
+                            UPDATE {schema}.inventory_fifo_allocations
+                            SET posted_journal_id = NULL
+                            WHERE company_id = %s
+                              AND id = %s
+                        """, (
+                            int(company_id),
+                            int(alloc["id"]),
+                        ))
+
+                    # --------------------------------------------------
+                    # 3. Restore AVG valuation quantities
+                    # --------------------------------------------------
+                    cur.execute(f"""
+                        SELECT
+                            item_id,
+                            SUM(qty) AS qty
+                        FROM {schema}.inventory_tx_lines
+                        WHERE company_id = %s
+                          AND tx_id = %s
+                        GROUP BY item_id
+                    """, (
+                        int(company_id),
+                        inventory_tx_id,
+                    ))
+
+                    avg_rows = cur.fetchall() or []
+
+                    for ar in avg_rows:
+                        avg = ar if isinstance(ar, dict) else {
+                            "item_id": ar[0],
+                            "qty": ar[1],
+                        }
+
+                        item_id = int(avg["item_id"])
+                        qty = float(avg["qty"] or 0)
+
+                        if qty <= 0:
+                            continue
+
+                        cur.execute(f"""
+                            UPDATE {schema}.inventory_layers
+                            SET qty_out = GREATEST(qty_out - %s, 0)
+                            WHERE company_id = %s
+                              AND tx_id = %s
+                              AND item_id = %s
+                              AND qty_in = 0
+                              AND qty_out >= %s
+                        """, (
+                            qty,
+                            int(company_id),
+                            inventory_tx_id,
+                            item_id,
+                            qty,
+                        ))
+
+                    # --------------------------------------------------
+                    # 4. Mark inventory transaction reversed
+                    # --------------------------------------------------
+                    cur.execute(f"""
+                        UPDATE {schema}.inventory_tx
+                        SET
+                            status = 'reversed',
+                            posted_journal_id = NULL,
+                            updated_at = NOW()
+                        WHERE company_id = %s
+                          AND id = %s
+                    """, (
+                        int(company_id),
+                        inventory_tx_id,
+                    ))
+
+                # --------------------------------------------------
+                # 5. Reset manufacturing material usage
+                # --------------------------------------------------
+                cur.execute(f"""
+                    UPDATE {schema}.manufacturing_order_materials
+                    SET
+                        actual_qty = 0,
+                        unit_cost = 0,
+                        total_cost = 0,
+                        inventory_tx_id = NULL,
+                        inventory_tx_line_id = NULL,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                      AND manufacturing_order_id = %s
+                """, (
+                    int(company_id),
+                    manufacturing_order_id,
+                ))
+
+                # --------------------------------------------------
+                # 6. Reactivate manufacturing order
+                # --------------------------------------------------
+                cur.execute(f"""
+                    UPDATE {schema}.manufacturing_orders
+                    SET
+                        material_tx_id = NULL,
+                        status = 'released',
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                      AND id = %s
+                      AND status IN ('in_progress', 'completed')
+                """, (
+                    int(company_id),
+                    manufacturing_order_id,
+                ))
+                
             conn.commit()
             return reversal_journal_id
         
@@ -84344,6 +84758,2455 @@ class DatabaseService:
             tx_id = _run(_cur)
             conn.commit()
             return tx_id
+
+    def create_manufacturing_bom(
+        self,
+        company_id: int,
+        *,
+        item_id: int,
+        bom_code: str,
+        name: str,
+        batch_qty=1,
+        batch_unit=None,
+        description=None,
+        version_no=1,
+        effective_from=None,
+        effective_to=None,
+        is_default=False,
+        created_by_user_id=None,
+        cur=None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        bom_code = str(bom_code or "").strip()
+        name = str(name or "").strip()
+
+        if not bom_code:
+            raise ValueError("BOM code is required")
+
+        if not name:
+            raise ValueError("BOM name is required")
+
+        batch_qty = Decimal(str(batch_qty or 0))
+
+        if batch_qty <= 0:
+            raise ValueError("BOM batch quantity must be greater than zero")
+
+        sql = f"""
+            INSERT INTO {schema}.manufacturing_boms (
+                company_id,
+                item_id,
+                bom_code,
+                name,
+                description,
+                version_no,
+                batch_qty,
+                batch_unit,
+                status,
+                effective_from,
+                effective_to,
+                is_default,
+                is_active,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, 'draft',
+                %s, %s, %s, TRUE,
+                %s, %s
+            )
+            RETURNING id
+        """
+
+        params = (
+            company_id,
+            int(item_id),
+            bom_code,
+            name,
+            description,
+            int(version_no or 1),
+            batch_qty,
+            batch_unit,
+            effective_from,
+            effective_to,
+            bool(is_default),
+            created_by_user_id,
+            created_by_user_id,
+        )
+
+        if cur is not None:
+            cur.execute(sql, params)
+            return int(cur.fetchone()[0])
+
+        with self._conn_cursor() as (conn, cur2):
+            cur2.execute(sql, params)
+            return int(cur2.fetchone()[0])
+
+
+    def add_manufacturing_bom_line(
+        self,
+        company_id: int,
+        bom_id: int,
+        *,
+        item_id: int,
+        quantity,
+        line_no=None,
+        unit=None,
+        scrap_percent=0,
+        is_optional=False,
+        memo=None,
+        cur=None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        quantity = Decimal(str(quantity or 0))
+        scrap_percent = Decimal(str(scrap_percent or 0))
+
+        if quantity <= 0:
+            raise ValueError("BOM line quantity must be greater than zero")
+
+        if scrap_percent < 0 or scrap_percent > 100:
+            raise ValueError("Scrap percentage must be between 0 and 100")
+
+        def _insert(c):
+            if line_no is None:
+                c.execute(
+                    f"""
+                    SELECT COALESCE(MAX(line_no), 0) + 1
+                    FROM {schema}.manufacturing_bom_lines
+                    WHERE company_id = %s
+                    AND bom_id = %s
+                    """,
+                    (company_id, bom_id),
+                )
+                next_line_no = int(c.fetchone()[0])
+            else:
+                next_line_no = int(line_no)
+
+            c.execute(
+                f"""
+                INSERT INTO {schema}.manufacturing_bom_lines (
+                    company_id,
+                    bom_id,
+                    line_no,
+                    item_id,
+                    quantity,
+                    unit,
+                    scrap_percent,
+                    is_optional,
+                    memo
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    company_id,
+                    int(bom_id),
+                    next_line_no,
+                    int(item_id),
+                    quantity,
+                    unit,
+                    scrap_percent,
+                    bool(is_optional),
+                    memo,
+                ),
+            )
+
+            return int(c.fetchone()[0])
+
+        if cur is not None:
+            return _insert(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _insert(cur2)
+
+
+    def get_manufacturing_bom(
+        self,
+        company_id: int,
+        bom_id: int,
+        cur=None,
+    ) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        def _fetch(c):
+            c.execute(
+                f"""
+                SELECT
+                    b.id,
+                    b.company_id,
+                    b.item_id,
+                    i.sku,
+                    i.name AS item_name,
+                    b.bom_code,
+                    b.name,
+                    b.description,
+                    b.version_no,
+                    b.batch_qty,
+                    b.batch_unit,
+                    b.status,
+                    b.effective_from,
+                    b.effective_to,
+                    b.is_default,
+                    b.is_active,
+                    b.created_by_user_id,
+                    b.updated_by_user_id,
+                    b.created_at,
+                    b.updated_at
+                FROM {schema}.manufacturing_boms b
+                JOIN {schema}.inventory_items i
+                ON i.id = b.item_id
+                WHERE b.company_id = %s
+                AND b.id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
+
+            row = c.fetchone()
+
+            if not row:
+                return None
+
+            columns = [d[0] for d in c.description]
+            bom = dict(zip(columns, row))
+
+            c.execute(
+                f"""
+                SELECT
+                    l.id,
+                    l.bom_id,
+                    l.line_no,
+                    l.item_id,
+                    i.sku,
+                    i.name AS item_name,
+                    l.quantity,
+                    l.unit,
+                    l.scrap_percent,
+                    l.is_optional,
+                    l.memo,
+                    l.created_at,
+                    l.updated_at
+                FROM {schema}.manufacturing_bom_lines l
+                JOIN {schema}.inventory_items i
+                ON i.id = l.item_id
+                WHERE l.company_id = %s
+                AND l.bom_id = %s
+                ORDER BY l.line_no, l.id
+                """,
+                (company_id, int(bom_id)),
+            )
+
+            line_columns = [d[0] for d in c.description]
+            bom["lines"] = [
+                dict(zip(line_columns, r))
+                for r in c.fetchall()
+            ]
+
+            return bom
+
+        if cur is not None:
+            return _fetch(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _fetch(cur2)
+
+
+    def list_manufacturing_boms(
+        self,
+        company_id: int,
+        *,
+        item_id=None,
+        status=None,
+        active_only=True,
+        cur=None,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        def _fetch(c):
+            where = ["b.company_id = %s"]
+            params = [company_id]
+
+            if item_id is not None:
+                where.append("b.item_id = %s")
+                params.append(int(item_id))
+
+            if status:
+                where.append("b.status = %s")
+                params.append(str(status).strip())
+
+            if active_only:
+                where.append("b.is_active = TRUE")
+
+            c.execute(
+                f"""
+                SELECT
+                    b.id,
+                    b.company_id,
+                    b.item_id,
+                    i.sku,
+                    i.name AS item_name,
+                    b.bom_code,
+                    b.name,
+                    b.description,
+                    b.version_no,
+                    b.batch_qty,
+                    b.batch_unit,
+                    b.status,
+                    b.effective_from,
+                    b.effective_to,
+                    b.is_default,
+                    b.is_active,
+                    b.created_at,
+                    b.updated_at
+                FROM {schema}.manufacturing_boms b
+                JOIN {schema}.inventory_items i
+                ON i.id = b.item_id
+                WHERE {' AND '.join(where)}
+                ORDER BY
+                    i.name,
+                    b.bom_code,
+                    b.version_no DESC
+                """,
+                tuple(params),
+            )
+
+            columns = [d[0] for d in c.description]
+            return [dict(zip(columns, r)) for r in c.fetchall()]
+
+        if cur is not None:
+            return _fetch(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _fetch(cur2)
+        
+    def create_manufacturing_order(
+        self,
+        company_id: int,
+        *,
+        mo_no: str,
+        bom_id: int | None,
+        item_id: int,
+        planned_qty,
+        tx_date=None,
+        unit=None,
+        location=None,
+        batch_no=None,
+        notes=None,
+        created_by_user_id=None,
+        cur=None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        mo_no = str(mo_no or "").strip()
+
+        if not mo_no:
+            raise ValueError("Manufacturing order number is required")
+
+        planned_qty = Decimal(str(planned_qty or 0))
+
+        if planned_qty <= 0:
+            raise ValueError("Planned production quantity must be greater than zero")
+
+        def _create(c):
+            bom = None
+
+            if bom_id is not None:
+                c.execute(
+                    f"""
+                    SELECT
+                        id,
+                        item_id,
+                        batch_qty,
+                        batch_unit
+                    FROM {schema}.manufacturing_boms
+                    WHERE company_id = %s
+                    AND id = %s
+                    """,
+                    (company_id, int(bom_id)),
+                )
+
+                bom_row = c.fetchone()
+
+                if not bom_row:
+                    raise ValueError("Manufacturing BOM not found")
+
+                bom = {
+                    "id": bom_row[0],
+                    "item_id": bom_row[1],
+                    "batch_qty": bom_row[2],
+                    "batch_unit": bom_row[3],
+                }
+
+                if int(bom["item_id"]) != int(item_id):
+                    raise ValueError(
+                        "Manufacturing BOM finished item does not match production item"
+                    )
+
+            c.execute(
+                f"""
+                INSERT INTO {schema}.manufacturing_orders (
+                    company_id,
+                    mo_no,
+                    bom_id,
+                    item_id,
+                    tx_date,
+                    planned_qty,
+                    actual_qty,
+                    unit,
+                    location,
+                    batch_no,
+                    status,
+                    notes,
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, 0, %s, %s, %s,
+                    'draft', %s, %s, %s
+                )
+                RETURNING id
+                """,
+                (
+                    company_id,
+                    mo_no,
+                    bom_id,
+                    int(item_id),
+                    tx_date,
+                    planned_qty,
+                    unit,
+                    location,
+                    batch_no,
+                    notes,
+                    created_by_user_id,
+                    created_by_user_id,
+                ),
+            )
+
+            mo_id = int(c.fetchone()[0])
+
+            if bom is not None:
+                c.execute(
+                    f"""
+                    SELECT
+                        id,
+                        line_no,
+                        item_id,
+                        quantity,
+                        unit,
+                        scrap_percent,
+                        is_optional,
+                        memo
+                    FROM {schema}.manufacturing_bom_lines
+                    WHERE company_id = %s
+                    AND bom_id = %s
+                    ORDER BY line_no, id
+                    """,
+                    (company_id, int(bom_id)),
+                )
+
+                bom_lines = c.fetchall()
+
+                batch_qty = Decimal(str(bom["batch_qty"] or 1))
+
+                if batch_qty <= 0:
+                    raise ValueError("BOM batch quantity must be greater than zero")
+
+                factor = planned_qty / batch_qty
+
+                for line in bom_lines:
+                    (
+                        bom_line_id,
+                        line_no,
+                        material_item_id,
+                        bom_qty,
+                        bom_unit,
+                        scrap_percent,
+                        is_optional,
+                        memo,
+                    ) = line
+
+                    bom_qty = Decimal(str(bom_qty or 0))
+                    scrap_percent = Decimal(str(scrap_percent or 0))
+
+                    planned_material_qty = (
+                        bom_qty
+                        * factor
+                        * (Decimal("1") + (scrap_percent / Decimal("100")))
+                    )
+
+                    c.execute(
+                        f"""
+                        INSERT INTO {schema}.manufacturing_order_materials (
+                            company_id,
+                            manufacturing_order_id,
+                            bom_line_id,
+                            item_id,
+                            line_no,
+                            planned_qty,
+                            actual_qty,
+                            unit,
+                            unit_cost,
+                            total_cost,
+                            memo
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s,
+                            %s, 0, %s, 0, 0, %s
+                        )
+                        """,
+                        (
+                            company_id,
+                            mo_id,
+                            int(bom_line_id),
+                            int(material_item_id),
+                            int(line_no),
+                            planned_material_qty,
+                            bom_unit,
+                            memo,
+                        ),
+                    )
+
+            return mo_id
+
+        if cur is not None:
+            return _create(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _create(cur2)
+
+    def get_manufacturing_order(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        cur=None,
+    ) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        def _fetch(c):
+            c.execute(
+                f"""
+                SELECT
+                    mo.id,
+                    mo.company_id,
+                    mo.mo_no,
+                    mo.bom_id,
+                    mo.item_id,
+                    i.sku,
+                    i.name AS item_name,
+                    mo.tx_date,
+                    mo.planned_qty,
+                    mo.actual_qty,
+                    mo.unit,
+                    mo.location,
+                    mo.batch_no,
+                    mo.status,
+                    mo.notes,
+                    mo.material_tx_id,
+                    mo.output_tx_id,
+                    mo.created_by_user_id,
+                    mo.updated_by_user_id,
+                    mo.created_at,
+                    mo.updated_at
+                FROM {schema}.manufacturing_orders mo
+                JOIN {schema}.inventory_items i
+                ON i.id = mo.item_id
+                WHERE mo.company_id = %s
+                AND mo.id = %s
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+
+            row = c.fetchone()
+
+            if not row:
+                return None
+
+            columns = [d[0] for d in c.description]
+            order = dict(zip(columns, row))
+
+            c.execute(
+                f"""
+                SELECT
+                    m.id,
+                    m.manufacturing_order_id,
+                    m.bom_line_id,
+                    m.item_id,
+                    i.sku,
+                    i.name AS item_name,
+                    m.line_no,
+                    m.planned_qty,
+                    m.actual_qty,
+                    m.unit,
+                    m.unit_cost,
+                    m.total_cost,
+                    m.inventory_tx_id,
+                    m.inventory_tx_line_id,
+                    m.memo,
+                    m.created_at,
+                    m.updated_at
+                FROM {schema}.manufacturing_order_materials m
+                JOIN {schema}.inventory_items i
+                ON i.id = m.item_id
+                WHERE m.company_id = %s
+                AND m.manufacturing_order_id = %s
+                ORDER BY m.line_no, m.id
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+
+            line_columns = [d[0] for d in c.description]
+            order["materials"] = [
+                dict(zip(line_columns, r))
+                for r in c.fetchall()
+            ]
+
+            return order
+
+        if cur is not None:
+            return _fetch(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _fetch(cur2)
+
+
+    def list_manufacturing_orders(
+        self,
+        company_id: int,
+        *,
+        status=None,
+        item_id=None,
+        date_from=None,
+        date_to=None,
+        cur=None,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        def _fetch(c):
+            where = ["mo.company_id = %s"]
+            params = [company_id]
+
+            if status:
+                where.append("mo.status = %s")
+                params.append(str(status).strip())
+
+            if item_id is not None:
+                where.append("mo.item_id = %s")
+                params.append(int(item_id))
+
+            if date_from is not None:
+                where.append("mo.tx_date >= %s")
+                params.append(date_from)
+
+            if date_to is not None:
+                where.append("mo.tx_date <= %s")
+                params.append(date_to)
+
+            c.execute(
+                f"""
+                SELECT
+                    mo.id,
+                    mo.company_id,
+                    mo.mo_no,
+                    mo.bom_id,
+                    mo.item_id,
+                    i.sku,
+                    i.name AS item_name,
+                    mo.tx_date,
+                    mo.planned_qty,
+                    mo.actual_qty,
+                    mo.unit,
+                    mo.location,
+                    mo.batch_no,
+                    mo.status,
+                    mo.material_tx_id,
+                    mo.output_tx_id,
+                    mo.created_at,
+                    mo.updated_at
+                FROM {schema}.manufacturing_orders mo
+                JOIN {schema}.inventory_items i
+                ON i.id = mo.item_id
+                WHERE {' AND '.join(where)}
+                ORDER BY mo.tx_date DESC, mo.id DESC
+                """,
+                tuple(params),
+            )
+
+            columns = [d[0] for d in c.description]
+            return [dict(zip(columns, r)) for r in c.fetchall()]
+
+        if cur is not None:
+            return _fetch(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _fetch(cur2)
+
+    def record_manufacturing_material_usage(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        material_id: int,
+        *,
+        actual_qty,
+        unit_cost=0,
+        inventory_tx_id=None,
+        inventory_tx_line_id=None,
+        memo=None,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        actual_qty = Decimal(str(actual_qty or 0))
+        unit_cost = Decimal(str(unit_cost or 0))
+
+        if actual_qty < 0:
+            raise ValueError("Actual material quantity cannot be negative")
+
+        if unit_cost < 0:
+            raise ValueError("Material unit cost cannot be negative")
+
+        total_cost = actual_qty * unit_cost
+
+        def _update(c):
+            c.execute(
+                f"""
+                SELECT
+                    m.id,
+                    m.manufacturing_order_id,
+                    m.item_id,
+                    m.planned_qty,
+                    m.actual_qty,
+                    m.unit,
+                    mo.status
+                FROM {schema}.manufacturing_order_materials m
+                JOIN {schema}.manufacturing_orders mo
+                ON mo.id = m.manufacturing_order_id
+                WHERE m.company_id = %s
+                AND m.id = %s
+                AND m.manufacturing_order_id = %s
+                FOR UPDATE
+                """,
+                (
+                    company_id,
+                    int(material_id),
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            row = c.fetchone()
+
+            if not row:
+                raise ValueError("Manufacturing material line not found")
+
+            if row[6] == "cancelled":
+                raise ValueError(
+                    "Cannot record material usage for a cancelled manufacturing order"
+                )
+
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_order_materials
+                SET
+                    actual_qty = %s,
+                    unit_cost = %s,
+                    total_cost = %s,
+                    inventory_tx_id = %s,
+                    inventory_tx_line_id = %s,
+                    memo = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+                AND manufacturing_order_id = %s
+                RETURNING
+                    id,
+                    manufacturing_order_id,
+                    item_id,
+                    planned_qty,
+                    actual_qty,
+                    unit,
+                    unit_cost,
+                    total_cost,
+                    inventory_tx_id,
+                    inventory_tx_line_id,
+                    memo
+                """,
+                (
+                    actual_qty,
+                    unit_cost,
+                    total_cost,
+                    inventory_tx_id,
+                    inventory_tx_line_id,
+                    memo,
+                    company_id,
+                    int(material_id),
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            updated = c.fetchone()
+            columns = [d[0] for d in c.description]
+
+            return dict(zip(columns, updated))
+
+        if cur is not None:
+            return _update(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _update(cur2)
+
+    def update_manufacturing_order(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        actual_qty=None,
+        status=None,
+        location=None,
+        batch_no=None,
+        notes=None,
+        material_tx_id=None,
+        output_tx_id=None,
+        updated_by_user_id=None,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        allowed_statuses = {
+            "draft",
+            "released",
+            "in_progress",
+            "completed",
+            "cancelled",
+        }
+
+        def _update(c):
+            sets = ["updated_at = NOW()"]
+            params = []
+
+            if actual_qty is not None:
+                actual = Decimal(str(actual_qty or 0))
+
+                if actual < 0:
+                    raise ValueError("Actual production quantity cannot be negative")
+
+                sets.append("actual_qty = %s")
+                params.append(actual)
+
+            if status is not None:
+                status_value = str(status).strip().lower()
+
+                if status_value not in allowed_statuses:
+                    raise ValueError("Invalid manufacturing order status")
+
+                sets.append("status = %s")
+                params.append(status_value)
+
+            if location is not None:
+                sets.append("location = %s")
+                params.append(location)
+
+            if batch_no is not None:
+                sets.append("batch_no = %s")
+                params.append(batch_no)
+
+            if notes is not None:
+                sets.append("notes = %s")
+                params.append(notes)
+
+            if material_tx_id is not None:
+                sets.append("material_tx_id = %s")
+                params.append(int(material_tx_id))
+
+            if output_tx_id is not None:
+                sets.append("output_tx_id = %s")
+                params.append(int(output_tx_id))
+
+            if updated_by_user_id is not None:
+                sets.append("updated_by_user_id = %s")
+                params.append(int(updated_by_user_id))
+
+            params.extend([
+                company_id,
+                int(manufacturing_order_id),
+            ])
+
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_orders
+                SET {", ".join(sets)}
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING
+                    id,
+                    company_id,
+                    mo_no,
+                    bom_id,
+                    item_id,
+                    tx_date,
+                    planned_qty,
+                    actual_qty,
+                    unit,
+                    location,
+                    batch_no,
+                    status,
+                    notes,
+                    material_tx_id,
+                    output_tx_id,
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                """,
+                tuple(params),
+            )
+
+            row = c.fetchone()
+
+            if not row:
+                raise ValueError("Manufacturing order not found")
+
+            columns = [d[0] for d in c.description]
+            return dict(zip(columns, row))
+
+        if cur is not None:
+            return _update(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _update(cur2)
+
+    def issue_inventory_to_manufacturing(
+        self,
+        company_id: int,
+        *,
+        manufacturing_order_id: int,
+        lines: list[dict],
+        ref: str | None = None,
+        notes: str | None = None,
+        created_by: int | None = None,
+        post_now: bool = True,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        if not lines or not isinstance(lines, list):
+            raise ValueError("lines required")
+
+        def money(x) -> float:
+            from decimal import Decimal, ROUND_HALF_UP
+            return float(
+                Decimal(str(x or 0)).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            )
+
+        def _to_int(v, default=None):
+            try:
+                if v in (None, ""):
+                    return default
+                return int(v)
+            except Exception:
+                return default
+
+        def _to_float(v, default=0.0):
+            try:
+                if v in (None, ""):
+                    return default
+                return float(str(v).replace(",", "").strip())
+            except Exception:
+                return default
+
+        with self._conn_cursor() as (conn, cur):
+
+            # ==========================================================
+            # 1) LOCK + VALIDATE MANUFACTURING ORDER
+            # ==========================================================
+
+            mo = self.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.manufacturing_orders
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE
+                """,
+                (
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+                cur=cur,
+            )
+
+            if not mo:
+                raise ValueError("MANUFACTURING_ORDER_NOT_FOUND")
+
+            mo_status = str(mo.get("status") or "").strip().lower()
+
+            if mo_status in ("cancelled", "completed"):
+                raise ValueError(
+                    f"MANUFACTURING_ORDER_NOT_OPEN|status={mo_status}"
+                )
+
+            tx_date = mo.get("tx_date")
+
+            if hasattr(tx_date, "isoformat"):
+                tx_date = tx_date.isoformat()[:10]
+            else:
+                tx_date = str(tx_date or "")[:10]
+
+            if not tx_date:
+                raise ValueError("tx_date is required")
+
+            mo_no = str(mo.get("mo_no") or manufacturing_order_id).strip()
+
+            ref = (
+                str(ref).strip()
+                if ref
+                else f"MO-MAT-{mo_no}"
+            )
+
+            # ==========================================================
+            # 2) IDEMPOTENCY
+            # ==========================================================
+
+            existing_tx = self.fetch_one(
+                f"""
+                SELECT id, status, posted_journal_id
+                FROM {schema}.inventory_tx
+                WHERE company_id=%s
+                AND source='manufacturing_order'
+                AND source_id=%s
+                AND tx_type='material_usage'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+                cur=cur,
+            )
+
+            if existing_tx:
+                return {
+                    "ok": True,
+                    "already_posted": str(
+                        existing_tx.get("status") or ""
+                    ).lower() == "posted",
+                    "manufacturing_order_id": int(manufacturing_order_id),
+                    "inventory_tx_id": int(existing_tx["id"]),
+                    "journal_id": (
+                        int(existing_tx["posted_journal_id"])
+                        if existing_tx.get("posted_journal_id")
+                        else None
+                    ),
+                }
+
+            # ==========================================================
+            # 3) RESOLVE MANUFACTURING DEBIT ACCOUNT
+            # ==========================================================
+
+            debit_row = self.resolve_coa_account_by_roles_for_posting(
+                company_id,
+                [
+                    "manufacturing_wip",
+                    "production_wip",
+                    "manufacturing",
+                    "wip",
+                    "work_in_progress",
+                ],
+                cur=cur,
+                required=False,
+            )
+
+            if not debit_row:
+                raise ValueError(
+                    "MANUFACTURING_WIP_ACCOUNT_NOT_CONFIGURED"
+                )
+
+            manufacturing_debit_account = str(
+                debit_row.get("code") or ""
+            ).strip()
+
+            manufacturing_debit_name = str(
+                debit_row.get("name")
+                or manufacturing_debit_account
+            ).strip()
+
+            if not manufacturing_debit_account:
+                raise ValueError(
+                    "MANUFACTURING_WIP_ACCOUNT_NOT_CONFIGURED"
+                )
+
+            # ==========================================================
+            # 4) CREATE INVENTORY TRANSACTION
+            # ==========================================================
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.inventory_tx (
+                    company_id,
+                    tx_date,
+                    tx_type,
+                    status,
+                    ref,
+                    notes,
+                    created_by,
+                    source,
+                    source_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    %s,%s,
+                    'material_usage',
+                    'draft',
+                    %s,%s,%s,
+                    'manufacturing_order',
+                    %s,
+                    NOW(),NOW()
+                )
+                RETURNING id
+                """,
+                (
+                    int(company_id),
+                    tx_date,
+                    ref,
+                    notes,
+                    created_by,
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            row = cur.fetchone() or {}
+
+            tx_id = int(row.get("id") or 0)
+
+            if tx_id <= 0:
+                raise ValueError(
+                    "FAILED_TO_CREATE_MANUFACTURING_MATERIAL_TX"
+                )
+
+            # ==========================================================
+            # 5) INVENTORY ACCOUNT TOTALS
+            # ==========================================================
+
+            inv_credit_totals: dict[str, dict] = {}
+            total_issue_cost = 0.0
+
+            # ==========================================================
+            # 6) PROCESS MATERIAL LINES
+            # ==========================================================
+
+            for idx, ln in enumerate(lines, start=1):
+
+                material_id = _to_int(
+                    ln.get("material_id")
+                    or ln.get("materialId")
+                    or ln.get("manufacturing_order_material_id")
+                    or ln.get("manufacturingOrderMaterialId"),
+                    0,
+                )
+
+                item_id = _to_int(
+                    ln.get("item_id")
+                    or ln.get("itemId"),
+                    0,
+                )
+
+                qty = _to_float(
+                    ln.get("qty")
+                    or ln.get("quantity")
+                    or ln.get("actual_qty")
+                    or ln.get("actualQty"),
+                    0.0,
+                )
+
+                if material_id <= 0:
+                    raise ValueError(
+                        f"line {idx}: material_id required"
+                    )
+
+                if item_id <= 0:
+                    raise ValueError(
+                        f"line {idx}: item_id required"
+                    )
+
+                if qty <= 0:
+                    raise ValueError(
+                        f"line {idx}: qty must be > 0"
+                    )
+
+                # ------------------------------------------------------
+                # Load manufacturing material line
+                # ------------------------------------------------------
+
+                material = self.fetch_one(
+                    f"""
+                    SELECT
+                        m.*,
+                        mo.mo_no,
+                        mo.status AS mo_status
+                    FROM {schema}.manufacturing_order_materials m
+                    JOIN {schema}.manufacturing_orders mo
+                    ON mo.id=m.manufacturing_order_id
+                    WHERE m.company_id=%s
+                    AND m.id=%s
+                    AND m.manufacturing_order_id=%s
+                    FOR UPDATE
+                    """,
+                    (
+                        int(company_id),
+                        int(material_id),
+                        int(manufacturing_order_id),
+                    ),
+                    cur=cur,
+                )
+
+                if not material:
+                    raise ValueError(
+                        f"MANUFACTURING_MATERIAL_NOT_FOUND|id={material_id}"
+                    )
+
+                if int(material.get("item_id") or 0) != int(item_id):
+                    raise ValueError(
+                        f"MATERIAL_ITEM_MISMATCH|material_id={material_id}"
+                    )
+
+                # ------------------------------------------------------
+                # Load inventory item
+                # ------------------------------------------------------
+
+                item = self.fetch_one(
+                    f"""
+                    SELECT *
+                    FROM {schema}.inventory_items
+                    WHERE company_id=%s
+                    AND id=%s
+                    LIMIT 1
+                    """,
+                    (
+                        int(company_id),
+                        int(item_id),
+                    ),
+                    cur=cur,
+                )
+
+                if not item:
+                    raise ValueError(
+                        f"INVENTORY_ITEM_NOT_FOUND|item_id={item_id}"
+                    )
+
+                if item.get("is_active") is False:
+                    raise ValueError(
+                        f"INVENTORY_ITEM_INACTIVE|item_id={item_id}"
+                    )
+
+                track_stock = bool(
+                    item.get("track_stock", True)
+                )
+
+                # ------------------------------------------------------
+                # Inventory account
+                # ------------------------------------------------------
+
+                inv_raw = str(
+                    item.get("inventory_account") or ""
+                ).strip()
+
+                inv_row = None
+
+                if inv_raw:
+                    inv_row = self.get_account_row_for_posting(
+                        company_id,
+                        inv_raw,
+                    )
+
+                if not inv_row:
+                    inv_raw = str(
+                        self.find_default_inventory_account_code(
+                            company_id,
+                            cur=cur,
+                        ) or ""
+                    ).strip()
+
+                    if inv_raw:
+                        inv_row = self.get_account_row_for_posting(
+                            company_id,
+                            inv_raw,
+                        )
+
+                if not inv_row:
+                    raise ValueError(
+                        f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}"
+                    )
+
+                inventory_account = str(
+                    inv_row[1] or inv_raw
+                ).strip()
+
+                inventory_account_name = str(
+                    inv_row[0] or inventory_account
+                ).strip()
+
+                # ------------------------------------------------------
+                # Valuation
+                # ------------------------------------------------------
+
+                valuation_method = str(
+                    item.get("valuation_method") or "AVG"
+                ).strip().upper()
+
+                if valuation_method not in ("AVG", "FIFO"):
+                    valuation_method = "AVG"
+
+                if track_stock:
+                    onhand = self._inventory_onhand_cur(
+                        company_id,
+                        item_id,
+                        cur,
+                    )
+
+                    if qty > onhand:
+                        raise ValueError(
+                            f"INSUFFICIENT_STOCK|item_id={item_id}|"
+                            f"onhand={onhand}|requested={qty}"
+                        )
+
+                # ------------------------------------------------------
+                # FIFO / AVG costing
+                # ------------------------------------------------------
+
+                if valuation_method == "FIFO":
+
+                    line_cost = money(
+                        self.fifo_consume(
+                            company_id,
+                            item_id=item_id,
+                            qty_out=qty,
+                            tx_date=tx_date,
+                            source="manufacturing_order",
+                            source_id=int(tx_id),
+                            posted_journal_id=None,
+                            cur=cur,
+                        )
+                    )
+
+                else:
+
+                    unit_cost = money(
+                        self._inventory_avg_cost_cur(
+                            company_id,
+                            item_id,
+                            cur,
+                        )
+                    )
+
+                    if unit_cost <= 0:
+                        unit_cost = money(
+                            item.get("purchase_cost") or 0
+                        )
+
+                    if unit_cost <= 0:
+                        raise ValueError(
+                            f"MISSING_COST|item_id={item_id}"
+                        )
+
+                    line_cost = money(
+                        qty * unit_cost
+                    )
+
+                    if track_stock:
+                        cur.execute(
+                            f"""
+                            INSERT INTO {schema}.inventory_layers (
+                                company_id,
+                                item_id,
+                                tx_date,
+                                qty_in,
+                                qty_out,
+                                unit_cost,
+                                ref,
+                                source,
+                                source_id,
+                                tx_id,
+                                created_at
+                            )
+                            VALUES (
+                                %s,%s,%s,
+                                0,%s,%s,
+                                %s,
+                                'manufacturing_order',
+                                %s,
+                                %s,
+                                NOW()
+                            )
+                            """,
+                            (
+                                int(company_id),
+                                int(item_id),
+                                tx_date,
+                                float(qty),
+                                float(unit_cost),
+                                ref,
+                                int(tx_id),
+                                int(tx_id),
+                            ),
+                        )
+
+                if line_cost <= 0:
+                    raise ValueError(
+                        f"ZERO_MANUFACTURING_MATERIAL_COST|item_id={item_id}"
+                    )
+
+                unit_cost_for_line = money(
+                    line_cost / qty
+                )
+
+                # ------------------------------------------------------
+                # Insert inventory transaction line
+                # ------------------------------------------------------
+
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.inventory_tx_lines (
+                        company_id,
+                        tx_id,
+                        line_no,
+                        item_id,
+                        qty,
+                        unit_cost,
+                        unit_price,
+                        vat_code,
+                        memo,
+                        created_at
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,
+                        %s,%s,0,
+                        %s,%s,
+                        NOW()
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        int(company_id),
+                        int(tx_id),
+                        int(idx),
+                        int(item_id),
+                        float(qty),
+                        float(unit_cost_for_line),
+                        ln.get("vat_code")
+                        or ln.get("vatCode"),
+                        ln.get("memo")
+                        or f"Material usage for {mo_no}",
+                    ),
+                )
+
+                tx_line_row = cur.fetchone() or {}
+                tx_line_id = int(
+                    tx_line_row.get("id") or 0
+                )
+
+                if tx_line_id <= 0:
+                    raise ValueError(
+                        "FAILED_TO_CREATE_MANUFACTURING_TX_LINE"
+                    )
+
+                # ------------------------------------------------------
+                # Group inventory credits
+                # ------------------------------------------------------
+
+                if inventory_account not in inv_credit_totals:
+                    inv_credit_totals[inventory_account] = {
+                        "name": inventory_account_name,
+                        "amount": 0.0,
+                    }
+
+                inv_credit_totals[inventory_account]["amount"] = money(
+                    inv_credit_totals[inventory_account]["amount"]
+                    + line_cost
+                )
+
+                total_issue_cost = money(
+                    total_issue_cost + line_cost
+                )
+
+                # ------------------------------------------------------
+                # Update manufacturing material usage
+                # ------------------------------------------------------
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.manufacturing_order_materials
+                    SET
+                        actual_qty=%s,
+                        unit_cost=%s,
+                        total_cost=%s,
+                        inventory_tx_id=%s,
+                        inventory_tx_line_id=%s,
+                        updated_at=NOW()
+                    WHERE company_id=%s
+                    AND id=%s
+                    AND manufacturing_order_id=%s
+                    """,
+                    (
+                        float(qty),
+                        float(unit_cost_for_line),
+                        float(line_cost),
+                        int(tx_id),
+                        int(tx_line_id),
+                        int(company_id),
+                        int(material_id),
+                        int(manufacturing_order_id),
+                    ),
+                )
+
+            # ==========================================================
+            # 7) TOTAL COST VALIDATION
+            # ==========================================================
+
+            if total_issue_cost <= 0:
+                raise ValueError(
+                    "MANUFACTURING_MATERIAL_TOTAL_IS_ZERO"
+                )
+
+            journal_id = None
+
+            # ==========================================================
+            # 8) POST JOURNAL
+            # ==========================================================
+
+            if post_now:
+
+                journal_lines = [
+                    {
+                        "account_code": manufacturing_debit_account,
+                        "account_name": manufacturing_debit_name,
+                        "debit": total_issue_cost,
+                        "credit": 0.0,
+                        "memo": (
+                            f"Materials consumed for production "
+                            f"{mo_no}"
+                        ),
+                    }
+                ]
+
+                for acct, info in inv_credit_totals.items():
+
+                    if info["amount"] <= 0:
+                        continue
+
+                    journal_lines.append({
+                        "account_code": acct,
+                        "account_name": info["name"],
+                        "debit": 0.0,
+                        "credit": info["amount"],
+                        "memo": (
+                            f"Inventory consumed in production "
+                            f"{mo_no}"
+                        ),
+                    })
+
+                journal_id = self.post_journal(
+                    company_id,
+                    {
+                        "date": tx_date,
+                        "ref": ref,
+                        "description": (
+                            f"Manufacturing material usage #{tx_id}"
+                        ),
+                        "source": "manufacturing_order",
+                        "source_id": int(tx_id),
+                        "source_table": "inventory_tx",
+                        "module_name": "manufacturing",
+                        "event_type": "posted",
+                        "created_by_user_id": created_by,
+                        "updated_by_user_id": created_by,
+                        "prepared_by_user_id": created_by,
+                        "lines": journal_lines,
+                    },
+                    cur=cur,
+                    conn=conn,
+                )
+
+                # ------------------------------------------------------
+                # Mark inventory transaction posted
+                # ------------------------------------------------------
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.inventory_tx
+                    SET
+                        status='posted',
+                        posted_journal_id=%s,
+                        posted_at=NOW(),
+                        posted_by=%s,
+                        updated_at=NOW()
+                    WHERE company_id=%s
+                    AND id=%s
+                    """,
+                    (
+                        int(journal_id),
+                        created_by,
+                        int(company_id),
+                        int(tx_id),
+                    ),
+                )
+
+                # ------------------------------------------------------
+                # Attach journal to inventory layers
+                # ------------------------------------------------------
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.inventory_layers
+                    SET posted_journal_id=%s
+                    WHERE company_id=%s
+                    AND source='manufacturing_order'
+                    AND source_id=%s
+                    """,
+                    (
+                        int(journal_id),
+                        int(company_id),
+                        int(tx_id),
+                    ),
+                )
+
+                # ------------------------------------------------------
+                # Attach journal to FIFO allocations
+                # ------------------------------------------------------
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.inventory_fifo_allocations
+                    SET posted_journal_id=%s
+                    WHERE company_id=%s
+                    AND source='manufacturing_order'
+                    AND source_id=%s
+                    """,
+                    (
+                        int(journal_id),
+                        int(company_id),
+                        int(tx_id),
+                    ),
+                )
+
+                # ------------------------------------------------------
+                # Link manufacturing order to material transaction
+                # ------------------------------------------------------
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.manufacturing_orders
+                    SET
+                        material_tx_id=%s,
+                        status=CASE
+                            WHEN status='draft'
+                            THEN 'in_progress'
+                            ELSE status
+                        END,
+                        updated_by_user_id=%s,
+                        updated_at=NOW()
+                    WHERE company_id=%s
+                    AND id=%s
+                    """,
+                    (
+                        int(tx_id),
+                        created_by,
+                        int(company_id),
+                        int(manufacturing_order_id),
+                    ),
+                )
+
+            return {
+                "ok": True,
+                "manufacturing_order_id": int(
+                    manufacturing_order_id
+                ),
+                "inventory_tx_id": int(tx_id),
+                "journal_id": (
+                    int(journal_id)
+                    if journal_id
+                    else None
+                ),
+                "total_cost": total_issue_cost,
+            }
+    
+    def post_manufacturing_material_usage(
+        self,
+        company_id: int,
+        *,
+        manufacturing_order_id: int,
+        lines: list[dict],
+        ref: str | None = None,
+        notes: str | None = None,
+        created_by: int | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        if not isinstance(lines, list) or not lines:
+            raise ValueError("lines required")
+
+        from decimal import Decimal, ROUND_HALF_UP
+
+        def money(x):
+            return float(
+                Decimal(str(x or 0)).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            )
+
+        def dec(x):
+            return Decimal(str(x or 0))
+
+        def to_int(v, default=None):
+            try:
+                if v in (None, ""):
+                    return default
+                return int(v)
+            except Exception:
+                return default
+
+        def to_float(v, default=0.0):
+            try:
+                if v in (None, ""):
+                    return default
+                return float(str(v).replace(",", "").strip())
+            except Exception:
+                return default
+
+        with self._conn_cursor() as (conn, cur):
+
+            # ==========================================================
+            # 1) LOCK MANUFACTURING ORDER
+            # ==========================================================
+
+            mo = self.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.manufacturing_orders
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE
+                """,
+                (
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+                cur=cur,
+            )
+
+            if not mo:
+                raise ValueError("MANUFACTURING_ORDER_NOT_FOUND")
+
+            status = str(
+                mo.get("status") or ""
+            ).strip().lower()
+
+            if status in ("cancelled", "completed"):
+                raise ValueError(
+                    f"MANUFACTURING_ORDER_NOT_OPEN|status={status}"
+                )
+
+            tx_date = mo.get("tx_date")
+
+            if hasattr(tx_date, "isoformat"):
+                tx_date = tx_date.isoformat()[:10]
+            else:
+                tx_date = str(tx_date or "")[:10]
+
+            if not tx_date:
+                raise ValueError("tx_date is required")
+
+            mo_no = str(
+                mo.get("mo_no") or manufacturing_order_id
+            ).strip()
+
+            ref = (
+                str(ref).strip()
+                if ref
+                else f"MO-MAT-{mo_no}"
+            )
+
+            # ==========================================================
+            # 2) IDEMPOTENCY
+            # ==========================================================
+
+            existing_tx = self.fetch_one(
+                f"""
+                SELECT
+                    id,
+                    status,
+                    posted_journal_id
+                FROM {schema}.inventory_tx
+                WHERE company_id=%s
+                AND tx_type='material_usage'
+                AND source='manufacturing_order'
+                AND source_id=%s
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+                cur=cur,
+            )
+
+            if existing_tx:
+                return {
+                    "ok": True,
+                    "already_posted": str(
+                        existing_tx.get("status") or ""
+                    ).lower() == "posted",
+                    "manufacturing_order_id": int(
+                        manufacturing_order_id
+                    ),
+                    "inventory_tx_id": int(
+                        existing_tx["id"]
+                    ),
+                    "journal_id": (
+                        int(existing_tx["posted_journal_id"])
+                        if existing_tx.get("posted_journal_id")
+                        else None
+                    ),
+                }
+
+            # ==========================================================
+            # 3) RESOLVE MANUFACTURING WIP ACCOUNT
+            # ==========================================================
+
+            debit_row = self.resolve_coa_account_by_roles_for_posting(
+                company_id,
+                [
+                    "manufacturing_wip",
+                    "production_wip",
+                    "manufacturing",
+                    "wip",
+                    "work_in_progress",
+                ],
+                cur=cur,
+                required=False,
+            )
+
+            if not debit_row:
+                raise ValueError(
+                    "MANUFACTURING_WIP_ACCOUNT_NOT_CONFIGURED"
+                )
+
+            manufacturing_wip_code = str(
+                debit_row.get("code") or ""
+            ).strip()
+
+            manufacturing_wip_name = str(
+                debit_row.get("name")
+                or manufacturing_wip_code
+            ).strip()
+
+            if not manufacturing_wip_code:
+                raise ValueError(
+                    "MANUFACTURING_WIP_ACCOUNT_NOT_CONFIGURED"
+                )
+
+            # ==========================================================
+            # 4) CREATE INVENTORY TRANSACTION HEADER
+            # ==========================================================
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.inventory_tx (
+                    company_id,
+                    tx_date,
+                    tx_type,
+                    status,
+                    ref,
+                    notes,
+                    created_by,
+                    source,
+                    source_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    %s,%s,
+                    'material_usage',
+                    'draft',
+                    %s,%s,%s,
+                    'manufacturing_order',
+                    %s,
+                    NOW(),NOW()
+                )
+                RETURNING id
+                """,
+                (
+                    int(company_id),
+                    tx_date,
+                    ref,
+                    notes,
+                    created_by,
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            tx_row = cur.fetchone()
+
+            if isinstance(tx_row, dict):
+                tx_id = int(tx_row.get("id") or 0)
+            else:
+                tx_id = int(tx_row[0] or 0)
+
+            if tx_id <= 0:
+                raise ValueError(
+                    "FAILED_TO_CREATE_MANUFACTURING_MATERIAL_TX"
+                )
+
+            # ==========================================================
+            # 5) PROCESS ACTUAL MATERIAL USAGE
+            # ==========================================================
+
+            inventory_credits = {}
+            total_material_cost = 0.0
+
+            for idx, line in enumerate(lines, start=1):
+
+                material_id = to_int(
+                    line.get("material_id")
+                    or line.get("materialId")
+                    or line.get("manufacturing_order_material_id")
+                    or line.get("manufacturingOrderMaterialId"),
+                    0,
+                )
+
+                actual_qty = to_float(
+                    line.get("actual_qty")
+                    or line.get("actualQty")
+                    or line.get("qty")
+                    or line.get("quantity"),
+                    0.0,
+                )
+
+                if material_id <= 0:
+                    raise ValueError(
+                        f"line {idx}: material_id required"
+                    )
+
+                if actual_qty <= 0:
+                    raise ValueError(
+                        f"line {idx}: actual_qty must be > 0"
+                    )
+
+                # ------------------------------------------------------
+                # Lock the manufacturing material line
+                # ------------------------------------------------------
+
+                material = self.fetch_one(
+                    f"""
+                    SELECT
+                        m.*,
+                        i.name AS item_name,
+                        i.sku AS item_sku,
+                        i.inventory_account,
+                        i.purchase_cost,
+                        i.valuation_method,
+                        i.track_stock,
+                        i.is_active
+                    FROM {schema}.manufacturing_order_materials m
+                    JOIN {schema}.inventory_items i
+                    ON i.id=m.item_id
+                    WHERE m.company_id=%s
+                    AND m.id=%s
+                    AND m.manufacturing_order_id=%s
+                    FOR UPDATE
+                    """,
+                    (
+                        int(company_id),
+                        int(material_id),
+                        int(manufacturing_order_id),
+                    ),
+                    cur=cur,
+                )
+
+                if not material:
+                    raise ValueError(
+                        f"MANUFACTURING_MATERIAL_NOT_FOUND|id={material_id}"
+                    )
+
+                item_id = int(
+                    material.get("item_id") or 0
+                )
+
+                if item_id <= 0:
+                    raise ValueError(
+                        f"INVALID_MATERIAL_ITEM|material_id={material_id}"
+                    )
+
+                if material.get("is_active") is False:
+                    raise ValueError(
+                        f"INVENTORY_ITEM_INACTIVE|item_id={item_id}"
+                    )
+
+                # ------------------------------------------------------
+                # Do not allow the same material line to be posted twice
+                # ------------------------------------------------------
+
+                if material.get("inventory_tx_id"):
+                    raise ValueError(
+                        f"MATERIAL_ALREADY_POSTED|material_id={material_id}"
+                    )
+
+                # ------------------------------------------------------
+                # Inventory account
+                # ------------------------------------------------------
+
+                inventory_raw = str(
+                    material.get("inventory_account") or ""
+                ).strip()
+
+                inv_row = None
+
+                if inventory_raw:
+                    inv_row = self.get_account_row_for_posting(
+                        company_id,
+                        inventory_raw,
+                    )
+
+                if not inv_row:
+                    inventory_raw = str(
+                        self.find_default_inventory_account_code(
+                            company_id,
+                            cur=cur,
+                        ) or ""
+                    ).strip()
+
+                    if inventory_raw:
+                        inv_row = self.get_account_row_for_posting(
+                            company_id,
+                            inventory_raw,
+                        )
+
+                if not inv_row:
+                    raise ValueError(
+                        f"INVENTORY_ACCOUNT_NOT_FOUND|"
+                        f"item_id={item_id}|{inventory_raw}"
+                    )
+
+                inventory_account = str(
+                    inv_row[1] or inventory_raw
+                ).strip()
+
+                inventory_account_name = str(
+                    inv_row[0] or inventory_account
+                ).strip()
+
+                # ------------------------------------------------------
+                # Stock valuation
+                # ------------------------------------------------------
+
+                valuation_method = str(
+                    material.get("valuation_method")
+                    or "AVG"
+                ).strip().upper()
+
+                if valuation_method not in ("FIFO", "AVG"):
+                    valuation_method = "AVG"
+
+                track_stock = bool(
+                    material.get("track_stock", True)
+                )
+
+                if track_stock:
+                    onhand = self._inventory_onhand_cur(
+                        company_id,
+                        item_id,
+                        cur,
+                    )
+
+                    if actual_qty > onhand:
+                        raise ValueError(
+                            f"INSUFFICIENT_STOCK|"
+                            f"item_id={item_id}|"
+                            f"onhand={onhand}|"
+                            f"requested={actual_qty}"
+                        )
+
+                # ------------------------------------------------------
+                # FIFO
+                # ------------------------------------------------------
+
+                if valuation_method == "FIFO":
+
+                    line_cost = money(
+                        self.fifo_consume(
+                            company_id,
+                            item_id=item_id,
+                            qty_out=actual_qty,
+                            tx_date=tx_date,
+                            source="manufacturing_order",
+                            source_id=int(tx_id),
+                            posted_journal_id=None,
+                            cur=cur,
+                        )
+                    )
+
+                # ------------------------------------------------------
+                # AVERAGE
+                # ------------------------------------------------------
+
+                else:
+
+                    unit_cost = money(
+                        self._inventory_avg_cost_cur(
+                            company_id,
+                            item_id,
+                            cur,
+                        )
+                    )
+
+                    if unit_cost <= 0:
+                        unit_cost = money(
+                            material.get("purchase_cost") or 0
+                        )
+
+                    if unit_cost <= 0:
+                        raise ValueError(
+                            f"MISSING_COST|item_id={item_id}"
+                        )
+
+                    line_cost = money(
+                        actual_qty * unit_cost
+                    )
+
+                    if track_stock:
+                        cur.execute(
+                            f"""
+                            INSERT INTO {schema}.inventory_layers (
+                                company_id,
+                                item_id,
+                                tx_date,
+                                qty_in,
+                                qty_out,
+                                unit_cost,
+                                ref,
+                                source,
+                                source_id,
+                                tx_id,
+                                created_at
+                            )
+                            VALUES (
+                                %s,%s,%s,
+                                0,%s,%s,
+                                %s,
+                                'manufacturing_order',
+                                %s,
+                                %s,
+                                NOW()
+                            )
+                            """,
+                            (
+                                int(company_id),
+                                item_id,
+                                tx_date,
+                                float(actual_qty),
+                                float(unit_cost),
+                                ref,
+                                int(tx_id),
+                                int(tx_id),
+                            ),
+                        )
+
+                if line_cost <= 0:
+                    raise ValueError(
+                        f"ZERO_MATERIAL_COST|item_id={item_id}"
+                    )
+
+                unit_cost = money(
+                    line_cost / actual_qty
+                )
+
+                # ------------------------------------------------------
+                # Inventory transaction line
+                # ------------------------------------------------------
+
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.inventory_tx_lines (
+                        company_id,
+                        tx_id,
+                        line_no,
+                        item_id,
+                        qty,
+                        unit_cost,
+                        unit_price,
+                        vat_code,
+                        memo,
+                        created_at
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,
+                        %s,%s,0,
+                        %s,%s,
+                        NOW()
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        int(company_id),
+                        int(tx_id),
+                        int(idx),
+                        item_id,
+                        float(actual_qty),
+                        float(unit_cost),
+                        line.get("vat_code")
+                        or line.get("vatCode"),
+                        line.get("memo")
+                        or (
+                            f"Material usage - "
+                            f"{material.get('item_name') or item_id}"
+                        ),
+                    ),
+                )
+
+                tx_line_row = cur.fetchone()
+
+                if isinstance(tx_line_row, dict):
+                    tx_line_id = int(
+                        tx_line_row.get("id") or 0
+                    )
+                else:
+                    tx_line_id = int(
+                        tx_line_row[0] or 0
+                    )
+
+                if tx_line_id <= 0:
+                    raise ValueError(
+                        "FAILED_TO_CREATE_MATERIAL_TX_LINE"
+                    )
+
+                # ------------------------------------------------------
+                # Group credits by inventory account
+                # ------------------------------------------------------
+
+                if inventory_account not in inventory_credits:
+                    inventory_credits[inventory_account] = {
+                        "name": inventory_account_name,
+                        "amount": 0.0,
+                    }
+
+                inventory_credits[inventory_account]["amount"] = money(
+                    inventory_credits[inventory_account]["amount"]
+                    + line_cost
+                )
+
+                total_material_cost = money(
+                    total_material_cost + line_cost
+                )
+
+                # ------------------------------------------------------
+                # Update manufacturing material line
+                # ------------------------------------------------------
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.manufacturing_order_materials
+                    SET
+                        actual_qty=%s,
+                        unit_cost=%s,
+                        total_cost=%s,
+                        inventory_tx_id=%s,
+                        inventory_tx_line_id=%s,
+                        updated_at=NOW()
+                    WHERE company_id=%s
+                    AND id=%s
+                    AND manufacturing_order_id=%s
+                    """,
+                    (
+                        float(actual_qty),
+                        float(unit_cost),
+                        float(line_cost),
+                        int(tx_id),
+                        int(tx_line_id),
+                        int(company_id),
+                        int(material_id),
+                        int(manufacturing_order_id),
+                    ),
+                )
+
+            # ==========================================================
+            # 6) TOTAL VALIDATION
+            # ==========================================================
+
+            if total_material_cost <= 0:
+                raise ValueError(
+                    "MANUFACTURING_MATERIAL_COST_IS_ZERO"
+                )
+
+            # ==========================================================
+            # 7) CREATE JOURNAL
+            # ==========================================================
+
+            journal_lines = [
+                {
+                    "account_code": manufacturing_wip_code,
+                    "account_name": manufacturing_wip_name,
+                    "debit": total_material_cost,
+                    "credit": 0.0,
+                    "memo": (
+                        f"Materials consumed for production "
+                        f"{mo_no}"
+                    ),
+                }
+            ]
+
+            for account_code, info in inventory_credits.items():
+
+                amount = money(
+                    info.get("amount") or 0
+                )
+
+                if amount <= 0:
+                    continue
+
+                journal_lines.append({
+                    "account_code": account_code,
+                    "account_name": info["name"],
+                    "debit": 0.0,
+                    "credit": amount,
+                    "memo": (
+                        f"Inventory consumed in production "
+                        f"{mo_no}"
+                    ),
+                })
+
+            journal_id = self.post_journal(
+                company_id,
+                {
+                    "date": tx_date,
+                    "ref": ref,
+                    "description": (
+                        f"Manufacturing material usage #{tx_id}"
+                    ),
+                    "source": "manufacturing_order",
+                    "source_id": int(tx_id),
+                    "source_table": "inventory_tx",
+                    "module_name": "manufacturing",
+                    "event_type": "posted",
+                    "created_by_user_id": created_by,
+                    "updated_by_user_id": created_by,
+                    "prepared_by_user_id": created_by,
+                    "lines": journal_lines,
+                },
+                cur=cur,
+                conn=conn,
+            )
+
+            if not journal_id:
+                raise ValueError(
+                    "MANUFACTURING_MATERIAL_JOURNAL_FAILED"
+                )
+
+            # ==========================================================
+            # 8) POST INVENTORY TRANSACTION
+            # ==========================================================
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.inventory_tx
+                SET
+                    status='posted',
+                    posted_journal_id=%s,
+                    posted_at=NOW(),
+                    posted_by=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                """,
+                (
+                    int(journal_id),
+                    created_by,
+                    int(company_id),
+                    int(tx_id),
+                ),
+            )
+
+            # ==========================================================
+            # 9) ATTACH JOURNAL TO INVENTORY LAYERS
+            # ==========================================================
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.inventory_layers
+                SET posted_journal_id=%s
+                WHERE company_id=%s
+                AND source='manufacturing_order'
+                AND source_id=%s
+                """,
+                (
+                    int(journal_id),
+                    int(company_id),
+                    int(tx_id),
+                ),
+            )
+
+            # ==========================================================
+            # 10) ATTACH JOURNAL TO FIFO ALLOCATIONS
+            # ==========================================================
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.inventory_fifo_allocations
+                SET posted_journal_id=%s
+                WHERE company_id=%s
+                AND source='manufacturing_order'
+                AND source_id=%s
+                """,
+                (
+                    int(journal_id),
+                    int(company_id),
+                    int(tx_id),
+                ),
+            )
+
+            # ==========================================================
+            # 11) UPDATE MANUFACTURING ORDER
+            # ==========================================================
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.manufacturing_orders
+                SET
+                    material_tx_id=%s,
+                    status=CASE
+                        WHEN status='draft'
+                        THEN 'in_progress'
+                        ELSE status
+                    END,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                """,
+                (
+                    int(tx_id),
+                    created_by,
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            return {
+                "ok": True,
+                "manufacturing_order_id": int(
+                    manufacturing_order_id
+                ),
+                "mo_no": mo_no,
+                "inventory_tx_id": int(tx_id),
+                "journal_id": int(journal_id),
+                "total_cost": total_material_cost,
+                "material_count": len(lines),
+            }
+    
     def pos_ensure_packing_queue_item(self, company_id: int, order_id: int) -> int:
         schema = self.company_schema(company_id)
 
