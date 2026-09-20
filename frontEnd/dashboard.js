@@ -125407,10 +125407,10 @@ function renderManufacturingBoms(rows) {
     <div class="flex items-center justify-between mb-3">
       <div>
         <div class="font-semibold text-slate-800">
-          Recipes / Bills of Material
+          Bills of Material
         </div>
         <div class="text-xs text-slate-500">
-          Define the standard ingredients or materials required to produce a finished item.
+          Define the standard materials or components required to produce a finished item.
         </div>
       </div>
 
@@ -125418,7 +125418,7 @@ function renderManufacturingBoms(rows) {
         type="button"
         id="mfgRecipeNewBtn"
         class="px-3 py-2 rounded bg-slate-900 text-white text-xs">
-        + New Recipe
+        + New BOM
       </button>
     </div>
 
@@ -126095,7 +126095,7 @@ function openManufacturingBomModal(bomId = 0) {
         <div class="flex items-center justify-between border-b px-4 py-3">
           <div>
             <div id="mfgBomModalTitle" class="font-semibold">
-              New Recipe
+              New BOM
             </div>
             <div class="text-xs text-slate-500">
               Define the finished product and standard material quantities.
@@ -126212,7 +126212,7 @@ function openManufacturingBomModal(bomId = 0) {
               type="button"
               id="mfgBomSaveBtn"
               class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
-              Save Recipe
+              Save BOM
             </button>
           </div>
 
@@ -126266,7 +126266,7 @@ function openManufacturingBomModal(bomId = 0) {
   }
 
   document.getElementById("mfgBomModalTitle").textContent =
-    bomId ? "Edit Recipe" : "New Recipe";
+    bomId ? "Edit BOM" : "New BOM";
 
   if (!bomId) {
     addManufacturingBomLine();
@@ -126468,7 +126468,7 @@ async function saveManufacturingBom() {
     return showManufacturingBomMsg("Add at least one material.", "error");
 
   const btn = document.getElementById("mfgBomSaveBtn");
-  const oldText = btn?.textContent || "Save Recipe";
+  const oldText = btn?.textContent || "Save BOM";
 
   if (btn) {
     btn.disabled = true;
@@ -126523,7 +126523,7 @@ async function saveManufacturingBom() {
 
   } catch (err) {
     showManufacturingBomMsg(
-      err?.message || "Failed to save recipe.",
+      err?.message || "Failed to Save BOM.",
       "error"
     );
   } finally {
