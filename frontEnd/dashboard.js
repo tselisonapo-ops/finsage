@@ -125646,7 +125646,15 @@ function openManufacturingBomModal(bomId = 0) {
   modal.dataset.bomId = String(bomId || 0);
 
   const itemSel = document.getElementById("mfgBomItem");
-  if (itemSel) itemSel.innerHTML = manufacturingItemOptions();
+
+  if (itemSel) {
+    try {
+      itemSel.innerHTML = manufacturingItemOptions();
+    } catch (err) {
+      console.error("[Manufacturing] manufacturingItemOptions failed:", err);
+      itemSel.innerHTML = `<option value="">Unable to load finished items</option>`;
+    }
+  }
 
   document.getElementById("mfgBomCode").value = "";
   document.getElementById("mfgBomName").value = "";
@@ -125667,7 +125675,7 @@ function openManufacturingBomModal(bomId = 0) {
   }
 
   loadManufacturingBomIntoModal(bomId);
-  modal.classList.remove("hidden");
+  
 }
 
 async function loadManufacturingBomIntoModal(bomId) {
