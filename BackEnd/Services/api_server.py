@@ -13277,13 +13277,19 @@ def manufacturing_boms(cid: int):
 
         payload = request.get_json(silent=True) or {}
 
-        payload["created_by_user_id"] = user.get("id")
-        payload["updated_by_user_id"] = user.get("id")
-
         bom_id = db_service.create_manufacturing_bom(
             company_id=company_id,
-            data=payload,
-            user_id=int(user.get("id") or 0) or None,
+            finished_item_name=payload.get("finished_item_name"),
+            bom_code=payload.get("bom_code"),
+            name=payload.get("name"),
+            batch_qty=payload.get("batch_qty", 1),
+            batch_unit=payload.get("batch_unit"),
+            description=payload.get("description"),
+            version_no=payload.get("version_no", 1),
+            effective_from=payload.get("effective_from"),
+            effective_to=payload.get("effective_to"),
+            is_default=payload.get("is_default", False),
+            created_by_user_id=int(user.get("id") or 0) or None,
         )
 
         bom = db_service.get_manufacturing_bom(

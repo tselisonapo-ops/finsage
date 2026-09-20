@@ -125565,10 +125565,11 @@ function openManufacturingBomDefinitionModal(bomId = 0) {
             <label class="text-xs md:col-span-2">
               <div class="text-slate-600 mb-1">Finished Item</div>
 
-              <select
-                id="mfgBomDefinitionItem"
-                class="w-full border rounded px-2 py-2 text-sm">
-              </select>
+              <input
+                id="mfgBomDefinitionFinishedItem"
+                type="text"
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="e.g. Office Desk">
             </label>
 
             <label class="text-xs">
@@ -125695,28 +125696,12 @@ function openManufacturingBomDefinitionModal(bomId = 0) {
 
   modal.dataset.bomId = String(bomId || 0);
 
-  const itemSel =
-    document.getElementById("mfgBomDefinitionItem");
-
-  if (itemSel) {
-    try {
-      itemSel.innerHTML = manufacturingItemOptions();
-    } catch (err) {
-      console.error(
-        "[Manufacturing] BOM item options failed:",
-        err
-      );
-
-      itemSel.innerHTML =
-        `<option value="">Unable to load finished items</option>`;
-    }
-  }
-
   document.getElementById("mfgBomDefinitionCode").value = "";
   document.getElementById("mfgBomDefinitionName").value = "";
   document.getElementById("mfgBomDefinitionBatchQty").value = "1";
   document.getElementById("mfgBomDefinitionBatchUnit").value = "";
   document.getElementById("mfgBomDefinitionDescription").value = "";
+  document.getElementById("mfgBomDefinitionFinishedItem").value = "";
 
   const tbody =
     document.getElementById("mfgBomDefinitionLinesTbody");

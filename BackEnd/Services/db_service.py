@@ -52884,6 +52884,9 @@ class DatabaseService:
             )
         );
 
+        ALTER TABLE {schema}.manufacturing_boms
+        ADD COLUMN IF NOT EXISTS finished_item_name TEXT;
+
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_boms_company_item_idx
         ON {schema}.manufacturing_boms(company_id, item_id);
 
@@ -84763,7 +84766,7 @@ class DatabaseService:
         self,
         company_id: int,
         *,
-        item_id: int,
+        finished_item_name: str,
         bom_code: str,
         name: str,
         batch_qty=1,
@@ -84778,6 +84781,7 @@ class DatabaseService:
     ) -> int:
         schema = self.company_schema(company_id)
 
+        finished_item_name = str(finished_item_name or "").strip()
         bom_code = str(bom_code or "").strip()
         name = str(name or "").strip()
 
@@ -84787,6 +84791,9 @@ class DatabaseService:
         if not name:
             raise ValueError("BOM name is required")
 
+        if not finished_item_name:
+            raise ValueError("Finished item is required")
+
         batch_qty = Decimal(str(batch_qty or 0))
 
         if batch_qty <= 0:
@@ -84795,7 +84802,7 @@ class DatabaseService:
         sql = f"""
             INSERT INTO {schema}.manufacturing_boms (
                 company_id,
-                item_id,
+                finished_item_name,
                 bom_code,
                 name,
                 description,
@@ -84821,7 +84828,7 @@ class DatabaseService:
 
         params = (
             company_id,
-            int(item_id),
+            finished_item_name,
             bom_code,
             name,
             description,
