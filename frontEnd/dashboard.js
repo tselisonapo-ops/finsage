@@ -13032,7 +13032,8 @@ function renderCatalogScreen(name) {
       tpl: "tpl-manufacturing",
       enter: () => {
         bindManufacturingUI?.();
-        loadManufacturing?.();
+        loadManufacturingBoms?.();
+        loadManufacturingOrders?.();
       },
     },
 
