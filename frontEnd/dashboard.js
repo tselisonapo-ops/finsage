@@ -125322,23 +125322,41 @@ async function bindManufacturingUI() {
   const mount = getManufacturingMount();
   if (!mount) return false;
 
+  const newBomBtn = document.getElementById("mfgNewBomBtn");
+
+  if (newBomBtn && newBomBtn.dataset.bound !== "1") {
+    newBomBtn.dataset.bound = "1";
+
+    newBomBtn.addEventListener("click", () => {
+      renderManufacturingBomDefinition();
+      openManufacturingBomDefinitionModal();
+    });
+  }
+
   if (mount.dataset.bound !== "1") {
     mount.dataset.bound = "1";
 
     mount.addEventListener("click", async (e) => {
       const bomBtn = e.target.closest("[data-mfg-bom]");
+
       if (bomBtn) {
-        openManufacturingBomModal(Number(bomBtn.dataset.mfgBom));
+        openManufacturingBomModal(
+          Number(bomBtn.dataset.mfgBom)
+        );
         return;
       }
 
       const orderBtn = e.target.closest("[data-mfg-order]");
+
       if (orderBtn) {
-        openManufacturingOrderDetail(Number(orderBtn.dataset.mfgOrder));
+        openManufacturingOrderDetail(
+          Number(orderBtn.dataset.mfgOrder)
+        );
         return;
       }
 
       const usageBtn = e.target.closest("[data-mfg-usage]");
+
       if (usageBtn) {
         await postManufacturingMaterialUsageUI(
           Number(usageBtn.dataset.mfgUsage)
@@ -125350,9 +125368,9 @@ async function bindManufacturingUI() {
 
   await ensureManufacturingItemCache();
   await loadManufacturingBoms();
+
   return true;
 }
-
 window.bindManufacturingUI = bindManufacturingUI;
 
 // =====================================================
@@ -125489,6 +125507,659 @@ function renderManufacturingBoms(rows) {
     console.error("[Manufacturing] mfgRecipeNewBtn NOT FOUND");
   }
 }
+
+function openManufacturingBomDefinitionModal(bomId = 0) {
+  let modal = document.getElementById("mfgBomDefinitionModal");
+
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "mfgBomDefinitionModal";
+    modal.className =
+      "fixed inset-0 z-50 hidden bg-black/40 flex items-center justify-center p-4";
+
+    modal.innerHTML = `
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-auto">
+
+        <div class="flex items-center justify-between border-b px-4 py-3">
+          <div>
+            <div id="mfgBomDefinitionTitle" class="font-semibold">
+              New BOM
+            </div>
+
+            <div class="text-xs text-slate-500">
+              Define the finished item and the materials or components required to produce it.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            id="mfgBomDefinitionCloseBtn"
+            class="text-slate-500 text-lg">
+            ×
+          </button>
+        </div>
+
+        <div class="p-4">
+
+          <div id="mfgBomDefinitionMsg"></div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">BOM Code</div>
+
+              <input
+                id="mfgBomDefinitionCode"
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="e.g. BOM-001">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">BOM Name</div>
+
+              <input
+                id="mfgBomDefinitionName"
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="e.g. Standard Product BOM">
+            </label>
+
+            <label class="text-xs md:col-span-2">
+              <div class="text-slate-600 mb-1">Finished Item</div>
+
+              <select
+                id="mfgBomDefinitionItem"
+                class="w-full border rounded px-2 py-2 text-sm">
+              </select>
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">Output Quantity</div>
+
+              <input
+                id="mfgBomDefinitionBatchQty"
+                type="number"
+                min="0.0001"
+                step="0.0001"
+                class="w-full border rounded px-2 py-2 text-sm"
+                value="1">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">Output Unit</div>
+
+              <input
+                id="mfgBomDefinitionBatchUnit"
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="units / kg / metres">
+            </label>
+
+            <label class="text-xs md:col-span-2">
+              <div class="text-slate-600 mb-1">Description</div>
+
+              <textarea
+                id="mfgBomDefinitionDescription"
+                rows="2"
+                class="w-full border rounded px-2 py-2 text-sm"></textarea>
+            </label>
+
+          </div>
+
+          <div class="mt-5 flex items-center justify-between">
+
+            <div>
+              <div class="font-semibold text-sm">
+                BOM Components
+              </div>
+
+              <div class="text-xs text-slate-500">
+                Define the standard materials or components required for the output quantity.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              id="mfgBomDefinitionAddLineBtn"
+              class="px-2 py-1 border rounded text-xs">
+              + Add Component
+            </button>
+
+          </div>
+
+          <div class="overflow-auto border rounded mt-2">
+
+            <table class="w-full text-xs">
+
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-2 py-2">Component</th>
+                  <th class="text-right px-2 py-2">Quantity</th>
+                  <th class="text-left px-2 py-2">Unit</th>
+                  <th class="text-right px-2 py-2">Scrap %</th>
+                  <th class="text-center px-2 py-2"></th>
+                </tr>
+              </thead>
+
+              <tbody id="mfgBomDefinitionLinesTbody"></tbody>
+
+            </table>
+
+          </div>
+
+          <div class="flex justify-end gap-2 mt-4">
+
+            <button
+              type="button"
+              id="mfgBomDefinitionCancelBtn"
+              class="px-3 py-2 border rounded text-xs">
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              id="mfgBomDefinitionSaveBtn"
+              class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
+              Save BOM
+            </button>
+
+          </div>
+
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    document.getElementById("mfgBomDefinitionCloseBtn")
+      ?.addEventListener(
+        "click",
+        closeManufacturingBomDefinitionModal
+      );
+
+    document.getElementById("mfgBomDefinitionCancelBtn")
+      ?.addEventListener(
+        "click",
+        closeManufacturingBomDefinitionModal
+      );
+
+    document.getElementById("mfgBomDefinitionAddLineBtn")
+      ?.addEventListener(
+        "click",
+        () => addManufacturingBomDefinitionLine()
+      );
+
+    document.getElementById("mfgBomDefinitionSaveBtn")
+      ?.addEventListener(
+        "click",
+        saveManufacturingBomDefinition
+      );
+  }
+
+  modal.dataset.bomId = String(bomId || 0);
+
+  const itemSel =
+    document.getElementById("mfgBomDefinitionItem");
+
+  if (itemSel) {
+    try {
+      itemSel.innerHTML = manufacturingItemOptions();
+    } catch (err) {
+      console.error(
+        "[Manufacturing] BOM item options failed:",
+        err
+      );
+
+      itemSel.innerHTML =
+        `<option value="">Unable to load finished items</option>`;
+    }
+  }
+
+  document.getElementById("mfgBomDefinitionCode").value = "";
+  document.getElementById("mfgBomDefinitionName").value = "";
+  document.getElementById("mfgBomDefinitionBatchQty").value = "1";
+  document.getElementById("mfgBomDefinitionBatchUnit").value = "";
+  document.getElementById("mfgBomDefinitionDescription").value = "";
+
+  const tbody =
+    document.getElementById("mfgBomDefinitionLinesTbody");
+
+  if (tbody) {
+    tbody.innerHTML = "";
+  }
+
+  document.getElementById("mfgBomDefinitionTitle").textContent =
+    bomId ? "Edit BOM" : "New BOM";
+
+  if (!bomId) {
+    addManufacturingBomDefinitionLine();
+  }
+
+  modal.classList.remove("hidden");
+}
+
+function addManufacturingBomDefinitionLine(line = {}) {
+  const tbody =
+    document.getElementById("mfgBomDefinitionLinesTbody");
+
+  if (!tbody) return;
+
+  const tr = document.createElement("tr");
+
+  tr.className = "border-b";
+
+  tr.innerHTML = `
+    <td class="px-2 py-2">
+      <select
+        class="mfg-bom-definition-line-item w-full border rounded px-2 py-1">
+        ${manufacturingItemOptions(line.item_id || "")}
+      </select>
+    </td>
+
+    <td class="px-2 py-2">
+      <input
+        type="number"
+        min="0"
+        step="0.0001"
+        class="mfg-bom-definition-line-qty w-full border rounded px-2 py-1 text-right"
+        value="${esc(line.quantity ?? line.qty ?? "")}">
+    </td>
+
+    <td class="px-2 py-2">
+      <input
+        type="text"
+        class="mfg-bom-definition-line-unit w-full border rounded px-2 py-1"
+        value="${esc(line.unit || line.uom || "")}">
+    </td>
+
+    <td class="px-2 py-2">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        class="mfg-bom-definition-line-scrap w-full border rounded px-2 py-1 text-right"
+        value="${esc(line.scrap_pct ?? line.scrap_percent ?? 0)}">
+    </td>
+
+    <td class="px-2 py-2 text-center">
+      <button
+        type="button"
+        class="text-red-600 underline text-xs"
+        data-mfg-bom-definition-remove>
+        Remove
+      </button>
+    </td>
+  `;
+
+  tr.querySelector(
+    "[data-mfg-bom-definition-remove]"
+  )?.addEventListener("click", () => {
+    tr.remove();
+  });
+
+  tbody.appendChild(tr);
+}
+
+function closeManufacturingBomDefinitionModal() {
+  const modal =
+    document.getElementById("mfgBomDefinitionModal");
+
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+
+function showManufacturingBomDefinitionMsg(
+  text = "",
+  kind = "info"
+) {
+  const el =
+    document.getElementById("mfgBomDefinitionMsg");
+
+  if (!el) return;
+
+  el.className =
+    kind === "error"
+      ? "text-xs my-2 text-red-600 font-semibold"
+      : kind === "ok"
+        ? "text-xs my-2 text-emerald-600 font-semibold"
+        : "text-xs my-2 text-slate-600";
+
+  el.textContent = text || "";
+}
+
+
+async function saveManufacturingBomDefinition() {
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID;
+
+  const modal =
+    document.getElementById("mfgBomDefinitionModal");
+
+  if (!cid || !modal) return;
+
+  showManufacturingBomDefinitionMsg(
+    "Saving BOM...",
+    "info"
+  );
+
+  const payload = {
+    bom_code:
+      document.getElementById(
+        "mfgBomDefinitionCode"
+      )?.value.trim(),
+
+    name:
+      document.getElementById(
+        "mfgBomDefinitionName"
+      )?.value.trim(),
+
+    item_id:
+      Number(
+        document.getElementById(
+          "mfgBomDefinitionItem"
+        )?.value || 0
+      ),
+
+    batch_qty:
+      Number(
+        document.getElementById(
+          "mfgBomDefinitionBatchQty"
+        )?.value || 0
+      ),
+
+    batch_unit:
+      document.getElementById(
+        "mfgBomDefinitionBatchUnit"
+      )?.value.trim(),
+
+    description:
+      document.getElementById(
+        "mfgBomDefinitionDescription"
+      )?.value.trim()
+  };
+
+  if (!payload.bom_code) {
+    showManufacturingBomDefinitionMsg(
+      "BOM code is required.",
+      "error"
+    );
+    return;
+  }
+
+  if (!payload.name) {
+    showManufacturingBomDefinitionMsg(
+      "BOM name is required.",
+      "error"
+    );
+    return;
+  }
+
+  if (!payload.item_id) {
+    showManufacturingBomDefinitionMsg(
+      "Finished item is required.",
+      "error"
+    );
+    return;
+  }
+
+  if (!(payload.batch_qty > 0)) {
+    showManufacturingBomDefinitionMsg(
+      "Output quantity must be greater than zero.",
+      "error"
+    );
+    return;
+  }
+
+  const rows = [
+    ...document.querySelectorAll(
+      "#mfgBomDefinitionLinesTbody tr"
+    )
+  ];
+
+  const lines = [];
+
+  for (const row of rows) {
+    const itemId =
+      Number(
+        row.querySelector(
+          ".mfg-bom-definition-line-item"
+        )?.value || 0
+      );
+
+    const quantity =
+      Number(
+        row.querySelector(
+          ".mfg-bom-definition-line-qty"
+        )?.value || 0
+      );
+
+    const unit =
+      row.querySelector(
+        ".mfg-bom-definition-line-unit"
+      )?.value.trim() || "";
+
+    const scrapPct =
+      Number(
+        row.querySelector(
+          ".mfg-bom-definition-line-scrap"
+        )?.value || 0
+      );
+
+    if (!itemId && !quantity && !unit) {
+      continue;
+    }
+
+    if (!itemId) {
+      showManufacturingBomDefinitionMsg(
+        "Each BOM component must have an item.",
+        "error"
+      );
+      return;
+    }
+
+    if (!(quantity > 0)) {
+      showManufacturingBomDefinitionMsg(
+        "Each BOM component must have a quantity greater than zero.",
+        "error"
+      );
+      return;
+    }
+
+    if (scrapPct < 0) {
+      showManufacturingBomDefinitionMsg(
+        "Scrap percentage cannot be negative.",
+        "error"
+      );
+      return;
+    }
+
+    lines.push({
+      item_id: itemId,
+      quantity,
+      unit,
+      scrap_pct: scrapPct
+    });
+  }
+
+  if (!lines.length) {
+    showManufacturingBomDefinitionMsg(
+      "Add at least one BOM component.",
+      "error"
+    );
+    return;
+  }
+
+  try {
+    const bomId =
+      Number(modal.dataset.bomId || 0);
+
+    let savedBom;
+
+    if (bomId) {
+      savedBom = await apiFetch(
+        ENDPOINTS.manufacturing.bom(cid, bomId),
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+    } else {
+      savedBom = await apiFetch(
+        ENDPOINTS.manufacturing.boms(cid),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+    }
+
+    const savedBomId =
+      Number(
+        savedBom?.id ||
+        savedBom?.bom_id ||
+        savedBom?.row?.id ||
+        bomId
+      );
+
+    if (!savedBomId) {
+      throw new Error(
+        "BOM was saved but no BOM ID was returned."
+      );
+    }
+
+    if (!bomId) {
+      for (const line of lines) {
+        await apiFetch(
+          ENDPOINTS.manufacturing.bomLines(
+            cid,
+            savedBomId
+          ),
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(line)
+          }
+        );
+      }
+    }
+
+    showManufacturingBomDefinitionMsg(
+      "BOM saved successfully.",
+      "ok"
+    );
+
+    await loadManufacturingBoms();
+
+    setTimeout(() => {
+      closeManufacturingBomDefinitionModal();
+    }, 500);
+
+  } catch (err) {
+    console.error(
+      "[Manufacturing] save BOM failed:",
+      err
+    );
+
+    showManufacturingBomDefinitionMsg(
+      err?.message ||
+        "Failed to save BOM.",
+      "error"
+    );
+  }
+}
+
+function renderManufacturingBomDefinition() {
+  const mount = getManufacturingMount();
+  if (!mount) return;
+
+  mount.innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="font-semibold text-slate-800">
+          Bill of Materials
+        </div>
+
+        <div class="text-xs text-slate-500">
+          Define the components and quantities required to manufacture a finished item.
+        </div>
+      </div>
+
+      <button
+        type="button"
+        id="mfgBomDefinitionNewBtn"
+        class="px-3 py-2 rounded bg-slate-900 text-white text-xs">
+        + New BOM
+      </button>
+    </div>
+
+    <div id="mfgBomDefinitionMsg"></div>
+
+    <div class="border rounded p-4 bg-slate-50">
+      <div class="text-sm font-semibold text-slate-800">
+        BOM Definition
+      </div>
+
+      <div class="text-xs text-slate-500 mt-1">
+        A BOM defines the standard material or component structure
+        for producing a finished item.
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+
+        <div>
+          <div class="text-xs text-slate-500">
+            Finished Item
+          </div>
+
+          <div class="text-sm font-medium text-slate-800 mt-1">
+            Select a BOM to view its structure
+          </div>
+        </div>
+
+        <div>
+          <div class="text-xs text-slate-500">
+            Output Quantity
+          </div>
+
+          <div class="text-sm font-medium text-slate-800 mt-1">
+            —
+          </div>
+        </div>
+
+        <div>
+          <div class="text-xs text-slate-500">
+            Status
+          </div>
+
+          <div class="text-sm font-medium text-slate-800 mt-1">
+            —
+          </div>
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  const btn =
+    document.getElementById("mfgBomDefinitionNewBtn");
+
+  if (btn && btn.dataset.bound !== "1") {
+    btn.dataset.bound = "1";
+
+    btn.addEventListener("click", () => {
+      openManufacturingBomDefinitionModal();
+    });
+  }
+}
 // =====================================================
 // BOM Modal
 // =====================================================
@@ -125534,7 +126205,7 @@ function openManufacturingBomModal(bomId = 0) {
               <input
                 id="mfgBomCode"
                 class="w-full border rounded px-2 py-2 text-sm"
-                placeholder="e.g. GAL-ROLL-001">
+                placeholder="e.g. PROD-001">
             </label>
 
             <label class="text-xs">
@@ -125542,7 +126213,7 @@ function openManufacturingBomModal(bomId = 0) {
               <input
                 id="mfgBomName"
                 class="w-full border rounded px-2 py-2 text-sm"
-                placeholder="e.g. Standard Galito's Roll">
+                placeholder="e.g. Standard Production Recipe">
             </label>
 
             <label class="text-xs md:col-span-2">
