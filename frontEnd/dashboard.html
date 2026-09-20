@@ -30310,6 +30310,45 @@ window.safeRedirect = function (url, mode = "href") {
     }
   });
 </script>
+
+<script>
+(() => {
+  const protectedModals = [
+    "mfgBomModal"
+  ];
+
+  function protectModals() {
+    protectedModals.forEach(id => {
+      const modal = document.getElementById(id);
+
+      if (!modal) return;
+
+      if (modal.parentNode !== document.body) {
+        document.body.appendChild(modal);
+        console.log(`[Manufacturing Modal Guard] ${id} moved to <body> root`);
+      }
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    protectModals();
+
+    const observer = new MutationObserver(() => {
+      protectModals();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    console.log(
+      "[Manufacturing Modal Guard] watching protected modals:",
+      protectedModals
+    );
+  });
+})();
+</script>
 <script
   src="https://maps.googleapis.com/maps/api/js?key=YOUR_REAL_KEY_HERE&libraries=places&callback=onMapsLoaded"
   async
