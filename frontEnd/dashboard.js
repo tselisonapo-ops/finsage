@@ -125399,7 +125399,7 @@ function renderManufacturingBoms(rows) {
 
       <button
         type="button"
-        id="mfgNewBomBtn"
+        id="mfgRecipeNewBtn"
         class="px-3 py-2 rounded bg-slate-900 text-white text-xs">
         + New Recipe
       </button>
@@ -125479,20 +125479,16 @@ function renderManufacturingBoms(rows) {
     </div>
   `;
 
-  const newBomBtn = document.getElementById("mfgNewBomBtn");
+  const recipeNewBtn = document.getElementById("mfgRecipeNewBtn");
 
-  console.log("[Manufacturing] New Recipe button:", newBomBtn);
-
-  if (newBomBtn) {
-    newBomBtn.addEventListener("click", () => {
-      console.log("[Manufacturing] New Recipe clicked");
+  if (recipeNewBtn) {
+    recipeNewBtn.addEventListener("click", () => {
       openManufacturingBomModal();
     });
   } else {
-    console.error("[Manufacturing] mfgNewBomBtn NOT FOUND");
+    console.error("[Manufacturing] mfgRecipeNewBtn NOT FOUND");
   }
 }
-
 // =====================================================
 // BOM Modal
 // =====================================================
@@ -125660,8 +125656,13 @@ function openManufacturingBomModal(bomId = 0) {
     try {
       itemSel.innerHTML = manufacturingItemOptions();
     } catch (err) {
-      console.error("[Manufacturing] manufacturingItemOptions failed:", err);
-      itemSel.innerHTML = `<option value="">Unable to load finished items</option>`;
+      console.error(
+        "[Manufacturing] manufacturingItemOptions failed:",
+        err
+      );
+
+      itemSel.innerHTML =
+        `<option value="">Unable to load finished items</option>`;
     }
   }
 
@@ -125672,19 +125673,21 @@ function openManufacturingBomModal(bomId = 0) {
   document.getElementById("mfgBomDescription").value = "";
 
   const tbody = document.getElementById("mfgBomLinesTbody");
-  if (tbody) tbody.innerHTML = "";
+
+  if (tbody) {
+    tbody.innerHTML = "";
+  }
 
   document.getElementById("mfgBomModalTitle").textContent =
     bomId ? "Edit Recipe" : "New Recipe";
 
   if (!bomId) {
     addManufacturingBomLine();
-    modal.classList.remove("hidden");
-    return;
+  } else {
+    loadManufacturingBomIntoModal(bomId);
   }
 
-  loadManufacturingBomIntoModal(bomId);
-  
+  modal.classList.remove("hidden");
 }
 
 async function loadManufacturingBomIntoModal(bomId) {
