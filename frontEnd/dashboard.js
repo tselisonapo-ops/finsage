@@ -125328,7 +125328,6 @@ async function bindManufacturingUI() {
     newBomBtn.dataset.bound = "1";
 
     newBomBtn.addEventListener("click", () => {
-      renderManufacturingBomDefinition();
       openManufacturingBomDefinitionModal();
     });
   }
@@ -126077,89 +126076,6 @@ async function saveManufacturingBomDefinition() {
   }
 }
 
-function renderManufacturingBomDefinition() {
-  const mount = getManufacturingMount();
-  if (!mount) return;
-
-  mount.innerHTML = `
-    <div class="flex items-center justify-between mb-3">
-      <div>
-        <div class="font-semibold text-slate-800">
-          Bill of Materials
-        </div>
-
-        <div class="text-xs text-slate-500">
-          Define the components and quantities required to manufacture a finished item.
-        </div>
-      </div>
-
-      <button
-        type="button"
-        id="mfgBomDefinitionNewBtn"
-        class="px-3 py-2 rounded bg-slate-900 text-white text-xs">
-        + New BOM
-      </button>
-    </div>
-
-    <div id="mfgBomDefinitionMsg"></div>
-
-    <div class="border rounded p-4 bg-slate-50">
-      <div class="text-sm font-semibold text-slate-800">
-        BOM Definition
-      </div>
-
-      <div class="text-xs text-slate-500 mt-1">
-        A BOM defines the standard material or component structure
-        for producing a finished item.
-      </div>
-
-      <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-
-        <div>
-          <div class="text-xs text-slate-500">
-            Finished Item
-          </div>
-
-          <div class="text-sm font-medium text-slate-800 mt-1">
-            Select a BOM to view its structure
-          </div>
-        </div>
-
-        <div>
-          <div class="text-xs text-slate-500">
-            Output Quantity
-          </div>
-
-          <div class="text-sm font-medium text-slate-800 mt-1">
-            —
-          </div>
-        </div>
-
-        <div>
-          <div class="text-xs text-slate-500">
-            Status
-          </div>
-
-          <div class="text-sm font-medium text-slate-800 mt-1">
-            —
-          </div>
-        </div>
-
-      </div>
-    </div>
-  `;
-
-  const btn =
-    document.getElementById("mfgBomDefinitionNewBtn");
-
-  if (btn && btn.dataset.bound !== "1") {
-    btn.dataset.bound = "1";
-
-    btn.addEventListener("click", () => {
-      openManufacturingBomDefinitionModal();
-    });
-  }
-}
 // =====================================================
 // BOM Modal
 // =====================================================
