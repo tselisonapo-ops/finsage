@@ -125479,9 +125479,18 @@ function renderManufacturingBoms(rows) {
     </div>
   `;
 
-  document.getElementById("mfgNewBomBtn")
-    ?.addEventListener("click", () => openManufacturingBomModal());
+  const newBomBtn = document.getElementById("mfgNewBomBtn");
 
+  console.log("[Manufacturing] New Recipe button:", newBomBtn);
+
+  if (newBomBtn) {
+    newBomBtn.addEventListener("click", () => {
+      console.log("[Manufacturing] New Recipe clicked");
+      openManufacturingBomModal();
+    });
+  } else {
+    console.error("[Manufacturing] mfgNewBomBtn NOT FOUND");
+  }
 }
 
 // =====================================================
