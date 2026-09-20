@@ -125418,7 +125418,7 @@ function renderManufacturingBoms(rows) {
         type="button"
         id="mfgRecipeNewBtn"
         class="px-3 py-2 rounded bg-slate-900 text-white text-xs">
-        + New BOM
+        + New Bill of Materials
       </button>
     </div>
 
@@ -127953,6 +127953,39 @@ function closeReceiveModal() {
   m.classList.add("hidden");
 }
 
+async function loadReceiveInventoryItems() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+
+  if (!cid) {
+    throw new Error("No active company selected.");
+  }
+
+  const params = new URLSearchParams({
+    limit: "500",
+    offset: "0",
+    active: "1"
+  });
+
+  console.log("[Receive] Loading inventory items:", ENDPOINTS.inventory.items(cid, params.toString()));
+
+  const data = await apiFetch(
+    ENDPOINTS.inventory.items(cid, params.toString())
+  );
+
+  const items = data?.rows || data?.items || [];
+
+  window._INV_ITEM_CACHE = {
+    loaded: true,
+    items
+  };
+
+  console.log("[Receive] Inventory items loaded:", items.length);
+
+  return items;
+}
+
+window.loadReceiveInventoryItems = loadReceiveInventoryItems;
+
 function addReceiveLine(line = {}) {
   const tbody = document.getElementById("invReceiveTbody");
   if (!tbody) return;
@@ -128384,9 +128417,9 @@ async function openReceiveModal(prefill = {}) {
   applyReceiveColumnPolicy();
 
   try {
-    await ensureInvItemCache();
+    await loadReceiveInventoryItems();
   } catch (e) {
-    console.warn("[Receive] item cache load failed", e);
+    console.warn("[Receive] inventory item load failed", e);
   }
 
   addReceiveLine();
