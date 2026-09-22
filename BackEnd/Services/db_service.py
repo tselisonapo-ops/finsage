@@ -52936,19 +52936,18 @@ class DatabaseService:
         ON {schema}.manufacturing_bom_lines(company_id, item_id);
 
 
-        -- 3) MANUFACTURING ORDERS / PRODUCTION BATCHES
+        # 3) MANUFACTURING ORDERS / PRODUCTION BATCHES
         CREATE TABLE IF NOT EXISTS {schema}.manufacturing_orders (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
 
             mo_no TEXT NOT NULL,
 
-            bom_id INT NULL
+            -- Production batch is created from a BOM.
+            -- The finished product is identified by the BOM's
+            -- finished_item_name; it is NOT an inventory item.
+            bom_id INT NOT NULL
                 REFERENCES {schema}.manufacturing_boms(id)
-                ON DELETE RESTRICT,
-
-            item_id INT NOT NULL
-                REFERENCES {schema}.inventory_items(id)
                 ON DELETE RESTRICT,
 
             tx_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -53002,9 +53001,8 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_orders_company_status_idx
         ON {schema}.manufacturing_orders(company_id, status);
 
-        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_orders_company_item_idx
-        ON {schema}.manufacturing_orders(company_id, item_id);
-
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_orders_company_bom_idx
+        ON {schema}.manufacturing_orders(company_id, bom_id);
 
         -- 4) ACTUAL MATERIAL USAGE
         CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_materials (
@@ -53019,6 +53017,9 @@ class DatabaseService:
                 REFERENCES {schema}.manufacturing_bom_lines(id)
                 ON DELETE SET NULL,
 
+            -- This is the raw material/component actually consumed.
+            -- Unlike manufacturing_orders, item_id is correct here
+            -- because materials are inventory items.
             item_id INT NOT NULL
                 REFERENCES {schema}.inventory_items(id)
                 ON DELETE RESTRICT,
@@ -53043,6 +53044,9 @@ class DatabaseService:
 
             memo TEXT NULL,
 
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -53062,7 +53066,7 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_materials_tx_idx
         ON {schema}.manufacturing_order_materials(company_id, inventory_tx_id);
-
+        
         -- ============================================================
         -- INVENTORY WRITE-DOWN REASONS TABLE & AUDIT HOOKS
         -- ============================================================
