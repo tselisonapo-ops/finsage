@@ -125869,6 +125869,20 @@ async function saveManufacturingBomDefinition() {
     return;
   }
 
+  console.log(
+    "[Manufacturing] Finished item field:",
+    document.getElementById("mfgBomDefinitionFinishedItem")
+  );
+
+  console.log(
+    "[Manufacturing] Finished item value:",
+    document.getElementById("mfgBomDefinitionFinishedItem")?.value
+  );
+
+  console.log(
+    "[Manufacturing] Payload:",
+    payload
+  );
   if (!payload.name) {
     showManufacturingBomDefinitionMsg(
       "BOM name is required.",
