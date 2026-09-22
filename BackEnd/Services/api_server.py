@@ -13459,100 +13459,21 @@ def manufacturing_orders(cid: int):
         planned_qty = payload.get("planned_qty")
 
         if bom_id in (None, "", 0):
-            raise ValueError("Manufacturing BOM is required")
+            raise ValueError(
+                "Manufacturing BOM is required"
+            )
 
         if planned_qty in (None, "", 0):
             raise ValueError(
                 "Planned production quantity is required"
             )
 
-        bom_id = int(bom_id)
-
-        planned_qty = Decimal(str(planned_qty))
-
-        if planned_qty <= 0:
-            raise ValueError(
-                "Planned production quantity must be greater than zero"
-            )
-
-        schema = db_service.company_schema(company_id)
-
-        # Confirm the BOM exists and obtain its batch unit.
-        with db_service._conn_cursor() as (conn, cur):
-            cur.execute(
-                f"""
-                SELECT
-                    id,
-                    finished_item_name,
-                    batch_qty,
-                    batch_unit
-                FROM {schema}.manufacturing_boms
-                WHERE company_id = %s
-                  AND id = %s
-                  AND is_active = TRUE
-                """,
-                (
-                    company_id,
-                    bom_id,
-                ),
-            )
-
-            bom_row = cur.fetchone()
-
-            if not bom_row:
-                raise ValueError(
-                    "Manufacturing BOM not found"
-                )
-
-            finished_item_name = bom_row[1]
-            batch_unit = bom_row[3]
-
-        # Generate the next company-specific manufacturing order number.
-        if payload.get("mo_no"):
-            mo_no = str(
-                payload.get("mo_no")
-            ).strip()
-        else:
-            with db_service._conn_cursor() as (conn, cur):
-                cur.execute(
-                    f"""
-                    SELECT mo_no
-                    FROM {schema}.manufacturing_orders
-                    WHERE company_id = %s
-                    ORDER BY id DESC
-                    LIMIT 1
-                    """,
-                    (company_id,),
-                )
-
-                last_row = cur.fetchone()
-
-                if last_row and last_row[0]:
-                    last_mo = str(last_row[0]).strip()
-
-                    try:
-                        last_number = int(
-                            last_mo.rsplit("-", 1)[-1]
-                        )
-                    except (TypeError, ValueError):
-                        last_number = 0
-                else:
-                    last_number = 0
-
-                mo_no = f"MO-{last_number + 1:06d}"
-
-        if not mo_no:
-            raise ValueError(
-                "Manufacturing order number is required"
-            )
-
         order_id = db_service.create_manufacturing_order(
             company_id=company_id,
-            mo_no=mo_no,
-            bom_id=bom_id,
+            bom_id=int(bom_id),
             planned_qty=planned_qty,
             tx_date=payload.get("tx_date"),
-            unit=payload.get("unit") or batch_unit,
+            unit=payload.get("unit"),
             location=payload.get("location"),
             batch_no=payload.get("batch_no"),
             notes=payload.get("notes"),
@@ -13582,7 +13503,7 @@ def manufacturing_orders(cid: int):
         )
         return jsonify({
             "error": str(e),
-        }), 400
+        }), 500
 
 
 # ================================================================
