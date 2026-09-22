@@ -53066,7 +53066,7 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_materials_tx_idx
         ON {schema}.manufacturing_order_materials(company_id, inventory_tx_id);
-        
+
         -- ============================================================
         -- INVENTORY WRITE-DOWN REASONS TABLE & AUDIT HOOKS
         -- ============================================================
@@ -85163,10 +85163,18 @@ class DatabaseService:
 
             row = c.fetchone()
 
-            if not row or not row[0]:
+            if not row:
                 return "MO-000001"
 
-            last_mo_no = str(row[0]).strip()
+            if isinstance(row, dict):
+                last_mo_no = row.get("mo_no")
+            else:
+                last_mo_no = row[0]
+
+            if not last_mo_no:
+                return "MO-000001"
+
+            last_mo_no = str(last_mo_no).strip()
 
             try:
                 last_number = int(
