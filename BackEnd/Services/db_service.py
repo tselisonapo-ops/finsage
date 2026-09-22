@@ -85138,13 +85138,52 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
 
+    def generate_manufacturing_order_number(
+        self,
+        company_id: int,
+        cur=None,
+    ) -> str:
+        schema = self.company_schema(company_id)
+
+        def _generate(c):
+            c.execute(
+                f"""
+                SELECT mo_no
+                FROM {schema}.manufacturing_orders
+                WHERE company_id = %s
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (company_id,),
+            )
+
+            row = c.fetchone()
+
+            if not row or not row[0]:
+                return "MO-000001"
+
+            last_mo_no = str(row[0]).strip()
+
+            try:
+                last_number = int(
+                    last_mo_no.rsplit("-", 1)[-1]
+                )
+            except (TypeError, ValueError):
+                last_number = 0
+
+            return f"MO-{last_number + 1:06d}"
+
+        if cur is not None:
+            return _generate(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _generate(cur2)
+
     def create_manufacturing_order(
         self,
         company_id: int,
         *,
-        mo_no: str,
-        bom_id: int | None,
-        item_id: int,
+        bom_id: int,
         planned_qty,
         tx_date=None,
         unit=None,
@@ -85156,50 +85195,61 @@ class DatabaseService:
     ) -> int:
         schema = self.company_schema(company_id)
 
-        mo_no = str(mo_no or "").strip()
-
-        if not mo_no:
-            raise ValueError("Manufacturing order number is required")
+        if bom_id is None:
+            raise ValueError("Manufacturing BOM is required")
 
         planned_qty = Decimal(str(planned_qty or 0))
 
         if planned_qty <= 0:
-            raise ValueError("Planned production quantity must be greater than zero")
+            raise ValueError(
+                "Planned production quantity must be greater than zero"
+            )
 
         def _create(c):
-            bom = None
+            mo_no = self.generate_manufacturing_order_number(
+                company_id=company_id,
+                cur=c,
+            )
 
-            if bom_id is not None:
-                c.execute(
-                    f"""
-                    SELECT
-                        id,
-                        item_id,
-                        batch_qty,
-                        batch_unit
-                    FROM {schema}.manufacturing_boms
-                    WHERE company_id = %s
-                    AND id = %s
-                    """,
-                    (company_id, int(bom_id)),
+            c.execute(
+                f"""
+                SELECT
+                    id,
+                    finished_item_name,
+                    batch_qty,
+                    batch_unit
+                FROM {schema}.manufacturing_boms
+                WHERE company_id = %s
+                AND id = %s
+                AND is_active = TRUE
+                """,
+                (
+                    company_id,
+                    int(bom_id),
+                ),
+            )
+
+            bom_row = c.fetchone()
+
+            if not bom_row:
+                raise ValueError("Manufacturing BOM not found")
+
+            bom = {
+                "id": bom_row[0],
+                "finished_item_name": bom_row[1],
+                "batch_qty": bom_row[2],
+                "batch_unit": bom_row[3],
+            }
+
+            batch_qty = Decimal(str(bom["batch_qty"] or 0))
+
+            if batch_qty <= 0:
+                raise ValueError(
+                    "BOM batch quantity must be greater than zero"
                 )
 
-                bom_row = c.fetchone()
-
-                if not bom_row:
-                    raise ValueError("Manufacturing BOM not found")
-
-                bom = {
-                    "id": bom_row[0],
-                    "item_id": bom_row[1],
-                    "batch_qty": bom_row[2],
-                    "batch_unit": bom_row[3],
-                }
-
-                if int(bom["item_id"]) != int(item_id):
-                    raise ValueError(
-                        "Manufacturing BOM finished item does not match production item"
-                    )
+            if not unit:
+                unit = bom["batch_unit"]
 
             c.execute(
                 f"""
@@ -85207,7 +85257,6 @@ class DatabaseService:
                     company_id,
                     mo_no,
                     bom_id,
-                    item_id,
                     tx_date,
                     planned_qty,
                     actual_qty,
@@ -85221,7 +85270,7 @@ class DatabaseService:
                 )
                 VALUES (
                     %s, %s, %s, %s, %s,
-                    %s, 0, %s, %s, %s,
+                    0, %s, %s, %s,
                     'draft', %s, %s, %s
                 )
                 RETURNING id
@@ -85229,8 +85278,7 @@ class DatabaseService:
                 (
                     company_id,
                     mo_no,
-                    bom_id,
-                    int(item_id),
+                    int(bom_id),
                     tx_date,
                     planned_qty,
                     unit,
@@ -85244,87 +85292,90 @@ class DatabaseService:
 
             mo_id = int(c.fetchone()[0])
 
-            if bom is not None:
-                c.execute(
-                    f"""
-                    SELECT
-                        id,
-                        line_no,
-                        item_id,
-                        quantity,
-                        unit,
-                        scrap_percent,
-                        is_optional,
-                        memo
-                    FROM {schema}.manufacturing_bom_lines
-                    WHERE company_id = %s
-                    AND bom_id = %s
-                    ORDER BY line_no, id
-                    """,
-                    (company_id, int(bom_id)),
+            c.execute(
+                f"""
+                SELECT
+                    id,
+                    line_no,
+                    item_id,
+                    quantity,
+                    unit,
+                    scrap_percent,
+                    is_optional,
+                    memo
+                FROM {schema}.manufacturing_bom_lines
+                WHERE company_id = %s
+                AND bom_id = %s
+                ORDER BY line_no, id
+                """,
+                (
+                    company_id,
+                    int(bom_id),
+                ),
+            )
+
+            bom_lines = c.fetchall()
+
+            factor = planned_qty / batch_qty
+
+            for line in bom_lines:
+                (
+                    bom_line_id,
+                    line_no,
+                    material_item_id,
+                    bom_qty,
+                    bom_unit,
+                    scrap_percent,
+                    is_optional,
+                    memo,
+                ) = line
+
+                bom_qty = Decimal(str(bom_qty or 0))
+                scrap_percent = Decimal(str(scrap_percent or 0))
+
+                planned_material_qty = (
+                    bom_qty
+                    * factor
+                    * (
+                        Decimal("1")
+                        + (
+                            scrap_percent
+                            / Decimal("100")
+                        )
+                    )
                 )
 
-                bom_lines = c.fetchall()
-
-                batch_qty = Decimal(str(bom["batch_qty"] or 1))
-
-                if batch_qty <= 0:
-                    raise ValueError("BOM batch quantity must be greater than zero")
-
-                factor = planned_qty / batch_qty
-
-                for line in bom_lines:
-                    (
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_order_materials (
+                        company_id,
+                        manufacturing_order_id,
                         bom_line_id,
+                        item_id,
                         line_no,
-                        material_item_id,
-                        bom_qty,
+                        planned_qty,
+                        actual_qty,
+                        unit,
+                        unit_cost,
+                        total_cost,
+                        memo
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, 0, %s, 0, 0, %s
+                    )
+                    """,
+                    (
+                        company_id,
+                        mo_id,
+                        int(bom_line_id),
+                        int(material_item_id),
+                        int(line_no),
+                        planned_material_qty,
                         bom_unit,
-                        scrap_percent,
-                        is_optional,
                         memo,
-                    ) = line
-
-                    bom_qty = Decimal(str(bom_qty or 0))
-                    scrap_percent = Decimal(str(scrap_percent or 0))
-
-                    planned_material_qty = (
-                        bom_qty
-                        * factor
-                        * (Decimal("1") + (scrap_percent / Decimal("100")))
-                    )
-
-                    c.execute(
-                        f"""
-                        INSERT INTO {schema}.manufacturing_order_materials (
-                            company_id,
-                            manufacturing_order_id,
-                            bom_line_id,
-                            item_id,
-                            line_no,
-                            planned_qty,
-                            actual_qty,
-                            unit,
-                            unit_cost,
-                            total_cost,
-                            memo
-                        )
-                        VALUES (
-                            %s, %s, %s, %s, %s,
-                            %s, 0, %s, 0, 0, %s
-                        )
-                        """,
-                        (
-                            company_id,
-                            mo_id,
-                            int(bom_line_id),
-                            int(material_item_id),
-                            int(line_no),
-                            planned_material_qty,
-                            bom_unit,
-                            memo,
-                        ),
-                    )
+                    ),
+                )
 
             return mo_id
 
