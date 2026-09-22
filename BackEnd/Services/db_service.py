@@ -84947,9 +84947,7 @@ class DatabaseService:
                 SELECT
                     b.id,
                     b.company_id,
-                    b.item_id,
-                    i.sku,
-                    i.name AS item_name,
+                    b.finished_item_name,
                     b.bom_code,
                     b.name,
                     b.description,
@@ -84966,8 +84964,6 @@ class DatabaseService:
                     b.created_at,
                     b.updated_at
                 FROM {schema}.manufacturing_boms b
-                JOIN {schema}.inventory_items i
-                ON i.id = b.item_id
                 WHERE b.company_id = %s
                 AND b.id = %s
                 """,
@@ -84980,7 +84976,11 @@ class DatabaseService:
                 return None
 
             columns = [d[0] for d in c.description]
-            bom = dict(zip(columns, row))
+
+            if isinstance(row, dict):
+                bom = dict(row)
+            else:
+                bom = dict(zip(columns, row))
 
             c.execute(
                 f"""
@@ -85000,7 +85000,7 @@ class DatabaseService:
                     l.updated_at
                 FROM {schema}.manufacturing_bom_lines l
                 JOIN {schema}.inventory_items i
-                ON i.id = l.item_id
+                    ON i.id = l.item_id
                 WHERE l.company_id = %s
                 AND l.bom_id = %s
                 ORDER BY l.line_no, l.id
@@ -85009,10 +85009,16 @@ class DatabaseService:
             )
 
             line_columns = [d[0] for d in c.description]
-            bom["lines"] = [
-                dict(zip(line_columns, r))
-                for r in c.fetchall()
-            ]
+
+            line_rows = c.fetchall()
+
+            if line_rows and isinstance(line_rows[0], dict):
+                bom["lines"] = [dict(r) for r in line_rows]
+            else:
+                bom["lines"] = [
+                    dict(zip(line_columns, r))
+                    for r in line_rows
+                ]
 
             return bom
 
@@ -85021,7 +85027,6 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
-
 
     def list_manufacturing_boms(
         self,
