@@ -126673,24 +126673,21 @@ function renderManufacturingOrders(rows) {
 // =====================================================
 
 async function openManufacturingOrderModal() {
-  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID;
 
-  const boms = await apiFetch(
-    ENDPOINTS.manufacturing.boms(cid)
-  );
-  console.log("[Manufacturing] BOM API response:", boms);
-  console.log("[Manufacturing] BOM API boms:", boms?.boms);
-  const rows =
-    boms?.boms ||
-    boms?.rows ||
-    boms?.items ||
-    [];
+  const existing =
+    document.getElementById("mfgOrderModal");
 
-  const existing = document.getElementById("mfgOrderModal");
-  if (existing) existing.remove();
+  if (existing) {
+    existing.remove();
+  }
 
   const modal = document.createElement("div");
+
   modal.id = "mfgOrderModal";
+
   modal.className =
     "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
 
@@ -126698,7 +126695,9 @@ async function openManufacturingOrderModal() {
     <div class="bg-white rounded-lg shadow-xl w-full max-w-lg">
 
       <div class="flex items-center justify-between border-b px-4 py-3">
-        <div class="font-semibold">New Production Batch</div>
+        <div class="font-semibold">
+          New Production Batch
+        </div>
 
         <button
           type="button"
@@ -126713,24 +126712,26 @@ async function openManufacturingOrderModal() {
         <div id="mfgOrderMsg"></div>
 
         <label class="text-xs block">
-          <div class="text-slate-600 mb-1">BOM</div>
+          <div class="text-slate-600 mb-1">
+            BOM
+          </div>
 
           <select
             id="mfgOrderBom"
             class="w-full border rounded px-2 py-2 text-sm">
-            <option value="">Select BOM</option>
-            ${
-              rows.map(r => `
-                <option value="${Number(r.id)}">
-                  ${esc(r.bom_code || "")} — ${esc(r.name || "")}
-                </option>
-              `).join("")
-            }
+
+            <option value="">
+              Loading BOMs…
+            </option>
+
           </select>
         </label>
 
         <label class="text-xs block">
-          <div class="text-slate-600 mb-1">Production Date</div>
+          <div class="text-slate-600 mb-1">
+            Production Date
+          </div>
+
           <input
             id="mfgOrderDate"
             type="date"
@@ -126739,7 +126740,10 @@ async function openManufacturingOrderModal() {
         </label>
 
         <label class="text-xs block">
-          <div class="text-slate-600 mb-1">Planned Quantity</div>
+          <div class="text-slate-600 mb-1">
+            Planned Quantity
+          </div>
+
           <input
             id="mfgOrderQty"
             type="number"
@@ -126750,7 +126754,10 @@ async function openManufacturingOrderModal() {
         </label>
 
         <label class="text-xs block">
-          <div class="text-slate-600 mb-1">Location</div>
+          <div class="text-slate-600 mb-1">
+            Location
+          </div>
+
           <input
             id="mfgOrderLocation"
             class="w-full border rounded px-2 py-2 text-sm"
@@ -126758,7 +126765,10 @@ async function openManufacturingOrderModal() {
         </label>
 
         <label class="text-xs block">
-          <div class="text-slate-600 mb-1">Notes</div>
+          <div class="text-slate-600 mb-1">
+            Notes
+          </div>
+
           <textarea
             id="mfgOrderNotes"
             rows="2"
@@ -126789,13 +126799,113 @@ async function openManufacturingOrderModal() {
 
   document.body.appendChild(modal);
 
-  modal.querySelectorAll("[data-close-mfg-order]")
+  modal
+    .querySelectorAll("[data-close-mfg-order]")
     .forEach(btn =>
-      btn.addEventListener("click", () => modal.remove())
+      btn.addEventListener(
+        "click",
+        () => modal.remove()
+      )
     );
 
-  document.getElementById("mfgOrderSaveBtn")
-    ?.addEventListener("click", saveManufacturingOrder);
+  document
+    .getElementById("mfgOrderSaveBtn")
+    ?.addEventListener(
+      "click",
+      saveManufacturingOrder
+    );
+
+  // Load BOMs after the modal is already visible.
+  try {
+    if (!cid) {
+      throw new Error(
+        "No active company selected"
+      );
+    }
+
+    const boms = await apiFetch(
+      ENDPOINTS.manufacturing.boms(cid)
+    );
+
+    console.log(
+      "[Manufacturing] BOM API response:",
+      boms
+    );
+
+    console.log(
+      "[Manufacturing] BOM API boms:",
+      boms?.boms
+    );
+
+    const rows =
+      boms?.boms ||
+      boms?.rows ||
+      boms?.items ||
+      [];
+
+    const select =
+      document.getElementById("mfgOrderBom");
+
+    if (!select) return;
+
+    if (!rows.length) {
+      select.innerHTML = `
+        <option value="">
+          No active BOMs available
+        </option>
+      `;
+      return;
+    }
+
+    select.innerHTML = `
+      <option value="">
+        Select BOM
+      </option>
+
+      ${
+        rows.map(r => `
+          <option value="${Number(r.id)}">
+            ${esc(r.bom_code || "")}
+            — ${esc(
+              r.finished_item_name ||
+              r.name ||
+              ""
+            )}
+          </option>
+        `).join("")
+      }
+    `;
+
+  } catch (err) {
+
+    console.error(
+      "[Manufacturing] Failed to load BOMs:",
+      err
+    );
+
+    const select =
+      document.getElementById("mfgOrderBom");
+
+    if (select) {
+      select.innerHTML = `
+        <option value="">
+          Failed to load BOMs
+        </option>
+      `;
+    }
+
+    const msg =
+      document.getElementById("mfgOrderMsg");
+
+    if (msg) {
+      msg.innerHTML = `
+        <div class="text-xs text-red-600">
+          Unable to load BOMs.
+          ${esc(err?.message || String(err))}
+        </div>
+      `;
+    }
+  }
 }
 
 async function saveManufacturingOrder() {
