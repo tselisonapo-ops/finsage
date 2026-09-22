@@ -126679,7 +126679,11 @@ async function openManufacturingOrderModal() {
     ENDPOINTS.manufacturing.boms(cid)
   );
 
-  const rows = boms?.rows || boms?.items || [];
+  const rows =
+    boms?.boms ||
+    boms?.rows ||
+    boms?.items ||
+    [];
 
   const existing = document.getElementById("mfgOrderModal");
   if (existing) existing.remove();
