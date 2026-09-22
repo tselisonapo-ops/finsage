@@ -125391,7 +125391,11 @@ async function loadManufacturingBoms() {
       ENDPOINTS.manufacturing.boms(cid)
     );
 
-    const rows = data?.rows || data?.items || [];
+    const rows =
+      data?.boms ||
+      data?.rows ||
+      data?.items ||
+      [];
 
     renderManufacturingBoms(rows);
   } catch (err) {
@@ -125413,13 +125417,6 @@ function renderManufacturingBoms(rows) {
           Define the standard materials or components required to produce a finished item.
         </div>
       </div>
-
-      <button
-        type="button"
-        id="mfgRecipeNewBtn"
-        class="px-3 py-2 rounded bg-slate-900 text-white text-xs">
-        + New Bill of Materials
-      </button>
     </div>
 
     <div id="mfgMsg"></div>
@@ -125495,16 +125492,6 @@ function renderManufacturingBoms(rows) {
       </table>
     </div>
   `;
-
-  const recipeNewBtn = document.getElementById("mfgRecipeNewBtn");
-
-  if (recipeNewBtn) {
-    recipeNewBtn.addEventListener("click", () => {
-      openManufacturingBomModal();
-    });
-  } else {
-    console.error("[Manufacturing] mfgRecipeNewBtn NOT FOUND");
-  }
 }
 
 function openManufacturingBomDefinitionModal(bomId = 0) {
