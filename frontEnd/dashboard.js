@@ -125879,7 +125879,7 @@ async function saveManufacturingBomDefinition() {
     return;
   }
 
-  if (!payload.item_id) {
+  if (!payload.finished_item_name) {
     showManufacturingBomDefinitionMsg(
       "Finished item is required.",
       "error"
