@@ -85443,9 +85443,11 @@ class DatabaseService:
                     mo.company_id,
                     mo.mo_no,
                     mo.bom_id,
-                    mo.item_id,
-                    i.sku,
-                    i.name AS item_name,
+
+                    b.bom_code,
+                    b.name AS bom_name,
+                    b.finished_item_name,
+
                     mo.tx_date,
                     mo.planned_qty,
                     mo.actual_qty,
@@ -85461,12 +85463,16 @@ class DatabaseService:
                     mo.created_at,
                     mo.updated_at
                 FROM {schema}.manufacturing_orders mo
-                JOIN {schema}.inventory_items i
-                ON i.id = mo.item_id
+                JOIN {schema}.manufacturing_boms b
+                    ON b.id = mo.bom_id
+                   AND b.company_id = mo.company_id
                 WHERE mo.company_id = %s
-                AND mo.id = %s
+                  AND mo.id = %s
                 """,
-                (company_id, int(manufacturing_order_id)),
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
             )
 
             row = c.fetchone()
@@ -85475,7 +85481,11 @@ class DatabaseService:
                 return None
 
             columns = [d[0] for d in c.description]
-            order = dict(zip(columns, row))
+
+            if isinstance(row, dict):
+                order = dict(row)
+            else:
+                order = dict(zip(columns, row))
 
             c.execute(
                 f"""
@@ -85495,23 +85505,36 @@ class DatabaseService:
                     m.inventory_tx_id,
                     m.inventory_tx_line_id,
                     m.memo,
+                    m.created_by_user_id,
+                    m.updated_by_user_id,
                     m.created_at,
                     m.updated_at
                 FROM {schema}.manufacturing_order_materials m
                 JOIN {schema}.inventory_items i
-                ON i.id = m.item_id
+                    ON i.id = m.item_id
                 WHERE m.company_id = %s
-                AND m.manufacturing_order_id = %s
+                  AND m.manufacturing_order_id = %s
                 ORDER BY m.line_no, m.id
                 """,
-                (company_id, int(manufacturing_order_id)),
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
             )
 
             line_columns = [d[0] for d in c.description]
-            order["materials"] = [
-                dict(zip(line_columns, r))
-                for r in c.fetchall()
-            ]
+            line_rows = c.fetchall()
+
+            if line_rows and isinstance(line_rows[0], dict):
+                order["materials"] = [
+                    dict(r)
+                    for r in line_rows
+                ]
+            else:
+                order["materials"] = [
+                    dict(zip(line_columns, r))
+                    for r in line_rows
+                ]
 
             return order
 
@@ -85521,13 +85544,12 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
 
-
     def list_manufacturing_orders(
         self,
         company_id: int,
         *,
         status=None,
-        item_id=None,
+        bom_id=None,
         date_from=None,
         date_to=None,
         cur=None,
@@ -85542,9 +85564,9 @@ class DatabaseService:
                 where.append("mo.status = %s")
                 params.append(str(status).strip())
 
-            if item_id is not None:
-                where.append("mo.item_id = %s")
-                params.append(int(item_id))
+            if bom_id is not None:
+                where.append("mo.bom_id = %s")
+                params.append(int(bom_id))
 
             if date_from is not None:
                 where.append("mo.tx_date >= %s")
@@ -85561,9 +85583,11 @@ class DatabaseService:
                     mo.company_id,
                     mo.mo_no,
                     mo.bom_id,
-                    mo.item_id,
-                    i.sku,
-                    i.name AS item_name,
+
+                    b.bom_code,
+                    b.name AS bom_name,
+                    b.finished_item_name,
+
                     mo.tx_date,
                     mo.planned_qty,
                     mo.actual_qty,
@@ -85576,23 +85600,39 @@ class DatabaseService:
                     mo.created_at,
                     mo.updated_at
                 FROM {schema}.manufacturing_orders mo
-                JOIN {schema}.inventory_items i
-                ON i.id = mo.item_id
+                JOIN {schema}.manufacturing_boms b
+                    ON b.id = mo.bom_id
+                   AND b.company_id = mo.company_id
                 WHERE {' AND '.join(where)}
                 ORDER BY mo.tx_date DESC, mo.id DESC
                 """,
                 tuple(params),
             )
 
+            rows = c.fetchall()
+
+            if not rows:
+                return []
+
             columns = [d[0] for d in c.description]
-            return [dict(zip(columns, r)) for r in c.fetchall()]
+
+            if isinstance(rows[0], dict):
+                return [
+                    dict(r)
+                    for r in rows
+                ]
+
+            return [
+                dict(zip(columns, r))
+                for r in rows
+            ]
 
         if cur is not None:
             return _fetch(cur)
 
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
-
+        
     def record_manufacturing_material_usage(
         self,
         company_id: int,
