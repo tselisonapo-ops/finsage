@@ -85093,9 +85093,7 @@ class DatabaseService:
                 SELECT
                     b.id,
                     b.company_id,
-                    b.item_id,
-                    i.sku,
-                    i.name AS item_name,
+                    b.finished_item_name,
                     b.bom_code,
                     b.name,
                     b.description,
@@ -85110,26 +85108,36 @@ class DatabaseService:
                     b.created_at,
                     b.updated_at
                 FROM {schema}.manufacturing_boms b
-                JOIN {schema}.inventory_items i
-                ON i.id = b.item_id
                 WHERE {' AND '.join(where)}
                 ORDER BY
-                    i.name,
+                    b.name,
                     b.bom_code,
                     b.version_no DESC
                 """,
                 tuple(params),
             )
 
+            rows = c.fetchall()
+
+            if not rows:
+                return []
+
             columns = [d[0] for d in c.description]
-            return [dict(zip(columns, r)) for r in c.fetchall()]
+
+            if isinstance(rows[0], dict):
+                return [dict(r) for r in rows]
+
+            return [
+                dict(zip(columns, r))
+                for r in rows
+            ]
 
         if cur is not None:
             return _fetch(cur)
 
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
-        
+
     def create_manufacturing_order(
         self,
         company_id: int,
