@@ -125383,7 +125383,7 @@ async function loadManufacturingBoms() {
   if (!cid || !mount) return;
 
   mount.innerHTML = `
-    <div class="text-xs text-slate-500">Loading recipes…</div>
+    <div class="text-xs text-slate-500">Loading BOM…</div>
   `;
 
   try {
@@ -125429,7 +125429,7 @@ function renderManufacturingBoms(rows) {
         <thead class="bg-slate-50 border-b">
           <tr class="text-slate-600">
             <th class="text-left px-2 py-2">Code</th>
-            <th class="text-left px-2 py-2">Recipe</th>
+            <th class="text-left px-2 py-2">Bill of Materials</th>
             <th class="text-left px-2 py-2">Finished Item</th>
             <th class="text-right px-2 py-2">Batch Qty</th>
             <th class="text-center px-2 py-2">Version</th>
@@ -125486,7 +125486,7 @@ function renderManufacturingBoms(rows) {
               : `
                 <tr>
                   <td colspan="7" class="px-2 py-4 text-slate-500">
-                    No manufacturing recipes yet.
+                    No manufacturing BOM yet.
                   </td>
                 </tr>
               `
@@ -126124,7 +126124,7 @@ function openManufacturingBomModal(bomId = 0) {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 
             <label class="text-xs">
-              <div class="text-slate-600 mb-1">Recipe Code</div>
+              <div class="text-slate-600 mb-1">BOM Code</div>
               <input
                 id="mfgBomCode"
                 class="w-full border rounded px-2 py-2 text-sm"
@@ -126132,11 +126132,11 @@ function openManufacturingBomModal(bomId = 0) {
             </label>
 
             <label class="text-xs">
-              <div class="text-slate-600 mb-1">Recipe Name</div>
+              <div class="text-slate-600 mb-1">BOM Name</div>
               <input
                 id="mfgBomName"
                 class="w-full border rounded px-2 py-2 text-sm"
-                placeholder="e.g. Standard Production Recipe">
+                placeholder="Enter BOM name">
             </label>
 
             <label class="text-xs md:col-span-2">
@@ -126178,7 +126178,7 @@ function openManufacturingBomModal(bomId = 0) {
 
           <div class="mt-5 flex items-center justify-between">
             <div>
-              <div class="font-semibold text-sm">Recipe Materials</div>
+              <div class="font-semibold text-sm">BOM Components</div>
               <div class="text-xs text-slate-500">
                 Standard quantity required for one batch.
               </div>
@@ -126321,7 +126321,7 @@ async function loadManufacturingBomIntoModal(bomId) {
 
   } catch (err) {
     showManufacturingBomMsg(
-      err?.message || "Failed to load recipe.",
+      err?.message || "Failed to load BOM.",
       "error"
     );
   }
@@ -126422,10 +126422,10 @@ async function saveManufacturingBom() {
   };
 
   if (!payload.bom_code)
-    return showManufacturingBomMsg("Recipe code is required.", "error");
+    return showManufacturingBomMsg("BOM code is required.", "error");
 
   if (!payload.name)
-    return showManufacturingBomMsg("Recipe name is required.", "error");
+    return showManufacturingBomMsg("BOM name is required.", "error");
 
   if (!payload.item_id)
     return showManufacturingBomMsg("Select the finished item.", "error");
@@ -126522,7 +126522,7 @@ async function saveManufacturingBom() {
     closeManufacturingBomModal();
 
     showToast?.(
-      bomId ? "Recipe updated successfully" : "Recipe created successfully",
+      bomId ? "BOM updated successfully" : "BOM created successfully",
       "ok"
     );
 
@@ -126708,12 +126708,12 @@ async function openManufacturingOrderModal() {
         <div id="mfgOrderMsg"></div>
 
         <label class="text-xs block">
-          <div class="text-slate-600 mb-1">Recipe</div>
+          <div class="text-slate-600 mb-1">BOM</div>
 
           <select
             id="mfgOrderBom"
             class="w-full border rounded px-2 py-2 text-sm">
-            <option value="">Select recipe…</option>
+            <option value="">Select BOM</option>
             ${
               rows.map(r => `
                 <option value="${Number(r.id)}">
@@ -126812,7 +126812,7 @@ async function saveManufacturingOrder() {
   };
 
   if (!payload.bom_id)
-    return showManufacturingOrderMsg("Select a recipe.", "error");
+    return showManufacturingOrderMsg("Select a BOM.", "error");
 
   if (!payload.tx_date)
     return showManufacturingOrderMsg("Production date is required.", "error");
