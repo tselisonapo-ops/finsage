@@ -85232,24 +85232,35 @@ class DatabaseService:
             bom_row = c.fetchone()
 
             if not bom_row:
-                raise ValueError("Manufacturing BOM not found")
+                raise ValueError(
+                    "Manufacturing BOM not found"
+                )
 
-            bom = {
-                "id": bom_row[0],
-                "finished_item_name": bom_row[1],
-                "batch_qty": bom_row[2],
-                "batch_unit": bom_row[3],
-            }
+            if isinstance(bom_row, dict):
+                bom = {
+                    "id": bom_row["id"],
+                    "finished_item_name": bom_row["finished_item_name"],
+                    "batch_qty": bom_row["batch_qty"],
+                    "batch_unit": bom_row["batch_unit"],
+                }
+            else:
+                bom = {
+                    "id": bom_row[0],
+                    "finished_item_name": bom_row[1],
+                    "batch_qty": bom_row[2],
+                    "batch_unit": bom_row[3],
+                }
 
-            batch_qty = Decimal(str(bom["batch_qty"] or 0))
+            batch_qty = Decimal(
+                str(bom["batch_qty"] or 0)
+            )
 
             if batch_qty <= 0:
                 raise ValueError(
                     "BOM batch quantity must be greater than zero"
                 )
 
-            if not unit:
-                unit = bom["batch_unit"]
+            production_unit = unit or bom["batch_unit"]
 
             c.execute(
                 f"""
@@ -85281,7 +85292,7 @@ class DatabaseService:
                     int(bom_id),
                     tx_date,
                     planned_qty,
-                    unit,
+                    production_unit,
                     location,
                     batch_no,
                     notes,
@@ -85290,7 +85301,12 @@ class DatabaseService:
                 ),
             )
 
-            mo_id = int(c.fetchone()[0])
+            order_row = c.fetchone()
+
+            if isinstance(order_row, dict):
+                mo_id = int(order_row["id"])
+            else:
+                mo_id = int(order_row[0])
 
             c.execute(
                 f"""
@@ -85319,19 +85335,33 @@ class DatabaseService:
             factor = planned_qty / batch_qty
 
             for line in bom_lines:
-                (
-                    bom_line_id,
-                    line_no,
-                    material_item_id,
-                    bom_qty,
-                    bom_unit,
-                    scrap_percent,
-                    is_optional,
-                    memo,
-                ) = line
+                if isinstance(line, dict):
+                    bom_line_id = line["id"]
+                    line_no = line["line_no"]
+                    material_item_id = line["item_id"]
+                    bom_qty = line["quantity"]
+                    bom_unit = line["unit"]
+                    scrap_percent = line["scrap_percent"]
+                    memo = line["memo"]
+                else:
+                    (
+                        bom_line_id,
+                        line_no,
+                        material_item_id,
+                        bom_qty,
+                        bom_unit,
+                        scrap_percent,
+                        is_optional,
+                        memo,
+                    ) = line
 
-                bom_qty = Decimal(str(bom_qty or 0))
-                scrap_percent = Decimal(str(scrap_percent or 0))
+                bom_qty = Decimal(
+                    str(bom_qty or 0)
+                )
+
+                scrap_percent = Decimal(
+                    str(scrap_percent or 0)
+                )
 
                 planned_material_qty = (
                     bom_qty
