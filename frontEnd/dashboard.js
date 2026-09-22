@@ -126678,7 +126678,8 @@ async function openManufacturingOrderModal() {
   const boms = await apiFetch(
     ENDPOINTS.manufacturing.boms(cid)
   );
-
+  console.log("[Manufacturing] BOM API response:", boms);
+  console.log("[Manufacturing] BOM API boms:", boms?.boms);
   const rows =
     boms?.boms ||
     boms?.rows ||
