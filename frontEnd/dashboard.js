@@ -126016,6 +126016,16 @@ async function saveManufacturingBomDefinition() {
       );
     }
 
+    console.log(
+      "[Manufacturing] Saved BOM response:",
+      savedBom
+    );
+
+    console.log(
+      "[Manufacturing] Saved BOM response JSON:",
+      JSON.stringify(savedBom, null, 2)
+    );
+
     const savedBomId =
       Number(
         savedBom?.id ||
