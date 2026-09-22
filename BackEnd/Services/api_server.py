@@ -13386,8 +13386,18 @@ def add_manufacturing_bom_line(cid: int, bom_id: int):
         line_id = db_service.add_manufacturing_bom_line(
             company_id=company_id,
             bom_id=int(bom_id),
-            data=payload,
-            user_id=int(user.get("id") or 0) or None,
+            item_id=int(payload.get("item_id") or 0),
+            quantity=payload.get("quantity"),
+            line_no=payload.get("line_no"),
+            unit=payload.get("unit"),
+            scrap_percent=payload.get(
+                "scrap_percent",
+                payload.get("scrap_pct", 0)
+            ),
+            is_optional=payload.get("is_optional", False),
+            memo=payload.get("memo"),
+            created_by_user_id=int(user.get("id") or 0) or None,
+            updated_by_user_id=int(user.get("id") or 0) or None,
         )
 
         return jsonify({

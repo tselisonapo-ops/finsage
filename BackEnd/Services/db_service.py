@@ -52920,6 +52920,8 @@ class DatabaseService:
 
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_by_user_id INTEGER,
+            updated_by_user_id INTEGER
 
             UNIQUE(bom_id, line_no),
 
@@ -84867,6 +84869,8 @@ class DatabaseService:
         scrap_percent=0,
         is_optional=False,
         memo=None,
+        created_by_user_id=None,
+        updated_by_user_id=None,
         cur=None,
     ) -> int:
         schema = self.company_schema(company_id)
@@ -84878,7 +84882,9 @@ class DatabaseService:
             raise ValueError("BOM line quantity must be greater than zero")
 
         if scrap_percent < 0 or scrap_percent > 100:
-            raise ValueError("Scrap percentage must be between 0 and 100")
+            raise ValueError(
+                "Scrap percentage must be between 0 and 100"
+            )
 
         def _insert(c):
             if line_no is None:
@@ -84891,7 +84897,16 @@ class DatabaseService:
                     """,
                     (company_id, bom_id),
                 )
-                next_line_no = int(c.fetchone()[0])
+
+                row = c.fetchone()
+
+                if isinstance(row, dict):
+                    next_line_no = int(
+                        next(iter(row.values()))
+                    )
+                else:
+                    next_line_no = int(row[0])
+
             else:
                 next_line_no = int(line_no)
 
@@ -84906,9 +84921,14 @@ class DatabaseService:
                     unit,
                     scrap_percent,
                     is_optional,
-                    memo
+                    memo,
+                    created_by_user_id,
+                    updated_by_user_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s
+                )
                 RETURNING id
                 """,
                 (
@@ -84921,18 +84941,32 @@ class DatabaseService:
                     scrap_percent,
                     bool(is_optional),
                     memo,
+                    (
+                        int(created_by_user_id)
+                        if created_by_user_id
+                        else None
+                    ),
+                    (
+                        int(updated_by_user_id)
+                        if updated_by_user_id
+                        else None
+                    ),
                 ),
             )
 
-            return int(c.fetchone()[0])
+            row = c.fetchone()
+
+            if isinstance(row, dict):
+                return int(row["id"])
+
+            return int(row[0])
 
         if cur is not None:
             return _insert(cur)
 
         with self._conn_cursor() as (conn, cur2):
             return _insert(cur2)
-
-
+    
     def get_manufacturing_bom(
         self,
         company_id: int,
