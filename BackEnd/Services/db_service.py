@@ -84844,12 +84844,16 @@ class DatabaseService:
 
         if cur is not None:
             cur.execute(sql, params)
-            return int(cur.fetchone()[0])
+            row = cur.fetchone()
+        else:
+            with self._conn_cursor() as (conn, cur2):
+                cur2.execute(sql, params)
+                row = cur2.fetchone()
 
-        with self._conn_cursor() as (conn, cur2):
-            cur2.execute(sql, params)
-            return int(cur2.fetchone()[0])
+        if isinstance(row, dict):
+            return int(row["id"])
 
+        return int(row[0])
 
     def add_manufacturing_bom_line(
         self,
