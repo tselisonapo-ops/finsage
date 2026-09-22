@@ -125838,12 +125838,10 @@ async function saveManufacturingBomDefinition() {
         "mfgBomDefinitionName"
       )?.value.trim(),
 
-    item_id:
-      Number(
-        document.getElementById(
-          "mfgBomDefinitionItem"
-        )?.value || 0
-      ),
+    finished_item_name:
+      document.getElementById(
+        "mfgBomDefinitionFinishedItem"
+      )?.value.trim(),
 
     batch_qty:
       Number(
@@ -126009,6 +126007,7 @@ async function saveManufacturingBomDefinition() {
         savedBom?.id ||
         savedBom?.bom_id ||
         savedBom?.row?.id ||
+        savedBom?.bom?.id ||
         bomId
       );
 
@@ -126060,7 +126059,6 @@ async function saveManufacturingBomDefinition() {
     );
   }
 }
-
 // =====================================================
 // BOM Modal
 // =====================================================
