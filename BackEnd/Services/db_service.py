@@ -85242,11 +85242,11 @@ class DatabaseService:
                     f"Manufacturing order not found: {manufacturing_order_id}"
                 )
 
-            mo_id = int(row[0])
-            mo_no = row[1]
-            current_status = str(row[2] or "").strip().lower()
-            planned_qty = row[3]
-            actual_qty = row[4]
+            mo_id = int(row["id"])
+            mo_no = row["mo_no"]
+            current_status = str(row["status"] or "").strip().lower()
+            planned_qty = row["planned_qty"]
+            actual_qty = row["actual_qty"]
 
             if current_status == new_status:
                 return {
@@ -85327,13 +85327,13 @@ class DatabaseService:
             return {
                 "ok": True,
                 "changed": True,
-                "id": int(updated[0]),
-                "mo_no": updated[1],
-                "status": updated[2],
-                "planned_qty": updated[3],
-                "actual_qty": updated[4],
-                "updated_by_user_id": updated[5],
-                "updated_at": updated[6],
+                "id": int(updated["id"]),
+                "mo_no": updated["mo_no"],
+                "status": updated["status"],
+                "planned_qty": updated["planned_qty"],
+                "actual_qty": updated["actual_qty"],
+                "updated_by_user_id": updated["updated_by_user_id"],
+                "updated_at": updated["updated_at"],
             }
 
     def create_manufacturing_order(
