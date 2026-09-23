@@ -127575,6 +127575,7 @@ async function openManufacturingOrderDetail(orderId) {
   );
 
   const modal = document.createElement("div");
+
   modal.className =
     "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
 
@@ -127583,6 +127584,22 @@ async function openManufacturingOrderDetail(orderId) {
     order?.material_lines ||
     order?.lines ||
     [];
+
+  const finishedItem =
+    order?.finished_item_name ||
+    order?.item_name ||
+    "";
+
+  const outputUnit =
+    order?.unit ||
+    "";
+
+  const status =
+    String(order?.status || "").trim();
+
+  const canRecordUsage =
+    status !== "cancelled" &&
+    status !== "completed";
 
   modal.innerHTML = `
     <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-auto">
@@ -127594,7 +127611,7 @@ async function openManufacturingOrderDetail(orderId) {
           </div>
 
           <div class="text-xs text-slate-500">
-            ${esc(order?.item_name || order?.finished_item_name || "")}
+            Production of ${esc(finishedItem)}
           </div>
         </div>
 
@@ -127611,94 +127628,155 @@ async function openManufacturingOrderDetail(orderId) {
         <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4 text-xs">
 
           <div class="border rounded p-2">
-            <div class="text-slate-500">Date</div>
+            <div class="text-slate-500">Finished Item</div>
             <div class="font-semibold">
-              ${esc(String(order?.tx_date || "").slice(0, 10))}
+              ${esc(finishedItem)}
             </div>
           </div>
 
           <div class="border rounded p-2">
-            <div class="text-slate-500">Planned</div>
+            <div class="text-slate-500">Production Date</div>
             <div class="font-semibold">
-              ${esc(order?.planned_qty ?? "")}
+              ${esc(formatManufacturingDate(order?.tx_date))}
             </div>
           </div>
 
           <div class="border rounded p-2">
-            <div class="text-slate-500">Actual</div>
+            <div class="text-slate-500">Planned Output</div>
+            <div class="font-semibold">
+              ${esc(order?.planned_qty ?? "0")}
+              ${esc(outputUnit)}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">Actual Output</div>
             <div class="font-semibold">
               ${esc(order?.actual_qty ?? "0")}
+              ${esc(outputUnit)}
             </div>
           </div>
 
           <div class="border rounded p-2">
             <div class="text-slate-500">Status</div>
             <div class="font-semibold">
-              ${esc(order?.status || "")}
+              ${esc(status || "draft")}
             </div>
           </div>
 
-          <div class="border rounded p-2">
-            <div class="text-slate-500">Material Cost</div>
-            <div class="font-semibold">
-              ${fmtMoney(order?.material_cost || 0)}
-            </div>
+        </div>
+
+        <div class="border rounded bg-slate-50 p-3 mb-4 text-xs text-slate-600">
+
+          <div class="font-semibold text-slate-700 mb-1">
+            Production Batch
+          </div>
+
+          <div>
+            This batch is for producing
+            <strong>${esc(order?.planned_qty ?? "0")} ${esc(outputUnit)}</strong>
+            of
+            <strong>${esc(finishedItem)}</strong>.
+            The material quantities below come from the selected BOM.
+            Actual quantities are recorded when the raw materials are consumed.
           </div>
 
         </div>
 
         <div class="flex items-center justify-between mb-2">
-          <div class="font-semibold text-sm">
-            Material Usage
+
+          <div>
+            <div class="font-semibold text-sm">
+              Materials / Material Usage
+            </div>
+
+            <div class="text-xs text-slate-500">
+              Planned quantities come from the BOM. Actual quantities show what was consumed.
+            </div>
           </div>
 
           ${
-            order?.status !== "cancelled" &&
-            order?.status !== "completed"
+            canRecordUsage
               ? `
                 <button
                   type="button"
                   data-post-usage
                   class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
-                  Post Material Usage
+                  Record Material Usage
                 </button>
               `
               : ""
           }
+
         </div>
 
         <div class="overflow-auto border rounded">
+
           <table class="w-full text-xs">
+
             <thead class="bg-slate-50 border-b">
               <tr>
-                <th class="text-left px-2 py-2">Material</th>
-                <th class="text-right px-2 py-2">Planned Qty</th>
-                <th class="text-right px-2 py-2">Actual Qty</th>
-                <th class="text-left px-2 py-2">Unit</th>
-                <th class="text-right px-2 py-2">Unit Cost</th>
-                <th class="text-right px-2 py-2">Total Cost</th>
+
+                <th class="text-left px-2 py-2">
+                  Material
+                </th>
+
+                <th class="text-right px-2 py-2">
+                  Planned Qty
+                </th>
+
+                <th class="text-right px-2 py-2">
+                  Actual Qty
+                </th>
+
+                <th class="text-left px-2 py-2">
+                  Unit
+                </th>
+
+                <th class="text-right px-2 py-2">
+                  Unit Cost
+                </th>
+
+                <th class="text-right px-2 py-2">
+                  Total Cost
+                </th>
+
               </tr>
             </thead>
 
             <tbody>
+
               ${
                 materials.length
                   ? materials.map(m => `
                     <tr class="border-b">
+
                       <td class="px-2 py-2">
-                        ${esc(
-                          m.item_name ||
-                          m.material_name ||
-                          `Item #${m.item_id || ""}`
-                        )}
+                        <div class="font-medium">
+                          ${esc(
+                            m.item_name ||
+                            m.material_name ||
+                            `Item #${m.item_id || ""}`
+                          )}
+                        </div>
+
+                        ${
+                          m.item_sku
+                            ? `
+                              <div class="text-[10px] text-slate-400">
+                                ${esc(m.item_sku)}
+                              </div>
+                            `
+                            : ""
+                        }
                       </td>
 
                       <td class="px-2 py-2 text-right">
-                        ${esc(m.planned_qty ?? "")}
+                        ${esc(m.planned_qty ?? "0")}
                       </td>
 
                       <td class="px-2 py-2 text-right">
-                        ${esc(m.actual_qty ?? "")}
+                        ${esc(m.actual_qty ?? "0")}
                       </td>
 
                       <td class="px-2 py-2">
@@ -127712,18 +127790,42 @@ async function openManufacturingOrderDetail(orderId) {
                       <td class="px-2 py-2 text-right">
                         ${fmtMoney(m.total_cost || 0)}
                       </td>
+
                     </tr>
                   `).join("")
                   : `
                     <tr>
-                      <td colspan="6" class="px-2 py-4 text-slate-500">
-                        No material lines.
+                      <td
+                        colspan="6"
+                        class="px-2 py-4 text-slate-500">
+                        No material lines have been added to this production batch.
                       </td>
                     </tr>
                   `
               }
+
             </tbody>
+
           </table>
+
+        </div>
+
+        <div class="flex items-center justify-between mt-4">
+
+          <div class="text-xs text-slate-500">
+            Material Cost:
+            <span class="font-semibold text-slate-700">
+              ${fmtMoney(order?.material_cost || 0)}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            data-close
+            class="px-3 py-2 border rounded text-xs">
+            Close
+          </button>
+
         </div>
 
       </div>
@@ -127732,12 +127834,14 @@ async function openManufacturingOrderDetail(orderId) {
 
   document.body.appendChild(modal);
 
-  modal.querySelector("[data-close]")
-    ?.addEventListener("click", () => modal.remove());
+  modal.querySelectorAll("[data-close]")
+    .forEach(btn => {
+      btn.addEventListener("click", () => modal.remove());
+    });
 
   modal.querySelector("[data-post-usage]")
     ?.addEventListener("click", async () => {
-      await postManufacturingMaterialUsageUI(orderId);
+      await openManufacturingMaterialUsage(orderId);
       modal.remove();
     });
 }
