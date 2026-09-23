@@ -13600,11 +13600,19 @@ def post_manufacturing_material_usage(cid: int, order_id: int):
             payload["engagement_company_id"] = auth_ctx.get("source_company_id")
             payload["engagement_id"] = auth_ctx.get("engagement_id")
 
+        lines = (
+            payload.get("lines")
+            or payload.get("materials")
+            or []
+        )
+
         result = db_service.post_manufacturing_material_usage(
             company_id=company_id,
             manufacturing_order_id=int(order_id),
-            user_id=int(user.get("id") or 0) or None,
-            payload=payload,
+            lines=lines,
+            ref=payload.get("ref"),
+            notes=payload.get("notes"),
+            created_by=int(user.get("id") or 0) or None,
         )
 
         db_service.audit_log(

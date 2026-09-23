@@ -125332,6 +125332,36 @@ async function bindManufacturingUI() {
     });
   }
 
+  const bomTab = document.getElementById("mfgTabBoms");
+
+  if (bomTab && bomTab.dataset.bound !== "1") {
+    bomTab.dataset.bound = "1";
+
+    bomTab.addEventListener("click", async () => {
+      await loadManufacturingBoms();
+    });
+  }
+
+  const ordersTab = document.getElementById("mfgTabOrders");
+
+  if (ordersTab && ordersTab.dataset.bound !== "1") {
+    ordersTab.dataset.bound = "1";
+
+    ordersTab.addEventListener("click", async () => {
+      await loadManufacturingOrders();
+    });
+  }
+
+  const usageTab = document.getElementById("mfgTabUsage");
+
+  if (usageTab && usageTab.dataset.bound !== "1") {
+    usageTab.dataset.bound = "1";
+
+    usageTab.addEventListener("click", async () => {
+      await loadManufacturingMaterialUsage();
+    });
+  }
+
   if (mount.dataset.bound !== "1") {
     mount.dataset.bound = "1";
 
@@ -125339,7 +125369,7 @@ async function bindManufacturingUI() {
       const bomBtn = e.target.closest("[data-mfg-bom]");
 
       if (bomBtn) {
-        openManufacturingBomModal(
+        openManufacturingBomDefinitionModal(
           Number(bomBtn.dataset.mfgBom)
         );
         return;
@@ -126549,12 +126579,378 @@ async function loadManufacturingOrders() {
       ENDPOINTS.manufacturing.orders(cid)
     );
 
-    renderManufacturingOrders(
-      data?.rows || data?.items || []
-    );
+    const rows =
+      data?.orders ||
+      data?.rows ||
+      data?.items ||
+      [];
+
+    renderManufacturingOrders(rows);
 
   } catch (err) {
     mount.innerHTML = renderApiError(err);
+  }
+}
+
+async function loadManufacturingMaterialUsage() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const mount = getManufacturingMount();
+
+  if (!cid || !mount) return;
+
+  mount.innerHTML = `
+    <div class="text-xs text-slate-500">
+      Loading production batches…
+    </div>
+  `;
+
+  try {
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.orders(cid)
+    );
+
+    const rows =
+      data?.orders ||
+      data?.rows ||
+      data?.items ||
+      [];
+
+    if (!rows.length) {
+      mount.innerHTML = `
+        <div class="border rounded p-4 text-sm text-slate-500">
+          No production batches are available for material usage.
+        </div>
+      `;
+      return;
+    }
+
+    mount.innerHTML = `
+      <div class="mb-3">
+        <div class="font-semibold text-slate-800">
+          Material Usage
+        </div>
+
+        <div class="text-xs text-slate-500">
+          Select a production batch to record the actual raw materials consumed.
+        </div>
+      </div>
+
+      <div class="border rounded overflow-hidden">
+        <div class="overflow-auto">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left px-2 py-2">Batch</th>
+                <th class="text-left px-2 py-2">Finished Item</th>
+                <th class="text-left px-2 py-2">Date</th>
+                <th class="text-right px-2 py-2">Planned</th>
+                <th class="text-center px-2 py-2">Status</th>
+                <th class="text-right px-2 py-2">Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${rows.map(r => `
+                <tr class="border-b hover:bg-slate-50">
+                  <td class="px-2 py-2 font-medium">
+                    ${esc(r.mo_no || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(r.finished_item_name || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(String(r.tx_date || "").slice(0, 10))}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${esc(r.planned_qty ?? "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-center">
+                    ${esc(r.status || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    <button
+                      type="button"
+                      class="text-xs underline"
+                      data-mfg-usage-batch="${Number(r.id)}">
+                      Record Usage
+                    </button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    mount.querySelectorAll("[data-mfg-usage-batch]")
+      .forEach(btn => {
+        btn.addEventListener("click", () => {
+          openManufacturingMaterialUsage(
+            Number(btn.dataset.mfgUsageBatch)
+          );
+        });
+      });
+
+  } catch (err) {
+    mount.innerHTML = renderApiError(err);
+  }
+}
+
+async function openManufacturingMaterialUsage(orderId) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid || !orderId) return;
+
+  try {
+    const order = await apiFetch(
+      ENDPOINTS.manufacturing.order(cid, orderId)
+    );
+
+    const materials =
+      order?.materials ||
+      order?.material_lines ||
+      order?.lines ||
+      [];
+
+    if (!materials.length) {
+      alert("This production batch has no material lines.");
+      return;
+    }
+
+    if (
+      order?.status === "cancelled" ||
+      order?.status === "completed"
+    ) {
+      alert("Material usage cannot be posted for this production batch.");
+      return;
+    }
+
+    const modal = document.createElement("div");
+
+    modal.className =
+      "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
+
+    modal.innerHTML = `
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-auto">
+
+        <div class="flex items-center justify-between border-b px-4 py-3">
+          <div>
+            <div class="font-semibold">
+              Record Material Usage
+            </div>
+
+            <div class="text-xs text-slate-500">
+              ${esc(order?.mo_no || "")}
+              —
+              ${esc(order?.finished_item_name || "")}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="text-lg text-slate-500"
+            data-close>
+            ×
+          </button>
+        </div>
+
+        <div class="p-4">
+
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs">
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">Production Batch</div>
+              <div class="font-semibold">
+                ${esc(order?.mo_no || "")}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">Finished Item</div>
+              <div class="font-semibold">
+                ${esc(order?.finished_item_name || "")}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">Planned Output</div>
+              <div class="font-semibold">
+                ${esc(order?.planned_qty ?? "")}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">Status</div>
+              <div class="font-semibold">
+                ${esc(order?.status || "")}
+              </div>
+            </div>
+
+          </div>
+
+          <div class="mb-2">
+            <div class="font-semibold text-sm">
+              Raw Materials Consumed
+            </div>
+
+            <div class="text-xs text-slate-500">
+              Enter the actual quantity consumed for each material.
+            </div>
+          </div>
+
+          <div class="overflow-auto border rounded">
+            <table class="w-full text-xs">
+
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-2 py-2">
+                    Material
+                  </th>
+
+                  <th class="text-right px-2 py-2">
+                    Planned Qty
+                  </th>
+
+                  <th class="text-right px-2 py-2">
+                    Actual Qty
+                  </th>
+
+                  <th class="text-left px-2 py-2">
+                    Unit
+                  </th>
+
+                  <th class="text-right px-2 py-2">
+                    Unit Cost
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${materials.map(m => `
+                  <tr class="border-b">
+
+                    <td class="px-2 py-2">
+                      <div class="font-medium">
+                        ${esc(
+                          m.item_name ||
+                          m.material_name ||
+                          `Item #${m.item_id || ""}`
+                        )}
+                      </div>
+
+                      ${
+                        m.item_sku
+                          ? `
+                            <div class="text-[10px] text-slate-400">
+                              ${esc(m.item_sku)}
+                            </div>
+                          `
+                          : ""
+                      }
+                    </td>
+
+                    <td class="px-2 py-2 text-right">
+                      ${esc(m.planned_qty ?? "")}
+                    </td>
+
+                    <td class="px-2 py-2 text-right">
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value="${esc(m.actual_qty ?? "")}"
+                        data-material-id="${Number(m.id)}"
+                        class="w-28 border rounded px-2 py-1 text-right">
+                    </td>
+
+                    <td class="px-2 py-2">
+                      ${esc(m.unit || "")}
+                    </td>
+
+                    <td class="px-2 py-2 text-right">
+                      ${fmtMoney(m.unit_cost || 0)}
+                    </td>
+
+                  </tr>
+                `).join("")}
+              </tbody>
+
+            </table>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 mt-4">
+
+            <button
+              type="button"
+              data-close
+              class="px-3 py-2 border rounded text-xs">
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              data-submit
+              class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
+              Post Material Usage
+            </button>
+
+          </div>
+
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.querySelectorAll("[data-close]")
+      .forEach(btn => {
+        btn.addEventListener("click", () => modal.remove());
+      });
+
+    modal.querySelector("[data-submit]")
+      ?.addEventListener("click", async () => {
+
+        const lines = [];
+
+        modal.querySelectorAll("[data-material-id]")
+          .forEach(input => {
+
+            const actualQty = Number(input.value || 0);
+
+            if (actualQty > 0) {
+              lines.push({
+                material_id: Number(
+                  input.dataset.materialId
+                ),
+                actual_qty: actualQty,
+              });
+            }
+          });
+
+        if (!lines.length) {
+          alert(
+            "Enter an actual quantity for at least one material."
+          );
+          return;
+        }
+
+        await postManufacturingMaterialUsageUI(
+          orderId,
+          lines,
+          modal
+        );
+      });
+
+  } catch (err) {
+    alert(
+      err?.message ||
+      "Failed to load material usage."
+    );
   }
 }
 
@@ -126609,11 +127005,7 @@ function renderManufacturingOrders(rows) {
                   </td>
 
                   <td class="px-2 py-2">
-                    ${esc(
-                      r.item_name ||
-                      r.finished_item_name ||
-                      `Item #${r.item_id || ""}`
-                    )}
+                    ${esc(r.finished_item_name || "")}
                   </td>
 
                   <td class="px-2 py-2 text-right">
@@ -126654,7 +127046,6 @@ function renderManufacturingOrders(rows) {
   document.getElementById("mfgNewOrderBtn")
     ?.addEventListener("click", () => openManufacturingOrderModal());
 }
-
 // =====================================================
 // Production Order Modal
 // =====================================================
@@ -127153,31 +127544,53 @@ async function openManufacturingOrderDetail(orderId) {
 // Post Material Usage
 // =====================================================
 
-async function postManufacturingMaterialUsageUI(orderId) {
+async function postManufacturingMaterialUsageUI(
+  orderId,
+  lines = null,
+  modal = null
+) {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   if (!cid || !orderId) return;
 
+  if (!lines) {
+    alert(
+      "Material quantities must be entered before posting."
+    );
+    return;
+  }
+
   if (!confirm(
     "Post material usage for this production batch?\n\n" +
-    "This will consume raw-material inventory and debit Manufacturing WIP."
+    "This will consume the specified raw-material quantities " +
+    "from inventory and debit Manufacturing WIP."
   )) {
     return;
   }
 
   try {
     const result = await apiFetch(
-      ENDPOINTS.manufacturing.orderMaterialUsage(cid, orderId),
+      ENDPOINTS.manufacturing.orderMaterialUsage(
+        cid,
+        orderId
+      ),
       {
         method: "POST",
-        body: JSON.stringify({})
+        body: JSON.stringify({
+          lines,
+        }),
       }
     );
 
     showToast?.(
-      `Material usage posted — Cost ${fmtMoney(result?.total_cost || 0)}`,
+      `Material usage posted — Cost ${fmtMoney(
+        result?.total_cost || 0
+      )}`,
       "ok"
     );
 
+    modal?.remove();
+
+    await loadManufacturingMaterialUsage();
     await loadManufacturingOrders();
 
   } catch (err) {
