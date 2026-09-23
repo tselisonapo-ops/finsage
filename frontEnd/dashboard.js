@@ -128253,7 +128253,7 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
   }
 
   function root() {
-    return document.getElementById("screen-production-performance");
+    return document.getElementById("productionPerformanceRoot");
   }
 
   function ensureStyles() {
