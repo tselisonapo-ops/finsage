@@ -126788,9 +126788,11 @@ async function openManufacturingMaterialUsage(orderId) {
   if (!cid || !orderId) return;
 
   try {
-    const order = await apiFetch(
+    const data = await apiFetch(
       ENDPOINTS.manufacturing.order(cid, orderId)
     );
+
+    const order = data?.order || data;
 
     const materials =
       order?.materials ||
