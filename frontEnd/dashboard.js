@@ -4789,6 +4789,9 @@ const ENDPOINTS = {
   
     history: (cid, qs = "") =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/history${qs ? `?${qs}` : ""}`,  
+  
+    status: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/status`,  
   },
 
   projects: {
@@ -127565,6 +127568,53 @@ function showManufacturingOrderMsg(text, kind = "info") {
 // =====================================================
 // Production Order Detail
 // =====================================================
+async function updateManufacturingOrderStatus(orderId, status) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+
+  if (!cid || !orderId || !status) return null;
+
+  const labels = {
+    released: "Release this production batch?",
+    in_progress: "Start production for this batch?",
+    completed: "Complete this production batch?",
+    cancelled: "Cancel this production batch?"
+  };
+
+  const message =
+    labels[status] ||
+    `Change production batch status to ${status}?`;
+
+  if (!confirm(message)) {
+    return null;
+  }
+
+  try {
+    const result = await apiFetch(
+      ENDPOINTS.manufacturing.status(cid, orderId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          status
+        })
+      }
+    );
+
+    showToast?.(
+      `Production batch status changed to ${result?.status || status}.`,
+      "ok"
+    );
+
+    return result;
+
+  } catch (err) {
+    alert(
+      err?.message ||
+      "Failed to update production batch status."
+    );
+
+    return null;
+  }
+}
 
 async function openManufacturingOrderDetail(orderId) {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
@@ -127597,11 +127647,11 @@ async function openManufacturingOrderDetail(orderId) {
     "";
 
   const status =
-    String(order?.status || "").trim();
+    String(order?.status || "").trim().toLowerCase();
 
   const canRecordUsage =
-    status !== "cancelled" &&
-    status !== "completed";
+    status === "released" ||
+    status === "in_progress";
 
   modal.innerHTML = `
     <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-auto">
@@ -127659,10 +127709,66 @@ async function openManufacturingOrderDetail(orderId) {
             </div>
           </div>
 
-          <div class="border rounded p-2">
-            <div class="text-slate-500">Status</div>
-            <div class="font-semibold">
-              ${esc(status || "draft")}
+          <div>
+            <div class="text-xs text-slate-500">Status</div>
+
+            <div class="flex items-center gap-2 mt-1">
+              <span class="font-medium">
+                ${esc(order.status || "")}
+              </span>
+
+              ${
+                String(order.status || "").toLowerCase() === "draft"
+                  ? `
+                    <button
+                      type="button"
+                      class="px-2 py-1 text-xs border rounded hover:bg-slate-50"
+                      data-mfg-status="released">
+                      Release Production
+                    </button>
+                  `
+                  : ""
+              }
+
+              ${
+                String(order.status || "").toLowerCase() === "released"
+                  ? `
+                    <button
+                      type="button"
+                      class="px-2 py-1 text-xs border rounded hover:bg-slate-50"
+                      data-mfg-status="in_progress">
+                      Start Production
+                    </button>
+
+                    <button
+                      type="button"
+                      class="px-2 py-1 text-xs border rounded text-red-600 hover:bg-red-50"
+                      data-mfg-status="cancelled">
+                      Cancel Production
+                    </button>
+                  `
+                  : ""
+              }
+
+              ${
+                String(order.status || "").toLowerCase() === "in_progress"
+                  ? `
+                    <button
+                      type="button"
+                      class="px-2 py-1 text-xs border rounded hover:bg-slate-50"
+                      data-mfg-status="completed">
+                      Complete Production
+                    </button>
+
+                    <button
+                      type="button"
+                      class="px-2 py-1 text-xs border rounded text-red-600 hover:bg-red-50"
+                      data-mfg-status="cancelled">
+                      Cancel Production
+                    </button>
+                  `
+                  : ""
+              }
             </div>
           </div>
 
@@ -127845,6 +127951,27 @@ async function openManufacturingOrderDetail(orderId) {
     ?.addEventListener("click", async () => {
       await openManufacturingMaterialUsage(orderId);
       modal.remove();
+    });
+
+  modal.querySelectorAll("[data-mfg-status]")
+    .forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const newStatus = btn.dataset.mfgStatus;
+
+        const result = await updateManufacturingOrderStatus(
+          orderId,
+          newStatus
+        );
+
+        if (!result) return;
+
+        modal.remove();
+
+        await loadManufacturingOrders();
+        await loadManufacturingProductionHistory();
+
+        await openManufacturingOrderDetail(orderId);
+      });
     });
 }
 

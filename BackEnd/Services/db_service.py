@@ -85191,6 +85191,151 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _generate(cur2)
 
+    def update_manufacturing_order_status(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        new_status: str,
+        updated_by_user_id: int | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        new_status = str(new_status or "").strip().lower()
+
+        allowed_statuses = {
+            "draft",
+            "released",
+            "in_progress",
+            "completed",
+            "cancelled",
+        }
+
+        if new_status not in allowed_statuses:
+            raise ValueError(
+                f"Invalid manufacturing order status: {new_status}"
+            )
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
+                f"""
+                SELECT
+                    id,
+                    mo_no,
+                    status,
+                    planned_qty,
+                    actual_qty
+                FROM {schema}.manufacturing_orders
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE
+                """,
+                (
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            row = cur.fetchone()
+
+            if not row:
+                raise ValueError(
+                    f"Manufacturing order not found: {manufacturing_order_id}"
+                )
+
+            mo_id = int(row[0])
+            mo_no = row[1]
+            current_status = str(row[2] or "").strip().lower()
+            planned_qty = row[3]
+            actual_qty = row[4]
+
+            if current_status == new_status:
+                return {
+                    "ok": True,
+                    "changed": False,
+                    "id": mo_id,
+                    "mo_no": mo_no,
+                    "status": current_status,
+                }
+
+            allowed_transitions = {
+                "draft": {
+                    "released",
+                    "cancelled",
+                },
+                "released": {
+                    "in_progress",
+                    "cancelled",
+                },
+                "in_progress": {
+                    "completed",
+                    "cancelled",
+                },
+                "completed": set(),
+                "cancelled": set(),
+            }
+
+            if new_status not in allowed_transitions.get(
+                current_status,
+                set(),
+            ):
+                raise ValueError(
+                    f"Invalid manufacturing order status transition: "
+                    f"{current_status} -> {new_status}"
+                )
+
+            if new_status == "completed":
+                if actual_qty is None:
+                    raise ValueError(
+                        "Actual production quantity is required before "
+                        "completing the manufacturing order."
+                    )
+
+                if float(actual_qty) <= 0:
+                    raise ValueError(
+                        "Actual production quantity must be greater than "
+                        "zero before completing the manufacturing order."
+                    )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.manufacturing_orders
+                SET
+                    status=%s,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                RETURNING
+                    id,
+                    mo_no,
+                    status,
+                    planned_qty,
+                    actual_qty,
+                    updated_by_user_id,
+                    updated_at
+                """,
+                (
+                    new_status,
+                    updated_by_user_id,
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            updated = cur.fetchone()
+
+            return {
+                "ok": True,
+                "changed": True,
+                "id": int(updated[0]),
+                "mo_no": updated[1],
+                "status": updated[2],
+                "planned_qty": updated[3],
+                "actual_qty": updated[4],
+                "updated_by_user_id": updated[5],
+                "updated_at": updated[6],
+            }
+
     def create_manufacturing_order(
         self,
         company_id: int,

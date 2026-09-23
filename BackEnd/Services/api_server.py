@@ -13694,6 +13694,55 @@ def manufacturing_production_history(cid: int):
             "error": str(e),
         }), 500
     
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/status",
+    methods=["POST"]
+)
+@require_auth
+def update_manufacturing_order_status(cid: int, order_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        new_status = (
+            payload.get("status")
+            or payload.get("new_status")
+            or ""
+        )
+
+        if not str(new_status).strip():
+            raise ValueError(
+                "Manufacturing order status is required."
+            )
+
+        result = db_service.update_manufacturing_order_status(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            new_status=new_status,
+            updated_by_user_id=int(user.get("id") or 0) or None,
+        )
+
+        return jsonify(result), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "update_manufacturing_order_status failed"
+        )
+
+        return jsonify({
+            "error": str(e),
+        }), 500
+    
 @app.route("/api/companies/<int:cid>/services/items", methods=["POST"])
 @require_auth
 def create_service_item(cid: int):
