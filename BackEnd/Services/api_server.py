@@ -13649,6 +13649,50 @@ def post_manufacturing_material_usage(cid: int, order_id: int):
         return jsonify({
             "error": str(e),
         }), 400
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/history",
+    methods=["GET"]
+)
+@require_auth
+def manufacturing_production_history(cid: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        status = request.args.get("status")
+        bom_id = request.args.get("bom_id")
+        date_from = request.args.get("date_from")
+        date_to = request.args.get("date_to")
+
+        history = db_service.list_manufacturing_production_history(
+            company_id=company_id,
+            status=status,
+            bom_id=int(bom_id) if bom_id not in (None, "") else None,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+        return jsonify({
+            "ok": True,
+            "history": history or [],
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "manufacturing_production_history failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 500
     
 @app.route("/api/companies/<int:cid>/services/items", methods=["POST"])
 @require_auth

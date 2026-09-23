@@ -4786,6 +4786,9 @@ const ENDPOINTS = {
 
     orderMaterialUsage: (cid, orderId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/material-usage`,
+  
+    history: (cid, qs = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/history${qs ? `?${qs}` : ""}`,  
   },
 
   projects: {
@@ -125362,6 +125365,16 @@ async function bindManufacturingUI() {
     });
   }
 
+  const historyTab = document.getElementById("mfgTabHistory");
+
+  if (historyTab && historyTab.dataset.bound !== "1") {
+    historyTab.dataset.bound = "1";
+
+    historyTab.addEventListener("click", async () => {
+      await loadManufacturingProductionHistory();
+    });
+  }
+
   if (mount.dataset.bound !== "1") {
     mount.dataset.bound = "1";
 
@@ -125384,6 +125397,15 @@ async function bindManufacturingUI() {
         return;
       }
 
+      const historyBtn = e.target.closest("[data-mfg-history-order]");
+
+      if (historyBtn) {
+        openManufacturingOrderDetail(
+          Number(historyBtn.dataset.mfgHistoryOrder)
+        );
+        return;
+      }
+
       const usageBtn = e.target.closest("[data-mfg-usage]");
 
       if (usageBtn) {
@@ -125400,8 +125422,8 @@ async function bindManufacturingUI() {
 
   return true;
 }
-window.bindManufacturingUI = bindManufacturingUI;
 
+window.bindManufacturingUI = bindManufacturingUI;
 // =====================================================
 // BOM / Recipe List
 // =====================================================
@@ -126592,6 +126614,33 @@ async function loadManufacturingOrders() {
   }
 }
 
+function formatManufacturingDate(value) {
+  if (!value) return "";
+
+  const raw = String(value).slice(0, 10);
+
+  const parts = raw.split("-");
+
+  if (parts.length !== 3) {
+    return raw;
+  }
+
+  const [year, month, day] = parts;
+
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  ];
+
+  const monthName = months[Number(month) - 1];
+
+  if (!monthName) {
+    return raw;
+  }
+
+  return `${day} ${monthName} ${year}`;
+}
+
 async function loadManufacturingMaterialUsage() {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   const mount = getManufacturingMount();
@@ -126661,7 +126710,7 @@ async function loadManufacturingMaterialUsage() {
                   </td>
 
                   <td class="px-2 py-2">
-                    ${esc(String(r.tx_date || "").slice(0, 10))}
+                    ${esc(formatManufacturingDate(r.tx_date))}
                   </td>
 
                   <td class="px-2 py-2 text-right">
@@ -126954,6 +127003,137 @@ async function openManufacturingMaterialUsage(orderId) {
   }
 }
 
+function renderManufacturingProductionHistory(rows) {
+  const mount = getManufacturingMount();
+  if (!mount) return;
+
+  mount.innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="font-semibold text-slate-800">
+          Production History
+        </div>
+        <div class="text-xs text-slate-500">
+          Completed and historical production batches, material usage and costs.
+        </div>
+      </div>
+    </div>
+
+    <div class="overflow-auto border rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-2">Batch</th>
+            <th class="text-left px-2 py-2">Date</th>
+            <th class="text-left px-2 py-2">Finished Item</th>
+            <th class="text-left px-2 py-2">BOM</th>
+            <th class="text-right px-2 py-2">Planned</th>
+            <th class="text-right px-2 py-2">Actual</th>
+            <th class="text-right px-2 py-2">Material Cost</th>
+            <th class="text-center px-2 py-2">Status</th>
+            <th class="text-right px-2 py-2">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${
+            rows.length
+              ? rows.map(r => `
+                <tr class="border-b hover:bg-slate-50">
+
+                  <td class="px-2 py-2 font-medium">
+                    ${esc(r.mo_no || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(formatManufacturingDate(r.tx_date))}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(r.finished_item_name || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(
+                      r.bom_code
+                        ? `${r.bom_code} — ${r.bom_name || ""}`
+                        : (r.bom_name || "")
+                    )}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${esc(r.planned_qty ?? "")}
+                    ${esc(r.unit || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${esc(r.actual_qty ?? "0")}
+                    ${esc(r.unit || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${fmtMoney(r.material_cost || 0)}
+                  </td>
+
+                  <td class="px-2 py-2 text-center">
+                    ${esc(r.status || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    <button
+                      type="button"
+                      class="text-xs underline"
+                      data-mfg-history-order="${Number(r.id)}">
+                      Open
+                    </button>
+                  </td>
+
+                </tr>
+              `).join("")
+              : `
+                <tr>
+                  <td colspan="9" class="px-2 py-4 text-slate-500">
+                    No production history yet.
+                  </td>
+                </tr>
+              `
+          }
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadManufacturingProductionHistory() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const mount = getManufacturingMount();
+
+  if (!cid || !mount) return;
+
+  mount.innerHTML = `
+    <div class="text-xs text-slate-500">
+      Loading production history…
+    </div>
+  `;
+
+  try {
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.history(cid)
+    );
+
+    const rows =
+      data?.history ||
+      data?.rows ||
+      data?.items ||
+      [];
+
+    renderManufacturingProductionHistory(rows);
+
+  } catch (err) {
+    mount.innerHTML = renderApiError(err);
+  }
+}
+
 function renderManufacturingOrders(rows) {
   const mount = getManufacturingMount();
   if (!mount) return;
@@ -126968,13 +127148,6 @@ function renderManufacturingOrders(rows) {
           Track planned production, material usage and actual output.
         </div>
       </div>
-
-      <button
-        type="button"
-        id="mfgNewOrderBtn"
-        class="px-3 py-2 rounded bg-slate-900 text-white text-xs">
-        + New Production Batch
-      </button>
     </div>
 
     <div class="overflow-auto border rounded">
@@ -127001,7 +127174,7 @@ function renderManufacturingOrders(rows) {
                   </td>
 
                   <td class="px-2 py-2">
-                    ${esc(String(r.tx_date || "").slice(0, 10))}
+                    ${esc(formatManufacturingDate(r.tx_date))}
                   </td>
 
                   <td class="px-2 py-2">

@@ -87397,7 +87397,131 @@ class DatabaseService:
                 "total_cost": total_material_cost,
                 "material_count": len(lines),
             }
-    
+    def list_manufacturing_production_history(
+        self,
+        company_id: int,
+        *,
+        status: str | None = None,
+        bom_id: int | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        cur=None,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        params = [int(company_id)]
+        where = [
+            "mo.company_id=%s",
+        ]
+
+        # ----------------------------------------------------------
+        # History excludes draft orders by default.
+        # Drafts are still available from Production Orders.
+        # ----------------------------------------------------------
+
+        if status:
+            where.append("LOWER(mo.status)=LOWER(%s)")
+            params.append(str(status).strip())
+        else:
+            where.append(
+                "LOWER(mo.status) IN "
+                "('released', 'in_progress', 'completed', 'cancelled')"
+            )
+
+        if bom_id not in (None, ""):
+            where.append("mo.bom_id=%s")
+            params.append(int(bom_id))
+
+        if date_from:
+            where.append("mo.tx_date >= %s")
+            params.append(str(date_from))
+
+        if date_to:
+            where.append("mo.tx_date <= %s")
+            params.append(str(date_to))
+
+        sql = f"""
+            SELECT
+                mo.id,
+                mo.company_id,
+                mo.mo_no,
+
+                mo.bom_id,
+                b.bom_code,
+                b.name AS bom_name,
+                b.finished_item_name,
+
+                mo.tx_date,
+                mo.planned_qty,
+                mo.actual_qty,
+                mo.unit,
+                mo.location,
+                mo.batch_no,
+                mo.status,
+                mo.notes,
+
+                mo.material_tx_id,
+                mo.output_tx_id,
+
+                COALESCE(
+                    (
+                        SELECT SUM(mom.total_cost)
+                        FROM {schema}.manufacturing_order_materials mom
+                        WHERE mom.company_id=%s
+                        AND mom.manufacturing_order_id=mo.id
+                    ),
+                    0
+                ) AS material_cost,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.manufacturing_order_materials mom
+                    WHERE mom.company_id=%s
+                    AND mom.manufacturing_order_id=mo.id
+                ) AS material_count,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.manufacturing_order_materials mom
+                    WHERE mom.company_id=%s
+                    AND mom.manufacturing_order_id=mo.id
+                    AND mom.actual_qty > 0
+                ) AS used_material_count,
+
+                mo.created_by_user_id,
+                mo.updated_by_user_id,
+                mo.created_at,
+                mo.updated_at
+
+            FROM {schema}.manufacturing_orders mo
+
+            JOIN {schema}.manufacturing_boms b
+                ON b.id=mo.bom_id
+
+            WHERE {" AND ".join(where)}
+
+            ORDER BY
+                mo.tx_date DESC,
+                mo.id DESC
+        """
+
+        # The three correlated subqueries each need company_id.
+        # Put those parameters before the WHERE parameters.
+        query_params = [
+            int(company_id),
+            int(company_id),
+            int(company_id),
+            *params,
+        ]
+
+        rows = self.fetch_all(
+            sql,
+            query_params,
+            cur=cur,
+        )
+
+        return rows or []  
+
     def pos_ensure_packing_queue_item(self, company_id: int, order_id: int) -> int:
         schema = self.company_schema(company_id)
 
