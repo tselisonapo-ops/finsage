@@ -19248,9 +19248,21 @@ class DatabaseService:
             PARTITION BY
                 lower(trim(name)),
                 COALESCE(
-                NULLIF(code_family,''),
-                split_part(code, '_', 1) || '_' || split_part(code, '_', 2)
-                )
+                    NULLIF(code_family,''),
+                    split_part(code, '_', 1) || '_' || split_part(code, '_', 2)
+                ),
+                CASE
+                    WHEN COALESCE(NULLIF(role, ''), '') IN (
+                        'manufacturing_wip',
+                        'project_wip',
+                        'production_wip',
+                        'manufacturing_overhead',
+                        'production_variance',
+                        'manufacturing_clearing'
+                    )
+                    THEN role
+                    ELSE ''
+                END
             ORDER BY
                 (NULLIF(cf_bucket,'') IS NOT NULL) DESC,
                 (NULLIF(standard,'') IS NOT NULL) DESC,
@@ -64669,6 +64681,27 @@ class DatabaseService:
         schema = self.company_schema(company_id)
 
         def _run(_cur):
+
+            # --------------------------------------------------------
+            # Manufacturing work-in-progress
+            #
+            # Manufacturing WIP is industry-scoped in the COA pool.
+            # Do not allow the generic project_wip repair to hijack it.
+            # --------------------------------------------------------
+            _cur.execute(
+                f"""
+                UPDATE {schema}.coa
+                SET role = 'manufacturing_wip'
+                WHERE company_id = %s
+                AND LOWER(TRIM(COALESCE(template_code_scoped, ''))) =
+                    'i::manufacturing::1510'
+                AND COALESCE(role, '') IN (
+                    '',
+                    'project_wip'
+                );
+                """,
+                (int(company_id),),
+            )
             # --------------------------------------------------------
             # Loan payable - current
             # --------------------------------------------------------
@@ -67233,14 +67266,23 @@ class DatabaseService:
             matches = []
 
             for row in coa_rows:
-                detected_role = ac._coa_role_from_text(
-                    row.get("name", ""),
-                    row.get("section", ""),
-                    row.get("category", ""),
-                    row.get("subcategory", ""),
-                    row.get("standard", ""),
-                    row.get("description", ""),
-                )
+                # Manufacturing-scoped COA accounts must take precedence over
+                # generic text-based WIP classification.
+                template_code_scoped = str(
+                    row.get("template_code_scoped") or ""
+                ).strip().lower()
+
+                if template_code_scoped == "i::manufacturing::1510":
+                    detected_role = "manufacturing_wip"
+                else:
+                    detected_role = ac._coa_role_from_text(
+                        row.get("name", ""),
+                        row.get("section", ""),
+                        row.get("category", ""),
+                        row.get("subcategory", ""),
+                        row.get("standard", ""),
+                        row.get("description", ""),
+                    )
 
                 detected_role = str(detected_role or "").strip()
 
@@ -87423,7 +87465,7 @@ class DatabaseService:
                     "description": (
                         f"Manufacturing material usage #{tx_id}"
                     ),
-                    "source": "manufacturing_order",
+                    "source": "manufacturing_material_usage",
                     "source_id": int(tx_id),
                     "source_table": "inventory_tx",
                     "module_name": "manufacturing",
