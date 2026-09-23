@@ -128114,13 +128114,11 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
   };
 
   function getCompanyId() {
-    return (
-      window.currentCompanyId ||
-      window.selectedCompanyId ||
-      window.companyId ||
-      document.body?.dataset?.companyId ||
-      null
-    );
+    if (typeof window.getActiveCompanyId === "function") {
+      return window.getActiveCompanyId();
+    }
+
+    return null;
   }
 
   function esc(value) {
