@@ -126617,28 +126617,57 @@ async function loadManufacturingOrders() {
 function formatManufacturingDate(value) {
   if (!value) return "";
 
-  const raw = String(value).slice(0, 10);
+  const raw = String(value).trim();
 
-  const parts = raw.split("-");
+  // ISO / database date:
+  // 2026-09-22
+  // 2026-09-22T00:00:00...
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
 
-  if (parts.length !== 3) {
-    return raw;
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+
+    const months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+
+    const monthName = months[Number(month) - 1];
+
+    if (monthName) {
+      return `${day} ${monthName} ${year}`;
+    }
   }
 
-  const [year, month, day] = parts;
+  // Browser / API date such as:
+  // Tue, 22 Sep 2026 00:00:00 GMT
+  const longMatch = raw.match(
+    /(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i
+  );
 
-  const months = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-  ];
+  if (longMatch) {
+    const [, day, month, year] = longMatch;
 
-  const monthName = months[Number(month) - 1];
+    const monthMap = {
+      jan: "Jan",
+      feb: "Feb",
+      mar: "Mar",
+      apr: "Apr",
+      may: "May",
+      jun: "Jun",
+      jul: "Jul",
+      aug: "Aug",
+      sep: "Sep",
+      oct: "Oct",
+      nov: "Nov",
+      dec: "Dec"
+    };
 
-  if (!monthName) {
-    return raw;
+    return `${day.padStart(2, "0")} ${monthMap[month.toLowerCase()]} ${year}`;
   }
 
-  return `${day} ${monthName} ${year}`;
+  // Fallback
+  return raw;
 }
 
 async function loadManufacturingMaterialUsage() {
