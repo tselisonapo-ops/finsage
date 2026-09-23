@@ -126882,7 +126882,7 @@ async function openManufacturingMaterialUsage(orderId) {
             </div>
 
             <div class="text-xs text-slate-500">
-              Enter the actual quantity consumed for each material.
+              Actual quantities are pre-filled from the planned quantities. Adjust them to reflect the quantities actually consumed.
             </div>
           </div>
 
@@ -126942,13 +126942,17 @@ async function openManufacturingMaterialUsage(orderId) {
                     </td>
 
                     <td class="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value="${esc(m.actual_qty ?? "")}"
-                        data-material-id="${Number(m.id)}"
-                        class="w-28 border rounded px-2 py-1 text-right">
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value="${esc(
+                        Number(m.actual_qty || 0) > 0
+                          ? m.actual_qty
+                          : m.planned_qty ?? ""
+                      )}"
+                      data-material-id="${Number(m.id)}"
+                      class="w-28 border rounded px-2 py-1 text-right">
                     </td>
 
                     <td class="px-2 py-2">
