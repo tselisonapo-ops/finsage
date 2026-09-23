@@ -1394,6 +1394,20 @@ def _coa_role_from_text(
     )
 
     if is_inventory_asset:
+        # --------------------------------------------------------------
+        # Manufacturing / production WIP
+        # --------------------------------------------------------------
+        if has_any(
+            "manufacturing wip",
+            "manufacturing work in progress",
+            "manufacturing work-in-progress",
+            "production wip",
+            "production work in progress",
+            "production work-in-progress",
+            "factory work in progress",
+            "factory work-in-progress",
+        ):
+            return "manufacturing_wip"
         if has_any(
             "project work-in-progress",
             "project work in progress",

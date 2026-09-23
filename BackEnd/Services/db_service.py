@@ -87542,6 +87542,7 @@ class DatabaseService:
                 "total_cost": total_material_cost,
                 "material_count": len(lines),
             }
+        
     def list_manufacturing_production_history(
         self,
         company_id: int,
