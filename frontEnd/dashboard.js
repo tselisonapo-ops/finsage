@@ -128223,31 +128223,16 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
   }
 
   async function apiGet(url) {
-    const response = await fetch(url, {
+    if (typeof window.apiFetch !== "function") {
+      throw new Error("apiFetch is not available");
+    }
+
+    return await window.apiFetch(url, {
       method: "GET",
       headers: {
         Accept: "application/json",
-        ...getAuthHeaders(),
       },
     });
-
-    let payload = null;
-
-    try {
-      payload = await response.json();
-    } catch (_) {
-      payload = null;
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        payload?.error ||
-          payload?.message ||
-          `Request failed (${response.status})`
-      );
-    }
-
-    return payload || {};
   }
 
   function root() {
