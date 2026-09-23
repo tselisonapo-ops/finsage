@@ -127570,9 +127570,11 @@ async function openManufacturingOrderDetail(orderId) {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   if (!cid || !orderId) return;
 
-  const order = await apiFetch(
+  const data = await apiFetch(
     ENDPOINTS.manufacturing.order(cid, orderId)
   );
+
+  const order = data?.order || data;
 
   const modal = document.createElement("div");
 
