@@ -4792,6 +4792,11 @@ const ENDPOINTS = {
   
     status: (cid, orderId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/status`,  
+    productionPerformance: (cid, qs = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/production-performance${qs ? `?${qs}` : ""}`,
+
+    productionPerformanceOrder: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/production-performance/${encodeURIComponent(orderId)}`,
   },
 
   projects: {
@@ -8718,14 +8723,28 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       ],
     },
 
-    {
+{
       name: "Planning & Performance",
       icon: "📊",
       isParent: true,
       minRole: "assistant",
       permissionAny: ["can_prepare_financials", "can_view_reports"],
       children: [
-        { name: "Budgeting & Forecasting", screen: "budgeting", icon: "🎯", minRole: "assistant", permissionAny: ["can_prepare_financials", "can_view_reports"] },
+        {
+          name: "Budgeting & Forecasting",
+          screen: "budgeting",
+          icon: "🎯",
+          minRole: "assistant",
+          permissionAny: ["can_prepare_financials", "can_view_reports"],
+        },
+        {
+          name: "Production Performance",
+          screen: "production-performance",
+          icon: "🏭",
+          minRole: "assistant",
+          permissionAny: ["can_prepare_financials", "can_view_reports"],
+          feature: "inventory-module",
+        },
       ],
     },
 
@@ -10729,6 +10748,16 @@ const SCREEN_POLICY = {
     ],
   },
 
+  "production-performance": {
+    auth: "private",
+    minRole: "assistant",
+    permissionAny: [
+      "can_prepare_financials",
+      "can_view_reports"
+    ],
+    feature: "inventory-module",
+  },
+
   "deferred-tax": {
     auth: "private",
     minRole: "assistant",
@@ -12192,6 +12221,7 @@ async function switchScreen(
       const isIFRS9Workflow = target === "ifrs9";
       const isPayrollWorkflow = target === "payroll";
       const isBudgetingWorkflow = target === "budgeting";
+      const isProductionPerformanceWorkflow = target === "production-performance";
       const isDeferredTaxWorkflow = target === "deferred-tax";
       const isDataMigrationWorkflow = target === "data-migration";    
       const isIAS41Workflow = target === "ias41";
@@ -12228,6 +12258,7 @@ async function switchScreen(
       else if (isIFRS9Workflow) base = "ifrs9";
       else if (isPayrollWorkflow) base = "payroll";
       else if (isBudgetingWorkflow) base = "budgeting";
+      else if (isProductionPerformanceWorkflow) base = "production-performance";
       else if (target === "fixedassets") base = "fixedassets";
       else if (target === "help") base = "help";
       else if (isDeferredTaxWorkflow) base = "deferred-tax";
@@ -12312,6 +12343,7 @@ async function switchScreen(
         ifrs9: "IFRS 9 Financial Instruments",
         payroll: "Payroll",
         budgeting: "Planning & Performance",
+        "production-performance": "Production Performance",
         "deferred-tax": "IAS 12 Deferred Tax",
         ias41: "IAS 41 Agriculture",
         inventory: "Inventory & Services",
@@ -12453,6 +12485,28 @@ async function switchScreen(
         try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[Budgeting] ensureCompanyDataLoaded failed:", e); }
         await window.bindBudgetingScreen?.();
         console.log("[switchScreen] early return at:", target, "base:", base);
+        return;
+      }
+
+      if (base === "production-performance") {
+        try {
+          await ensureCompanyDataLoaded?.();
+        } catch (e) {
+          console.warn(
+            "[ProductionPerformance] company load failed:",
+            e
+          );
+        }
+
+        await window.bindProductionPerformanceScreen?.();
+
+        console.log(
+          "[switchScreen] early return at:",
+          target,
+          "base:",
+          base
+        );
+
         return;
       }
 
@@ -128049,6 +128103,1247 @@ window.openManufacturingOrderModal = openManufacturingOrderModal;
 window.openManufacturingOrderDetail = openManufacturingOrderDetail;
 window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
 
+(function () {
+  "use strict";
+
+  const state = {
+    companyId: null,
+    rows: [],
+    selectedOrder: null,
+    loading: false,
+  };
+
+  function getCompanyId() {
+    return (
+      window.currentCompanyId ||
+      window.selectedCompanyId ||
+      window.companyId ||
+      document.body?.dataset?.companyId ||
+      null
+    );
+  }
+
+  function esc(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function num(value, decimals = 2) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+
+    return n.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
+
+  function money(value, decimals = 2) {
+    const n = Number(value);
+
+    if (!Number.isFinite(n)) {
+      return "—";
+    }
+
+    return n.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
+
+  function percent(value, decimals = 1) {
+    const n = Number(value);
+
+    if (!Number.isFinite(n)) {
+      return "—";
+    }
+
+    return `${n.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })}%`;
+  }
+
+  function signedMoney(value) {
+    const n = Number(value);
+
+    if (!Number.isFinite(n)) {
+      return "—";
+    }
+
+    const formatted = Math.abs(n).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    if (n > 0) return `+${formatted}`;
+    if (n < 0) return `-${formatted}`;
+
+    return formatted;
+  }
+
+  function varianceClass(value) {
+    const n = Number(value);
+
+    if (!Number.isFinite(n) || n === 0) {
+      return "";
+    }
+
+    return n > 0 ? "is-negative" : "is-positive";
+  }
+
+  function statusLabel(status) {
+    const value = String(status || "").trim();
+
+    if (!value) return "—";
+
+    return value
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+
+  function getAuthHeaders() {
+    if (typeof window.getAuthHeaders === "function") {
+      return window.getAuthHeaders();
+    }
+
+    const token =
+      window.authToken ||
+      localStorage.getItem("token") ||
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("jwt");
+
+    return token
+      ? {
+          Authorization: `Bearer ${token}`,
+        }
+      : {};
+  }
+
+  async function apiGet(url) {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
+    });
+
+    let payload = null;
+
+    try {
+      payload = await response.json();
+    } catch (_) {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        payload?.error ||
+          payload?.message ||
+          `Request failed (${response.status})`
+      );
+    }
+
+    return payload || {};
+  }
+
+  function root() {
+    return document.getElementById("screen-production-performance");
+  }
+
+  function ensureStyles() {
+    if (document.getElementById("production-performance-styles")) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "production-performance-styles";
+
+    style.textContent = `
+      #screen-production-performance {
+        padding: 20px;
+      }
+
+      #screen-production-performance .pp-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+
+      #screen-production-performance .pp-title {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      #screen-production-performance .pp-subtitle {
+        margin: 5px 0 0;
+        opacity: .68;
+        font-size: 13px;
+      }
+
+      #screen-production-performance .pp-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      #screen-production-performance .pp-filters {
+        display: flex;
+        gap: 10px;
+        align-items: end;
+        flex-wrap: wrap;
+        padding: 14px;
+        border: 1px solid rgba(127,127,127,.18);
+        border-radius: 10px;
+        margin-bottom: 16px;
+      }
+
+      #screen-production-performance .pp-field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        min-width: 150px;
+      }
+
+      #screen-production-performance .pp-field label {
+        font-size: 11px;
+        font-weight: 600;
+        opacity: .7;
+      }
+
+      #screen-production-performance .pp-field input,
+      #screen-production-performance .pp-field select {
+        height: 36px;
+        padding: 0 9px;
+        border: 1px solid rgba(127,127,127,.25);
+        border-radius: 7px;
+        background: inherit;
+        color: inherit;
+      }
+
+      #screen-production-performance .pp-btn {
+        height: 36px;
+        padding: 0 13px;
+        border: 1px solid rgba(127,127,127,.25);
+        border-radius: 7px;
+        background: inherit;
+        color: inherit;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      #screen-production-performance .pp-btn:hover {
+        background: rgba(127,127,127,.08);
+      }
+
+      #screen-production-performance .pp-kpis {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      #screen-production-performance .pp-kpi {
+        padding: 15px;
+        border: 1px solid rgba(127,127,127,.18);
+        border-radius: 10px;
+        min-height: 88px;
+      }
+
+      #screen-production-performance .pp-kpi-label {
+        font-size: 11px;
+        opacity: .65;
+        margin-bottom: 7px;
+      }
+
+      #screen-production-performance .pp-kpi-value {
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      #screen-production-performance .pp-kpi-note {
+        margin-top: 4px;
+        font-size: 11px;
+        opacity: .55;
+      }
+
+      #screen-production-performance .pp-panel {
+        border: 1px solid rgba(127,127,127,.18);
+        border-radius: 10px;
+        overflow: hidden;
+        margin-bottom: 18px;
+      }
+
+      #screen-production-performance .pp-panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 13px 15px;
+        border-bottom: 1px solid rgba(127,127,127,.15);
+      }
+
+      #screen-production-performance .pp-panel-title {
+        font-weight: 700;
+      }
+
+      #screen-production-performance .pp-table-wrap {
+        overflow-x: auto;
+      }
+
+      #screen-production-performance table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 1050px;
+      }
+
+      #screen-production-performance th,
+      #screen-production-performance td {
+        padding: 10px 11px;
+        border-bottom: 1px solid rgba(127,127,127,.12);
+        text-align: right;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+
+      #screen-production-performance th:first-child,
+      #screen-production-performance td:first-child,
+      #screen-production-performance th:nth-child(2),
+      #screen-production-performance td:nth-child(2) {
+        text-align: left;
+      }
+
+      #screen-production-performance th {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        opacity: .62;
+      }
+
+      #screen-production-performance tr.pp-clickable {
+        cursor: pointer;
+      }
+
+      #screen-production-performance tr.pp-clickable:hover {
+        background: rgba(127,127,127,.06);
+      }
+
+      #screen-production-performance .pp-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 7px;
+        border-radius: 999px;
+        background: rgba(127,127,127,.12);
+        font-size: 10px;
+        font-weight: 600;
+      }
+
+      #screen-production-performance .pp-positive {
+        font-weight: 600;
+      }
+
+      #screen-production-performance .pp-negative {
+        font-weight: 600;
+      }
+
+      #screen-production-performance .is-positive {
+        font-weight: 600;
+      }
+
+      #screen-production-performance .is-negative {
+        font-weight: 600;
+      }
+
+      #screen-production-performance .pp-empty {
+        padding: 35px;
+        text-align: center;
+        opacity: .6;
+      }
+
+      #screen-production-performance .pp-loading {
+        padding: 35px;
+        text-align: center;
+        opacity: .65;
+      }
+
+      #screen-production-performance .pp-unavailable {
+        padding: 12px 14px;
+        margin-bottom: 15px;
+        border: 1px solid rgba(127,127,127,.18);
+        border-radius: 9px;
+        font-size: 12px;
+        opacity: .75;
+      }
+
+      #screen-production-performance .pp-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.42);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        z-index: 10000;
+      }
+
+      #screen-production-performance .pp-modal {
+        width: min(1100px, 96vw);
+        max-height: 90vh;
+        overflow: auto;
+        background: var(--card-bg, #fff);
+        color: inherit;
+        border-radius: 12px;
+        border: 1px solid rgba(127,127,127,.2);
+        box-shadow: 0 20px 60px rgba(0,0,0,.22);
+      }
+
+      #screen-production-performance .pp-modal-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+        align-items: center;
+        padding: 15px 18px;
+        border-bottom: 1px solid rgba(127,127,127,.15);
+      }
+
+      #screen-production-performance .pp-modal-body {
+        padding: 18px;
+      }
+
+      #screen-production-performance .pp-detail-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      #screen-production-performance .pp-detail-card {
+        padding: 11px;
+        border: 1px solid rgba(127,127,127,.15);
+        border-radius: 8px;
+      }
+
+      #screen-production-performance .pp-detail-label {
+        font-size: 10px;
+        opacity: .6;
+        margin-bottom: 5px;
+      }
+
+      #screen-production-performance .pp-detail-value {
+        font-weight: 700;
+        font-size: 14px;
+      }
+
+      @media (max-width: 1100px) {
+        #screen-production-performance .pp-kpis {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        #screen-production-performance .pp-detail-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 700px) {
+        #screen-production-performance .pp-header {
+          flex-direction: column;
+        }
+
+        #screen-production-performance .pp-kpis {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        #screen-production-performance .pp-detail-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function renderShell() {
+    const el = root();
+
+    if (!el) {
+      console.warn(
+        "[ProductionPerformance] #screen-production-performance not found"
+      );
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="pp-header">
+        <div>
+          <h2 class="pp-title">Production Performance</h2>
+          <div class="pp-subtitle">
+            Production costing, material efficiency and contribution analysis
+          </div>
+        </div>
+
+        <div class="pp-actions">
+          <button type="button" class="pp-btn" data-pp-action="refresh">
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div class="pp-filters">
+        <div class="pp-field">
+          <label for="pp-date-from">Date from</label>
+          <input type="date" id="pp-date-from">
+        </div>
+
+        <div class="pp-field">
+          <label for="pp-date-to">Date to</label>
+          <input type="date" id="pp-date-to">
+        </div>
+
+        <div class="pp-field">
+          <label for="pp-status">Status</label>
+          <select id="pp-status">
+            <option value="">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="in_progress">In progress</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+
+        <button type="button" class="pp-btn" data-pp-action="apply">
+          Apply
+        </button>
+      </div>
+
+      <div class="pp-kpis" id="pp-kpis">
+        ${renderKpiPlaceholders()}
+      </div>
+
+      <div id="pp-unavailable"></div>
+
+      <div class="pp-panel">
+        <div class="pp-panel-header">
+          <div class="pp-panel-title">Production orders</div>
+          <div id="pp-count" style="font-size:11px;opacity:.6;"></div>
+        </div>
+
+        <div class="pp-table-wrap" id="pp-table">
+          <div class="pp-loading">Loading production performance...</div>
+        </div>
+      </div>
+
+      <div id="pp-detail-container"></div>
+    `;
+  }
+
+  function renderKpiPlaceholders() {
+    return [
+      ["Production orders", "—", ""],
+      ["Planned material cost", "—", ""],
+      ["Actual material cost", "—", ""],
+      ["Material contribution", "—", ""],
+      ["Contribution margin", "—", ""],
+    ]
+      .map(
+        ([label, value, note]) => `
+          <div class="pp-kpi">
+            <div class="pp-kpi-label">${esc(label)}</div>
+            <div class="pp-kpi-value">${esc(value)}</div>
+            <div class="pp-kpi-note">${esc(note)}</div>
+          </div>
+        `
+      )
+      .join("");
+  }
+
+  function renderKpis(rows) {
+    const el = document.getElementById("pp-kpis");
+
+    if (!el) return;
+
+    const productionOrders = rows.length;
+
+    const plannedMaterialCost = rows.reduce(
+      (sum, row) => sum + Number(row.planned_material_cost || 0),
+      0
+    );
+
+    const actualMaterialCost = rows.reduce(
+      (sum, row) => sum + Number(row.actual_material_cost || 0),
+      0
+    );
+
+    const materialContribution = rows.reduce(
+      (sum, row) => sum + Number(row.material_contribution || 0),
+      0
+    );
+
+    const productionValue = rows.reduce(
+      (sum, row) => sum + Number(row.production_value || 0),
+      0
+    );
+
+    const contributionMargin =
+      productionValue !== 0
+        ? (materialContribution / productionValue) * 100
+        : null;
+
+    el.innerHTML = `
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Production orders</div>
+        <div class="pp-kpi-value">${num(productionOrders, 0)}</div>
+        <div class="pp-kpi-note">Orders in selected period</div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Planned material cost</div>
+        <div class="pp-kpi-value">${money(plannedMaterialCost)}</div>
+        <div class="pp-kpi-note">Order planned material cost</div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Actual material cost</div>
+        <div class="pp-kpi-value">${money(actualMaterialCost)}</div>
+        <div class="pp-kpi-note">Posted material usage</div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Material contribution</div>
+        <div class="pp-kpi-value">${money(materialContribution)}</div>
+        <div class="pp-kpi-note">
+          Production value less actual materials
+        </div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Contribution margin</div>
+        <div class="pp-kpi-value">${percent(contributionMargin)}</div>
+        <div class="pp-kpi-note">
+          Material contribution / production value
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTable(rows) {
+    const el = document.getElementById("pp-table");
+    const count = document.getElementById("pp-count");
+
+    if (!el) return;
+
+    if (count) {
+      count.textContent = `${rows.length} order${rows.length === 1 ? "" : "s"}`;
+    }
+
+    if (!rows.length) {
+      el.innerHTML = `
+        <div class="pp-empty">
+          No production orders match the selected filters.
+        </div>
+      `;
+      return;
+    }
+
+    el.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>Finished product</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Planned qty</th>
+            <th>Actual qty</th>
+            <th>Completion</th>
+            <th>Planned materials</th>
+            <th>Actual materials</th>
+            <th>Material variance</th>
+            <th>Production value</th>
+            <th>Contribution</th>
+            <th>Margin</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${rows.map(renderRow).join("")}
+        </tbody>
+      </table>
+    `;
+
+    el.querySelectorAll("tr[data-order-id]").forEach((row) => {
+      row.addEventListener("click", () => {
+        const orderId = Number(row.dataset.orderId);
+
+        if (orderId) {
+          openDetail(orderId);
+        }
+      });
+    });
+  }
+
+  function renderRow(row) {
+    const completion = Number(row.production_completion);
+    const variance = Number(row.material_cost_variance);
+
+    return `
+      <tr
+        class="pp-clickable"
+        data-order-id="${esc(row.manufacturing_order_id || row.id)}"
+      >
+        <td>
+          <strong>${esc(row.mo_no || row.order_no || "—")}</strong>
+        </td>
+
+        <td>
+          ${esc(
+            row.finished_item_name ||
+              row.finished_product ||
+              row.bom_name ||
+              "—"
+          )}
+        </td>
+
+        <td>${esc(row.tx_date || "—")}</td>
+
+        <td>
+          <span class="pp-badge">
+            ${esc(statusLabel(row.status))}
+          </span>
+        </td>
+
+        <td>${num(row.planned_qty)}</td>
+
+        <td>${num(row.actual_qty)}</td>
+
+        <td>${percent(completion)}</td>
+
+        <td>${money(row.planned_material_cost)}</td>
+
+        <td>${money(row.actual_material_cost)}</td>
+
+        <td class="${varianceClass(variance)}">
+          ${signedMoney(variance)}
+        </td>
+
+        <td>${money(row.production_value)}</td>
+
+        <td>${money(row.material_contribution)}</td>
+
+        <td>${percent(row.material_contribution_margin)}</td>
+      </tr>
+    `;
+  }
+
+  function renderUnavailableNotice() {
+    const el = document.getElementById("pp-unavailable");
+
+    if (!el) return;
+
+    el.innerHTML = `
+      <div class="pp-unavailable">
+        <strong>Costing scope:</strong>
+        material costs are currently available from production usage.
+        Labour and manufacturing overhead are not yet allocated, so full
+        production cost and absorption margin are not calculated.
+      </div>
+    `;
+  }
+
+  async function load() {
+    const companyId = getCompanyId();
+
+    if (!companyId) {
+      const table = document.getElementById("pp-table");
+
+      if (table) {
+        table.innerHTML = `
+          <div class="pp-empty">
+            No company is currently selected.
+          </div>
+        `;
+      }
+
+      return;
+    }
+
+    state.companyId = companyId;
+    state.loading = true;
+
+    const dateFrom = document.getElementById("pp-date-from")?.value || "";
+    const dateTo = document.getElementById("pp-date-to")?.value || "";
+    const status = document.getElementById("pp-status")?.value || "";
+
+    const params = new URLSearchParams();
+
+    if (dateFrom) {
+      params.set("date_from", dateFrom);
+    }
+
+    if (dateTo) {
+      params.set("date_to", dateTo);
+    }
+
+    if (status) {
+      params.set("status", status);
+    }
+
+    params.set("limit", "200");
+    params.set("offset", "0");
+
+    const table = document.getElementById("pp-table");
+
+    if (table) {
+      table.innerHTML = `
+        <div class="pp-loading">
+          Loading production performance...
+        </div>
+      `;
+    }
+
+    try {
+      const url = window.API?.manufacturing?.productionPerformance
+        ? window.API.manufacturing.productionPerformance(
+            companyId,
+            params.toString()
+          )
+        : `${API_BASE}/api/companies/${encodeURIComponent(
+            companyId
+          )}/manufacturing/production-performance${
+            params.toString() ? `?${params.toString()}` : ""
+          }`;
+
+      const payload = await apiGet(url);
+
+      state.rows = Array.isArray(payload.items)
+        ? payload.items
+        : Array.isArray(payload.rows)
+        ? payload.rows
+        : [];
+
+      renderKpis(state.rows);
+      renderTable(state.rows);
+      renderUnavailableNotice();
+    } catch (error) {
+      console.error(
+        "[ProductionPerformance] load failed:",
+        error
+      );
+
+      if (table) {
+        table.innerHTML = `
+          <div class="pp-empty">
+            Failed to load production performance.
+            <br>
+            <small>${esc(error.message || error)}</small>
+          </div>
+        `;
+      }
+    } finally {
+      state.loading = false;
+    }
+  }
+
+  async function openDetail(orderId) {
+    if (!state.companyId || !orderId) {
+      return;
+    }
+
+    const container = document.getElementById(
+      "pp-detail-container"
+    );
+
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="pp-modal-backdrop" data-pp-modal>
+        <div class="pp-modal">
+          <div class="pp-modal-header">
+            <strong>Production Performance Detail</strong>
+
+            <button
+              type="button"
+              class="pp-btn"
+              data-pp-close
+            >
+              Close
+            </button>
+          </div>
+
+          <div class="pp-modal-body">
+            <div class="pp-loading">
+              Loading production order detail...
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const backdrop = container.querySelector("[data-pp-modal]");
+
+    backdrop?.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        closeDetail();
+      }
+    });
+
+    container
+      .querySelector("[data-pp-close]")
+      ?.addEventListener("click", closeDetail);
+
+    try {
+      const url =
+        window.API?.manufacturing?.productionPerformanceOrder
+          ? window.API.manufacturing.productionPerformanceOrder(
+              state.companyId,
+              orderId
+            )
+          : `${API_BASE}/api/companies/${encodeURIComponent(
+              state.companyId
+            )}/manufacturing/production-performance/${encodeURIComponent(
+              orderId
+            )}`;
+
+      const payload = await apiGet(url);
+
+      state.selectedOrder = payload;
+
+      renderDetail(payload);
+    } catch (error) {
+      console.error(
+        "[ProductionPerformance] detail failed:",
+        error
+      );
+
+      const body = container.querySelector(".pp-modal-body");
+
+      if (body) {
+        body.innerHTML = `
+          <div class="pp-empty">
+            Failed to load production order detail.
+            <br>
+            <small>${esc(error.message || error)}</small>
+          </div>
+        `;
+      }
+    }
+  }
+
+  function closeDetail() {
+    const container = document.getElementById(
+      "pp-detail-container"
+    );
+
+    if (container) {
+      container.innerHTML = "";
+    }
+
+    state.selectedOrder = null;
+  }
+
+  function renderDetail(payload) {
+    const container = document.getElementById(
+      "pp-detail-container"
+    );
+
+    if (!container) return;
+
+    const order =
+      payload.order ||
+      payload.manufacturing_order ||
+      payload;
+
+    const materials =
+      payload.materials ||
+      payload.lines ||
+      payload.material_details ||
+      [];
+
+    const costing = payload.costing || {};
+
+    const plannedMaterialCost = Number(
+      payload.planned_material_cost ??
+        order.planned_material_cost ??
+        0
+    );
+
+    const actualMaterialCost = Number(
+      payload.actual_material_cost ??
+        order.actual_material_cost ??
+        0
+    );
+
+    const materialContribution = Number(
+      payload.material_contribution ??
+        order.material_contribution ??
+        0
+    );
+
+    const productionValue = Number(
+      payload.production_value ??
+        order.production_value ??
+        0
+    );
+
+    const contributionMargin =
+      payload.material_contribution_margin ??
+      order.material_contribution_margin;
+
+    const variance =
+      payload.material_cost_variance ??
+      order.material_cost_variance;
+
+    const body = container.querySelector(".pp-modal-body");
+
+    if (!body) return;
+
+    body.innerHTML = `
+      <div class="pp-detail-grid">
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Production order</div>
+          <div class="pp-detail-value">
+            ${esc(order.mo_no || order.order_no || order.id || "—")}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Finished product</div>
+          <div class="pp-detail-value">
+            ${esc(
+              order.finished_item_name ||
+                order.finished_product ||
+                order.bom_name ||
+                "—"
+            )}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Planned quantity</div>
+          <div class="pp-detail-value">
+            ${num(order.planned_qty)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Actual quantity</div>
+          <div class="pp-detail-value">
+            ${num(order.actual_qty)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Production value</div>
+          <div class="pp-detail-value">
+            ${money(productionValue)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Planned material cost</div>
+          <div class="pp-detail-value">
+            ${money(plannedMaterialCost)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Actual material cost</div>
+          <div class="pp-detail-value">
+            ${money(actualMaterialCost)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Material variance</div>
+          <div class="pp-detail-value">
+            ${signedMoney(variance)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Material contribution</div>
+          <div class="pp-detail-value">
+            ${money(materialContribution)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Contribution margin</div>
+          <div class="pp-detail-value">
+            ${percent(contributionMargin)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Labour cost</div>
+          <div class="pp-detail-value">
+            ${
+              costing.labour_cost != null
+                ? money(costing.labour_cost)
+                : "Not allocated"
+            }
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Manufacturing overhead</div>
+          <div class="pp-detail-value">
+            ${
+              costing.manufacturing_overhead != null
+                ? money(costing.manufacturing_overhead)
+                : "Not allocated"
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class="pp-panel">
+        <div class="pp-panel-header">
+          <div class="pp-panel-title">
+            Material efficiency
+          </div>
+        </div>
+
+        <div class="pp-table-wrap">
+          ${
+            materials.length
+              ? `
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Material</th>
+                      <th>Standard qty</th>
+                      <th>Actual qty</th>
+                      <th>Qty variance</th>
+                      <th>Unit cost</th>
+                      <th>Standard cost</th>
+                      <th>Actual cost</th>
+                      <th>Cost variance</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${materials.map(renderMaterialRow).join("")}
+                  </tbody>
+                </table>
+              `
+              : `
+                <div class="pp-empty">
+                  No material detail is available for this order.
+                </div>
+              `
+          }
+        </div>
+      </div>
+
+      <div class="pp-unavailable">
+        <strong>Management accounting note:</strong>
+        contribution shown here is based on production value less material
+        cost. Labour and manufacturing overhead are currently not allocated,
+        so this screen does not present an absorption/full-production margin.
+      </div>
+    `;
+  }
+
+  function renderMaterialRow(material) {
+    const quantityVariance =
+      material.quantity_variance ??
+      material.qty_variance ??
+      null;
+
+    const costVariance =
+      material.cost_variance ??
+      material.material_cost_variance ??
+      null;
+
+    return `
+      <tr>
+        <td>
+          ${esc(
+            material.item_name ||
+              material.material_name ||
+              material.item_id ||
+              "—"
+          )}
+        </td>
+
+        <td>${num(material.standard_qty)}</td>
+
+        <td>${num(material.actual_qty)}</td>
+
+        <td class="${varianceClass(quantityVariance)}">
+          ${signedMoney(quantityVariance)}
+        </td>
+
+        <td>${money(material.unit_cost)}</td>
+
+        <td>${money(material.standard_cost)}</td>
+
+        <td>${money(material.actual_cost)}</td>
+
+        <td class="${varianceClass(costVariance)}">
+          ${signedMoney(costVariance)}
+        </td>
+      </tr>
+    `;
+  }
+
+  function bindEvents() {
+    const el = root();
+
+    if (!el || el.dataset.ppBound === "1") {
+      return;
+    }
+
+    el.dataset.ppBound = "1";
+
+    el.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-pp-action]");
+
+      if (!action) return;
+
+      const value = action.dataset.ppAction;
+
+      if (value === "refresh" || value === "apply") {
+        load();
+      }
+    });
+  }
+
+  async function bindProductionPerformanceScreen() {
+    const el = root();
+
+    if (!el) {
+      console.warn(
+        "[ProductionPerformance] screen container not found"
+      );
+      return;
+    }
+
+    ensureStyles();
+    renderShell();
+    bindEvents();
+
+    await load();
+  }
+
+  window.bindProductionPerformanceScreen =
+    bindProductionPerformanceScreen;
+
+  window.productionPerformance = {
+    load,
+    openDetail,
+    closeDetail,
+  };
+})();
 // =====================================================
 // Reorder Alerts (Frontend)
 // =====================================================

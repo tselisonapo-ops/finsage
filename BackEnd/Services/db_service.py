@@ -87710,6 +87710,613 @@ class DatabaseService:
 
         return rows or []  
 
+    def list_manufacturing_production_performance(
+        self,
+        company_id: int,
+        *,
+        date_from=None,
+        date_to=None,
+        status=None,
+        limit: int = 200,
+        offset: int = 0,
+    ):
+        company_id = int(company_id)
+
+        schema = self.company_schema(company_id)
+
+        try:
+            limit = max(1, min(int(limit or 200), 1000))
+        except Exception:
+            limit = 200
+
+        try:
+            offset = max(0, int(offset or 0))
+        except Exception:
+            offset = 0
+
+        where = [
+            "mo.company_id = %s",
+        ]
+        params = [company_id]
+
+        if date_from:
+            where.append("mo.tx_date >= %s")
+            params.append(date_from)
+
+        if date_to:
+            where.append("mo.tx_date <= %s")
+            params.append(date_to)
+
+        if status:
+            where.append("LOWER(TRIM(COALESCE(mo.status, ''))) = %s")
+            params.append(str(status).strip().lower())
+
+        where_sql = " AND ".join(where)
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                mo.id,
+                mo.mo_no,
+                mo.tx_date,
+                mo.bom_id,
+                mo.planned_qty,
+                mo.actual_qty,
+                mo.unit,
+                mo.location,
+                mo.batch_no,
+                mo.status,
+                mo.notes,
+
+                b.bom_code,
+                b.name AS bom_name,
+                b.finished_item_name,
+                b.batch_qty,
+                b.batch_unit,
+
+                COALESCE(
+                    SUM(mom.planned_qty * mom.unit_cost),
+                    0
+                ) AS planned_material_cost,
+
+                COALESCE(
+                    SUM(mom.total_cost),
+                    0
+                ) AS actual_material_cost,
+
+                COALESCE(
+                    SUM(
+                        GREATEST(
+                            COALESCE(mom.actual_qty, 0)
+                            - COALESCE(mom.planned_qty, 0),
+                            0
+                        ) * COALESCE(mom.unit_cost, 0)
+                    ),
+                    0
+                ) AS excess_material_cost,
+
+                COALESCE(
+                    SUM(
+                        COALESCE(mom.actual_qty, 0)
+                        - COALESCE(mom.planned_qty, 0)
+                    ),
+                    0
+                ) AS material_qty_variance,
+
+                ii.id AS finished_item_id,
+                ii.sku AS finished_item_sku,
+                ii.name AS finished_item_inventory_name,
+                ii.unit AS finished_item_unit,
+                ii.sales_price AS finished_item_sales_price
+
+            FROM {schema}.manufacturing_orders mo
+
+            LEFT JOIN {schema}.manufacturing_boms b
+                ON b.id = mo.bom_id
+                AND b.company_id = mo.company_id
+
+            LEFT JOIN {schema}.manufacturing_order_materials mom
+                ON mom.manufacturing_order_id = mo.id
+                AND mom.company_id = mo.company_id
+
+            LEFT JOIN {schema}.inventory_items ii
+                ON ii.company_id = mo.company_id
+                AND LOWER(TRIM(ii.name)) =
+                    LOWER(TRIM(COALESCE(
+                        b.finished_item_name,
+                        b.name
+                    )))
+
+            WHERE {where_sql}
+
+            GROUP BY
+                mo.id,
+                mo.mo_no,
+                mo.tx_date,
+                mo.bom_id,
+                mo.planned_qty,
+                mo.actual_qty,
+                mo.unit,
+                mo.location,
+                mo.batch_no,
+                mo.status,
+                mo.notes,
+
+                b.bom_code,
+                b.name,
+                b.finished_item_name,
+                b.batch_qty,
+                b.batch_unit,
+
+                ii.id,
+                ii.sku,
+                ii.name,
+                ii.unit,
+                ii.sales_price
+
+            ORDER BY
+                mo.tx_date DESC,
+                mo.id DESC
+
+            LIMIT %s
+            OFFSET %s
+            """,
+            params + [limit, offset],
+        ) or []
+
+        result = []
+
+        for row in rows:
+            planned_qty = float(row.get("planned_qty") or 0)
+            actual_qty = float(row.get("actual_qty") or 0)
+
+            planned_material_cost = float(
+                row.get("planned_material_cost") or 0
+            )
+
+            actual_material_cost = float(
+                row.get("actual_material_cost") or 0
+            )
+
+            sales_price = row.get("finished_item_sales_price")
+
+            sales_price = (
+                float(sales_price)
+                if sales_price is not None
+                else None
+            )
+
+            production_value = (
+                actual_qty * sales_price
+                if sales_price is not None
+                else None
+            )
+
+            material_contribution = (
+                production_value - actual_material_cost
+                if production_value is not None
+                else None
+            )
+
+            material_contribution_margin = (
+                (material_contribution / production_value) * 100
+                if production_value
+                else None
+            )
+
+            production_completion = (
+                (actual_qty / planned_qty) * 100
+                if planned_qty
+                else 0
+            )
+
+            material_cost_variance = (
+                actual_material_cost - planned_material_cost
+            )
+
+            result.append({
+                "id": int(row["id"]),
+                "mo_no": row.get("mo_no"),
+                "tx_date": row.get("tx_date"),
+                "bom_id": row.get("bom_id"),
+                "bom_code": row.get("bom_code"),
+                "bom_name": row.get("bom_name"),
+                "finished_item_name": (
+                    row.get("finished_item_name")
+                    or row.get("bom_name")
+                ),
+
+                "finished_item_id": (
+                    int(row["finished_item_id"])
+                    if row.get("finished_item_id") is not None
+                    else None
+                ),
+                "finished_item_sku": row.get("finished_item_sku"),
+                "finished_item_inventory_name":
+                    row.get("finished_item_inventory_name"),
+
+                "planned_qty": planned_qty,
+                "actual_qty": actual_qty,
+                "unit": row.get("unit"),
+                "location": row.get("location"),
+                "batch_no": row.get("batch_no"),
+                "status": row.get("status"),
+                "notes": row.get("notes"),
+
+                "sales_price": sales_price,
+                "production_value": production_value,
+
+                "planned_material_cost": planned_material_cost,
+                "actual_material_cost": actual_material_cost,
+                "material_cost_variance": material_cost_variance,
+
+                "material_qty_variance": float(
+                    row.get("material_qty_variance") or 0
+                ),
+                "excess_material_cost": float(
+                    row.get("excess_material_cost") or 0
+                ),
+
+                "material_contribution": material_contribution,
+                "material_contribution_margin":
+                    material_contribution_margin,
+
+                "production_completion":
+                    min(max(production_completion, 0), 100),
+            })
+
+        return {
+            "items": result,
+            "count": len(result),
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def get_manufacturing_production_performance(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+    ):
+        company_id = int(company_id)
+        manufacturing_order_id = int(manufacturing_order_id)
+
+        schema = self.company_schema(company_id)
+
+        order = self.fetch_one(
+            f"""
+            SELECT
+                mo.id,
+                mo.mo_no,
+                mo.tx_date,
+                mo.bom_id,
+                mo.planned_qty,
+                mo.actual_qty,
+                mo.unit,
+                mo.location,
+                mo.batch_no,
+                mo.status,
+                mo.notes,
+                mo.material_tx_id,
+                mo.output_tx_id,
+
+                b.bom_code,
+                b.name AS bom_name,
+                b.description AS bom_description,
+                b.version_no,
+                b.batch_qty,
+                b.batch_unit,
+                b.finished_item_name,
+
+                ii.id AS finished_item_id,
+                ii.sku AS finished_item_sku,
+                ii.name AS finished_item_inventory_name,
+                ii.unit AS finished_item_inventory_unit,
+                ii.sales_price AS finished_item_sales_price
+
+            FROM {schema}.manufacturing_orders mo
+
+            LEFT JOIN {schema}.manufacturing_boms b
+                ON b.id = mo.bom_id
+                AND b.company_id = mo.company_id
+
+            LEFT JOIN {schema}.inventory_items ii
+                ON ii.company_id = mo.company_id
+                AND LOWER(TRIM(ii.name)) =
+                    LOWER(TRIM(COALESCE(
+                        b.finished_item_name,
+                        b.name
+                    )))
+
+            WHERE mo.company_id = %s
+            AND mo.id = %s
+            """,
+            (company_id, manufacturing_order_id),
+        )
+
+        if not order:
+            raise ValueError(
+                f"MANUFACTURING_ORDER_NOT_FOUND|id={manufacturing_order_id}"
+            )
+
+        planned_qty = float(order.get("planned_qty") or 0)
+        actual_qty = float(order.get("actual_qty") or 0)
+
+        batch_qty = float(order.get("batch_qty") or 0)
+
+        materials = self.fetch_all(
+            f"""
+            SELECT
+                mom.id,
+                mom.line_no,
+                mom.bom_line_id,
+                mom.item_id,
+                mom.planned_qty,
+                mom.actual_qty,
+                mom.unit,
+                mom.unit_cost,
+                mom.total_cost,
+                mom.inventory_tx_id,
+                mom.inventory_tx_line_id,
+                mom.memo,
+
+                bl.quantity AS bom_quantity,
+                bl.unit AS bom_unit,
+                bl.scrap_percent,
+                bl.is_optional,
+
+                ii.sku,
+                ii.name AS item_name,
+                ii.unit AS item_unit,
+                ii.valuation_method
+
+            FROM {schema}.manufacturing_order_materials mom
+
+            LEFT JOIN {schema}.manufacturing_bom_lines bl
+                ON bl.id = mom.bom_line_id
+                AND bl.company_id = mom.company_id
+
+            LEFT JOIN {schema}.inventory_items ii
+                ON ii.id = mom.item_id
+                AND ii.company_id = mom.company_id
+
+            WHERE mom.company_id = %s
+            AND mom.manufacturing_order_id = %s
+
+            ORDER BY
+                mom.line_no,
+                mom.id
+            """,
+            (company_id, manufacturing_order_id),
+        ) or []
+
+        material_rows = []
+
+        planned_material_cost = 0.0
+        actual_material_cost = 0.0
+
+        for material in materials:
+            bom_quantity = float(
+                material.get("bom_quantity") or 0
+            )
+
+            scrap_percent = float(
+                material.get("scrap_percent") or 0
+            )
+
+            actual_material_qty = float(
+                material.get("actual_qty") or 0
+            )
+
+            unit_cost = float(
+                material.get("unit_cost") or 0
+            )
+
+            actual_cost = float(
+                material.get("total_cost") or 0
+            )
+
+            # BOM quantities are defined per BOM batch.
+            # Convert the BOM requirement to this production order.
+            if batch_qty > 0:
+                standard_qty_per_unit = (
+                    bom_quantity * (1 + scrap_percent / 100)
+                ) / batch_qty
+            else:
+                standard_qty_per_unit = (
+                    bom_quantity * (1 + scrap_percent / 100)
+                )
+
+            standard_qty = (
+                standard_qty_per_unit * planned_qty
+            )
+
+            standard_cost = standard_qty * unit_cost
+
+            qty_variance = (
+                actual_material_qty - standard_qty
+            )
+
+            cost_variance = (
+                actual_cost - standard_cost
+            )
+
+            planned_material_cost += standard_cost
+            actual_material_cost += actual_cost
+
+            material_rows.append({
+                "id": int(material["id"]),
+                "line_no": material.get("line_no"),
+                "bom_line_id": material.get("bom_line_id"),
+                "item_id": (
+                    int(material["item_id"])
+                    if material.get("item_id") is not None
+                    else None
+                ),
+
+                "sku": material.get("sku"),
+                "item_name": material.get("item_name"),
+                "unit": (
+                    material.get("unit")
+                    or material.get("item_unit")
+                    or material.get("bom_unit")
+                ),
+
+                "bom_quantity": bom_quantity,
+                "scrap_percent": scrap_percent,
+                "standard_qty_per_unit":
+                    standard_qty_per_unit,
+                "standard_qty": standard_qty,
+
+                "planned_qty": float(
+                    material.get("planned_qty") or 0
+                ),
+                "actual_qty": actual_material_qty,
+
+                "unit_cost": unit_cost,
+                "standard_cost": standard_cost,
+                "actual_cost": actual_cost,
+
+                "quantity_variance": qty_variance,
+                "cost_variance": cost_variance,
+
+                "is_optional": bool(
+                    material.get("is_optional")
+                ),
+
+                "inventory_tx_id": (
+                    int(material["inventory_tx_id"])
+                    if material.get("inventory_tx_id") is not None
+                    else None
+                ),
+                "inventory_tx_line_id": (
+                    int(material["inventory_tx_line_id"])
+                    if material.get("inventory_tx_line_id") is not None
+                    else None
+                ),
+
+                "memo": material.get("memo"),
+            })
+
+        sales_price = order.get("finished_item_sales_price")
+
+        sales_price = (
+            float(sales_price)
+            if sales_price is not None
+            else None
+        )
+
+        production_value = (
+            actual_qty * sales_price
+            if sales_price is not None
+            else None
+        )
+
+        material_contribution = (
+            production_value - actual_material_cost
+            if production_value is not None
+            else None
+        )
+
+        material_contribution_margin = (
+            material_contribution / production_value * 100
+            if production_value
+            else None
+        )
+
+        production_completion = (
+            actual_qty / planned_qty * 100
+            if planned_qty
+            else 0
+        )
+
+        return {
+            "order": {
+                "id": int(order["id"]),
+                "mo_no": order.get("mo_no"),
+                "tx_date": order.get("tx_date"),
+
+                "bom_id": order.get("bom_id"),
+                "bom_code": order.get("bom_code"),
+                "bom_name": order.get("bom_name"),
+                "bom_description": order.get(
+                    "bom_description"
+                ),
+                "bom_version_no": order.get(
+                    "version_no"
+                ),
+
+                "finished_item_name": (
+                    order.get("finished_item_name")
+                    or order.get("bom_name")
+                ),
+
+                "finished_item_id": (
+                    int(order["finished_item_id"])
+                    if order.get("finished_item_id") is not None
+                    else None
+                ),
+                "finished_item_sku":
+                    order.get("finished_item_sku"),
+
+                "planned_qty": planned_qty,
+                "actual_qty": actual_qty,
+                "unit": order.get("unit"),
+
+                "location": order.get("location"),
+                "batch_no": order.get("batch_no"),
+                "status": order.get("status"),
+                "notes": order.get("notes"),
+
+                "material_tx_id": (
+                    int(order["material_tx_id"])
+                    if order.get("material_tx_id") is not None
+                    else None
+                ),
+                "output_tx_id": (
+                    int(order["output_tx_id"])
+                    if order.get("output_tx_id") is not None
+                    else None
+                ),
+
+                "production_completion":
+                    min(max(production_completion, 0), 100),
+            },
+
+            "financial": {
+                "sales_price": sales_price,
+                "production_value": production_value,
+
+                "planned_material_cost":
+                    planned_material_cost,
+
+                "actual_material_cost":
+                    actual_material_cost,
+
+                "material_cost_variance":
+                    actual_material_cost
+                    - planned_material_cost,
+
+                "material_contribution":
+                    material_contribution,
+
+                "material_contribution_margin":
+                    material_contribution_margin,
+            },
+
+            "materials": material_rows,
+
+            "costing": {
+                "labour_cost": None,
+                "manufacturing_overhead": None,
+                "total_production_cost": None,
+                "full_production_margin": None,
+                "full_production_margin_percent": None,
+
+                "labour_available": False,
+                "overhead_available": False,
+            },
+        }
+
     def pos_ensure_packing_queue_item(self, company_id: int, order_id: int) -> int:
         schema = self.company_schema(company_id)
 

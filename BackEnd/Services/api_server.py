@@ -13743,6 +13743,112 @@ def update_manufacturing_order_status(cid: int, order_id: int):
             "error": str(e),
         }), 500
     
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/production-performance",
+    methods=["GET"],
+)
+@require_auth
+def list_manufacturing_production_performance(cid: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        date_from = request.args.get("date_from")
+        date_to = request.args.get("date_to")
+        status = request.args.get("status")
+
+        try:
+            limit = int(
+                request.args.get("limit", 200)
+            )
+        except Exception:
+            limit = 200
+
+        try:
+            offset = int(
+                request.args.get("offset", 0)
+            )
+        except Exception:
+            offset = 0
+
+        result = (
+            db_service
+            .list_manufacturing_production_performance(
+                company_id=company_id,
+                date_from=date_from,
+                date_to=date_to,
+                status=status,
+                limit=limit,
+                offset=offset,
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "list_manufacturing_production_performance failed"
+        )
+
+        return jsonify({
+            "error": str(e),
+        }), 500
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/"
+    "production-performance/<int:order_id>",
+    methods=["GET"],
+)
+@require_auth
+def get_manufacturing_production_performance(
+    cid: int,
+    order_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        result = (
+            db_service
+            .get_manufacturing_production_performance(
+                company_id=company_id,
+                manufacturing_order_id=int(order_id),
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 404
+
+    except Exception as e:
+        current_app.logger.exception(
+            "get_manufacturing_production_performance failed"
+        )
+
+        return jsonify({
+            "error": str(e),
+        }), 500
+    
 @app.route("/api/companies/<int:cid>/services/items", methods=["POST"])
 @require_auth
 def create_service_item(cid: int):
