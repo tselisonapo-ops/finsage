@@ -13280,6 +13280,7 @@ def manufacturing_boms(cid: int):
         bom_id = db_service.create_manufacturing_bom(
             company_id=company_id,
             finished_item_name=payload.get("finished_item_name"),
+            selling_price=payload.get("selling_price"),
             bom_code=payload.get("bom_code"),
             name=payload.get("name"),
             batch_qty=payload.get("batch_qty", 1),
@@ -13322,7 +13323,7 @@ def manufacturing_boms(cid: int):
 
 @app.route(
     "/api/companies/<int:cid>/manufacturing/boms/<int:bom_id>",
-    methods=["GET"]
+    methods=["GET", "PATCH"]
 )
 @require_auth
 def get_manufacturing_bom(cid: int, bom_id: int):
@@ -13333,15 +13334,52 @@ def get_manufacturing_bom(cid: int, bom_id: int):
         return err
 
     try:
-        bom = db_service.get_manufacturing_bom(
+        bom_id = int(bom_id)
+
+        if request.method == "GET":
+            bom = db_service.get_manufacturing_bom(
+                company_id=company_id,
+                bom_id=bom_id,
+            )
+
+            if not bom:
+                return jsonify({
+                    "error": "Manufacturing BOM not found",
+                }), 404
+
+            return jsonify({
+                "ok": True,
+                "bom": bom,
+            }), 200
+
+        payload = request.get_json(silent=True) or {}
+
+        updated = db_service.update_manufacturing_bom(
             company_id=company_id,
-            bom_id=int(bom_id),
+            bom_id=bom_id,
+            finished_item_name=payload.get("finished_item_name"),
+            selling_price=payload.get("selling_price"),
+            bom_code=payload.get("bom_code"),
+            name=payload.get("name"),
+            batch_qty=payload.get("batch_qty"),
+            batch_unit=payload.get("batch_unit"),
+            description=payload.get("description"),
+            version_no=payload.get("version_no"),
+            effective_from=payload.get("effective_from"),
+            effective_to=payload.get("effective_to"),
+            is_default=payload.get("is_default"),
+            updated_by_user_id=int(user.get("id") or 0) or None,
         )
 
-        if not bom:
+        if not updated:
             return jsonify({
                 "error": "Manufacturing BOM not found",
             }), 404
+
+        bom = db_service.get_manufacturing_bom(
+            company_id=company_id,
+            bom_id=bom_id,
+        )
 
         return jsonify({
             "ok": True,
@@ -13360,7 +13398,6 @@ def get_manufacturing_bom(cid: int, bom_id: int):
         return jsonify({
             "error": str(e),
         }), 400
-
 
 # ================================================================
 # MANUFACTURING — BOM LINE ADD

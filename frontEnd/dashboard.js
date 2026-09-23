@@ -125658,14 +125658,26 @@ function openManufacturingBomDefinitionModal(bomId = 0) {
                 placeholder="e.g. Standard Product BOM">
             </label>
 
-            <label class="text-xs md:col-span-2">
-              <div class="text-slate-600 mb-1">Finished Item</div>
+            <label class="text-xs md:col-span-2"> 
+              <div class="text-slate-600 mb-1">Finished Item</div> 
 
-              <input
-                id="mfgBomDefinitionFinishedItem"
-                type="text"
-                class="w-full border rounded px-2 py-2 text-sm"
-                placeholder="e.g. Office Desk">
+              <input 
+                id="mfgBomDefinitionFinishedItem" 
+                type="text" 
+                class="w-full border rounded px-2 py-2 text-sm" 
+                placeholder="e.g. Office Desk"> 
+            </label> 
+
+            <label class="text-xs"> 
+              <div class="text-slate-600 mb-1">Selling Price</div> 
+
+              <input 
+                id="mfgBomDefinitionSellingPrice" 
+                type="number" 
+                min="0" 
+                step="0.01" 
+                class="w-full border rounded px-2 py-2 text-sm" 
+                placeholder="0.00"> 
             </label>
 
             <label class="text-xs">
@@ -125798,6 +125810,7 @@ function openManufacturingBomDefinitionModal(bomId = 0) {
   document.getElementById("mfgBomDefinitionBatchUnit").value = "";
   document.getElementById("mfgBomDefinitionDescription").value = "";
   document.getElementById("mfgBomDefinitionFinishedItem").value = "";
+  document.getElementById("mfgBomDefinitionSellingPrice").value = "";
 
   const tbody =
     document.getElementById("mfgBomDefinitionLinesTbody");
@@ -125934,11 +125947,18 @@ async function saveManufacturingBomDefinition() {
         "mfgBomDefinitionName"
       )?.value.trim(),
 
-    finished_item_name:
-      document.getElementById(
-        "mfgBomDefinitionFinishedItem"
-      )?.value.trim(),
+    finished_item_name: 
+      document.getElementById( 
+        "mfgBomDefinitionFinishedItem" 
+      )?.value.trim(), 
 
+    selling_price: 
+      Number( 
+        document.getElementById( 
+          "mfgBomDefinitionSellingPrice" 
+        )?.value || 0 
+      ), 
+    
     batch_qty:
       Number(
         document.getElementById(
@@ -125993,6 +126013,14 @@ async function saveManufacturingBomDefinition() {
       "error"
     );
     return;
+  }
+
+  if (!(payload.selling_price >= 0)) { 
+    showManufacturingBomDefinitionMsg( 
+      "Selling price cannot be negative.", 
+      "error" 
+    ); 
+    return; 
   }
 
   if (!(payload.batch_qty > 0)) {
@@ -128250,6 +128278,7 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
     style.textContent = `
       #screen-production-performance {
         padding: 20px;
+        background: #fff;
       }
 
       #screen-production-performance .pp-header {

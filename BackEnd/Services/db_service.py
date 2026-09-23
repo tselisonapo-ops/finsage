@@ -52899,6 +52899,9 @@ class DatabaseService:
         ALTER TABLE {schema}.manufacturing_boms
         ADD COLUMN IF NOT EXISTS finished_item_name TEXT;
 
+        ALTER TABLE {schema}.manufacturing_boms
+        ADD COLUMN IF NOT EXISTS selling_price NUMERIC(18,2);
+
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_boms_company_item_idx
         ON {schema}.manufacturing_boms(company_id, item_id);
 
@@ -84815,6 +84818,7 @@ class DatabaseService:
         company_id: int,
         *,
         finished_item_name: str,
+        selling_price=None,
         bom_code: str,
         name: str,
         batch_qty=1,
@@ -84832,6 +84836,11 @@ class DatabaseService:
         finished_item_name = str(finished_item_name or "").strip()
         bom_code = str(bom_code or "").strip()
         name = str(name or "").strip()
+
+        selling_price = Decimal(str(selling_price or 0))
+
+        if selling_price < 0:
+            raise ValueError("Selling price cannot be negative")
 
         if not bom_code:
             raise ValueError("BOM code is required")
@@ -84851,6 +84860,7 @@ class DatabaseService:
             INSERT INTO {schema}.manufacturing_boms (
                 company_id,
                 finished_item_name,
+                selling_price,
                 bom_code,
                 name,
                 description,
@@ -84866,8 +84876,8 @@ class DatabaseService:
                 updated_by_user_id
             )
             VALUES (
-                %s, %s, %s, %s, %s,
-                %s, %s, %s, 'draft',
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, 'draft',
                 %s, %s, %s, TRUE,
                 %s, %s
             )
@@ -84877,6 +84887,7 @@ class DatabaseService:
         params = (
             company_id,
             finished_item_name,
+            selling_price,
             bom_code,
             name,
             description,
@@ -85183,6 +85194,119 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
+
+    def update_manufacturing_bom(
+        self,
+        company_id: int,
+        bom_id: int,
+        *,
+        finished_item_name=None,
+        selling_price=None,
+        bom_code=None,
+        name=None,
+        batch_qty=None,
+        batch_unit=None,
+        description=None,
+        version_no=None,
+        effective_from=None,
+        effective_to=None,
+        is_default=None,
+        updated_by_user_id=None,
+        cur=None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        finished_item_name = str(
+            finished_item_name or ""
+        ).strip()
+
+        bom_code = str(
+            bom_code or ""
+        ).strip()
+
+        name = str(
+            name or ""
+        ).strip()
+
+        if not finished_item_name:
+            raise ValueError(
+                "Finished item is required"
+            )
+
+        if not bom_code:
+            raise ValueError(
+                "BOM code is required"
+            )
+
+        if not name:
+            raise ValueError(
+                "BOM name is required"
+            )
+
+        batch_qty = Decimal(
+            str(batch_qty or 0)
+        )
+
+        if batch_qty <= 0:
+            raise ValueError(
+                "BOM batch quantity must be greater than zero"
+            )
+
+        selling_price = Decimal(
+            str(selling_price or 0)
+        )
+
+        if selling_price < 0:
+            raise ValueError(
+                "Selling price cannot be negative"
+            )
+
+        def _update(c):
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_boms
+                SET
+                    finished_item_name = %s,
+                    selling_price = %s,
+                    bom_code = %s,
+                    name = %s,
+                    batch_qty = %s,
+                    batch_unit = %s,
+                    description = %s,
+                    version_no = %s,
+                    effective_from = %s,
+                    effective_to = %s,
+                    is_default = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    finished_item_name,
+                    selling_price,
+                    bom_code,
+                    name,
+                    batch_qty,
+                    batch_unit,
+                    description,
+                    int(version_no or 1),
+                    effective_from,
+                    effective_to,
+                    bool(is_default),
+                    updated_by_user_id,
+                    company_id,
+                    int(bom_id),
+                ),
+            )
+
+            return c.rowcount > 0
+
+        if cur is not None:
+            return _update(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _update(cur2)
 
     def generate_manufacturing_order_number(
         self,
@@ -87852,7 +87976,7 @@ class DatabaseService:
                 ii.sku,
                 ii.name,
                 ii.unit,
-                ii.sales_price
+                b.selling_price
 
             ORDER BY
                 mo.tx_date DESC,
@@ -87878,7 +88002,7 @@ class DatabaseService:
                 row.get("actual_material_cost") or 0
             )
 
-            sales_price = row.get("finished_item_sales_price")
+            sales_price = row.get("bom_selling_price")
 
             sales_price = (
                 float(sales_price)
@@ -88010,8 +88134,9 @@ class DatabaseService:
                 ii.id AS finished_item_id,
                 ii.sku AS finished_item_sku,
                 ii.name AS finished_item_inventory_name,
-                ii.unit AS finished_item_inventory_unit,
-                ii.sales_price AS finished_item_sales_price
+                ii.unit AS finished_item_unit,
+                b.selling_price AS bom_selling_price,
+                b.selling_price AS bom_selling_price
 
             FROM {schema}.manufacturing_orders mo
 
@@ -88197,7 +88322,7 @@ class DatabaseService:
                 "memo": material.get("memo"),
             })
 
-        sales_price = order.get("finished_item_sales_price")
+        sales_price = order.get("bom_selling_price")
 
         sales_price = (
             float(sales_price)
