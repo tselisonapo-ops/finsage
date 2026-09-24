@@ -53010,6 +53010,16 @@ class DatabaseService:
             )
         );
 
+        ALTER TABLE {schema}.manufacturing_orders
+        ADD COLUMN IF NOT EXISTS production_tracking_method VARCHAR(20)
+            NOT NULL DEFAULT 'batch';
+
+        ALTER TABLE {schema}.manufacturing_orders
+        ADD COLUMN IF NOT EXISTS planned_start_date DATE;
+
+        ALTER TABLE {schema}.manufacturing_orders
+        ADD COLUMN IF NOT EXISTS planned_finish_date DATE;
+
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_orders_company_date_idx
         ON {schema}.manufacturing_orders(company_id, tx_date);
 
@@ -53167,6 +53177,27 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_overhead_company_mo_idx
         ON {schema}.manufacturing_order_overhead(company_id, manufacturing_order_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_progress (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            manufacturing_order_id BIGINT NOT NULL,
+            tx_date DATE NOT NULL,
+            quantity NUMERIC(18,4) NOT NULL,
+            notes TEXT,
+            created_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT manufacturing_order_progress_qty_chk
+                CHECK (quantity > 0)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mfg_order_progress_order
+            ON {schema}.manufacturing_order_progress (
+                manufacturing_order_id,
+                tx_date,
+                id
+            );
 
         -- ============================================================
         -- INVENTORY WRITE-DOWN REASONS TABLE & AUDIT HOOKS
@@ -85595,6 +85626,9 @@ class DatabaseService:
         bom_id: int,
         planned_qty,
         tx_date=None,
+        planned_start_date=None,
+        planned_finish_date=None,
+        production_tracking_method="batch",
         unit=None,
         location=None,
         batch_no=None,
@@ -85612,6 +85646,38 @@ class DatabaseService:
         if planned_qty <= 0:
             raise ValueError(
                 "Planned production quantity must be greater than zero"
+            )
+
+        production_tracking_method = str(
+            production_tracking_method or "batch"
+        ).strip().lower()
+
+        if production_tracking_method not in (
+            "batch",
+            "progressive",
+        ):
+            raise ValueError(
+                "Invalid production tracking method"
+            )
+
+        planned_start_date = (
+            planned_start_date
+            or tx_date
+        )
+
+        if not planned_start_date:
+            raise ValueError(
+                "Planned production start date is required"
+            )
+
+        planned_finish_date = (
+            planned_finish_date
+            or planned_start_date
+        )
+
+        if planned_finish_date < planned_start_date:
+            raise ValueError(
+                "Planned finish date cannot be before planned start date"
             )
 
         def _create(c):
@@ -85678,6 +85744,9 @@ class DatabaseService:
                     mo_no,
                     bom_id,
                     tx_date,
+                    planned_start_date,
+                    planned_finish_date,
+                    production_tracking_method,
                     planned_qty,
                     actual_qty,
                     unit,
@@ -85689,8 +85758,8 @@ class DatabaseService:
                     updated_by_user_id
                 )
                 VALUES (
-                    %s, %s, %s, %s, %s,
-                    0, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s, 0, %s, %s, %s,
                     'draft', %s, %s, %s
                 )
                 RETURNING id
@@ -85699,7 +85768,10 @@ class DatabaseService:
                     company_id,
                     mo_no,
                     int(bom_id),
-                    tx_date,
+                    tx_date or planned_start_date,
+                    planned_start_date,
+                    planned_finish_date,
+                    production_tracking_method,
                     planned_qty,
                     production_unit,
                     location,
@@ -85846,6 +85918,10 @@ class DatabaseService:
                     b.finished_item_name,
 
                     mo.tx_date,
+                    mo.planned_start_date,
+                    mo.planned_finish_date,
+                    mo.production_tracking_method,
+
                     mo.planned_qty,
                     mo.actual_qty,
                     mo.unit,
@@ -85862,9 +85938,9 @@ class DatabaseService:
                 FROM {schema}.manufacturing_orders mo
                 JOIN {schema}.manufacturing_boms b
                     ON b.id = mo.bom_id
-                   AND b.company_id = mo.company_id
+                AND b.company_id = mo.company_id
                 WHERE mo.company_id = %s
-                  AND mo.id = %s
+                AND mo.id = %s
                 """,
                 (
                     company_id,
@@ -85910,7 +85986,7 @@ class DatabaseService:
                 JOIN {schema}.inventory_items i
                     ON i.id = m.item_id
                 WHERE m.company_id = %s
-                  AND m.manufacturing_order_id = %s
+                AND m.manufacturing_order_id = %s
                 ORDER BY m.line_no, m.id
                 """,
                 (
@@ -85941,6 +86017,48 @@ class DatabaseService:
                 )
             )
 
+            order["production_progress"] = (
+                self.list_manufacturing_production_progress(
+                    company_id=company_id,
+                    manufacturing_order_id=int(manufacturing_order_id),
+                    cur=c,
+                )
+            )
+
+            planned_qty = Decimal(
+                str(order.get("planned_qty") or 0)
+            )
+
+            actual_qty = Decimal(
+                str(order.get("actual_qty") or 0)
+            )
+
+            remaining_qty = (
+                planned_qty - actual_qty
+            )
+
+            if remaining_qty < 0:
+                remaining_qty = Decimal("0")
+
+            progress_percent = Decimal("0")
+
+            if planned_qty > 0:
+                progress_percent = (
+                    actual_qty
+                    / planned_qty
+                    * Decimal("100")
+                )
+
+            if progress_percent > Decimal("100"):
+                progress_percent = Decimal("100")
+
+            order["production_progress_summary"] = {
+                "planned_qty": planned_qty,
+                "actual_qty": actual_qty,
+                "remaining_qty": remaining_qty,
+                "progress_percent": progress_percent,
+            }
+
             return order
 
         if cur is not None:
@@ -85967,7 +86085,9 @@ class DatabaseService:
 
             if status:
                 where.append("mo.status = %s")
-                params.append(str(status).strip())
+                params.append(
+                    str(status).strip()
+                )
 
             if bom_id is not None:
                 where.append("mo.bom_id = %s")
@@ -85994,6 +86114,10 @@ class DatabaseService:
                     b.finished_item_name,
 
                     mo.tx_date,
+                    mo.planned_start_date,
+                    mo.planned_finish_date,
+                    mo.production_tracking_method,
+
                     mo.planned_qty,
                     mo.actual_qty,
                     mo.unit,
@@ -86007,9 +86131,14 @@ class DatabaseService:
                 FROM {schema}.manufacturing_orders mo
                 JOIN {schema}.manufacturing_boms b
                     ON b.id = mo.bom_id
-                   AND b.company_id = mo.company_id
+                AND b.company_id = mo.company_id
                 WHERE {' AND '.join(where)}
-                ORDER BY mo.tx_date DESC, mo.id DESC
+                ORDER BY
+                    COALESCE(
+                        mo.planned_start_date,
+                        mo.tx_date
+                    ) DESC,
+                    mo.id DESC
                 """,
                 tuple(params),
             )
@@ -86019,7 +86148,10 @@ class DatabaseService:
             if not rows:
                 return []
 
-            columns = [d[0] for d in c.description]
+            columns = [
+                d[0]
+                for d in c.description
+            ]
 
             if isinstance(rows[0], dict):
                 return [
@@ -86038,6 +86170,297 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
         
+    def record_manufacturing_production_progress(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        quantity,
+        tx_date=None,
+        notes=None,
+        created_by_user_id=None,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        quantity = Decimal(str(quantity or 0))
+
+        if quantity <= 0:
+            raise ValueError(
+                "Production quantity must be greater than zero"
+            )
+
+        def _record(c):
+            # ---------------------------------------------------------
+            # Lock the production order so two users cannot post
+            # production against the same remaining quantity at once.
+            # ---------------------------------------------------------
+            c.execute(
+                f"""
+                SELECT
+                    id,
+                    mo_no,
+                    planned_qty,
+                    actual_qty,
+                    status,
+                    production_tracking_method,
+                    planned_start_date,
+                    planned_finish_date
+                FROM {schema}.manufacturing_orders
+                WHERE company_id = %s
+                AND id = %s
+                FOR UPDATE
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            row = c.fetchone()
+
+            if not row:
+                raise ValueError(
+                    "Manufacturing order not found"
+                )
+
+            columns = [d[0] for d in c.description]
+
+            if isinstance(row, dict):
+                order = dict(row)
+            else:
+                order = dict(zip(columns, row))
+
+            status = str(
+                order.get("status") or ""
+            ).strip().lower()
+
+            if status == "cancelled":
+                raise ValueError(
+                    "Cannot record production against a cancelled manufacturing order"
+                )
+
+            if status == "completed":
+                raise ValueError(
+                    "Cannot record production against a completed manufacturing order"
+                )
+
+            planned_qty = Decimal(
+                str(order.get("planned_qty") or 0)
+            )
+
+            current_actual_qty = Decimal(
+                str(order.get("actual_qty") or 0)
+            )
+
+            if planned_qty <= 0:
+                raise ValueError(
+                    "Manufacturing order has an invalid planned quantity"
+                )
+
+            new_actual_qty = (
+                current_actual_qty + quantity
+            )
+
+            if new_actual_qty > planned_qty:
+                raise ValueError(
+                    "Production quantity exceeds the remaining planned quantity. "
+                    f"Remaining quantity is "
+                    f"{planned_qty - current_actual_qty}"
+                )
+
+            progress_date = (
+                tx_date
+                or order.get("planned_start_date")
+                or order.get("tx_date")
+            )
+
+            if not progress_date:
+                raise ValueError(
+                    "Production date is required"
+                )
+
+            # ---------------------------------------------------------
+            # Record the individual production event.
+            # ---------------------------------------------------------
+            c.execute(
+                f"""
+                INSERT INTO {schema}.manufacturing_order_progress (
+                    company_id,
+                    manufacturing_order_id,
+                    tx_date,
+                    quantity,
+                    notes,
+                    created_by_user_id
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s
+                )
+                RETURNING
+                    id,
+                    tx_date,
+                    quantity,
+                    notes,
+                    created_by_user_id,
+                    created_at
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                    progress_date,
+                    quantity,
+                    notes,
+                    created_by_user_id,
+                ),
+            )
+
+            progress_row = c.fetchone()
+
+            progress_columns = [
+                d[0]
+                for d in c.description
+            ]
+
+            if isinstance(progress_row, dict):
+                progress = dict(progress_row)
+            else:
+                progress = dict(
+                    zip(
+                        progress_columns,
+                        progress_row,
+                    )
+                )
+
+            # ---------------------------------------------------------
+            # Maintain the cumulative actual production quantity on
+            # the manufacturing order.
+            # ---------------------------------------------------------
+            new_status = status
+
+            if status == "draft":
+                new_status = "in_progress"
+
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_orders
+                SET
+                    actual_qty = %s,
+                    status = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    new_actual_qty,
+                    new_status,
+                    created_by_user_id,
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            remaining_qty = (
+                planned_qty - new_actual_qty
+            )
+
+            if remaining_qty < 0:
+                remaining_qty = Decimal("0")
+
+            progress_percent = (
+                new_actual_qty
+                / planned_qty
+                * Decimal("100")
+            )
+
+            if progress_percent > Decimal("100"):
+                progress_percent = Decimal("100")
+
+            progress["manufacturing_order_id"] = (
+                int(manufacturing_order_id)
+            )
+
+            progress["planned_qty"] = planned_qty
+            progress["previous_actual_qty"] = (
+                current_actual_qty
+            )
+            progress["actual_qty"] = new_actual_qty
+            progress["remaining_qty"] = remaining_qty
+            progress["progress_percent"] = progress_percent
+            progress["status"] = new_status
+            progress["production_tracking_method"] = (
+                order.get("production_tracking_method")
+                or "batch"
+            )
+
+            return progress
+
+        if cur is not None:
+            return _record(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _record(cur2)
+
+    def list_manufacturing_production_progress(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        cur=None,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        def _fetch(c):
+            c.execute(
+                f"""
+                SELECT
+                    p.id,
+                    p.company_id,
+                    p.manufacturing_order_id,
+                    p.tx_date,
+                    p.quantity,
+                    p.notes,
+                    p.created_by_user_id,
+                    p.created_at
+                FROM {schema}.manufacturing_order_progress p
+                WHERE p.company_id = %s
+                AND p.manufacturing_order_id = %s
+                ORDER BY
+                    p.tx_date ASC,
+                    p.id ASC
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            rows = c.fetchall()
+
+            if not rows:
+                return []
+
+            columns = [
+                d[0]
+                for d in c.description
+            ]
+
+            if isinstance(rows[0], dict):
+                return [
+                    dict(row)
+                    for row in rows
+                ]
+
+            return [
+                dict(zip(columns, row))
+                for row in rows
+            ]
+
+        if cur is not None:
+            return _fetch(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _fetch(cur2)
+      
     def record_manufacturing_material_usage(
         self,
         company_id: int,

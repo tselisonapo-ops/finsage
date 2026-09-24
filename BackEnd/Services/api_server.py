@@ -13509,11 +13509,28 @@ def manufacturing_orders(cid: int):
             company_id=company_id,
             bom_id=int(bom_id),
             planned_qty=planned_qty,
+
+            # Retained for compatibility with the existing
+            # manufacturing order model.
             tx_date=payload.get("tx_date"),
+
+            planned_start_date=payload.get(
+                "planned_start_date"
+            ),
+
+            planned_finish_date=payload.get(
+                "planned_finish_date"
+            ),
+
+            production_tracking_method=payload.get(
+                "production_tracking_method"
+            ) or "batch",
+
             unit=payload.get("unit"),
             location=payload.get("location"),
             batch_no=payload.get("batch_no"),
             notes=payload.get("notes"),
+
             created_by_user_id=int(
                 user.get("id") or 0
             ) or None,
@@ -13542,7 +13559,79 @@ def manufacturing_orders(cid: int):
             "error": str(e),
         }), 500
 
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/production-progress",
+    methods=["GET", "POST"]
+)
+@require_auth
+def manufacturing_order_production_progress(
+    cid: int,
+    order_id: int,
+):
+    company_id = int(cid)
 
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        if request.method == "GET":
+            progress = (
+                db_service.list_manufacturing_production_progress(
+                    company_id=company_id,
+                    manufacturing_order_id=int(order_id),
+                )
+            )
+
+            return jsonify({
+                "ok": True,
+                "progress": progress or [],
+            }), 200
+
+        payload = (
+            request.get_json(silent=True)
+            or {}
+        )
+
+        quantity = payload.get("quantity")
+
+        if quantity in (None, "", 0):
+            raise ValueError(
+                "Production quantity is required"
+            )
+
+        progress = (
+            db_service.record_manufacturing_production_progress(
+                company_id=company_id,
+                manufacturing_order_id=int(order_id),
+                quantity=quantity,
+                tx_date=payload.get("tx_date"),
+                notes=payload.get("notes"),
+                created_by_user_id=int(
+                    user.get("id") or 0
+                ) or None,
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "progress": progress,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e)
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "manufacturing_order_production_progress failed"
+        )
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+    
 # ================================================================
 # MANUFACTURING — ORDER GET / UPDATE
 # ================================================================
