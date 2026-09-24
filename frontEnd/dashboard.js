@@ -128030,11 +128030,11 @@ async function openManufacturingOrderDetail(orderId) {
     0
   );
 
-  const materialCost = Number(
-    order?.material_cost || 0
-  );
+  const materialCost =
+    Number(order?.material_cost || 0);
 
-  const modal = document.createElement("div");
+  const modal =
+    document.createElement("div");
 
   modal.className =
     "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
@@ -128047,6 +128047,7 @@ async function openManufacturingOrderDetail(orderId) {
           <div class="text-lg font-semibold">
             ${esc(order?.mo_no || `MO-${orderId}`)}
           </div>
+
           <div class="text-sm text-slate-600">
             Production of ${esc(finishedItem)}
           </div>
@@ -128062,24 +128063,35 @@ async function openManufacturingOrderDetail(orderId) {
 
       <div class="p-5">
 
+        <!-- PRODUCTION HEADER -->
+
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
 
           <div>
-            <div class="text-slate-500">Finished Item</div>
+            <div class="text-slate-500">
+              Finished Item
+            </div>
+
             <div class="font-semibold">
               ${esc(finishedItem)}
             </div>
           </div>
 
           <div>
-            <div class="text-slate-500">Production Date</div>
+            <div class="text-slate-500">
+              Production Date
+            </div>
+
             <div class="font-semibold">
               ${esc(order?.tx_date || "—")}
             </div>
           </div>
 
           <div>
-            <div class="text-slate-500">Planned Output</div>
+            <div class="text-slate-500">
+              Planned Output
+            </div>
+
             <div class="font-semibold">
               ${esc(order?.planned_qty ?? 0)}
               ${esc(outputUnit)}
@@ -128087,7 +128099,10 @@ async function openManufacturingOrderDetail(orderId) {
           </div>
 
           <div>
-            <div class="text-slate-500">Actual Output</div>
+            <div class="text-slate-500">
+              Actual Output
+            </div>
+
             <div class="font-semibold">
               ${esc(order?.actual_qty ?? 0)}
               ${esc(outputUnit)}
@@ -128100,7 +128115,9 @@ async function openManufacturingOrderDetail(orderId) {
 
           <div class="text-xs px-2 py-1 rounded bg-slate-100">
             Status:
-            <strong>${esc(order?.status || "—")}</strong>
+            <strong>
+              ${esc(order?.status || "—")}
+            </strong>
           </div>
 
           ${
@@ -128117,7 +128134,8 @@ async function openManufacturingOrderDetail(orderId) {
           }
 
           ${
-            status !== "completed" && status !== "cancelled"
+            status !== "completed" &&
+            status !== "cancelled"
               ? `
                 <button
                   type="button"
@@ -128139,18 +128157,25 @@ async function openManufacturingOrderDetail(orderId) {
         </div>
 
         <div class="mt-6">
+
           <div class="font-semibold text-base">
             Production Batch
           </div>
 
           <div class="mt-1 text-sm text-slate-600">
             This batch is for producing
-            <strong>${esc(order?.planned_qty ?? 0)} ${esc(outputUnit)}</strong>
+            <strong>
+              ${esc(order?.planned_qty ?? 0)}
+              ${esc(outputUnit)}
+            </strong>
             of
-            <strong>${esc(finishedItem)}</strong>.
+            <strong>
+              ${esc(finishedItem)}
+            </strong>.
             The material quantities below come from the selected BOM.
             Actual quantities are recorded when the raw materials are consumed.
           </div>
+
         </div>
 
         <!-- MATERIALS -->
@@ -128158,10 +128183,12 @@ async function openManufacturingOrderDetail(orderId) {
         <div class="mt-6 border rounded">
 
           <div class="px-4 py-3 border-b flex items-center justify-between">
+
             <div>
               <div class="font-semibold">
                 Materials / Material Usage
               </div>
+
               <div class="text-xs text-slate-500">
                 Planned quantities come from the BOM.
                 Actual quantities show what was consumed.
@@ -128180,26 +128207,50 @@ async function openManufacturingOrderDetail(orderId) {
                 `
                 : ""
             }
+
           </div>
 
           <div class="overflow-x-auto">
+
             <table class="w-full text-sm">
+
               <thead class="bg-slate-50">
+
                 <tr>
-                  <th class="px-3 py-2 text-left">Material</th>
-                  <th class="px-3 py-2 text-right">Planned Qty</th>
-                  <th class="px-3 py-2 text-right">Actual Qty</th>
-                  <th class="px-3 py-2 text-left">Unit</th>
-                  <th class="px-3 py-2 text-right">Unit Cost</th>
-                  <th class="px-3 py-2 text-right">Total Cost</th>
+                  <th class="px-3 py-2 text-left">
+                    Material
+                  </th>
+
+                  <th class="px-3 py-2 text-right">
+                    Planned Qty
+                  </th>
+
+                  <th class="px-3 py-2 text-right">
+                    Actual Qty
+                  </th>
+
+                  <th class="px-3 py-2 text-left">
+                    Unit
+                  </th>
+
+                  <th class="px-3 py-2 text-right">
+                    Unit Cost
+                  </th>
+
+                  <th class="px-3 py-2 text-right">
+                    Total Cost
+                  </th>
                 </tr>
+
               </thead>
 
               <tbody>
+
                 ${
                   materials.length
                     ? materials.map(line => `
                         <tr class="border-b">
+
                           <td class="px-3 py-2">
                             ${esc(
                               line.item_name ||
@@ -128228,6 +128279,7 @@ async function openManufacturingOrderDetail(orderId) {
                           <td class="px-3 py-2 text-right">
                             ${fmtMoney(line.total_cost || 0)}
                           </td>
+
                         </tr>
                       `).join("")
                     : `
@@ -128240,9 +128292,13 @@ async function openManufacturingOrderDetail(orderId) {
                         </tr>
                       `
                 }
+
               </tbody>
+
             </table>
+
           </div>
+
         </div>
 
         <!-- DIRECT LABOUR -->
@@ -128250,10 +128306,12 @@ async function openManufacturingOrderDetail(orderId) {
         <div class="border rounded mt-5">
 
           <div class="px-4 py-3 border-b flex items-center justify-between">
+
             <div>
               <div class="font-semibold">
                 Direct Labour
               </div>
+
               <div class="text-xs text-slate-500">
                 Labour directly attributable to this production batch.
               </div>
@@ -128265,39 +128323,145 @@ async function openManufacturingOrderDetail(orderId) {
               class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
               Add Labour
             </button>
+
+          </div>
+
+          <!-- INLINE LABOUR FORM -->
+
+          <div
+            data-labour-form
+            class="hidden px-4 py-3 border-b bg-slate-50">
+
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">
+                  Employee / Worker
+                </div>
+
+                <input
+                  type="text"
+                  data-labour-worker
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="Worker name">
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">
+                  Role
+                </div>
+
+                <input
+                  type="text"
+                  data-labour-role
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="Role">
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">
+                  Hours
+                </div>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-labour-hours
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="0.00">
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">
+                  Rate
+                </div>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-labour-rate
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="0.00">
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">
+                  Labour Cost
+                </div>
+
+                <input
+                  type="text"
+                  data-labour-cost
+                  readonly
+                  class="w-full border rounded px-2 py-2 text-sm bg-white"
+                  value="LSL 0.00">
+              </label>
+
+            </div>
+
+            <div class="mt-3 flex justify-end gap-2">
+
+              <button
+                type="button"
+                data-cancel-labour
+                class="px-3 py-1.5 text-sm rounded border hover:bg-white">
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                data-save-labour
+                class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+                Save Labour
+              </button>
+
+            </div>
+
           </div>
 
           <div class="overflow-x-auto">
+
             <table class="w-full text-sm">
 
               <thead class="bg-slate-50">
+
                 <tr>
                   <th class="px-3 py-2 text-left">
                     Employee / Worker
                   </th>
+
                   <th class="px-3 py-2 text-left">
                     Role
                   </th>
+
                   <th class="px-3 py-2 text-right">
                     Hours
                   </th>
+
                   <th class="px-3 py-2 text-right">
                     Rate
                   </th>
+
                   <th class="px-3 py-2 text-right">
                     Labour Cost
                   </th>
+
                   <th class="px-3 py-2 text-right">
                     Action
                   </th>
                 </tr>
+
               </thead>
 
               <tbody data-labour-lines>
+
                 ${
                   labourLines.length
                     ? labourLines.map(line => `
                         <tr class="border-b">
+
                           <td class="px-3 py-2">
                             ${esc(
                               line.worker_name ||
@@ -128311,31 +128475,40 @@ async function openManufacturingOrderDetail(orderId) {
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.hours != null
-                              ? esc(line.hours)
-                              : "—"}
+                            ${
+                              line.hours != null
+                                ? esc(line.hours)
+                                : "—"
+                            }
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.rate != null
-                              ? fmtMoney(line.rate)
-                              : "—"}
+                            ${
+                              line.rate != null
+                                ? fmtMoney(line.rate)
+                                : "—"
+                            }
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.labour_cost != null
-                              ? fmtMoney(line.labour_cost)
-                              : "—"}
+                            ${
+                              line.labour_cost != null
+                                ? fmtMoney(line.labour_cost)
+                                : "—"
+                            }
                           </td>
 
                           <td class="px-3 py-2 text-right">
+
                             <button
                               type="button"
                               class="text-xs text-red-600 hover:underline"
                               data-delete-labour="${Number(line.id)}">
                               Delete
                             </button>
+
                           </td>
+
                         </tr>
                       `).join("")
                     : `
@@ -128348,10 +128521,13 @@ async function openManufacturingOrderDetail(orderId) {
                         </tr>
                       `
                 }
+
               </tbody>
 
             </table>
+
           </div>
+
         </div>
 
         <!-- OTHER DIRECT COSTS -->
@@ -128359,10 +128535,12 @@ async function openManufacturingOrderDetail(orderId) {
         <div class="border rounded mt-5">
 
           <div class="px-4 py-3 border-b flex items-center justify-between">
+
             <div>
               <div class="font-semibold">
                 Other Direct Costs
               </div>
+
               <div class="text-xs text-slate-500">
                 Other costs directly attributable to this production batch.
               </div>
@@ -128374,33 +128552,113 @@ async function openManufacturingOrderDetail(orderId) {
               class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
               Add Direct Cost
             </button>
+
+          </div>
+
+          <!-- INLINE DIRECT COST FORM -->
+
+          <div
+            data-direct-cost-form
+            class="hidden px-4 py-3 border-b bg-slate-50">
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+
+              <label class="text-xs md:col-span-2">
+
+                <div class="text-slate-600 mb-1">
+                  Description
+                </div>
+
+                <input
+                  type="text"
+                  data-direct-cost-description
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="Description">
+              </label>
+
+              <label class="text-xs">
+
+                <div class="text-slate-600 mb-1">
+                  Cost Type
+                </div>
+
+                <input
+                  type="text"
+                  data-direct-cost-type
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="Cost type">
+              </label>
+
+              <label class="text-xs">
+
+                <div class="text-slate-600 mb-1">
+                  Amount
+                </div>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-direct-cost-amount
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="0.00">
+              </label>
+
+            </div>
+
+            <div class="mt-3 flex justify-end gap-2">
+
+              <button
+                type="button"
+                data-cancel-direct-cost
+                class="px-3 py-1.5 text-sm rounded border hover:bg-white">
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                data-save-direct-cost
+                class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+                Save Direct Cost
+              </button>
+
+            </div>
+
           </div>
 
           <div class="overflow-x-auto">
+
             <table class="w-full text-sm">
 
               <thead class="bg-slate-50">
+
                 <tr>
                   <th class="px-3 py-2 text-left">
                     Description
                   </th>
+
                   <th class="px-3 py-2 text-left">
                     Cost Type
                   </th>
+
                   <th class="px-3 py-2 text-right">
                     Amount
                   </th>
+
                   <th class="px-3 py-2 text-right">
                     Action
                   </th>
                 </tr>
+
               </thead>
 
               <tbody data-direct-cost-lines>
+
                 ${
                   directCostLines.length
                     ? directCostLines.map(line => `
                         <tr class="border-b">
+
                           <td class="px-3 py-2">
                             ${esc(line.description || "")}
                           </td>
@@ -128410,19 +128668,24 @@ async function openManufacturingOrderDetail(orderId) {
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.amount != null
-                              ? fmtMoney(line.amount)
-                              : "—"}
+                            ${
+                              line.amount != null
+                                ? fmtMoney(line.amount)
+                                : "—"
+                            }
                           </td>
 
                           <td class="px-3 py-2 text-right">
+
                             <button
                               type="button"
                               class="text-xs text-red-600 hover:underline"
                               data-delete-direct-cost="${Number(line.id)}">
                               Delete
                             </button>
+
                           </td>
+
                         </tr>
                       `).join("")
                     : `
@@ -128435,10 +128698,13 @@ async function openManufacturingOrderDetail(orderId) {
                         </tr>
                       `
                 }
+
               </tbody>
 
             </table>
+
           </div>
+
         </div>
 
         <!-- MANUFACTURING OVERHEAD -->
@@ -128446,10 +128712,12 @@ async function openManufacturingOrderDetail(orderId) {
         <div class="border rounded mt-5">
 
           <div class="px-4 py-3 border-b flex items-center justify-between">
+
             <div>
               <div class="font-semibold">
                 Manufacturing Overhead
               </div>
+
               <div class="text-xs text-slate-500">
                 Factory costs allocated to this production batch.
               </div>
@@ -128461,36 +128729,143 @@ async function openManufacturingOrderDetail(orderId) {
               class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
               Add Overhead
             </button>
+
+          </div>
+
+          <!-- INLINE OVERHEAD FORM -->
+
+          <div
+            data-overhead-form
+            class="hidden px-4 py-3 border-b bg-slate-50">
+
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+
+              <label class="text-xs md:col-span-2">
+
+                <div class="text-slate-600 mb-1">
+                  Cost / Allocation
+                </div>
+
+                <input
+                  type="text"
+                  data-overhead-name
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="e.g. Factory electricity">
+              </label>
+
+              <label class="text-xs">
+
+                <div class="text-slate-600 mb-1">
+                  Basis
+                </div>
+
+                <input
+                  type="text"
+                  data-overhead-basis
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="e.g. machine hours">
+              </label>
+
+              <label class="text-xs">
+
+                <div class="text-slate-600 mb-1">
+                  Quantity
+                </div>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-overhead-quantity
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="0.00">
+              </label>
+
+              <label class="text-xs">
+
+                <div class="text-slate-600 mb-1">
+                  Rate
+                </div>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-overhead-rate
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="0.00">
+              </label>
+
+            </div>
+
+            <div class="mt-3 flex items-center justify-between">
+
+              <div class="text-sm text-slate-600">
+                Allocated Amount:
+                <strong data-overhead-amount>
+                  LSL 0.00
+                </strong>
+              </div>
+
+              <div class="flex gap-2">
+
+                <button
+                  type="button"
+                  data-cancel-overhead
+                  class="px-3 py-1.5 text-sm rounded border hover:bg-white">
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  data-save-overhead
+                  class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+                  Save Overhead
+                </button>
+
+              </div>
+
+            </div>
+
           </div>
 
           <div class="overflow-x-auto">
+
             <table class="w-full text-sm">
 
               <thead class="bg-slate-50">
+
                 <tr>
                   <th class="px-3 py-2 text-left">
                     Cost / Allocation
                   </th>
+
                   <th class="px-3 py-2 text-left">
                     Basis
                   </th>
+
                   <th class="px-3 py-2 text-right">
                     Rate
                   </th>
+
                   <th class="px-3 py-2 text-right">
                     Allocated Amount
                   </th>
+
                   <th class="px-3 py-2 text-right">
                     Action
                   </th>
                 </tr>
+
               </thead>
 
               <tbody data-overhead-lines>
+
                 ${
                   overheadLines.length
                     ? overheadLines.map(line => `
                         <tr class="border-b">
+
                           <td class="px-3 py-2">
                             ${esc(line.allocation_name || "")}
                           </td>
@@ -128500,25 +128875,32 @@ async function openManufacturingOrderDetail(orderId) {
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.rate != null
-                              ? fmtMoney(line.rate)
-                              : "—"}
+                            ${
+                              line.rate != null
+                                ? fmtMoney(line.rate)
+                                : "—"
+                            }
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.allocated_amount != null
-                              ? fmtMoney(line.allocated_amount)
-                              : "—"}
+                            ${
+                              line.allocated_amount != null
+                                ? fmtMoney(line.allocated_amount)
+                                : "—"
+                            }
                           </td>
 
                           <td class="px-3 py-2 text-right">
+
                             <button
                               type="button"
                               class="text-xs text-red-600 hover:underline"
                               data-delete-overhead="${Number(line.id)}">
                               Delete
                             </button>
+
                           </td>
+
                         </tr>
                       `).join("")
                     : `
@@ -128531,10 +128913,13 @@ async function openManufacturingOrderDetail(orderId) {
                         </tr>
                       `
                 }
+
               </tbody>
 
             </table>
+
           </div>
+
         </div>
 
         <!-- PRODUCTION COST SUMMARY -->
@@ -128542,12 +128927,15 @@ async function openManufacturingOrderDetail(orderId) {
         <div class="border rounded mt-5">
 
           <div class="px-4 py-3 border-b">
+
             <div class="font-semibold">
               Production Cost Summary
             </div>
+
             <div class="text-xs text-slate-500">
               Management accounting view of the production batch.
             </div>
+
           </div>
 
           <div class="p-4">
@@ -128556,6 +128944,7 @@ async function openManufacturingOrderDetail(orderId) {
 
               <div class="flex justify-between py-2 border-b">
                 <span>Direct Materials</span>
+
                 <strong data-summary-materials>
                   ${fmtMoney(materialCost)}
                 </strong>
@@ -128563,10 +128952,12 @@ async function openManufacturingOrderDetail(orderId) {
 
               <div class="flex justify-between py-2 border-b">
                 <span>Direct Labour</span>
+
                 <strong data-summary-labour>
                   ${fmtMoney(
                     labourLines.reduce(
-                      (s, x) => s + Number(x.labour_cost || 0),
+                      (s, x) =>
+                        s + Number(x.labour_cost || 0),
                       0
                     )
                   )}
@@ -128575,10 +128966,12 @@ async function openManufacturingOrderDetail(orderId) {
 
               <div class="flex justify-between py-2 border-b">
                 <span>Other Direct Costs</span>
+
                 <strong data-summary-direct-costs>
                   ${fmtMoney(
                     directCostLines.reduce(
-                      (s, x) => s + Number(x.amount || 0),
+                      (s, x) =>
+                        s + Number(x.amount || 0),
                       0
                     )
                   )}
@@ -128586,16 +128979,21 @@ async function openManufacturingOrderDetail(orderId) {
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-                <span>Total Direct Production Cost</span>
+                <span>
+                  Total Direct Production Cost
+                </span>
+
                 <strong data-summary-direct-total>
                   ${fmtMoney(
                     materialCost +
                     labourLines.reduce(
-                      (s, x) => s + Number(x.labour_cost || 0),
+                      (s, x) =>
+                        s + Number(x.labour_cost || 0),
                       0
                     ) +
                     directCostLines.reduce(
-                      (s, x) => s + Number(x.amount || 0),
+                      (s, x) =>
+                        s + Number(x.amount || 0),
                       0
                     )
                   )}
@@ -128603,11 +129001,15 @@ async function openManufacturingOrderDetail(orderId) {
               </div>
 
               <div class="flex justify-between py-2 border-b">
-                <span>Manufacturing Overhead</span>
+                <span>
+                  Manufacturing Overhead
+                </span>
+
                 <strong data-summary-overhead>
                   ${fmtMoney(
                     overheadLines.reduce(
-                      (s, x) => s + Number(x.allocated_amount || 0),
+                      (s, x) =>
+                        s + Number(x.allocated_amount || 0),
                       0
                     )
                   )}
@@ -128615,20 +129017,26 @@ async function openManufacturingOrderDetail(orderId) {
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-                <span>Full Production Cost</span>
+                <span>
+                  Full Production Cost
+                </span>
+
                 <strong data-summary-full-cost>
                   ${fmtMoney(
                     materialCost +
                     labourLines.reduce(
-                      (s, x) => s + Number(x.labour_cost || 0),
+                      (s, x) =>
+                        s + Number(x.labour_cost || 0),
                       0
                     ) +
                     directCostLines.reduce(
-                      (s, x) => s + Number(x.amount || 0),
+                      (s, x) =>
+                        s + Number(x.amount || 0),
                       0
                     ) +
                     overheadLines.reduce(
-                      (s, x) => s + Number(x.allocated_amount || 0),
+                      (s, x) =>
+                        s + Number(x.allocated_amount || 0),
                       0
                     )
                   )}
@@ -128637,6 +129045,7 @@ async function openManufacturingOrderDetail(orderId) {
 
               <div class="flex justify-between py-2 border-b">
                 <span>Selling Price</span>
+
                 <strong data-summary-selling-price>
                   ${fmtMoney(sellingPrice)}
                 </strong>
@@ -128644,6 +129053,7 @@ async function openManufacturingOrderDetail(orderId) {
 
               <div class="flex justify-between py-2 border-b">
                 <span>Production Value</span>
+
                 <strong data-summary-production-value>
                   ${fmtMoney(
                     Number(order?.actual_qty || 0) *
@@ -128654,6 +129064,7 @@ async function openManufacturingOrderDetail(orderId) {
 
               <div class="flex justify-between py-2 border-b font-semibold">
                 <span>Contribution</span>
+
                 <strong data-summary-contribution>
                   ${fmtMoney(
                     (
@@ -128663,11 +129074,13 @@ async function openManufacturingOrderDetail(orderId) {
                     (
                       materialCost +
                       labourLines.reduce(
-                        (s, x) => s + Number(x.labour_cost || 0),
+                        (s, x) =>
+                          s + Number(x.labour_cost || 0),
                         0
                       ) +
                       directCostLines.reduce(
-                        (s, x) => s + Number(x.amount || 0),
+                        (s, x) =>
+                          s + Number(x.amount || 0),
                         0
                       )
                     )
@@ -128676,7 +129089,10 @@ async function openManufacturingOrderDetail(orderId) {
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-                <span>Contribution Margin</span>
+                <span>
+                  Contribution Margin
+                </span>
+
                 <strong data-summary-contribution-margin>
                   ${
                     Number(order?.actual_qty || 0) *
@@ -128690,11 +129106,13 @@ async function openManufacturingOrderDetail(orderId) {
                             (
                               materialCost +
                               labourLines.reduce(
-                                (s, x) => s + Number(x.labour_cost || 0),
+                                (s, x) =>
+                                  s + Number(x.labour_cost || 0),
                                 0
                               ) +
                               directCostLines.reduce(
-                                (s, x) => s + Number(x.amount || 0),
+                                (s, x) =>
+                                  s + Number(x.amount || 0),
                                 0
                               )
                             )
@@ -128702,8 +129120,8 @@ async function openManufacturingOrderDetail(orderId) {
                           (
                             Number(order?.actual_qty || 0) *
                             sellingPrice
-                          )
-                        * 100
+                          ) *
+                          100
                         ).toFixed(1) + "%"
                       : "—"
                   }
@@ -128711,7 +129129,10 @@ async function openManufacturingOrderDetail(orderId) {
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-                <span>Full Production Margin</span>
+                <span>
+                  Full Production Margin
+                </span>
+
                 <strong data-summary-full-margin>
                   ${fmtMoney(
                     (
@@ -128721,15 +129142,18 @@ async function openManufacturingOrderDetail(orderId) {
                     (
                       materialCost +
                       labourLines.reduce(
-                        (s, x) => s + Number(x.labour_cost || 0),
+                        (s, x) =>
+                          s + Number(x.labour_cost || 0),
                         0
                       ) +
                       directCostLines.reduce(
-                        (s, x) => s + Number(x.amount || 0),
+                        (s, x) =>
+                          s + Number(x.amount || 0),
                         0
                       ) +
                       overheadLines.reduce(
-                        (s, x) => s + Number(x.allocated_amount || 0),
+                        (s, x) =>
+                          s + Number(x.allocated_amount || 0),
                         0
                       )
                     )
@@ -128738,7 +129162,10 @@ async function openManufacturingOrderDetail(orderId) {
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-                <span>Full Production Margin %</span>
+                <span>
+                  Full Production Margin %
+                </span>
+
                 <strong data-summary-full-margin-percent>
                   ${
                     Number(order?.actual_qty || 0) *
@@ -128752,15 +129179,18 @@ async function openManufacturingOrderDetail(orderId) {
                             (
                               materialCost +
                               labourLines.reduce(
-                                (s, x) => s + Number(x.labour_cost || 0),
+                                (s, x) =>
+                                  s + Number(x.labour_cost || 0),
                                 0
                               ) +
                               directCostLines.reduce(
-                                (s, x) => s + Number(x.amount || 0),
+                                (s, x) =>
+                                  s + Number(x.amount || 0),
                                 0
                               ) +
                               overheadLines.reduce(
-                                (s, x) => s + Number(x.allocated_amount || 0),
+                                (s, x) =>
+                                  s + Number(x.allocated_amount || 0),
                                 0
                               )
                             )
@@ -128768,8 +129198,8 @@ async function openManufacturingOrderDetail(orderId) {
                           (
                             Number(order?.actual_qty || 0) *
                             sellingPrice
-                          )
-                        * 100
+                          ) *
+                          100
                         ).toFixed(1) + "%"
                       : "—"
                   }
@@ -128779,18 +129209,22 @@ async function openManufacturingOrderDetail(orderId) {
             </div>
 
           </div>
+
         </div>
 
         <div class="mt-5 flex justify-end">
+
           <button
             type="button"
             data-close
             class="px-4 py-2 border rounded hover:bg-slate-50">
             Close
           </button>
+
         </div>
 
       </div>
+
     </div>
   `;
 
@@ -128814,7 +129248,11 @@ async function openManufacturingOrderDetail(orderId) {
   modal.querySelectorAll("[data-post-usage]")
     .forEach(btn => {
       btn.addEventListener("click", async () => {
-        await openManufacturingMaterialUsage(orderId);
+
+        await openManufacturingMaterialUsage(
+          orderId
+        );
+
         modal.remove();
       });
     });
@@ -128825,6 +129263,7 @@ async function openManufacturingOrderDetail(orderId) {
 
   modal.querySelectorAll("[data-mfg-status]")
     .forEach(btn => {
+
       btn.addEventListener("click", async () => {
 
         const newStatus =
@@ -128847,46 +129286,111 @@ async function openManufacturingOrderDetail(orderId) {
           orderId
         );
       });
+
     });
 
   /* -------------------------------------------------------
-     ADD LABOUR
+     LABOUR FORM
   ------------------------------------------------------- */
 
+  const labourForm =
+    modal.querySelector("[data-labour-form]");
+
+  const labourWorker =
+    modal.querySelector("[data-labour-worker]");
+
+  const labourRole =
+    modal.querySelector("[data-labour-role]");
+
+  const labourHours =
+    modal.querySelector("[data-labour-hours]");
+
+  const labourRate =
+    modal.querySelector("[data-labour-rate]");
+
+  const labourCostInput =
+    modal.querySelector("[data-labour-cost]");
+
+  const updateLabourCost = () => {
+
+    const hours =
+      Number(labourHours?.value || 0);
+
+    const rate =
+      Number(labourRate?.value || 0);
+
+    const cost =
+      Number.isFinite(hours) &&
+      Number.isFinite(rate)
+        ? hours * rate
+        : 0;
+
+    if (labourCostInput) {
+      labourCostInput.value =
+        fmtMoney(cost);
+    }
+  };
+
+  labourHours?.addEventListener(
+    "input",
+    updateLabourCost
+  );
+
+  labourRate?.addEventListener(
+    "input",
+    updateLabourCost
+  );
+
   modal.querySelector("[data-add-labour]")
+    ?.addEventListener("click", () => {
+
+      if (!labourForm) return;
+
+      labourForm.classList.remove("hidden");
+
+      labourWorker?.focus();
+    });
+
+  modal.querySelector("[data-cancel-labour]")
+    ?.addEventListener("click", () => {
+
+      labourForm?.classList.add("hidden");
+
+      if (labourWorker) labourWorker.value = "";
+      if (labourRole) labourRole.value = "";
+      if (labourHours) labourHours.value = "";
+      if (labourRate) labourRate.value = "";
+
+      updateLabourCost();
+    });
+
+  modal.querySelector("[data-save-labour]")
     ?.addEventListener("click", async () => {
 
       const workerName =
-        prompt("Employee / Worker name:");
-
-      if (workerName == null) return;
+        String(labourWorker?.value || "").trim();
 
       const role =
-        prompt("Role:");
-
-      if (role == null) return;
-
-      const hoursRaw =
-        prompt("Hours:");
-
-      if (hoursRaw == null) return;
-
-      const rateRaw =
-        prompt("Rate per hour:");
-
-      if (rateRaw == null) return;
+        String(labourRole?.value || "").trim();
 
       const hours =
-        Number(hoursRaw);
+        Number(labourHours?.value || 0);
 
       const rate =
-        Number(rateRaw);
+        Number(labourRate?.value || 0);
+
+      if (!workerName) {
+        alert("Employee / Worker is required.");
+        labourWorker?.focus();
+        return;
+      }
 
       if (
         !Number.isFinite(hours) ||
-        hours < 0
+        hours <= 0
       ) {
-        alert("Please enter a valid number of hours.");
+        alert("Hours must be greater than zero.");
+        labourHours?.focus();
         return;
       }
 
@@ -128895,6 +129399,7 @@ async function openManufacturingOrderDetail(orderId) {
         rate < 0
       ) {
         alert("Please enter a valid labour rate.");
+        labourRate?.focus();
         return;
       }
 
@@ -128915,8 +129420,8 @@ async function openManufacturingOrderDetail(orderId) {
               Accept: "application/json",
             },
             body: JSON.stringify({
-              worker_name: workerName.trim(),
-              role: role.trim(),
+              worker_name: workerName,
+              role,
               hours,
               rate,
               labour_cost: labourCost,
@@ -129002,40 +129507,97 @@ async function openManufacturingOrderDetail(orderId) {
           );
         }
       });
+
     });
 
   /* -------------------------------------------------------
-     ADD DIRECT COST
+     DIRECT COST FORM
   ------------------------------------------------------- */
 
+  const directCostForm =
+    modal.querySelector(
+      "[data-direct-cost-form]"
+    );
+
+  const directCostDescription =
+    modal.querySelector(
+      "[data-direct-cost-description]"
+    );
+
+  const directCostType =
+    modal.querySelector(
+      "[data-direct-cost-type]"
+    );
+
+  const directCostAmount =
+    modal.querySelector(
+      "[data-direct-cost-amount]"
+    );
+
   modal.querySelector("[data-add-direct-cost]")
+    ?.addEventListener("click", () => {
+
+      if (!directCostForm) return;
+
+      directCostForm.classList.remove(
+        "hidden"
+      );
+
+      directCostDescription?.focus();
+    });
+
+  modal.querySelector("[data-cancel-direct-cost]")
+    ?.addEventListener("click", () => {
+
+      directCostForm?.classList.add(
+        "hidden"
+      );
+
+      if (directCostDescription) {
+        directCostDescription.value = "";
+      }
+
+      if (directCostType) {
+        directCostType.value = "";
+      }
+
+      if (directCostAmount) {
+        directCostAmount.value = "";
+      }
+    });
+
+  modal.querySelector("[data-save-direct-cost]")
     ?.addEventListener("click", async () => {
 
       const description =
-        prompt("Description:");
-
-      if (description == null) return;
+        String(
+          directCostDescription?.value || ""
+        ).trim();
 
       const costType =
-        prompt("Cost type:");
-
-      if (costType == null) return;
-
-      const amountRaw =
-        prompt("Amount:");
-
-      if (amountRaw == null) return;
+        String(
+          directCostType?.value || ""
+        ).trim();
 
       const amount =
-        Number(amountRaw);
+        Number(
+          directCostAmount?.value || 0
+        );
+
+      if (!description) {
+        alert("Description is required.");
+        directCostDescription?.focus();
+        return;
+      }
 
       if (
         !Number.isFinite(amount) ||
-        amount < 0
+        amount <= 0
       ) {
         alert(
-          "Please enter a valid direct cost amount."
+          "Amount must be greater than zero."
         );
+        directCostAmount?.focus();
         return;
       }
 
@@ -129053,8 +129615,8 @@ async function openManufacturingOrderDetail(orderId) {
               Accept: "application/json",
             },
             body: JSON.stringify({
-              description: description.trim(),
-              cost_type: costType.trim(),
+              description,
+              cost_type: costType,
               amount,
               source: "manual",
             }),
@@ -129085,10 +129647,13 @@ async function openManufacturingOrderDetail(orderId) {
      DELETE DIRECT COST
   ------------------------------------------------------- */
 
-  modal.querySelectorAll("[data-delete-direct-cost]")
-    .forEach(btn => {
+  modal.querySelectorAll(
+    "[data-delete-direct-cost]"
+  ).forEach(btn => {
 
-      btn.addEventListener("click", async () => {
+    btn.addEventListener(
+      "click",
+      async () => {
 
         const directCostId =
           Number(
@@ -129139,49 +129704,156 @@ async function openManufacturingOrderDetail(orderId) {
             "Failed to delete direct cost."
           );
         }
-      });
-    });
+      }
+    );
+
+  });
 
   /* -------------------------------------------------------
-     ADD OVERHEAD
+     OVERHEAD FORM
   ------------------------------------------------------- */
 
+  const overheadForm =
+    modal.querySelector(
+      "[data-overhead-form]"
+    );
+
+  const overheadName =
+    modal.querySelector(
+      "[data-overhead-name]"
+    );
+
+  const overheadBasis =
+    modal.querySelector(
+      "[data-overhead-basis]"
+    );
+
+  const overheadQuantity =
+    modal.querySelector(
+      "[data-overhead-quantity]"
+    );
+
+  const overheadRate =
+    modal.querySelector(
+      "[data-overhead-rate]"
+    );
+
+  const overheadAmount =
+    modal.querySelector(
+      "[data-overhead-amount]"
+    );
+
+  const updateOverheadAmount = () => {
+
+    const quantity =
+      Number(
+        overheadQuantity?.value || 0
+      );
+
+    const rate =
+      Number(
+        overheadRate?.value || 0
+      );
+
+    const amount =
+      Number.isFinite(quantity) &&
+      Number.isFinite(rate)
+        ? quantity * rate
+        : 0;
+
+    if (overheadAmount) {
+      overheadAmount.textContent =
+        fmtMoney(amount);
+    }
+  };
+
+  overheadQuantity?.addEventListener(
+    "input",
+    updateOverheadAmount
+  );
+
+  overheadRate?.addEventListener(
+    "input",
+    updateOverheadAmount
+  );
+
   modal.querySelector("[data-add-overhead]")
+    ?.addEventListener("click", () => {
+
+      if (!overheadForm) return;
+
+      overheadForm.classList.remove(
+        "hidden"
+      );
+
+      overheadName?.focus();
+    });
+
+  modal.querySelector("[data-cancel-overhead]")
+    ?.addEventListener("click", () => {
+
+      overheadForm?.classList.add(
+        "hidden"
+      );
+
+      if (overheadName) {
+        overheadName.value = "";
+      }
+
+      if (overheadBasis) {
+        overheadBasis.value = "";
+      }
+
+      if (overheadQuantity) {
+        overheadQuantity.value = "";
+      }
+
+      if (overheadRate) {
+        overheadRate.value = "";
+      }
+
+      updateOverheadAmount();
+    });
+
+  modal.querySelector("[data-save-overhead]")
     ?.addEventListener("click", async () => {
 
       const allocationName =
-        prompt("Cost / allocation name:");
-
-      if (allocationName == null) return;
+        String(
+          overheadName?.value || ""
+        ).trim();
 
       const basis =
-        prompt("Allocation basis:");
-
-      if (basis == null) return;
-
-      const quantityRaw =
-        prompt("Basis quantity:");
-
-      if (quantityRaw == null) return;
-
-      const rateRaw =
-        prompt("Rate:");
-
-      if (rateRaw == null) return;
+        String(
+          overheadBasis?.value || ""
+        ).trim();
 
       const quantity =
-        Number(quantityRaw);
+        Number(
+          overheadQuantity?.value || 0
+        );
 
       const rate =
-        Number(rateRaw);
+        Number(
+          overheadRate?.value || 0
+        );
+
+      if (!allocationName) {
+        alert(
+          "Cost / Allocation is required."
+        );
+        overheadName?.focus();
+        return;
+      }
 
       if (
         !Number.isFinite(quantity) ||
-        quantity < 0
+        quantity <= 0
       ) {
         alert(
-          "Please enter a valid basis quantity."
+          "Quantity must be greater than zero."
         );
+        overheadQuantity?.focus();
         return;
       }
 
@@ -129192,6 +129864,7 @@ async function openManufacturingOrderDetail(orderId) {
         alert(
           "Please enter a valid overhead rate."
         );
+        overheadRate?.focus();
         return;
       }
 
@@ -129213,10 +129886,9 @@ async function openManufacturingOrderDetail(orderId) {
             },
             body: JSON.stringify({
               allocation_name:
-                allocationName.trim(),
+                allocationName,
 
-              basis:
-                basis.trim(),
+              basis,
 
               quantity,
 
@@ -129254,10 +129926,13 @@ async function openManufacturingOrderDetail(orderId) {
      DELETE OVERHEAD
   ------------------------------------------------------- */
 
-  modal.querySelectorAll("[data-delete-overhead]")
-    .forEach(btn => {
+  modal.querySelectorAll(
+    "[data-delete-overhead]"
+  ).forEach(btn => {
 
-      btn.addEventListener("click", async () => {
+    btn.addEventListener(
+      "click",
+      async () => {
 
         const overheadId =
           Number(
@@ -129308,8 +129983,10 @@ async function openManufacturingOrderDetail(orderId) {
             "Failed to delete manufacturing overhead."
           );
         }
-      });
-    });
+      }
+    );
+
+  });
 
   /* -------------------------------------------------------
      INITIAL SUMMARY
@@ -129320,7 +129997,6 @@ async function openManufacturingOrderDetail(orderId) {
     order
   );
 }
-
 // =====================================================
 // Post Material Usage
 // =====================================================
