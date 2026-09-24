@@ -125905,7 +125905,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       throw new Error("Active company could not be determined");
     }
 
-    const url = manufacturing.bom(cid, bomId);
+    const url = ENDPOINTS.manufacturing.bom(cid, bomId);
 
     const data = await window.apiFetch(url, {
       method: "GET",
