@@ -127853,8 +127853,127 @@ async function updateManufacturingOrderStatus(orderId, status) {
   }
 }
 
+function refreshManufacturingOrderManagementSummary(modal, order) {
+  const managementCosts = order?.management_costs || {};
+
+  const labourLines = Array.isArray(managementCosts.labour)
+    ? managementCosts.labour
+    : [];
+
+  const directCostLines = Array.isArray(managementCosts.direct_costs)
+    ? managementCosts.direct_costs
+    : [];
+
+  const overheadLines = Array.isArray(managementCosts.overhead)
+    ? managementCosts.overhead
+    : [];
+
+  const materialCost = Number(order?.material_cost || 0);
+
+  const labourCost = labourLines.reduce(
+    (sum, line) => sum + Number(line?.labour_cost || 0),
+    0
+  );
+
+  const directCosts = directCostLines.reduce(
+    (sum, line) => sum + Number(line?.amount || 0),
+    0
+  );
+
+  const overheadCost = overheadLines.reduce(
+    (sum, line) => sum + Number(line?.allocated_amount || 0),
+    0
+  );
+
+  const totalDirectProductionCost =
+    materialCost +
+    labourCost +
+    directCosts;
+
+  const fullProductionCost =
+    totalDirectProductionCost +
+    overheadCost;
+
+  const actualOutput = Number(order?.actual_qty || 0);
+
+  const sellingPrice = Number(
+    order?.bom_selling_price ??
+    order?.selling_price ??
+    0
+  );
+
+  const productionValue =
+    actualOutput * sellingPrice;
+
+  const contribution =
+    productionValue - totalDirectProductionCost;
+
+  const contributionMargin =
+    productionValue !== 0
+      ? (contribution / productionValue) * 100
+      : null;
+
+  const fullProductionMargin =
+    productionValue - fullProductionCost;
+
+  const fullProductionMarginPercent =
+    productionValue !== 0
+      ? (fullProductionMargin / productionValue) * 100
+      : null;
+
+  const setMoney = (selector, value) => {
+    const el = modal.querySelector(selector);
+    if (el) {
+      el.textContent = fmtMoney(value);
+    }
+  };
+
+  const setText = (selector, value) => {
+    const el = modal.querySelector(selector);
+    if (el) {
+      el.textContent = value;
+    }
+  };
+
+  setMoney("[data-summary-materials]", materialCost);
+  setMoney("[data-summary-labour]", labourCost);
+  setMoney("[data-summary-direct-costs]", directCosts);
+  setMoney(
+    "[data-summary-direct-total]",
+    totalDirectProductionCost
+  );
+  setMoney("[data-summary-overhead]", overheadCost);
+  setMoney("[data-summary-full-cost]", fullProductionCost);
+
+  setMoney("[data-summary-selling-price]", sellingPrice);
+  setMoney("[data-summary-production-value]", productionValue);
+  setMoney("[data-summary-contribution]", contribution);
+
+  setText(
+    "[data-summary-contribution-margin]",
+    contributionMargin == null
+      ? "—"
+      : `${contributionMargin.toFixed(1)}%`
+  );
+
+  setMoney(
+    "[data-summary-full-margin]",
+    fullProductionMargin
+  );
+
+  setText(
+    "[data-summary-full-margin-percent]",
+    fullProductionMarginPercent == null
+      ? "—"
+      : `${fullProductionMarginPercent.toFixed(1)}%`
+  );
+}
+
 async function openManufacturingOrderDetail(orderId) {
-  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID;
+
   if (!cid || !orderId) return;
 
   const data = await apiFetch(
@@ -127864,8 +127983,7 @@ async function openManufacturingOrderDetail(orderId) {
   const order = data?.order || data;
 
   const managementCosts =
-    order?.management_costs ||
-    {};
+    order?.management_costs || {};
 
   const labourLines =
     Array.isArray(managementCosts.labour)
@@ -127881,11 +127999,6 @@ async function openManufacturingOrderDetail(orderId) {
     Array.isArray(managementCosts.overhead)
       ? managementCosts.overhead
       : [];
-
-  const modal = document.createElement("div");
-
-  modal.className =
-    "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
 
   const materials =
     order?.materials ||
@@ -127903,160 +128016,91 @@ async function openManufacturingOrderDetail(orderId) {
     "";
 
   const status =
-    String(order?.status || "").trim().toLowerCase();
+    String(order?.status || "")
+      .trim()
+      .toLowerCase();
 
   const canRecordUsage =
     status === "released" ||
     status === "in_progress";
 
+  const sellingPrice = Number(
+    order?.bom_selling_price ??
+    order?.selling_price ??
+    0
+  );
+
+  const materialCost = Number(
+    order?.material_cost || 0
+  );
+
+  const modal = document.createElement("div");
+
+  modal.className =
+    "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
+
   modal.innerHTML = `
     <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-auto">
 
-      <div class="flex items-center justify-between border-b px-4 py-3">
+      <div class="sticky top-0 bg-white border-b px-5 py-4 flex items-center justify-between z-10">
         <div>
-          <div class="font-semibold">
-            ${esc(order?.mo_no || `Production Batch #${orderId}`)}
+          <div class="text-lg font-semibold">
+            ${esc(order?.mo_no || `MO-${orderId}`)}
           </div>
-
-          <div class="text-xs text-slate-500">
+          <div class="text-sm text-slate-600">
             Production of ${esc(finishedItem)}
           </div>
         </div>
 
         <button
           type="button"
-          class="text-lg text-slate-500"
-          data-close>
+          data-close
+          class="text-2xl text-slate-400 hover:text-slate-700">
           ×
         </button>
       </div>
 
-      <div class="p-4">
+      <div class="p-5">
 
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4 text-xs">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
 
-          <div class="border rounded p-2">
+          <div>
             <div class="text-slate-500">Finished Item</div>
             <div class="font-semibold">
               ${esc(finishedItem)}
             </div>
           </div>
 
-          <div class="border rounded p-2">
+          <div>
             <div class="text-slate-500">Production Date</div>
             <div class="font-semibold">
-              ${esc(formatManufacturingDate(order?.tx_date))}
+              ${esc(order?.tx_date || "—")}
             </div>
           </div>
 
-          <div class="border rounded p-2">
+          <div>
             <div class="text-slate-500">Planned Output</div>
             <div class="font-semibold">
-              ${esc(order?.planned_qty ?? "0")}
+              ${esc(order?.planned_qty ?? 0)}
               ${esc(outputUnit)}
             </div>
           </div>
 
-          <div class="border rounded p-2">
+          <div>
             <div class="text-slate-500">Actual Output</div>
             <div class="font-semibold">
-              ${esc(order?.actual_qty ?? "0")}
+              ${esc(order?.actual_qty ?? 0)}
               ${esc(outputUnit)}
             </div>
           </div>
 
-          <div>
-            <div class="text-xs text-slate-500">Status</div>
-
-            <div class="flex items-center gap-2 mt-1">
-              <span class="font-medium">
-                ${esc(order.status || "")}
-              </span>
-
-              ${
-                String(order.status || "").toLowerCase() === "draft"
-                  ? `
-                    <button
-                      type="button"
-                      class="px-2 py-1 text-xs border rounded hover:bg-slate-50"
-                      data-mfg-status="released">
-                      Release Production
-                    </button>
-                  `
-                  : ""
-              }
-
-              ${
-                String(order.status || "").toLowerCase() === "released"
-                  ? `
-                    <button
-                      type="button"
-                      class="px-2 py-1 text-xs border rounded hover:bg-slate-50"
-                      data-mfg-status="in_progress">
-                      Start Production
-                    </button>
-
-                    <button
-                      type="button"
-                      class="px-2 py-1 text-xs border rounded text-red-600 hover:bg-red-50"
-                      data-mfg-status="cancelled">
-                      Cancel Production
-                    </button>
-                  `
-                  : ""
-              }
-
-              ${
-                String(order.status || "").toLowerCase() === "in_progress"
-                  ? `
-                    <button
-                      type="button"
-                      class="px-2 py-1 text-xs border rounded hover:bg-slate-50"
-                      data-mfg-status="completed">
-                      Complete Production
-                    </button>
-
-                    <button
-                      type="button"
-                      class="px-2 py-1 text-xs border rounded text-red-600 hover:bg-red-50"
-                      data-mfg-status="cancelled">
-                      Cancel Production
-                    </button>
-                  `
-                  : ""
-              }
-            </div>
-          </div>
-
         </div>
 
-        <div class="border rounded bg-slate-50 p-3 mb-4 text-xs text-slate-600">
+        <div class="mt-4 flex flex-wrap gap-2">
 
-          <div class="font-semibold text-slate-700 mb-1">
-            Production Batch
-          </div>
-
-          <div>
-            This batch is for producing
-            <strong>${esc(order?.planned_qty ?? "0")} ${esc(outputUnit)}</strong>
-            of
-            <strong>${esc(finishedItem)}</strong>.
-            The material quantities below come from the selected BOM.
-            Actual quantities are recorded when the raw materials are consumed.
-          </div>
-
-        </div>
-
-        <div class="flex items-center justify-between mb-2">
-
-          <div>
-            <div class="font-semibold text-sm">
-              Materials / Material Usage
-            </div>
-
-            <div class="text-xs text-slate-500">
-              Planned quantities come from the BOM. Actual quantities show what was consumed.
-            </div>
+          <div class="text-xs px-2 py-1 rounded bg-slate-100">
+            Status:
+            <strong>${esc(order?.status || "—")}</strong>
           </div>
 
           ${
@@ -128065,8 +128109,28 @@ async function openManufacturingOrderDetail(orderId) {
                 <button
                   type="button"
                   data-post-usage
-                  class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
+                  class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
                   Record Material Usage
+                </button>
+              `
+              : ""
+          }
+
+          ${
+            status !== "completed" && status !== "cancelled"
+              ? `
+                <button
+                  type="button"
+                  data-mfg-status="completed"
+                  class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
+                  Complete Production
+                </button>
+
+                <button
+                  type="button"
+                  data-mfg-status="cancelled"
+                  class="px-3 py-1.5 text-sm rounded border border-red-200 text-red-600 hover:bg-red-50">
+                  Cancel Production
                 </button>
               `
               : ""
@@ -128074,115 +128138,122 @@ async function openManufacturingOrderDetail(orderId) {
 
         </div>
 
-        <div class="overflow-auto border rounded">
+        <div class="mt-6">
+          <div class="font-semibold text-base">
+            Production Batch
+          </div>
 
-          <table class="w-full text-xs">
-
-            <thead class="bg-slate-50 border-b">
-              <tr>
-
-                <th class="text-left px-2 py-2">
-                  Material
-                </th>
-
-                <th class="text-right px-2 py-2">
-                  Planned Qty
-                </th>
-
-                <th class="text-right px-2 py-2">
-                  Actual Qty
-                </th>
-
-                <th class="text-left px-2 py-2">
-                  Unit
-                </th>
-
-                <th class="text-right px-2 py-2">
-                  Unit Cost
-                </th>
-
-                <th class="text-right px-2 py-2">
-                  Total Cost
-                </th>
-
-              </tr>
-            </thead>
-
-            <tbody>
-
-              ${
-                materials.length
-                  ? materials.map(m => `
-                    <tr class="border-b">
-
-                      <td class="px-2 py-2">
-                        <div class="font-medium">
-                          ${esc(
-                            m.item_name ||
-                            m.material_name ||
-                            `Item #${m.item_id || ""}`
-                          )}
-                        </div>
-
-                        ${
-                          m.item_sku
-                            ? `
-                              <div class="text-[10px] text-slate-400">
-                                ${esc(m.item_sku)}
-                              </div>
-                            `
-                            : ""
-                        }
-                      </td>
-
-                      <td class="px-2 py-2 text-right">
-                        ${esc(m.planned_qty ?? "0")}
-                      </td>
-
-                      <td class="px-2 py-2 text-right">
-                        ${esc(m.actual_qty ?? "0")}
-                      </td>
-
-                      <td class="px-2 py-2">
-                        ${esc(m.unit || "")}
-                      </td>
-
-                      <td class="px-2 py-2 text-right">
-                        ${fmtMoney(m.unit_cost || 0)}
-                      </td>
-
-                      <td class="px-2 py-2 text-right">
-                        ${fmtMoney(m.total_cost || 0)}
-                      </td>
-
-                    </tr>
-                  `).join("")
-                  : `
-                    <tr>
-                      <td
-                        colspan="6"
-                        class="px-2 py-4 text-slate-500">
-                        No material lines have been added to this production batch.
-                      </td>
-                    </tr>
-                  `
-              }
-
-            </tbody>
-
-          </table>
-
+          <div class="mt-1 text-sm text-slate-600">
+            This batch is for producing
+            <strong>${esc(order?.planned_qty ?? 0)} ${esc(outputUnit)}</strong>
+            of
+            <strong>${esc(finishedItem)}</strong>.
+            The material quantities below come from the selected BOM.
+            Actual quantities are recorded when the raw materials are consumed.
+          </div>
         </div>
 
-        <!-- Direct Labour -->
+        <!-- MATERIALS -->
+
+        <div class="mt-6 border rounded">
+
+          <div class="px-4 py-3 border-b flex items-center justify-between">
+            <div>
+              <div class="font-semibold">
+                Materials / Material Usage
+              </div>
+              <div class="text-xs text-slate-500">
+                Planned quantities come from the BOM.
+                Actual quantities show what was consumed.
+              </div>
+            </div>
+
+            ${
+              canRecordUsage
+                ? `
+                  <button
+                    type="button"
+                    data-post-usage
+                    class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+                    Record Material Usage
+                  </button>
+                `
+                : ""
+            }
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-3 py-2 text-left">Material</th>
+                  <th class="px-3 py-2 text-right">Planned Qty</th>
+                  <th class="px-3 py-2 text-right">Actual Qty</th>
+                  <th class="px-3 py-2 text-left">Unit</th>
+                  <th class="px-3 py-2 text-right">Unit Cost</th>
+                  <th class="px-3 py-2 text-right">Total Cost</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${
+                  materials.length
+                    ? materials.map(line => `
+                        <tr class="border-b">
+                          <td class="px-3 py-2">
+                            ${esc(
+                              line.item_name ||
+                              line.name ||
+                              line.description ||
+                              ""
+                            )}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            ${esc(line.planned_qty ?? 0)}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            ${esc(line.actual_qty ?? 0)}
+                          </td>
+
+                          <td class="px-3 py-2">
+                            ${esc(line.unit || "")}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            ${fmtMoney(line.unit_cost || 0)}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            ${fmtMoney(line.total_cost || 0)}
+                          </td>
+                        </tr>
+                      `).join("")
+                    : `
+                        <tr>
+                          <td
+                            colspan="6"
+                            class="px-3 py-4 text-slate-500">
+                            No materials have been recorded.
+                          </td>
+                        </tr>
+                      `
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- DIRECT LABOUR -->
+
         <div class="border rounded mt-5">
 
-          <div class="flex items-center justify-between border-b px-3 py-2 bg-slate-50">
+          <div class="px-4 py-3 border-b flex items-center justify-between">
             <div>
-              <div class="font-semibold text-sm text-slate-700">
+              <div class="font-semibold">
                 Direct Labour
               </div>
-
               <div class="text-xs text-slate-500">
                 Labour directly attributable to this production batch.
               </div>
@@ -128191,54 +128262,48 @@ async function openManufacturingOrderDetail(orderId) {
             <button
               type="button"
               data-add-labour
-              class="px-3 py-1.5 border rounded text-xs hover:bg-white">
+              class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
               Add Labour
             </button>
           </div>
 
-          <div class="overflow-auto">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
 
-            <table class="w-full text-xs">
-
-              <thead class="border-b bg-white">
+              <thead class="bg-slate-50">
                 <tr>
-
-                  <th class="text-left px-3 py-2">
+                  <th class="px-3 py-2 text-left">
                     Employee / Worker
                   </th>
-
-                  <th class="text-left px-3 py-2">
+                  <th class="px-3 py-2 text-left">
                     Role
                   </th>
-
-                  <th class="text-right px-3 py-2">
+                  <th class="px-3 py-2 text-right">
                     Hours
                   </th>
-
-                  <th class="text-right px-3 py-2">
+                  <th class="px-3 py-2 text-right">
                     Rate
                   </th>
-
-                  <th class="text-right px-3 py-2">
+                  <th class="px-3 py-2 text-right">
                     Labour Cost
                   </th>
-
-                  <th class="text-right px-3 py-2">
+                  <th class="px-3 py-2 text-right">
                     Action
                   </th>
-
                 </tr>
               </thead>
 
               <tbody data-labour-lines>
-
                 ${
                   labourLines.length
                     ? labourLines.map(line => `
                         <tr class="border-b">
-
                           <td class="px-3 py-2">
-                            ${esc(line.worker_name || line.worker_reference || "")}
+                            ${esc(
+                              line.worker_name ||
+                              line.worker_reference ||
+                              ""
+                            )}
                           </td>
 
                           <td class="px-3 py-2">
@@ -128246,15 +128311,21 @@ async function openManufacturingOrderDetail(orderId) {
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.hours != null ? esc(line.hours) : "—"}
+                            ${line.hours != null
+                              ? esc(line.hours)
+                              : "—"}
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.rate != null ? fmtMoney(line.rate) : "—"}
+                            ${line.rate != null
+                              ? fmtMoney(line.rate)
+                              : "—"}
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.labour_cost != null ? fmtMoney(line.labour_cost) : "—"}
+                            ${line.labour_cost != null
+                              ? fmtMoney(line.labour_cost)
+                              : "—"}
                           </td>
 
                           <td class="px-3 py-2 text-right">
@@ -128265,7 +128336,6 @@ async function openManufacturingOrderDetail(orderId) {
                               Delete
                             </button>
                           </td>
-
                         </tr>
                       `).join("")
                     : `
@@ -128278,26 +128348,21 @@ async function openManufacturingOrderDetail(orderId) {
                         </tr>
                       `
                 }
-
               </tbody>
 
             </table>
-
           </div>
-
         </div>
 
+        <!-- OTHER DIRECT COSTS -->
 
-        <!-- Other Direct Costs -->
-        <div class="border rounded mt-4">
+        <div class="border rounded mt-5">
 
-          <div class="flex items-center justify-between border-b px-3 py-2 bg-slate-50">
-
+          <div class="px-4 py-3 border-b flex items-center justify-between">
             <div>
-              <div class="font-semibold text-sm text-slate-700">
+              <div class="font-semibold">
                 Other Direct Costs
               </div>
-
               <div class="text-xs text-slate-500">
                 Other costs directly attributable to this production batch.
               </div>
@@ -128306,45 +128371,36 @@ async function openManufacturingOrderDetail(orderId) {
             <button
               type="button"
               data-add-direct-cost
-              class="px-3 py-1.5 border rounded text-xs hover:bg-white">
+              class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
               Add Direct Cost
             </button>
-
           </div>
 
-          <div class="overflow-auto">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
 
-            <table class="w-full text-xs">
-
-              <thead class="border-b bg-white">
+              <thead class="bg-slate-50">
                 <tr>
-
-                  <th class="text-left px-3 py-2">
+                  <th class="px-3 py-2 text-left">
                     Description
                   </th>
-
-                  <th class="text-left px-3 py-2">
+                  <th class="px-3 py-2 text-left">
                     Cost Type
                   </th>
-
-                  <th class="text-right px-3 py-2">
+                  <th class="px-3 py-2 text-right">
                     Amount
                   </th>
-
-                  <th class="text-right px-3 py-2">
+                  <th class="px-3 py-2 text-right">
                     Action
                   </th>
-
                 </tr>
               </thead>
 
               <tbody data-direct-cost-lines>
-
                 ${
                   directCostLines.length
                     ? directCostLines.map(line => `
                         <tr class="border-b">
-
                           <td class="px-3 py-2">
                             ${esc(line.description || "")}
                           </td>
@@ -128354,7 +128410,9 @@ async function openManufacturingOrderDetail(orderId) {
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.amount != null ? fmtMoney(line.amount) : "—"}
+                            ${line.amount != null
+                              ? fmtMoney(line.amount)
+                              : "—"}
                           </td>
 
                           <td class="px-3 py-2 text-right">
@@ -128365,7 +128423,6 @@ async function openManufacturingOrderDetail(orderId) {
                               Delete
                             </button>
                           </td>
-
                         </tr>
                       `).join("")
                     : `
@@ -128378,26 +128435,21 @@ async function openManufacturingOrderDetail(orderId) {
                         </tr>
                       `
                 }
-
               </tbody>
 
             </table>
-
           </div>
-
         </div>
 
+        <!-- MANUFACTURING OVERHEAD -->
 
-        <!-- Manufacturing Overhead -->
-        <div class="border rounded mt-4">
+        <div class="border rounded mt-5">
 
-          <div class="flex items-center justify-between border-b px-3 py-2 bg-slate-50">
-
+          <div class="px-4 py-3 border-b flex items-center justify-between">
             <div>
-              <div class="font-semibold text-sm text-slate-700">
+              <div class="font-semibold">
                 Manufacturing Overhead
               </div>
-
               <div class="text-xs text-slate-500">
                 Factory costs allocated to this production batch.
               </div>
@@ -128406,49 +128458,39 @@ async function openManufacturingOrderDetail(orderId) {
             <button
               type="button"
               data-add-overhead
-              class="px-3 py-1.5 border rounded text-xs hover:bg-white">
+              class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
               Add Overhead
             </button>
-
           </div>
 
-          <div class="overflow-auto">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
 
-            <table class="w-full text-xs">
-
-              <thead class="border-b bg-white">
+              <thead class="bg-slate-50">
                 <tr>
-
-                  <th class="text-left px-3 py-2">
+                  <th class="px-3 py-2 text-left">
                     Cost / Allocation
                   </th>
-
-                  <th class="text-left px-3 py-2">
+                  <th class="px-3 py-2 text-left">
                     Basis
                   </th>
-
-                  <th class="text-right px-3 py-2">
+                  <th class="px-3 py-2 text-right">
                     Rate
                   </th>
-
-                  <th class="text-right px-3 py-2">
+                  <th class="px-3 py-2 text-right">
                     Allocated Amount
                   </th>
-
-                  <th class="text-right px-3 py-2">
+                  <th class="px-3 py-2 text-right">
                     Action
                   </th>
-
                 </tr>
               </thead>
 
               <tbody data-overhead-lines>
-
                 ${
                   overheadLines.length
                     ? overheadLines.map(line => `
                         <tr class="border-b">
-
                           <td class="px-3 py-2">
                             ${esc(line.allocation_name || "")}
                           </td>
@@ -128458,15 +128500,15 @@ async function openManufacturingOrderDetail(orderId) {
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${line.rate != null ? fmtMoney(line.rate) : "—"}
+                            ${line.rate != null
+                              ? fmtMoney(line.rate)
+                              : "—"}
                           </td>
 
                           <td class="px-3 py-2 text-right">
-                            ${
-                              line.allocated_amount != null
-                                ? fmtMoney(line.allocated_amount)
-                                : "—"
-                            }
+                            ${line.allocated_amount != null
+                              ? fmtMoney(line.allocated_amount)
+                              : "—"}
                           </td>
 
                           <td class="px-3 py-2 text-right">
@@ -128477,7 +128519,6 @@ async function openManufacturingOrderDetail(orderId) {
                               Delete
                             </button>
                           </td>
-
                         </tr>
                       `).join("")
                     : `
@@ -128490,211 +128531,263 @@ async function openManufacturingOrderDetail(orderId) {
                         </tr>
                       `
                 }
-
               </tbody>
 
             </table>
-
           </div>
-
         </div>
 
+        <!-- PRODUCTION COST SUMMARY -->
 
-        <!-- Production Cost Summary -->
         <div class="border rounded mt-5">
 
-          <div class="border-b px-3 py-2 bg-slate-50">
-
-            <div class="font-semibold text-sm text-slate-700">
+          <div class="px-4 py-3 border-b">
+            <div class="font-semibold">
               Production Cost Summary
             </div>
-
             <div class="text-xs text-slate-500">
               Management accounting view of the production batch.
             </div>
-
           </div>
 
-          <div class="p-3">
+          <div class="p-4">
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
 
-              <div class="space-y-2 text-xs">
-
-                <div class="flex items-center justify-between">
-                  <span class="text-slate-500">
-                    Direct Materials
-                  </span>
-
-                  <span
-                    class="font-medium"
-                    data-summary-materials>
-                    ${fmtMoney(order?.material_cost || 0)}
-                  </span>
-                </div>
-
-                <div class="flex items-center justify-between">
-                  <span class="text-slate-500">
-                    Direct Labour
-                  </span>
-
-                  <span
-                    class="font-medium"
-                    data-summary-labour>
-                    ${fmtMoney(0)}
-                  </span>
-                </div>
-
-                <div class="flex items-center justify-between">
-                  <span class="text-slate-500">
-                    Other Direct Costs
-                  </span>
-
-                  <span
-                    class="font-medium"
-                    data-summary-direct-costs>
-                    ${fmtMoney(0)}
-                  </span>
-                </div>
-
-                <div class="border-t pt-2 flex items-center justify-between">
-                  <span class="font-semibold text-slate-700">
-                    Total Direct Production Cost
-                  </span>
-
-                  <span
-                    class="font-semibold"
-                    data-summary-direct-total>
-                    ${fmtMoney(order?.material_cost || 0)}
-                  </span>
-                </div>
-
-                <div class="flex items-center justify-between">
-                  <span class="text-slate-500">
-                    Manufacturing Overhead
-                  </span>
-
-                  <span
-                    class="font-medium"
-                    data-summary-overhead>
-                    ${fmtMoney(0)}
-                  </span>
-                </div>
-
-                <div class="border-t pt-2 flex items-center justify-between">
-                  <span class="font-semibold text-slate-700">
-                    Full Production Cost
-                  </span>
-
-                  <span
-                    class="font-semibold"
-                    data-summary-full-cost>
-                    ${fmtMoney(order?.material_cost || 0)}
-                  </span>
-                </div>
-
+              <div class="flex justify-between py-2 border-b">
+                <span>Direct Materials</span>
+                <strong data-summary-materials>
+                  ${fmtMoney(materialCost)}
+                </strong>
               </div>
 
+              <div class="flex justify-between py-2 border-b">
+                <span>Direct Labour</span>
+                <strong data-summary-labour>
+                  ${fmtMoney(
+                    labourLines.reduce(
+                      (s, x) => s + Number(x.labour_cost || 0),
+                      0
+                    )
+                  )}
+                </strong>
+              </div>
 
-              <div class="space-y-2 text-xs">
+              <div class="flex justify-between py-2 border-b">
+                <span>Other Direct Costs</span>
+                <strong data-summary-direct-costs>
+                  ${fmtMoney(
+                    directCostLines.reduce(
+                      (s, x) => s + Number(x.amount || 0),
+                      0
+                    )
+                  )}
+                </strong>
+              </div>
 
-                <div class="flex items-center justify-between">
-                  <span class="text-slate-500">
-                    Selling Price
-                  </span>
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Total Direct Production Cost</span>
+                <strong data-summary-direct-total>
+                  ${fmtMoney(
+                    materialCost +
+                    labourLines.reduce(
+                      (s, x) => s + Number(x.labour_cost || 0),
+                      0
+                    ) +
+                    directCostLines.reduce(
+                      (s, x) => s + Number(x.amount || 0),
+                      0
+                    )
+                  )}
+                </strong>
+              </div>
 
-                  <span
-                    class="font-medium"
-                    data-summary-selling-price>
-                    ${fmtMoney(0)}
-                  </span>
-                </div>
+              <div class="flex justify-between py-2 border-b">
+                <span>Manufacturing Overhead</span>
+                <strong data-summary-overhead>
+                  ${fmtMoney(
+                    overheadLines.reduce(
+                      (s, x) => s + Number(x.allocated_amount || 0),
+                      0
+                    )
+                  )}
+                </strong>
+              </div>
 
-                <div class="flex items-center justify-between">
-                  <span class="text-slate-500">
-                    Production Value
-                  </span>
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Full Production Cost</span>
+                <strong data-summary-full-cost>
+                  ${fmtMoney(
+                    materialCost +
+                    labourLines.reduce(
+                      (s, x) => s + Number(x.labour_cost || 0),
+                      0
+                    ) +
+                    directCostLines.reduce(
+                      (s, x) => s + Number(x.amount || 0),
+                      0
+                    ) +
+                    overheadLines.reduce(
+                      (s, x) => s + Number(x.allocated_amount || 0),
+                      0
+                    )
+                  )}
+                </strong>
+              </div>
 
-                  <span
-                    class="font-medium"
-                    data-summary-production-value>
-                    ${fmtMoney(0)}
-                  </span>
-                </div>
+              <div class="flex justify-between py-2 border-b">
+                <span>Selling Price</span>
+                <strong data-summary-selling-price>
+                  ${fmtMoney(sellingPrice)}
+                </strong>
+              </div>
 
-                <div class="border-t pt-2 flex items-center justify-between">
-                  <span class="font-semibold text-slate-700">
-                    Contribution
-                  </span>
+              <div class="flex justify-between py-2 border-b">
+                <span>Production Value</span>
+                <strong data-summary-production-value>
+                  ${fmtMoney(
+                    Number(order?.actual_qty || 0) *
+                    sellingPrice
+                  )}
+                </strong>
+              </div>
 
-                  <span
-                    class="font-semibold"
-                    data-summary-contribution>
-                    ${fmtMoney(0)}
-                  </span>
-                </div>
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Contribution</span>
+                <strong data-summary-contribution>
+                  ${fmtMoney(
+                    (
+                      Number(order?.actual_qty || 0) *
+                      sellingPrice
+                    ) -
+                    (
+                      materialCost +
+                      labourLines.reduce(
+                        (s, x) => s + Number(x.labour_cost || 0),
+                        0
+                      ) +
+                      directCostLines.reduce(
+                        (s, x) => s + Number(x.amount || 0),
+                        0
+                      )
+                    )
+                  )}
+                </strong>
+              </div>
 
-                <div class="flex items-center justify-between">
-                  <span class="text-slate-500">
-                    Contribution Margin
-                  </span>
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Contribution Margin</span>
+                <strong data-summary-contribution-margin>
+                  ${
+                    Number(order?.actual_qty || 0) *
+                    sellingPrice !== 0
+                      ? (
+                          (
+                            (
+                              Number(order?.actual_qty || 0) *
+                              sellingPrice
+                            ) -
+                            (
+                              materialCost +
+                              labourLines.reduce(
+                                (s, x) => s + Number(x.labour_cost || 0),
+                                0
+                              ) +
+                              directCostLines.reduce(
+                                (s, x) => s + Number(x.amount || 0),
+                                0
+                              )
+                            )
+                          ) /
+                          (
+                            Number(order?.actual_qty || 0) *
+                            sellingPrice
+                          )
+                        * 100
+                        ).toFixed(1) + "%"
+                      : "—"
+                  }
+                </strong>
+              </div>
 
-                  <span
-                    class="font-medium"
-                    data-summary-contribution-margin>
-                    —
-                  </span>
-                </div>
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Full Production Margin</span>
+                <strong data-summary-full-margin>
+                  ${fmtMoney(
+                    (
+                      Number(order?.actual_qty || 0) *
+                      sellingPrice
+                    ) -
+                    (
+                      materialCost +
+                      labourLines.reduce(
+                        (s, x) => s + Number(x.labour_cost || 0),
+                        0
+                      ) +
+                      directCostLines.reduce(
+                        (s, x) => s + Number(x.amount || 0),
+                        0
+                      ) +
+                      overheadLines.reduce(
+                        (s, x) => s + Number(x.allocated_amount || 0),
+                        0
+                      )
+                    )
+                  )}
+                </strong>
+              </div>
 
-                <div class="border-t pt-2 flex items-center justify-between">
-                  <span class="font-semibold text-slate-700">
-                    Full Production Margin
-                  </span>
-
-                  <span
-                    class="font-semibold"
-                    data-summary-full-margin>
-                    ${fmtMoney(0)}
-                  </span>
-                </div>
-
-                <div class="flex items-center justify-between">
-                  <span class="text-slate-500">
-                    Full Production Margin %
-                  </span>
-
-                  <span
-                    class="font-medium"
-                    data-summary-full-margin-percent>
-                    —
-                  </span>
-                </div>
-
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Full Production Margin %</span>
+                <strong data-summary-full-margin-percent>
+                  ${
+                    Number(order?.actual_qty || 0) *
+                    sellingPrice !== 0
+                      ? (
+                          (
+                            (
+                              Number(order?.actual_qty || 0) *
+                              sellingPrice
+                            ) -
+                            (
+                              materialCost +
+                              labourLines.reduce(
+                                (s, x) => s + Number(x.labour_cost || 0),
+                                0
+                              ) +
+                              directCostLines.reduce(
+                                (s, x) => s + Number(x.amount || 0),
+                                0
+                              ) +
+                              overheadLines.reduce(
+                                (s, x) => s + Number(x.allocated_amount || 0),
+                                0
+                              )
+                            )
+                          ) /
+                          (
+                            Number(order?.actual_qty || 0) *
+                            sellingPrice
+                          )
+                        * 100
+                        ).toFixed(1) + "%"
+                      : "—"
+                  }
+                </strong>
               </div>
 
             </div>
 
           </div>
-
         </div>
 
-
-        <div class="flex items-center justify-between mt-4">
-
-          <div class="text-xs text-slate-500">
-            Material Cost:
-            <span class="font-semibold text-slate-700">
-              ${fmtMoney(order?.material_cost || 0)}
-            </span>
-          </div>
-
+        <div class="mt-5 flex justify-end">
           <button
             type="button"
             data-close
-            class="px-3 py-2 border rounded text-xs">
+            class="px-4 py-2 border rounded hover:bg-slate-50">
             Close
           </button>
-
         </div>
 
       </div>
@@ -128703,26 +128796,45 @@ async function openManufacturingOrderDetail(orderId) {
 
   document.body.appendChild(modal);
 
+  /* -------------------------------------------------------
+     CLOSE
+  ------------------------------------------------------- */
+
   modal.querySelectorAll("[data-close]")
     .forEach(btn => {
-      btn.addEventListener("click", () => modal.remove());
+      btn.addEventListener("click", () => {
+        modal.remove();
+      });
     });
 
-  modal.querySelector("[data-post-usage]")
-    ?.addEventListener("click", async () => {
-      await openManufacturingMaterialUsage(orderId);
-      modal.remove();
+  /* -------------------------------------------------------
+     MATERIAL USAGE
+  ------------------------------------------------------- */
+
+  modal.querySelectorAll("[data-post-usage]")
+    .forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await openManufacturingMaterialUsage(orderId);
+        modal.remove();
+      });
     });
+
+  /* -------------------------------------------------------
+     STATUS
+  ------------------------------------------------------- */
 
   modal.querySelectorAll("[data-mfg-status]")
     .forEach(btn => {
       btn.addEventListener("click", async () => {
-        const newStatus = btn.dataset.mfgStatus;
 
-        const result = await updateManufacturingOrderStatus(
-          orderId,
-          newStatus
-        );
+        const newStatus =
+          btn.dataset.mfgStatus;
+
+        const result =
+          await updateManufacturingOrderStatus(
+            orderId,
+            newStatus
+          );
 
         if (!result) return;
 
@@ -128731,9 +128843,482 @@ async function openManufacturingOrderDetail(orderId) {
         await loadManufacturingOrders();
         await loadManufacturingProductionHistory();
 
-        await openManufacturingOrderDetail(orderId);
+        await openManufacturingOrderDetail(
+          orderId
+        );
       });
     });
+
+  /* -------------------------------------------------------
+     ADD LABOUR
+  ------------------------------------------------------- */
+
+  modal.querySelector("[data-add-labour]")
+    ?.addEventListener("click", async () => {
+
+      const workerName =
+        prompt("Employee / Worker name:");
+
+      if (workerName == null) return;
+
+      const role =
+        prompt("Role:");
+
+      if (role == null) return;
+
+      const hoursRaw =
+        prompt("Hours:");
+
+      if (hoursRaw == null) return;
+
+      const rateRaw =
+        prompt("Rate per hour:");
+
+      if (rateRaw == null) return;
+
+      const hours =
+        Number(hoursRaw);
+
+      const rate =
+        Number(rateRaw);
+
+      if (
+        !Number.isFinite(hours) ||
+        hours < 0
+      ) {
+        alert("Please enter a valid number of hours.");
+        return;
+      }
+
+      if (
+        !Number.isFinite(rate) ||
+        rate < 0
+      ) {
+        alert("Please enter a valid labour rate.");
+        return;
+      }
+
+      const labourCost =
+        hours * rate;
+
+      try {
+
+        await apiFetch(
+          ENDPOINTS.manufacturing.orderLabour(
+            cid,
+            orderId
+          ),
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              worker_name: workerName.trim(),
+              role: role.trim(),
+              hours,
+              rate,
+              labour_cost: labourCost,
+              source: "manual",
+            }),
+          }
+        );
+
+        modal.remove();
+
+        await openManufacturingOrderDetail(
+          orderId
+        );
+
+      } catch (err) {
+
+        console.error(
+          "Add manufacturing labour failed:",
+          err
+        );
+
+        alert(
+          err?.message ||
+          "Failed to add direct labour."
+        );
+      }
+    });
+
+  /* -------------------------------------------------------
+     DELETE LABOUR
+  ------------------------------------------------------- */
+
+  modal.querySelectorAll("[data-delete-labour]")
+    .forEach(btn => {
+
+      btn.addEventListener("click", async () => {
+
+        const labourId =
+          Number(btn.dataset.deleteLabour);
+
+        if (!labourId) return;
+
+        if (
+          !confirm(
+            "Delete this direct labour entry?"
+          )
+        ) {
+          return;
+        }
+
+        try {
+
+          await apiFetch(
+            ENDPOINTS.manufacturing.orderLabourItem(
+              cid,
+              orderId,
+              labourId
+            ),
+            {
+              method: "DELETE",
+              headers: {
+                Accept: "application/json",
+              },
+            }
+          );
+
+          modal.remove();
+
+          await openManufacturingOrderDetail(
+            orderId
+          );
+
+        } catch (err) {
+
+          console.error(
+            "Delete manufacturing labour failed:",
+            err
+          );
+
+          alert(
+            err?.message ||
+            "Failed to delete direct labour."
+          );
+        }
+      });
+    });
+
+  /* -------------------------------------------------------
+     ADD DIRECT COST
+  ------------------------------------------------------- */
+
+  modal.querySelector("[data-add-direct-cost]")
+    ?.addEventListener("click", async () => {
+
+      const description =
+        prompt("Description:");
+
+      if (description == null) return;
+
+      const costType =
+        prompt("Cost type:");
+
+      if (costType == null) return;
+
+      const amountRaw =
+        prompt("Amount:");
+
+      if (amountRaw == null) return;
+
+      const amount =
+        Number(amountRaw);
+
+      if (
+        !Number.isFinite(amount) ||
+        amount < 0
+      ) {
+        alert(
+          "Please enter a valid direct cost amount."
+        );
+        return;
+      }
+
+      try {
+
+        await apiFetch(
+          ENDPOINTS.manufacturing.orderDirectCosts(
+            cid,
+            orderId
+          ),
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              description: description.trim(),
+              cost_type: costType.trim(),
+              amount,
+              source: "manual",
+            }),
+          }
+        );
+
+        modal.remove();
+
+        await openManufacturingOrderDetail(
+          orderId
+        );
+
+      } catch (err) {
+
+        console.error(
+          "Add manufacturing direct cost failed:",
+          err
+        );
+
+        alert(
+          err?.message ||
+          "Failed to add other direct cost."
+        );
+      }
+    });
+
+  /* -------------------------------------------------------
+     DELETE DIRECT COST
+  ------------------------------------------------------- */
+
+  modal.querySelectorAll("[data-delete-direct-cost]")
+    .forEach(btn => {
+
+      btn.addEventListener("click", async () => {
+
+        const directCostId =
+          Number(
+            btn.dataset.deleteDirectCost
+          );
+
+        if (!directCostId) return;
+
+        if (
+          !confirm(
+            "Delete this direct cost?"
+          )
+        ) {
+          return;
+        }
+
+        try {
+
+          await apiFetch(
+            ENDPOINTS.manufacturing.orderDirectCostItem(
+              cid,
+              orderId,
+              directCostId
+            ),
+            {
+              method: "DELETE",
+              headers: {
+                Accept: "application/json",
+              },
+            }
+          );
+
+          modal.remove();
+
+          await openManufacturingOrderDetail(
+            orderId
+          );
+
+        } catch (err) {
+
+          console.error(
+            "Delete manufacturing direct cost failed:",
+            err
+          );
+
+          alert(
+            err?.message ||
+            "Failed to delete direct cost."
+          );
+        }
+      });
+    });
+
+  /* -------------------------------------------------------
+     ADD OVERHEAD
+  ------------------------------------------------------- */
+
+  modal.querySelector("[data-add-overhead]")
+    ?.addEventListener("click", async () => {
+
+      const allocationName =
+        prompt("Cost / allocation name:");
+
+      if (allocationName == null) return;
+
+      const basis =
+        prompt("Allocation basis:");
+
+      if (basis == null) return;
+
+      const quantityRaw =
+        prompt("Basis quantity:");
+
+      if (quantityRaw == null) return;
+
+      const rateRaw =
+        prompt("Rate:");
+
+      if (rateRaw == null) return;
+
+      const quantity =
+        Number(quantityRaw);
+
+      const rate =
+        Number(rateRaw);
+
+      if (
+        !Number.isFinite(quantity) ||
+        quantity < 0
+      ) {
+        alert(
+          "Please enter a valid basis quantity."
+        );
+        return;
+      }
+
+      if (
+        !Number.isFinite(rate) ||
+        rate < 0
+      ) {
+        alert(
+          "Please enter a valid overhead rate."
+        );
+        return;
+      }
+
+      const allocatedAmount =
+        quantity * rate;
+
+      try {
+
+        await apiFetch(
+          ENDPOINTS.manufacturing.orderOverhead(
+            cid,
+            orderId
+          ),
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              allocation_name:
+                allocationName.trim(),
+
+              basis:
+                basis.trim(),
+
+              quantity,
+
+              rate,
+
+              allocated_amount:
+                allocatedAmount,
+
+              source: "manual",
+            }),
+          }
+        );
+
+        modal.remove();
+
+        await openManufacturingOrderDetail(
+          orderId
+        );
+
+      } catch (err) {
+
+        console.error(
+          "Add manufacturing overhead failed:",
+          err
+        );
+
+        alert(
+          err?.message ||
+          "Failed to add manufacturing overhead."
+        );
+      }
+    });
+
+  /* -------------------------------------------------------
+     DELETE OVERHEAD
+  ------------------------------------------------------- */
+
+  modal.querySelectorAll("[data-delete-overhead]")
+    .forEach(btn => {
+
+      btn.addEventListener("click", async () => {
+
+        const overheadId =
+          Number(
+            btn.dataset.deleteOverhead
+          );
+
+        if (!overheadId) return;
+
+        if (
+          !confirm(
+            "Delete this manufacturing overhead allocation?"
+          )
+        ) {
+          return;
+        }
+
+        try {
+
+          await apiFetch(
+            ENDPOINTS.manufacturing.orderOverheadItem(
+              cid,
+              orderId,
+              overheadId
+            ),
+            {
+              method: "DELETE",
+              headers: {
+                Accept: "application/json",
+              },
+            }
+          );
+
+          modal.remove();
+
+          await openManufacturingOrderDetail(
+            orderId
+          );
+
+        } catch (err) {
+
+          console.error(
+            "Delete manufacturing overhead failed:",
+            err
+          );
+
+          alert(
+            err?.message ||
+            "Failed to delete manufacturing overhead."
+          );
+        }
+      });
+    });
+
+  /* -------------------------------------------------------
+     INITIAL SUMMARY
+  ------------------------------------------------------- */
+
+  refreshManufacturingOrderManagementSummary(
+    modal,
+    order
+  );
 }
 
 // =====================================================
