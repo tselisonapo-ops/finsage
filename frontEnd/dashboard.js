@@ -4786,12 +4786,34 @@ const ENDPOINTS = {
 
     orderMaterialUsage: (cid, orderId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/material-usage`,
-  
+
+    orderManagementCosts: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/management-costs`,
+
+    orderLabour: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/labour`,
+
+    orderLabourItem: (cid, orderId, labourId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/labour/${encodeURIComponent(labourId)}`,
+
+    orderDirectCosts: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/direct-costs`,
+
+    orderDirectCostItem: (cid, orderId, directCostId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/direct-costs/${encodeURIComponent(directCostId)}`,
+
+    orderOverhead: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/overhead`,
+
+    orderOverheadItem: (cid, orderId, overheadId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/overhead/${encodeURIComponent(overheadId)}`,
+
     history: (cid, qs = "") =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/history${qs ? `?${qs}` : ""}`,  
-  
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/history${qs ? `?${qs}` : ""}`,
+
     status: (cid, orderId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/status`,  
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/status`,
+
     productionPerformance: (cid, qs = "") =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/production-performance${qs ? `?${qs}` : ""}`,
 
@@ -125601,9 +125623,19 @@ function renderManufacturingBoms(rows) {
       </table>
     </div>
   `;
+
+  mount.querySelectorAll("[data-mfg-bom]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const bomId = Number(btn.dataset.mfgBom || 0);
+
+      if (bomId) {
+        openManufacturingBomDefinitionModal(bomId);
+      }
+    });
+  });
 }
 
-function openManufacturingBomDefinitionModal(bomId = 0) {
+async function openManufacturingBomDefinitionModal(bomId = 0) {
   let modal = document.getElementById("mfgBomDefinitionModal");
 
   if (!modal) {
@@ -125658,26 +125690,26 @@ function openManufacturingBomDefinitionModal(bomId = 0) {
                 placeholder="e.g. Standard Product BOM">
             </label>
 
-            <label class="text-xs md:col-span-2"> 
-              <div class="text-slate-600 mb-1">Finished Item</div> 
+            <label class="text-xs md:col-span-2">
+              <div class="text-slate-600 mb-1">Finished Item</div>
 
-              <input 
-                id="mfgBomDefinitionFinishedItem" 
-                type="text" 
-                class="w-full border rounded px-2 py-2 text-sm" 
-                placeholder="e.g. Office Desk"> 
-            </label> 
+              <input
+                id="mfgBomDefinitionFinishedItem"
+                type="text"
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="e.g. Office Desk">
+            </label>
 
-            <label class="text-xs"> 
-              <div class="text-slate-600 mb-1">Selling Price</div> 
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">Selling Price</div>
 
-              <input 
-                id="mfgBomDefinitionSellingPrice" 
-                type="number" 
-                min="0" 
-                step="0.01" 
-                class="w-full border rounded px-2 py-2 text-sm" 
-                placeholder="0.00"> 
+              <input
+                id="mfgBomDefinitionSellingPrice"
+                type="number"
+                min="0"
+                step="0.01"
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="0.00">
             </label>
 
             <label class="text-xs">
@@ -125804,29 +125836,146 @@ function openManufacturingBomDefinitionModal(bomId = 0) {
 
   modal.dataset.bomId = String(bomId || 0);
 
-  document.getElementById("mfgBomDefinitionCode").value = "";
-  document.getElementById("mfgBomDefinitionName").value = "";
-  document.getElementById("mfgBomDefinitionBatchQty").value = "1";
-  document.getElementById("mfgBomDefinitionBatchUnit").value = "";
-  document.getElementById("mfgBomDefinitionDescription").value = "";
-  document.getElementById("mfgBomDefinitionFinishedItem").value = "";
-  document.getElementById("mfgBomDefinitionSellingPrice").value = "";
+  const codeInput =
+    document.getElementById("mfgBomDefinitionCode");
+
+  const nameInput =
+    document.getElementById("mfgBomDefinitionName");
+
+  const finishedItemInput =
+    document.getElementById("mfgBomDefinitionFinishedItem");
+
+  const sellingPriceInput =
+    document.getElementById("mfgBomDefinitionSellingPrice");
+
+  const batchQtyInput =
+    document.getElementById("mfgBomDefinitionBatchQty");
+
+  const batchUnitInput =
+    document.getElementById("mfgBomDefinitionBatchUnit");
+
+  const descriptionInput =
+    document.getElementById("mfgBomDefinitionDescription");
+
+  const title =
+    document.getElementById("mfgBomDefinitionTitle");
+
+  const msg =
+    document.getElementById("mfgBomDefinitionMsg");
 
   const tbody =
     document.getElementById("mfgBomDefinitionLinesTbody");
+
+  codeInput.value = "";
+  nameInput.value = "";
+  finishedItemInput.value = "";
+  sellingPriceInput.value = "";
+  batchQtyInput.value = "1";
+  batchUnitInput.value = "";
+  descriptionInput.value = "";
+
+  if (msg) {
+    msg.innerHTML = "";
+  }
 
   if (tbody) {
     tbody.innerHTML = "";
   }
 
-  document.getElementById("mfgBomDefinitionTitle").textContent =
-    bomId ? "Edit BOM" : "New BOM";
+  title.textContent = bomId ? "Edit BOM" : "New BOM";
+
+  modal.classList.remove("hidden");
 
   if (!bomId) {
     addManufacturingBomDefinitionLine();
+    return;
   }
 
-  modal.classList.remove("hidden");
+  try {
+    if (typeof window.apiFetch !== "function") {
+      throw new Error("apiFetch is not available");
+    }
+
+    const cid =
+      typeof window.getActiveCompanyId === "function"
+        ? window.getActiveCompanyId()
+        : null;
+
+    if (!cid) {
+      throw new Error("Active company could not be determined");
+    }
+
+    const url = manufacturing.bom(cid, bomId);
+
+    const data = await window.apiFetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!data?.ok || !data?.bom) {
+      throw new Error(
+        data?.error || "Unable to load manufacturing BOM"
+      );
+    }
+
+    const bom = data.bom;
+
+    codeInput.value =
+      bom.bom_code ?? "";
+
+    nameInput.value =
+      bom.name ?? "";
+
+    finishedItemInput.value =
+      bom.finished_item_name ?? "";
+
+    sellingPriceInput.value =
+      bom.selling_price ?? "";
+
+    batchQtyInput.value =
+      bom.batch_qty ?? "1";
+
+    batchUnitInput.value =
+      bom.batch_unit ?? "";
+
+    descriptionInput.value =
+      bom.description ?? "";
+
+    if (tbody) {
+      tbody.innerHTML = "";
+
+      const lines = Array.isArray(bom.lines)
+        ? bom.lines
+        : [];
+
+      if (lines.length) {
+        lines.forEach(line => {
+          addManufacturingBomDefinitionLine(line);
+        });
+      } else {
+        addManufacturingBomDefinitionLine();
+      }
+    }
+
+  } catch (e) {
+    console.error(
+      "[Manufacturing BOM] failed to load:",
+      e
+    );
+
+    if (msg) {
+      msg.innerHTML = `
+        <div class="mb-3 border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2 text-xs">
+          ${esc(
+            e?.message ||
+            "Unable to load manufacturing BOM."
+          )}
+        </div>
+      `;
+    }
+  }
 }
 
 function addManufacturingBomDefinitionLine(line = {}) {
@@ -127714,6 +127863,25 @@ async function openManufacturingOrderDetail(orderId) {
 
   const order = data?.order || data;
 
+  const managementCosts =
+    order?.management_costs ||
+    {};
+
+  const labourLines =
+    Array.isArray(managementCosts.labour)
+      ? managementCosts.labour
+      : [];
+
+  const directCostLines =
+    Array.isArray(managementCosts.direct_costs)
+      ? managementCosts.direct_costs
+      : [];
+
+  const overheadLines =
+    Array.isArray(managementCosts.overhead)
+      ? managementCosts.overhead
+      : [];
+
   const modal = document.createElement("div");
 
   modal.className =
@@ -128005,6 +128173,511 @@ async function openManufacturingOrderDetail(orderId) {
           </table>
 
         </div>
+
+        <!-- Direct Labour -->
+        <div class="border rounded mt-5">
+
+          <div class="flex items-center justify-between border-b px-3 py-2 bg-slate-50">
+            <div>
+              <div class="font-semibold text-sm text-slate-700">
+                Direct Labour
+              </div>
+
+              <div class="text-xs text-slate-500">
+                Labour directly attributable to this production batch.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-add-labour
+              class="px-3 py-1.5 border rounded text-xs hover:bg-white">
+              Add Labour
+            </button>
+          </div>
+
+          <div class="overflow-auto">
+
+            <table class="w-full text-xs">
+
+              <thead class="border-b bg-white">
+                <tr>
+
+                  <th class="text-left px-3 py-2">
+                    Employee / Worker
+                  </th>
+
+                  <th class="text-left px-3 py-2">
+                    Role
+                  </th>
+
+                  <th class="text-right px-3 py-2">
+                    Hours
+                  </th>
+
+                  <th class="text-right px-3 py-2">
+                    Rate
+                  </th>
+
+                  <th class="text-right px-3 py-2">
+                    Labour Cost
+                  </th>
+
+                  <th class="text-right px-3 py-2">
+                    Action
+                  </th>
+
+                </tr>
+              </thead>
+
+              <tbody data-labour-lines>
+
+                ${
+                  labourLines.length
+                    ? labourLines.map(line => `
+                        <tr class="border-b">
+
+                          <td class="px-3 py-2">
+                            ${esc(line.worker_name || line.worker_reference || "")}
+                          </td>
+
+                          <td class="px-3 py-2">
+                            ${esc(line.role || "")}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            ${line.hours != null ? esc(line.hours) : "—"}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            ${line.rate != null ? fmtMoney(line.rate) : "—"}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            ${line.labour_cost != null ? fmtMoney(line.labour_cost) : "—"}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              class="text-xs text-red-600 hover:underline"
+                              data-delete-labour="${Number(line.id)}">
+                              Delete
+                            </button>
+                          </td>
+
+                        </tr>
+                      `).join("")
+                    : `
+                        <tr data-labour-empty>
+                          <td
+                            colspan="6"
+                            class="px-3 py-4 text-slate-500">
+                            No direct labour has been recorded for this production batch.
+                          </td>
+                        </tr>
+                      `
+                }
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </div>
+
+
+        <!-- Other Direct Costs -->
+        <div class="border rounded mt-4">
+
+          <div class="flex items-center justify-between border-b px-3 py-2 bg-slate-50">
+
+            <div>
+              <div class="font-semibold text-sm text-slate-700">
+                Other Direct Costs
+              </div>
+
+              <div class="text-xs text-slate-500">
+                Other costs directly attributable to this production batch.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-add-direct-cost
+              class="px-3 py-1.5 border rounded text-xs hover:bg-white">
+              Add Direct Cost
+            </button>
+
+          </div>
+
+          <div class="overflow-auto">
+
+            <table class="w-full text-xs">
+
+              <thead class="border-b bg-white">
+                <tr>
+
+                  <th class="text-left px-3 py-2">
+                    Description
+                  </th>
+
+                  <th class="text-left px-3 py-2">
+                    Cost Type
+                  </th>
+
+                  <th class="text-right px-3 py-2">
+                    Amount
+                  </th>
+
+                  <th class="text-right px-3 py-2">
+                    Action
+                  </th>
+
+                </tr>
+              </thead>
+
+              <tbody data-direct-cost-lines>
+
+                ${
+                  directCostLines.length
+                    ? directCostLines.map(line => `
+                        <tr class="border-b">
+
+                          <td class="px-3 py-2">
+                            ${esc(line.description || "")}
+                          </td>
+
+                          <td class="px-3 py-2">
+                            ${esc(line.cost_type || "")}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            ${line.amount != null ? fmtMoney(line.amount) : "—"}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              class="text-xs text-red-600 hover:underline"
+                              data-delete-direct-cost="${Number(line.id)}">
+                              Delete
+                            </button>
+                          </td>
+
+                        </tr>
+                      `).join("")
+                    : `
+                        <tr data-direct-cost-empty>
+                          <td
+                            colspan="4"
+                            class="px-3 py-4 text-slate-500">
+                            No other direct costs have been recorded for this production batch.
+                          </td>
+                        </tr>
+                      `
+                }
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </div>
+
+
+        <!-- Manufacturing Overhead -->
+        <div class="border rounded mt-4">
+
+          <div class="flex items-center justify-between border-b px-3 py-2 bg-slate-50">
+
+            <div>
+              <div class="font-semibold text-sm text-slate-700">
+                Manufacturing Overhead
+              </div>
+
+              <div class="text-xs text-slate-500">
+                Factory costs allocated to this production batch.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-add-overhead
+              class="px-3 py-1.5 border rounded text-xs hover:bg-white">
+              Add Overhead
+            </button>
+
+          </div>
+
+          <div class="overflow-auto">
+
+            <table class="w-full text-xs">
+
+              <thead class="border-b bg-white">
+                <tr>
+
+                  <th class="text-left px-3 py-2">
+                    Cost / Allocation
+                  </th>
+
+                  <th class="text-left px-3 py-2">
+                    Basis
+                  </th>
+
+                  <th class="text-right px-3 py-2">
+                    Rate
+                  </th>
+
+                  <th class="text-right px-3 py-2">
+                    Allocated Amount
+                  </th>
+
+                  <th class="text-right px-3 py-2">
+                    Action
+                  </th>
+
+                </tr>
+              </thead>
+
+              <tbody data-overhead-lines>
+
+                ${
+                  overheadLines.length
+                    ? overheadLines.map(line => `
+                        <tr class="border-b">
+
+                          <td class="px-3 py-2">
+                            ${esc(line.allocation_name || "")}
+                          </td>
+
+                          <td class="px-3 py-2">
+                            ${esc(line.basis || "")}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            ${line.rate != null ? fmtMoney(line.rate) : "—"}
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            ${
+                              line.allocated_amount != null
+                                ? fmtMoney(line.allocated_amount)
+                                : "—"
+                            }
+                          </td>
+
+                          <td class="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              class="text-xs text-red-600 hover:underline"
+                              data-delete-overhead="${Number(line.id)}">
+                              Delete
+                            </button>
+                          </td>
+
+                        </tr>
+                      `).join("")
+                    : `
+                        <tr data-overhead-empty>
+                          <td
+                            colspan="5"
+                            class="px-3 py-4 text-slate-500">
+                            No manufacturing overhead has been allocated to this production batch.
+                          </td>
+                        </tr>
+                      `
+                }
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </div>
+
+
+        <!-- Production Cost Summary -->
+        <div class="border rounded mt-5">
+
+          <div class="border-b px-3 py-2 bg-slate-50">
+
+            <div class="font-semibold text-sm text-slate-700">
+              Production Cost Summary
+            </div>
+
+            <div class="text-xs text-slate-500">
+              Management accounting view of the production batch.
+            </div>
+
+          </div>
+
+          <div class="p-3">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+              <div class="space-y-2 text-xs">
+
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">
+                    Direct Materials
+                  </span>
+
+                  <span
+                    class="font-medium"
+                    data-summary-materials>
+                    ${fmtMoney(order?.material_cost || 0)}
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">
+                    Direct Labour
+                  </span>
+
+                  <span
+                    class="font-medium"
+                    data-summary-labour>
+                    ${fmtMoney(0)}
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">
+                    Other Direct Costs
+                  </span>
+
+                  <span
+                    class="font-medium"
+                    data-summary-direct-costs>
+                    ${fmtMoney(0)}
+                  </span>
+                </div>
+
+                <div class="border-t pt-2 flex items-center justify-between">
+                  <span class="font-semibold text-slate-700">
+                    Total Direct Production Cost
+                  </span>
+
+                  <span
+                    class="font-semibold"
+                    data-summary-direct-total>
+                    ${fmtMoney(order?.material_cost || 0)}
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">
+                    Manufacturing Overhead
+                  </span>
+
+                  <span
+                    class="font-medium"
+                    data-summary-overhead>
+                    ${fmtMoney(0)}
+                  </span>
+                </div>
+
+                <div class="border-t pt-2 flex items-center justify-between">
+                  <span class="font-semibold text-slate-700">
+                    Full Production Cost
+                  </span>
+
+                  <span
+                    class="font-semibold"
+                    data-summary-full-cost>
+                    ${fmtMoney(order?.material_cost || 0)}
+                  </span>
+                </div>
+
+              </div>
+
+
+              <div class="space-y-2 text-xs">
+
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">
+                    Selling Price
+                  </span>
+
+                  <span
+                    class="font-medium"
+                    data-summary-selling-price>
+                    ${fmtMoney(0)}
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">
+                    Production Value
+                  </span>
+
+                  <span
+                    class="font-medium"
+                    data-summary-production-value>
+                    ${fmtMoney(0)}
+                  </span>
+                </div>
+
+                <div class="border-t pt-2 flex items-center justify-between">
+                  <span class="font-semibold text-slate-700">
+                    Contribution
+                  </span>
+
+                  <span
+                    class="font-semibold"
+                    data-summary-contribution>
+                    ${fmtMoney(0)}
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">
+                    Contribution Margin
+                  </span>
+
+                  <span
+                    class="font-medium"
+                    data-summary-contribution-margin>
+                    —
+                  </span>
+                </div>
+
+                <div class="border-t pt-2 flex items-center justify-between">
+                  <span class="font-semibold text-slate-700">
+                    Full Production Margin
+                  </span>
+
+                  <span
+                    class="font-semibold"
+                    data-summary-full-margin>
+                    ${fmtMoney(0)}
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">
+                    Full Production Margin %
+                  </span>
+
+                  <span
+                    class="font-medium"
+                    data-summary-full-margin-percent>
+                    —
+                  </span>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
 
         <div class="flex items-center justify-between mt-4">
 

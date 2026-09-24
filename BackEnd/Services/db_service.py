@@ -53082,6 +53082,92 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_materials_tx_idx
         ON {schema}.manufacturing_order_materials(company_id, inventory_tx_id);
 
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_labour (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            manufacturing_order_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_orders(id)
+                ON DELETE CASCADE,
+
+            worker_name TEXT NULL,
+            worker_reference TEXT NULL,
+            role TEXT NULL,
+
+            hours NUMERIC(18,6) NULL,
+            rate NUMERIC(18,6) NULL,
+            labour_cost NUMERIC(18,6) NULL,
+
+            source TEXT NULL,
+            source_id INT NULL,
+            memo TEXT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_labour_company_mo_idx
+        ON {schema}.manufacturing_order_labour(company_id, manufacturing_order_id);
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_direct_costs (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            manufacturing_order_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_orders(id)
+                ON DELETE CASCADE,
+
+            description TEXT NULL,
+            cost_type TEXT NULL,
+            amount NUMERIC(18,6) NULL,
+
+            source TEXT NULL,
+            source_id INT NULL,
+            memo TEXT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_direct_costs_company_mo_idx
+        ON {schema}.manufacturing_order_direct_costs(company_id, manufacturing_order_id);
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_overhead (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            manufacturing_order_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_orders(id)
+                ON DELETE CASCADE,
+
+            allocation_name TEXT NULL,
+            basis TEXT NULL,
+            quantity NUMERIC(18,6) NULL,
+            rate NUMERIC(18,6) NULL,
+            allocated_amount NUMERIC(18,6) NULL,
+
+            source TEXT NULL,
+            source_id INT NULL,
+            memo TEXT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_overhead_company_mo_idx
+        ON {schema}.manufacturing_order_overhead(company_id, manufacturing_order_id);
+
         -- ============================================================
         -- INVENTORY WRITE-DOWN REASONS TABLE & AUDIT HOOKS
         -- ============================================================
@@ -85847,6 +85933,14 @@ class DatabaseService:
                     for r in line_rows
                 ]
 
+            order["management_costs"] = (
+                self.get_manufacturing_order_management_costs(
+                    company_id=company_id,
+                    manufacturing_order_id=int(manufacturing_order_id),
+                    cur=c,
+                )
+            )
+
             return order
 
         if cur is not None:
@@ -88441,6 +88535,468 @@ class DatabaseService:
                 "overhead_available": False,
             },
         }
+
+    def get_manufacturing_order_management_costs(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        def _fetch(c):
+            result = {
+                "labour": [],
+                "direct_costs": [],
+                "overhead": [],
+            }
+
+            c.execute(
+                f"""
+                SELECT
+                    id,
+                    company_id,
+                    manufacturing_order_id,
+                    worker_name,
+                    worker_reference,
+                    role,
+                    hours,
+                    rate,
+                    labour_cost,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                FROM {schema}.manufacturing_order_labour
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                ORDER BY id
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            rows = c.fetchall()
+            columns = [d[0] for d in c.description]
+
+            if rows:
+                for row in rows:
+                    item = (
+                        dict(row)
+                        if isinstance(row, dict)
+                        else dict(zip(columns, row))
+                    )
+
+                    for key in (
+                        "hours",
+                        "rate",
+                        "labour_cost",
+                    ):
+                        if item.get(key) is not None:
+                            item[key] = float(item[key])
+
+                    result["labour"].append(item)
+
+            c.execute(
+                f"""
+                SELECT
+                    id,
+                    company_id,
+                    manufacturing_order_id,
+                    description,
+                    cost_type,
+                    amount,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                FROM {schema}.manufacturing_order_direct_costs
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                ORDER BY id
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            rows = c.fetchall()
+            columns = [d[0] for d in c.description]
+
+            if rows:
+                for row in rows:
+                    item = (
+                        dict(row)
+                        if isinstance(row, dict)
+                        else dict(zip(columns, row))
+                    )
+
+                    if item.get("amount") is not None:
+                        item["amount"] = float(item["amount"])
+
+                    result["direct_costs"].append(item)
+
+            c.execute(
+                f"""
+                SELECT
+                    id,
+                    company_id,
+                    manufacturing_order_id,
+                    allocation_name,
+                    basis,
+                    quantity,
+                    rate,
+                    allocated_amount,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                FROM {schema}.manufacturing_order_overhead
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                ORDER BY id
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            rows = c.fetchall()
+            columns = [d[0] for d in c.description]
+
+            if rows:
+                for row in rows:
+                    item = (
+                        dict(row)
+                        if isinstance(row, dict)
+                        else dict(zip(columns, row))
+                    )
+
+                    for key in (
+                        "quantity",
+                        "rate",
+                        "allocated_amount",
+                    ):
+                        if item.get(key) is not None:
+                            item[key] = float(item[key])
+
+                    result["overhead"].append(item)
+
+            return result
+
+        if cur is not None:
+            return _fetch(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _fetch(cur2)
+
+    def create_manufacturing_order_labour(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        worker_name=None,
+        worker_reference=None,
+        role=None,
+        hours=None,
+        rate=None,
+        labour_cost=None,
+        source=None,
+        source_id=None,
+        memo=None,
+        created_by_user_id=None,
+        cur=None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        def _create(c):
+            c.execute(
+                f"""
+                INSERT INTO {schema}.manufacturing_order_labour (
+                    company_id,
+                    manufacturing_order_id,
+                    worker_name,
+                    worker_reference,
+                    role,
+                    hours,
+                    rate,
+                    labour_cost,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s
+                )
+                RETURNING id
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                    worker_name,
+                    worker_reference,
+                    role,
+                    hours,
+                    rate,
+                    labour_cost,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    created_by_user_id,
+                ),
+            )
+
+            row = c.fetchone()
+
+            if isinstance(row, dict):
+                return int(row["id"])
+
+            return int(row[0])
+
+        if cur is not None:
+            return _create(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _create(cur2)
+
+    def delete_manufacturing_order_labour(
+        self,
+        company_id: int,
+        labour_id: int,
+        cur=None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        def _delete(c):
+            c.execute(
+                f"""
+                DELETE FROM {schema}.manufacturing_order_labour
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    company_id,
+                    int(labour_id),
+                ),
+            )
+
+            return c.rowcount > 0
+
+        if cur is not None:
+            return _delete(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _delete(cur2)
+
+    def create_manufacturing_order_direct_cost(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        description=None,
+        cost_type=None,
+        amount=None,
+        source=None,
+        source_id=None,
+        memo=None,
+        created_by_user_id=None,
+        cur=None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        def _create(c):
+            c.execute(
+                f"""
+                INSERT INTO {schema}.manufacturing_order_direct_costs (
+                    company_id,
+                    manufacturing_order_id,
+                    description,
+                    cost_type,
+                    amount,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s
+                )
+                RETURNING id
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                    description,
+                    cost_type,
+                    amount,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    created_by_user_id,
+                ),
+            )
+
+            row = c.fetchone()
+
+            if isinstance(row, dict):
+                return int(row["id"])
+
+            return int(row[0])
+
+        if cur is not None:
+            return _create(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _create(cur2)
+
+    def delete_manufacturing_order_direct_cost(
+        self,
+        company_id: int,
+        direct_cost_id: int,
+        cur=None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        def _delete(c):
+            c.execute(
+                f"""
+                DELETE FROM {schema}.manufacturing_order_direct_costs
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    company_id,
+                    int(direct_cost_id),
+                ),
+            )
+
+            return c.rowcount > 0
+
+        if cur is not None:
+            return _delete(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _delete(cur2)
+
+    def create_manufacturing_order_overhead(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        allocation_name=None,
+        basis=None,
+        quantity=None,
+        rate=None,
+        allocated_amount=None,
+        source=None,
+        source_id=None,
+        memo=None,
+        created_by_user_id=None,
+        cur=None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        def _create(c):
+            c.execute(
+                f"""
+                INSERT INTO {schema}.manufacturing_order_overhead (
+                    company_id,
+                    manufacturing_order_id,
+                    allocation_name,
+                    basis,
+                    quantity,
+                    rate,
+                    allocated_amount,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s
+                )
+                RETURNING id
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                    allocation_name,
+                    basis,
+                    quantity,
+                    rate,
+                    allocated_amount,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    created_by_user_id,
+                ),
+            )
+
+            row = c.fetchone()
+
+            if isinstance(row, dict):
+                return int(row["id"])
+
+            return int(row[0])
+
+        if cur is not None:
+            return _create(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _create(cur2)
+
+    def delete_manufacturing_order_overhead(
+        self,
+        company_id: int,
+        overhead_id: int,
+        cur=None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        def _delete(c):
+            c.execute(
+                f"""
+                DELETE FROM {schema}.manufacturing_order_overhead
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    company_id,
+                    int(overhead_id),
+                ),
+            )
+
+            return c.rowcount > 0
+
+        if cur is not None:
+            return _delete(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _delete(cur2)
 
     def pos_ensure_packing_queue_item(self, company_id: int, order_id: int) -> int:
         schema = self.company_schema(company_id)

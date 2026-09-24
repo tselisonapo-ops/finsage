@@ -13886,6 +13886,311 @@ def get_manufacturing_production_performance(
             "error": str(e),
         }), 500
     
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/management-costs",
+    methods=["GET"]
+)
+@require_auth
+def get_manufacturing_order_management_costs(
+    cid: int,
+    order_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        result = db_service.get_manufacturing_order_management_costs(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "get_manufacturing_order_management_costs failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/labour",
+    methods=["POST"]
+)
+@require_auth
+def create_manufacturing_order_labour(
+    cid: int,
+    order_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        labour_id = db_service.create_manufacturing_order_labour(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            worker_name=payload.get("worker_name"),
+            worker_reference=payload.get("worker_reference"),
+            role=payload.get("role"),
+            hours=payload.get("hours"),
+            rate=payload.get("rate"),
+            labour_cost=payload.get("labour_cost"),
+            source=payload.get("source"),
+            source_id=payload.get("source_id"),
+            memo=payload.get("memo"),
+            created_by_user_id=int(user.get("id") or 0) or None,
+        )
+
+        return jsonify({
+            "ok": True,
+            "id": labour_id,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "create_manufacturing_order_labour failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/labour/<int:labour_id>",
+    methods=["DELETE"]
+)
+@require_auth
+def delete_manufacturing_order_labour(
+    cid: int,
+    order_id: int,
+    labour_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        deleted = db_service.delete_manufacturing_order_labour(
+            company_id=company_id,
+            labour_id=int(labour_id),
+        )
+
+        if not deleted:
+            return jsonify({
+                "error": "Labour record not found",
+            }), 404
+
+        return jsonify({
+            "ok": True,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "delete_manufacturing_order_labour failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/direct-costs",
+    methods=["POST"]
+)
+@require_auth
+def create_manufacturing_order_direct_cost(
+    cid: int,
+    order_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        direct_cost_id = db_service.create_manufacturing_order_direct_cost(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            description=payload.get("description"),
+            cost_type=payload.get("cost_type"),
+            amount=payload.get("amount"),
+            source=payload.get("source"),
+            source_id=payload.get("source_id"),
+            memo=payload.get("memo"),
+            created_by_user_id=int(user.get("id") or 0) or None,
+        )
+
+        return jsonify({
+            "ok": True,
+            "id": direct_cost_id,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "create_manufacturing_order_direct_cost failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/direct-costs/<int:direct_cost_id>",
+    methods=["DELETE"]
+)
+@require_auth
+def delete_manufacturing_order_direct_cost(
+    cid: int,
+    order_id: int,
+    direct_cost_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        deleted = db_service.delete_manufacturing_order_direct_cost(
+            company_id=company_id,
+            direct_cost_id=int(direct_cost_id),
+        )
+
+        if not deleted:
+            return jsonify({
+                "error": "Direct cost record not found",
+            }), 404
+
+        return jsonify({
+            "ok": True,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "delete_manufacturing_order_direct_cost failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/overhead",
+    methods=["POST"]
+)
+@require_auth
+def create_manufacturing_order_overhead(
+    cid: int,
+    order_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        overhead_id = db_service.create_manufacturing_order_overhead(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            allocation_name=payload.get("allocation_name"),
+            basis=payload.get("basis"),
+            quantity=payload.get("quantity"),
+            rate=payload.get("rate"),
+            allocated_amount=payload.get("allocated_amount"),
+            source=payload.get("source"),
+            source_id=payload.get("source_id"),
+            memo=payload.get("memo"),
+            created_by_user_id=int(user.get("id") or 0) or None,
+        )
+
+        return jsonify({
+            "ok": True,
+            "id": overhead_id,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "create_manufacturing_order_overhead failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/overhead/<int:overhead_id>",
+    methods=["DELETE"]
+)
+@require_auth
+def delete_manufacturing_order_overhead(
+    cid: int,
+    order_id: int,
+    overhead_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        deleted = db_service.delete_manufacturing_order_overhead(
+            company_id=company_id,
+            overhead_id=int(overhead_id),
+        )
+
+        if not deleted:
+            return jsonify({
+                "error": "Overhead record not found",
+            }), 404
+
+        return jsonify({
+            "ok": True,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "delete_manufacturing_order_overhead failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+    
 @app.route("/api/companies/<int:cid>/services/items", methods=["POST"])
 @require_auth
 def create_service_item(cid: int):
