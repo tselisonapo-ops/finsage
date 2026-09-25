@@ -85916,6 +85916,7 @@ class DatabaseService:
                     b.bom_code,
                     b.name AS bom_name,
                     b.finished_item_name,
+                    b.selling_price AS bom_selling_price,
 
                     mo.tx_date,
                     mo.planned_start_date,
