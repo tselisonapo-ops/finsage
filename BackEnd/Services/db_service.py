@@ -85759,7 +85759,7 @@ class DatabaseService:
                 )
                 VALUES (
                     %s, %s, %s, %s, %s, %s, %s,
-                    %s, 0, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
                     'draft', %s, %s, %s
                 )
                 RETURNING id
@@ -85772,6 +85772,7 @@ class DatabaseService:
                     planned_start_date,
                     planned_finish_date,
                     production_tracking_method,
+                    planned_qty,
                     planned_qty,
                     production_unit,
                     location,
@@ -85895,7 +85896,7 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur2):
             return _create(cur2)
-
+        
     def get_manufacturing_order(
         self,
         company_id: int,
@@ -86034,9 +86035,7 @@ class DatabaseService:
                 str(order.get("actual_qty") or 0)
             )
 
-            remaining_qty = (
-                planned_qty - actual_qty
-            )
+            remaining_qty = planned_qty - actual_qty
 
             if remaining_qty < 0:
                 remaining_qty = Decimal("0")
@@ -86053,6 +86052,178 @@ class DatabaseService:
             if progress_percent > Decimal("100"):
                 progress_percent = Decimal("100")
 
+
+            # ---------------------------------------------------------
+            # PRODUCTION COST SUMMARY
+            # ---------------------------------------------------------
+
+            selling_price = Decimal(
+                str(order.get("bom_selling_price") or 0)
+            )
+
+            # Direct materials
+            material_cost = sum(
+                (
+                    Decimal(str(line.get("total_cost") or 0))
+                    for line in order.get("materials", [])
+                ),
+                Decimal("0"),
+            )
+
+            # Direct labour
+            labour_cost = sum(
+                (
+                    Decimal(str(line.get("labour_cost") or 0))
+                    for line in order.get("management_costs", {}).get("labour", [])
+                ),
+                Decimal("0"),
+            )
+
+            # Other direct production costs
+            direct_cost_total = sum(
+                (
+                    Decimal(str(line.get("amount") or 0))
+                    for line in order.get("management_costs", {}).get("direct_costs", [])
+                ),
+                Decimal("0"),
+            )
+
+            # Manufacturing overhead
+            overhead_total = sum(
+                (
+                    Decimal(str(line.get("allocated_amount") or 0))
+                    for line in order.get("management_costs", {}).get("overhead", [])
+                ),
+                Decimal("0"),
+            )
+
+            # Direct production cost excludes manufacturing overhead
+            total_direct_cost = (
+                material_cost
+                + labour_cost
+                + direct_cost_total
+            )
+
+            # Full production / absorption cost
+            full_production_cost = (
+                total_direct_cost
+                + overhead_total
+            )
+
+            # Selling price is per finished unit.
+            # Therefore production value is output quantity × BOM selling price.
+            production_value = (
+                actual_qty
+                * selling_price
+            )
+
+            # Contribution before manufacturing overhead
+            contribution = (
+                production_value
+                - total_direct_cost
+            )
+
+            contribution_margin = None
+
+            if production_value != 0:
+                contribution_margin = (
+                    contribution
+                    / production_value
+                    * Decimal("100")
+                )
+
+            # Full production margin after manufacturing overhead
+            full_production_margin = (
+                production_value
+                - full_production_cost
+            )
+
+            full_production_margin_percent = None
+
+            if production_value != 0:
+                full_production_margin_percent = (
+                    full_production_margin
+                    / production_value
+                    * Decimal("100")
+                )
+
+
+            # ---------------------------------------------------------
+            # UNIT ECONOMICS
+            # ---------------------------------------------------------
+
+            # Actual output is the preferred denominator because these
+            # costs represent the production batch as actually produced.
+            #
+            # If actual output is zero, fall back to planned output so
+            # the unit-cost fields remain useful before production output
+            # has been entered.
+            unit_output = actual_qty
+
+            if unit_output <= 0:
+                unit_output = planned_qty
+
+            unit_direct_cost = None
+            unit_full_production_cost = None
+            unit_contribution = None
+            unit_full_production_margin = None
+
+            if unit_output > 0:
+                unit_direct_cost = (
+                    total_direct_cost
+                    / unit_output
+                )
+
+                unit_full_production_cost = (
+                    full_production_cost
+                    / unit_output
+                )
+
+                unit_contribution = (
+                    selling_price
+                    - unit_direct_cost
+                )
+
+                unit_full_production_margin = (
+                    selling_price
+                    - unit_full_production_cost
+                )
+
+
+            order["production_summary"] = {
+                "planned_output": planned_qty,
+                "actual_output": actual_qty,
+                "remaining_output": remaining_qty,
+                "production_progress_percent": progress_percent,
+
+                "selling_price": selling_price,
+                "production_value": production_value,
+
+                "material_cost": material_cost,
+                "labour_cost": labour_cost,
+                "other_direct_costs": direct_cost_total,
+                "total_direct_cost": total_direct_cost,
+
+                "manufacturing_overhead": overhead_total,
+                "full_production_cost": full_production_cost,
+
+                "contribution": contribution,
+                "contribution_margin": contribution_margin,
+
+                "full_production_margin": full_production_margin,
+                "full_production_margin_percent": (
+                    full_production_margin_percent
+                ),
+
+                "unit_direct_cost": unit_direct_cost,
+                "unit_full_production_cost": unit_full_production_cost,
+                "unit_contribution": unit_contribution,
+                "unit_full_production_margin": unit_full_production_margin,
+            }
+
+
+            # Keep the existing progress summary for backwards
+            # compatibility with the current frontend/API consumers.
             order["production_progress_summary"] = {
                 "planned_qty": planned_qty,
                 "actual_qty": actual_qty,
@@ -86067,7 +86238,7 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
-
+        
     def list_manufacturing_orders(
         self,
         company_id: int,
@@ -86192,10 +86363,6 @@ class DatabaseService:
             )
 
         def _record(c):
-            # ---------------------------------------------------------
-            # Lock the production order so two users cannot post
-            # production against the same remaining quantity at once.
-            # ---------------------------------------------------------
             c.execute(
                 f"""
                 SELECT
@@ -86206,7 +86373,8 @@ class DatabaseService:
                     status,
                     production_tracking_method,
                     planned_start_date,
-                    planned_finish_date
+                    planned_finish_date,
+                    tx_date
                 FROM {schema}.manufacturing_orders
                 WHERE company_id = %s
                 AND id = %s
@@ -86225,12 +86393,20 @@ class DatabaseService:
                     "Manufacturing order not found"
                 )
 
-            columns = [d[0] for d in c.description]
+            columns = [
+                d[0]
+                for d in c.description
+            ]
 
             if isinstance(row, dict):
                 order = dict(row)
             else:
-                order = dict(zip(columns, row))
+                order = dict(
+                    zip(
+                        columns,
+                        row,
+                    )
+                )
 
             status = str(
                 order.get("status") or ""
@@ -86250,24 +86426,13 @@ class DatabaseService:
                 str(order.get("planned_qty") or 0)
             )
 
-            current_actual_qty = Decimal(
+            actual_qty = Decimal(
                 str(order.get("actual_qty") or 0)
             )
 
             if planned_qty <= 0:
                 raise ValueError(
                     "Manufacturing order has an invalid planned quantity"
-                )
-
-            new_actual_qty = (
-                current_actual_qty + quantity
-            )
-
-            if new_actual_qty > planned_qty:
-                raise ValueError(
-                    "Production quantity exceeds the remaining planned quantity. "
-                    f"Remaining quantity is "
-                    f"{planned_qty - current_actual_qty}"
                 )
 
             progress_date = (
@@ -86283,6 +86448,9 @@ class DatabaseService:
 
             # ---------------------------------------------------------
             # Record the individual production event.
+            #
+            # This history is independent of the editable actual_qty
+            # stored on the manufacturing order.
             # ---------------------------------------------------------
             c.execute(
                 f"""
@@ -86333,46 +86501,50 @@ class DatabaseService:
                 )
 
             # ---------------------------------------------------------
-            # Maintain the cumulative actual production quantity on
-            # the manufacturing order.
+            # Do NOT modify actual_qty here.
+            #
+            # actual_qty is the editable actual finished output of
+            # the production order.
             # ---------------------------------------------------------
+
             new_status = status
 
             if status == "draft":
                 new_status = "in_progress"
 
-            c.execute(
-                f"""
-                UPDATE {schema}.manufacturing_orders
-                SET
-                    actual_qty = %s,
-                    status = %s,
-                    updated_by_user_id = %s,
-                    updated_at = NOW()
-                WHERE company_id = %s
-                AND id = %s
-                """,
-                (
-                    new_actual_qty,
-                    new_status,
-                    created_by_user_id,
-                    company_id,
-                    int(manufacturing_order_id),
-                ),
-            )
+                c.execute(
+                    f"""
+                    UPDATE {schema}.manufacturing_orders
+                    SET
+                        status = %s,
+                        updated_by_user_id = %s,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                    AND id = %s
+                    """,
+                    (
+                        new_status,
+                        created_by_user_id,
+                        company_id,
+                        int(manufacturing_order_id),
+                    ),
+                )
 
             remaining_qty = (
-                planned_qty - new_actual_qty
+                planned_qty - actual_qty
             )
 
             if remaining_qty < 0:
                 remaining_qty = Decimal("0")
 
-            progress_percent = (
-                new_actual_qty
-                / planned_qty
-                * Decimal("100")
-            )
+            progress_percent = Decimal("0")
+
+            if planned_qty > 0:
+                progress_percent = (
+                    actual_qty
+                    / planned_qty
+                    * Decimal("100")
+                )
 
             if progress_percent > Decimal("100"):
                 progress_percent = Decimal("100")
@@ -86382,10 +86554,8 @@ class DatabaseService:
             )
 
             progress["planned_qty"] = planned_qty
-            progress["previous_actual_qty"] = (
-                current_actual_qty
-            )
-            progress["actual_qty"] = new_actual_qty
+            progress["previous_actual_qty"] = actual_qty
+            progress["actual_qty"] = actual_qty
             progress["remaining_qty"] = remaining_qty
             progress["progress_percent"] = progress_percent
             progress["status"] = new_status
