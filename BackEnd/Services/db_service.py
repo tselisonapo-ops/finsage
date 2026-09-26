@@ -3652,7 +3652,7 @@ class DatabaseService:
 
         ALTER TABLE public.company_users
         ADD COLUMN IF NOT EXISTS pos_role TEXT NULL,
-        ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+        ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS pos_is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
         ALTER TABLE public.company_users
@@ -3661,7 +3661,7 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS pos_display_name TEXT;
 
         ALTER TABLE public.company_users
-            ADD COLUMN IF NOT EXISTS product_access JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            ADD COLUMN IF NOT EXISTS product_access JSONB NOT NULL DEFAULT '{}'::jsonb,
             ADD COLUMN IF NOT EXISTS ops_is_active BOOLEAN NOT NULL DEFAULT FALSE; 
 
         ALTER TABLE public.company_users
