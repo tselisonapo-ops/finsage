@@ -29255,6 +29255,8 @@ class DatabaseService:
         ALTER TABLE public.company_users
             ADD COLUMN IF NOT EXISTS product_access JSONB NOT NULL DEFAULT '{}'::jsonb,
             ADD COLUMN IF NOT EXISTS ops_is_active BOOLEAN NOT NULL DEFAULT FALSE;
+
+        ALTER TABLE public.company_users
             ADD COLUMN IF NOT EXISTS ops_role_code TEXT NULL;
 
         -- Existing company owners automatically receive FinSage Nexus.
