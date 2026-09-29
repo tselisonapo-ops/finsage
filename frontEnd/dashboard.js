@@ -128379,6 +128379,7 @@ async function recordManufacturingProductionProgress(
       }
     );
 }
+
 function refreshManufacturingOrderManagementSummary(modal, order) {
   const summary = order?.production_summary || {};
 
@@ -130299,6 +130300,16 @@ async function openManufacturingOrderDetail(orderId) {
         );
 
         modal.remove();
+      });
+    });
+
+  // RECORD PRODUCTION
+  modal.querySelectorAll("[data-record-production]")
+    .forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await recordManufacturingProductionProgress(
+          orderId
+        );
       });
     });
 
