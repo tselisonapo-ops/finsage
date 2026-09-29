@@ -128617,28 +128617,20 @@ async function openManufacturingOrderDetail(orderId) {
         );
 
   const remainingOutput =
-    Number(
-      productionSummary.remaining_output ??
-      Math.max(
-        plannedOutput - completedOutput,
-        0
-      )
+    Math.max(
+      plannedOutput - completedOutput,
+      0
     );
 
   const productionProgressPercent =
-    Number(
-      productionSummary.production_progress_percent ??
-      (
-        plannedOutput > 0
-          ? Math.min(
-              completedOutput /
-                plannedOutput *
-                100,
-              100
-            )
-          : 0
-      )
-    );
+    plannedOutput > 0
+      ? Math.min(
+          completedOutput /
+            plannedOutput *
+            100,
+          100
+        )
+      : 0;
 
   const sellingPrice =
     Number(
