@@ -85533,31 +85533,6 @@ class DatabaseService:
             planned_qty = row["planned_qty"]
             actual_qty = row["actual_qty"]
 
-            cur.execute(
-                f"""
-                SELECT
-                    COALESCE(SUM(quantity), 0) AS completed_qty
-                FROM {schema}.manufacturing_production_progress
-                WHERE company_id=%s
-                AND manufacturing_order_id=%s
-                """,
-                (
-                    int(company_id),
-                    mo_id,
-                ),
-            )
-
-            progress_row = cur.fetchone()
-
-            completed_qty = (
-                float(progress_row["completed_qty"] or 0)
-                if progress_row
-                else 0
-            )
-
-            if completed_qty > 0:
-                actual_qty = completed_qty
-
             if current_status == new_status:
                 return {
                     "ok": True,
@@ -85565,6 +85540,8 @@ class DatabaseService:
                     "id": mo_id,
                     "mo_no": mo_no,
                     "status": current_status,
+                    "planned_qty": planned_qty,
+                    "actual_qty": actual_qty,
                 }
 
             allowed_transitions = {
