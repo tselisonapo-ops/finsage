@@ -128597,12 +128597,24 @@ async function openManufacturingOrderDetail(orderId) {
       0
     );
 
+  const productionProgress =
+    Array.isArray(order?.production_progress)
+      ? order.production_progress
+      : [];
+
   const completedOutput =
-    Number(
-      productionSummary.actual_output ??
-      order?.actual_qty ??
-      0
-    );
+    productionProgress.length
+      ? productionProgress.reduce(
+          (total, entry) =>
+            total +
+            Number(entry?.quantity || 0),
+          0
+        )
+      : Number(
+          productionSummary.actual_output ??
+          order?.actual_qty ??
+          0
+        );
 
   const remainingOutput =
     Number(
