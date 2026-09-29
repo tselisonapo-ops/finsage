@@ -86528,12 +86528,51 @@ class DatabaseService:
                 )
 
             # ---------------------------------------------------------
-            # Do NOT modify actual_qty here.
+            # Sync the manufacturing order's actual output with the
+            # production progress recorded for this order.
             #
-            # actual_qty is the editable actual finished output of
-            # the production order.
+            # Production progress is the source of the quantities
+            # produced. Recalculate from the history so actual_qty
+            # cannot become out of sync with the progress records.
             # ---------------------------------------------------------
+            c.execute(
+                f"""
+                SELECT
+                    COALESCE(SUM(quantity), 0)
+                FROM {schema}.manufacturing_order_progress
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
+            )
 
+            new_actual_qty = Decimal(
+                str(c.fetchone()[0] or 0)
+            )
+
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_orders
+                SET
+                    actual_qty = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    new_actual_qty,
+                    created_by_user_id,
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            actual_qty = new_actual_qty
+            
             new_status = status
 
             if status == "draft":
