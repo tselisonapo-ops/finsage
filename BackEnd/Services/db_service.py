@@ -86571,8 +86571,9 @@ class DatabaseService:
                 ),
             )
 
+            previous_actual_qty = actual_qty
             actual_qty = new_actual_qty
-            
+
             new_status = status
 
             if status == "draft":
@@ -86620,7 +86621,7 @@ class DatabaseService:
             )
 
             progress["planned_qty"] = planned_qty
-            progress["previous_actual_qty"] = actual_qty
+            progress["previous_actual_qty"] = previous_actual_qty
             progress["actual_qty"] = actual_qty
             progress["remaining_qty"] = remaining_qty
             progress["progress_percent"] = progress_percent
