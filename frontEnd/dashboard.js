@@ -130304,6 +130304,7 @@ async function openManufacturingOrderDetail(orderId) {
     });
 
   // RECORD PRODUCTION
+  console.log("[MFG] RECORD PRODUCTION binding reached");
   modal.querySelectorAll("[data-record-production]")
     .forEach(btn => {
       btn.addEventListener("click", async () => {
