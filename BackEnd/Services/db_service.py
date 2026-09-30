@@ -88989,6 +88989,7 @@ class DatabaseService:
             sales_price = float(raw_sales_price) if raw_sales_price is not None else 0.0
 
             production_value = actual_qty * sales_price
+            material_variance = actual_material_cost - planned_material_cost
             material_contribution = production_value - actual_material_cost
             material_contribution_margin = (
                 (material_contribution / production_value) * 100
@@ -89033,40 +89034,75 @@ class DatabaseService:
                 else 0.0
             )
 
-            return {
-                "order": {
-                    "id": int(order["id"]),
-                    "mo_no": order.get("mo_no"),
-                    "tx_date": order.get("tx_date"),
-                    "bom_id": order.get("bom_id"),
-                    "bom_code": order.get("bom_code"),
-                    "bom_name": order.get("bom_name"),
-                    "bom_description": order.get("bom_description"),
-                    "bom_version_no": order.get("version_no"),
-                    "finished_item_name": order.get("finished_item_name") or order.get("bom_name"),
-                    "finished_item_id": int(order["finished_item_id"]) if order.get("finished_item_id") is not None else None,
-                    "finished_item_sku": order.get("finished_item_sku"),
-                    "planned_qty": planned_qty,
-                    "actual_qty": actual_qty,
-                    "unit": order.get("unit"),
-                    "location": order.get("location"),
-                    "batch_no": order.get("batch_no"),
-                    "status": order.get("status"),
-                    "notes": order.get("notes"),
-                    "material_tx_id": int(order["material_tx_id"]) if order.get("material_tx_id") is not None else None,
-                    "output_tx_id": int(order["output_tx_id"]) if order.get("output_tx_id") is not None else None,
-                    "production_completion": min(max(production_completion, 0.0), 100.0),
-                },
-                "financial": {
-                    "sales_price": sales_price,
-                    "production_value": production_value,
-                    "planned_material_cost": planned_material_cost,
-                    "actual_material_cost": actual_material_cost,
-                    "material_cost_variance": actual_material_cost - planned_material_cost,
-                    "material_contribution": material_contribution,
-                    "material_contribution_margin": material_contribution_margin,
-                },
+            # Common financial dictionary containing both exact names and aliases
+            financial_summary = {
+                "sales_price": sales_price,
+                "production_value": production_value,
+
+                "planned_material_cost": planned_material_cost,
+                "actual_material_cost": actual_material_cost,
+                "material_cost": actual_material_cost,
+
+                "material_variance": material_variance,
+                "material_cost_variance": material_variance,
+
+                "material_contribution": material_contribution,
+                "contribution": material_contribution,
+
+                "material_contribution_margin": material_contribution_margin,
+                "contribution_margin": material_contribution_margin,
+
+                "labour_cost": labour_cost,
+                "other_direct_costs": other_direct_cost,
+                "manufacturing_overhead": overhead_cost,
+                "total_direct_cost": total_direct_cost,
+                "full_production_cost": full_production_cost,
+                "full_production_margin": full_production_margin,
+                "full_production_margin_percent": full_production_margin_percent,
+            }
+
+            order_data = {
+                "id": int(order["id"]),
+                "mo_no": order.get("mo_no"),
+                "tx_date": order.get("tx_date"),
+                "bom_id": order.get("bom_id"),
+                "bom_code": order.get("bom_code"),
+                "bom_name": order.get("bom_name"),
+                "bom_description": order.get("bom_description"),
+                "bom_version_no": order.get("version_no"),
+                "finished_item_name": order.get("finished_item_name") or order.get("bom_name"),
+                "finished_item_id": int(order["finished_item_id"]) if order.get("finished_item_id") is not None else None,
+                "finished_item_sku": order.get("finished_item_sku"),
+                "planned_qty": planned_qty,
+                "actual_qty": actual_qty,
+                "unit": order.get("unit"),
+                "location": order.get("location"),
+                "batch_no": order.get("batch_no"),
+                "status": order.get("status"),
+                "notes": order.get("notes"),
+                "material_tx_id": int(order["material_tx_id"]) if order.get("material_tx_id") is not None else None,
+                "output_tx_id": int(order["output_tx_id"]) if order.get("output_tx_id") is not None else None,
+                "production_completion": min(max(production_completion, 0.0), 100.0),
+            }
+
+            # Merge financials into order so order.production_value works
+            order_data.update(financial_summary)
+
+            response = {
+                # 1. Root level access (e.g. data.production_value)
+                **financial_summary,
+
+                # 2. Nested order access (e.g. data.order.production_value)
+                "order": order_data,
+
+                # 3. Dedicated financial section
+                "financial": financial_summary,
+
+                # 4. Standard production_summary section (matching get_manufacturing_order)
+                "production_summary": financial_summary,
+
                 "materials": material_rows,
+
                 "costing": {
                     "labour_cost": labour_cost,
                     "other_direct_costs": other_direct_cost,
@@ -89079,6 +89115,8 @@ class DatabaseService:
                     "overhead_available": bool(management_costs.get("overhead")),
                 },
             }
+
+            return response
 
     def get_manufacturing_order_management_costs(
         self,
