@@ -86026,7 +86026,7 @@ class DatabaseService:
                     planned_finish_date,
                     production_tracking_method,
                     planned_qty,
-                    planned_qty,
+                    Decimal("0"),         # <--- FIXED: Default actual_qty to 0
                     production_unit,
                     location,
                     batch_no,
@@ -86274,14 +86274,26 @@ class DatabaseService:
                 )
             )
 
-            # ... (the rest of your calculations for production_summary remain unchanged) ...
+            # Sum up recorded progress entries
+            progress_records = order.get("production_progress") or []
+            if progress_records:
+                actual_qty = sum(
+                    (Decimal(str(p.get("quantity") or 0)) for p in progress_records),
+                    Decimal("0"),
+                )
+            elif order.get("status") == "draft":
+                actual_qty = Decimal("0")
+            else:
+                actual_qty = Decimal(str(order.get("actual_qty") or 0))
+
+            # Keep order["actual_qty"] in sync
+            order["actual_qty"] = actual_qty
+
             planned_qty = Decimal(str(order.get("planned_qty") or 0))
-            actual_qty = Decimal(str(order.get("actual_qty") or 0))
             remaining_qty = max(Decimal("0"), planned_qty - actual_qty)
             progress_percent = Decimal("0")
             if planned_qty > 0:
                 progress_percent = min(Decimal("100"), (actual_qty / planned_qty) * Decimal("100"))
-
             selling_price = Decimal(str(order.get("bom_selling_price") or 0))
 
             material_cost = sum(

@@ -128618,7 +128618,7 @@ async function openManufacturingOrderDetail(orderId) {
       ? order.production_progress
       : [];
 
-  // Only use planned/actual default if the status is actually marked completed
+  // Completed output is calculated strictly from recorded progress entries
   const completedOutput =
     productionProgress.length > 0
       ? productionProgress.reduce(
@@ -128626,8 +128626,8 @@ async function openManufacturingOrderDetail(orderId) {
           0
         )
       : status === "completed"
-      ? Number(order?.actual_qty ?? productionSummary.actual_output ?? plannedOutput)
-      : Number(order?.actual_qty || 0);
+      ? Number(order?.actual_qty ?? plannedOutput)
+      : 0; // MUST be 0 when in draft, released, or in_progress
 
   const remainingOutput = Math.max(plannedOutput - completedOutput, 0);
 
