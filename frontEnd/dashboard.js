@@ -4822,6 +4822,18 @@ const ENDPOINTS = {
 
     productionPerformanceOrder: (cid, orderId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/production-performance/${encodeURIComponent(orderId)}`,
+
+    orderDispatch: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatch`,
+
+    orderDispatches: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatches`,
+
+    orderEodReconciliation: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/eod-reconciliation`,
+
+    orderEodDisposals: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/eod-disposals`,
   },
 
   projects: {
@@ -128908,13 +128920,20 @@ async function openManufacturingOrderDetail(orderId) {
           }
 
           ${
-            status !== "completed" && status !== "cancelled"
+            status === "completed"
               ? `
                 <button
                   type="button"
-                  data-mfg-status="cancelled"
-                  class="px-3 py-1.5 text-sm rounded border border-red-200 text-red-600 hover:bg-red-50">
-                  Cancel Production
+                  data-action-dispatch
+                  class="px-3 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500 font-medium">
+                  Dispatch / Release Goods
+                </button>
+
+                <button
+                  type="button"
+                  data-action-eod
+                  class="px-3 py-1.5 text-sm rounded bg-amber-600 text-white hover:bg-amber-500 font-medium">
+                  End-of-Day Reconciliation & Waste
                 </button>
               `
               : ""
@@ -129049,6 +129068,80 @@ async function openManufacturingOrderDetail(orderId) {
             </table>
           </div>
         </div>
+
+        <!-- DISPATCH & DISTRIBUTION HISTORY -->
+        <div class="mt-6 border rounded">
+          <div class="px-4 py-3 border-b flex justify-between items-center bg-slate-50">
+            <div>
+              <div class="font-semibold text-slate-800">Goods Dispatches & Distribution</div>
+              <div class="text-xs text-slate-500">Tracks rolls sent to kitchen, branches, or retail.</div>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs">
+              <thead class="bg-white border-b text-slate-600">
+                <tr>
+                  <th class="px-3 py-2 text-left">Destination</th>
+                  <th class="px-3 py-2 text-right">Quantity</th>
+                  <th class="px-3 py-2 text-left">Recipient</th>
+                  <th class="px-3 py-2 text-left">Ref Slip</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  Array.isArray(order?.dispatches) && order.dispatches.length
+                    ? order.dispatches.map(d => `
+                      <tr class="border-b">
+                        <td class="px-3 py-2 font-medium">${esc(d.destination || d.channel)}</td>
+                        <td class="px-3 py-2 text-right font-semibold">${esc(d.quantity)} ${esc(outputUnit)}</td>
+                        <td class="px-3 py-2">${esc(d.received_by || "—")}</td>
+                        <td class="px-3 py-2 font-mono">${esc(d.reference_no || "—")}</td>
+                      </tr>
+                    `).join("")
+                    : `<tr><td colspan="4" class="px-3 py-4 text-center text-slate-400">No dispatches logged yet.</td></tr>`
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- END-OF-DAY RECONCILIATION SUMMARY -->
+        ${
+          order?.eod_reconciliation && (order.eod_reconciliation.treatments || []).length
+            ? `
+              <div class="mt-6 border border-amber-200 rounded bg-amber-50/40 p-4">
+                <div class="font-semibold text-slate-800 mb-2">Day-End Produce Reconciliation & Donations</div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-3">
+                  <div><span class="text-slate-500">Unsold On Hand:</span> <strong>${order.eod_reconciliation.leftover_qty ?? order?.dispatch_summary?.leftover_on_hand ?? 0} ${outputUnit}</strong></div>
+                  <div><span class="text-slate-500">Reconciled At:</span> <strong>${order.eod_reconciliation.reconciled_at ? new Date(order.eod_reconciliation.reconciled_at).toLocaleDateString() : "—"}</strong></div>
+                </div>
+                <table class="w-full text-xs bg-white border rounded">
+                  <thead class="bg-slate-100 border-b">
+                    <tr>
+                      <th class="px-2 py-1 text-left">Action</th>
+                      <th class="px-2 py-1 text-right">Qty</th>
+                      <th class="px-2 py-1 text-right">Total Cost Value</th>
+                      <th class="px-2 py-1 text-left">Recipient / Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${(order.eod_reconciliation.treatments || []).map(t => {
+                      const label = String(t.treatment_type || t.type || "").replace(/_/g, ' ');
+                      return `
+                        <tr class="border-b">
+                          <td class="px-2 py-1 font-medium capitalize">${esc(label)}</td>
+                          <td class="px-2 py-1 text-right font-bold">${esc(t.quantity)}</td>
+                          <td class="px-2 py-1 text-right">${fmtMoney(t.total_value || (Number(t.quantity || 0) * Number(t.unit_cost || 0)))}</td>
+                          <td class="px-2 py-1">${esc(t.notes || "—")}</td>
+                        </tr>
+                      `;
+                    }).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : ""
+        }
 
         <!-- DIRECT LABOUR -->
         <div class="border rounded mt-5">
@@ -129501,6 +129594,14 @@ async function openManufacturingOrderDetail(orderId) {
     });
   });
 
+  modal.querySelector("[data-action-dispatch]")?.addEventListener("click", () => {
+    openFinishedGoodsDispatchModal(orderId);
+  });
+
+  modal.querySelector("[data-action-eod]")?.addEventListener("click", () => {
+    openEndOfDayReconciliationModal(orderId);
+  });
+
   // RECORD PRODUCTION
   modal.querySelectorAll("[data-record-production]").forEach(btn => {
     btn.addEventListener("click", async () => {
@@ -129883,12 +129984,349 @@ async function postManufacturingMaterialUsageUI(
   }
 }
 
+// =====================================================
+// FINISHED GOODS DISPATCH & RELEASE MODAL
+// =====================================================
+
+function openFinishedGoodsDispatchModal(orderId) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const order = window.__mfgProductionOrder;
+  if (!cid || !order) return;
+
+  const completedQty = Number(order.actual_qty ?? order.planned_qty ?? 0);
+  const totalDispatched = (order.dispatches || []).reduce((sum, d) => sum + Number(d.quantity || 0), 0);
+  const availableToDispatch = order.dispatch_summary?.available_to_dispatch != null
+    ? Number(order.dispatch_summary.available_to_dispatch)
+    : Math.max(completedQty - totalDispatched, 0);
+
+  if (availableToDispatch <= 0) {
+    alert("All produced goods from this batch have already been dispatched.");
+    return;
+  }
+
+  const modal = document.createElement("div");
+  modal.className = "fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4";
+  modal.innerHTML = `
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg">
+      <div class="flex items-center justify-between border-b px-4 py-3">
+        <div class="font-semibold text-slate-800">Dispatch / Release Produced Goods</div>
+        <button type="button" class="text-lg text-slate-500 hover:text-slate-800" data-close>✕</button>
+      </div>
+
+      <div class="p-4 space-y-3 text-xs">
+        <div class="grid grid-cols-2 gap-2 p-2 bg-slate-50 rounded border">
+          <div>
+            <span class="text-slate-500">Produced Item:</span>
+            <div class="font-semibold">${esc(order.finished_item_name || "Finished Goods")}</div>
+          </div>
+          <div>
+            <span class="text-slate-500">Available to Dispatch:</span>
+            <div class="font-semibold text-emerald-700">${availableToDispatch} ${esc(order.unit || "units")}</div>
+          </div>
+        </div>
+
+        <label class="block">
+          <span class="text-slate-600 mb-1 block font-medium">Destination Channel</span>
+          <select id="dispatchChannel" class="w-full border rounded px-2 py-2 text-sm bg-white">
+            <option value="kitchen">Galito's Restaurant Kitchen (Grill Line / Assembly)</option>
+            <option value="branch_transfer">Branch / Store Transfer (Delivery Van)</option>
+            <option value="counter_retail">Front-of-House / Bakery Counter</option>
+          </select>
+        </label>
+
+        <label class="block">
+          <span class="text-slate-600 mb-1 block font-medium">Destination Details / Branch Name</span>
+          <input id="dispatchDestination" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Maseru Main Grill / Station Line">
+        </label>
+
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block">
+            <span class="text-slate-600 mb-1 block font-medium">Quantity to Release</span>
+            <input id="dispatchQty" type="number" min="0.01" max="${availableToDispatch}" step="any" value="${availableToDispatch}" class="w-full border rounded px-2 py-2 text-sm font-semibold">
+          </label>
+          <label class="block">
+            <span class="text-slate-600 mb-1 block font-medium">Received By / Driver</span>
+            <input id="dispatchRecipient" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Tebello (Kitchen Sup)">
+          </label>
+        </div>
+
+        <label class="block">
+          <span class="text-slate-600 mb-1 block font-medium">Reference / Dispatch Slip #</span>
+          <input id="dispatchRef" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. DSP-0012">
+        </label>
+
+        <div class="flex justify-end gap-2 pt-3 border-t">
+          <button type="button" data-close class="px-3 py-1.5 border rounded text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button type="button" id="btnSaveDispatch" class="px-4 py-1.5 bg-slate-900 text-white rounded hover:bg-slate-800 font-semibold">Post Dispatch</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  modal.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => modal.remove()));
+
+  modal.querySelector("#btnSaveDispatch").addEventListener("click", async () => {
+    const qty = Number(modal.querySelector("#dispatchQty").value);
+    if (!qty || qty <= 0 || qty > availableToDispatch) {
+      alert(`Please enter a valid quantity between 0.01 and ${availableToDispatch}.`);
+      return;
+    }
+
+    const payload = {
+      order_id: orderId,
+      channel: modal.querySelector("#dispatchChannel").value,
+      destination: modal.querySelector("#dispatchDestination").value.trim(),
+      quantity: qty,
+      received_by: modal.querySelector("#dispatchRecipient").value.trim(),
+      reference_no: modal.querySelector("#dispatchRef").value.trim(),
+      tx_date: new Date().toISOString().slice(0, 10),
+    };
+
+    try {
+      const endpoint = ENDPOINTS?.manufacturing?.orderDispatch
+        ? ENDPOINTS.manufacturing.orderDispatch(cid, orderId)
+        : `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatch`;
+
+      await apiFetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      showToast?.("Produced goods dispatched successfully", "ok");
+      modal.remove();
+      await openManufacturingOrderDetail(orderId);
+    } catch (err) {
+      alert(err.message || "Failed to dispatch goods.");
+    }
+  });
+}
+
+// =====================================================
+// END-OF-DAY RECONCILIATION & LEFTOVER DISPOSAL MODAL
+// =====================================================
+
+function openEndOfDayReconciliationModal(orderId) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const order = window.__mfgProductionOrder;
+  if (!cid || !order) return;
+
+  const unitCost = Number(
+    order?.production_summary?.unit_full_production_cost ??
+    order?.production_summary?.unit_direct_cost ??
+    0
+  );
+
+  const initialLeftover = Number(order?.dispatch_summary?.leftover_on_hand ?? 0);
+
+  const modal = document.createElement("div");
+  modal.className = "fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4";
+  modal.innerHTML = `
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
+      <div class="flex items-center justify-between border-b px-5 py-3">
+        <div>
+          <div class="font-semibold text-slate-800">End-of-Day Produce Reconciliation</div>
+          <div class="text-xs text-slate-500">Account for remaining daily bakery stock and record charity donations or destruction.</div>
+        </div>
+        <button type="button" class="text-lg text-slate-500 hover:text-slate-800" data-close>✕</button>
+      </div>
+
+      <div class="p-5 space-y-4 text-xs">
+        <div class="grid grid-cols-3 gap-3 p-3 bg-slate-50 rounded border">
+          <div>
+            <span class="text-slate-500">Produced Batch</span>
+            <div class="font-bold text-sm text-slate-800">${esc(order.mo_no)} (${esc(order.finished_item_name)})</div>
+          </div>
+          <div>
+            <span class="text-slate-500">Full Production Cost</span>
+            <div class="font-bold text-sm text-slate-800">${fmtMoney(unitCost)} / unit</div>
+          </div>
+          <div>
+            <span class="text-slate-500">Audit Status</span>
+            <div class="font-bold text-sm text-indigo-700">Day-End Close</div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-medium text-slate-700 mb-1">Total Produce Left On Hand at Close of Day</label>
+          <div class="flex items-center gap-2">
+            <input id="eodLeftoverTotal" type="number" min="0" step="any" placeholder="0" class="border rounded px-3 py-2 text-sm w-36 font-bold text-right" value="${initialLeftover}">
+            <span class="text-slate-500">${esc(order.unit || "units")} remaining on cooling racks/shelves</span>
+          </div>
+        </div>
+
+        <div class="border-t pt-3">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold text-slate-800">Disposition of Leftover Produce</div>
+              <div class="text-slate-500">Specify what happened to the unsold goods (must match counted leftover).</div>
+            </div>
+            <button type="button" id="btnAddDisposalRow" class="px-2.5 py-1 text-xs border rounded bg-white hover:bg-slate-50 font-medium">+ Add Treatment</button>
+          </div>
+
+          <table class="w-full text-left border rounded overflow-hidden">
+            <thead class="bg-slate-100 text-slate-600">
+              <tr>
+                <th class="p-2">Action / Destination</th>
+                <th class="p-2 w-24 text-right">Quantity</th>
+                <th class="p-2 w-28 text-right">Valuation</th>
+                <th class="p-2">Recipient / Cause / Notes</th>
+                <th class="p-2 w-10"></th>
+              </tr>
+            </thead>
+            <tbody id="disposalRowsTbody">
+              <!-- Dynamically added rows -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="p-3 bg-amber-50 border border-amber-200 rounded text-amber-900 flex justify-between items-center">
+          <div>
+            <span>Allocated: <strong id="allocatedCount">0</strong> / Leftover: <strong id="targetCount">0</strong></span>
+          </div>
+          <div id="allocationWarning" class="font-semibold text-xs"></div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t">
+          <button type="button" data-close class="px-3 py-1.5 border rounded text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button type="button" id="btnSaveEOD" class="px-4 py-1.5 bg-slate-900 text-white rounded hover:bg-slate-800 font-semibold">Post Day-End Reconciliation</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  modal.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => modal.remove()));
+
+  const tbody = modal.querySelector("#disposalRowsTbody");
+  const leftoverInput = modal.querySelector("#eodLeftoverTotal");
+  const allocatedCountEl = modal.querySelector("#allocatedCount");
+  const targetCountEl = modal.querySelector("#targetCount");
+  const warningEl = modal.querySelector("#allocationWarning");
+
+  function addRow(defaultType = "charity", defaultQty = 0) {
+    const tr = document.createElement("tr");
+    tr.className = "border-b text-xs";
+    tr.innerHTML = `
+      <td class="p-2">
+        <select class="disposal-type w-full border rounded p-1 bg-white">
+          <option value="charity" ${defaultType === "charity" ? "selected" : ""}>Donated to Charity</option>
+          <option value="destroyed" ${defaultType === "destroyed" ? "selected" : ""}>Destroyed / Spoilage / Expired</option>
+          <option value="staff_meal" ${defaultType === "staff_meal" ? "selected" : ""}>Staff Meal / Welfare</option>
+          <option value="carried_forward" ${defaultType === "carried_forward" ? "selected" : ""}>Carry Forward (Day-Old Discount)</option>
+        </select>
+      </td>
+      <td class="p-2">
+        <input type="number" min="0" step="any" value="${defaultQty}" class="disposal-qty w-full border rounded p-1 text-right font-medium">
+      </td>
+      <td class="p-2 text-right font-mono disposal-val">
+        ${fmtMoney(defaultQty * unitCost)}
+      </td>
+      <td class="p-2">
+        <input type="text" class="disposal-notes w-full border rounded p-1" placeholder="e.g. Maseru Children Home / Burnt crust">
+      </td>
+      <td class="p-2 text-center">
+        <button type="button" class="text-red-500 font-bold hover:text-red-700 btn-remove-row">✕</button>
+      </td>
+    `;
+
+    tr.querySelector(".btn-remove-row").addEventListener("click", () => {
+      tr.remove();
+      recalc();
+    });
+
+    tr.querySelector(".disposal-qty").addEventListener("input", recalc);
+    tbody.appendChild(tr);
+    recalc();
+  }
+
+  function recalc() {
+    const target = Number(leftoverInput.value || 0);
+    targetCountEl.textContent = target;
+
+    let allocated = 0;
+    tbody.querySelectorAll("tr").forEach(row => {
+      const q = Number(row.querySelector(".disposal-qty").value || 0);
+      row.querySelector(".disposal-val").textContent = fmtMoney(q * unitCost);
+      allocated += q;
+    });
+
+    allocatedCountEl.textContent = allocated;
+    if (allocated === target) {
+      warningEl.textContent = "✓ Balanced";
+      warningEl.className = "font-semibold text-xs text-emerald-700";
+    } else {
+      const diff = target - allocated;
+      warningEl.textContent = diff > 0 ? `Unallocated: ${diff}` : `Over-allocated by: ${Math.abs(diff)}`;
+      warningEl.className = "font-semibold text-xs text-red-600";
+    }
+  }
+
+  leftoverInput.addEventListener("input", recalc);
+  modal.querySelector("#btnAddDisposalRow").addEventListener("click", () => addRow());
+
+  addRow("charity", initialLeftover > 0 ? initialLeftover : 0);
+
+  modal.querySelector("#btnSaveEOD").addEventListener("click", async () => {
+    const target = Number(leftoverInput.value || 0);
+    let rowsData = [];
+    let allocated = 0;
+
+    tbody.querySelectorAll("tr").forEach(tr => {
+      const q = Number(tr.querySelector(".disposal-qty").value || 0);
+      if (q > 0) {
+        allocated += q;
+        rowsData.push({
+          type: tr.querySelector(".disposal-type").value,
+          treatment_type: tr.querySelector(".disposal-type").value,
+          quantity: q,
+          unit_cost: unitCost,
+          total_value: q * unitCost,
+          notes: tr.querySelector(".disposal-notes").value.trim(),
+        });
+      }
+    });
+
+    if (target > 0 && allocated !== target) {
+      alert("Allocated quantities must balance exactly with total produce left on hand.");
+      return;
+    }
+
+    const payload = {
+      order_id: orderId,
+      leftover_qty: target,
+      treatments: rowsData,
+      reconciled_at: new Date().toISOString(),
+    };
+
+    try {
+      const endpoint = ENDPOINTS?.manufacturing?.orderEodReconciliation
+        ? ENDPOINTS.manufacturing.orderEodReconciliation(cid, orderId)
+        : `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/eod-reconciliation`;
+
+      await apiFetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      showToast?.("End-of-day produce reconciliation saved", "ok");
+      modal.remove();
+      await openManufacturingOrderDetail(orderId);
+    } catch (err) {
+      alert(err.message || "Failed to post reconciliation.");
+    }
+  });
+}
+
 window.loadManufacturingBoms = loadManufacturingBoms;
 window.loadManufacturingOrders = loadManufacturingOrders;
 window.openManufacturingBomModal = openManufacturingBomModal;
 window.openManufacturingOrderModal = openManufacturingOrderModal;
 window.openManufacturingOrderDetail = openManufacturingOrderDetail;
 window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
+
 
 (function () {
   "use strict";

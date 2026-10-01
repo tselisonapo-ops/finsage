@@ -14291,6 +14291,204 @@ def delete_manufacturing_order_overhead(
         return jsonify({
             "error": str(e),
         }), 400
+
+# ================================================================
+# MANUFACTURING — DISPATCH PRODUCED GOODS
+# ================================================================
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/dispatch",
+    methods=["POST"]
+)
+@require_auth
+def create_manufacturing_order_dispatch(cid: int, order_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        result = db_service.create_manufacturing_order_dispatch(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            channel=payload.get("channel"),
+            quantity=payload.get("quantity"),
+            destination=payload.get("destination"),
+            unit=payload.get("unit"),
+            received_by=payload.get("received_by"),
+            reference_no=payload.get("reference_no"),
+            tx_date=payload.get("tx_date"),
+            notes=payload.get("notes"),
+            created_by_user_id=int(user.get("id") or 0) or None,
+        )
+
+        return jsonify({
+            "ok": True,
+            "dispatch": result,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("create_manufacturing_order_dispatch failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/dispatches",
+    methods=["GET"]
+)
+@require_auth
+def list_manufacturing_order_dispatches(cid: int, order_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        dispatches = db_service.list_manufacturing_order_dispatches(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+        )
+        return jsonify({
+            "ok": True,
+            "dispatches": dispatches or [],
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception("list_manufacturing_order_dispatches failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/dispatches/<int:dispatch_id>",
+    methods=["DELETE"]
+)
+@require_auth
+def delete_manufacturing_order_dispatch(cid: int, order_id: int, dispatch_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        deleted = db_service.delete_manufacturing_order_dispatch(
+            company_id=company_id,
+            dispatch_id=int(dispatch_id),
+        )
+        if not deleted:
+            return jsonify({"error": "Dispatch record not found"}), 404
+
+        return jsonify({"ok": True}), 200
+
+    except Exception as e:
+        current_app.logger.exception("delete_manufacturing_order_dispatch failed")
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# MANUFACTURING — END-OF-DAY RECONCILIATION & DISPOSITION
+# ================================================================
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/eod-reconciliation",
+    methods=["POST"]
+)
+@require_auth
+def record_manufacturing_order_eod_reconciliation(cid: int, order_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        treatments = (
+            payload.get("treatments")
+            or payload.get("disposals")
+            or []
+        )
+
+        result = db_service.record_manufacturing_order_eod_reconciliation(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            leftover_qty=payload.get("leftover_qty"),
+            treatments=treatments,
+            reconciled_at=payload.get("reconciled_at"),
+            created_by_user_id=int(user.get("id") or 0) or None,
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("record_manufacturing_order_eod_reconciliation failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/eod-disposals",
+    methods=["GET"]
+)
+@require_auth
+def list_manufacturing_order_eod_disposals(cid: int, order_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        disposals = db_service.list_manufacturing_order_eod_disposals(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+        )
+        return jsonify({
+            "ok": True,
+            "disposals": disposals or [],
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception("list_manufacturing_order_eod_disposals failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/eod-disposals/<int:disposal_id>",
+    methods=["DELETE"]
+)
+@require_auth
+def delete_manufacturing_order_eod_disposal(cid: int, order_id: int, disposal_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        deleted = db_service.delete_manufacturing_order_eod_disposal(
+            company_id=company_id,
+            disposal_id=int(disposal_id),
+        )
+        if not deleted:
+            return jsonify({"error": "Disposal record not found"}), 404
+
+        return jsonify({"ok": True}), 200
+
+    except Exception as e:
+        current_app.logger.exception("delete_manufacturing_order_eod_disposal failed")
+        return jsonify({"error": str(e)}), 500
     
 @app.route("/api/companies/<int:cid>/services/items", methods=["POST"])
 @require_auth
