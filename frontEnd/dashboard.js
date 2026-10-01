@@ -128595,6 +128595,7 @@ async function openManufacturingOrderDetail(orderId) {
       : "Batch / Daily Production";
 
   const canRecordUsage =
+    status === "draft" ||
     status === "released" ||
     status === "in_progress";
 
@@ -128617,34 +128618,22 @@ async function openManufacturingOrderDetail(orderId) {
       ? order.production_progress
       : [];
 
+  // Only use planned/actual default if the status is actually marked completed
   const completedOutput =
-    productionProgress.length
+    productionProgress.length > 0
       ? productionProgress.reduce(
-          (total, entry) =>
-            total +
-            Number(entry?.quantity || 0),
+          (total, entry) => total + Number(entry?.quantity || 0),
           0
         )
-      : Number(
-          productionSummary.actual_output ??
-          order?.actual_qty ??
-          0
-        );
+      : status === "completed"
+      ? Number(order?.actual_qty ?? productionSummary.actual_output ?? plannedOutput)
+      : Number(order?.actual_qty || 0);
 
-  const remainingOutput =
-    Math.max(
-      plannedOutput - completedOutput,
-      0
-    );
+  const remainingOutput = Math.max(plannedOutput - completedOutput, 0);
 
   const productionProgressPercent =
     plannedOutput > 0
-      ? Math.min(
-          completedOutput /
-            plannedOutput *
-            100,
-          100
-        )
+      ? Math.min((completedOutput / plannedOutput) * 100, 100)
       : 0;
 
   const sellingPrice =
@@ -128861,41 +128850,66 @@ async function openManufacturingOrderDetail(orderId) {
             : ""
         }
 
-        <div class="mt-4 flex flex-wrap gap-2">
-          <div class="text-xs px-2 py-1 rounded bg-slate-100">
-            Status: <strong>${esc(order?.status || "—")}</strong>
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+          <div class="text-xs px-2.5 py-1.5 rounded font-mono uppercase bg-slate-100 border text-slate-700">
+            Status: <strong>${esc(order?.status || "draft")}</strong>
           </div>
 
           ${
             trackingMethod === "progressive"
-              ? `<div class="text-xs px-2 py-1 rounded bg-slate-100">Production is tracked progressively.</div>`
+              ? `<div class="text-xs px-2 py-1 rounded bg-slate-100 text-slate-600">Progressive Tracking</div>`
               : ""
           }
 
+          <!-- LIFECYCLE TRANSITION BUTTONS -->
           ${
-            canRecordUsage
+            status === "draft"
               ? `
                 <button
                   type="button"
-                  data-post-usage
+                  data-mfg-status="released"
+                  class="px-3 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500">
+                  Release Order
+                </button>
+                <button
+                  type="button"
+                  data-mfg-status="in_progress"
                   class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
-                  Record Material Usage
+                  Start Production
                 </button>
               `
               : ""
           }
 
           ${
-            status !== "completed" &&
-            status !== "cancelled"
+            status === "released"
+              ? `
+                <button
+                  type="button"
+                  data-mfg-status="in_progress"
+                  class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+                  Start Production
+                </button>
+              `
+              : ""
+          }
+
+          ${
+            status === "in_progress"
               ? `
                 <button
                   type="button"
                   data-mfg-status="completed"
-                  class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
+                  class="px-3 py-1.5 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-500">
                   Complete Production
                 </button>
+              `
+              : ""
+          }
 
+          ${
+            status !== "completed" && status !== "cancelled"
+              ? `
                 <button
                   type="button"
                   data-mfg-status="cancelled"
