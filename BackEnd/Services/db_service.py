@@ -47674,7 +47674,7 @@ class DatabaseService:
         END
         $fk_asset_dep_approval$;
 
-        -- Anti-duplicate: one dep row per asset per period (non-void)
+        -- Anti-duplicate: one dep row per asset per period for monthly schedules (excludes manufacturing UOP orders)
         DO $uq_asset_dep_asset_period$
         BEGIN
         IF NOT EXISTS (
@@ -47684,7 +47684,8 @@ class DatabaseService:
             EXECUTE format(
             'CREATE UNIQUE INDEX uq_asset_dep_asset_period
             ON %I.asset_depreciation(asset_id, period_start, period_end)
-            WHERE status <> ''void''',
+            WHERE status <> ''void''
+              AND (source_type IS NULL OR source_type IN (''manual'', ''monthly_schedule''))',
             '{schema}'
             );
         END IF;
@@ -85636,6 +85637,9 @@ class DatabaseService:
         user_id: int | None = None,
         cur=None,
     ):
+        from datetime import date
+        from typing import Dict, Any
+
         schema = self.company_schema(company_id)
 
         def _resolve_wip_account(c) -> str | None:
@@ -85721,20 +85725,25 @@ class DatabaseService:
                 for r in overhead_rows
             ]
 
-            # Detect whether asset_depreciations uses 'journal_id' or 'journal_entry_id'
+            # Detect journal FK column (in DDL it is 'posted_journal_id')
             c.execute(
                 f"""
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_schema = %s
                   AND table_name = 'asset_depreciation'
-                  AND column_name IN ('journal_id', 'journal_entry_id')
+                  AND column_name IN ('posted_journal_id', 'journal_id', 'journal_entry_id')
+                ORDER BY CASE column_name
+                    WHEN 'posted_journal_id' THEN 1
+                    WHEN 'journal_id' THEN 2
+                    ELSE 3
+                END
                 LIMIT 1
                 """,
                 (schema,),
             )
             col_match = c.fetchone()
-            journal_fk_col = (col_match["column_name"] if isinstance(col_match, dict) else col_match[0]) if col_match else "journal_id"
+            journal_fk_col = (col_match["column_name"] if isinstance(col_match, dict) else col_match[0]) if col_match else "posted_journal_id"
 
             for item in overheads:
                 amount = round(float(item.get("allocated_amount") or 0.0), 2)
@@ -85748,7 +85757,6 @@ class DatabaseService:
                 tx_date_str = tx_date.isoformat() if hasattr(tx_date, "isoformat") else str(tx_date)
 
                 # 2. Resolve accounts using resolve_depreciation_accounts
-                # It returns (dep_exp_code, acc_dep_code)
                 dep_exp_code, acc_dep_code = resolve_depreciation_accounts(
                     cur=c,
                     schema=schema,
@@ -85764,8 +85772,7 @@ class DatabaseService:
                         f"account for asset '{asset_name}' (ID={asset_id})"
                     )
 
-                # 3. For Manufacturing absorption: Debit Manufacturing WIP.
-                # Fall back to dep_exp_code if WIP role is not yet mapped in COA.
+                # 3. For Manufacturing absorption: Debit Manufacturing WIP
                 wip_code = _resolve_wip_account(c)
                 debit_account_code = wip_code or dep_exp_code
 
@@ -85783,12 +85790,11 @@ class DatabaseService:
                 )
 
                 # 4. Build payload for post_journal
-                # Post through the universal journal engine
                 journal_payload: Dict[str, Any] = {
                     "date": tx_date_str,
                     "ref": journal_ref,
                     "description": line_desc,
-                    "source": "asset_depreciation",  # Validated against check constraint
+                    "source": "asset_depreciation",
                     "source_id": int(manufacturing_order_id),
                     "source_table": "manufacturing_order_overhead",
                     "module_name": "manufacturing",
@@ -85819,33 +85825,44 @@ class DatabaseService:
                     cur=c,
                 )
 
-                # 5. Insert ledger record into asset_depreciations
+                # 5. Insert ledger record matching actual asset_depreciation DDL
                 c.execute(
                     f"""
                     INSERT INTO {schema}.asset_depreciation (
                         company_id,
                         asset_id,
-                        depreciation_date,
-                        amount,
-                        depreciation_method,
+                        period_start,
+                        period_end,
+                        depreciation_amount,
+                        depreciation_method_basis,
                         {journal_fk_col},
+                        status,
+                        posted_at,
                         source_type,
                         source_id,
                         source_ref,
+                        uop_units_used_basis,
+                        uop_unit_name_basis,
                         created_by_user_id,
                         created_at
                     )
-                    VALUES (%s, %s, %s, %s, 'uop', %s, 'manufacturing_order', %s, %s, %s, NOW())
+                    VALUES (
+                        %s, %s, %s, %s, %s, 'UOP', %s, 'posted', NOW(),
+                        'manufacturing_order', %s, %s, %s, %s, %s, NOW()
+                    )
                     RETURNING id
                     """,
                     (
                         company_id,
                         asset_id,
                         tx_date_str,
+                        tx_date_str,
                         amount,
                         journal_id,
                         manufacturing_order_id,
                         mo_no,
+                        item.get("quantity"),
+                        item.get("basis") or "Machine hours",
                         user_id,
                     ),
                 )
