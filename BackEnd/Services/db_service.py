@@ -89242,9 +89242,7 @@ class DatabaseService:
                 "overhead": [],
             }
 
-            # -------------------------------------------------------------
             # 1. LABOUR
-            # -------------------------------------------------------------
             c.execute(
                 f"""
                 SELECT
@@ -89296,9 +89294,7 @@ class DatabaseService:
 
                     result["labour"].append(item)
 
-            # -------------------------------------------------------------
             # 2. DIRECT COSTS
-            # -------------------------------------------------------------
             c.execute(
                 f"""
                 SELECT
@@ -89342,9 +89338,7 @@ class DatabaseService:
 
                     result["direct_costs"].append(item)
 
-            # -------------------------------------------------------------
-            # 3. OVERHEAD (Enriched with Asset & Depreciation details)
-            # -------------------------------------------------------------
+            # 3. OVERHEAD (Uses a.asset_name from assets table)
             c.execute(
                 f"""
                 SELECT
@@ -89359,7 +89353,7 @@ class DatabaseService:
                     o.asset_id,
                     o.asset_depreciation_id,
                     a.asset_code,
-                    a.name AS asset_name,
+                    a.asset_name,
                     o.source,
                     o.source_id,
                     o.memo,
