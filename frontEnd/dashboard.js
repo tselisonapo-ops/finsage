@@ -132060,7 +132060,7 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
     state.selectedOrder = null;
   }
 
-  function renderDetail(payload) {
+function renderDetail(payload) {
     const container = document.getElementById(
       "pp-detail-container"
     );
@@ -132072,6 +132072,13 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
       payload.manufacturing_order ||
       payload;
 
+    // 1. Read the financial block from the payload
+    const financial =
+      payload.financial ||
+      payload.financials ||
+      payload.production_summary ||
+      {};
+
     const materials =
       payload.materials ||
       payload.lines ||
@@ -132080,36 +132087,43 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
 
     const costing = payload.costing || {};
 
+    // 2. Include financial.* in the fallback chain
     const plannedMaterialCost = Number(
       payload.planned_material_cost ??
+        financial.planned_material_cost ??
         order.planned_material_cost ??
         0
     );
 
     const actualMaterialCost = Number(
       payload.actual_material_cost ??
+        financial.actual_material_cost ??
         order.actual_material_cost ??
         0
     );
 
     const materialContribution = Number(
       payload.material_contribution ??
+        financial.material_contribution ??
         order.material_contribution ??
         0
     );
 
     const productionValue = Number(
       payload.production_value ??
+        financial.production_value ??
         order.production_value ??
         0
     );
 
     const contributionMargin =
       payload.material_contribution_margin ??
+      financial.material_contribution_margin ??
       order.material_contribution_margin;
 
     const variance =
       payload.material_cost_variance ??
+      financial.material_cost_variance ??
       order.material_cost_variance;
 
     const body = container.querySelector(".pp-modal-body");
@@ -132263,7 +132277,7 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
       </div>
     `;
   }
-
+  
   function renderMaterialRow(material) {
     const quantityVariance =
       material.quantity_variance ??
