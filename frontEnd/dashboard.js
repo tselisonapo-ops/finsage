@@ -128520,24 +128520,26 @@ async function openManufacturingOrderDetail(orderId) {
 
   if (!cid || !orderId) return;
 
-  // 1. Fetch Order Data and Available Assets in parallel
+  // 1. Fetch Order and Assets in parallel
   const [data, assetsRes] = await Promise.all([
     apiFetch(ENDPOINTS.manufacturing.order(cid, orderId)),
     apiFetch(
-      window.ENDPOINTS?.assets?.list
-        ? window.ENDPOINTS.assets.list(cid)
-        : `/api/companies/${encodeURIComponent(cid)}/assets`
-    ).catch(() => ({ items: [] })),
+      ENDPOINTS?.assets?.list
+        ? ENDPOINTS.assets.list(cid, { limit: 100 })
+        : `/api/companies/${encodeURIComponent(cid)}/assets?limit=100`
+    ).catch(() => ({ data: [] })),
   ]);
 
-  const availableAssets = Array.isArray(assetsRes?.items)
+  // Read from .data (matches your API response)
+  const availableAssets = Array.isArray(assetsRes?.data)
+    ? assetsRes.data
+    : Array.isArray(assetsRes?.items)
     ? assetsRes.items
     : Array.isArray(assetsRes?.assets)
     ? assetsRes.assets
     : Array.isArray(assetsRes)
     ? assetsRes
     : [];
-
   const order = data?.order || data;
 
   window.__mfgProductionOrder = order;
@@ -129212,11 +129214,24 @@ async function openManufacturingOrderDetail(orderId) {
                 <select data-overhead-asset class="w-full border rounded px-2 py-2 text-sm bg-white">
                   <option value="">-- None / Manual Allocation --</option>
                   ${
-                    availableAssets.map(a => `
-                      <option value="${esc(a.id)}" data-name="${esc(a.name || a.asset_name || '')}" data-code="${esc(a.asset_code || a.code || '')}">
-                        ${esc(a.asset_code ? a.asset_code + ' - ' : '')}${esc(a.name || a.asset_name || `Asset #${a.id}`)}
-                      </option>
-                    `).join("")
+                    availableAssets.map(a => {
+                      const cost = Number(a.cost || 0);
+                      const residual = Number(a.residual_value || 0);
+                      const totalUnits = Number(a.uop_total_units || 0);
+                      const calculatedRate = totalUnits > 0 ? (cost - residual) / totalUnits : 0;
+                      const basisName = a.uop_unit_name || "Machine hours";
+
+                      return `
+                        <option 
+                          value="${esc(a.id)}" 
+                          data-name="${esc(a.asset_name || '')}" 
+                          data-code="${esc(a.asset_code || '')}"
+                          data-rate="${calculatedRate > 0 ? calculatedRate.toFixed(2) : ''}"
+                          data-basis="${esc(basisName)}">
+                          ${esc(a.asset_code)} - ${esc(a.asset_name)} (${calculatedRate > 0 ? fmtMoney(calculatedRate) + '/hr' : 'UOP'})
+                        </option>
+                      `;
+                    }).join("")
                   }
                 </select>
               </label>
@@ -129685,19 +129700,24 @@ async function openManufacturingOrderDetail(orderId) {
   overheadQuantity?.addEventListener("input", updateOverheadAmount);
   overheadRate?.addEventListener("input", updateOverheadAmount);
 
-  // When an asset is picked from the dropdown, pre-populate name and basis
+  // When an asset is picked from the dropdown, auto-fill name, basis, AND rate
   overheadAssetSelect?.addEventListener("change", () => {
     const selectedOption = overheadAssetSelect.selectedOptions[0];
     const assetId = overheadAssetSelect.value;
 
     if (assetId && selectedOption) {
       const assetName = selectedOption.dataset.name || selectedOption.textContent.trim();
-      if (!overheadName.value || overheadName.value.startsWith("Machinery depreciation")) {
-        overheadName.value = `Machinery depreciation (${assetName})`;
+      const defaultBasis = selectedOption.dataset.basis || "Machine hours";
+      const defaultRate = selectedOption.dataset.rate || "";
+
+      overheadName.value = `Machinery depreciation (${assetName})`;
+      overheadBasis.value = defaultBasis;
+
+      if (defaultRate && (!overheadRate.value || Number(overheadRate.value) === 0)) {
+        overheadRate.value = defaultRate;
       }
-      if (!overheadBasis.value) {
-        overheadBasis.value = "Machine hours";
-      }
+      
+      updateOverheadAmount();
     }
   });
 
