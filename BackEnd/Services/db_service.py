@@ -47511,7 +47511,7 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
-        ALTER TABLE {schema}.asset_depreciations
+        ALTER TABLE {schema}.asset_depreciation
         ADD COLUMN source_type VARCHAR(50) DEFAULT 'manual', -- 'manual', 'monthly_schedule', 'manufacturing_order'
         ADD COLUMN source_id INT NULL,                       -- ID of the order (e.g. 5)
         ADD COLUMN source_ref VARCHAR(100) NULL;             -- Document number (e.g. 'MO-000005')
@@ -53185,7 +53185,7 @@ class DatabaseService:
 
         ALTER TABLE {schema}.manufacturing_order_overhead
         ADD COLUMN asset_id INT NULL REFERENCES {schema}.assets(id) ON DELETE SET NULL,
-        ADD COLUMN asset_depreciation_id INT NULL REFERENCES {schema}.asset_depreciations(id) ON DELETE SET NULL;
+        ADD COLUMN asset_depreciation_id INT NULL REFERENCES {schema}.asset_depreciation(id) ON DELETE SET NULL;
 
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_overhead_company_mo_idx
         ON {schema}.manufacturing_order_overhead(company_id, manufacturing_order_id);
@@ -85727,7 +85727,7 @@ class DatabaseService:
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_schema = %s
-                  AND table_name = 'asset_depreciations'
+                  AND table_name = 'asset_depreciation'
                   AND column_name IN ('journal_id', 'journal_entry_id')
                 LIMIT 1
                 """,
@@ -85822,7 +85822,7 @@ class DatabaseService:
                 # 5. Insert ledger record into asset_depreciations
                 c.execute(
                     f"""
-                    INSERT INTO {schema}.asset_depreciations (
+                    INSERT INTO {schema}.asset_depreciation (
                         company_id,
                         asset_id,
                         depreciation_date,
