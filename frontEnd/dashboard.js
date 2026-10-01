@@ -129988,7 +129988,11 @@ async function postManufacturingMaterialUsageUI(
 // FINISHED GOODS DISPATCH & RELEASE MODAL
 // =====================================================
 
-function openFinishedGoodsDispatchModal(orderId) {
+// =====================================================
+// FINISHED GOODS DISPATCH & RELEASE MODAL (TRACE-DRIVEN)
+// =====================================================
+
+async function openFinishedGoodsDispatchModal(orderId) {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   const order = window.__mfgProductionOrder;
   if (!cid || !order) return;
@@ -130027,17 +130031,23 @@ function openFinishedGoodsDispatchModal(orderId) {
 
         <label class="block">
           <span class="text-slate-600 mb-1 block font-medium">Destination Channel</span>
-          <select id="dispatchChannel" class="w-full border rounded px-2 py-2 text-sm bg-white">
-            <option value="internal_usage">Internal Consumption / Operations</option>
-            <option value="branch_transfer">Branch / Warehouse Transfer</option>
-            <option value="retail_sales">Sales Floor / Direct Retail</option>
+          <select id="dispatchChannel" class="w-full border rounded px-2 py-2 text-sm bg-white font-medium">
+            <option value="internal_usage">Internal Consumption / Kitchen Requisition</option>
+            <option value="branch_transfer">Branch / Warehouse Transfer (In-Transit)</option>
+            <option value="retail_sales">Sales Floor / Counter Restock</option>
             <option value="customer_delivery">Customer Order / Delivery</option>
           </select>
         </label>
 
+        <!-- DYNAMIC CUSTOMER FIELD (Shown only for customer delivery) -->
+        <label id="customerFieldWrap" class="hidden block">
+          <span class="text-slate-600 mb-1 block font-medium">Customer Name / Account</span>
+          <input id="dispatchCustomerName" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Maseru Hotel, Walk-in Client">
+        </label>
+
         <label class="block">
-          <span class="text-slate-600 mb-1 block font-medium">Destination / Location Details</span>
-          <input id="dispatchDestination" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Main Kitchen, Warehouse B, Store #2, or Customer name">
+          <span id="destinationLabel" class="text-slate-600 mb-1 block font-medium">Destination / Department Details</span>
+          <input id="dispatchDestination" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Main Kitchen, Grill Station">
         </label>
 
         <div class="grid grid-cols-2 gap-3">
@@ -130047,14 +130057,26 @@ function openFinishedGoodsDispatchModal(orderId) {
           </label>
           <label class="block">
             <span class="text-slate-600 mb-1 block font-medium">Received By / Handled By</span>
-            <input id="dispatchRecipient" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Receiver or driver name">
+            <input id="dispatchRecipient" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Supervisor or driver name">
           </label>
         </div>
 
-        <label class="block">
-          <span class="text-slate-600 mb-1 block font-medium">Reference / Dispatch Slip #</span>
-          <input id="dispatchRef" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. DSP-0012">
-        </label>
+        <!-- DOCUMENT TRACE SECTION -->
+        <div class="p-3 bg-slate-50 border rounded space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-700 font-semibold">System Audit Trace</span>
+            <label class="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-500">
+              <input type="checkbox" id="chkManualRef" class="rounded"> Use external physical slip #
+            </label>
+          </div>
+
+          <div class="relative">
+            <input id="dispatchRef" type="text" readonly class="w-full border rounded px-2 py-1.5 text-xs bg-slate-100 font-mono text-slate-700" value="Generating trace...">
+          </div>
+          <div id="traceHint" class="text-[10px] text-slate-500">
+            Auto-generates an internal Material Issue Note (ISS-XXXX) in Material Receipts & Issues.
+          </div>
+        </div>
 
         <div class="flex justify-end gap-2 pt-3 border-t">
           <button type="button" data-close class="px-3 py-1.5 border rounded text-slate-600 hover:bg-slate-50">Cancel</button>
@@ -130067,6 +130089,69 @@ function openFinishedGoodsDispatchModal(orderId) {
   document.body.appendChild(modal);
   modal.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => modal.remove()));
 
+  const channelSelect = modal.querySelector("#dispatchChannel");
+  const destInput = modal.querySelector("#dispatchDestination");
+  const destLabel = modal.querySelector("#destinationLabel");
+  const customerWrap = modal.querySelector("#customerFieldWrap");
+  const refInput = modal.querySelector("#dispatchRef");
+  const chkManual = modal.querySelector("#chkManualRef");
+  const traceHint = modal.querySelector("#traceHint");
+
+  // Fetch or update the auto-reference preview based on channel
+  async function updateChannelUI() {
+    const ch = channelSelect.value;
+
+    if (ch === "customer_delivery") {
+      customerWrap.classList.remove("hidden");
+      destLabel.textContent = "Delivery Address / Notes";
+      destInput.placeholder = "e.g. Delivery dock, Site A";
+      traceHint.textContent = "Creates a Commercial Sales Invoice (INV-XXXX) with Revenue & COGS entries.";
+    } else {
+      customerWrap.classList.add("hidden");
+      if (ch === "internal_usage") {
+        destLabel.textContent = "Destination Department";
+        destInput.placeholder = "e.g. Kitchen Grill Line, Production Dept";
+        traceHint.textContent = "Creates an internal Store Issue Slip (ISS-XXXX) linking to Material Receipts & Issues.";
+      } else if (ch === "branch_transfer") {
+        destLabel.textContent = "Destination Branch / Warehouse";
+        destInput.placeholder = "e.g. Maseru Mall Outlet, Central Store B";
+        traceHint.textContent = "Creates a Transfer Manifest (TRF-XXXX) in transit, awaiting Goods Receipt at destination.";
+      } else if (ch === "retail_sales") {
+        destLabel.textContent = "Retail Location / Shelf";
+        destInput.placeholder = "e.g. Front Bakery Counter, Display Shelf 1";
+        traceHint.textContent = "Creates a Counter Restock Sheet (STG-XXXX). Real sale is recorded at the till via Launch POS.";
+      }
+    }
+
+    if (!chkManual.checked) {
+      refInput.readOnly = true;
+      refInput.classList.add("bg-slate-100");
+      try {
+        const res = await apiFetch(`/api/companies/${encodeURIComponent(cid)}/manufacturing/dispatch-preview-number?channel=${ch}`);
+        refInput.value = res.reference_no || `Auto: ${ch.toUpperCase().slice(0, 3)}-000001`;
+      } catch {
+        refInput.value = `Auto: ${ch.toUpperCase().slice(0, 3)}-000001`;
+      }
+    }
+  }
+
+  channelSelect.addEventListener("change", updateChannelUI);
+  chkManual.addEventListener("change", () => {
+    if (chkManual.checked) {
+      refInput.readOnly = false;
+      refInput.classList.remove("bg-slate-100");
+      refInput.value = "";
+      refInput.placeholder = "Enter physical paper docket/waybill #";
+      refInput.focus();
+    } else {
+      updateChannelUI();
+    }
+  });
+
+  // Initial load
+  updateChannelUI();
+
+  // Submit Handler
   modal.querySelector("#btnSaveDispatch").addEventListener("click", async () => {
     const qty = Number(modal.querySelector("#dispatchQty").value);
     if (!qty || qty <= 0 || qty > availableToDispatch) {
@@ -130075,27 +130160,28 @@ function openFinishedGoodsDispatchModal(orderId) {
     }
 
     const payload = {
-      order_id: orderId,
-      channel: modal.querySelector("#dispatchChannel").value,
-      destination: modal.querySelector("#dispatchDestination").value.trim(),
+      channel: channelSelect.value,
+      destination: destInput.value.trim(),
+      customer_name: modal.querySelector("#dispatchCustomerName")?.value.trim() || null,
       quantity: qty,
       received_by: modal.querySelector("#dispatchRecipient").value.trim(),
-      reference_no: modal.querySelector("#dispatchRef").value.trim(),
+      reference_no: refInput.value.trim(),
+      is_manual_ref: chkManual.checked,
       tx_date: new Date().toISOString().slice(0, 10),
     };
 
     try {
-      const endpoint = ENDPOINTS?.manufacturing?.orderDispatch
-        ? ENDPOINTS.manufacturing.orderDispatch(cid, orderId)
-        : `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatch`;
+      const res = await apiFetch(
+        `/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatch`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
 
-      await apiFetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      showToast?.("Produced goods dispatched successfully", "ok");
+      const officialDoc = res?.dispatch?.reference_no || payload.reference_no;
+      showToast?.(`Dispatched successfully — Trace ${officialDoc} generated`, "ok");
       modal.remove();
       await openManufacturingOrderDetail(orderId);
     } catch (err) {
@@ -130103,7 +130189,6 @@ function openFinishedGoodsDispatchModal(orderId) {
     }
   });
 }
-
 // =====================================================
 // END-OF-DAY RECONCILIATION & LEFTOVER DISPOSAL MODAL
 // =====================================================

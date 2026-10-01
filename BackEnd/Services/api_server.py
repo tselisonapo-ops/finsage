@@ -14490,6 +14490,63 @@ def delete_manufacturing_order_eod_disposal(cid: int, order_id: int, disposal_id
         current_app.logger.exception("delete_manufacturing_order_eod_disposal failed")
         return jsonify({"error": str(e)}), 500
     
+# ================================================================
+# PREVIEW NEXT DISPATCH REFERENCE NUMBER
+# ================================================================
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/dispatch-preview-number",
+    methods=["GET"]
+)
+@require_auth
+def preview_dispatch_number(cid: int):
+    company_id = int(cid)
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    channel = request.args.get("channel", "internal_usage")
+    next_ref = db_service.generate_dispatch_document_number(company_id, channel)
+    return jsonify({"ok": True, "reference_no": next_ref}), 200
+
+
+# ================================================================
+# POST DISPATCH
+# ================================================================
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/dispatch",
+    methods=["POST"]
+)
+@require_auth
+def create_manufacturing_order_dispatch(cid: int, order_id: int):
+    company_id = int(cid)
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        result = db_service.create_manufacturing_order_dispatch(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            channel=payload.get("channel"),
+            quantity=payload.get("quantity"),
+            destination=payload.get("destination"),
+            unit=payload.get("unit"),
+            received_by=payload.get("received_by"),
+            reference_no=payload.get("reference_no"),
+            customer_name=payload.get("customer_name"),
+            is_manual_ref=bool(payload.get("is_manual_ref")),
+            tx_date=payload.get("tx_date"),
+            notes=payload.get("notes"),
+            created_by_user_id=int(user.get("id") or 0) or None,
+        )
+        return jsonify({"ok": True, "dispatch": result}), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("create_manufacturing_order_dispatch failed")
+        return jsonify({"error": str(e)}), 500
+    
 @app.route("/api/companies/<int:cid>/services/items", methods=["POST"])
 @require_auth
 def create_service_item(cid: int):

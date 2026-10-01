@@ -53243,6 +53243,12 @@ class DatabaseService:
             CONSTRAINT chk_mfg_dispatch_qty CHECK (quantity > 0)
         );
 
+        ALTER TABLE {schema}.manufacturing_order_dispatches
+        ADD COLUMN IF NOT EXISTS doc_type VARCHAR(50) DEFAULT ''dispatch'',
+        ADD COLUMN IF NOT EXISTS posted_journal_id INT NULL,
+        ADD COLUMN IF NOT EXISTS customer_name VARCHAR(150) NULL,
+        ADD COLUMN IF NOT EXISTS is_manual_ref BOOLEAN DEFAULT FALSE;
+
         CREATE INDEX IF NOT EXISTS {schema}_mfg_dispatches_company_mo_idx
         ON {schema}.manufacturing_order_dispatches(company_id, manufacturing_order_id);
 
@@ -89904,233 +89910,6 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _delete(cur2)
         
-    # ================================================================
-    # DISPATCH / RELEASE OF PRODUCED GOODS
-    # ================================================================
-
-    def create_manufacturing_order_dispatch(
-        self,
-        company_id: int,
-        manufacturing_order_id: int,
-        *,
-        channel: str,
-        quantity,
-        destination=None,
-        unit=None,
-        received_by=None,
-        reference_no=None,
-        tx_date=None,
-        notes=None,
-        created_by_user_id=None,
-        cur=None,
-    ) -> dict:
-        from decimal import Decimal
-        from datetime import date
-        schema = self.company_schema(company_id)
-
-        quantity = Decimal(str(quantity or 0))
-        if quantity <= 0:
-            raise ValueError("Dispatch quantity must be greater than zero")
-
-        channel = str(channel or "").strip().lower()
-        if not channel:
-            raise ValueError("Dispatch channel is required")
-
-        def _create(c):
-            # 1. Lock order and get details
-            c.execute(
-                f"""
-                SELECT
-                    mo.id,
-                    mo.mo_no,
-                    mo.status,
-                    mo.actual_qty,
-                    mo.planned_qty,
-                    mo.unit,
-                    b.finished_item_name
-                FROM {schema}.manufacturing_orders mo
-                JOIN {schema}.manufacturing_boms b
-                    ON b.id = mo.bom_id
-                    AND b.company_id = mo.company_id
-                WHERE mo.company_id = %s
-                AND mo.id = %s
-                FOR UPDATE
-                """,
-                (company_id, int(manufacturing_order_id)),
-            )
-            order_row = c.fetchone()
-            if not order_row:
-                raise ValueError("Manufacturing order not found")
-
-            mo_id = order_row["id"] if isinstance(order_row, dict) else order_row[0]
-            mo_no = order_row["mo_no"] if isinstance(order_row, dict) else order_row[1]
-            mo_status = str((order_row["status"] if isinstance(order_row, dict) else order_row[2]) or "").lower()
-            actual_qty = Decimal(str((order_row["actual_qty"] if isinstance(order_row, dict) else order_row[3]) or 0))
-            planned_qty = Decimal(str((order_row["planned_qty"] if isinstance(order_row, dict) else order_row[4]) or 0))
-            default_unit = unit or (order_row["unit"] if isinstance(order_row, dict) else order_row[5])
-            finished_item_name = (order_row["finished_item_name"] if isinstance(order_row, dict) else order_row[6]) or "Finished Goods"
-
-            if mo_status not in ("completed", "in_progress"):
-                raise ValueError(
-                    f"Goods can only be dispatched from orders that are in_progress or completed (current: {mo_status})"
-                )
-
-            # 2. Check total already dispatched to prevent over-dispatching
-            c.execute(
-                f"""
-                SELECT COALESCE(SUM(quantity), 0) AS total_dispatched
-                FROM {schema}.manufacturing_order_dispatches
-                WHERE company_id = %s
-                AND manufacturing_order_id = %s
-                """,
-                (company_id, int(manufacturing_order_id)),
-            )
-            sum_row = c.fetchone()
-            already_dispatched = Decimal(str(
-                (sum_row["total_dispatched"] if isinstance(sum_row, dict) else sum_row[0]) or 0
-            ))
-
-            max_available = actual_qty if actual_qty > 0 else planned_qty
-            if (already_dispatched + quantity) > max_available:
-                raise ValueError(
-                    f"Cannot dispatch {quantity}. Total dispatched would exceed available produced quantity ({max_available})"
-                )
-
-            # 3. Derive unit cost from order summary
-            order_full = self.get_manufacturing_order(company_id, manufacturing_order_id, cur=c)
-            unit_cost = Decimal(str(
-                order_full.get("production_summary", {}).get("unit_full_production_cost")
-                or order_full.get("production_summary", {}).get("unit_direct_cost")
-                or 0
-            ))
-            dispatch_cost = Decimal(str(round(quantity * unit_cost, 2)))
-            dispatch_date = tx_date or str(date.today())
-
-            # 4. Insert dispatch record
-            c.execute(
-                f"""
-                INSERT INTO {schema}.manufacturing_order_dispatches (
-                    company_id,
-                    manufacturing_order_id,
-                    channel,
-                    destination,
-                    quantity,
-                    unit,
-                    received_by,
-                    reference_no,
-                    tx_date,
-                    notes,
-                    created_by_user_id,
-                    updated_by_user_id
-                )
-                VALUES (
-                    %s, %s, %s, %s, %s,
-                    %s, %s, %s, COALESCE(%s, CURRENT_DATE), %s,
-                    %s, %s
-                )
-                RETURNING id, channel, destination, quantity, unit, received_by, reference_no, tx_date, notes
-                """,
-                (
-                    company_id,
-                    int(manufacturing_order_id),
-                    channel,
-                    destination,
-                    quantity,
-                    default_unit,
-                    received_by,
-                    reference_no,
-                    dispatch_date,
-                    notes,
-                    created_by_user_id,
-                    created_by_user_id,
-                ),
-            )
-            row = c.fetchone()
-            dispatch_id = row["id"] if isinstance(row, dict) else row[0]
-
-            # 5. POST ACCOUNTING JOURNAL: Relieve WIP & Debit Channel COGS / Stock
-            journal_id = None
-            if dispatch_cost > Decimal("0"):
-                # Credit: Manufacturing WIP
-                wip_row = self.resolve_coa_account_by_roles_for_posting(
-                    company_id,
-                    ["manufacturing_wip", "production_wip", "manufacturing", "wip", "work_in_progress"],
-                    cur=c,
-                    required=False,
-                )
-                wip_code = (wip_row.get("code") if wip_row else "1400").strip()
-                wip_name = (wip_row.get("name") if wip_row else "Manufacturing WIP").strip()
-
-                # Debit: Channel-specific target account (Universal rules)
-                if channel == "internal_usage":
-                    target_roles = ["cogs", "cost_of_sales", "operating_expenses", "raw_materials_consumed"]
-                    target_memo = f"Internal Usage / Transfer - {finished_item_name} ({mo_no})"
-                elif channel == "branch_transfer":
-                    target_roles = ["branch_clearing", "intercompany_clearing", "inventory_transit", "finished_goods"]
-                    target_memo = f"Transfer to {destination or 'Branch/Warehouse'} - {finished_item_name} ({mo_no})"
-                elif channel == "customer_delivery":
-                    target_roles = ["cogs", "cost_of_sales", "operating_expenses"]
-                    target_memo = f"Dispatched for Customer Delivery ({destination or 'Order'}) - {finished_item_name} ({mo_no})"
-                else:  # retail_sales / default
-                    target_roles = ["finished_goods", "merchandise_inventory", "cogs", "cost_of_sales"]
-                    target_memo = f"Transfer to Sales Floor / Retail - {finished_item_name} ({mo_no})"
-
-                debit_row = self.resolve_coa_account_by_roles_for_posting(
-                    company_id, target_roles, cur=c, required=False
-                )
-                debit_code = (debit_row.get("code") if debit_row else wip_code).strip()
-                debit_name = (debit_row.get("name") if debit_row else "Cost of Goods Sold").strip()
-
-                journal_payload = {
-                    "date": str(dispatch_date)[:10],
-                    "ref": f"DSP/{mo_no}/{dispatch_id}",
-                    "description": f"Dispatch: {quantity} {default_unit} of {finished_item_name} to {destination or channel}",
-                    "source": "manufacturing_order_dispatch",
-                    "source_id": int(manufacturing_order_id),
-                    "source_table": "manufacturing_order_dispatches",
-                    "module_name": "manufacturing",
-                    "event_type": "posted",
-                    "created_by_user_id": created_by_user_id,
-                    "updated_by_user_id": created_by_user_id,
-                    "prepared_by_user_id": created_by_user_id,
-                    "lines": [
-                        {
-                            "account_code": debit_code,
-                            "account_name": debit_name,
-                            "debit": float(dispatch_cost),
-                            "credit": 0.0,
-                            "memo": target_memo,
-                        },
-                        {
-                            "account_code": wip_code,
-                            "account_name": wip_name,
-                            "debit": 0.0,
-                            "credit": float(dispatch_cost),
-                            "memo": f"Relieve WIP for dispatched {finished_item_name} ({mo_no})",
-                        },
-                    ],
-                }
-
-                journal_id = self.post_journal(
-                    company_id=company_id,
-                    entry=journal_payload,
-                    cur=c,
-                )
-
-            disp_dict = dict(row) if isinstance(row, dict) else dict(zip([d[0] for d in c.description], row))
-            disp_dict["posted_journal_id"] = journal_id
-            disp_dict["unit_cost"] = float(unit_cost)
-            disp_dict["total_cost"] = float(dispatch_cost)
-            return disp_dict
-
-        if cur is not None:
-            return _create(cur)
-
-        with self._conn_cursor() as (conn, cur2):
-            res = _create(cur2)
-            conn.commit()
-            return res
-
     def list_manufacturing_order_dispatches(
         self,
         company_id: int,
@@ -90350,13 +90129,13 @@ class DatabaseService:
                 # Resolve Debit Account depending on treatment
                 if t_type == "charity":
                     debit_roles = ["donations_expense", "charity_expense", "operating_expenses", "cogs"]
-                    debit_desc = f"Charitable Donation ({t.get('notes') or 'Local Community'}) - {t_qty} {outputUnit} of {finished_item_name}"
+                    debit_desc = f"Charitable Donation ({t.get('notes') or 'Local Community'}) - {t_qty} {output_unit} of {finished_item_name}"
                 elif t_type == "destroyed":
                     debit_roles = ["shrinkage_expense", "spoilage_expense", "inventory_loss", "cogs"]
-                    debit_desc = f"Bakery Waste/Spoilage ({t.get('notes') or 'Expired/Burnt'}) - {t_qty} {outputUnit} of {finished_item_name}"
+                    debit_desc = f"Bakery Waste/Spoilage ({t.get('notes') or 'Expired/Burnt'}) - {t_qty} {output_unit} of {finished_item_name}"
                 elif t_type == "staff_meal":
                     debit_roles = ["staff_welfare", "staff_meals_expense", "operating_expenses"]
-                    debit_desc = f"Staff Meals/Welfare - {t_qty} {outputUnit} of {finished_item_name}"
+                    debit_desc = f"Staff Meals/Welfare - {t_qty} {output_unit} of {finished_item_name}"
                 else:  # carried_forward
                     # Carried forward produce stays in inventory/WIP for next morning
                     continue
@@ -90493,6 +90272,276 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _delete(cur2)
 
+# ================================================================
+    # DISPATCH DOCUMENT NUMBER GENERATOR
+    # ================================================================
+    def generate_dispatch_document_number(
+        self,
+        company_id: int,
+        channel: str,
+        cur=None,
+    ) -> str:
+        """
+        Auto-generates verified document trace numbers based on the destination:
+          - internal_usage   -> ISS-000001 (Material Issue Note)
+          - branch_transfer  -> TRF-000001 (Transfer Manifest)
+          - retail_sales     -> STG-000001 (Counter Restock / Staging Sheet)
+          - customer_delivery-> INV-000001 (Sales Invoice / Delivery Slip)
+        """
+        schema = self.company_schema(company_id)
+        
+        prefix_map = {
+            "internal_usage": "ISS",
+            "branch_transfer": "TRF",
+            "retail_sales": "STG",
+            "customer_delivery": "INV",
+        }
+        prefix = prefix_map.get(channel, "DSP")
+
+        def _gen(c):
+            c.execute(
+                f"""
+                SELECT reference_no
+                FROM {schema}.manufacturing_order_dispatches
+                WHERE company_id = %s
+                  AND reference_no LIKE %s
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (company_id, f"{prefix}-%"),
+            )
+            row = c.fetchone()
+            if not row:
+                return f"{prefix}-000001"
+
+            last_ref = row["reference_no"] if isinstance(row, dict) else row[0]
+            try:
+                last_num = int(str(last_ref).split("-")[-1])
+            except (ValueError, TypeError, IndexError):
+                last_num = 0
+
+            return f"{prefix}-{last_num + 1:06d}"
+
+        if cur is not None:
+            return _gen(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _gen(cur2)
+
+    # ================================================================
+    # DISPATCH EXECUTION WITH SUB-LEDGER & JOURNAL INTEGRATION
+    # ================================================================
+    def create_manufacturing_order_dispatch(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        channel: str,
+        quantity,
+        destination=None,
+        unit=None,
+        received_by=None,
+        reference_no=None,
+        customer_name=None,
+        is_manual_ref=False,
+        tx_date=None,
+        notes=None,
+        created_by_user_id=None,
+        cur=None,
+    ) -> dict:
+        from decimal import Decimal
+        from datetime import date
+        schema = self.company_schema(company_id)
+
+        quantity = Decimal(str(quantity or 0))
+        if quantity <= 0:
+            raise ValueError("Dispatch quantity must be greater than zero")
+
+        channel = str(channel or "").strip().lower()
+        if channel not in ("internal_usage", "branch_transfer", "retail_sales", "customer_delivery"):
+            raise ValueError("Invalid dispatch channel")
+
+        def _create(c):
+            # 1. Fetch Order
+            c.execute(
+                f"""
+                SELECT
+                    mo.id, mo.mo_no, mo.status, mo.actual_qty, mo.planned_qty, mo.unit,
+                    b.finished_item_name, COALESCE(b.selling_price, 0) as selling_price
+                FROM {schema}.manufacturing_orders mo
+                JOIN {schema}.manufacturing_boms b
+                    ON b.id = mo.bom_id AND b.company_id = mo.company_id
+                WHERE mo.company_id = %s AND mo.id = %s
+                FOR UPDATE
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+            order_row = c.fetchone()
+            if not order_row:
+                raise ValueError("Manufacturing order not found")
+
+            mo_no = order_row["mo_no"] if isinstance(order_row, dict) else order_row[1]
+            mo_status = str((order_row["status"] if isinstance(order_row, dict) else order_row[2]) or "").lower()
+            actual_qty = Decimal(str((order_row["actual_qty"] if isinstance(order_row, dict) else order_row[3]) or 0))
+            planned_qty = Decimal(str((order_row["planned_qty"] if isinstance(order_row, dict) else order_row[4]) or 0))
+            default_unit = unit or (order_row["unit"] if isinstance(order_row, dict) else order_row[5])
+            finished_item = (order_row["finished_item_name"] if isinstance(order_row, dict) else order_row[6]) or "Finished Goods"
+            selling_price = Decimal(str((order_row["selling_price"] if isinstance(order_row, dict) else order_row[7]) or 0))
+
+            if mo_status not in ("completed", "in_progress"):
+                raise ValueError(f"Cannot dispatch from order in status '{mo_status}'")
+
+            # 2. Check Available Produced Stock
+            c.execute(
+                f"""
+                SELECT COALESCE(SUM(quantity), 0) AS total_dispatched
+                FROM {schema}.manufacturing_order_dispatches
+                WHERE company_id = %s AND manufacturing_order_id = %s
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+            sum_row = c.fetchone()
+            already_dispatched = Decimal(str((sum_row["total_dispatched"] if isinstance(sum_row, dict) else sum_row[0]) or 0))
+            max_available = actual_qty if actual_qty > 0 else planned_qty
+
+            if (already_dispatched + quantity) > max_available:
+                raise ValueError(f"Cannot dispatch {quantity}. Exceeds available produced quantity ({max_available - already_dispatched} remaining)")
+
+            # 3. Auto-generate Official Trace Document Reference if not manual
+            if not is_manual_ref or not str(reference_no or "").strip():
+                official_ref = self.generate_dispatch_document_number(company_id, channel, cur=c)
+            else:
+                official_ref = str(reference_no).strip()
+
+            # 4. Resolve Production Valuation Cost
+            order_full = self.get_manufacturing_order(company_id, manufacturing_order_id, cur=c)
+            unit_cost = Decimal(str(
+                order_full.get("production_summary", {}).get("unit_full_production_cost")
+                or order_full.get("production_summary", {}).get("unit_direct_cost")
+                or 0
+            ))
+            dispatch_cost = Decimal(str(round(quantity * unit_cost, 2)))
+            dispatch_date = str(tx_date or date.today())[:10]
+
+            # 5. Insert Dispatch Record
+            c.execute(
+                f"""
+                INSERT INTO {schema}.manufacturing_order_dispatches (
+                    company_id, manufacturing_order_id, channel, destination,
+                    quantity, unit, received_by, reference_no, doc_type,
+                    customer_name, is_manual_ref, tx_date, notes,
+                    created_by_user_id, updated_by_user_id
+                )
+                VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s
+                )
+                RETURNING id, channel, destination, quantity, unit, received_by, reference_no, doc_type, tx_date, notes
+                """,
+                (
+                    company_id, int(manufacturing_order_id), channel, destination,
+                    quantity, default_unit, received_by, official_ref, channel,
+                    customer_name, bool(is_manual_ref), dispatch_date, notes,
+                    created_by_user_id, created_by_user_id,
+                ),
+            )
+            disp_row = c.fetchone()
+            dispatch_id = disp_row["id"] if isinstance(disp_row, dict) else disp_row[0]
+
+            # 6. TRANSACTION DECISION & ACCOUNTING JOURNAL
+            journal_id = None
+            if dispatch_cost > Decimal("0"):
+                # Credit: Manufacturing WIP (always relieved)
+                wip_row = self.resolve_coa_account_by_roles_for_posting(
+                    company_id, ["manufacturing_wip", "production_wip", "work_in_progress"], cur=c, required=False
+                )
+                wip_code = (wip_row.get("code") if wip_row else "1400").strip()
+                wip_name = (wip_row.get("name") if wip_row else "Manufacturing WIP").strip()
+
+                journal_lines = []
+
+                if channel == "internal_usage":
+                    # Instant Expense: Material Consumption / Department Food Cost
+                    debit_row = self.resolve_coa_account_by_roles_for_posting(
+                        company_id, ["cogs", "cost_of_sales", "operating_expenses", "raw_materials_consumed"], cur=c, required=False
+                    )
+                    debit_code = (debit_row.get("code") if debit_row else wip_code).strip()
+                    journal_lines = [
+                        {"account_code": debit_code, "debit": float(dispatch_cost), "credit": 0.0, "memo": f"Store Requisition {official_ref} - {destination or 'Kitchen'} ({finished_item})"},
+                        {"account_code": wip_code, "debit": 0.0, "credit": float(dispatch_cost), "memo": f"Relieve WIP for {official_ref}"},
+                    ]
+
+                elif channel == "branch_transfer":
+                    # Stock in Transit / Intercompany Transfer
+                    debit_row = self.resolve_coa_account_by_roles_for_posting(
+                        company_id, ["branch_clearing", "inventory_transit", "intercompany_clearing", "cogs"], cur=c, required=False
+                    )
+                    debit_code = (debit_row.get("code") if debit_row else wip_code).strip()
+                    journal_lines = [
+                        {"account_code": debit_code, "debit": float(dispatch_cost), "credit": 0.0, "memo": f"Transfer Manifest {official_ref} to {destination or 'Branch'} ({finished_item})"},
+                        {"account_code": wip_code, "debit": 0.0, "credit": float(dispatch_cost), "memo": f"Relieve WIP for {official_ref}"},
+                    ]
+
+                elif channel == "retail_sales":
+                    # Move to Sales Floor Shelf (Reclassify to Retail Stock)
+                    debit_row = self.resolve_coa_account_by_roles_for_posting(
+                        company_id, ["merchandise_inventory", "finished_goods", "cogs"], cur=c, required=False
+                    )
+                    debit_code = (debit_row.get("code") if debit_row else wip_code).strip()
+                    journal_lines = [
+                        {"account_code": debit_code, "debit": float(dispatch_cost), "credit": 0.0, "memo": f"Counter Restock {official_ref} - Front Sales Floor ({finished_item})"},
+                        {"account_code": wip_code, "debit": 0.0, "credit": float(dispatch_cost), "memo": f"Relieve WIP for {official_ref}"},
+                    ]
+
+                elif channel == "customer_delivery":
+                    # Sale Event: Relieve WIP to COGS
+                    cogs_row = self.resolve_coa_account_by_roles_for_posting(company_id, ["cogs", "cost_of_sales"], cur=c, required=False)
+                    cogs_code = (cogs_row.get("code") if cogs_row else wip_code).strip()
+                    journal_lines = [
+                        {"account_code": cogs_code, "debit": float(dispatch_cost), "credit": 0.0, "memo": f"COGS on Delivery {official_ref} to {customer_name or destination}"},
+                        {"account_code": wip_code, "debit": 0.0, "credit": float(dispatch_cost), "memo": f"Relieve WIP for delivery {official_ref}"},
+                    ]
+
+                if journal_lines:
+                    journal_id = self.post_journal(
+                        company_id=company_id,
+                        entry={
+                            "date": dispatch_date,
+                            "ref": official_ref,
+                            "description": f"Dispatch ({channel.replace('_', ' ').title()}): {quantity} {default_unit} of {finished_item}",
+                            "source": "manufacturing_order_dispatch",
+                            "source_id": int(manufacturing_order_id),
+                            "source_table": "manufacturing_order_dispatches",
+                            "module_name": "manufacturing",
+                            "event_type": "posted",
+                            "created_by_user_id": created_by_user_id,
+                            "updated_by_user_id": created_by_user_id,
+                            "lines": journal_lines,
+                        },
+                        cur=c,
+                    )
+                    c.execute(
+                        f"UPDATE {schema}.manufacturing_order_dispatches SET posted_journal_id = %s WHERE id = %s",
+                        (journal_id, dispatch_id)
+                    )
+
+            res = dict(disp_row) if isinstance(disp_row, dict) else dict(zip([d[0] for d in c.description], disp_row))
+            res["official_reference"] = official_ref
+            res["journal_id"] = journal_id
+            res["total_cost"] = float(dispatch_cost)
+            res["unit_cost"] = float(unit_cost)
+            return res
+
+        if cur is not None:
+            return _create(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            result = _create(cur2)
+            conn.commit()
+            return result
+        
     def pos_ensure_packing_queue_item(self, company_id: int, order_id: int) -> int:
         schema = self.company_schema(company_id)
 
