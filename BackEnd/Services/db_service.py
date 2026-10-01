@@ -86636,7 +86636,7 @@ class DatabaseService:
             c.execute(
                 f"""
                 SELECT
-                    COALESCE(SUM(quantity), 0)
+                    COALESCE(SUM(quantity), 0) AS total_qty
                 FROM {schema}.manufacturing_order_progress
                 WHERE company_id = %s
                 AND manufacturing_order_id = %s
@@ -86647,9 +86647,13 @@ class DatabaseService:
                 ),
             )
 
-            new_actual_qty = Decimal(
-                str(c.fetchone()[0] or 0)
-            )
+            sum_row = c.fetchone()
+            if isinstance(sum_row, dict):
+                raw_qty = sum_row.get("total_qty")
+            else:
+                raw_qty = sum_row[0] if sum_row else 0
+
+            new_actual_qty = Decimal(str(raw_qty or 0))
 
             c.execute(
                 f"""
