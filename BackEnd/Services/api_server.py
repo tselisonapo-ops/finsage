@@ -704,6 +704,292 @@ def _export_statement_csv(stmt: dict, filename="statement.csv"):
     resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
 
+def _render_manufacturing_dispatch_document_html(document):
+    channel = document["channel"]
+
+    sections = document.get("sections") or {}
+
+    title = document["document_title"]
+
+    product = document.get("product") or {}
+    production = document.get("production_order") or {}
+
+    company_name = document.get("company_name") or "Company"
+
+    destination_label = "Destination"
+
+    if channel == "internal_usage":
+        destination_label = "Issued To"
+    elif channel == "branch_transfer":
+        destination_label = "Transfer To"
+    elif channel == "retail_sales":
+        destination_label = "Sales Location"
+    elif channel == "customer_delivery":
+        destination_label = "Deliver To"
+
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+
+<title>
+    {title} - {document.get("reference_no") or ""}
+</title>
+
+<style>
+    body {{
+        font-family: Arial, sans-serif;
+        color: #222;
+        margin: 0;
+        padding: 32px;
+        background: #fff;
+    }}
+
+    .document {{
+        max-width: 900px;
+        margin: 0 auto;
+    }}
+
+    .header {{
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 2px solid #222;
+        padding-bottom: 18px;
+        margin-bottom: 24px;
+    }}
+
+    .company {{
+        font-size: 22px;
+        font-weight: 700;
+    }}
+
+    .title {{
+        text-align: right;
+    }}
+
+    .title h1 {{
+        margin: 0;
+        font-size: 24px;
+    }}
+
+    .reference {{
+        margin-top: 6px;
+        font-size: 14px;
+    }}
+
+    .meta {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px 40px;
+        margin-bottom: 24px;
+    }}
+
+    .meta-item {{
+        padding: 8px 0;
+        border-bottom: 1px solid #ddd;
+    }}
+
+    .label {{
+        font-size: 11px;
+        text-transform: uppercase;
+        color: #666;
+        margin-bottom: 4px;
+    }}
+
+    .value {{
+        font-size: 14px;
+        font-weight: 600;
+    }}
+
+    table {{
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }}
+
+    th,
+    td {{
+        border: 1px solid #ccc;
+        padding: 10px;
+        text-align: left;
+    }}
+
+    th {{
+        background: #f3f3f3;
+        font-size: 12px;
+    }}
+
+    .notes {{
+        margin-top: 24px;
+        border: 1px solid #ccc;
+        padding: 14px;
+        min-height: 60px;
+    }}
+
+    .signatures {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 60px;
+        margin-top: 70px;
+    }}
+
+    .signature {{
+        border-top: 1px solid #222;
+        padding-top: 8px;
+        font-size: 12px;
+    }}
+
+    .footer {{
+        margin-top: 40px;
+        border-top: 1px solid #ddd;
+        padding-top: 10px;
+        font-size: 10px;
+        color: #777;
+    }}
+
+    @media print {{
+        body {{
+            padding: 10px;
+        }}
+
+        .document {{
+            max-width: none;
+        }}
+    }}
+</style>
+
+</head>
+
+<body>
+
+<div class="document">
+
+    <div class="header">
+
+        <div class="company">
+            {company_name}
+        </div>
+
+        <div class="title">
+            <h1>{title}</h1>
+
+            <div class="reference">
+                {document.get("reference_no") or ""}
+            </div>
+
+            <div class="reference">
+                Date: {document.get("date") or ""}
+            </div>
+        </div>
+
+    </div>
+
+    <div class="meta">
+
+        <div class="meta-item">
+            <div class="label">Production Order</div>
+            <div class="value">
+                {production.get("number") or "-"}
+            </div>
+        </div>
+
+        <div class="meta-item">
+            <div class="label">Finished Product</div>
+            <div class="value">
+                {product.get("name") or "-"}
+            </div>
+        </div>
+
+        <div class="meta-item">
+            <div class="label">{destination_label}</div>
+            <div class="value">
+                {(
+                    sections.get("issue_to")
+                    or sections.get("to_location")
+                    or sections.get("sales_location")
+                    or sections.get("delivery_to")
+                    or "-"
+                )}
+            </div>
+        </div>
+
+        <div class="meta-item">
+            <div class="label">Received By</div>
+            <div class="value">
+                {document.get("received_by") or "-"}
+            </div>
+        </div>
+
+        <div class="meta-item">
+            <div class="label">Prepared By</div>
+            <div class="value">
+                {document.get("created_by") or "-"}
+            </div>
+        </div>
+
+    </div>
+
+    <table>
+
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th>Quantity</th>
+                <th>Unit</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr>
+                <td>
+                    {product.get("name") or "Finished Goods"}
+                </td>
+
+                <td>
+                    {product.get("quantity") or 0}
+                </td>
+
+                <td>
+                    {product.get("unit") or ""}
+                </td>
+            </tr>
+        </tbody>
+
+    </table>
+
+    <div class="notes">
+
+        <div class="label">Notes / Remarks</div>
+
+        <div>
+            {document.get("notes") or ""}
+        </div>
+
+    </div>
+
+    <div class="signatures">
+
+        <div class="signature">
+            Prepared / Issued By
+        </div>
+
+        <div class="signature">
+            Received By
+        </div>
+
+    </div>
+
+    <div class="footer">
+        FinSage Manufacturing Dispatch —
+        {document.get("reference_no") or ""}
+    </div>
+
+</div>
+
+</body>
+</html>
+"""
 
 # -----------------------------
 # helpers
@@ -14464,7 +14750,94 @@ def preview_dispatch_number(cid: int):
     next_ref = db_service.generate_dispatch_document_number(company_id, channel)
     return jsonify({"ok": True, "reference_no": next_ref}), 200
 
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/dispatches/<int:dispatch_id>/document/print",
+    methods=["GET"],
+)
+@require_auth
+def print_manufacturing_dispatch_document(
+    cid: int,
+    dispatch_id: int,
+):
+    company_id = int(cid)
 
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        document = db_service.build_manufacturing_dispatch_document(
+            company_id=company_id,
+            dispatch_id=int(dispatch_id),
+        )
+
+        html = _render_manufacturing_dispatch_document_html(
+            document
+        )
+
+        return html, 200, {
+            "Content-Type": "text/html; charset=utf-8"
+        }
+
+    except ValueError as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 404
+
+    except Exception as e:
+        current_app.logger.exception(
+            "print_manufacturing_dispatch_document failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 500
+# ================================================================
+# GET DISPATCH DOCUMENT
+# ================================================================
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/dispatches/<int:dispatch_id>/document",
+    methods=["GET"],
+)
+@require_auth
+def get_manufacturing_dispatch_document(
+    cid: int,
+    dispatch_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        document = db_service.build_manufacturing_dispatch_document(
+            company_id=company_id,
+            dispatch_id=int(dispatch_id),
+        )
+
+        return jsonify({
+            "ok": True,
+            "document": document,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 404
+
+    except Exception as e:
+        current_app.logger.exception(
+            "get_manufacturing_dispatch_document failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 500
 # ================================================================
 # POST DISPATCH
 # ================================================================

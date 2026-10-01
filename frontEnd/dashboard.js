@@ -4834,6 +4834,15 @@ const ENDPOINTS = {
 
     orderEodDisposals: (cid, orderId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/eod-disposals`,
+
+    dispatchDocument: (cid, orderId, dispatchId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatches/${encodeURIComponent(dispatchId)}/document`,
+
+    dispatchDocumentPrint: (cid, orderId, dispatchId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatches/${encodeURIComponent(dispatchId)}/document/print`,
+
+    dispatchDocumentPreviewNumber: (cid, channel) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/dispatch-preview-number?channel=${encodeURIComponent(channel)}`,
   },
 
   projects: {
@@ -129987,21 +129996,21 @@ async function postManufacturingMaterialUsageUI(
 // =====================================================
 // FINISHED GOODS DISPATCH & RELEASE MODAL
 // =====================================================
-
-// =====================================================
-// FINISHED GOODS DISPATCH & RELEASE MODAL (TRACE-DRIVEN)
-// =====================================================
-
 async function openFinishedGoodsDispatchModal(orderId) {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   const order = window.__mfgProductionOrder;
   if (!cid || !order) return;
 
   const completedQty = Number(order.actual_qty ?? order.planned_qty ?? 0);
-  const totalDispatched = (order.dispatches || []).reduce((sum, d) => sum + Number(d.quantity || 0), 0);
-  const availableToDispatch = order.dispatch_summary?.available_to_dispatch != null
-    ? Number(order.dispatch_summary.available_to_dispatch)
-    : Math.max(completedQty - totalDispatched, 0);
+  const totalDispatched = (order.dispatches || []).reduce(
+    (sum, d) => sum + Number(d.quantity || 0),
+    0
+  );
+
+  const availableToDispatch =
+    order.dispatch_summary?.available_to_dispatch != null
+      ? Number(order.dispatch_summary.available_to_dispatch)
+      : Math.max(completedQty - totalDispatched, 0);
 
   if (availableToDispatch <= 0) {
     alert("All produced goods from this batch have already been dispatched.");
@@ -130009,85 +130018,199 @@ async function openFinishedGoodsDispatchModal(orderId) {
   }
 
   const modal = document.createElement("div");
-  modal.className = "fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4";
+  modal.className =
+    "fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4";
+
   modal.innerHTML = `
     <div class="bg-white rounded-lg shadow-xl w-full max-w-lg">
+
       <div class="flex items-center justify-between border-b px-4 py-3">
-        <div class="font-semibold text-slate-800">Dispatch / Release Produced Goods</div>
-        <button type="button" class="text-lg text-slate-500 hover:text-slate-800" data-close>✕</button>
+        <div>
+          <div class="font-semibold text-slate-800">
+            Dispatch / Release Produced Goods
+          </div>
+          <div class="text-xs text-slate-500">
+            Finished goods distribution
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="text-lg text-slate-500 hover:text-slate-800"
+          data-close>
+          ✕
+        </button>
       </div>
 
       <div class="p-4 space-y-3 text-xs">
+
         <div class="grid grid-cols-2 gap-2 p-2 bg-slate-50 rounded border">
           <div>
             <span class="text-slate-500">Produced Item:</span>
-            <div class="font-semibold">${esc(order.finished_item_name || "Finished Goods")}</div>
+            <div class="font-semibold">
+              ${esc(order.finished_item_name || "Finished Goods")}
+            </div>
           </div>
+
           <div>
             <span class="text-slate-500">Available to Dispatch:</span>
-            <div class="font-semibold text-emerald-700">${availableToDispatch} ${esc(order.unit || "units")}</div>
+            <div class="font-semibold text-emerald-700">
+              ${availableToDispatch} ${esc(order.unit || "units")}
+            </div>
           </div>
         </div>
 
         <label class="block">
-          <span class="text-slate-600 mb-1 block font-medium">Destination Channel</span>
-          <select id="dispatchChannel" class="w-full border rounded px-2 py-2 text-sm bg-white font-medium">
-            <option value="internal_usage">Internal Consumption / Kitchen Requisition</option>
-            <option value="branch_transfer">Branch / Warehouse Transfer (In-Transit)</option>
-            <option value="retail_sales">Sales Floor / Counter Restock</option>
-            <option value="customer_delivery">Customer Order / Delivery</option>
+          <span class="text-slate-600 mb-1 block font-medium">
+            Destination Channel
+          </span>
+
+          <select
+            id="dispatchChannel"
+            class="w-full border rounded px-2 py-2 text-sm bg-white font-medium">
+
+            <option value="internal_usage">
+              Internal Consumption / Kitchen Requisition
+            </option>
+
+            <option value="branch_transfer">
+              Branch / Warehouse Transfer
+            </option>
+
+            <option value="retail_sales">
+              Sales Floor / Counter Restock
+            </option>
+
+            <option value="customer_delivery">
+              Customer Order / Delivery
+            </option>
+
           </select>
         </label>
 
-        <!-- DYNAMIC CUSTOMER FIELD (Shown only for customer delivery) -->
+        <!-- CUSTOMER -->
         <label id="customerFieldWrap" class="hidden block">
-          <span class="text-slate-600 mb-1 block font-medium">Customer Name / Account</span>
-          <input id="dispatchCustomerName" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Maseru Hotel, Walk-in Client">
+          <span class="text-slate-600 mb-1 block font-medium">
+            Customer Name / Account
+          </span>
+
+          <input
+            id="dispatchCustomerName"
+            type="text"
+            class="w-full border rounded px-2 py-2 text-sm"
+            placeholder="e.g. Maseru Hotel, Walk-in Client">
         </label>
 
+        <!-- DESTINATION -->
         <label class="block">
-          <span id="destinationLabel" class="text-slate-600 mb-1 block font-medium">Destination / Department Details</span>
-          <input id="dispatchDestination" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Main Kitchen, Grill Station">
+          <span
+            id="destinationLabel"
+            class="text-slate-600 mb-1 block font-medium">
+            Destination Department
+          </span>
+
+          <input
+            id="dispatchDestination"
+            type="text"
+            class="w-full border rounded px-2 py-2 text-sm"
+            placeholder="e.g. Main Kitchen, Grill Station">
         </label>
 
         <div class="grid grid-cols-2 gap-3">
+
           <label class="block">
-            <span class="text-slate-600 mb-1 block font-medium">Quantity to Release</span>
-            <input id="dispatchQty" type="number" min="0.01" max="${availableToDispatch}" step="any" value="${availableToDispatch}" class="w-full border rounded px-2 py-2 text-sm font-semibold">
+            <span class="text-slate-600 mb-1 block font-medium">
+              Quantity to Release
+            </span>
+
+            <input
+              id="dispatchQty"
+              type="number"
+              min="0.01"
+              max="${availableToDispatch}"
+              step="any"
+              value="${availableToDispatch}"
+              class="w-full border rounded px-2 py-2 text-sm font-semibold">
           </label>
+
           <label class="block">
-            <span class="text-slate-600 mb-1 block font-medium">Received By / Handled By</span>
-            <input id="dispatchRecipient" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Supervisor or driver name">
+            <span class="text-slate-600 mb-1 block font-medium">
+              Received By / Handled By
+            </span>
+
+            <input
+              id="dispatchRecipient"
+              type="text"
+              class="w-full border rounded px-2 py-2 text-sm"
+              placeholder="e.g. Supervisor or driver name">
           </label>
+
         </div>
 
-        <!-- DOCUMENT TRACE SECTION -->
+        <!-- DOCUMENT TRACE -->
         <div class="p-3 bg-slate-50 border rounded space-y-2">
+
           <div class="flex items-center justify-between">
-            <span class="text-slate-700 font-semibold">System Audit Trace</span>
-            <label class="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-500">
-              <input type="checkbox" id="chkManualRef" class="rounded"> Use external physical slip #
+
+            <span class="text-slate-700 font-semibold">
+              Document Trace
+            </span>
+
+            <label
+              class="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-500">
+
+              <input
+                type="checkbox"
+                id="chkManualRef"
+                class="rounded">
+
+              Use external physical slip #
             </label>
+
           </div>
 
-          <div class="relative">
-            <input id="dispatchRef" type="text" readonly class="w-full border rounded px-2 py-1.5 text-xs bg-slate-100 font-mono text-slate-700" value="Generating trace...">
+          <input
+            id="dispatchRef"
+            type="text"
+            readonly
+            class="w-full border rounded px-2 py-1.5 text-xs bg-slate-100 font-mono text-slate-700"
+            value="Generating document number...">
+
+          <div
+            id="traceHint"
+            class="text-[10px] text-slate-500">
+            Creates an Internal Consumption Note (ISS-XXXXXX) for finished goods consumed internally.
           </div>
-          <div id="traceHint" class="text-[10px] text-slate-500">
-            Auto-generates an internal Material Issue Note (ISS-XXXX) in Material Receipts & Issues.
-          </div>
+
         </div>
 
         <div class="flex justify-end gap-2 pt-3 border-t">
-          <button type="button" data-close class="px-3 py-1.5 border rounded text-slate-600 hover:bg-slate-50">Cancel</button>
-          <button type="button" id="btnSaveDispatch" class="px-4 py-1.5 bg-slate-900 text-white rounded hover:bg-slate-800 font-semibold">Post Dispatch</button>
+
+          <button
+            type="button"
+            data-close
+            class="px-3 py-1.5 border rounded text-slate-600 hover:bg-slate-50">
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            id="btnSaveDispatch"
+            class="px-4 py-1.5 bg-slate-900 text-white rounded hover:bg-slate-800 font-semibold">
+            Post Dispatch
+          </button>
+
         </div>
+
       </div>
     </div>
   `;
 
   document.body.appendChild(modal);
-  modal.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => modal.remove()));
+
+  modal.querySelectorAll("[data-close]").forEach(btn => {
+    btn.addEventListener("click", () => modal.remove());
+  });
 
   const channelSelect = modal.querySelector("#dispatchChannel");
   const destInput = modal.querySelector("#dispatchDestination");
@@ -130096,98 +130219,587 @@ async function openFinishedGoodsDispatchModal(orderId) {
   const refInput = modal.querySelector("#dispatchRef");
   const chkManual = modal.querySelector("#chkManualRef");
   const traceHint = modal.querySelector("#traceHint");
+  const saveBtn = modal.querySelector("#btnSaveDispatch");
 
-  // Fetch or update the auto-reference preview based on channel
   async function updateChannelUI() {
     const ch = channelSelect.value;
 
     if (ch === "customer_delivery") {
       customerWrap.classList.remove("hidden");
+
       destLabel.textContent = "Delivery Address / Notes";
       destInput.placeholder = "e.g. Delivery dock, Site A";
-      traceHint.textContent = "Creates a Commercial Sales Invoice (INV-XXXX) with Revenue & COGS entries.";
+
+      traceHint.textContent =
+        "Creates a Delivery Note (DN-XXXXXX) for finished goods delivered to the customer.";
+
     } else {
       customerWrap.classList.add("hidden");
+
       if (ch === "internal_usage") {
         destLabel.textContent = "Destination Department";
-        destInput.placeholder = "e.g. Kitchen Grill Line, Production Dept";
-        traceHint.textContent = "Creates an internal Store Issue Slip (ISS-XXXX) linking to Material Receipts & Issues.";
+        destInput.placeholder =
+          "e.g. Main Kitchen, Grill Station, Staff Canteen";
+
+        traceHint.textContent =
+          "Creates an Internal Consumption Note (ISS-XXXXXX) for finished goods consumed internally.";
+
       } else if (ch === "branch_transfer") {
         destLabel.textContent = "Destination Branch / Warehouse";
-        destInput.placeholder = "e.g. Maseru Mall Outlet, Central Store B";
-        traceHint.textContent = "Creates a Transfer Manifest (TRF-XXXX) in transit, awaiting Goods Receipt at destination.";
+        destInput.placeholder =
+          "e.g. Maseru Mall Outlet, Central Store B";
+
+        traceHint.textContent =
+          "Creates a Transfer Manifest (TRF-XXXXXX) for finished goods moving to another branch or warehouse.";
+
       } else if (ch === "retail_sales") {
         destLabel.textContent = "Retail Location / Shelf";
-        destInput.placeholder = "e.g. Front Bakery Counter, Display Shelf 1";
-        traceHint.textContent = "Creates a Counter Restock Sheet (STG-XXXX). Real sale is recorded at the till via Launch POS.";
+        destInput.placeholder =
+          "e.g. Front Bakery Counter, Display Shelf 1";
+
+        traceHint.textContent =
+          "Creates a Stock Staging / Restock Sheet (STG-XXXXXX). The actual customer sale is recorded separately at POS.";
       }
     }
 
     if (!chkManual.checked) {
       refInput.readOnly = true;
       refInput.classList.add("bg-slate-100");
+
       try {
-        const res = await apiFetch(`/api/companies/${encodeURIComponent(cid)}/manufacturing/dispatch-preview-number?channel=${ch}`);
-        refInput.value = res.reference_no || `Auto: ${ch.toUpperCase().slice(0, 3)}-000001`;
-      } catch {
-        refInput.value = `Auto: ${ch.toUpperCase().slice(0, 3)}-000001`;
+        const res = await apiFetch(
+          ENDPOINTS.manufacturing.dispatchDocumentPreviewNumber(
+            cid,
+            ch
+          )
+        );
+
+        refInput.value =
+          res?.reference_no ||
+          "Generating...";
+      } catch (err) {
+        console.warn(
+          "Unable to preview dispatch document number:",
+          err
+        );
+
+        refInput.value = "Auto-generated on posting";
       }
     }
   }
 
   channelSelect.addEventListener("change", updateChannelUI);
+
   chkManual.addEventListener("change", () => {
     if (chkManual.checked) {
       refInput.readOnly = false;
       refInput.classList.remove("bg-slate-100");
       refInput.value = "";
-      refInput.placeholder = "Enter physical paper docket/waybill #";
+      refInput.placeholder =
+        "Enter physical paper docket / waybill #";
       refInput.focus();
     } else {
       updateChannelUI();
     }
   });
 
-  // Initial load
-  updateChannelUI();
+  await updateChannelUI();
 
-  // Submit Handler
-  modal.querySelector("#btnSaveDispatch").addEventListener("click", async () => {
-    const qty = Number(modal.querySelector("#dispatchQty").value);
-    if (!qty || qty <= 0 || qty > availableToDispatch) {
-      alert(`Please enter a valid quantity between 0.01 and ${availableToDispatch}.`);
+  saveBtn.addEventListener("click", async () => {
+    const qty = Number(
+      modal.querySelector("#dispatchQty").value
+    );
+
+    if (
+      !Number.isFinite(qty) ||
+      qty <= 0 ||
+      qty > availableToDispatch
+    ) {
+      alert(
+        `Please enter a valid quantity between 0.01 and ${availableToDispatch}.`
+      );
+      return;
+    }
+
+    const destination =
+      destInput.value.trim();
+
+    const customerName =
+      modal
+        .querySelector("#dispatchCustomerName")
+        ?.value
+        .trim() || null;
+
+    const receivedBy =
+      modal
+        .querySelector("#dispatchRecipient")
+        .value
+        .trim();
+
+    if (!destination) {
+      alert("Destination / location is required.");
+      destInput.focus();
+      return;
+    }
+
+    if (
+      channelSelect.value === "customer_delivery" &&
+      !customerName
+    ) {
+      alert("Customer Name / Account is required.");
+      modal
+        .querySelector("#dispatchCustomerName")
+        ?.focus();
       return;
     }
 
     const payload = {
       channel: channelSelect.value,
-      destination: destInput.value.trim(),
-      customer_name: modal.querySelector("#dispatchCustomerName")?.value.trim() || null,
+      destination,
+      customer_name: customerName,
       quantity: qty,
-      received_by: modal.querySelector("#dispatchRecipient").value.trim(),
+      received_by: receivedBy,
       reference_no: refInput.value.trim(),
       is_manual_ref: chkManual.checked,
       tx_date: new Date().toISOString().slice(0, 10),
     };
 
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Posting...";
+
     try {
       const res = await apiFetch(
-        `/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatch`,
+        ENDPOINTS.manufacturing.orderDispatch(
+          cid,
+          orderId
+        ),
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
           body: JSON.stringify(payload),
         }
       );
 
-      const officialDoc = res?.dispatch?.reference_no || payload.reference_no;
-      showToast?.(`Dispatched successfully — Trace ${officialDoc} generated`, "ok");
+      const dispatch = res?.dispatch || res;
+
+      const officialDoc =
+        dispatch?.reference_no ||
+        dispatch?.official_reference ||
+        payload.reference_no;
+
+      const dispatchId =
+        dispatch?.id ||
+        dispatch?.dispatch_id;
+
+      showToast?.(
+        `Dispatched successfully — ${officialDoc} generated`,
+        "ok"
+      );
+
       modal.remove();
+
+      /*
+       * Refresh the production order first so the new
+       * dispatch is reflected in the order detail.
+       */
       await openManufacturingOrderDetail(orderId);
+
+      /*
+       * Then open the generated document.
+       */
+      if (dispatchId) {
+        await openManufacturingDispatchDocument(
+          orderId,
+          dispatchId
+        );
+      }
+
     } catch (err) {
-      alert(err.message || "Failed to dispatch goods.");
+      console.error(
+        "Finished goods dispatch failed:",
+        err
+      );
+
+      alert(
+        err?.message ||
+        "Failed to dispatch goods."
+      );
+
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Post Dispatch";
     }
   });
+}
+
+async function openManufacturingDispatchDocument(orderId, dispatchId) {
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID;
+
+  if (!cid || !orderId || !dispatchId) return;
+
+  try {
+    const res = await apiFetch(
+      ENDPOINTS.manufacturing.dispatchDocument(
+        cid,
+        orderId,
+        dispatchId
+      )
+    );
+
+    const documentData =
+      res?.document ||
+      res;
+
+    renderManufacturingDispatchDocument(
+      documentData
+    );
+
+  } catch (err) {
+    console.error(
+      "Load manufacturing dispatch document failed:",
+      err
+    );
+
+    alert(
+      err?.message ||
+      "The dispatch was posted, but the document could not be loaded."
+    );
+  }
+}
+
+
+function renderManufacturingDispatchDocument(documentData) {
+  const doc =
+    documentData || {};
+
+  const modal =
+    document.createElement("div");
+
+  modal.className =
+    "fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4";
+
+  modal.innerHTML = `
+    <div
+      class="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[94vh] overflow-hidden flex flex-col">
+
+      <div
+        class="flex items-center justify-between border-b px-5 py-3 bg-white">
+
+        <div>
+          <div class="font-semibold text-slate-800">
+            ${esc(doc.title || "Dispatch Document")}
+          </div>
+
+          <div class="text-xs text-slate-500 font-mono">
+            ${esc(doc.reference_no || "—")}
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+
+          <button
+            type="button"
+            data-print-document
+            class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+            Print
+          </button>
+
+          <button
+            type="button"
+            data-close-document
+            class="px-3 py-1.5 text-lg text-slate-500 hover:text-slate-800">
+            ✕
+          </button>
+
+        </div>
+      </div>
+
+      <div
+        class="overflow-auto p-6 bg-slate-100">
+
+        <div
+          id="manufacturingDispatchDocument"
+          class="bg-white mx-auto shadow-sm p-8 max-w-3xl">
+
+          <div class="flex justify-between gap-6 border-b pb-5">
+
+            <div>
+              <div class="text-xl font-bold text-slate-900">
+                ${esc(doc.company_name || "")}
+              </div>
+
+              ${
+                doc.company_address
+                  ? `
+                    <div class="text-xs text-slate-500 mt-1">
+                      ${esc(doc.company_address)}
+                    </div>
+                  `
+                  : ""
+              }
+            </div>
+
+            <div class="text-right">
+
+              <div class="text-2xl font-bold text-slate-900">
+                ${esc(doc.title || "Dispatch Document")}
+              </div>
+
+              <div class="font-mono text-sm mt-1">
+                ${esc(doc.reference_no || "—")}
+              </div>
+
+              <div class="text-xs text-slate-500 mt-1">
+                Date: ${esc(doc.tx_date || "—")}
+              </div>
+
+            </div>
+
+          </div>
+
+          <div class="grid grid-cols-2 gap-6 py-5 text-sm">
+
+            <div>
+              <div class="text-xs text-slate-500">
+                Production Order
+              </div>
+
+              <div class="font-semibold">
+                ${esc(doc.mo_no || "—")}
+              </div>
+            </div>
+
+            <div>
+              <div class="text-xs text-slate-500">
+                Document Type
+              </div>
+
+              <div class="font-semibold">
+                ${esc(doc.short_title || doc.document_type || "—")}
+              </div>
+            </div>
+
+            <div>
+              <div class="text-xs text-slate-500">
+                Finished Product
+              </div>
+
+              <div class="font-semibold">
+                ${esc(doc.finished_item_name || "Finished Goods")}
+              </div>
+            </div>
+
+            <div>
+              <div class="text-xs text-slate-500">
+                Destination
+              </div>
+
+              <div class="font-semibold">
+                ${esc(doc.destination || "—")}
+              </div>
+            </div>
+
+            ${
+              doc.customer_name
+                ? `
+                  <div>
+                    <div class="text-xs text-slate-500">
+                      Customer
+                    </div>
+
+                    <div class="font-semibold">
+                      ${esc(doc.customer_name)}
+                    </div>
+                  </div>
+                `
+                : ""
+            }
+
+            ${
+              doc.received_by
+                ? `
+                  <div>
+                    <div class="text-xs text-slate-500">
+                      Received / Handled By
+                    </div>
+
+                    <div class="font-semibold">
+                      ${esc(doc.received_by)}
+                    </div>
+                  </div>
+                `
+                : ""
+            }
+
+          </div>
+
+          <table class="w-full text-sm border-collapse border">
+
+            <thead class="bg-slate-50">
+
+              <tr>
+                <th class="border px-3 py-2 text-left">
+                  Finished Goods
+                </th>
+
+                <th class="border px-3 py-2 text-right">
+                  Quantity
+                </th>
+
+                <th class="border px-3 py-2 text-left">
+                  Unit
+                </th>
+              </tr>
+
+            </thead>
+
+            <tbody>
+
+              <tr>
+                <td class="border px-3 py-3 font-semibold">
+                  ${esc(doc.finished_item_name || "Finished Goods")}
+                </td>
+
+                <td class="border px-3 py-3 text-right font-semibold">
+                  ${esc(doc.quantity ?? 0)}
+                </td>
+
+                <td class="border px-3 py-3">
+                  ${esc(doc.unit || "")}
+                </td>
+              </tr>
+
+            </tbody>
+
+          </table>
+
+          ${
+            doc.notes
+              ? `
+                <div class="mt-5 border rounded p-3 text-sm">
+                  <div class="text-xs text-slate-500 mb-1">
+                    Notes
+                  </div>
+
+                  ${esc(doc.notes)}
+                </div>
+              `
+              : ""
+          }
+
+          <div class="grid grid-cols-2 gap-10 mt-14">
+
+            <div class="border-t pt-2 text-xs text-slate-500">
+              Released / Prepared By
+            </div>
+
+            <div class="border-t pt-2 text-xs text-slate-500">
+              Received By
+            </div>
+
+          </div>
+
+          <div class="mt-8 pt-4 border-t text-[10px] text-slate-400 text-center">
+            ${esc(
+              doc.footer_text ||
+              "Generated from FinSage Manufacturing"
+            )}
+          </div>
+
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal
+    .querySelector("[data-close-document]")
+    ?.addEventListener(
+      "click",
+      () => modal.remove()
+    );
+
+  modal
+    .querySelector("[data-print-document]")
+    ?.addEventListener(
+      "click",
+      () => printManufacturingDispatchDocument(
+        modal
+      )
+    );
+}
+
+
+function printManufacturingDispatchDocument(modal) {
+  const documentElement =
+    modal.querySelector(
+      "#manufacturingDispatchDocument"
+    );
+
+  if (!documentElement) return;
+
+  const printWindow =
+    window.open(
+      "",
+      "_blank",
+      "width=1000,height=800"
+    );
+
+  if (!printWindow) {
+    alert(
+      "Please allow pop-ups to print the document."
+    );
+    return;
+  }
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>FinSage Dispatch Document</title>
+
+        <meta
+          charset="UTF-8">
+
+        <script src="https://cdn.tailwindcss.com"></script>
+
+        <style>
+          @page {
+            size: A4;
+            margin: 15mm;
+          }
+
+          body {
+            background: white;
+            font-family: Arial, sans-serif;
+          }
+
+          @media print {
+            body {
+              margin: 0;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        ${documentElement.outerHTML}
+
+        <script>
+          window.onload = function () {
+            window.print();
+          };
+        <\/script>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
 }
 // =====================================================
 // END-OF-DAY RECONCILIATION & LEFTOVER DISPOSAL MODAL
