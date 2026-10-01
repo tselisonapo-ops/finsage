@@ -14292,50 +14292,6 @@ def delete_manufacturing_order_overhead(
             "error": str(e),
         }), 400
 
-# ================================================================
-# MANUFACTURING — DISPATCH PRODUCED GOODS
-# ================================================================
-
-@app.route(
-    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/dispatch",
-    methods=["POST"]
-)
-@require_auth
-def create_manufacturing_order_dispatch(cid: int, order_id: int):
-    company_id = int(cid)
-
-    user, err = _company_auth_or_403(company_id)
-    if err:
-        return err
-
-    try:
-        payload = request.get_json(silent=True) or {}
-
-        result = db_service.create_manufacturing_order_dispatch(
-            company_id=company_id,
-            manufacturing_order_id=int(order_id),
-            channel=payload.get("channel"),
-            quantity=payload.get("quantity"),
-            destination=payload.get("destination"),
-            unit=payload.get("unit"),
-            received_by=payload.get("received_by"),
-            reference_no=payload.get("reference_no"),
-            tx_date=payload.get("tx_date"),
-            notes=payload.get("notes"),
-            created_by_user_id=int(user.get("id") or 0) or None,
-        )
-
-        return jsonify({
-            "ok": True,
-            "dispatch": result,
-        }), 201
-
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        current_app.logger.exception("create_manufacturing_order_dispatch failed")
-        return jsonify({"error": str(e)}), 500
-
 
 @app.route(
     "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/dispatches",
