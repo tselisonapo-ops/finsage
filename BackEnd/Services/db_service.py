@@ -90061,16 +90061,19 @@ class DatabaseService:
                 wip_code = (wip_row.get("code") if wip_row else "1400").strip()
                 wip_name = (wip_row.get("name") if wip_row else "Manufacturing WIP").strip()
 
-                # Debit: Channel-specific target account
-                if channel == "kitchen":
-                    target_roles = ["cogs_food", "food_cost", "cogs", "cost_of_sales", "kitchen_expense"]
-                    target_memo = f"Transfer to Kitchen Grill Line - {finished_item_name} ({mo_no})"
+                # Debit: Channel-specific target account (Universal rules)
+                if channel == "internal_usage":
+                    target_roles = ["cogs", "cost_of_sales", "operating_expenses", "raw_materials_consumed"]
+                    target_memo = f"Internal Usage / Transfer - {finished_item_name} ({mo_no})"
                 elif channel == "branch_transfer":
-                    target_roles = ["branch_clearing", "intercompany_clearing", "inventory_transit", "cogs"]
-                    target_memo = f"Branch Transfer to {destination or 'Outlet'} - {finished_item_name} ({mo_no})"
-                else:  # counter_retail
+                    target_roles = ["branch_clearing", "intercompany_clearing", "inventory_transit", "finished_goods"]
+                    target_memo = f"Transfer to {destination or 'Branch/Warehouse'} - {finished_item_name} ({mo_no})"
+                elif channel == "customer_delivery":
+                    target_roles = ["cogs", "cost_of_sales", "operating_expenses"]
+                    target_memo = f"Dispatched for Customer Delivery ({destination or 'Order'}) - {finished_item_name} ({mo_no})"
+                else:  # retail_sales / default
                     target_roles = ["finished_goods", "merchandise_inventory", "cogs", "cost_of_sales"]
-                    target_memo = f"Transfer to Front Counter Retail - {finished_item_name} ({mo_no})"
+                    target_memo = f"Transfer to Sales Floor / Retail - {finished_item_name} ({mo_no})"
 
                 debit_row = self.resolve_coa_account_by_roles_for_posting(
                     company_id, target_roles, cur=c, required=False

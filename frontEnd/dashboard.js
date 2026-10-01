@@ -130028,15 +130028,16 @@ function openFinishedGoodsDispatchModal(orderId) {
         <label class="block">
           <span class="text-slate-600 mb-1 block font-medium">Destination Channel</span>
           <select id="dispatchChannel" class="w-full border rounded px-2 py-2 text-sm bg-white">
-            <option value="kitchen">Galito's Restaurant Kitchen (Grill Line / Assembly)</option>
-            <option value="branch_transfer">Branch / Store Transfer (Delivery Van)</option>
-            <option value="counter_retail">Front-of-House / Bakery Counter</option>
+            <option value="internal_usage">Internal Consumption / Operations</option>
+            <option value="branch_transfer">Branch / Warehouse Transfer</option>
+            <option value="retail_sales">Sales Floor / Direct Retail</option>
+            <option value="customer_delivery">Customer Order / Delivery</option>
           </select>
         </label>
 
         <label class="block">
-          <span class="text-slate-600 mb-1 block font-medium">Destination Details / Branch Name</span>
-          <input id="dispatchDestination" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Maseru Main Grill / Station Line">
+          <span class="text-slate-600 mb-1 block font-medium">Destination / Location Details</span>
+          <input id="dispatchDestination" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Main Kitchen, Warehouse B, Store #2, or Customer name">
         </label>
 
         <div class="grid grid-cols-2 gap-3">
@@ -130045,8 +130046,8 @@ function openFinishedGoodsDispatchModal(orderId) {
             <input id="dispatchQty" type="number" min="0.01" max="${availableToDispatch}" step="any" value="${availableToDispatch}" class="w-full border rounded px-2 py-2 text-sm font-semibold">
           </label>
           <label class="block">
-            <span class="text-slate-600 mb-1 block font-medium">Received By / Driver</span>
-            <input id="dispatchRecipient" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Tebello (Kitchen Sup)">
+            <span class="text-slate-600 mb-1 block font-medium">Received By / Handled By</span>
+            <input id="dispatchRecipient" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Receiver or driver name">
           </label>
         </div>
 
@@ -130224,7 +130225,8 @@ function openEndOfDayReconciliationModal(orderId) {
         ${fmtMoney(defaultQty * unitCost)}
       </td>
       <td class="p-2">
-        <input type="text" class="disposal-notes w-full border rounded p-1" placeholder="e.g. Maseru Children Home / Burnt crust">
+        <!-- PUT IT RIGHT HERE -->
+        <input type="text" class="disposal-notes w-full border rounded p-1" placeholder="e.g. Organization name, reason for disposal, or shift details">
       </td>
       <td class="p-2 text-center">
         <button type="button" class="text-red-500 font-bold hover:text-red-700 btn-remove-row">✕</button>
