@@ -90466,27 +90466,7 @@ class DatabaseService:
             # ----------------------------------------------------------
             # Company identity
             # ----------------------------------------------------------
-            company_name = None
-
-            try:
-                c.execute(
-                    """
-                    SELECT name
-                    FROM public.companies
-                    WHERE id = %s
-                    """,
-                    (company_id,),
-                )
-                company_row = c.fetchone()
-
-                if company_row:
-                    company_name = (
-                        company_row["name"]
-                        if isinstance(company_row, dict)
-                        else company_row[0]
-                    )
-            except Exception:
-                company_name = None
+            company = self.get_company(company_id) or {}
 
             # ----------------------------------------------------------
             # Created by
@@ -90524,7 +90504,21 @@ class DatabaseService:
             # ----------------------------------------------------------
             document = {
                 "company_id": company_id,
-                "company_name": company_name or "Company",
+
+                "company": {
+                    "name": company.get("name") or "Company",
+                    "client_code": company.get("client_code"),
+                    "company_reg_no": company.get("company_reg_no"),
+                    "tin": company.get("tin"),
+                    "vat": company.get("vat"),
+                    "company_email": company.get("company_email"),
+                    "physical_address": company.get("physical_address"),
+                    "postal_address": company.get("postal_address"),
+                    "company_phone": company.get("company_phone"),
+                    "logo_url": company.get("logo_url"),
+                },
+
+                "company_name": company.get("name") or "Company",
 
                 "dispatch_id": data["id"],
                 "document_type": template["document_type"],
@@ -90799,7 +90793,7 @@ class DatabaseService:
                             "ref": official_ref,
                             "description": f"Dispatch ({channel.replace('_', ' ').title()}): {quantity} {default_unit} of {finished_item}",
                             "source": "manufacturing_order_dispatch",
-                            "source_id": int(manufacturing_order_id),
+                            "source_id": int(dispatch_id),
                             "source_table": "manufacturing_order_dispatches",
                             "module_name": "manufacturing",
                             "event_type": "posted",

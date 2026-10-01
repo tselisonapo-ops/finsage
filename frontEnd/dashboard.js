@@ -4835,11 +4835,11 @@ const ENDPOINTS = {
     orderEodDisposals: (cid, orderId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/eod-disposals`,
 
-    dispatchDocument: (cid, orderId, dispatchId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatches/${encodeURIComponent(dispatchId)}/document`,
-
-    dispatchDocumentPrint: (cid, orderId, dispatchId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatches/${encodeURIComponent(dispatchId)}/document/print`,
+    dispatchDocument: (cid, dispatchId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/dispatches/${encodeURIComponent(dispatchId)}/document`,
+    
+    dispatchDocumentPrint: (cid, dispatchId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/dispatches/${encodeURIComponent(dispatchId)}/document/print`,
 
     dispatchDocumentPreviewNumber: (cid, channel) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/dispatch-preview-number?channel=${encodeURIComponent(channel)}`,
@@ -130443,11 +130443,7 @@ async function openManufacturingDispatchDocument(orderId, dispatchId) {
 
   try {
     const res = await apiFetch(
-      ENDPOINTS.manufacturing.dispatchDocument(
-        cid,
-        orderId,
-        dispatchId
-      )
+      ENDPOINTS.manufacturing.dispatchDocument(cid, dispatchId)
     );
 
     const documentData =

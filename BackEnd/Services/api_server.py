@@ -714,7 +714,22 @@ def _render_manufacturing_dispatch_document_html(document):
     product = document.get("product") or {}
     production = document.get("production_order") or {}
 
-    company_name = document.get("company_name") or "Company"
+    company = document.get("company") or {}
+
+    company_name = (
+        company.get("name")
+        or document.get("company_name")
+        or "Company"
+    )
+
+    company_reg_no = company.get("company_reg_no") or ""
+    company_tin = company.get("tin") or ""
+    company_vat = company.get("vat") or ""
+    company_email = company.get("company_email") or ""
+    company_phone = company.get("company_phone") or ""
+    physical_address = company.get("physical_address") or ""
+    postal_address = company.get("postal_address") or ""
+    logo_url = company.get("logo_url") or ""
 
     destination_label = "Destination"
 
@@ -727,6 +742,27 @@ def _render_manufacturing_dispatch_document_html(document):
     elif channel == "customer_delivery":
         destination_label = "Deliver To"
 
+    def esc(value):
+        if value is None:
+            return ""
+
+        return (
+            str(value)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&#39;")
+        )
+
+    destination = (
+        sections.get("issue_to")
+        or sections.get("to_location")
+        or sections.get("sales_location")
+        or sections.get("delivery_to")
+        or "-"
+    )
+
     return f"""
 <!DOCTYPE html>
 <html>
@@ -734,129 +770,241 @@ def _render_manufacturing_dispatch_document_html(document):
 <meta charset="UTF-8">
 
 <title>
-    {title} - {document.get("reference_no") or ""}
+    {esc(title)} - {esc(document.get("reference_no") or "")}
 </title>
 
 <style>
+
+    @page {{
+        size: A4 portrait;
+        margin: 14mm;
+    }}
+
+    * {{
+        box-sizing: border-box;
+    }}
+
     body {{
         font-family: Arial, sans-serif;
         color: #222;
         margin: 0;
-        padding: 32px;
+        padding: 0;
         background: #fff;
+        font-size: 13px;
     }}
 
     .document {{
-        max-width: 900px;
+        width: 100%;
+        max-width: 794px;
         margin: 0 auto;
     }}
+
+    /* =========================================================
+       COMPANY HEADER
+       ========================================================= */
 
     .header {{
         display: flex;
         justify-content: space-between;
+        align-items: flex-start;
+        gap: 30px;
         border-bottom: 2px solid #222;
-        padding-bottom: 18px;
+        padding-bottom: 16px;
         margin-bottom: 24px;
+    }}
+
+    .company-block {{
+        flex: 1;
+        min-width: 0;
+    }}
+
+    .company-logo {{
+        display: block;
+        max-width: 150px;
+        max-height: 60px;
+        object-fit: contain;
+        margin-bottom: 8px;
     }}
 
     .company {{
         font-size: 22px;
         font-weight: 700;
+        line-height: 1.2;
+        margin-bottom: 7px;
     }}
+
+    .company-details {{
+        font-size: 10.5px;
+        line-height: 1.5;
+        color: #555;
+    }}
+
+    .company-registration {{
+        margin-top: 4px;
+        font-size: 10px;
+        line-height: 1.5;
+        color: #666;
+    }}
+
+    /* =========================================================
+       DOCUMENT TITLE
+       ========================================================= */
 
     .title {{
         text-align: right;
+        min-width: 230px;
     }}
 
     .title h1 {{
-        margin: 0;
-        font-size: 24px;
+        margin: 0 0 10px;
+        font-size: 23px;
+        line-height: 1.2;
     }}
 
     .reference {{
-        margin-top: 6px;
-        font-size: 14px;
+        margin-top: 5px;
+        font-size: 13px;
     }}
+
+    .reference strong {{
+        font-weight: 700;
+    }}
+
+    /* =========================================================
+       DOCUMENT META
+       ========================================================= */
 
     .meta {{
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 12px 40px;
-        margin-bottom: 24px;
+        gap: 0 40px;
+        margin-bottom: 22px;
     }}
 
     .meta-item {{
-        padding: 8px 0;
+        padding: 9px 0;
         border-bottom: 1px solid #ddd;
     }}
 
     .label {{
-        font-size: 11px;
+        font-size: 10px;
         text-transform: uppercase;
         color: #666;
         margin-bottom: 4px;
+        letter-spacing: 0.3px;
     }}
 
     .value {{
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 600;
     }}
+
+    /* =========================================================
+       FINISHED GOODS TABLE
+       ========================================================= */
 
     table {{
         width: 100%;
         border-collapse: collapse;
-        margin-top: 20px;
+        margin-top: 18px;
     }}
 
     th,
     td {{
-        border: 1px solid #ccc;
+        border: 1px solid #bbb;
         padding: 10px;
         text-align: left;
     }}
 
     th {{
         background: #f3f3f3;
-        font-size: 12px;
+        font-size: 11px;
+        text-transform: uppercase;
     }}
 
-    .notes {{
-        margin-top: 24px;
-        border: 1px solid #ccc;
-        padding: 14px;
-        min-height: 60px;
+    td {{
+        font-size: 13px;
     }}
+
+    .quantity {{
+        width: 130px;
+        text-align: right;
+    }}
+
+    .unit {{
+        width: 100px;
+    }}
+
+    /* =========================================================
+       NOTES
+       ========================================================= */
+
+    .notes {{
+        margin-top: 22px;
+        border: 1px solid #ccc;
+        padding: 12px;
+        min-height: 65px;
+    }}
+
+    .notes-content {{
+        margin-top: 7px;
+        white-space: pre-wrap;
+        line-height: 1.5;
+    }}
+
+    /* =========================================================
+       SIGNATURES
+       ========================================================= */
 
     .signatures {{
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 60px;
+        gap: 70px;
         margin-top: 70px;
     }}
 
     .signature {{
         border-top: 1px solid #222;
         padding-top: 8px;
-        font-size: 12px;
+        font-size: 11px;
     }}
+
+    .signature-name {{
+        margin-top: 18px;
+        font-size: 12px;
+        min-height: 18px;
+    }}
+
+    /* =========================================================
+       FOOTER
+       ========================================================= */
 
     .footer {{
-        margin-top: 40px;
+        margin-top: 45px;
         border-top: 1px solid #ddd;
-        padding-top: 10px;
-        font-size: 10px;
+        padding-top: 9px;
+        font-size: 9px;
         color: #777;
+        display: flex;
+        justify-content: space-between;
     }}
 
+    /* =========================================================
+       PRINT
+       ========================================================= */
+
     @media print {{
+
         body {{
-            padding: 10px;
+            padding: 0;
         }}
 
         .document {{
             max-width: none;
         }}
+
     }}
+
 </style>
 
 </head>
@@ -865,124 +1013,269 @@ def _render_manufacturing_dispatch_document_html(document):
 
 <div class="document">
 
+    <!-- =====================================================
+         COMPANY + DOCUMENT HEADER
+         ===================================================== -->
+
     <div class="header">
 
-        <div class="company">
-            {company_name}
+        <div class="company-block">
+
+            {
+                f'<img src="{esc(logo_url)}" alt="Company Logo" class="company-logo">'
+                if logo_url
+                else ""
+            }
+
+            <div class="company">
+                {esc(company_name)}
+            </div>
+
+            {
+                f'<div class="company-details">{esc(physical_address)}</div>'
+                if physical_address
+                else ""
+            }
+
+            {
+                f'<div class="company-details">Postal: {esc(postal_address)}</div>'
+                if postal_address
+                else ""
+            }
+
+            {
+                f'<div class="company-details">'
+                f'{esc(company_phone)}'
+                f'{" | " if company_phone and company_email else ""}'
+                f'{esc(company_email)}'
+                f'</div>'
+                if company_phone or company_email
+                else ""
+            }
+
+            {
+                f'<div class="company-registration">'
+                f'{"Reg No: " + esc(company_reg_no) if company_reg_no else ""}'
+                f'{" | " if company_reg_no and company_tin else ""}'
+                f'{"TIN: " + esc(company_tin) if company_tin else ""}'
+                f'{" | " if (company_reg_no or company_tin) and company_vat else ""}'
+                f'{"VAT: " + esc(company_vat) if company_vat else ""}'
+                f'</div>'
+                if company_reg_no or company_tin or company_vat
+                else ""
+            }
+
         </div>
 
+
         <div class="title">
-            <h1>{title}</h1>
+
+            <h1>
+                {esc(title)}
+            </h1>
 
             <div class="reference">
-                {document.get("reference_no") or ""}
+                <strong>Document No:</strong>
+                {esc(document.get("reference_no") or "-")}
             </div>
 
             <div class="reference">
-                Date: {document.get("date") or ""}
+                <strong>Date:</strong>
+                {esc(document.get("date") or "-")}
             </div>
+
         </div>
 
     </div>
+
+
+    <!-- =====================================================
+         DOCUMENT INFORMATION
+         ===================================================== -->
 
     <div class="meta">
 
         <div class="meta-item">
-            <div class="label">Production Order</div>
-            <div class="value">
-                {production.get("number") or "-"}
+
+            <div class="label">
+                Production Order
             </div>
+
+            <div class="value">
+                {esc(production.get("number") or "-")}
+            </div>
+
         </div>
 
-        <div class="meta-item">
-            <div class="label">Finished Product</div>
-            <div class="value">
-                {product.get("name") or "-"}
-            </div>
-        </div>
 
         <div class="meta-item">
-            <div class="label">{destination_label}</div>
-            <div class="value">
-                {(
-                    sections.get("issue_to")
-                    or sections.get("to_location")
-                    or sections.get("sales_location")
-                    or sections.get("delivery_to")
-                    or "-"
-                )}
+
+            <div class="label">
+                Finished Product
             </div>
+
+            <div class="value">
+                {esc(product.get("name") or "-")}
+            </div>
+
         </div>
 
-        <div class="meta-item">
-            <div class="label">Received By</div>
-            <div class="value">
-                {document.get("received_by") or "-"}
-            </div>
-        </div>
 
         <div class="meta-item">
-            <div class="label">Prepared By</div>
-            <div class="value">
-                {document.get("created_by") or "-"}
+
+            <div class="label">
+                {esc(destination_label)}
             </div>
+
+            <div class="value">
+                {esc(destination)}
+            </div>
+
+        </div>
+
+
+        <div class="meta-item">
+
+            <div class="label">
+                Received By
+            </div>
+
+            <div class="value">
+                {esc(document.get("received_by") or "-")}
+            </div>
+
+        </div>
+
+
+        <div class="meta-item">
+
+            <div class="label">
+                Prepared By
+            </div>
+
+            <div class="value">
+                {esc(document.get("created_by") or "-")}
+            </div>
+
+        </div>
+
+
+        <div class="meta-item">
+
+            <div class="label">
+                Document Status
+            </div>
+
+            <div class="value">
+                Issued
+            </div>
+
         </div>
 
     </div>
+
+
+    <!-- =====================================================
+         FINISHED GOODS
+         ===================================================== -->
 
     <table>
 
         <thead>
+
             <tr>
                 <th>Description</th>
-                <th>Quantity</th>
-                <th>Unit</th>
+                <th class="quantity">Quantity</th>
+                <th class="unit">Unit</th>
             </tr>
+
         </thead>
 
+
         <tbody>
+
             <tr>
-                <td>
-                    {product.get("name") or "Finished Goods"}
-                </td>
 
                 <td>
-                    {product.get("quantity") or 0}
+                    {esc(product.get("name") or "Finished Goods")}
                 </td>
 
-                <td>
-                    {product.get("unit") or ""}
+                <td class="quantity">
+                    {esc(product.get("quantity") or 0)}
                 </td>
+
+                <td class="unit">
+                    {esc(product.get("unit") or "")}
+                </td>
+
             </tr>
+
         </tbody>
 
     </table>
 
+
+    <!-- =====================================================
+         NOTES
+         ===================================================== -->
+
     <div class="notes">
 
-        <div class="label">Notes / Remarks</div>
+        <div class="label">
+            Notes / Remarks
+        </div>
 
-        <div>
-            {document.get("notes") or ""}
+        <div class="notes-content">
+            {esc(document.get("notes") or "")}
         </div>
 
     </div>
+
+
+    <!-- =====================================================
+         SIGNATURES
+         ===================================================== -->
 
     <div class="signatures">
 
         <div class="signature">
+
             Prepared / Issued By
+
+            <div class="signature-name">
+                {esc(document.get("created_by") or "")}
+            </div>
+
         </div>
 
+
         <div class="signature">
+
             Received By
+
+            <div class="signature-name">
+                {esc(document.get("received_by") or "")}
+            </div>
+
         </div>
 
     </div>
 
+
+    <!-- =====================================================
+         FOOTER
+         ===================================================== -->
+
     <div class="footer">
-        FinSage Manufacturing Dispatch —
-        {document.get("reference_no") or ""}
+
+        <span>
+            FinSage Manufacturing Dispatch
+        </span>
+
+        <span>
+            {esc(document.get("reference_no") or "")}
+        </span>
+
     </div>
 
 </div>
