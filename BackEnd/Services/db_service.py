@@ -105,6 +105,7 @@ from BackEnd.Services.lessor_lease_engine import (
     lessor_lease_engine,
 )
 from BackEnd.Services.emailer import send_company_mail
+
 # ────────────────────────────────────────────────────────────────
 # ENV-DEPENDENT CONFIG (NOW SAFE)
 # ────────────────────────────────────────────────────────────────
@@ -47510,6 +47511,11 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
+        ALTER TABLE {schema}.asset_depreciations
+        ADD COLUMN source_type VARCHAR(50) DEFAULT 'manual', -- 'manual', 'monthly_schedule', 'manufacturing_order'
+        ADD COLUMN source_id INT NULL,                       -- ID of the order (e.g. 5)
+        ADD COLUMN source_ref VARCHAR(100) NULL;             -- Document number (e.g. 'MO-000005')
+
         -- ==================================================
         -- ASSET DEPRECIATION: Basis snapshot fields (safe-add)
         -- ==================================================
@@ -53176,6 +53182,10 @@ class DatabaseService:
             created_at TIMESTAMPTZ NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NULL DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.manufacturing_order_overhead
+        ADD COLUMN asset_id INT NULL REFERENCES {schema}.assets(id) ON DELETE SET NULL,
+        ADD COLUMN asset_depreciation_id INT NULL REFERENCES {schema}.asset_depreciations(id) ON DELETE SET NULL;
 
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_order_overhead_company_mo_idx
         ON {schema}.manufacturing_order_overhead(company_id, manufacturing_order_id);
@@ -85484,7 +85494,6 @@ class DatabaseService:
         updated_by_user_id: int | None = None,
     ) -> dict:
         schema = self.company_schema(company_id)
-
         new_status = str(new_status or "").strip().lower()
 
         allowed_statuses = {
@@ -85496,9 +85505,7 @@ class DatabaseService:
         }
 
         if new_status not in allowed_statuses:
-            raise ValueError(
-                f"Invalid manufacturing order status: {new_status}"
-            )
+            raise ValueError(f"Invalid manufacturing order status: {new_status}")
 
         with self._conn_cursor() as (conn, cur):
             cur.execute(
@@ -85521,7 +85528,6 @@ class DatabaseService:
             )
 
             row = cur.fetchone()
-
             if not row:
                 raise ValueError(
                     f"Manufacturing order not found: {manufacturing_order_id}"
@@ -85545,26 +85551,14 @@ class DatabaseService:
                 }
 
             allowed_transitions = {
-                "draft": {
-                    "released",
-                    "cancelled",
-                },
-                "released": {
-                    "in_progress",
-                    "cancelled",
-                },
-                "in_progress": {
-                    "completed",
-                    "cancelled",
-                },
+                "draft": {"released", "cancelled"},
+                "released": {"in_progress", "cancelled"},
+                "in_progress": {"completed", "cancelled"},
                 "completed": set(),
                 "cancelled": set(),
             }
 
-            if new_status not in allowed_transitions.get(
-                current_status,
-                set(),
-            ):
+            if new_status not in allowed_transitions.get(current_status, set()):
                 raise ValueError(
                     f"Invalid manufacturing order status transition: "
                     f"{current_status} -> {new_status}"
@@ -85582,6 +85576,17 @@ class DatabaseService:
                         "Actual production quantity must be greater than "
                         "zero before completing the manufacturing order."
                     )
+
+                # ============================================================
+                # POST ASSET DEPRECIATION & JOURNAL ENTRY ON ORDER COMPLETION
+                # ============================================================
+                self.post_manufacturing_order_asset_depreciation(
+                    company_id=company_id,
+                    manufacturing_order_id=mo_id,
+                    mo_no=mo_no,
+                    user_id=updated_by_user_id,
+                    cur=cur,  # Executes inside this active transaction
+                )
 
             cur.execute(
                 f"""
@@ -85623,6 +85628,250 @@ class DatabaseService:
                 "updated_at": updated["updated_at"],
             }
 
+    def post_manufacturing_order_asset_depreciation(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        mo_no: str,
+        user_id: int | None = None,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        def _resolve_wip_account(c) -> str | None:
+            """
+            Look up the manufacturing WIP / production WIP account by COA role.
+            """
+            # 1. Try helper if available on db_service
+            if hasattr(self, "ensure_required_coa_account") and callable(getattr(self, "ensure_required_coa_account")):
+                row = self.ensure_required_coa_account(
+                    company_id,
+                    "manufacturing_wip",
+                    cur=c,
+                    required=False,
+                )
+                if row and row.get("code"):
+                    return row["code"].strip()
+
+            # 2. Query COA by role directly
+            c.execute(
+                f"""
+                SELECT code
+                FROM {schema}.coa
+                WHERE company_id = %s
+                  AND LOWER(TRIM(COALESCE(role, ''))) IN (
+                      'manufacturing_wip',
+                      'production_wip',
+                      'wip_inventory',
+                      'work_in_progress'
+                  )
+                  AND posting IS TRUE
+                ORDER BY code
+                LIMIT 1
+                """,
+                (company_id,),
+            )
+            r = c.fetchone()
+            if r:
+                return (r["code"] if isinstance(r, dict) else r[0]).strip()
+
+            return None
+
+        def _run(c):
+            # 1. Fetch unposted overhead lines linked to assets
+            c.execute(
+                f"""
+                SELECT
+                    o.id AS overhead_id,
+                    o.asset_id,
+                    o.allocated_amount,
+                    o.quantity,
+                    o.rate,
+                    o.basis,
+                    o.allocation_name,
+                    mo.tx_date,
+                    mo.mo_no,
+                    a.*
+                FROM {schema}.manufacturing_order_overhead o
+                JOIN {schema}.assets a
+                    ON a.id = o.asset_id
+                    AND a.company_id = o.company_id
+                JOIN {schema}.manufacturing_orders mo
+                    ON mo.id = o.manufacturing_order_id
+                    AND mo.company_id = o.company_id
+                WHERE o.company_id = %s
+                  AND o.manufacturing_order_id = %s
+                  AND o.asset_id IS NOT NULL
+                  AND o.asset_depreciation_id IS NULL
+                  AND COALESCE(o.allocated_amount, 0) > 0
+                FOR UPDATE OF o
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+
+            overhead_rows = c.fetchall()
+            if not overhead_rows:
+                return
+
+            from BackEnd.Services.assets.posting import resolve_depreciation_accounts
+
+            columns = [d[0] for d in c.description]
+            overheads = [
+                dict(r) if isinstance(r, dict) else dict(zip(columns, r))
+                for r in overhead_rows
+            ]
+
+            # Detect whether asset_depreciations uses 'journal_id' or 'journal_entry_id'
+            c.execute(
+                f"""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = %s
+                  AND table_name = 'asset_depreciations'
+                  AND column_name IN ('journal_id', 'journal_entry_id')
+                LIMIT 1
+                """,
+                (schema,),
+            )
+            col_match = c.fetchone()
+            journal_fk_col = (col_match["column_name"] if isinstance(col_match, dict) else col_match[0]) if col_match else "journal_id"
+
+            for item in overheads:
+                amount = round(float(item.get("allocated_amount") or 0.0), 2)
+                if amount <= 0:
+                    continue
+
+                overhead_id = int(item["overhead_id"])
+                asset_id = int(item["asset_id"])
+                asset_name = item.get("name") or item.get("asset_name") or f"Asset #{asset_id}"
+                tx_date = item.get("tx_date") or date.today()
+                tx_date_str = tx_date.isoformat() if hasattr(tx_date, "isoformat") else str(tx_date)
+
+                # 2. Resolve accounts using resolve_depreciation_accounts
+                # It returns (dep_exp_code, acc_dep_code)
+                dep_exp_code, acc_dep_code = resolve_depreciation_accounts(
+                    cur=c,
+                    schema=schema,
+                    company_id=company_id,
+                    asset=item,
+                    persist=True,
+                    return_names=False,
+                )
+
+                if not acc_dep_code:
+                    raise ValueError(
+                        f"UNRESOLVED_ACCUM_DEPR_ACCOUNT|Unable to resolve accumulated depreciation "
+                        f"account for asset '{asset_name}' (ID={asset_id})"
+                    )
+
+                # 3. For Manufacturing absorption: Debit Manufacturing WIP.
+                # Fall back to dep_exp_code if WIP role is not yet mapped in COA.
+                wip_code = _resolve_wip_account(c)
+                debit_account_code = wip_code or dep_exp_code
+
+                if not debit_account_code:
+                    raise ValueError(
+                        f"UNRESOLVED_DEBIT_ACCOUNT|Unable to resolve manufacturing WIP or depreciation "
+                        f"expense account for asset '{asset_name}' (ID={asset_id})"
+                    )
+
+                # Unique reference to prevent DUPLICATE_JOURNAL_REF in post_journal
+                journal_ref = f"DEP/{mo_no}/{overhead_id}"
+                line_desc = (
+                    f"UOP Depreciation ({asset_name}) - "
+                    f"{item.get('quantity', 0)} {item.get('basis', 'hrs')} @ {item.get('rate', 0)} via {mo_no}"
+                )
+
+                # 4. Build payload for post_journal
+                # Post through the universal journal engine
+                journal_payload: Dict[str, Any] = {
+                    "date": tx_date_str,
+                    "ref": journal_ref,
+                    "description": line_desc,
+                    "source": "asset_depreciation",  # Validated against check constraint
+                    "source_id": int(manufacturing_order_id),
+                    "source_table": "manufacturing_order_overhead",
+                    "module_name": "manufacturing",
+                    "event_type": "posted",
+                    "created_by_user_id": user_id,
+                    "updated_by_user_id": user_id,
+                    "prepared_by_user_id": user_id,
+                    "lines": [
+                        {
+                            "account_code": debit_account_code,
+                            "debit": amount,
+                            "credit": 0.0,
+                            "description": f"Manufacturing WIP Absorption - {asset_name} ({mo_no})",
+                        },
+                        {
+                            "account_code": acc_dep_code,
+                            "debit": 0.0,
+                            "credit": amount,
+                            "description": f"Accumulated Depreciation - {asset_name} ({mo_no})",
+                        },
+                    ],
+                }
+
+                # Post through the universal journal engine
+                journal_id = self.post_journal(
+                    company_id=company_id,
+                    entry=journal_payload,
+                    cur=c,
+                )
+
+                # 5. Insert ledger record into asset_depreciations
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.asset_depreciations (
+                        company_id,
+                        asset_id,
+                        depreciation_date,
+                        amount,
+                        depreciation_method,
+                        {journal_fk_col},
+                        source_type,
+                        source_id,
+                        source_ref,
+                        created_by_user_id,
+                        created_at
+                    )
+                    VALUES (%s, %s, %s, %s, 'uop', %s, 'manufacturing_order', %s, %s, %s, NOW())
+                    RETURNING id
+                    """,
+                    (
+                        company_id,
+                        asset_id,
+                        tx_date_str,
+                        amount,
+                        journal_id,
+                        manufacturing_order_id,
+                        mo_no,
+                        user_id,
+                    ),
+                )
+                depr_row = c.fetchone()
+                depr_id = int(depr_row["id"] if isinstance(depr_row, dict) else depr_row[0])
+
+                # 6. Stamp asset_depreciation_id onto manufacturing_order_overhead
+                c.execute(
+                    f"""
+                    UPDATE {schema}.manufacturing_order_overhead
+                    SET asset_depreciation_id = %s,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                      AND id = %s
+                    """,
+                    (depr_id, company_id, overhead_id),
+                )
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            res = _run(cur2)
+            conn.commit()
+            return res
+        
     def create_manufacturing_order(
         self,
         company_id: int,
@@ -85921,7 +86170,8 @@ class DatabaseService:
                     b.bom_code,
                     b.name AS bom_name,
                     b.finished_item_name,
-                    b.selling_price AS bom_selling_price,
+                    -- Fallback to finished item sales price if BOM price is NULL
+                    COALESCE(b.selling_price, ii.sales_price, 0) AS bom_selling_price,
 
                     mo.tx_date,
                     mo.planned_start_date,
@@ -85944,7 +86194,10 @@ class DatabaseService:
                 FROM {schema}.manufacturing_orders mo
                 JOIN {schema}.manufacturing_boms b
                     ON b.id = mo.bom_id
-                AND b.company_id = mo.company_id
+                    AND b.company_id = mo.company_id
+                LEFT JOIN {schema}.inventory_items ii
+                    ON ii.company_id = mo.company_id
+                    AND LOWER(TRIM(ii.name)) = LOWER(TRIM(COALESCE(b.finished_item_name, b.name)))
                 WHERE mo.company_id = %s
                 AND mo.id = %s
                 """,
@@ -85955,17 +86208,13 @@ class DatabaseService:
             )
 
             row = c.fetchone()
-
             if not row:
                 return None
 
             columns = [d[0] for d in c.description]
+            order = dict(row) if isinstance(row, dict) else dict(zip(columns, row))
 
-            if isinstance(row, dict):
-                order = dict(row)
-            else:
-                order = dict(zip(columns, row))
-
+            # Fetch materials
             c.execute(
                 f"""
                 SELECT
@@ -86003,18 +86252,12 @@ class DatabaseService:
 
             line_columns = [d[0] for d in c.description]
             line_rows = c.fetchall()
+            order["materials"] = [
+                dict(r) if isinstance(r, dict) else dict(zip(line_columns, r))
+                for r in line_rows
+            ]
 
-            if line_rows and isinstance(line_rows[0], dict):
-                order["materials"] = [
-                    dict(r)
-                    for r in line_rows
-                ]
-            else:
-                order["materials"] = [
-                    dict(zip(line_columns, r))
-                    for r in line_rows
-                ]
-
+            # This now returns overhead with asset_id, asset_name, asset_code!
             order["management_costs"] = (
                 self.get_manufacturing_order_management_costs(
                     company_id=company_id,
@@ -86031,203 +86274,70 @@ class DatabaseService:
                 )
             )
 
-            planned_qty = Decimal(
-                str(order.get("planned_qty") or 0)
-            )
-
-            actual_qty = Decimal(
-                str(order.get("actual_qty") or 0)
-            )
-
-            remaining_qty = planned_qty - actual_qty
-
-            if remaining_qty < 0:
-                remaining_qty = Decimal("0")
-
+            # ... (the rest of your calculations for production_summary remain unchanged) ...
+            planned_qty = Decimal(str(order.get("planned_qty") or 0))
+            actual_qty = Decimal(str(order.get("actual_qty") or 0))
+            remaining_qty = max(Decimal("0"), planned_qty - actual_qty)
             progress_percent = Decimal("0")
-
             if planned_qty > 0:
-                progress_percent = (
-                    actual_qty
-                    / planned_qty
-                    * Decimal("100")
-                )
+                progress_percent = min(Decimal("100"), (actual_qty / planned_qty) * Decimal("100"))
 
-            if progress_percent > Decimal("100"):
-                progress_percent = Decimal("100")
+            selling_price = Decimal(str(order.get("bom_selling_price") or 0))
 
-
-            # ---------------------------------------------------------
-            # PRODUCTION COST SUMMARY
-            # ---------------------------------------------------------
-
-            selling_price = Decimal(
-                str(order.get("bom_selling_price") or 0)
-            )
-
-            # Direct materials
             material_cost = sum(
-                (
-                    Decimal(str(line.get("total_cost") or 0))
-                    for line in order.get("materials", [])
-                ),
+                (Decimal(str(line.get("total_cost") or 0)) for line in order.get("materials", [])),
                 Decimal("0"),
             )
-
-            # Direct labour
             labour_cost = sum(
-                (
-                    Decimal(str(line.get("labour_cost") or 0))
-                    for line in order.get("management_costs", {}).get("labour", [])
-                ),
+                (Decimal(str(line.get("labour_cost") or 0)) for line in order.get("management_costs", {}).get("labour", [])),
                 Decimal("0"),
             )
-
-            # Other direct production costs
             direct_cost_total = sum(
-                (
-                    Decimal(str(line.get("amount") or 0))
-                    for line in order.get("management_costs", {}).get("direct_costs", [])
-                ),
+                (Decimal(str(line.get("amount") or 0)) for line in order.get("management_costs", {}).get("direct_costs", [])),
                 Decimal("0"),
             )
-
-            # Manufacturing overhead
             overhead_total = sum(
-                (
-                    Decimal(str(line.get("allocated_amount") or 0))
-                    for line in order.get("management_costs", {}).get("overhead", [])
-                ),
+                (Decimal(str(line.get("allocated_amount") or 0)) for line in order.get("management_costs", {}).get("overhead", [])),
                 Decimal("0"),
             )
 
-            # Direct production cost excludes manufacturing overhead
-            total_direct_cost = (
-                material_cost
-                + labour_cost
-                + direct_cost_total
-            )
+            total_direct_cost = material_cost + labour_cost + direct_cost_total
+            full_production_cost = total_direct_cost + overhead_total
+            production_value = actual_qty * selling_price
+            contribution = production_value - total_direct_cost
+            contribution_margin = (contribution / production_value * Decimal("100")) if production_value != 0 else None
+            full_production_margin = production_value - full_production_cost
+            full_production_margin_percent = (full_production_margin / production_value * Decimal("100")) if production_value != 0 else None
 
-            # Full production / absorption cost
-            full_production_cost = (
-                total_direct_cost
-                + overhead_total
-            )
-
-            # Selling price is per finished unit.
-            # Therefore production value is output quantity × BOM selling price.
-            production_value = (
-                actual_qty
-                * selling_price
-            )
-
-            # Contribution before manufacturing overhead
-            contribution = (
-                production_value
-                - total_direct_cost
-            )
-
-            contribution_margin = None
-
-            if production_value != 0:
-                contribution_margin = (
-                    contribution
-                    / production_value
-                    * Decimal("100")
-                )
-
-            # Full production margin after manufacturing overhead
-            full_production_margin = (
-                production_value
-                - full_production_cost
-            )
-
-            full_production_margin_percent = None
-
-            if production_value != 0:
-                full_production_margin_percent = (
-                    full_production_margin
-                    / production_value
-                    * Decimal("100")
-                )
-
-
-            # ---------------------------------------------------------
-            # UNIT ECONOMICS
-            # ---------------------------------------------------------
-
-            # Actual output is the preferred denominator because these
-            # costs represent the production batch as actually produced.
-            #
-            # If actual output is zero, fall back to planned output so
-            # the unit-cost fields remain useful before production output
-            # has been entered.
-            unit_output = actual_qty
-
-            if unit_output <= 0:
-                unit_output = planned_qty
-
-            unit_direct_cost = None
-            unit_full_production_cost = None
-            unit_contribution = None
-            unit_full_production_margin = None
-
-            if unit_output > 0:
-                unit_direct_cost = (
-                    total_direct_cost
-                    / unit_output
-                )
-
-                unit_full_production_cost = (
-                    full_production_cost
-                    / unit_output
-                )
-
-                unit_contribution = (
-                    selling_price
-                    - unit_direct_cost
-                )
-
-                unit_full_production_margin = (
-                    selling_price
-                    - unit_full_production_cost
-                )
-
+            unit_output = actual_qty if actual_qty > 0 else planned_qty
+            unit_direct_cost = (total_direct_cost / unit_output) if unit_output > 0 else None
+            unit_full_production_cost = (full_production_cost / unit_output) if unit_output > 0 else None
+            unit_contribution = (selling_price - unit_direct_cost) if unit_direct_cost is not None else None
+            unit_full_production_margin = (selling_price - unit_full_production_cost) if unit_full_production_cost is not None else None
 
             order["production_summary"] = {
                 "planned_output": planned_qty,
                 "actual_output": actual_qty,
                 "remaining_output": remaining_qty,
                 "production_progress_percent": progress_percent,
-
                 "selling_price": selling_price,
                 "production_value": production_value,
-
                 "material_cost": material_cost,
                 "labour_cost": labour_cost,
                 "other_direct_costs": direct_cost_total,
                 "total_direct_cost": total_direct_cost,
-
                 "manufacturing_overhead": overhead_total,
                 "full_production_cost": full_production_cost,
-
                 "contribution": contribution,
                 "contribution_margin": contribution_margin,
-
                 "full_production_margin": full_production_margin,
-                "full_production_margin_percent": (
-                    full_production_margin_percent
-                ),
-
+                "full_production_margin_percent": full_production_margin_percent,
                 "unit_direct_cost": unit_direct_cost,
                 "unit_full_production_cost": unit_full_production_cost,
                 "unit_contribution": unit_contribution,
                 "unit_full_production_margin": unit_full_production_margin,
             }
 
-
-            # Keep the existing progress summary for backwards
-            # compatibility with the current frontend/API consumers.
             order["production_progress_summary"] = {
                 "planned_qty": planned_qty,
                 "actual_qty": actual_qty,
@@ -86239,7 +86349,6 @@ class DatabaseService:
 
         if cur is not None:
             return _fetch(cur)
-
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
         
@@ -87550,7 +87659,7 @@ class DatabaseService:
                         "description": (
                             f"Manufacturing material usage #{tx_id}"
                         ),
-                        "source": "manufacturing_order",
+                        "source": "manufacturing_material_usage",
                         "source_id": int(tx_id),
                         "source_table": "inventory_tx",
                         "module_name": "manufacturing",
@@ -89133,6 +89242,9 @@ class DatabaseService:
                 "overhead": [],
             }
 
+            # -------------------------------------------------------------
+            # 1. LABOUR
+            # -------------------------------------------------------------
             c.execute(
                 f"""
                 SELECT
@@ -89184,6 +89296,9 @@ class DatabaseService:
 
                     result["labour"].append(item)
 
+            # -------------------------------------------------------------
+            # 2. DIRECT COSTS
+            # -------------------------------------------------------------
             c.execute(
                 f"""
                 SELECT
@@ -89227,28 +89342,38 @@ class DatabaseService:
 
                     result["direct_costs"].append(item)
 
+            # -------------------------------------------------------------
+            # 3. OVERHEAD (Enriched with Asset & Depreciation details)
+            # -------------------------------------------------------------
             c.execute(
                 f"""
                 SELECT
-                    id,
-                    company_id,
-                    manufacturing_order_id,
-                    allocation_name,
-                    basis,
-                    quantity,
-                    rate,
-                    allocated_amount,
-                    source,
-                    source_id,
-                    memo,
-                    created_by_user_id,
-                    updated_by_user_id,
-                    created_at,
-                    updated_at
-                FROM {schema}.manufacturing_order_overhead
-                WHERE company_id = %s
-                AND manufacturing_order_id = %s
-                ORDER BY id
+                    o.id,
+                    o.company_id,
+                    o.manufacturing_order_id,
+                    o.allocation_name,
+                    o.basis,
+                    o.quantity,
+                    o.rate,
+                    o.allocated_amount,
+                    o.asset_id,
+                    o.asset_depreciation_id,
+                    a.asset_code,
+                    a.name AS asset_name,
+                    o.source,
+                    o.source_id,
+                    o.memo,
+                    o.created_by_user_id,
+                    o.updated_by_user_id,
+                    o.created_at,
+                    o.updated_at
+                FROM {schema}.manufacturing_order_overhead o
+                LEFT JOIN {schema}.assets a
+                    ON a.id = o.asset_id
+                    AND a.company_id = o.company_id
+                WHERE o.company_id = %s
+                AND o.manufacturing_order_id = %s
+                ORDER BY o.id
                 """,
                 (
                     company_id,
@@ -89274,6 +89399,12 @@ class DatabaseService:
                     ):
                         if item.get(key) is not None:
                             item[key] = float(item[key])
+
+                    if item.get("asset_id") is not None:
+                        item["asset_id"] = int(item["asset_id"])
+
+                    if item.get("asset_depreciation_id") is not None:
+                        item["asset_depreciation_id"] = int(item["asset_depreciation_id"])
 
                     result["overhead"].append(item)
 
@@ -89491,6 +89622,7 @@ class DatabaseService:
         quantity=None,
         rate=None,
         allocated_amount=None,
+        asset_id=None,
         source=None,
         source_id=None,
         memo=None,
@@ -89498,6 +89630,11 @@ class DatabaseService:
         cur=None,
     ) -> int:
         schema = self.company_schema(company_id)
+
+        # If asset_id is provided, auto-tag the source metadata
+        if asset_id is not None:
+            source = source or "asset"
+            source_id = source_id or int(asset_id)
 
         def _create(c):
             c.execute(
@@ -89510,6 +89647,7 @@ class DatabaseService:
                     quantity,
                     rate,
                     allocated_amount,
+                    asset_id,
                     source,
                     source_id,
                     memo,
@@ -89518,7 +89656,7 @@ class DatabaseService:
                 )
                 VALUES (
                     %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s
                 )
                 RETURNING id
                 """,
@@ -89530,6 +89668,7 @@ class DatabaseService:
                     quantity,
                     rate,
                     allocated_amount,
+                    int(asset_id) if asset_id is not None else None,
                     source,
                     source_id,
                     memo,
@@ -89560,6 +89699,26 @@ class DatabaseService:
         schema = self.company_schema(company_id)
 
         def _delete(c):
+            # Check if depreciation has already posted
+            c.execute(
+                f"""
+                SELECT asset_depreciation_id
+                FROM {schema}.manufacturing_order_overhead
+                WHERE company_id = %s AND id = %s
+                """,
+                (company_id, int(overhead_id)),
+            )
+            row = c.fetchone()
+            if not row:
+                return False
+
+            depr_id = row["asset_depreciation_id"] if isinstance(row, dict) else row[0]
+            if depr_id is not None:
+                raise ValueError(
+                    "CANNOT_DELETE_POSTED_OVERHEAD|This overhead has already posted "
+                    "depreciation to the Asset Register. Reverse the order status first."
+                )
+
             c.execute(
                 f"""
                 DELETE FROM {schema}.manufacturing_order_overhead
@@ -89579,7 +89738,7 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur2):
             return _delete(cur2)
-
+        
     def pos_ensure_packing_queue_item(self, company_id: int, order_id: int) -> int:
         schema = self.company_schema(company_id)
 
@@ -89612,6 +89771,7 @@ class DatabaseService:
         ))
 
         return int(row["id"])
+
 
     def pos_list_menu_items(self, company_id: int, active_only: bool = True) -> list[dict]:
         schema = self.company_schema(company_id)

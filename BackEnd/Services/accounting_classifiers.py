@@ -1408,6 +1408,7 @@ def _coa_role_from_text(
             "factory work-in-progress",
         ):
             return "manufacturing_wip"
+        
         if has_any(
             "project work-in-progress",
             "project work in progress",

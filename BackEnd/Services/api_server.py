@@ -14209,6 +14209,10 @@ def create_manufacturing_order_overhead(
     try:
         payload = request.get_json(silent=True) or {}
 
+        # Safely parse asset_id if provided
+        raw_asset_id = payload.get("asset_id")
+        asset_id = int(raw_asset_id) if raw_asset_id not in (None, "", 0, "0") else None
+
         overhead_id = db_service.create_manufacturing_order_overhead(
             company_id=company_id,
             manufacturing_order_id=int(order_id),
@@ -14217,6 +14221,7 @@ def create_manufacturing_order_overhead(
             quantity=payload.get("quantity"),
             rate=payload.get("rate"),
             allocated_amount=payload.get("allocated_amount"),
+            asset_id=asset_id,  # <--- Added asset_id here
             source=payload.get("source"),
             source_id=payload.get("source_id"),
             memo=payload.get("memo"),
@@ -14240,6 +14245,7 @@ def create_manufacturing_order_overhead(
         return jsonify({
             "error": str(e),
         }), 400
+
 
 @app.route(
     "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/overhead/<int:overhead_id>",
@@ -14271,6 +14277,12 @@ def delete_manufacturing_order_overhead(
         return jsonify({
             "ok": True,
         }), 200
+
+    except ValueError as e:
+        # Handles the safeguard when asset_depreciation_id IS NOT NULL
+        return jsonify({
+            "error": str(e),
+        }), 400
 
     except Exception as e:
         current_app.logger.exception(

@@ -128520,9 +128520,23 @@ async function openManufacturingOrderDetail(orderId) {
 
   if (!cid || !orderId) return;
 
-  const data = await apiFetch(
-    ENDPOINTS.manufacturing.order(cid, orderId)
-  );
+  // 1. Fetch Order Data and Available Assets in parallel
+  const [data, assetsRes] = await Promise.all([
+    apiFetch(ENDPOINTS.manufacturing.order(cid, orderId)),
+    apiFetch(
+      window.ENDPOINTS?.assets?.list
+        ? window.ENDPOINTS.assets.list(cid)
+        : `/api/companies/${encodeURIComponent(cid)}/assets`
+    ).catch(() => ({ items: [] })),
+  ]);
+
+  const availableAssets = Array.isArray(assetsRes?.items)
+    ? assetsRes.items
+    : Array.isArray(assetsRes?.assets)
+    ? assetsRes.assets
+    : Array.isArray(assetsRes)
+    ? assetsRes
+    : [];
 
   const order = data?.order || data;
 
@@ -128584,7 +128598,6 @@ async function openManufacturingOrderDetail(orderId) {
 
   /* -------------------------------------------------------
      PRODUCTION SUMMARY
-     Backend is now the single source of truth.
   ------------------------------------------------------- */
 
   const productionSummary =
@@ -128737,17 +128750,13 @@ async function openManufacturingOrderDetail(orderId) {
     <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-auto">
 
       <div class="sticky top-0 bg-white border-b px-5 py-4 flex items-center justify-between z-10">
-
         <div>
-
           <div class="text-lg font-semibold">
             ${esc(order?.mo_no || `MO-${orderId}`)}
           </div>
-
           <div class="text-sm text-slate-600">
             Production of ${esc(finishedItem)}
           </div>
-
         </div>
 
         <button
@@ -128756,197 +128765,108 @@ async function openManufacturingOrderDetail(orderId) {
           class="text-2xl text-slate-400 hover:text-slate-700">
           ×
         </button>
-
       </div>
 
       <div class="p-5">
 
         <!-- PRODUCTION HEADER -->
-
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-
           <div>
-
-            <div class="text-slate-500">
-              Finished Item
-            </div>
-
-            <div class="font-semibold">
-              ${esc(finishedItem)}
-            </div>
-
+            <div class="text-slate-500">Finished Item</div>
+            <div class="font-semibold">${esc(finishedItem)}</div>
           </div>
 
           <div>
-
-            <div class="text-slate-500">
-              Production Tracking
-            </div>
-
-            <div class="font-semibold">
-              ${esc(trackingLabel)}
-            </div>
-
+            <div class="text-slate-500">Production Tracking</div>
+            <div class="font-semibold">${esc(trackingLabel)}</div>
           </div>
 
           <div>
-
-            <div class="text-slate-500">
-              Planned Start
-            </div>
-
+            <div class="text-slate-500">Planned Start</div>
             <div class="font-semibold">
-              ${esc(
-                order?.planned_start_date ||
-                order?.tx_date ||
-                "—"
-              )}
+              ${esc(order?.planned_start_date || order?.tx_date || "—")}
             </div>
-
           </div>
 
           <div>
-
-            <div class="text-slate-500">
-              Expected Finish
-            </div>
-
+            <div class="text-slate-500">Expected Finish</div>
             <div class="font-semibold">
-              ${esc(
-                order?.planned_finish_date ||
-                "—"
-              )}
+              ${esc(order?.planned_finish_date || "—")}
             </div>
-
           </div>
-
         </div>
 
         <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-
           <div>
-
-            <div class="text-slate-500">
-              Planned Output
-            </div>
-
+            <div class="text-slate-500">Planned Output</div>
             <div class="font-semibold">
-              ${esc(plannedOutput)}
-              ${esc(outputUnit)}
+              ${esc(plannedOutput)} ${esc(outputUnit)}
             </div>
-
           </div>
 
           <div>
-
-            <div class="text-slate-500">
-              Completed Output
-            </div>
-
+            <div class="text-slate-500">Completed Output</div>
             <div class="font-semibold">
-              ${esc(completedOutput)}
-              ${esc(outputUnit)}
+              ${esc(completedOutput)} ${esc(outputUnit)}
             </div>
-
           </div>
 
           <div>
-
-            <div class="text-slate-500">
-              Remaining Output
-            </div>
-
+            <div class="text-slate-500">Remaining Output</div>
             <div class="font-semibold">
-              ${esc(remainingOutput)}
-              ${esc(outputUnit)}
+              ${esc(remainingOutput)} ${esc(outputUnit)}
             </div>
-
           </div>
 
           <div>
-
-            <div class="text-slate-500">
-              Production Progress
-            </div>
-
+            <div class="text-slate-500">Production Progress</div>
             <div class="font-semibold">
               ${productionProgressPercent.toFixed(1)}%
             </div>
-
           </div>
-
         </div>
 
         <!-- PROGRESS BAR -->
-
         <div class="mt-4">
-
           <div class="flex justify-between text-xs text-slate-500 mb-1">
-
-            <span>
-              Production progress
-            </span>
-
-            <span>
-              ${productionProgressPercent.toFixed(1)}%
-            </span>
-
+            <span>Production progress</span>
+            <span>${productionProgressPercent.toFixed(1)}%</span>
           </div>
 
           <div class="w-full h-2 bg-slate-100 rounded overflow-hidden">
-
             <div
               class="h-full bg-slate-700"
-              style="width:${Math.min(
-                productionProgressPercent,
-                100
-              )}%">
+              style="width:${Math.min(productionProgressPercent, 100)}%">
             </div>
-
           </div>
-
         </div>
 
-        <!-- RECORD PRODUCTION -->
-
+        <!-- RECORD PRODUCTION & ACTIONS -->
         ${
           status !== "completed" &&
           status !== "cancelled" &&
           remainingOutput > 0
             ? `
               <div class="mt-4 flex justify-end">
-
                 <button
                   type="button"
                   data-record-production
                   class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
                   Record Production
                 </button>
-
               </div>
             `
             : ""
         }
 
         <div class="mt-4 flex flex-wrap gap-2">
-
           <div class="text-xs px-2 py-1 rounded bg-slate-100">
-
-            Status:
-
-            <strong>
-              ${esc(order?.status || "—")}
-            </strong>
-
+            Status: <strong>${esc(order?.status || "—")}</strong>
           </div>
 
           ${
             trackingMethod === "progressive"
-              ? `
-                <div class="text-xs px-2 py-1 rounded bg-slate-100">
-                  Production is tracked progressively.
-                </div>
-              `
+              ? `<div class="text-xs px-2 py-1 rounded bg-slate-100">Production is tracked progressively.</div>`
               : ""
           }
 
@@ -128983,213 +128903,88 @@ async function openManufacturingOrderDetail(orderId) {
               `
               : ""
           }
-
         </div>
 
         <!-- PRODUCTION INFORMATION -->
-
         <div class="mt-6 border rounded">
-
           <div class="px-4 py-3 border-b">
-
-            <div class="font-semibold">
-              Production Order
-            </div>
-
+            <div class="font-semibold">Production Order</div>
             <div class="mt-1 text-sm text-slate-600">
-
               ${
                 trackingMethod === "progressive"
-                  ? `
-                    This production order can remain open across
-                    multiple production days or stages. Material,
-                    labour, direct costs and overhead can accumulate
-                    while production output is recorded progressively.
-                  `
-                  : `
-                    This is a batch / daily production order intended
-                    for a short production cycle.
-                  `
+                  ? `This production order can remain open across multiple production days or stages. Material, labour, direct costs and overhead can accumulate while production output is recorded progressively.`
+                  : `This is a batch / daily production order intended for a short production cycle.`
               }
-
             </div>
-
           </div>
 
           <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-
             <div>
-
-              <div class="text-slate-500">
-                BOM
-              </div>
-
-              <div class="font-semibold">
-                ${esc(
-                  order?.bom_code ||
-                  order?.bom_name ||
-                  "—"
-                )}
-              </div>
-
+              <div class="text-slate-500">BOM</div>
+              <div class="font-semibold">${esc(order?.bom_code || order?.bom_name || "—")}</div>
             </div>
 
             <div>
-
-              <div class="text-slate-500">
-                Location
-              </div>
-
-              <div class="font-semibold">
-                ${esc(order?.location || "—")}
-              </div>
-
+              <div class="text-slate-500">Location</div>
+              <div class="font-semibold">${esc(order?.location || "—")}</div>
             </div>
 
             <div>
-
-              <div class="text-slate-500">
-                Planned Start
-              </div>
-
-              <div class="font-semibold">
-                ${esc(
-                  order?.planned_start_date ||
-                  order?.tx_date ||
-                  "—"
-                )}
-              </div>
-
+              <div class="text-slate-500">Planned Start</div>
+              <div class="font-semibold">${esc(order?.planned_start_date || order?.tx_date || "—")}</div>
             </div>
 
             <div>
-
-              <div class="text-slate-500">
-                Expected Finish
-              </div>
-
-              <div class="font-semibold">
-                ${esc(
-                  order?.planned_finish_date ||
-                  "—"
-                )}
-              </div>
-
+              <div class="text-slate-500">Expected Finish</div>
+              <div class="font-semibold">${esc(order?.planned_finish_date || "—")}</div>
             </div>
-
           </div>
-
         </div>
 
         <!-- PRODUCTION PROGRESS HISTORY -->
-
         <div class="mt-6 border rounded">
-
           <div class="px-4 py-3 border-b">
-
-            <div class="font-semibold">
-              Production Progress History
-            </div>
-
+            <div class="font-semibold">Production Progress History</div>
             <div class="text-xs text-slate-500">
               Individual production entries recorded against this order.
             </div>
-
           </div>
 
           <div class="overflow-x-auto">
-
             <table class="w-full text-sm">
-
               <thead class="bg-slate-50">
-
                 <tr>
-
-                  <th class="px-3 py-2 text-left">
-                    Date
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Quantity
-                  </th>
-
-                  <th class="px-3 py-2 text-left">
-                    Notes
-                  </th>
-
+                  <th class="px-3 py-2 text-left">Date</th>
+                  <th class="px-3 py-2 text-right">Quantity</th>
+                  <th class="px-3 py-2 text-left">Notes</th>
                 </tr>
-
               </thead>
-
               <tbody>
-
                 ${
-                  Array.isArray(order?.production_progress) &&
-                  order.production_progress.length
+                  Array.isArray(order?.production_progress) && order.production_progress.length
                     ? order.production_progress
                         .map(entry => `
                           <tr class="border-b">
-
-                            <td class="px-3 py-2">
-                              ${esc(
-                                entry.tx_date || "—"
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${esc(
-                                entry.quantity ?? 0
-                              )}
-                              ${esc(outputUnit)}
-                            </td>
-
-                            <td class="px-3 py-2">
-                              ${esc(
-                                entry.notes || "—"
-                              )}
-                            </td>
-
+                            <td class="px-3 py-2">${esc(entry.tx_date || "—")}</td>
+                            <td class="px-3 py-2 text-right">${esc(entry.quantity ?? 0)} ${esc(outputUnit)}</td>
+                            <td class="px-3 py-2">${esc(entry.notes || "—")}</td>
                           </tr>
-                        `)
-                        .join("")
-                    : `
-                      <tr>
-
-                        <td
-                          colspan="3"
-                          class="px-3 py-4 text-slate-500">
-                          No production progress has been recorded yet.
-                        </td>
-
-                      </tr>
-                    `
+                        `).join("")
+                    : `<tr><td colspan="3" class="px-3 py-4 text-slate-500">No production progress has been recorded yet.</td></tr>`
                 }
-
               </tbody>
-
             </table>
-
           </div>
-
         </div>
 
         <!-- MATERIALS -->
-
         <div class="mt-6 border rounded">
-
           <div class="px-4 py-3 border-b flex items-center justify-between">
-
             <div>
-
-              <div class="font-semibold">
-                Materials / Material Usage
-              </div>
-
+              <div class="font-semibold">Materials / Material Usage</div>
               <div class="text-xs text-slate-500">
-                Planned quantities come from the BOM.
-                Actual quantities show what was consumed.
+                Planned quantities come from the BOM. Actual quantities show what was consumed.
               </div>
-
             </div>
 
             ${
@@ -129204,132 +128999,47 @@ async function openManufacturingOrderDetail(orderId) {
                 `
                 : ""
             }
-
           </div>
 
           <div class="overflow-x-auto">
-
             <table class="w-full text-sm">
-
               <thead class="bg-slate-50">
-
                 <tr>
-
-                  <th class="px-3 py-2 text-left">
-                    Material
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Planned Qty
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Actual Qty
-                  </th>
-
-                  <th class="px-3 py-2 text-left">
-                    Unit
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Unit Cost
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Total Cost
-                  </th>
-
+                  <th class="px-3 py-2 text-left">Material</th>
+                  <th class="px-3 py-2 text-right">Planned Qty</th>
+                  <th class="px-3 py-2 text-right">Actual Qty</th>
+                  <th class="px-3 py-2 text-left">Unit</th>
+                  <th class="px-3 py-2 text-right">Unit Cost</th>
+                  <th class="px-3 py-2 text-right">Total Cost</th>
                 </tr>
-
               </thead>
-
               <tbody>
-
                 ${
                   materials.length
                     ? materials
                         .map(line => `
                           <tr class="border-b">
-
-                            <td class="px-3 py-2">
-                              ${esc(
-                                line.item_name ||
-                                line.name ||
-                                line.description ||
-                                ""
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${esc(
-                                line.planned_qty ?? 0
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${esc(
-                                line.actual_qty ?? 0
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2">
-                              ${esc(
-                                line.unit || ""
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${fmtMoney(
-                                line.unit_cost || 0
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${fmtMoney(
-                                line.total_cost || 0
-                              )}
-                            </td>
-
+                            <td class="px-3 py-2">${esc(line.item_name || line.name || line.description || "")}</td>
+                            <td class="px-3 py-2 text-right">${esc(line.planned_qty ?? 0)}</td>
+                            <td class="px-3 py-2 text-right">${esc(line.actual_qty ?? 0)}</td>
+                            <td class="px-3 py-2">${esc(line.unit || "")}</td>
+                            <td class="px-3 py-2 text-right">${fmtMoney(line.unit_cost || 0)}</td>
+                            <td class="px-3 py-2 text-right">${fmtMoney(line.total_cost || 0)}</td>
                           </tr>
-                        `)
-                        .join("")
-                    : `
-                      <tr>
-
-                        <td
-                          colspan="6"
-                          class="px-3 py-4 text-slate-500">
-                          No materials have been recorded.
-                        </td>
-
-                      </tr>
-                    `
+                        `).join("")
+                    : `<tr><td colspan="6" class="px-3 py-4 text-slate-500">No materials have been recorded.</td></tr>`
                 }
-
               </tbody>
-
             </table>
-
           </div>
-
         </div>
 
         <!-- DIRECT LABOUR -->
-
         <div class="border rounded mt-5">
-
           <div class="px-4 py-3 border-b flex items-center justify-between">
-
             <div>
-
-              <div class="font-semibold">
-                Direct Labour
-              </div>
-
-              <div class="text-xs text-slate-500">
-                Labour directly attributable to this production order.
-              </div>
-
+              <div class="font-semibold">Direct Labour</div>
+              <div class="text-xs text-slate-500">Labour directly attributable to this production order.</div>
             </div>
 
             <button
@@ -129338,249 +129048,82 @@ async function openManufacturingOrderDetail(orderId) {
               class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
               Add Labour
             </button>
-
           </div>
 
-          <div
-            data-labour-form
-            class="hidden px-4 py-3 border-b bg-slate-50">
-
+          <div data-labour-form class="hidden px-4 py-3 border-b bg-slate-50">
             <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
-
               <label class="text-xs">
-
-                <div class="text-slate-600 mb-1">
-                  Employee / Worker
-                </div>
-
-                <input
-                  type="text"
-                  data-labour-worker
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="Worker name">
-
+                <div class="text-slate-600 mb-1">Employee / Worker</div>
+                <input type="text" data-labour-worker class="w-full border rounded px-2 py-2 text-sm" placeholder="Worker name">
               </label>
 
               <label class="text-xs">
-
-                <div class="text-slate-600 mb-1">
-                  Role
-                </div>
-
-                <input
-                  type="text"
-                  data-labour-role
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="Role">
-
+                <div class="text-slate-600 mb-1">Role</div>
+                <input type="text" data-labour-role class="w-full border rounded px-2 py-2 text-sm" placeholder="Role">
               </label>
 
               <label class="text-xs">
-
-                <div class="text-slate-600 mb-1">
-                  Hours
-                </div>
-
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  data-labour-hours
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="0.00">
-
+                <div class="text-slate-600 mb-1">Hours</div>
+                <input type="number" min="0" step="0.01" data-labour-hours class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
               </label>
 
               <label class="text-xs">
-
-                <div class="text-slate-600 mb-1">
-                  Rate
-                </div>
-
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  data-labour-rate
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="0.00">
-
+                <div class="text-slate-600 mb-1">Rate</div>
+                <input type="number" min="0" step="0.01" data-labour-rate class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
               </label>
 
               <label class="text-xs">
-
-                <div class="text-slate-600 mb-1">
-                  Labour Cost
-                </div>
-
-                <input
-                  type="text"
-                  data-labour-cost
-                  readonly
-                  class="w-full border rounded px-2 py-2 text-sm bg-white"
-                  value="LSL 0.00">
-
+                <div class="text-slate-600 mb-1">Labour Cost</div>
+                <input type="text" data-labour-cost readonly class="w-full border rounded px-2 py-2 text-sm bg-white" value="LSL 0.00">
               </label>
-
             </div>
 
             <div class="mt-3 flex justify-end gap-2">
-
-              <button
-                type="button"
-                data-cancel-labour
-                class="px-3 py-1.5 text-sm rounded border hover:bg-white">
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                data-save-labour
-                class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
-                Save Labour
-              </button>
-
+              <button type="button" data-cancel-labour class="px-3 py-1.5 text-sm rounded border hover:bg-white">Cancel</button>
+              <button type="button" data-save-labour class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">Save Labour</button>
             </div>
-
           </div>
 
           <div class="overflow-x-auto">
-
             <table class="w-full text-sm">
-
               <thead class="bg-slate-50">
-
                 <tr>
-
-                  <th class="px-3 py-2 text-left">
-                    Employee / Worker
-                  </th>
-
-                  <th class="px-3 py-2 text-left">
-                    Role
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Hours
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Rate
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Labour Cost
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Action
-                  </th>
-
+                  <th class="px-3 py-2 text-left">Employee / Worker</th>
+                  <th class="px-3 py-2 text-left">Role</th>
+                  <th class="px-3 py-2 text-right">Hours</th>
+                  <th class="px-3 py-2 text-right">Rate</th>
+                  <th class="px-3 py-2 text-right">Labour Cost</th>
+                  <th class="px-3 py-2 text-right">Action</th>
                 </tr>
-
               </thead>
-
               <tbody data-labour-lines>
-
                 ${
                   labourLines.length
-                    ? labourLines
-                        .map(line => `
-                          <tr class="border-b">
-
-                            <td class="px-3 py-2">
-                              ${esc(
-                                line.worker_name ||
-                                line.worker_reference ||
-                                ""
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2">
-                              ${esc(
-                                line.role || ""
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${
-                                line.hours != null
-                                  ? esc(line.hours)
-                                  : "—"
-                              }
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${
-                                line.rate != null
-                                  ? fmtMoney(line.rate)
-                                  : "—"
-                              }
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${
-                                line.labour_cost != null
-                                  ? fmtMoney(
-                                      line.labour_cost
-                                    )
-                                  : "—"
-                              }
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-
-                              <button
-                                type="button"
-                                class="text-xs text-red-600 hover:underline"
-                                data-delete-labour="${Number(
-                                  line.id
-                                )}">
-                                Delete
-                              </button>
-
-                            </td>
-
-                          </tr>
-                        `)
-                        .join("")
-                    : `
-                      <tr data-labour-empty>
-
-                        <td
-                          colspan="6"
-                          class="px-3 py-4 text-slate-500">
-                          No direct labour has been recorded for this production order.
+                    ? labourLines.map(line => `
+                      <tr class="border-b">
+                        <td class="px-3 py-2">${esc(line.worker_name || line.worker_reference || "")}</td>
+                        <td class="px-3 py-2">${esc(line.role || "")}</td>
+                        <td class="px-3 py-2 text-right">${line.hours != null ? esc(line.hours) : "—"}</td>
+                        <td class="px-3 py-2 text-right">${line.rate != null ? fmtMoney(line.rate) : "—"}</td>
+                        <td class="px-3 py-2 text-right">${line.labour_cost != null ? fmtMoney(line.labour_cost) : "—"}</td>
+                        <td class="px-3 py-2 text-right">
+                          <button type="button" class="text-xs text-red-600 hover:underline" data-delete-labour="${Number(line.id)}">Delete</button>
                         </td>
-
                       </tr>
-                    `
+                    `).join("")
+                    : `<tr data-labour-empty><td colspan="6" class="px-3 py-4 text-slate-500">No direct labour has been recorded for this production order.</td></tr>`
                 }
-
               </tbody>
-
             </table>
-
           </div>
-
         </div>
 
         <!-- OTHER DIRECT COSTS -->
-
         <div class="border rounded mt-5">
-
           <div class="px-4 py-3 border-b flex items-center justify-between">
-
             <div>
-
-              <div class="font-semibold">
-                Other Direct Costs
-              </div>
-
-              <div class="text-xs text-slate-500">
-                Other costs directly attributable to this production order.
-              </div>
-
+              <div class="font-semibold">Other Direct Costs</div>
+              <div class="text-xs text-slate-500">Other costs directly attributable to this production order.</div>
             </div>
 
             <button
@@ -129589,190 +129132,68 @@ async function openManufacturingOrderDetail(orderId) {
               class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
               Add Direct Cost
             </button>
-
           </div>
 
-          <div
-            data-direct-cost-form
-            class="hidden px-4 py-3 border-b bg-slate-50">
-
+          <div data-direct-cost-form class="hidden px-4 py-3 border-b bg-slate-50">
             <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-
               <label class="text-xs md:col-span-2">
-
-                <div class="text-slate-600 mb-1">
-                  Description
-                </div>
-
-                <input
-                  type="text"
-                  data-direct-cost-description
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="Description">
-
+                <div class="text-slate-600 mb-1">Description</div>
+                <input type="text" data-direct-cost-description class="w-full border rounded px-2 py-2 text-sm" placeholder="Description">
               </label>
 
               <label class="text-xs">
-
-                <div class="text-slate-600 mb-1">
-                  Cost Type
-                </div>
-
-                <input
-                  type="text"
-                  data-direct-cost-type
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="Cost type">
-
+                <div class="text-slate-600 mb-1">Cost Type</div>
+                <input type="text" data-direct-cost-type class="w-full border rounded px-2 py-2 text-sm" placeholder="Cost type">
               </label>
 
               <label class="text-xs">
-
-                <div class="text-slate-600 mb-1">
-                  Amount
-                </div>
-
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  data-direct-cost-amount
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="0.00">
-
+                <div class="text-slate-600 mb-1">Amount</div>
+                <input type="number" min="0" step="0.01" data-direct-cost-amount class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
               </label>
-
             </div>
 
             <div class="mt-3 flex justify-end gap-2">
-
-              <button
-                type="button"
-                data-cancel-direct-cost
-                class="px-3 py-1.5 text-sm rounded border hover:bg-white">
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                data-save-direct-cost
-                class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
-                Save Direct Cost
-              </button>
-
+              <button type="button" data-cancel-direct-cost class="px-3 py-1.5 text-sm rounded border hover:bg-white">Cancel</button>
+              <button type="button" data-save-direct-cost class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">Save Direct Cost</button>
             </div>
-
           </div>
 
           <div class="overflow-x-auto">
-
             <table class="w-full text-sm">
-
               <thead class="bg-slate-50">
-
                 <tr>
-
-                  <th class="px-3 py-2 text-left">
-                    Description
-                  </th>
-
-                  <th class="px-3 py-2 text-left">
-                    Cost Type
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Amount
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Action
-                  </th>
-
+                  <th class="px-3 py-2 text-left">Description</th>
+                  <th class="px-3 py-2 text-left">Cost Type</th>
+                  <th class="px-3 py-2 text-right">Amount</th>
+                  <th class="px-3 py-2 text-right">Action</th>
                 </tr>
-
               </thead>
-
               <tbody data-direct-cost-lines>
-
                 ${
                   directCostLines.length
-                    ? directCostLines
-                        .map(line => `
-                          <tr class="border-b">
-
-                            <td class="px-3 py-2">
-                              ${esc(
-                                line.description || ""
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2">
-                              ${esc(
-                                line.cost_type || ""
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${
-                                line.amount != null
-                                  ? fmtMoney(line.amount)
-                                  : "—"
-                              }
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-
-                              <button
-                                type="button"
-                                class="text-xs text-red-600 hover:underline"
-                                data-delete-direct-cost="${Number(
-                                  line.id
-                                )}">
-                                Delete
-                              </button>
-
-                            </td>
-
-                          </tr>
-                        `)
-                        .join("")
-                    : `
-                      <tr data-direct-cost-empty>
-
-                        <td
-                          colspan="4"
-                          class="px-3 py-4 text-slate-500">
-                          No other direct costs have been recorded for this production order.
+                    ? directCostLines.map(line => `
+                      <tr class="border-b">
+                        <td class="px-3 py-2">${esc(line.description || "")}</td>
+                        <td class="px-3 py-2">${esc(line.cost_type || "")}</td>
+                        <td class="px-3 py-2 text-right">${line.amount != null ? fmtMoney(line.amount) : "—"}</td>
+                        <td class="px-3 py-2 text-right">
+                          <button type="button" class="text-xs text-red-600 hover:underline" data-delete-direct-cost="${Number(line.id)}">Delete</button>
                         </td>
-
                       </tr>
-                    `
+                    `).join("")
+                    : `<tr data-direct-cost-empty><td colspan="4" class="px-3 py-4 text-slate-500">No other direct costs have been recorded for this production order.</td></tr>`
                 }
-
               </tbody>
-
             </table>
-
           </div>
-
         </div>
 
         <!-- MANUFACTURING OVERHEAD -->
-
         <div class="border rounded mt-5">
-
           <div class="px-4 py-3 border-b flex items-center justify-between">
-
             <div>
-
-              <div class="font-semibold">
-                Manufacturing Overhead
-              </div>
-
-              <div class="text-xs text-slate-500">
-                Factory costs allocated to this production order.
-              </div>
-
+              <div class="font-semibold">Manufacturing Overhead</div>
+              <div class="text-xs text-slate-500">Factory costs allocated to this production order.</div>
             </div>
 
             <button
@@ -129781,49 +129202,45 @@ async function openManufacturingOrderDetail(orderId) {
               class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
               Add Overhead
             </button>
-
           </div>
 
-          <div
-            data-overhead-form
-            class="hidden px-4 py-3 border-b bg-slate-50">
-
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <!-- ENRICHED OVERHEAD FORM WITH ASSET LINK -->
+          <div data-overhead-form class="hidden px-4 py-3 border-b bg-slate-50">
+            <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+              <label class="text-xs md:col-span-2">
+                <div class="text-slate-600 mb-1">Machine / Asset (Optional)</div>
+                <select data-overhead-asset class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- None / Manual Allocation --</option>
+                  ${
+                    availableAssets.map(a => `
+                      <option value="${esc(a.id)}" data-name="${esc(a.name || a.asset_name || '')}" data-code="${esc(a.asset_code || a.code || '')}">
+                        ${esc(a.asset_code ? a.asset_code + ' - ' : '')}${esc(a.name || a.asset_name || `Asset #${a.id}`)}
+                      </option>
+                    `).join("")
+                  }
+                </select>
+              </label>
 
               <label class="text-xs md:col-span-2">
-
-                <div class="text-slate-600 mb-1">
-                  Cost / Allocation
-                </div>
-
+                <div class="text-slate-600 mb-1">Cost / Allocation</div>
                 <input
                   type="text"
                   data-overhead-name
                   class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="e.g. Factory electricity">
-
+                  placeholder="e.g. Machinery depreciation">
               </label>
 
               <label class="text-xs">
-
-                <div class="text-slate-600 mb-1">
-                  Basis
-                </div>
-
+                <div class="text-slate-600 mb-1">Basis</div>
                 <input
                   type="text"
                   data-overhead-basis
                   class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="e.g. machine hours">
-
+                  placeholder="e.g. Machine hours">
               </label>
 
               <label class="text-xs">
-
-                <div class="text-slate-600 mb-1">
-                  Quantity
-                </div>
-
+                <div class="text-slate-600 mb-1">Quantity / Hours</div>
                 <input
                   type="number"
                   min="0"
@@ -129831,15 +129248,12 @@ async function openManufacturingOrderDetail(orderId) {
                   data-overhead-quantity
                   class="w-full border rounded px-2 py-2 text-sm"
                   placeholder="0.00">
-
               </label>
+            </div>
 
+            <div class="mt-3 grid grid-cols-1 md:grid-cols-6 gap-3">
               <label class="text-xs">
-
-                <div class="text-slate-600 mb-1">
-                  Rate
-                </div>
-
+                <div class="text-slate-600 mb-1">Rate (LSL)</div>
                 <input
                   type="number"
                   min="0"
@@ -129847,434 +129261,195 @@ async function openManufacturingOrderDetail(orderId) {
                   data-overhead-rate
                   class="w-full border rounded px-2 py-2 text-sm"
                   placeholder="0.00">
-
               </label>
-
             </div>
 
             <div class="mt-3 flex items-center justify-between">
-
               <div class="text-sm text-slate-600">
-
-                Allocated Amount:
-
-                <strong data-overhead-amount>
-                  LSL 0.00
-                </strong>
-
+                Allocated Amount: <strong data-overhead-amount>LSL 0.00</strong>
               </div>
 
               <div class="flex gap-2">
-
-                <button
-                  type="button"
-                  data-cancel-overhead
-                  class="px-3 py-1.5 text-sm rounded border hover:bg-white">
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  data-save-overhead
-                  class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
-                  Save Overhead
-                </button>
-
+                <button type="button" data-cancel-overhead class="px-3 py-1.5 text-sm rounded border hover:bg-white">Cancel</button>
+                <button type="button" data-save-overhead class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">Save Overhead</button>
               </div>
-
             </div>
-
           </div>
 
           <div class="overflow-x-auto">
-
             <table class="w-full text-sm">
-
               <thead class="bg-slate-50">
-
                 <tr>
-
-                  <th class="px-3 py-2 text-left">
-                    Cost / Allocation
-                  </th>
-
-                  <th class="px-3 py-2 text-left">
-                    Basis
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Rate
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Allocated Amount
-                  </th>
-
-                  <th class="px-3 py-2 text-right">
-                    Action
-                  </th>
-
+                  <th class="px-3 py-2 text-left">Cost / Allocation</th>
+                  <th class="px-3 py-2 text-left">Basis</th>
+                  <th class="px-3 py-2 text-right">Rate</th>
+                  <th class="px-3 py-2 text-right">Allocated Amount</th>
+                  <th class="px-3 py-2 text-right">Action</th>
                 </tr>
-
               </thead>
 
               <tbody data-overhead-lines>
-
                 ${
                   overheadLines.length
-                    ? overheadLines
-                        .map(line => `
-                          <tr class="border-b">
-
-                            <td class="px-3 py-2">
-                              ${esc(
-                                line.allocation_name || ""
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2">
-                              ${esc(
-                                line.basis || ""
-                              )}
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${
-                                line.rate != null
-                                  ? fmtMoney(line.rate)
-                                  : "—"
-                              }
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-                              ${
-                                line.allocated_amount != null
-                                  ? fmtMoney(
-                                      line.allocated_amount
-                                    )
-                                  : "—"
-                              }
-                            </td>
-
-                            <td class="px-3 py-2 text-right">
-
-                              <button
-                                type="button"
-                                class="text-xs text-red-600 hover:underline"
-                                data-delete-overhead="${Number(
-                                  line.id
-                                )}">
-                                Delete
-                              </button>
-
-                            </td>
-
-                          </tr>
-                        `)
-                        .join("")
-                    : `
-                      <tr data-overhead-empty>
-
-                        <td
-                          colspan="5"
-                          class="px-3 py-4 text-slate-500">
-                          No manufacturing overhead has been allocated to this production order.
+                    ? overheadLines.map(line => `
+                      <tr class="border-b">
+                        <td class="px-3 py-2">
+                          <div>${esc(line.allocation_name || "")}</div>
+                          ${
+                            line.asset_name
+                              ? `<div class="text-xs text-slate-500 font-mono">Linked Machine: ${esc(line.asset_code ? line.asset_code + ' - ' : '')}${esc(line.asset_name)}</div>`
+                              : ""
+                          }
                         </td>
 
+                        <td class="px-3 py-2">${esc(line.basis || "")}</td>
+                        <td class="px-3 py-2 text-right">${line.rate != null ? fmtMoney(line.rate) : "—"}</td>
+                        <td class="px-3 py-2 text-right">${line.allocated_amount != null ? fmtMoney(line.allocated_amount) : "—"}</td>
+
+                        <td class="px-3 py-2 text-right">
+                          ${
+                            line.asset_depreciation_id
+                              ? `<span class="inline-block px-2 py-0.5 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Depreciation Posted</span>`
+                              : `
+                                <button
+                                  type="button"
+                                  class="text-xs text-red-600 hover:underline"
+                                  data-delete-overhead="${Number(line.id)}">
+                                  Delete
+                                </button>
+                              `
+                          }
+                        </td>
+                      </tr>
+                    `).join("")
+                    : `
+                      <tr data-overhead-empty>
+                        <td colspan="5" class="px-3 py-4 text-slate-500">
+                          No manufacturing overhead has been allocated to this production order.
+                        </td>
                       </tr>
                     `
                 }
-
               </tbody>
-
             </table>
-
           </div>
-
         </div>
 
         <!-- PRODUCTION COST SUMMARY -->
-
         <div class="border rounded mt-5">
-
           <div class="px-4 py-3 border-b">
-
-            <div class="font-semibold">
-              Production Cost Summary
-            </div>
-
-            <div class="text-xs text-slate-500">
-              Management accounting view of the production order.
-            </div>
-
+            <div class="font-semibold">Production Cost Summary</div>
+            <div class="text-xs text-slate-500">Management accounting view of the production order.</div>
           </div>
 
           <div class="p-4">
-
             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-
               <div class="flex justify-between py-2 border-b">
-
-                <span>
-                  Direct Materials
-                </span>
-
-                <strong data-summary-materials>
-                  ${fmtMoney(materialCost)}
-                </strong>
-
+                <span>Direct Materials</span>
+                <strong data-summary-materials>${fmtMoney(materialCost)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b">
-
-                <span>
-                  Direct Labour
-                </span>
-
-                <strong data-summary-labour>
-                  ${fmtMoney(labourCost)}
-                </strong>
-
+                <span>Direct Labour</span>
+                <strong data-summary-labour>${fmtMoney(labourCost)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b">
-
-                <span>
-                  Other Direct Costs
-                </span>
-
-                <strong data-summary-direct-costs>
-                  ${fmtMoney(directCostTotal)}
-                </strong>
-
+                <span>Other Direct Costs</span>
+                <strong data-summary-direct-costs>${fmtMoney(directCostTotal)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-
-                <span>
-                  Total Direct Production Cost
-                </span>
-
-                <strong data-summary-direct-total>
-                  ${fmtMoney(totalDirectCost)}
-                </strong>
-
+                <span>Total Direct Production Cost</span>
+                <strong data-summary-direct-total>${fmtMoney(totalDirectCost)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b">
-
-                <span>
-                  Manufacturing Overhead
-                </span>
-
-                <strong data-summary-overhead>
-                  ${fmtMoney(overheadTotal)}
-                </strong>
-
+                <span>Manufacturing Overhead</span>
+                <strong data-summary-overhead>${fmtMoney(overheadTotal)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-
-                <span>
-                  Full Production Cost
-                </span>
-
-                <strong data-summary-full-cost>
-                  ${fmtMoney(fullProductionCost)}
-                </strong>
-
+                <span>Full Production Cost</span>
+                <strong data-summary-full-cost>${fmtMoney(fullProductionCost)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b">
-
-                <span>
-                  Selling Price / Unit
-                </span>
-
-                <strong data-summary-selling-price>
-                  ${fmtMoney(sellingPrice)}
-                </strong>
-
+                <span>Selling Price / Unit</span>
+                <strong data-summary-selling-price>${fmtMoney(sellingPrice)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b">
-
-                <span>
-                  Production Value
-                </span>
-
-                <strong data-summary-production-value>
-                  ${fmtMoney(productionValue)}
-                </strong>
-
+                <span>Production Value</span>
+                <strong data-summary-production-value>${fmtMoney(productionValue)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-
-                <span>
-                  Contribution
-                </span>
-
-                <strong data-summary-contribution>
-                  ${fmtMoney(contribution)}
-                </strong>
-
+                <span>Contribution</span>
+                <strong data-summary-contribution>${fmtMoney(contribution)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-
-                <span>
-                  Contribution Margin
-                </span>
-
+                <span>Contribution Margin</span>
                 <strong data-summary-contribution-margin>
-                  ${
-                    contributionMargin !== null
-                      ? contributionMargin.toFixed(1) + "%"
-                      : "—"
-                  }
+                  ${contributionMargin !== null ? contributionMargin.toFixed(1) + "%" : "—"}
                 </strong>
-
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-
-                <span>
-                  Full Production Margin
-                </span>
-
-                <strong data-summary-full-margin>
-                  ${fmtMoney(fullProductionMargin)}
-                </strong>
-
+                <span>Full Production Margin</span>
+                <strong data-summary-full-margin>${fmtMoney(fullProductionMargin)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-
-                <span>
-                  Full Production Margin %
-                </span>
-
+                <span>Full Production Margin %</span>
                 <strong data-summary-full-margin-percent>
-                  ${
-                    fullProductionMarginPercent !== null
-                      ? fullProductionMarginPercent.toFixed(1) + "%"
-                      : "—"
-                  }
+                  ${fullProductionMarginPercent !== null ? fullProductionMarginPercent.toFixed(1) + "%" : "—"}
                 </strong>
-
               </div>
-
             </div>
-
           </div>
-
         </div>
 
         <!-- UNIT ECONOMICS -->
-
         <div class="border rounded mt-5">
-
           <div class="px-4 py-3 border-b">
-
-            <div class="font-semibold">
-              Unit Economics
-            </div>
-
+            <div class="font-semibold">Unit Economics</div>
             <div class="text-xs text-slate-500">
-              Per-unit production economics using actual output where available,
-              otherwise planned output.
+              Per-unit production economics using actual output where available, otherwise planned output.
             </div>
-
           </div>
 
           <div class="p-4">
-
             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-
               <div class="flex justify-between py-2 border-b">
-
-                <span>
-                  Direct Cost / Unit
-                </span>
-
-                <strong>
-                  ${
-                    unitDirectCost !== null
-                      ? fmtMoney(unitDirectCost)
-                      : "—"
-                  }
-                </strong>
-
+                <span>Direct Cost / Unit</span>
+                <strong>${unitDirectCost !== null ? fmtMoney(unitDirectCost) : "—"}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b">
-
-                <span>
-                  Full Production Cost / Unit
-                </span>
-
-                <strong>
-                  ${
-                    unitFullProductionCost !== null
-                      ? fmtMoney(unitFullProductionCost)
-                      : "—"
-                  }
-                </strong>
-
+                <span>Full Production Cost / Unit</span>
+                <strong>${unitFullProductionCost !== null ? fmtMoney(unitFullProductionCost) : "—"}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-
-                <span>
-                  Contribution / Unit
-                </span>
-
-                <strong>
-                  ${
-                    unitContribution !== null
-                      ? fmtMoney(unitContribution)
-                      : "—"
-                  }
-                </strong>
-
+                <span>Contribution / Unit</span>
+                <strong>${unitContribution !== null ? fmtMoney(unitContribution) : "—"}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
-
-                <span>
-                  Full Production Margin / Unit
-                </span>
-
-                <strong>
-                  ${
-                    unitFullProductionMargin !== null
-                      ? fmtMoney(unitFullProductionMargin)
-                      : "—"
-                  }
-                </strong>
-
+                <span>Full Production Margin / Unit</span>
+                <strong>${unitFullProductionMargin !== null ? fmtMoney(unitFullProductionMargin) : "—"}</strong>
               </div>
-
             </div>
-
           </div>
-
         </div>
 
         <div class="mt-5 flex justify-end">
-
-          <button
-            type="button"
-            data-close
-            class="px-4 py-2 border rounded hover:bg-slate-50">
-            Close
-          </button>
-
+          <button type="button" data-close class="px-4 py-2 border rounded hover:bg-slate-50">Close</button>
         </div>
 
       </div>
-
     </div>
   `;
 
@@ -130283,784 +129458,335 @@ async function openManufacturingOrderDetail(orderId) {
   /* -------------------------------------------------------
      CLOSE
   ------------------------------------------------------- */
-
-  modal.querySelectorAll("[data-close]")
-    .forEach(btn => {
-      btn.addEventListener("click", () => {
-        modal.remove();
-      });
-    });
+  modal.querySelectorAll("[data-close]").forEach(btn => {
+    btn.addEventListener("click", () => modal.remove());
+  });
 
   /* -------------------------------------------------------
      MATERIAL USAGE
   ------------------------------------------------------- */
-
-  modal.querySelectorAll("[data-post-usage]")
-    .forEach(btn => {
-      btn.addEventListener("click", async () => {
-
-        await openManufacturingMaterialUsage(
-          orderId
-        );
-
-        modal.remove();
-      });
+  modal.querySelectorAll("[data-post-usage]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await openManufacturingMaterialUsage(orderId);
+      modal.remove();
     });
+  });
 
   // RECORD PRODUCTION
-  console.log("[MFG] RECORD PRODUCTION binding reached");
-  modal.querySelectorAll("[data-record-production]")
-    .forEach(btn => {
-      btn.addEventListener("click", async () => {
-        await recordManufacturingProductionProgress(
-          orderId
-        );
-      });
+  modal.querySelectorAll("[data-record-production]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await recordManufacturingProductionProgress(orderId);
     });
-
-  /* -------------------------------------------------------
-     STATUS
-  ------------------------------------------------------- */
-
-  modal.querySelectorAll("[data-mfg-status]")
-    .forEach(btn => {
-
-      btn.addEventListener("click", async () => {
-
-        const newStatus =
-          btn.dataset.mfgStatus;
-
-        const result =
-          await updateManufacturingOrderStatus(
-            orderId,
-            newStatus
-          );
-
-        if (!result) return;
-
-        modal.remove();
-
-        await loadManufacturingOrders();
-        await loadManufacturingProductionHistory();
-
-        await openManufacturingOrderDetail(
-          orderId
-        );
-      });
-
-    });
-
-  /* -------------------------------------------------------
-     LABOUR FORM
-  ------------------------------------------------------- */
-
-  const labourForm =
-    modal.querySelector("[data-labour-form]");
-
-  const labourWorker =
-    modal.querySelector("[data-labour-worker]");
-
-  const labourRole =
-    modal.querySelector("[data-labour-role]");
-
-  const labourHours =
-    modal.querySelector("[data-labour-hours]");
-
-  const labourRate =
-    modal.querySelector("[data-labour-rate]");
-
-  const labourCostInput =
-    modal.querySelector("[data-labour-cost]");
-
-  const updateLabourCost = () => {
-
-    const hours =
-      Number(labourHours?.value || 0);
-
-    const rate =
-      Number(labourRate?.value || 0);
-
-    const cost =
-      Number.isFinite(hours) &&
-      Number.isFinite(rate)
-        ? hours * rate
-        : 0;
-
-    if (labourCostInput) {
-      labourCostInput.value =
-        fmtMoney(cost);
-    }
-  };
-
-  labourHours?.addEventListener(
-    "input",
-    updateLabourCost
-  );
-
-  labourRate?.addEventListener(
-    "input",
-    updateLabourCost
-  );
-
-  modal.querySelector("[data-add-labour]")
-    ?.addEventListener("click", () => {
-
-      if (!labourForm) return;
-
-      labourForm.classList.remove("hidden");
-
-      labourWorker?.focus();
-    });
-
-  modal.querySelector("[data-cancel-labour]")
-    ?.addEventListener("click", () => {
-
-      labourForm?.classList.add("hidden");
-
-      if (labourWorker) labourWorker.value = "";
-      if (labourRole) labourRole.value = "";
-      if (labourHours) labourHours.value = "";
-      if (labourRate) labourRate.value = "";
-
-      updateLabourCost();
-    });
-
-  modal.querySelector("[data-save-labour]")
-    ?.addEventListener("click", async () => {
-
-      const workerName =
-        String(
-          labourWorker?.value || ""
-        ).trim();
-
-      const role =
-        String(
-          labourRole?.value || ""
-        ).trim();
-
-      const hours =
-        Number(labourHours?.value || 0);
-
-      const rate =
-        Number(labourRate?.value || 0);
-
-      if (!workerName) {
-        alert("Employee / Worker is required.");
-        labourWorker?.focus();
-        return;
-      }
-
-      if (
-        !Number.isFinite(hours) ||
-        hours <= 0
-      ) {
-        alert("Hours must be greater than zero.");
-        labourHours?.focus();
-        return;
-      }
-
-      if (
-        !Number.isFinite(rate) ||
-        rate < 0
-      ) {
-        alert("Please enter a valid labour rate.");
-        labourRate?.focus();
-        return;
-      }
-
-      const labourCost =
-        hours * rate;
-
-      try {
-
-        await apiFetch(
-          ENDPOINTS.manufacturing.orderLabour(
-            cid,
-            orderId
-          ),
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify({
-              worker_name: workerName,
-              role,
-              hours,
-              rate,
-              labour_cost: labourCost,
-              source: "manual",
-            }),
-          }
-        );
-
-        modal.remove();
-
-        await openManufacturingOrderDetail(
-          orderId
-        );
-
-      } catch (err) {
-
-        console.error(
-          "Add manufacturing labour failed:",
-          err
-        );
-
-        alert(
-          err?.message ||
-          "Failed to add direct labour."
-        );
-      }
-    });
-
-  /* -------------------------------------------------------
-     DELETE LABOUR
-  ------------------------------------------------------- */
-
-  modal.querySelectorAll("[data-delete-labour]")
-    .forEach(btn => {
-
-      btn.addEventListener("click", async () => {
-
-        const labourId =
-          Number(btn.dataset.deleteLabour);
-
-        if (!labourId) return;
-
-        if (
-          !confirm(
-            "Delete this direct labour entry?"
-          )
-        ) {
-          return;
-        }
-
-        try {
-
-          await apiFetch(
-            ENDPOINTS.manufacturing.orderLabourItem(
-              cid,
-              orderId,
-              labourId
-            ),
-            {
-              method: "DELETE",
-              headers: {
-                Accept: "application/json",
-              },
-            }
-          );
-
-          modal.remove();
-
-          await openManufacturingOrderDetail(
-            orderId
-          );
-
-        } catch (err) {
-
-          console.error(
-            "Delete manufacturing labour failed:",
-            err
-          );
-
-          alert(
-            err?.message ||
-            "Failed to delete direct labour."
-          );
-        }
-      });
-
-    });
-
-  /* -------------------------------------------------------
-     DIRECT COST FORM
-  ------------------------------------------------------- */
-
-  const directCostForm =
-    modal.querySelector(
-      "[data-direct-cost-form]"
-    );
-
-  const directCostDescription =
-    modal.querySelector(
-      "[data-direct-cost-description]"
-    );
-
-  const directCostType =
-    modal.querySelector(
-      "[data-direct-cost-type]"
-    );
-
-  const directCostAmount =
-    modal.querySelector(
-      "[data-direct-cost-amount]"
-    );
-
-  modal.querySelector("[data-add-direct-cost]")
-    ?.addEventListener("click", () => {
-
-      if (!directCostForm) return;
-
-      directCostForm.classList.remove(
-        "hidden"
-      );
-
-      directCostDescription?.focus();
-    });
-
-  modal.querySelector("[data-cancel-direct-cost]")
-    ?.addEventListener("click", () => {
-
-      directCostForm?.classList.add(
-        "hidden"
-      );
-
-      if (directCostDescription) {
-        directCostDescription.value = "";
-      }
-
-      if (directCostType) {
-        directCostType.value = "";
-      }
-
-      if (directCostAmount) {
-        directCostAmount.value = "";
-      }
-    });
-
-  modal.querySelector("[data-save-direct-cost]")
-    ?.addEventListener("click", async () => {
-
-      const description =
-        String(
-          directCostDescription?.value || ""
-        ).trim();
-
-      const costType =
-        String(
-          directCostType?.value || ""
-        ).trim();
-
-      const amount =
-        Number(
-          directCostAmount?.value || 0
-        );
-
-      if (!description) {
-        alert("Description is required.");
-        directCostDescription?.focus();
-        return;
-      }
-
-      if (
-        !Number.isFinite(amount) ||
-        amount <= 0
-      ) {
-        alert(
-          "Amount must be greater than zero."
-        );
-        directCostAmount?.focus();
-        return;
-      }
-
-      try {
-
-        await apiFetch(
-          ENDPOINTS.manufacturing.orderDirectCosts(
-            cid,
-            orderId
-          ),
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify({
-              description,
-              cost_type: costType,
-              amount,
-              source: "manual",
-            }),
-          }
-        );
-
-        modal.remove();
-
-        await openManufacturingOrderDetail(
-          orderId
-        );
-
-      } catch (err) {
-
-        console.error(
-          "Add manufacturing direct cost failed:",
-          err
-        );
-
-        alert(
-          err?.message ||
-          "Failed to add other direct cost."
-        );
-      }
-    });
-
-  /* -------------------------------------------------------
-     DELETE DIRECT COST
-  ------------------------------------------------------- */
-
-  modal.querySelectorAll(
-    "[data-delete-direct-cost]"
-  ).forEach(btn => {
-
-    btn.addEventListener(
-      "click",
-      async () => {
-
-        const directCostId =
-          Number(
-            btn.dataset.deleteDirectCost
-          );
-
-        if (!directCostId) return;
-
-        if (
-          !confirm(
-            "Delete this direct cost?"
-          )
-        ) {
-          return;
-        }
-
-        try {
-
-          await apiFetch(
-            ENDPOINTS.manufacturing.orderDirectCostItem(
-              cid,
-              orderId,
-              directCostId
-            ),
-            {
-              method: "DELETE",
-              headers: {
-                Accept: "application/json",
-              },
-            }
-          );
-
-          modal.remove();
-
-          await openManufacturingOrderDetail(
-            orderId
-          );
-
-        } catch (err) {
-
-          console.error(
-            "Delete manufacturing direct cost failed:",
-            err
-          );
-
-          alert(
-            err?.message ||
-            "Failed to delete direct cost."
-          );
-        }
-      }
-    );
-
   });
 
   /* -------------------------------------------------------
-     OVERHEAD FORM
+     STATUS TRANSITION
   ------------------------------------------------------- */
+  modal.querySelectorAll("[data-mfg-status]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const newStatus = btn.dataset.mfgStatus;
+      const result = await updateManufacturingOrderStatus(orderId, newStatus);
+      if (!result) return;
 
-  const overheadForm =
-    modal.querySelector(
-      "[data-overhead-form]"
-    );
-
-  const overheadName =
-    modal.querySelector(
-      "[data-overhead-name]"
-    );
-
-  const overheadBasis =
-    modal.querySelector(
-      "[data-overhead-basis]"
-    );
-
-  const overheadQuantity =
-    modal.querySelector(
-      "[data-overhead-quantity]"
-    );
-
-  const overheadRate =
-    modal.querySelector(
-      "[data-overhead-rate]"
-    );
-
-  const overheadAmount =
-    modal.querySelector(
-      "[data-overhead-amount]"
-    );
-
-  const updateOverheadAmount = () => {
-
-    const quantity =
-      Number(
-        overheadQuantity?.value || 0
-      );
-
-    const rate =
-      Number(
-        overheadRate?.value || 0
-      );
-
-    const amount =
-      Number.isFinite(quantity) &&
-      Number.isFinite(rate)
-        ? quantity * rate
-        : 0;
-
-    if (overheadAmount) {
-      overheadAmount.textContent =
-        fmtMoney(amount);
-    }
-  };
-
-  overheadQuantity?.addEventListener(
-    "input",
-    updateOverheadAmount
-  );
-
-  overheadRate?.addEventListener(
-    "input",
-    updateOverheadAmount
-  );
-
-  modal.querySelector("[data-add-overhead]")
-    ?.addEventListener("click", () => {
-
-      if (!overheadForm) return;
-
-      overheadForm.classList.remove(
-        "hidden"
-      );
-
-      overheadName?.focus();
+      modal.remove();
+      await loadManufacturingOrders();
+      await loadManufacturingProductionHistory();
+      await openManufacturingOrderDetail(orderId);
     });
-
-  modal.querySelector("[data-cancel-overhead]")
-    ?.addEventListener("click", () => {
-
-      overheadForm?.classList.add(
-        "hidden"
-      );
-
-      if (overheadName) {
-        overheadName.value = "";
-      }
-
-      if (overheadBasis) {
-        overheadBasis.value = "";
-      }
-
-      if (overheadQuantity) {
-        overheadQuantity.value = "";
-      }
-
-      if (overheadRate) {
-        overheadRate.value = "";
-      }
-
-      updateOverheadAmount();
-    });
-
-  modal.querySelector("[data-save-overhead]")
-    ?.addEventListener("click", async () => {
-
-      const allocationName =
-        String(
-          overheadName?.value || ""
-        ).trim();
-
-      const basis =
-        String(
-          overheadBasis?.value || ""
-        ).trim();
-
-      const quantity =
-        Number(
-          overheadQuantity?.value || 0
-        );
-
-      const rate =
-        Number(
-          overheadRate?.value || 0
-        );
-
-      if (!allocationName) {
-        alert(
-          "Cost / Allocation is required."
-        );
-        overheadName?.focus();
-        return;
-      }
-
-      if (
-        !Number.isFinite(quantity) ||
-        quantity <= 0
-      ) {
-        alert(
-          "Quantity must be greater than zero."
-        );
-        overheadQuantity?.focus();
-        return;
-      }
-
-      if (
-        !Number.isFinite(rate) ||
-        rate < 0
-      ) {
-        alert(
-          "Please enter a valid overhead rate."
-        );
-        overheadRate?.focus();
-        return;
-      }
-
-      const allocatedAmount =
-        quantity * rate;
-
-      try {
-
-        await apiFetch(
-          ENDPOINTS.manufacturing.orderOverhead(
-            cid,
-            orderId
-          ),
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify({
-              allocation_name:
-                allocationName,
-
-              basis,
-
-              quantity,
-
-              rate,
-
-              allocated_amount:
-                allocatedAmount,
-
-              source: "manual",
-            }),
-          }
-        );
-
-        modal.remove();
-
-        await openManufacturingOrderDetail(
-          orderId
-        );
-
-      } catch (err) {
-
-        console.error(
-          "Add manufacturing overhead failed:",
-          err
-        );
-
-        alert(
-          err?.message ||
-          "Failed to add manufacturing overhead."
-        );
-      }
-    });
+  });
 
   /* -------------------------------------------------------
-     DELETE OVERHEAD
+     LABOUR FORM HANDLERS
   ------------------------------------------------------- */
+  const labourForm = modal.querySelector("[data-labour-form]");
+  const labourWorker = modal.querySelector("[data-labour-worker]");
+  const labourRole = modal.querySelector("[data-labour-role]");
+  const labourHours = modal.querySelector("[data-labour-hours]");
+  const labourRate = modal.querySelector("[data-labour-rate]");
+  const labourCostInput = modal.querySelector("[data-labour-cost]");
 
-  modal.querySelectorAll(
-    "[data-delete-overhead]"
-  ).forEach(btn => {
+  const updateLabourCost = () => {
+    const hours = Number(labourHours?.value || 0);
+    const rate = Number(labourRate?.value || 0);
+    const cost = Number.isFinite(hours) && Number.isFinite(rate) ? hours * rate : 0;
+    if (labourCostInput) labourCostInput.value = fmtMoney(cost);
+  };
 
-    btn.addEventListener(
-      "click",
-      async () => {
+  labourHours?.addEventListener("input", updateLabourCost);
+  labourRate?.addEventListener("input", updateLabourCost);
 
-        const overheadId =
-          Number(
-            btn.dataset.deleteOverhead
-          );
+  modal.querySelector("[data-add-labour]")?.addEventListener("click", () => {
+    if (!labourForm) return;
+    labourForm.classList.remove("hidden");
+    labourWorker?.focus();
+  });
 
-        if (!overheadId) return;
+  modal.querySelector("[data-cancel-labour]")?.addEventListener("click", () => {
+    labourForm?.classList.add("hidden");
+    if (labourWorker) labourWorker.value = "";
+    if (labourRole) labourRole.value = "";
+    if (labourHours) labourHours.value = "";
+    if (labourRate) labourRate.value = "";
+    updateLabourCost();
+  });
 
-        if (
-          !confirm(
-            "Delete this manufacturing overhead allocation?"
-          )
-        ) {
-          return;
-        }
+  modal.querySelector("[data-save-labour]")?.addEventListener("click", async () => {
+    const workerName = String(labourWorker?.value || "").trim();
+    const role = String(labourRole?.value || "").trim();
+    const hours = Number(labourHours?.value || 0);
+    const rate = Number(labourRate?.value || 0);
 
-        try {
+    if (!workerName) {
+      alert("Employee / Worker is required.");
+      labourWorker?.focus();
+      return;
+    }
+    if (!Number.isFinite(hours) || hours <= 0) {
+      alert("Hours must be greater than zero.");
+      labourHours?.focus();
+      return;
+    }
+    if (!Number.isFinite(rate) || rate < 0) {
+      alert("Please enter a valid labour rate.");
+      labourRate?.focus();
+      return;
+    }
 
-          await apiFetch(
-            ENDPOINTS.manufacturing.orderOverheadItem(
-              cid,
-              orderId,
-              overheadId
-            ),
-            {
-              method: "DELETE",
-              headers: {
-                Accept: "application/json",
-              },
-            }
-          );
+    try {
+      await apiFetch(ENDPOINTS.manufacturing.orderLabour(cid, orderId), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          worker_name: workerName,
+          role,
+          hours,
+          rate,
+          labour_cost: hours * rate,
+          source: "manual",
+        }),
+      });
 
-          modal.remove();
+      modal.remove();
+      await openManufacturingOrderDetail(orderId);
+    } catch (err) {
+      console.error("Add manufacturing labour failed:", err);
+      alert(err?.message || "Failed to add direct labour.");
+    }
+  });
 
-          await openManufacturingOrderDetail(
-            orderId
-          );
+  modal.querySelectorAll("[data-delete-labour]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const labourId = Number(btn.dataset.deleteLabour);
+      if (!labourId || !confirm("Delete this direct labour entry?")) return;
 
-        } catch (err) {
-
-          console.error(
-            "Delete manufacturing overhead failed:",
-            err
-          );
-
-          alert(
-            err?.message ||
-            "Failed to delete manufacturing overhead."
-          );
-        }
+      try {
+        await apiFetch(ENDPOINTS.manufacturing.orderLabourItem(cid, orderId, labourId), {
+          method: "DELETE",
+          headers: { Accept: "application/json" },
+        });
+        modal.remove();
+        await openManufacturingOrderDetail(orderId);
+      } catch (err) {
+        console.error("Delete manufacturing labour failed:", err);
+        alert(err?.message || "Failed to delete direct labour.");
       }
-    );
+    });
+  });
 
+  /* -------------------------------------------------------
+     DIRECT COST FORM HANDLERS
+  ------------------------------------------------------- */
+  const directCostForm = modal.querySelector("[data-direct-cost-form]");
+  const directCostDescription = modal.querySelector("[data-direct-cost-description]");
+  const directCostType = modal.querySelector("[data-direct-cost-type]");
+  const directCostAmount = modal.querySelector("[data-direct-cost-amount]");
+
+  modal.querySelector("[data-add-direct-cost]")?.addEventListener("click", () => {
+    if (!directCostForm) return;
+    directCostForm.classList.remove("hidden");
+    directCostDescription?.focus();
+  });
+
+  modal.querySelector("[data-cancel-direct-cost]")?.addEventListener("click", () => {
+    directCostForm?.classList.add("hidden");
+    if (directCostDescription) directCostDescription.value = "";
+    if (directCostType) directCostType.value = "";
+    if (directCostAmount) directCostAmount.value = "";
+  });
+
+  modal.querySelector("[data-save-direct-cost]")?.addEventListener("click", async () => {
+    const description = String(directCostDescription?.value || "").trim();
+    const costType = String(directCostType?.value || "").trim();
+    const amount = Number(directCostAmount?.value || 0);
+
+    if (!description) {
+      alert("Description is required.");
+      directCostDescription?.focus();
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert("Amount must be greater than zero.");
+      directCostAmount?.focus();
+      return;
+    }
+
+    try {
+      await apiFetch(ENDPOINTS.manufacturing.orderDirectCosts(cid, orderId), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ description, cost_type: costType, amount, source: "manual" }),
+      });
+
+      modal.remove();
+      await openManufacturingOrderDetail(orderId);
+    } catch (err) {
+      console.error("Add manufacturing direct cost failed:", err);
+      alert(err?.message || "Failed to add other direct cost.");
+    }
+  });
+
+  modal.querySelectorAll("[data-delete-direct-cost]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const directCostId = Number(btn.dataset.deleteDirectCost);
+      if (!directCostId || !confirm("Delete this direct cost?")) return;
+
+      try {
+        await apiFetch(ENDPOINTS.manufacturing.orderDirectCostItem(cid, orderId, directCostId), {
+          method: "DELETE",
+          headers: { Accept: "application/json" },
+        });
+        modal.remove();
+        await openManufacturingOrderDetail(orderId);
+      } catch (err) {
+        console.error("Delete manufacturing direct cost failed:", err);
+        alert(err?.message || "Failed to delete direct cost.");
+      }
+    });
+  });
+
+  /* -------------------------------------------------------
+     OVERHEAD FORM HANDLERS (ENRICHED WITH ASSET LINK)
+  ------------------------------------------------------- */
+  const overheadForm = modal.querySelector("[data-overhead-form]");
+  const overheadAssetSelect = modal.querySelector("[data-overhead-asset]");
+  const overheadName = modal.querySelector("[data-overhead-name]");
+  const overheadBasis = modal.querySelector("[data-overhead-basis]");
+  const overheadQuantity = modal.querySelector("[data-overhead-quantity]");
+  const overheadRate = modal.querySelector("[data-overhead-rate]");
+  const overheadAmount = modal.querySelector("[data-overhead-amount]");
+
+  const updateOverheadAmount = () => {
+    const quantity = Number(overheadQuantity?.value || 0);
+    const rate = Number(overheadRate?.value || 0);
+    const amount = Number.isFinite(quantity) && Number.isFinite(rate) ? quantity * rate : 0;
+    if (overheadAmount) overheadAmount.textContent = fmtMoney(amount);
+  };
+
+  overheadQuantity?.addEventListener("input", updateOverheadAmount);
+  overheadRate?.addEventListener("input", updateOverheadAmount);
+
+  // When an asset is picked from the dropdown, pre-populate name and basis
+  overheadAssetSelect?.addEventListener("change", () => {
+    const selectedOption = overheadAssetSelect.selectedOptions[0];
+    const assetId = overheadAssetSelect.value;
+
+    if (assetId && selectedOption) {
+      const assetName = selectedOption.dataset.name || selectedOption.textContent.trim();
+      if (!overheadName.value || overheadName.value.startsWith("Machinery depreciation")) {
+        overheadName.value = `Machinery depreciation (${assetName})`;
+      }
+      if (!overheadBasis.value) {
+        overheadBasis.value = "Machine hours";
+      }
+    }
+  });
+
+  modal.querySelector("[data-add-overhead]")?.addEventListener("click", () => {
+    if (!overheadForm) return;
+    overheadForm.classList.remove("hidden");
+    overheadName?.focus();
+  });
+
+  modal.querySelector("[data-cancel-overhead]")?.addEventListener("click", () => {
+    overheadForm?.classList.add("hidden");
+    if (overheadAssetSelect) overheadAssetSelect.value = "";
+    if (overheadName) overheadName.value = "";
+    if (overheadBasis) overheadBasis.value = "";
+    if (overheadQuantity) overheadQuantity.value = "";
+    if (overheadRate) overheadRate.value = "";
+    updateOverheadAmount();
+  });
+
+  modal.querySelector("[data-save-overhead]")?.addEventListener("click", async () => {
+    const allocationName = String(overheadName?.value || "").trim();
+    const basis = String(overheadBasis?.value || "").trim();
+    const quantity = Number(overheadQuantity?.value || 0);
+    const rate = Number(overheadRate?.value || 0);
+    const rawAssetId = overheadAssetSelect?.value;
+    const assetId = rawAssetId ? Number(rawAssetId) : null;
+
+    if (!allocationName) {
+      alert("Cost / Allocation is required.");
+      overheadName?.focus();
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      alert("Quantity must be greater than zero.");
+      overheadQuantity?.focus();
+      return;
+    }
+    if (!Number.isFinite(rate) || rate < 0) {
+      alert("Please enter a valid overhead rate.");
+      overheadRate?.focus();
+      return;
+    }
+
+    try {
+      await apiFetch(ENDPOINTS.manufacturing.orderOverhead(cid, orderId), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          allocation_name: allocationName,
+          basis,
+          quantity,
+          rate,
+          allocated_amount: quantity * rate,
+          asset_id: assetId,                  // <--- Sent to backend
+          source: assetId ? "asset" : "manual",
+        }),
+      });
+
+      modal.remove();
+      await openManufacturingOrderDetail(orderId);
+    } catch (err) {
+      console.error("Add manufacturing overhead failed:", err);
+      alert(err?.message || "Failed to add manufacturing overhead.");
+    }
+  });
+
+  modal.querySelectorAll("[data-delete-overhead]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const overheadId = Number(btn.dataset.deleteOverhead);
+      if (!overheadId || !confirm("Delete this manufacturing overhead allocation?")) return;
+
+      try {
+        await apiFetch(ENDPOINTS.manufacturing.orderOverheadItem(cid, orderId, overheadId), {
+          method: "DELETE",
+          headers: { Accept: "application/json" },
+        });
+        modal.remove();
+        await openManufacturingOrderDetail(orderId);
+      } catch (err) {
+        console.error("Delete manufacturing overhead failed:", err);
+        alert(err?.message || "Failed to delete manufacturing overhead.");
+      }
+    });
   });
 
   /* -------------------------------------------------------
      INITIAL SUMMARY
   ------------------------------------------------------- */
-
-  refreshManufacturingOrderManagementSummary(
-    modal,
-    order
-  );
+  refreshManufacturingOrderManagementSummary?.(modal, order);
 }
 // =====================================================
 // Post Material Usage
@@ -132277,7 +131003,7 @@ function renderDetail(payload) {
       </div>
     `;
   }
-  
+
   function renderMaterialRow(material) {
     const quantityVariance =
       material.quantity_variance ??
