@@ -1473,7 +1473,16 @@ def _coa_role_from_text(
         ):
             return "direct_labour_cost"
 
-    if is_expense:
+        if has_any(
+            "direct subcontractor",
+            "direct subcontractor cost",
+            "production subcontractor",
+            "manufacturing subcontractor",
+            "subcontracted production",
+            "subcontracted manufacturing",
+        ):
+            return "direct_subcontractor_cost"
+        
         if has_any(
             "direct materials",
             "material purchases",
