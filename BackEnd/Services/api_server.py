@@ -13980,7 +13980,7 @@ def get_manufacturing_bom(cid: int, bom_id: int):
 
 @app.route(
     "/api/companies/<int:cid>/manufacturing/boms/<int:bom_id>/lines",
-    methods=["PUT"]
+    methods=["POST", "PUT"],
 )
 @require_auth
 def replace_manufacturing_bom_lines(cid: int, bom_id: int):
