@@ -129759,53 +129759,55 @@ async function openManufacturingOrderDetail(orderId) {
 
   const getEmployeeRole = employee => String(employee?.role || employee?.job_title || employee?.position || employee?.designation || employee?.job_role || "").trim();
 
-  const getPayBasis = setup => String(setup?.pay_basis || setup?.contract?.salary_type || "").trim().toLowerCase();
-
   const getHourlyRate = setup => {
-    const payBasis = getPayBasis(setup);
+    const contractType = String(setup?.contract?.salary_type || "").trim().toLowerCase();
+    const contractRate = Number(setup?.contract?.hourly_rate ?? 0);
 
-    if (payBasis === "hourly" || payBasis === "hourly_rate") {
-      const rate = Number(setup?.rate ?? setup?.contract?.hourly_rate ?? 0);
-      return Number.isFinite(rate) && rate >= 0 ? rate : 0;
+    if ((contractType === "hourly" || contractType === "hourly_rate") && contractRate > 0) {
+      return contractRate;
     }
 
-    const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
-    const normalHours = Number(setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0);
+    const payBasis = String(setup?.pay_basis || "").trim().toLowerCase();
+    const setupRate = Number(setup?.rate ?? 0);
 
-    if (Number.isFinite(basicSalary) && basicSalary > 0 && Number.isFinite(normalHours) && normalHours > 0) {
-      return basicSalary / normalHours;
+    if ((payBasis === "hourly" || payBasis === "hourly_rate") && setupRate > 0) {
+      return setupRate;
     }
 
-    return 0;
-  };
+    const basicSalary = Number(
+      setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0
+    );
+    const normalHours = Number(
+      setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0
+    );
 
-  const updateLabourCost = () => {
-    const hours = Number(labourHours?.value || 0);
-    const rate = Number(labourRate?.value || 0);
-    const cost = Number.isFinite(hours) && Number.isFinite(rate) ? hours * rate : 0;
-    if (labourCostInput) labourCostInput.value = fmtMoney(cost);
+    return basicSalary > 0 && normalHours > 0
+      ? basicSalary / normalHours
+      : 0;
   };
 
   const populateLabourRateFromSetup = setup => {
     selectedPayrollSetup = setup || null;
 
-    const payBasis = getPayBasis(setup);
     const hourlyRate = getHourlyRate(setup);
+    const contractType = String(setup?.contract?.salary_type || "").trim().toLowerCase();
+    const basicSalary = Number(
+      setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0
+    );
+    const normalHours = Number(
+      setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0
+    );
 
     if (labourRate) labourRate.value = hourlyRate > 0 ? hourlyRate.toFixed(2) : "";
 
     if (labourRateInfo) {
-      if (payBasis === "hourly" || payBasis === "hourly_rate") {
-        labourRateInfo.textContent = hourlyRate > 0 ? `Hourly payroll rate: ${fmtMoney(hourlyRate)}` : "No hourly rate configured in Payroll.";
+      if ((contractType === "hourly" || contractType === "hourly_rate") && hourlyRate > 0) {
+        labourRateInfo.textContent = `Contract hourly rate: ${fmtMoney(hourlyRate)}`;
+      } else if (basicSalary > 0 && normalHours > 0 && hourlyRate > 0) {
+        labourRateInfo.textContent =
+          `Basic salary ${fmtMoney(basicSalary)} ÷ ${normalHours.toFixed(2)} hrs = ${fmtMoney(hourlyRate)}/hr`;
       } else {
-        const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
-        const normalHours = Number(setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0);
-
-        if (basicSalary > 0 && normalHours > 0 && hourlyRate > 0) {
-          labourRateInfo.textContent = `Basic salary ${fmtMoney(basicSalary)} ÷ ${normalHours.toFixed(2)} hrs = ${fmtMoney(hourlyRate)}/hr`;
-        } else {
-          labourRateInfo.textContent = "Basic salary / normal monthly hours are not configured.";
-        }
+        labourRateInfo.textContent = "No valid hourly labour rate is configured in Payroll.";
       }
     }
 
