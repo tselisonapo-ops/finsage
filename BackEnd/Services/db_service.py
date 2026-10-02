@@ -85814,6 +85814,35 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _update(cur2)
 
+    def count_manufacturing_bom_non_draft_orders(
+        self,
+        company_id: int,
+        bom_id: int,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
+                f"""
+                SELECT COUNT(*) AS order_count
+                FROM {schema}.manufacturing_orders
+                WHERE company_id = %s
+                AND bom_id = %s
+                AND LOWER(COALESCE(status, 'draft')) <> 'draft'
+                """,
+                (
+                    int(company_id),
+                    int(bom_id),
+                ),
+            )
+
+            row = cur.fetchone()
+
+            if isinstance(row, dict):
+                return int(row["order_count"] or 0)
+
+            return int(row[0] or 0)
+
     def generate_manufacturing_order_number(
         self,
         company_id: int,
@@ -87321,6 +87350,193 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _create(cur2)
         
+    def sync_draft_manufacturing_order_materials(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        cur=None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        def _sync(c):
+            c.execute(
+                f"""
+                SELECT
+                    mo.id,
+                    mo.bom_id,
+                    mo.planned_qty,
+                    mo.status,
+                    b.batch_qty
+                FROM {schema}.manufacturing_orders mo
+                JOIN {schema}.manufacturing_boms b
+                    ON b.company_id = mo.company_id
+                    AND b.id = mo.bom_id
+                WHERE mo.company_id = %s
+                AND mo.id = %s
+                FOR UPDATE
+                """,
+                (
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            row = c.fetchone()
+
+            if not row:
+                return False
+
+            if isinstance(row, dict):
+                order = row
+            else:
+                columns = [d[0] for d in c.description]
+                order = dict(zip(columns, row))
+
+            status = str(
+                order.get("status") or ""
+            ).strip().lower()
+
+            if status != "draft":
+                return False
+
+            c.execute(
+                f"""
+                SELECT id
+                FROM {schema}.manufacturing_order_materials
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                LIMIT 1
+                """,
+                (
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            if c.fetchone():
+                return False
+
+            batch_qty = Decimal(
+                str(order.get("batch_qty") or 0)
+            )
+
+            planned_qty = Decimal(
+                str(order.get("planned_qty") or 0)
+            )
+
+            if batch_qty <= 0 or planned_qty <= 0:
+                return False
+
+            c.execute(
+                f"""
+                SELECT
+                    id,
+                    line_no,
+                    item_id,
+                    quantity,
+                    unit,
+                    scrap_percent,
+                    is_optional,
+                    memo
+                FROM {schema}.manufacturing_bom_lines
+                WHERE company_id = %s
+                AND bom_id = %s
+                ORDER BY line_no, id
+                """,
+                (
+                    int(company_id),
+                    int(order["bom_id"]),
+                ),
+            )
+
+            rows = c.fetchall()
+
+            if not rows:
+                return False
+
+            factor = planned_qty / batch_qty
+
+            for line in rows:
+                if isinstance(line, dict):
+                    bom_line_id = line["id"]
+                    line_no = line["line_no"]
+                    item_id = line["item_id"]
+                    bom_qty = line["quantity"]
+                    unit = line["unit"]
+                    scrap_percent = line["scrap_percent"]
+                    memo = line["memo"]
+                else:
+                    (
+                        bom_line_id,
+                        line_no,
+                        item_id,
+                        bom_qty,
+                        unit,
+                        scrap_percent,
+                        is_optional,
+                        memo,
+                    ) = line
+
+                bom_qty = Decimal(
+                    str(bom_qty or 0)
+                )
+
+                scrap_percent = Decimal(
+                    str(scrap_percent or 0)
+                )
+
+                planned_material_qty = (
+                    bom_qty
+                    * factor
+                    * (
+                        Decimal("1")
+                        + (
+                            scrap_percent
+                            / Decimal("100")
+                        )
+                    )
+                )
+
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_order_materials (
+                        company_id,
+                        manufacturing_order_id,
+                        bom_line_id,
+                        item_id,
+                        line_no,
+                        planned_qty,
+                        actual_qty,
+                        unit,
+                        unit_cost,
+                        total_cost,
+                        memo
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, 0, %s, 0, 0, %s
+                    )
+                    """,
+                    (
+                        int(company_id),
+                        int(manufacturing_order_id),
+                        int(bom_line_id),
+                        int(item_id),
+                        int(line_no),
+                        planned_material_qty,
+                        unit,
+                        memo,
+                    ),
+                )
+
+            return True
+
+        if cur is not None:
+            return _sync(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _sync(cur2)
+
     def get_manufacturing_order(
         self,
         company_id: int,
@@ -87385,6 +87601,12 @@ class DatabaseService:
             columns = [d[0] for d in c.description]
             order = dict(row) if isinstance(row, dict) else dict(zip(columns, row))
 
+            self.sync_draft_manufacturing_order_materials(
+                company_id=company_id,
+                manufacturing_order_id=int(manufacturing_order_id),
+                cur=c,
+            )
+            
             # Fetch materials
             c.execute(
                 f"""

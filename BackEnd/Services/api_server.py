@@ -13933,6 +13933,36 @@ def get_manufacturing_bom(cid: int, bom_id: int):
 
         payload = request.get_json(silent=True) or {}
 
+        active_orders = db_service.count_manufacturing_bom_non_draft_orders(
+            company_id=company_id,
+            bom_id=bom_id,
+        )
+
+        if active_orders > 0:
+            return jsonify({
+                "error": (
+                    "This BOM cannot be modified because it is already "
+                    "being used by a released or active production order."
+                ),
+            }), 409
+
+        updated = db_service.update_manufacturing_bom(
+            company_id=company_id,
+            bom_id=bom_id,
+            finished_item_name=payload.get("finished_item_name"),
+            selling_price=payload.get("selling_price"),
+            bom_code=payload.get("bom_code"),
+            name=payload.get("name"),
+            batch_qty=payload.get("batch_qty"),
+            batch_unit=payload.get("batch_unit"),
+            description=payload.get("description"),
+            version_no=payload.get("version_no"),
+            effective_from=payload.get("effective_from"),
+            effective_to=payload.get("effective_to"),
+            is_default=payload.get("is_default"),
+            updated_by_user_id=int(user.get("id") or 0) or None,
+        )
+
         updated = db_service.update_manufacturing_bom(
             company_id=company_id,
             bom_id=bom_id,
@@ -13982,11 +14012,11 @@ def get_manufacturing_bom(cid: int, bom_id: int):
     "/api/companies/<int:cid>/manufacturing/boms/<int:bom_id>/lines",
     methods=["POST", "PUT", "OPTIONS"],
 )
+@require_auth
 def replace_manufacturing_bom_lines(cid: int, bom_id: int):
     if request.method == "OPTIONS":
         return "", 204
 
-    @require_auth
     def _handle():
         company_id = int(cid)
 
@@ -14016,8 +14046,22 @@ def replace_manufacturing_bom_lines(cid: int, bom_id: int):
                     "line_id": line_id,
                 }), 200
 
-            lines = payload.get("lines")
+            active_orders = db_service.count_manufacturing_bom_non_draft_orders(
+                company_id=company_id,
+                bom_id=int(bom_id),
+            )
 
+            if active_orders > 0:
+                return jsonify({
+                    "error": (
+                        "BOM components cannot be modified because this "
+                        "BOM is already being used by a released or active "
+                        "production order."
+                    ),
+                }), 409
+
+            lines = payload.get("lines")
+            
             if not isinstance(lines, list):
                 return jsonify({
                     "error": "BOM lines must be provided as a list.",
