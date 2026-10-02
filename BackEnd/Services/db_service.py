@@ -41059,6 +41059,8 @@ class DatabaseService:
                         ''manufacturing_order_dispatch_reversal'',
                         ''manufacturing_order_eod'',
                         ''manufacturing_order_eod_reversal'',
+                        ''manufacturing_order_cost'',
+                        ''manufacturing_order_cost_reversal'',
 
                         ''asset'',
                         ''asset_reversal'',
@@ -86426,7 +86428,7 @@ class DatabaseService:
                 ),
                 "ref": journal_ref,
                 "description": description,
-                "source": "manufacturing",
+                "source": "manufacturing_order_cost",
                 "source_id": int(source_id),
                 "source_table": source_table,
                 "module_name": "manufacturing",
