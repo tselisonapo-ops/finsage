@@ -53254,6 +53254,35 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS customer_name VARCHAR(150) NULL,
         ADD COLUMN IF NOT EXISTS is_manual_ref BOOLEAN DEFAULT FALSE;
 
+        ALTER TABLE {schema}.manufacturing_order_dispatches
+            ADD COLUMN IF NOT EXISTS customer_id INT NULL;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_manufacturing_order_dispatches_customer_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.manufacturing_order_dispatches
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (customer_id)
+                    REFERENCES %I.customers(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}_manufacturing_order_dispatches_customer_fk',
+                    '{schema}'
+                );
+            END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_manufacturing_order_dispatches_customer_id_idx
+        ON {schema}.manufacturing_order_dispatches(customer_id);
+
         CREATE INDEX IF NOT EXISTS {schema}_mfg_dispatches_company_mo_idx
         ON {schema}.manufacturing_order_dispatches(company_id, manufacturing_order_id);
 
@@ -86015,15 +86044,18 @@ class DatabaseService:
             cur.execute(
                 f"""
                 SELECT
-                    id,
-                    mo_no,
-                    status,
-                    planned_qty,
-                    actual_qty
-                FROM {schema}.manufacturing_orders
-                WHERE company_id=%s
-                AND id=%s
-                FOR UPDATE
+                    mo.*,
+                    b.id AS bom_id,
+                    b.finished_item_name,
+                    b.batch_qty,
+                    b.selling_price AS bom_selling_price
+                FROM {schema}.manufacturing_orders mo
+                LEFT JOIN {schema}.manufacturing_boms b
+                    ON b.id = mo.bom_id
+                    AND b.company_id = mo.company_id
+                WHERE mo.company_id = %s
+                AND mo.id = %s
+                FOR UPDATE OF mo
                 """,
                 (
                     int(company_id),
@@ -86032,16 +86064,32 @@ class DatabaseService:
             )
 
             row = cur.fetchone()
+
             if not row:
                 raise ValueError(
                     f"Manufacturing order not found: {manufacturing_order_id}"
                 )
 
-            mo_id = int(row["id"])
-            mo_no = row["mo_no"]
-            current_status = str(row["status"] or "").strip().lower()
-            planned_qty = row["planned_qty"]
-            actual_qty = row["actual_qty"]
+            columns = [d[0] for d in cur.description]
+
+            order = (
+                dict(row)
+                if isinstance(row, dict)
+                else dict(zip(columns, row))
+            )
+
+            mo_id = int(order["id"])
+            mo_no = order["mo_no"]
+            current_status = str(
+                order.get("status") or ""
+            ).strip().lower()
+
+            planned_qty = order.get("planned_qty")
+            actual_qty = order.get("actual_qty")
+            bom_id = order.get("bom_id")
+            finished_item_name = str(
+                order.get("finished_item_name") or ""
+            ).strip()
 
             if current_status == new_status:
                 return {
@@ -86052,6 +86100,7 @@ class DatabaseService:
                     "status": current_status,
                     "planned_qty": planned_qty,
                     "actual_qty": actual_qty,
+                    "output_id": order.get("output_id"),
                 }
 
             allowed_transitions = {
@@ -86062,35 +86111,554 @@ class DatabaseService:
                 "cancelled": set(),
             }
 
-            if new_status not in allowed_transitions.get(current_status, set()):
+            if new_status not in allowed_transitions.get(
+                current_status,
+                set(),
+            ):
                 raise ValueError(
                     f"Invalid manufacturing order status transition: "
                     f"{current_status} -> {new_status}"
                 )
 
             if new_status == "completed":
+
+                # ============================================================
+                # 1. VALIDATE ACTUAL OUTPUT
+                # ============================================================
+
                 if actual_qty is None:
                     raise ValueError(
                         "Actual production quantity is required before "
                         "completing the manufacturing order."
                     )
 
-                if float(actual_qty) <= 0:
+                actual_output = float(actual_qty)
+
+                if actual_output <= 0:
                     raise ValueError(
                         "Actual production quantity must be greater than "
                         "zero before completing the manufacturing order."
                     )
 
+                if not bom_id:
+                    raise ValueError(
+                        f"Manufacturing order {mo_no} has no BOM."
+                    )
+
+                if not finished_item_name:
+                    raise ValueError(
+                        f"Manufacturing order {mo_no} has no finished product."
+                    )
+
                 # ============================================================
-                # POST ASSET DEPRECIATION & JOURNAL ENTRY ON ORDER COMPLETION
+                # 2. POST PRODUCTION COSTS INTO WIP
                 # ============================================================
+
                 self.post_manufacturing_order_asset_depreciation(
                     company_id=company_id,
                     manufacturing_order_id=mo_id,
                     mo_no=mo_no,
                     user_id=updated_by_user_id,
-                    cur=cur,  # Executes inside this active transaction
+                    cur=cur,
                 )
+
+                # ============================================================
+                # 3. CHECK FOR EXISTING OUTPUT
+                # ============================================================
+
+                cur.execute(
+                    f"""
+                    SELECT
+                        id,
+                        manufacturing_order_id,
+                        quantity,
+                        unit_cost,
+                        total_cost,
+                        posted_journal_id,
+                        status
+                    FROM {schema}.manufacturing_order_outputs
+                    WHERE company_id = %s
+                    AND manufacturing_order_id = %s
+                    FOR UPDATE
+                    """,
+                    (
+                        int(company_id),
+                        mo_id,
+                    ),
+                )
+
+                existing_output = cur.fetchone()
+
+                if existing_output:
+                    output_columns = [d[0] for d in cur.description]
+
+                    existing_output = (
+                        dict(existing_output)
+                        if isinstance(existing_output, dict)
+                        else dict(
+                            zip(
+                                output_columns,
+                                existing_output,
+                            )
+                        )
+                    )
+
+                    output_id = int(existing_output["id"])
+
+                else:
+
+                    # ========================================================
+                    # 4. MATERIAL COST
+                    # ========================================================
+
+                    cur.execute(
+                        f"""
+                        SELECT
+                            COALESCE(
+                                SUM(
+                                    COALESCE(total_cost, 0)
+                                ),
+                                0
+                            ) AS material_cost
+                        FROM {schema}.manufacturing_order_materials
+                        WHERE company_id = %s
+                        AND manufacturing_order_id = %s
+                        """,
+                        (
+                            int(company_id),
+                            mo_id,
+                        ),
+                    )
+
+                    material_row = cur.fetchone()
+
+                    material_cost = float(
+                        (
+                            material_row["material_cost"]
+                            if isinstance(material_row, dict)
+                            else material_row[0]
+                        )
+                        or 0
+                    )
+
+                    # ========================================================
+                    # 5. LABOUR COST
+                    # ========================================================
+
+                    labour_cost = 0.0
+                    labour_table = None
+
+                    for table_name in (
+                        "manufacturing_order_labour",
+                        "manufacturing_order_labor",
+                    ):
+                        cur.execute(
+                            """
+                            SELECT 1
+                            FROM information_schema.tables
+                            WHERE table_schema = %s
+                            AND table_name = %s
+                            LIMIT 1
+                            """,
+                            (
+                                schema,
+                                table_name,
+                            ),
+                        )
+
+                        if cur.fetchone():
+                            labour_table = table_name
+                            break
+
+                    if labour_table:
+
+                        cur.execute(
+                            f"""
+                            SELECT
+                                COALESCE(
+                                    SUM(
+                                        COALESCE(
+                                            total_cost,
+                                            labour_cost,
+                                            labor_cost,
+                                            amount,
+                                            cost,
+                                            0
+                                        )
+                                    ),
+                                    0
+                                ) AS total
+                            FROM {schema}.{labour_table}
+                            WHERE company_id = %s
+                            AND manufacturing_order_id = %s
+                            """,
+                            (
+                                int(company_id),
+                                mo_id,
+                            ),
+                        )
+
+                        labour_row = cur.fetchone()
+
+                        labour_cost = float(
+                            (
+                                labour_row["total"]
+                                if isinstance(labour_row, dict)
+                                else labour_row[0]
+                            )
+                            or 0
+                        )
+
+                    # ========================================================
+                    # 6. OTHER DIRECT PRODUCTION COSTS
+                    # ========================================================
+
+                    direct_cost = 0.0
+
+                    cur.execute(
+                        """
+                        SELECT 1
+                        FROM information_schema.tables
+                        WHERE table_schema = %s
+                        AND table_name = 'manufacturing_order_direct_costs'
+                        LIMIT 1
+                        """,
+                        (schema,),
+                    )
+
+                    if cur.fetchone():
+
+                        cur.execute(
+                            f"""
+                            SELECT
+                                COALESCE(
+                                    SUM(
+                                        COALESCE(
+                                            amount,
+                                            total_cost,
+                                            cost,
+                                            0
+                                        )
+                                    ),
+                                    0
+                                ) AS total
+                            FROM {schema}.manufacturing_order_direct_costs
+                            WHERE company_id = %s
+                            AND manufacturing_order_id = %s
+                            """,
+                            (
+                                int(company_id),
+                                mo_id,
+                            ),
+                        )
+
+                        direct_row = cur.fetchone()
+
+                        direct_cost = float(
+                            (
+                                direct_row["total"]
+                                if isinstance(direct_row, dict)
+                                else direct_row[0]
+                            )
+                            or 0
+                        )
+
+                    # ========================================================
+                    # 7. MANUFACTURING OVERHEAD
+                    # ========================================================
+
+                    cur.execute(
+                        f"""
+                        SELECT
+                            COALESCE(
+                                SUM(
+                                    COALESCE(
+                                        allocated_amount,
+                                        0
+                                    )
+                                ),
+                                0
+                            ) AS total
+                        FROM {schema}.manufacturing_order_overhead
+                        WHERE company_id = %s
+                        AND manufacturing_order_id = %s
+                        """,
+                        (
+                            int(company_id),
+                            mo_id,
+                        ),
+                    )
+
+                    overhead_row = cur.fetchone()
+
+                    overhead_cost = float(
+                        (
+                            overhead_row["total"]
+                            if isinstance(overhead_row, dict)
+                            else overhead_row[0]
+                        )
+                        or 0
+                    )
+
+                    total_production_cost = round(
+                        material_cost
+                        + labour_cost
+                        + direct_cost
+                        + overhead_cost,
+                        2,
+                    )
+
+                    if total_production_cost <= 0:
+                        raise ValueError(
+                            f"Production order {mo_no} has no production "
+                            f"cost available for finished-goods "
+                            f"capitalization."
+                        )
+
+                    unit_cost = round(
+                        total_production_cost / actual_output,
+                        6,
+                    )
+
+                    total_cost = round(
+                        unit_cost * actual_output,
+                        2,
+                    )
+
+                    # ========================================================
+                    # 8. RESOLVE FINISHED GOODS ACCOUNT
+                    # ========================================================
+
+                    fg_row = self.ensure_coa_role_for_posting(
+                        company_id,
+                        "inventory_finished_goods",
+                        cur=cur,
+                        required=True,
+                    )
+
+                    if not fg_row:
+                        raise ValueError(
+                            "UNRESOLVED_MANUFACTURING_ACCOUNT|"
+                            "Unable to resolve COA role "
+                            "'inventory_finished_goods'"
+                        )
+
+                    fg_code = (
+                        fg_row.get("code")
+                        if isinstance(fg_row, dict)
+                        else None
+                    )
+
+                    if not fg_code:
+                        raise ValueError(
+                            "UNRESOLVED_MANUFACTURING_ACCOUNT|"
+                            "Finished goods account has no account code"
+                        )
+
+                    # ========================================================
+                    # 9. RESOLVE MANUFACTURING WIP ACCOUNT
+                    # ========================================================
+
+                    wip_row = self.ensure_coa_role_for_posting(
+                        company_id,
+                        "manufacturing_wip",
+                        cur=cur,
+                        required=True,
+                    )
+
+                    if not wip_row:
+                        raise ValueError(
+                            "UNRESOLVED_MANUFACTURING_ACCOUNT|"
+                            "Unable to resolve COA role "
+                            "'manufacturing_wip'"
+                        )
+
+                    wip_code = (
+                        wip_row.get("code")
+                        if isinstance(wip_row, dict)
+                        else None
+                    )
+
+                    if not wip_code:
+                        raise ValueError(
+                            "UNRESOLVED_MANUFACTURING_ACCOUNT|"
+                            "Manufacturing WIP account has no account code"
+                        )
+
+                    # ========================================================
+                    # 10. POST WIP -> FINISHED GOODS
+                    # ========================================================
+
+                    tx_date = (
+                        order.get("tx_date")
+                        or date.today()
+                    )
+
+                    tx_date_str = (
+                        tx_date.isoformat()
+                        if hasattr(tx_date, "isoformat")
+                        else str(tx_date)
+                    )
+
+                    journal_ref = f"FG/{mo_no}"
+
+                    journal_payload = {
+                        "date": tx_date_str,
+                        "ref": journal_ref,
+                        "description": (
+                            f"Finished Goods Production - "
+                            f"{mo_no} - {finished_item_name}"
+                        ),
+                        "source": "manufacturing_order_output",
+                        "source_id": mo_id,
+                        "lines": [
+                            {
+                                "account_code": fg_code,
+                                "debit": total_cost,
+                                "credit": 0.0,
+                                "description": (
+                                    f"Finished Goods - "
+                                    f"{finished_item_name}"
+                                ),
+                            },
+                            {
+                                "account_code": wip_code,
+                                "debit": 0.0,
+                                "credit": total_cost,
+                                "description": (
+                                    f"Manufacturing WIP Transfer - "
+                                    f"{mo_no}"
+                                ),
+                            },
+                        ],
+                    }
+
+                    posted_journal_id = self.post_journal(
+                        company_id=company_id,
+                        entry=journal_payload,
+                        cur=cur,
+                    )
+
+                    # ========================================================
+                    # 11. CREATE MANUFACTURING ORDER OUTPUT
+                    # ========================================================
+
+                    cur.execute(
+                        f"""
+                        INSERT INTO {schema}.manufacturing_order_outputs (
+                            company_id,
+                            manufacturing_order_id,
+                            bom_id,
+                            finished_item_name,
+                            output_date,
+                            quantity,
+                            unit,
+                            unit_cost,
+                            total_cost,
+                            location,
+                            batch_no,
+                            status,
+                            posted_journal_id,
+                            created_by_user_id,
+                            updated_by_user_id,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, 'posted', %s, %s, %s, NOW(), NOW()
+                        )
+                        RETURNING id
+                        """,
+                        (
+                            int(company_id),
+                            mo_id,
+                            int(bom_id),
+                            finished_item_name,
+                            tx_date,
+                            actual_output,
+                            order.get("unit"),
+                            unit_cost,
+                            total_cost,
+                            order.get("location"),
+                            order.get("batch_no"),
+                            posted_journal_id,
+                            updated_by_user_id,
+                            updated_by_user_id,
+                        ),
+                    )
+
+                    output_row = cur.fetchone()
+
+                    output_id = int(
+                        output_row["id"]
+                        if isinstance(output_row, dict)
+                        else output_row[0]
+                    )
+
+                    # ========================================================
+                    # 12. CREATE FINISHED GOODS LAYER
+                    # ========================================================
+
+                    cur.execute(
+                        f"""
+                        INSERT INTO {schema}.manufacturing_finished_goods_layers (
+                            company_id,
+                            manufacturing_order_output_id,
+                            manufacturing_order_id,
+                            finished_item_name,
+                            location,
+                            batch_no,
+                            quantity_in,
+                            quantity_out,
+                            unit,
+                            unit_cost,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s, %s,
+                            %s, 0, %s, %s, NOW(), NOW()
+                        )
+                        """,
+                        (
+                            int(company_id),
+                            output_id,
+                            mo_id,
+                            finished_item_name,
+                            order.get("location"),
+                            order.get("batch_no"),
+                            actual_output,
+                            order.get("unit"),
+                            unit_cost,
+                        ),
+                    )
+
+                    # ========================================================
+                    # 13. LINK OUTPUT TO MANUFACTURING ORDER
+                    # ========================================================
+
+                    cur.execute(
+                        f"""
+                        UPDATE {schema}.manufacturing_orders
+                        SET
+                            output_id = %s,
+                            updated_by_user_id = %s,
+                            updated_at = NOW()
+                        WHERE company_id = %s
+                        AND id = %s
+                        """,
+                        (
+                            output_id,
+                            updated_by_user_id,
+                            int(company_id),
+                            mo_id,
+                        ),
+                    )
+
+            # ================================================================
+            # 14. FINALLY MARK ORDER COMPLETED
+            # ================================================================
 
             cur.execute(
                 f"""
@@ -86107,6 +86675,7 @@ class DatabaseService:
                     status,
                     planned_qty,
                     actual_qty,
+                    output_id,
                     updated_by_user_id,
                     updated_at
                 """,
@@ -86114,7 +86683,7 @@ class DatabaseService:
                     new_status,
                     updated_by_user_id,
                     int(company_id),
-                    int(manufacturing_order_id),
+                    mo_id,
                 ),
             )
 
@@ -86128,6 +86697,7 @@ class DatabaseService:
                 "status": updated["status"],
                 "planned_qty": updated["planned_qty"],
                 "actual_qty": updated["actual_qty"],
+                "output_id": updated["output_id"],
                 "updated_by_user_id": updated["updated_by_user_id"],
                 "updated_at": updated["updated_at"],
             }
@@ -90415,7 +90985,6 @@ class DatabaseService:
                     b.finished_item_name,
                     b.batch_qty,
                     b.batch_unit,
-                    -- 1. Added bom_selling_price and fallback to inventory item price
                     b.selling_price AS bom_selling_price,
 
                     COALESCE(
@@ -90451,7 +91020,102 @@ class DatabaseService:
                     ii.sku AS finished_item_sku,
                     ii.name AS finished_item_inventory_name,
                     ii.unit AS finished_item_unit,
-                    ii.sales_price AS finished_item_sales_price
+                    ii.sales_price AS finished_item_sales_price,
+
+                    /* =====================================================
+                    OFFICIAL PRODUCTION OUTPUT
+                    ===================================================== */
+
+                    COALESCE(
+                        (
+                            SELECT SUM(moo.quantity)
+                            FROM {schema}.manufacturing_order_outputs moo
+                            WHERE moo.company_id = mo.company_id
+                            AND moo.manufacturing_order_id = mo.id
+                            AND moo.status = 'posted'
+                        ),
+                        0
+                    ) AS output_qty,
+
+                    COALESCE(
+                        (
+                            SELECT MAX(moo.unit_cost)
+                            FROM {schema}.manufacturing_order_outputs moo
+                            WHERE moo.company_id = mo.company_id
+                            AND moo.manufacturing_order_id = mo.id
+                            AND moo.status = 'posted'
+                        ),
+                        0
+                    ) AS output_unit_cost,
+
+                    COALESCE(
+                        (
+                            SELECT SUM(moo.total_cost)
+                            FROM {schema}.manufacturing_order_outputs moo
+                            WHERE moo.company_id = mo.company_id
+                            AND moo.manufacturing_order_id = mo.id
+                            AND moo.status = 'posted'
+                        ),
+                        0
+                    ) AS output_total_cost,
+
+                    /* =====================================================
+                    DISPATCH SUMMARY
+                    ===================================================== */
+
+                    COALESCE(
+                        (
+                            SELECT SUM(d.quantity)
+                            FROM {schema}.manufacturing_order_dispatches d
+                            WHERE d.company_id = mo.company_id
+                            AND d.manufacturing_order_id = mo.id
+                        ),
+                        0
+                    ) AS dispatched_qty,
+
+                    COALESCE(
+                        (
+                            SELECT COUNT(*)
+                            FROM {schema}.manufacturing_order_dispatches d
+                            WHERE d.company_id = mo.company_id
+                            AND d.manufacturing_order_id = mo.id
+                        ),
+                        0
+                    ) AS dispatch_count,
+
+                    COALESCE(
+                        (
+                            SELECT SUM(
+                                d.quantity * COALESCE(
+                                    (
+                                        SELECT moo.unit_cost
+                                        FROM {schema}.manufacturing_order_outputs moo
+                                        WHERE moo.company_id = d.company_id
+                                        AND moo.manufacturing_order_id = d.manufacturing_order_id
+                                        AND moo.status = 'posted'
+                                        ORDER BY moo.id DESC
+                                        LIMIT 1
+                                    ),
+                                    0
+                                )
+                            )
+                            FROM {schema}.manufacturing_order_dispatches d
+                            WHERE d.company_id = mo.company_id
+                            AND d.manufacturing_order_id = mo.id
+                        ),
+                        0
+                    ) AS dispatched_cost,
+
+                    COALESCE(
+                        (
+                            SELECT COUNT(*)
+                            FROM {schema}.manufacturing_order_dispatches d
+                            WHERE d.company_id = mo.company_id
+                            AND d.manufacturing_order_id = mo.id
+                            AND d.posted_journal_id IS NOT NULL
+                        ),
+                        0
+                    ) AS posted_dispatch_count
 
                 FROM {schema}.manufacturing_orders mo
 
@@ -90522,16 +91186,23 @@ class DatabaseService:
                     row.get("actual_material_cost") or 0
                 )
 
-                # Fall back to inventory finished item sales price if BOM price is None
                 raw_sales_price = (
                     row.get("bom_selling_price")
                     if row.get("bom_selling_price") is not None
                     else row.get("finished_item_sales_price")
                 )
-                sales_price = float(raw_sales_price) if raw_sales_price is not None else 0.0
+
+                sales_price = (
+                    float(raw_sales_price)
+                    if raw_sales_price is not None
+                    else 0.0
+                )
 
                 production_value = actual_qty * sales_price
-                material_contribution = production_value - actual_material_cost
+                material_contribution = (
+                    production_value - actual_material_cost
+                )
+
                 material_contribution_margin = (
                     (material_contribution / production_value) * 100
                     if production_value > 0
@@ -90548,6 +91219,47 @@ class DatabaseService:
                     actual_material_cost - planned_material_cost
                 )
 
+                # ============================================================
+                # PRODUCTION OUTPUT / FINISHED GOODS
+                # ============================================================
+
+                output_qty = float(row.get("output_qty") or 0)
+                output_unit_cost = float(
+                    row.get("output_unit_cost") or 0
+                )
+                output_total_cost = float(
+                    row.get("output_total_cost") or 0
+                )
+
+                # The official posted output is the authoritative
+                # finished-goods quantity once production is completed.
+                produced_qty = output_qty if output_qty > 0 else actual_qty
+
+                # ============================================================
+                # DISPATCH
+                # ============================================================
+
+                dispatched_qty = float(
+                    row.get("dispatched_qty") or 0
+                )
+
+                dispatched_cost = float(
+                    row.get("dispatched_cost") or 0
+                )
+
+                finished_goods_remaining = max(
+                    produced_qty - dispatched_qty,
+                    0.0,
+                )
+
+                dispatch_count = int(
+                    row.get("dispatch_count") or 0
+                )
+
+                posted_dispatch_count = int(
+                    row.get("posted_dispatch_count") or 0
+                )
+
                 result.append({
                     "id": int(row["id"]),
                     "mo_no": row.get("mo_no"),
@@ -90555,17 +91267,25 @@ class DatabaseService:
                     "bom_id": row.get("bom_id"),
                     "bom_code": row.get("bom_code"),
                     "bom_name": row.get("bom_name"),
+
                     "finished_item_name": (
                         row.get("finished_item_name")
                         or row.get("bom_name")
                     ),
+
                     "finished_item_id": (
                         int(row["finished_item_id"])
                         if row.get("finished_item_id") is not None
                         else None
                     ),
-                    "finished_item_sku": row.get("finished_item_sku"),
-                    "finished_item_inventory_name": row.get("finished_item_inventory_name"),
+
+                    "finished_item_sku": row.get(
+                        "finished_item_sku"
+                    ),
+
+                    "finished_item_inventory_name": row.get(
+                        "finished_item_inventory_name"
+                    ),
 
                     "planned_qty": planned_qty,
                     "actual_qty": actual_qty,
@@ -90585,14 +91305,43 @@ class DatabaseService:
                     "material_qty_variance": float(
                         row.get("material_qty_variance") or 0
                     ),
+
                     "excess_material_cost": float(
                         row.get("excess_material_cost") or 0
                     ),
 
                     "material_contribution": material_contribution,
-                    "material_contribution_margin": material_contribution_margin,
+                    "material_contribution_margin": (
+                        material_contribution_margin
+                    ),
 
-                    "production_completion": min(max(production_completion, 0.0), 100.0),
+                    "production_completion": min(
+                        max(production_completion, 0.0),
+                        100.0,
+                    ),
+
+                    # ========================================================
+                    # NEW PRODUCTION OUTPUT FIELDS
+                    # ========================================================
+
+                    "output_qty": output_qty,
+                    "produced_qty": produced_qty,
+                    "output_unit_cost": output_unit_cost,
+                    "output_total_cost": output_total_cost,
+
+                    # ========================================================
+                    # NEW DISPATCH FIELDS
+                    # ========================================================
+
+                    "dispatched_qty": dispatched_qty,
+                    "finished_goods_remaining": finished_goods_remaining,
+                    "dispatch_count": dispatch_count,
+                    "posted_dispatch_count": posted_dispatch_count,
+                    "unposted_dispatch_count": max(
+                        dispatch_count - posted_dispatch_count,
+                        0,
+                    ),
+                    "dispatched_cost": dispatched_cost,
                 })
 
             return {
@@ -90627,6 +91376,7 @@ class DatabaseService:
                     mo.notes,
                     mo.material_tx_id,
                     mo.output_tx_id,
+                    mo.output_id,
 
                     b.bom_code,
                     b.name AS bom_name,
@@ -90660,7 +91410,10 @@ class DatabaseService:
                 WHERE mo.company_id = %s
                 AND mo.id = %s
                 """,
-                (company_id, manufacturing_order_id),
+                (
+                    company_id,
+                    manufacturing_order_id,
+                ),
             )
 
             if not order:
@@ -90715,7 +91468,10 @@ class DatabaseService:
                     mom.line_no,
                     mom.id
                 """,
-                (company_id, manufacturing_order_id),
+                (
+                    company_id,
+                    manufacturing_order_id,
+                ),
             ) or []
 
             material_rows = []
@@ -90723,23 +91479,56 @@ class DatabaseService:
             actual_material_cost = 0.0
 
             for material in materials:
-                bom_quantity = float(material.get("bom_quantity") or 0)
-                scrap_percent = float(material.get("scrap_percent") or 0)
-                actual_material_qty = float(material.get("actual_qty") or 0)
-                unit_cost = float(material.get("unit_cost") or 0)
-                actual_cost = float(material.get("total_cost") or 0)
+                bom_quantity = float(
+                    material.get("bom_quantity") or 0
+                )
+
+                scrap_percent = float(
+                    material.get("scrap_percent") or 0
+                )
+
+                actual_material_qty = float(
+                    material.get("actual_qty") or 0
+                )
+
+                unit_cost = float(
+                    material.get("unit_cost") or 0
+                )
+
+                actual_cost = float(
+                    material.get("total_cost") or 0
+                )
 
                 if batch_qty > 0:
                     standard_qty_per_unit = (
-                        bom_quantity * (1 + scrap_percent / 100)
+                        bom_quantity
+                        * (1 + scrap_percent / 100)
                     ) / batch_qty
                 else:
-                    standard_qty_per_unit = bom_quantity * (1 + scrap_percent / 100)
+                    standard_qty_per_unit = (
+                        bom_quantity
+                        * (1 + scrap_percent / 100)
+                    )
 
-                standard_qty = standard_qty_per_unit * planned_qty
-                standard_cost = standard_qty * unit_cost
-                qty_variance = actual_material_qty - standard_qty
-                cost_variance = actual_cost - standard_cost
+                standard_qty = (
+                    standard_qty_per_unit
+                    * planned_qty
+                )
+
+                standard_cost = (
+                    standard_qty
+                    * unit_cost
+                )
+
+                qty_variance = (
+                    actual_material_qty
+                    - standard_qty
+                )
+
+                cost_variance = (
+                    actual_cost
+                    - standard_cost
+                )
 
                 planned_material_cost += standard_cost
                 actual_material_cost += actual_cost
@@ -90748,82 +91537,318 @@ class DatabaseService:
                     "id": int(material["id"]),
                     "line_no": material.get("line_no"),
                     "bom_line_id": material.get("bom_line_id"),
-                    "item_id": int(material["item_id"]) if material.get("item_id") is not None else None,
+                    "item_id": (
+                        int(material["item_id"])
+                        if material.get("item_id") is not None
+                        else None
+                    ),
                     "sku": material.get("sku"),
                     "item_name": material.get("item_name"),
-                    "unit": material.get("unit") or material.get("item_unit") or material.get("bom_unit"),
+                    "unit": (
+                        material.get("unit")
+                        or material.get("item_unit")
+                        or material.get("bom_unit")
+                    ),
                     "bom_quantity": bom_quantity,
                     "scrap_percent": scrap_percent,
-                    "standard_qty_per_unit": standard_qty_per_unit,
+                    "standard_qty_per_unit": (
+                        standard_qty_per_unit
+                    ),
                     "standard_qty": standard_qty,
-                    "planned_qty": float(material.get("planned_qty") or 0),
+                    "planned_qty": float(
+                        material.get("planned_qty") or 0
+                    ),
                     "actual_qty": actual_material_qty,
                     "unit_cost": unit_cost,
                     "standard_cost": standard_cost,
                     "actual_cost": actual_cost,
                     "quantity_variance": qty_variance,
                     "cost_variance": cost_variance,
-                    "is_optional": bool(material.get("is_optional")),
-                    "inventory_tx_id": int(material["inventory_tx_id"]) if material.get("inventory_tx_id") is not None else None,
-                    "inventory_tx_line_id": int(material["inventory_tx_line_id"]) if material.get("inventory_tx_line_id") is not None else None,
+                    "is_optional": bool(
+                        material.get("is_optional")
+                    ),
+                    "inventory_tx_id": (
+                        int(material["inventory_tx_id"])
+                        if material.get("inventory_tx_id") is not None
+                        else None
+                    ),
+                    "inventory_tx_line_id": (
+                        int(material["inventory_tx_line_id"])
+                        if material.get("inventory_tx_line_id") is not None
+                        else None
+                    ),
                     "memo": material.get("memo"),
                 })
 
-            # Selling price resolution
+            # ================================================================
+            # SELLING PRICE / EXISTING PERFORMANCE CALCULATIONS
+            # ================================================================
+
             raw_sales_price = (
                 order.get("bom_selling_price")
                 if order.get("bom_selling_price") is not None
                 else order.get("finished_item_sales_price")
             )
-            sales_price = float(raw_sales_price) if raw_sales_price is not None else 0.0
 
-            production_value = actual_qty * sales_price
-            material_variance = actual_material_cost - planned_material_cost
-            material_contribution = production_value - actual_material_cost
+            sales_price = (
+                float(raw_sales_price)
+                if raw_sales_price is not None
+                else 0.0
+            )
+
+            production_value = (
+                actual_qty * sales_price
+            )
+
+            material_variance = (
+                actual_material_cost
+                - planned_material_cost
+            )
+
+            material_contribution = (
+                production_value
+                - actual_material_cost
+            )
+
             material_contribution_margin = (
                 (material_contribution / production_value) * 100
                 if production_value > 0
                 else 0.0
             )
+
             production_completion = (
                 (actual_qty / planned_qty) * 100
                 if planned_qty > 0
                 else 0.0
             )
 
-            # Retrieve management costs (labour, direct costs, overhead)
+            # ================================================================
+            # MANAGEMENT COSTS
+            # ================================================================
+
             management_costs = {}
+
             try:
-                management_costs = self.get_manufacturing_order_management_costs(
-                    company_id=company_id,
-                    manufacturing_order_id=manufacturing_order_id,
-                ) or {}
+                management_costs = (
+                    self.get_manufacturing_order_management_costs(
+                        company_id=company_id,
+                        manufacturing_order_id=manufacturing_order_id,
+                    )
+                    or {}
+                )
             except Exception:
                 management_costs = {}
 
             labour_cost = sum(
                 float(line.get("labour_cost") or 0)
-                for line in management_costs.get("labour", [])
-            )
-            other_direct_cost = sum(
-                float(line.get("amount") or 0)
-                for line in management_costs.get("direct_costs", [])
-            )
-            overhead_cost = sum(
-                float(line.get("allocated_amount") or 0)
-                for line in management_costs.get("overhead", [])
+                for line in management_costs.get(
+                    "labour",
+                    [],
+                )
             )
 
-            total_direct_cost = actual_material_cost + labour_cost + other_direct_cost
-            full_production_cost = total_direct_cost + overhead_cost
-            full_production_margin = production_value - full_production_cost
+            other_direct_cost = sum(
+                float(line.get("amount") or 0)
+                for line in management_costs.get(
+                    "direct_costs",
+                    [],
+                )
+            )
+
+            overhead_cost = sum(
+                float(line.get("allocated_amount") or 0)
+                for line in management_costs.get(
+                    "overhead",
+                    [],
+                )
+            )
+
+            total_direct_cost = (
+                actual_material_cost
+                + labour_cost
+                + other_direct_cost
+            )
+
+            full_production_cost = (
+                total_direct_cost
+                + overhead_cost
+            )
+
+            full_production_margin = (
+                production_value
+                - full_production_cost
+            )
+
             full_production_margin_percent = (
                 (full_production_margin / production_value) * 100
                 if production_value > 0
                 else 0.0
             )
 
-            # Common financial dictionary containing both exact names and aliases
+            # ================================================================
+            # OFFICIAL FINISHED-GOODS OUTPUT
+            # ================================================================
+
+            output = self.fetch_one(
+                f"""
+                SELECT
+                    moo.id,
+                    moo.company_id,
+                    moo.manufacturing_order_id,
+                    moo.bom_id,
+                    moo.finished_item_name,
+                    moo.output_date,
+                    moo.quantity,
+                    moo.unit,
+                    moo.unit_cost,
+                    moo.total_cost,
+                    moo.location,
+                    moo.batch_no,
+                    moo.status,
+                    moo.posted_journal_id
+                FROM {schema}.manufacturing_order_outputs moo
+                WHERE moo.company_id = %s
+                AND moo.manufacturing_order_id = %s
+                AND moo.status = 'posted'
+                ORDER BY moo.id DESC
+                LIMIT 1
+                """,
+                (
+                    company_id,
+                    manufacturing_order_id,
+                ),
+            )
+
+            if output:
+                output_qty = float(
+                    output.get("quantity") or 0
+                )
+
+                output_unit_cost = float(
+                    output.get("unit_cost") or 0
+                )
+
+                output_total_cost = float(
+                    output.get("total_cost") or 0
+                )
+
+                output_id = int(output["id"])
+                output_journal_id = (
+                    int(output["posted_journal_id"])
+                    if output.get("posted_journal_id") is not None
+                    else None
+                )
+            else:
+                output_qty = 0.0
+                output_unit_cost = 0.0
+                output_total_cost = 0.0
+                output_id = None
+                output_journal_id = None
+
+            # ================================================================
+            # FINISHED GOODS LAYER
+            # ================================================================
+
+            layer = self.fetch_one(
+                f"""
+                SELECT
+                    id,
+                    manufacturing_order_output_id,
+                    manufacturing_order_id,
+                    finished_item_name,
+                    location,
+                    batch_no,
+                    quantity_in,
+                    quantity_out,
+                    unit,
+                    unit_cost
+                FROM {schema}.manufacturing_finished_goods_layers
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (
+                    company_id,
+                    manufacturing_order_id,
+                ),
+            )
+
+            if layer:
+                layer_quantity_in = float(
+                    layer.get("quantity_in") or 0
+                )
+
+                layer_quantity_out = float(
+                    layer.get("quantity_out") or 0
+                )
+
+                layer_remaining_qty = max(
+                    layer_quantity_in - layer_quantity_out,
+                    0.0,
+                )
+
+                layer_id = int(layer["id"])
+            else:
+                layer_quantity_in = output_qty
+                layer_quantity_out = 0.0
+                layer_remaining_qty = output_qty
+                layer_id = None
+
+            # ================================================================
+            # DISPATCHES
+            # ================================================================
+
+            dispatches = self.list_manufacturing_order_dispatches(
+                company_id=company_id,
+                manufacturing_order_id=manufacturing_order_id,
+            ) or []
+
+            dispatched_qty = sum(
+                float(d.get("quantity") or 0)
+                for d in dispatches
+            )
+
+            dispatch_count = len(dispatches)
+
+            posted_dispatch_count = sum(
+                1
+                for d in dispatches
+                if d.get("posted_journal_id") is not None
+            )
+
+            unposted_dispatch_count = max(
+                dispatch_count - posted_dispatch_count,
+                0,
+            )
+
+            # The output unit cost is the authoritative finished-goods
+            # valuation for dispatch reporting.
+            dispatched_cost = (
+                dispatched_qty * output_unit_cost
+                if output_unit_cost > 0
+                else sum(
+                    float(d.get("quantity") or 0)
+                    * float(d.get("unit_cost") or 0)
+                    for d in dispatches
+                )
+            )
+
+            produced_qty = (
+                output_qty
+                if output_qty > 0
+                else actual_qty
+            )
+
+            finished_goods_remaining = max(
+                produced_qty - dispatched_qty,
+                0.0,
+            )
+
+            # ================================================================
+            # FINANCIAL SUMMARY — EXISTING API KEPT
+            # ================================================================
+
             financial_summary = {
                 "sales_price": sales_price,
                 "production_value": production_value,
@@ -90838,8 +91863,12 @@ class DatabaseService:
                 "material_contribution": material_contribution,
                 "contribution": material_contribution,
 
-                "material_contribution_margin": material_contribution_margin,
-                "contribution_margin": material_contribution_margin,
+                "material_contribution_margin": (
+                    material_contribution_margin
+                ),
+                "contribution_margin": (
+                    material_contribution_margin
+                ),
 
                 "labour_cost": labour_cost,
                 "other_direct_costs": other_direct_cost,
@@ -90847,8 +91876,49 @@ class DatabaseService:
                 "total_direct_cost": total_direct_cost,
                 "full_production_cost": full_production_cost,
                 "full_production_margin": full_production_margin,
-                "full_production_margin_percent": full_production_margin_percent,
+                "full_production_margin_percent": (
+                    full_production_margin_percent
+                ),
             }
+
+            # ================================================================
+            # PRODUCTION / DISPATCH SUMMARY
+            # ================================================================
+
+            production_dispatch_summary = {
+                "planned_qty": planned_qty,
+                "actual_qty": actual_qty,
+
+                "output_qty": output_qty,
+                "produced_qty": produced_qty,
+
+                "output_id": output_id,
+                "output_unit_cost": output_unit_cost,
+                "output_total_cost": output_total_cost,
+                "output_journal_id": output_journal_id,
+
+                "finished_goods_layer_id": layer_id,
+                "finished_goods_quantity_in": layer_quantity_in,
+                "finished_goods_quantity_out": layer_quantity_out,
+
+                "dispatched_qty": dispatched_qty,
+                "finished_goods_remaining": finished_goods_remaining,
+
+                "dispatch_count": dispatch_count,
+                "posted_dispatch_count": posted_dispatch_count,
+                "unposted_dispatch_count": unposted_dispatch_count,
+
+                "dispatched_cost": dispatched_cost,
+
+                "production_completion": min(
+                    max(production_completion, 0.0),
+                    100.0,
+                ),
+            }
+
+            # ================================================================
+            # ORDER DATA — EXISTING + NEW FIELDS
+            # ================================================================
 
             order_data = {
                 "id": int(order["id"]),
@@ -90857,11 +91927,28 @@ class DatabaseService:
                 "bom_id": order.get("bom_id"),
                 "bom_code": order.get("bom_code"),
                 "bom_name": order.get("bom_name"),
-                "bom_description": order.get("bom_description"),
-                "bom_version_no": order.get("version_no"),
-                "finished_item_name": order.get("finished_item_name") or order.get("bom_name"),
-                "finished_item_id": int(order["finished_item_id"]) if order.get("finished_item_id") is not None else None,
-                "finished_item_sku": order.get("finished_item_sku"),
+                "bom_description": order.get(
+                    "bom_description"
+                ),
+                "bom_version_no": order.get(
+                    "version_no"
+                ),
+
+                "finished_item_name": (
+                    order.get("finished_item_name")
+                    or order.get("bom_name")
+                ),
+
+                "finished_item_id": (
+                    int(order["finished_item_id"])
+                    if order.get("finished_item_id") is not None
+                    else None
+                ),
+
+                "finished_item_sku": order.get(
+                    "finished_item_sku"
+                ),
+
                 "planned_qty": planned_qty,
                 "actual_qty": actual_qty,
                 "unit": order.get("unit"),
@@ -90869,29 +91956,59 @@ class DatabaseService:
                 "batch_no": order.get("batch_no"),
                 "status": order.get("status"),
                 "notes": order.get("notes"),
-                "material_tx_id": int(order["material_tx_id"]) if order.get("material_tx_id") is not None else None,
-                "output_tx_id": int(order["output_tx_id"]) if order.get("output_tx_id") is not None else None,
-                "production_completion": min(max(production_completion, 0.0), 100.0),
+
+                "material_tx_id": (
+                    int(order["material_tx_id"])
+                    if order.get("material_tx_id") is not None
+                    else None
+                ),
+
+                "output_tx_id": (
+                    int(order["output_tx_id"])
+                    if order.get("output_tx_id") is not None
+                    else None
+                ),
+
+                "output_id": output_id,
+
+                "production_completion": min(
+                    max(production_completion, 0.0),
+                    100.0,
+                ),
             }
 
-            # Merge financials into order so order.production_value works
             order_data.update(financial_summary)
+            order_data.update(production_dispatch_summary)
 
             response = {
-                # 1. Root level access (e.g. data.production_value)
+                # Existing root financial access
                 **financial_summary,
 
-                # 2. Nested order access (e.g. data.order.production_value)
+                # Existing nested order access
                 "order": order_data,
 
-                # 3. Dedicated financial section
+                # Existing financial section
                 "financial": financial_summary,
 
-                # 4. Standard production_summary section (matching get_manufacturing_order)
+                # Existing production summary
                 "production_summary": financial_summary,
 
+                # New production/dispatch section
+                "production_dispatch": production_dispatch_summary,
+
+                # Existing material detail
                 "materials": material_rows,
 
+                # New dispatch detail
+                "dispatches": dispatches,
+
+                # Output detail
+                "output": output,
+
+                # Finished goods layer
+                "finished_goods_layer": layer,
+
+                # Existing costing section
                 "costing": {
                     "labour_cost": labour_cost,
                     "other_direct_costs": other_direct_cost,
@@ -90899,9 +92016,15 @@ class DatabaseService:
                     "total_direct_cost": total_direct_cost,
                     "total_production_cost": full_production_cost,
                     "full_production_margin": full_production_margin,
-                    "full_production_margin_percent": full_production_margin_percent,
-                    "labour_available": bool(management_costs.get("labour")),
-                    "overhead_available": bool(management_costs.get("overhead")),
+                    "full_production_margin_percent": (
+                        full_production_margin_percent
+                    ),
+                    "labour_available": bool(
+                        management_costs.get("labour")
+                    ),
+                    "overhead_available": bool(
+                        management_costs.get("overhead")
+                    ),
                 },
             }
 
@@ -91413,49 +92536,518 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _delete(cur2)
         
-    def list_manufacturing_order_dispatches(
+    def get_manufacturing_order_dispatches(
         self,
         company_id: int,
         manufacturing_order_id: int,
         cur=None,
     ) -> list[dict]:
+
+        company_id = int(company_id)
+        manufacturing_order_id = int(manufacturing_order_id)
         schema = self.company_schema(company_id)
 
         def _fetch(c):
             c.execute(
                 f"""
                 SELECT
-                    id,
+                    d.id,
+                    d.company_id,
+                    d.manufacturing_order_id,
+
+                    d.channel,
+                    d.destination,
+                    d.quantity,
+                    d.unit,
+                    d.received_by,
+                    d.reference_no,
+                    d.tx_date,
+                    d.notes,
+
+                    d.doc_type,
+                    d.posted_journal_id,
+                    d.customer_id,
+                    d.customer_name,
+                    d.is_manual_ref,
+
+                    d.created_by_user_id,
+                    d.updated_by_user_id,
+                    d.created_at,
+                    d.updated_at,
+
+                    /* =================================================
+                       CUSTOMER
+                       ================================================= */
+
+                    c.id AS customer_record_id,
+                    c.external_code AS customer_code,
+                    c.name AS customer_record_name,
+                    c.email AS customer_email,
+                    c.phone AS customer_phone,
+                    c.billing_address AS customer_billing_address,
+                    c.shipping_address AS customer_shipping_address,
+                    c.country AS customer_country,
+                    c.tax_number AS customer_tax_number,
+                    c.vat_number AS customer_vat_number,
+
+                    /* =================================================
+                       JOURNAL
+                       ================================================= */
+
+                    j.id AS journal_id,
+                    j.ref AS journal_ref,
+                    j.date AS journal_date,
+                    j.description AS journal_description,
+                    j.source AS journal_source,
+                    j.source_id AS journal_source_id,
+                    j.gross_amount AS journal_gross_amount,
+                    j.net_amount AS journal_net_amount,
+                    j.vat_amount AS journal_vat_amount,
+                    j.is_reversal AS journal_is_reversal,
+
+                    /* =================================================
+                       FINISHED-GOODS OUTPUT
+                       ================================================= */
+
+                    moo.id AS output_id,
+                    moo.output_date,
+                    moo.finished_item_name AS output_finished_item_name,
+                    moo.quantity AS output_quantity,
+                    moo.unit AS output_unit,
+                    moo.unit_cost AS output_unit_cost,
+                    moo.total_cost AS output_total_cost,
+                    moo.location AS output_location,
+                    moo.batch_no AS output_batch_no,
+                    moo.status AS output_status,
+                    moo.posted_journal_id AS output_posted_journal_id
+
+                FROM {schema}.manufacturing_order_dispatches d
+
+                LEFT JOIN {schema}.customers c
+                    ON c.id = d.customer_id
+                    AND c.company_id = d.company_id
+
+                LEFT JOIN {schema}.journal j
+                    ON j.id = d.posted_journal_id
+                    AND j.company_id = d.company_id
+
+                LEFT JOIN {schema}.manufacturing_order_outputs moo
+                    ON moo.company_id = d.company_id
+                    AND moo.manufacturing_order_id =
+                        d.manufacturing_order_id
+
+                WHERE d.company_id = %s
+                AND d.manufacturing_order_id = %s
+
+                ORDER BY
+                    d.tx_date ASC,
+                    d.id ASC
+                """,
+                (
                     company_id,
                     manufacturing_order_id,
-                    channel,
-                    destination,
-                    quantity,
-                    unit,
-                    received_by,
-                    reference_no,
-                    tx_date,
-                    notes,
-                    created_by_user_id,
-                    created_at
-                FROM {schema}.manufacturing_order_dispatches
-                WHERE company_id = %s
-                AND manufacturing_order_id = %s
-                ORDER BY tx_date ASC, id ASC
-                """,
-                (company_id, int(manufacturing_order_id)),
+                ),
             )
+
             rows = c.fetchall()
+
             if not rows:
                 return []
+
             columns = [d[0] for d in c.description]
-            return [dict(r) if isinstance(r, dict) else dict(zip(columns, r)) for r in rows]
+
+            result = []
+
+            for r in rows:
+                row = (
+                    dict(r)
+                    if isinstance(r, dict)
+                    else dict(zip(columns, r))
+                )
+
+                quantity = float(
+                    row.get("quantity") or 0
+                )
+
+                unit_cost = float(
+                    row.get("output_unit_cost") or 0
+                )
+
+                dispatch_cost = quantity * unit_cost
+
+                customer_name = (
+                    row.get("customer_record_name")
+                    or row.get("customer_name")
+                )
+
+                result.append({
+                    "id": int(row["id"]),
+                    "company_id": int(row["company_id"]),
+                    "manufacturing_order_id": int(
+                        row["manufacturing_order_id"]
+                    ),
+
+                    "channel": row.get("channel"),
+                    "destination": row.get("destination"),
+                    "quantity": quantity,
+                    "unit": row.get("unit"),
+                    "received_by": row.get("received_by"),
+                    "reference_no": row.get(
+                        "reference_no"
+                    ),
+                    "tx_date": row.get("tx_date"),
+                    "notes": row.get("notes"),
+
+                    "doc_type": row.get("doc_type"),
+
+                    "posted_journal_id": (
+                        int(row["posted_journal_id"])
+                        if row.get("posted_journal_id") is not None
+                        else None
+                    ),
+
+                    "customer_id": (
+                        int(row["customer_id"])
+                        if row.get("customer_id") is not None
+                        else None
+                    ),
+
+                    "customer_name": customer_name,
+                    "customer_code": row.get(
+                        "customer_code"
+                    ),
+                    "customer_email": row.get(
+                        "customer_email"
+                    ),
+                    "customer_phone": row.get(
+                        "customer_phone"
+                    ),
+                    "customer_billing_address": row.get(
+                        "customer_billing_address"
+                    ),
+                    "customer_shipping_address": row.get(
+                        "customer_shipping_address"
+                    ),
+                    "customer_country": row.get(
+                        "customer_country"
+                    ),
+                    "customer_tax_number": row.get(
+                        "customer_tax_number"
+                    ),
+                    "customer_vat_number": row.get(
+                        "customer_vat_number"
+                    ),
+
+                    "is_manual_ref": bool(
+                        row.get("is_manual_ref")
+                    ),
+
+                    "created_by_user_id": row.get(
+                        "created_by_user_id"
+                    ),
+                    "updated_by_user_id": row.get(
+                        "updated_by_user_id"
+                    ),
+                    "created_at": row.get("created_at"),
+                    "updated_at": row.get("updated_at"),
+
+                    # =================================================
+                    # Journal traceability
+                    # =================================================
+
+                    "journal_id": (
+                        int(row["journal_id"])
+                        if row.get("journal_id") is not None
+                        else None
+                    ),
+                    "journal_ref": row.get(
+                        "journal_ref"
+                    ),
+                    "journal_date": row.get(
+                        "journal_date"
+                    ),
+                    "journal_description": row.get(
+                        "journal_description"
+                    ),
+                    "journal_source": row.get(
+                        "journal_source"
+                    ),
+                    "journal_source_id": (
+                        int(row["journal_source_id"])
+                        if row.get("journal_source_id") is not None
+                        else None
+                    ),
+                    "journal_gross_amount": float(
+                        row.get("journal_gross_amount") or 0
+                    ),
+                    "journal_net_amount": float(
+                        row.get("journal_net_amount") or 0
+                    ),
+                    "journal_vat_amount": float(
+                        row.get("journal_vat_amount") or 0
+                    ),
+                    "journal_is_reversal": bool(
+                        row.get("journal_is_reversal")
+                    )
+                    if row.get("journal_is_reversal") is not None
+                    else False,
+
+                    # =================================================
+                    # Finished-goods output
+                    # =================================================
+
+                    "output_id": (
+                        int(row["output_id"])
+                        if row.get("output_id") is not None
+                        else None
+                    ),
+                    "output_date": row.get(
+                        "output_date"
+                    ),
+                    "output_finished_item_name": row.get(
+                        "output_finished_item_name"
+                    ),
+                    "output_quantity": float(
+                        row.get("output_quantity") or 0
+                    ),
+                    "output_unit": row.get(
+                        "output_unit"
+                    ),
+                    "output_unit_cost": unit_cost,
+                    "output_total_cost": float(
+                        row.get("output_total_cost") or 0
+                    ),
+                    "output_location": row.get(
+                        "output_location"
+                    ),
+                    "output_batch_no": row.get(
+                        "output_batch_no"
+                    ),
+                    "output_status": row.get(
+                        "output_status"
+                    ),
+                    "output_posted_journal_id": (
+                        int(row["output_posted_journal_id"])
+                        if row.get("output_posted_journal_id") is not None
+                        else None
+                    ),
+
+                    # Cost of this dispatch at production cost
+                    "dispatch_cost": dispatch_cost,
+                })
+
+            return result
 
         if cur is not None:
             return _fetch(cur)
 
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
+            
+    def list_manufacturing_order_dispatches(
+            self,
+            company_id: int,
+            manufacturing_order_id: int,
+            cur=None,
+        ) -> list[dict]:
+
+            company_id = int(company_id)
+            manufacturing_order_id = int(manufacturing_order_id)
+            schema = self.company_schema(company_id)
+
+            def _fetch(c):
+                c.execute(
+                    f"""
+                    SELECT
+                        d.id,
+                        d.company_id,
+                        d.manufacturing_order_id,
+
+                        d.channel,
+                        d.destination,
+                        d.quantity,
+                        d.unit,
+                        d.received_by,
+                        d.reference_no,
+                        d.tx_date,
+                        d.notes,
+
+                        d.doc_type,
+                        d.posted_journal_id,
+                        d.customer_id,
+                        d.customer_name,
+                        d.is_manual_ref,
+
+                        d.created_by_user_id,
+                        d.updated_by_user_id,
+                        d.created_at,
+                        d.updated_at,
+
+                        /* =================================================
+                        CUSTOMER
+                        ================================================= */
+
+                        c.id AS customer_record_id,
+                        c.external_code AS customer_code,
+                        c.name AS customer_record_name,
+                        c.email AS customer_email,
+                        c.phone AS customer_phone,
+
+                        /* =================================================
+                        JOURNAL
+                        ================================================= */
+
+                        j.id AS journal_id,
+                        j.ref AS journal_ref,
+                        j.date AS journal_date,
+                        j.description AS journal_description,
+                        j.source AS journal_source,
+                        j.source_id AS journal_source_id,
+                        j.is_reversal AS journal_is_reversal
+
+                    FROM {schema}.manufacturing_order_dispatches d
+
+                    LEFT JOIN {schema}.customers c
+                        ON c.id = d.customer_id
+                        AND c.company_id = d.company_id
+
+                    LEFT JOIN {schema}.journal j
+                        ON j.id = d.posted_journal_id
+                        AND j.company_id = d.company_id
+
+                    WHERE d.company_id = %s
+                    AND d.manufacturing_order_id = %s
+
+                    ORDER BY
+                        d.tx_date ASC,
+                        d.id ASC
+                    """,
+                    (
+                        company_id,
+                        manufacturing_order_id,
+                    ),
+                )
+
+                rows = c.fetchall()
+
+                if not rows:
+                    return []
+
+                columns = [d[0] for d in c.description]
+
+                result = []
+
+                for r in rows:
+                    row = (
+                        dict(r)
+                        if isinstance(r, dict)
+                        else dict(zip(columns, r))
+                    )
+
+                    quantity = float(
+                        row.get("quantity") or 0
+                    )
+
+                    # Customer record is authoritative when customer_id
+                    # exists; customer_name remains available for legacy
+                    # and manual dispatches.
+                    customer_name = (
+                        row.get("customer_record_name")
+                        or row.get("customer_name")
+                    )
+
+                    result.append({
+                        "id": int(row["id"]),
+                        "company_id": int(row["company_id"]),
+                        "manufacturing_order_id": int(
+                            row["manufacturing_order_id"]
+                        ),
+
+                        "channel": row.get("channel"),
+                        "destination": row.get("destination"),
+                        "quantity": quantity,
+                        "unit": row.get("unit"),
+                        "received_by": row.get("received_by"),
+                        "reference_no": row.get(
+                            "reference_no"
+                        ),
+                        "tx_date": row.get("tx_date"),
+                        "notes": row.get("notes"),
+
+                        "doc_type": row.get("doc_type"),
+                        "posted_journal_id": (
+                            int(row["posted_journal_id"])
+                            if row.get("posted_journal_id") is not None
+                            else None
+                        ),
+
+                        "customer_id": (
+                            int(row["customer_id"])
+                            if row.get("customer_id") is not None
+                            else None
+                        ),
+
+                        "customer_name": customer_name,
+                        "customer_code": row.get(
+                            "customer_code"
+                        ),
+                        "customer_email": row.get(
+                            "customer_email"
+                        ),
+                        "customer_phone": row.get(
+                            "customer_phone"
+                        ),
+
+                        "is_manual_ref": bool(
+                            row.get("is_manual_ref")
+                        ),
+
+                        "created_by_user_id": row.get(
+                            "created_by_user_id"
+                        ),
+                        "updated_by_user_id": row.get(
+                            "updated_by_user_id"
+                        ),
+                        "created_at": row.get("created_at"),
+                        "updated_at": row.get("updated_at"),
+
+                        # Journal traceability
+                        "journal_id": (
+                            int(row["journal_id"])
+                            if row.get("journal_id") is not None
+                            else None
+                        ),
+                        "journal_ref": row.get(
+                            "journal_ref"
+                        ),
+                        "journal_date": row.get(
+                            "journal_date"
+                        ),
+                        "journal_description": row.get(
+                            "journal_description"
+                        ),
+                        "journal_source": row.get(
+                            "journal_source"
+                        ),
+                        "journal_source_id": (
+                            int(row["journal_source_id"])
+                            if row.get("journal_source_id") is not None
+                            else None
+                        ),
+                        "journal_is_reversal": bool(
+                            row.get("journal_is_reversal")
+                        )
+                        if row.get("journal_is_reversal") is not None
+                        else False,
+                    })
+
+                return result
+
+            if cur is not None:
+                return _fetch(cur)
+
+            with self._conn_cursor() as (conn, cur2):
+                return _fetch(cur2)
 
     def delete_manufacturing_order_dispatch(
         self,

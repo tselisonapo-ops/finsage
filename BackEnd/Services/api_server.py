@@ -14061,7 +14061,7 @@ def replace_manufacturing_bom_lines(cid: int, bom_id: int):
                 }), 409
 
             lines = payload.get("lines")
-            
+
             if not isinstance(lines, list):
                 return jsonify({
                     "error": "BOM lines must be provided as a list.",
@@ -14669,6 +14669,46 @@ def get_manufacturing_production_performance(
     except Exception as e:
         current_app.logger.exception(
             "get_manufacturing_production_performance failed"
+        )
+
+        return jsonify({
+            "error": str(e),
+        }), 500
+    
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/dispatches/full",
+    methods=["GET"],
+)
+@require_auth
+def get_manufacturing_order_dispatches(
+    cid: int,
+    order_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        dispatches = db_service.get_manufacturing_order_dispatches(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+        )
+
+        return jsonify({
+            "ok": True,
+            "dispatches": dispatches or [],
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 404
+
+    except Exception as e:
+        current_app.logger.exception(
+            "get_manufacturing_order_dispatches failed"
         )
 
         return jsonify({

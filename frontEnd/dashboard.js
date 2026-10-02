@@ -4835,6 +4835,10 @@ const ENDPOINTS = {
     orderEodDisposals: (cid, orderId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/eod-disposals`,
 
+    orderDispatchesFull: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatches/full`,
+
+
     dispatchDocument: (cid, dispatchId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/dispatches/${encodeURIComponent(dispatchId)}/document`,
     
@@ -132080,6 +132084,9 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
       ["Actual material cost", "—", ""],
       ["Material contribution", "—", ""],
       ["Contribution margin", "—", ""],
+      ["Produced quantity", "—", ""],
+      ["Dispatched quantity", "—", ""],
+      ["Finished goods remaining", "—", ""],
     ]
       .map(
         ([label, value, note]) => `
@@ -132093,37 +132100,82 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
       .join("");
   }
 
-  function renderKpis(rows) {
+  function renderKpis(rows, summary = {}) {
     const el = document.getElementById("pp-kpis");
 
     if (!el) return;
 
-    const productionOrders = rows.length;
-
-    const plannedMaterialCost = rows.reduce(
-      (sum, row) => sum + Number(row.planned_material_cost || 0),
-      0
+    const productionOrders = Number(
+      summary.production_orders ?? rows.length
     );
 
-    const actualMaterialCost = rows.reduce(
-      (sum, row) => sum + Number(row.actual_material_cost || 0),
-      0
+    const plannedMaterialCost = Number(
+      summary.planned_material_cost ??
+        rows.reduce(
+          (sum, row) =>
+            sum + Number(row.planned_material_cost || 0),
+          0
+        )
     );
 
-    const materialContribution = rows.reduce(
-      (sum, row) => sum + Number(row.material_contribution || 0),
-      0
+    const actualMaterialCost = Number(
+      summary.actual_material_cost ??
+        rows.reduce(
+          (sum, row) =>
+            sum + Number(row.actual_material_cost || 0),
+          0
+        )
     );
 
-    const productionValue = rows.reduce(
-      (sum, row) => sum + Number(row.production_value || 0),
-      0
+    const materialContribution = Number(
+      summary.material_contribution ??
+        rows.reduce(
+          (sum, row) =>
+            sum + Number(row.material_contribution || 0),
+          0
+        )
+    );
+
+    const productionValue = Number(
+      summary.production_value ??
+        rows.reduce(
+          (sum, row) =>
+            sum + Number(row.production_value || 0),
+          0
+        )
     );
 
     const contributionMargin =
-      productionValue !== 0
+      summary.material_contribution_margin != null
+        ? Number(summary.material_contribution_margin)
+        : productionValue !== 0
         ? (materialContribution / productionValue) * 100
         : null;
+
+    const plannedQty = Number(
+      summary.planned_qty ??
+        rows.reduce(
+          (sum, row) => sum + Number(row.planned_qty || 0),
+          0
+        )
+    );
+
+    const actualQty = Number(
+      summary.actual_qty ??
+        rows.reduce(
+          (sum, row) => sum + Number(row.actual_qty || 0),
+          0
+        )
+    );
+
+    const dispatchedQty = Number(
+      summary.dispatched_qty || 0
+    );
+
+    const finishedGoodsRemaining = Number(
+      summary.finished_goods_remaining ??
+        Math.max(actualQty - dispatchedQty, 0)
+    );
 
     el.innerHTML = `
       <div class="pp-kpi">
@@ -132157,6 +132209,30 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
         <div class="pp-kpi-value">${percent(contributionMargin)}</div>
         <div class="pp-kpi-note">
           Material contribution / production value
+        </div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Produced quantity</div>
+        <div class="pp-kpi-value">${num(actualQty)}</div>
+        <div class="pp-kpi-note">
+          Planned ${num(plannedQty)}
+        </div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Dispatched quantity</div>
+        <div class="pp-kpi-value">${num(dispatchedQty)}</div>
+        <div class="pp-kpi-note">
+          Finished goods dispatched
+        </div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Finished goods remaining</div>
+        <div class="pp-kpi-value">${num(finishedGoodsRemaining)}</div>
+        <div class="pp-kpi-note">
+          Produced less dispatched
         </div>
       </div>
     `;
@@ -132357,9 +132433,12 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
         ? payload.rows
         : [];
 
-      renderKpis(state.rows);
-      renderTable(state.rows);
-      renderUnavailableNotice();
+    renderKpis(
+      state.rows,
+      payload.summary || {}
+    );
+    renderTable(state.rows);
+    renderUnavailableNotice();
     } catch (error) {
       console.error(
         "[ProductionPerformance] load failed:",
@@ -132428,7 +132507,7 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
       ?.addEventListener("click", closeDetail);
 
     try {
-      const url =
+      const performanceUrl =
         window.API?.manufacturing?.productionPerformanceOrder
           ? window.API.manufacturing.productionPerformanceOrder(
               state.companyId,
@@ -132440,7 +132519,31 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
               orderId
             )}`;
 
-      const payload = await apiGet(url);
+      const dispatchUrl =
+        window.API?.manufacturing?.orderDispatchesFull
+          ? window.API.manufacturing.orderDispatchesFull(
+              state.companyId,
+              orderId
+            )
+          : `${API_BASE}/api/companies/${encodeURIComponent(
+              state.companyId
+            )}/manufacturing/orders/${encodeURIComponent(
+              orderId
+            )}/dispatches/full`;
+
+      const [performancePayload, dispatchPayload] =
+        await Promise.all([
+          apiGet(performanceUrl),
+          apiGet(dispatchUrl),
+        ]);
+
+      const payload = {
+        ...performancePayload,
+
+        dispatches: Array.isArray(dispatchPayload?.dispatches)
+          ? dispatchPayload.dispatches
+          : [],
+      };
 
       state.selectedOrder = payload;
 
@@ -132477,7 +132580,191 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
     state.selectedOrder = null;
   }
 
-function renderDetail(payload) {
+  function getDispatchSummary(payload, order) {
+    const dispatches = Array.isArray(payload.dispatches)
+      ? payload.dispatches
+      : [];
+
+    const producedQty = Number(
+      payload.production_summary?.actual_qty ??
+        payload.financial?.actual_qty ??
+        order.actual_qty ??
+        0
+    );
+
+    const dispatchedQty = dispatches.reduce(
+      (sum, dispatch) =>
+        sum + Number(dispatch.quantity || 0),
+      0
+    );
+
+    const dispatchCost = dispatches.reduce(
+      (sum, dispatch) =>
+        sum + Number(dispatch.dispatch_cost || 0),
+      0
+    );
+
+    const disposedQty = Number(
+      payload.production_summary?.disposed_qty ??
+        payload.disposed_qty ??
+        0
+    );
+
+    const finishedGoodsRemaining = Math.max(
+      producedQty -
+        dispatchedQty -
+        disposedQty,
+      0
+    );
+
+    return {
+      dispatches,
+      producedQty,
+      dispatchedQty,
+      disposedQty,
+      finishedGoodsRemaining,
+      dispatchCost,
+    };
+  }
+
+  function renderDispatchRow(dispatch) {
+    return `
+      <tr>
+        <td>${esc(dispatch.tx_date || "—")}</td>
+
+        <td>
+          ${esc(
+            statusLabel(dispatch.channel)
+          )}
+        </td>
+
+        <td>
+          ${esc(
+            dispatch.customer_name ||
+              dispatch.destination ||
+              "—"
+          )}
+        </td>
+
+        <td>
+          ${esc(dispatch.customer_code || "—")}
+        </td>
+
+        <td>
+          ${num(dispatch.quantity)}
+        </td>
+
+        <td>
+          ${esc(dispatch.unit || "—")}
+        </td>
+
+        <td>
+          ${money(dispatch.dispatch_cost)}
+        </td>
+
+        <td>
+          ${esc(
+            dispatch.reference_no ||
+              dispatch.journal_ref ||
+              "—"
+          )}
+        </td>
+      </tr>
+    `;
+  }
+
+  function renderProductionDispatchSection(
+    payload,
+    order
+  ) {
+    const summary = getDispatchSummary(
+      payload,
+      order
+    );
+
+    return `
+      <div class="pp-panel">
+        <div class="pp-panel-header">
+          <div class="pp-panel-title">
+            Production & Dispatch
+          </div>
+        </div>
+
+        <div class="pp-detail-grid" style="padding:15px;margin:0;">
+          <div class="pp-detail-card">
+            <div class="pp-detail-label">
+              Planned output
+            </div>
+            <div class="pp-detail-value">
+              ${num(order.planned_qty)}
+            </div>
+          </div>
+
+          <div class="pp-detail-card">
+            <div class="pp-detail-label">
+              Actual output
+            </div>
+            <div class="pp-detail-value">
+              ${num(summary.producedQty)}
+            </div>
+          </div>
+
+          <div class="pp-detail-card">
+            <div class="pp-detail-label">
+              Dispatched
+            </div>
+            <div class="pp-detail-value">
+              ${num(summary.dispatchedQty)}
+            </div>
+          </div>
+
+          <div class="pp-detail-card">
+            <div class="pp-detail-label">
+              Finished goods remaining
+            </div>
+            <div class="pp-detail-value">
+              ${num(summary.finishedGoodsRemaining)}
+            </div>
+          </div>
+        </div>
+
+        ${
+          summary.dispatches.length
+            ? `
+              <div class="pp-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Channel</th>
+                      <th>Destination / Customer</th>
+                      <th>Customer code</th>
+                      <th>Quantity</th>
+                      <th>Unit</th>
+                      <th>Dispatch cost</th>
+                      <th>Reference</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${summary.dispatches
+                      .map(renderDispatchRow)
+                      .join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `
+              <div class="pp-empty">
+                No dispatches have been recorded for this production order.
+              </div>
+            `
+        }
+      </div>
+    `;
+  }
+
+  function renderDetail(payload) {
     const container = document.getElementById(
       "pp-detail-container"
     );
@@ -132685,6 +132972,8 @@ function renderDetail(payload) {
           }
         </div>
       </div>
+
+      ${renderProductionDispatchSection(payload, order)}
 
       <div class="pp-unavailable">
         <strong>Management accounting note:</strong>
