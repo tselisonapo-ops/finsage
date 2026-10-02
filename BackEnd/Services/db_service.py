@@ -86324,47 +86324,41 @@ class DatabaseService:
 
         schema = self.company_schema(company_id)
 
-        def _resolve_role_account(c, role: str) -> str | None:
+        def _resolve_role_account(
+            c,
+            role: str,
+            *,
+            required: bool = False,
+        ) -> str | None:
             """
-            Resolve a posting account strictly by COA role.
+            Resolve a manufacturing posting account by COA role.
 
-            Manufacturing posting must never depend on hardcoded account
-            codes because companies may map the same manufacturing role
-            to different account codes.
+            The central COA resolver handles existing role assignments,
+            semantic classification, ambiguity detection, and role repair.
+
+            Required roles raise when no valid account can be resolved.
+            Optional roles return None when the role is not configured.
             """
-            if hasattr(self, "ensure_required_coa_account") and callable(
-                getattr(self, "ensure_required_coa_account")
-            ):
-                row = self.ensure_required_coa_account(
-                    company_id,
-                    role,
-                    cur=c,
-                    required=False,
-                )
-                if row and row.get("code"):
-                    return str(row["code"]).strip()
-
-            c.execute(
-                f"""
-                SELECT code
-                FROM {schema}.coa
-                WHERE company_id = %s
-                AND LOWER(TRIM(COALESCE(role, ''))) = LOWER(%s)
-                AND posting IS TRUE
-                ORDER BY code
-                LIMIT 1
-                """,
-                (company_id, role),
+            row = self.ensure_coa_role_for_posting(
+                company_id,
+                role,
+                cur=c,
+                required=required,
             )
-
-            row = c.fetchone()
 
             if not row:
                 return None
 
-            return str(
-                row["code"] if isinstance(row, dict) else row[0]
-            ).strip()
+            code = row.get("code") if isinstance(row, dict) else None
+
+            if not code:
+                if required:
+                    raise ValueError(
+                        f"COA posting role '{role}' resolved without an account code"
+                    )
+                return None
+
+            return str(code).strip()
 
         def _require_role_account(c, role: str, label: str) -> str:
             code = _resolve_role_account(c, role)
