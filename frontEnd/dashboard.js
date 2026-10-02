@@ -129182,7 +129182,9 @@ async function openManufacturingOrderDetail(orderId) {
             <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
               <label class="text-xs">
                 <div class="text-slate-600 mb-1">Employee / Worker</div>
-                <input type="text" data-labour-worker class="w-full border rounded px-2 py-2 text-sm" placeholder="Worker name">
+                <select data-labour-worker class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">Loading employees...</option>
+                </select>
               </label>
 
               <label class="text-xs">
@@ -129191,8 +129193,16 @@ async function openManufacturingOrderDetail(orderId) {
               </label>
 
               <label class="text-xs">
-                <div class="text-slate-600 mb-1">Hours</div>
-                <input type="number" min="0" step="0.01" data-labour-hours class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
+                <div class="text-slate-600 mb-1">Hourly Rate</div>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-labour-rate
+                  class="w-full border rounded px-2 py-2 text-sm bg-slate-100"
+                  placeholder="0.00"
+                  readonly>
+                <div data-labour-rate-info class="mt-1 text-[11px] text-slate-500"></div>
               </label>
 
               <label class="text-xs">
@@ -129645,7 +129655,7 @@ async function openManufacturingOrderDetail(orderId) {
   });
 
   /* -------------------------------------------------------
-     LABOUR FORM HANDLERS
+    LABOUR FORM HANDLERS
   ------------------------------------------------------- */
   const labourForm = modal.querySelector("[data-labour-form]");
   const labourWorker = modal.querySelector("[data-labour-worker]");
@@ -129653,6 +129663,43 @@ async function openManufacturingOrderDetail(orderId) {
   const labourHours = modal.querySelector("[data-labour-hours]");
   const labourRate = modal.querySelector("[data-labour-rate]");
   const labourCostInput = modal.querySelector("[data-labour-cost]");
+  const labourRateInfo = modal.querySelector("[data-labour-rate-info]");
+
+  let payrollEmployees = [];
+  let selectedPayrollEmployee = null;
+  let selectedPayrollSetup = null;
+
+  const payrollEmployeesUrl = `/api/companies/${encodeURIComponent(cid)}/payroll/employees?status=active`;
+  const payrollEmployeePaySetupUrl = employeeId => `/api/companies/${encodeURIComponent(cid)}/payroll/employees/${encodeURIComponent(employeeId)}/pay-setup`;
+
+  const getEmployeeName = employee => {
+    const firstName = employee?.first_name || employee?.firstName || "";
+    const lastName = employee?.last_name || employee?.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+    return (employee?.full_name || employee?.name || fullName || employee?.employee_name || employee?.employee_no || employee?.employee_number || `Employee ${employee?.id || ""}`).trim();
+  };
+
+  const getEmployeeRole = employee => String(employee?.role || employee?.job_title || employee?.position || employee?.designation || employee?.job_role || "").trim();
+
+  const getPayBasis = setup => String(setup?.pay_basis || setup?.contract?.salary_type || "").trim().toLowerCase();
+
+  const getHourlyRate = setup => {
+    const payBasis = getPayBasis(setup);
+
+    if (payBasis === "hourly" || payBasis === "hourly_rate") {
+      const rate = Number(setup?.rate ?? setup?.contract?.hourly_rate ?? 0);
+      return Number.isFinite(rate) && rate >= 0 ? rate : 0;
+    }
+
+    const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
+    const normalHours = Number(setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0);
+
+    if (Number.isFinite(basicSalary) && basicSalary > 0 && Number.isFinite(normalHours) && normalHours > 0) {
+      return basicSalary / normalHours;
+    }
+
+    return 0;
+  };
 
   const updateLabourCost = () => {
     const hours = Number(labourHours?.value || 0);
@@ -129661,57 +129708,185 @@ async function openManufacturingOrderDetail(orderId) {
     if (labourCostInput) labourCostInput.value = fmtMoney(cost);
   };
 
-  labourHours?.addEventListener("input", updateLabourCost);
-  labourRate?.addEventListener("input", updateLabourCost);
+  const populateLabourRateFromSetup = setup => {
+    selectedPayrollSetup = setup || null;
 
-  modal.querySelector("[data-add-labour]")?.addEventListener("click", () => {
+    const payBasis = getPayBasis(setup);
+    const hourlyRate = getHourlyRate(setup);
+
+    if (labourRate) labourRate.value = hourlyRate > 0 ? hourlyRate.toFixed(2) : "";
+
+    if (labourRateInfo) {
+      if (payBasis === "hourly") {
+        labourRateInfo.textContent = hourlyRate > 0 ? `Hourly payroll rate: ${fmtMoney(hourlyRate)}` : "No hourly rate configured in Payroll.";
+      } else {
+        const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
+        const normalHours = Number(setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0);
+
+        if (basicSalary > 0 && normalHours > 0 && hourlyRate > 0) {
+          labourRateInfo.textContent = `Basic salary ${fmtMoney(basicSalary)} ÷ ${normalHours.toFixed(2)} hrs = ${fmtMoney(hourlyRate)}/hr`;
+        } else {
+          labourRateInfo.textContent = "Basic salary / normal monthly hours are not configured.";
+        }
+      }
+    }
+
+    updateLabourCost();
+  };
+
+  const loadPayrollEmployees = async () => {
+    if (!labourWorker) return;
+
+    labourWorker.innerHTML = `<option value="">Loading payroll employees...</option>`;
+
+    try {
+      const result = await apiFetch(payrollEmployeesUrl);
+
+      payrollEmployees = Array.isArray(result?.items)
+        ? result.items
+        : Array.isArray(result?.data)
+        ? result.data
+        : Array.isArray(result)
+        ? result
+        : [];
+
+      labourWorker.innerHTML = `<option value="">Select payroll employee...</option>`;
+
+      payrollEmployees.forEach(employee => {
+        const employeeId = employee?.id ?? employee?.employee_id;
+        if (!employeeId) return;
+
+        const name = getEmployeeName(employee);
+        const employeeNo = employee?.employee_no || employee?.employee_number || employee?.employee_code || "";
+        const role = getEmployeeRole(employee);
+        const option = document.createElement("option");
+
+        option.value = String(employeeId);
+        option.textContent = employeeNo ? `${name} (${employeeNo})` : name;
+        option.dataset.role = role;
+
+        labourWorker.appendChild(option);
+      });
+
+      if (!payrollEmployees.length) {
+        labourWorker.innerHTML = `<option value="">No active Payroll Employees found</option>`;
+      }
+    } catch (err) {
+      console.error("Load manufacturing payroll employees failed:", err);
+      labourWorker.innerHTML = `<option value="">Unable to load Payroll Employees</option>`;
+      alert(err?.message || "Failed to load Payroll Employees.");
+    }
+  };
+
+  const loadSelectedPayrollEmployee = async employeeId => {
+    selectedPayrollEmployee = null;
+    selectedPayrollSetup = null;
+
+    if (labourRate) labourRate.value = "";
+    if (labourRateInfo) labourRateInfo.textContent = "";
+    if (labourCostInput) labourCostInput.value = fmtMoney(0);
+
+    if (!employeeId) {
+      if (labourRole) labourRole.value = "";
+      return;
+    }
+
+    const employee = payrollEmployees.find(item => String(item?.id ?? item?.employee_id) === String(employeeId));
+    selectedPayrollEmployee = employee || null;
+
+    if (labourRole && employee) labourRole.value = getEmployeeRole(employee);
+
+    if (labourRateInfo) labourRateInfo.textContent = "Loading payroll remuneration setup...";
+
+    try {
+      const result = await apiFetch(payrollEmployeePaySetupUrl(employeeId));
+      const setup = result?.data || result;
+      populateLabourRateFromSetup(setup);
+    } catch (err) {
+      console.error("Load employee payroll pay setup failed:", err);
+
+      if (labourRate) labourRate.value = "";
+      if (labourRateInfo) labourRateInfo.textContent = "Unable to load payroll remuneration setup.";
+
+      alert(err?.message || "Failed to load the employee payroll setup.");
+    }
+  };
+
+  labourHours?.addEventListener("input", updateLabourCost);
+
+  labourWorker?.addEventListener("change", async () => {
+    await loadSelectedPayrollEmployee(labourWorker.value);
+  });
+
+  modal.querySelector("[data-add-labour]")?.addEventListener("click", async () => {
     if (!labourForm) return;
+
     labourForm.classList.remove("hidden");
+    await loadPayrollEmployees();
     labourWorker?.focus();
   });
 
   modal.querySelector("[data-cancel-labour]")?.addEventListener("click", () => {
     labourForm?.classList.add("hidden");
+
     if (labourWorker) labourWorker.value = "";
     if (labourRole) labourRole.value = "";
     if (labourHours) labourHours.value = "";
     if (labourRate) labourRate.value = "";
-    updateLabourCost();
+    if (labourCostInput) labourCostInput.value = fmtMoney(0);
+    if (labourRateInfo) labourRateInfo.textContent = "";
+
+    selectedPayrollEmployee = null;
+    selectedPayrollSetup = null;
   });
 
   modal.querySelector("[data-save-labour]")?.addEventListener("click", async () => {
-    const workerName = String(labourWorker?.value || "").trim();
+    const employeeId = Number(labourWorker?.value || 0);
+    const workerName = selectedPayrollEmployee ? getEmployeeName(selectedPayrollEmployee) : "";
     const role = String(labourRole?.value || "").trim();
     const hours = Number(labourHours?.value || 0);
     const rate = Number(labourRate?.value || 0);
 
-    if (!workerName) {
-      alert("Employee / Worker is required.");
+    if (!employeeId) {
+      alert("Please select a Payroll Employee.");
       labourWorker?.focus();
       return;
     }
+
+    if (!workerName) {
+      alert("The selected Payroll Employee has no valid name.");
+      labourWorker?.focus();
+      return;
+    }
+
     if (!Number.isFinite(hours) || hours <= 0) {
       alert("Hours must be greater than zero.");
       labourHours?.focus();
       return;
     }
-    if (!Number.isFinite(rate) || rate < 0) {
-      alert("Please enter a valid labour rate.");
-      labourRate?.focus();
+
+    if (!Number.isFinite(rate) || rate <= 0) {
+      alert("The selected employee does not have a valid payroll hourly rate.");
       return;
     }
+
+    const labourCost = hours * rate;
 
     try {
       await apiFetch(ENDPOINTS.manufacturing.orderLabour(cid, orderId), {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
         body: JSON.stringify({
+          employee_id: employeeId,
           worker_name: workerName,
           role,
           hours,
           rate,
-          labour_cost: hours * rate,
-          source: "manual",
+          labour_cost: labourCost,
+          source: "payroll",
         }),
       });
 
@@ -129726,13 +129901,17 @@ async function openManufacturingOrderDetail(orderId) {
   modal.querySelectorAll("[data-delete-labour]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const labourId = Number(btn.dataset.deleteLabour);
+
       if (!labourId || !confirm("Delete this direct labour entry?")) return;
 
       try {
         await apiFetch(ENDPOINTS.manufacturing.orderLabourItem(cid, orderId, labourId), {
           method: "DELETE",
-          headers: { Accept: "application/json" },
+          headers: {
+            Accept: "application/json",
+          },
         });
+
         modal.remove();
         await openManufacturingOrderDetail(orderId);
       } catch (err) {
