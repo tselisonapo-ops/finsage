@@ -129179,96 +129179,80 @@ async function openManufacturingOrderDetail(orderId) {
         }
 
         <!-- DIRECT LABOUR -->
-        <div class="border rounded mt-5">
-          <div class="px-4 py-3 border-b flex items-center justify-between">
-            <div>
-              <div class="font-semibold">Direct Labour</div>
-              <div class="text-xs text-slate-500">Labour directly attributable to this production order.</div>
-            </div>
+        <div data-labour-form class="hidden px-4 py-3 border-b bg-slate-50">
+          <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">Employee / Worker</div>
+              <select
+                data-labour-worker
+                class="w-full border rounded px-2 py-2 text-sm bg-white">
+                <option value="">Loading employees...</option>
+              </select>
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">Role</div>
+              <input
+                type="text"
+                data-labour-role
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="Role">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">Hours</div>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                data-labour-hours
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="0.00">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">Hourly Rate</div>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                data-labour-rate
+                class="w-full border rounded px-2 py-2 text-sm bg-slate-100"
+                placeholder="0.00"
+                readonly>
+              <div
+                data-labour-rate-info
+                class="mt-1 text-[11px] text-slate-500">
+              </div>
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">Labour Cost</div>
+              <input
+                type="text"
+                data-labour-cost
+                readonly
+                class="w-full border rounded px-2 py-2 text-sm bg-white"
+                value="LSL 0.00">
+            </label>
+
+          </div>
+
+          <div class="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              data-cancel-labour
+              class="px-3 py-1.5 text-sm rounded border hover:bg-white">
+              Cancel
+            </button>
 
             <button
               type="button"
-              data-add-labour
-              class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
-              Add Labour
+              data-save-labour
+              class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+              Save Labour
             </button>
-          </div>
-
-          <div data-labour-form class="hidden px-4 py-3 border-b bg-slate-50">
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
-              <label class="text-xs">
-                <div class="text-slate-600 mb-1">Employee / Worker</div>
-                <select data-labour-worker class="w-full border rounded px-2 py-2 text-sm bg-white">
-                  <option value="">Loading employees...</option>
-                </select>
-              </label>
-
-              <label class="text-xs">
-                <div class="text-slate-600 mb-1">Role</div>
-                <input type="text" data-labour-role class="w-full border rounded px-2 py-2 text-sm" placeholder="Role">
-              </label>
-
-              <label class="text-xs">
-                <div class="text-slate-600 mb-1">Hourly Rate</div>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  data-labour-rate
-                  class="w-full border rounded px-2 py-2 text-sm bg-slate-100"
-                  placeholder="0.00"
-                  readonly>
-                <div data-labour-rate-info class="mt-1 text-[11px] text-slate-500"></div>
-              </label>
-
-              <label class="text-xs">
-                <div class="text-slate-600 mb-1">Rate</div>
-                <input type="number" min="0" step="0.01" data-labour-rate class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
-              </label>
-
-              <label class="text-xs">
-                <div class="text-slate-600 mb-1">Labour Cost</div>
-                <input type="text" data-labour-cost readonly class="w-full border rounded px-2 py-2 text-sm bg-white" value="LSL 0.00">
-              </label>
-            </div>
-
-            <div class="mt-3 flex justify-end gap-2">
-              <button type="button" data-cancel-labour class="px-3 py-1.5 text-sm rounded border hover:bg-white">Cancel</button>
-              <button type="button" data-save-labour class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">Save Labour</button>
-            </div>
-          </div>
-
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-slate-50">
-                <tr>
-                  <th class="px-3 py-2 text-left">Employee / Worker</th>
-                  <th class="px-3 py-2 text-left">Role</th>
-                  <th class="px-3 py-2 text-right">Hours</th>
-                  <th class="px-3 py-2 text-right">Rate</th>
-                  <th class="px-3 py-2 text-right">Labour Cost</th>
-                  <th class="px-3 py-2 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody data-labour-lines>
-                ${
-                  labourLines.length
-                    ? labourLines.map(line => `
-                      <tr class="border-b">
-                        <td class="px-3 py-2">${esc(line.worker_name || line.worker_reference || "")}</td>
-                        <td class="px-3 py-2">${esc(line.role || "")}</td>
-                        <td class="px-3 py-2 text-right">${line.hours != null ? esc(line.hours) : "—"}</td>
-                        <td class="px-3 py-2 text-right">${line.rate != null ? fmtMoney(line.rate) : "—"}</td>
-                        <td class="px-3 py-2 text-right">${line.labour_cost != null ? fmtMoney(line.labour_cost) : "—"}</td>
-                        <td class="px-3 py-2 text-right">
-                          <button type="button" class="text-xs text-red-600 hover:underline" data-delete-labour="${Number(line.id)}">Delete</button>
-                        </td>
-                      </tr>
-                    `).join("")
-                    : `<tr data-labour-empty><td colspan="6" class="px-3 py-4 text-slate-500">No direct labour has been recorded for this production order.</td></tr>`
-                }
-              </tbody>
-            </table>
           </div>
         </div>
 
@@ -129733,7 +129717,7 @@ async function openManufacturingOrderDetail(orderId) {
     if (labourRate) labourRate.value = hourlyRate > 0 ? hourlyRate.toFixed(2) : "";
 
     if (labourRateInfo) {
-      if (payBasis === "hourly") {
+      if (payBasis === "hourly" || payBasis === "hourly_rate") {
         labourRateInfo.textContent = hourlyRate > 0 ? `Hourly payroll rate: ${fmtMoney(hourlyRate)}` : "No hourly rate configured in Payroll.";
       } else {
         const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
