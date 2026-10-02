@@ -86327,6 +86327,12 @@ class DatabaseService:
         from datetime import date
         from typing import Dict, Any
 
+        from BackEnd.Services.assets.posting import (
+            resolve_depreciation_accounts,
+            is_rou_asset_record,
+            ASSET_CLASS_DEPRECIATION_ROLES,
+        )
+
         schema = self.company_schema(company_id)
 
         def _resolve_role_account(
@@ -86999,10 +87005,6 @@ class DatabaseService:
             overhead_rows = _rows_to_dicts(c)
 
             if overhead_rows:
-
-                from BackEnd.Services.assets.posting import (
-                    resolve_depreciation_accounts,
-                )
 
                 # Detect journal FK column on asset_depreciation.
                 c.execute(
