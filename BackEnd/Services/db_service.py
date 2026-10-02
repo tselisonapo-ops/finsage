@@ -41060,7 +41060,10 @@ class DatabaseService:
                         ''manufacturing_order_eod'',
                         ''manufacturing_order_eod_reversal'',
                         ''manufacturing_order_cost'',
-                        ''manufacturing_order_cost_reversal'',
+                        ''manufacturing_order_labour'',
+                        ''manufacturing_order_labour_reversal'',
+                        ''manufacturing_order_direct_cost'',
+                        ''manufacturing_order_direct_cost_reversal'',
 
                         ''asset'',
                         ''asset_reversal'',
@@ -86392,6 +86395,7 @@ class DatabaseService:
             journal_ref: str,
             description: str,
             tx_date,
+            source: str,
             source_table: str,
             source_id: int,
         ):
@@ -86400,6 +86404,10 @@ class DatabaseService:
 
             Dr Manufacturing WIP
             Cr Production Cost Account
+
+            The journal source is supplied by the caller so labour
+            and other direct production costs cannot collide when their
+            source-table IDs happen to be the same.
             """
 
             amount = round(float(amount or 0.0), 2)
@@ -86428,14 +86436,8 @@ class DatabaseService:
                 ),
                 "ref": journal_ref,
                 "description": description,
-                "source": "manufacturing_order_cost",
+                "source": source,
                 "source_id": int(source_id),
-                "source_table": source_table,
-                "module_name": "manufacturing",
-                "event_type": "posted",
-                "created_by_user_id": user_id,
-                "updated_by_user_id": user_id,
-                "prepared_by_user_id": user_id,
                 "lines": [
                     {
                         "account_code": wip_code,
@@ -86661,6 +86663,7 @@ class DatabaseService:
                             f"Direct Labour - {mo_no}"
                         ),
                         tx_date=tx_date,
+                        source="manufacturing_order_labour",
                         source_table=labour_table,
                         source_id=(
                             labour_id
@@ -86808,6 +86811,7 @@ class DatabaseService:
                             f"Direct Production Cost - {mo_no}"
                         ),
                         tx_date=tx_date,
+                        source="manufacturing_order_direct_cost",
                         source_table=direct_cost_table,
                         source_id=(
                             cost_id
