@@ -89506,11 +89506,12 @@ class DatabaseService:
                 )
 
             manufacturing_wip_code = str(
-                debit_row.get("code") or ""
+                debit_row[1]
+                or manufacturing_wip_code
             ).strip()
 
             manufacturing_wip_name = str(
-                debit_row.get("name")
+                debit_row[0]
                 or manufacturing_wip_code
             ).strip()
 
