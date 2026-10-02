@@ -69053,7 +69053,101 @@ class DatabaseService:
                     int(company_id),
                     manufacturing_order_id,
                 ))
-                
+
+            # ==================================================
+            # MANUFACTURING - ASSET DEPRECIATION / OVERHEAD ROLLBACK
+            # ==================================================
+            elif source == "asset_depreciation":
+                # Find FK column in asset_depreciation
+                cur.execute(f"""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = %s
+                    AND table_name = 'asset_depreciation'
+                    AND column_name IN ('posted_journal_id', 'journal_id', 'journal_entry_id')
+                    ORDER BY CASE column_name
+                        WHEN 'posted_journal_id' THEN 1
+                        WHEN 'journal_id' THEN 2
+                        ELSE 3
+                    END
+                    LIMIT 1
+                """, (schema,))
+                col_match = cur.fetchone()
+                dep_col = (
+                    (col_match["column_name"] if isinstance(col_match, dict) else col_match[0])
+                    if col_match else "posted_journal_id"
+                )
+
+                # 1. Unlink overhead lines pointing to this asset_depreciation
+                cur.execute(f"""
+                    UPDATE {schema}.manufacturing_order_overhead
+                    SET asset_depreciation_id = NULL,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                      AND asset_depreciation_id IN (
+                          SELECT id FROM {schema}.asset_depreciation
+                          WHERE company_id = %s AND {dep_col} = %s
+                      )
+                """, (int(company_id), int(company_id), int(journal_id)))
+
+                # 2. Mark the asset depreciation row as reversed
+                cur.execute(f"""
+                    UPDATE {schema}.asset_depreciation
+                    SET status = 'reversed',
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                      AND {dep_col} = %s
+                """, (int(company_id), int(journal_id)))
+
+            # ==================================================
+            # MANUFACTURING - LABOUR & DIRECT COSTS ROLLBACK
+            # ==================================================
+            elif source == "manufacturing":
+                # 1. Check & reset labour tables
+                for t_name in ("manufacturing_order_labour", "manufacturing_order_labor"):
+                    cur.execute("""
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = %s AND table_name = %s LIMIT 1
+                    """, (schema, t_name))
+                    if cur.fetchone():
+                        cur.execute(f"""
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_schema = %s AND table_name = %s
+                            AND column_name IN ('posted_journal_id', 'journal_id', 'journal_entry_id')
+                            LIMIT 1
+                        """, (schema, t_name))
+                        col_row = cur.fetchone()
+                        if col_row:
+                            j_col = col_row["column_name"] if isinstance(col_row, dict) else col_row[0]
+                            cur.execute(f"""
+                                UPDATE {schema}.{t_name}
+                                SET {j_col} = NULL
+                                WHERE company_id = %s AND {j_col} = %s
+                            """, (int(company_id), int(journal_id)))
+
+                # 2. Check & reset direct costs table
+                cur.execute("""
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = %s AND table_name = 'manufacturing_order_direct_costs' LIMIT 1
+                """, (schema,))
+                if cur.fetchone():
+                    cur.execute(f"""
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = %s AND table_name = 'manufacturing_order_direct_costs'
+                        AND column_name IN ('posted_journal_id', 'journal_id', 'journal_entry_id')
+                        LIMIT 1
+                    """, (schema,))
+                    col_row = cur.fetchone()
+                    if col_row:
+                        j_col = col_row["column_name"] if isinstance(col_row, dict) else col_row[0]
+                        cur.execute(f"""
+                            UPDATE {schema}.manufacturing_order_direct_costs
+                            SET {j_col} = NULL
+                            WHERE company_id = %s AND {j_col} = %s
+                        """, (int(company_id), int(journal_id)))
+
             conn.commit()
             return reversal_journal_id
         
@@ -85792,6 +85886,190 @@ class DatabaseService:
                 "updated_by_user_id": updated["updated_by_user_id"],
                 "updated_at": updated["updated_at"],
             }
+
+    def reverse_manufacturing_order_asset_depreciation(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        user_id: int | None = None,
+        reason: str | None = None,
+        cur=None,
+    ) -> List[int]:
+        """
+        Reverses all journals posted by post_manufacturing_order_asset_depreciation
+        for a specific manufacturing order (Labour, Direct Costs, and UOP Depreciation).
+        """
+        schema = self.company_schema(company_id)
+        reversed_journal_ids: List[int] = []
+
+        def _run(c):
+            # ------------------------------------------------------------
+            # 1. Collect all Asset Depreciation journals for this MO
+            # ------------------------------------------------------------
+            # Detect journal FK column name
+            c.execute(
+                f"""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = %s
+                AND table_name = 'asset_depreciation'
+                AND column_name IN ('posted_journal_id', 'journal_id', 'journal_entry_id')
+                ORDER BY CASE column_name
+                    WHEN 'posted_journal_id' THEN 1
+                    WHEN 'journal_id' THEN 2
+                    ELSE 3
+                END
+                LIMIT 1
+                """,
+                (schema,),
+            )
+            col_match = c.fetchone()
+            dep_journal_col = (
+                (col_match["column_name"] if isinstance(col_match, dict) else col_match[0])
+                if col_match
+                else "posted_journal_id"
+            )
+
+            c.execute(
+                f"""
+                SELECT DISTINCT {dep_journal_col} AS jid
+                FROM {schema}.asset_depreciation
+                WHERE company_id = %s
+                  AND source_type = 'manufacturing_order'
+                  AND source_id = %s
+                  AND {dep_journal_col} IS NOT NULL
+                  AND status = 'posted'
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+            dep_journal_rows = c.fetchall() or []
+            dep_jids = [
+                int(r["jid"] if isinstance(r, dict) else r[0])
+                for r in dep_journal_rows
+                if (r["jid"] if isinstance(r, dict) else r[0])
+            ]
+
+            # ------------------------------------------------------------
+            # 2. Collect Labour journals for this MO
+            # ------------------------------------------------------------
+            labour_jids = []
+            for t_name in ("manufacturing_order_labour", "manufacturing_order_labor"):
+                c.execute(
+                    """
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = %s AND table_name = %s LIMIT 1
+                    """,
+                    (schema, t_name),
+                )
+                if c.fetchone():
+                    c.execute(
+                        f"""
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = %s AND table_name = %s
+                        AND column_name IN ('posted_journal_id', 'journal_id', 'journal_entry_id')
+                        LIMIT 1
+                        """,
+                        (schema, t_name),
+                    )
+                    col_info = c.fetchone()
+                    if col_info:
+                        j_col = col_info["column_name"] if isinstance(col_info, dict) else col_info[0]
+                        c.execute(
+                            f"""
+                            SELECT DISTINCT {j_col} AS jid
+                            FROM {schema}.{t_name}
+                            WHERE company_id = %s
+                              AND manufacturing_order_id = %s
+                              AND {j_col} IS NOT NULL
+                            """,
+                            (company_id, int(manufacturing_order_id)),
+                        )
+                        for r in c.fetchall() or []:
+                            jid_val = r["jid"] if isinstance(r, dict) else r[0]
+                            if jid_val:
+                                labour_jids.append(int(jid_val))
+                    break
+
+            # ------------------------------------------------------------
+            # 3. Collect Direct Cost journals for this MO
+            # ------------------------------------------------------------
+            direct_cost_jids = []
+            c.execute(
+                """
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = %s AND table_name = 'manufacturing_order_direct_costs' LIMIT 1
+                """,
+                (schema,),
+            )
+            if c.fetchone():
+                c.execute(
+                    f"""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = %s AND table_name = 'manufacturing_order_direct_costs'
+                    AND column_name IN ('posted_journal_id', 'journal_id', 'journal_entry_id')
+                    LIMIT 1
+                    """,
+                    (schema,),
+                )
+                col_info = c.fetchone()
+                if col_info:
+                    j_col = col_info["column_name"] if isinstance(col_info, dict) else col_info[0]
+                    c.execute(
+                        f"""
+                        SELECT DISTINCT {j_col} AS jid
+                        FROM {schema}.manufacturing_order_direct_costs
+                        WHERE company_id = %s
+                          AND manufacturing_order_id = %s
+                          AND {j_col} IS NOT NULL
+                        """,
+                        (company_id, int(manufacturing_order_id)),
+                    )
+                    for r in c.fetchall() or []:
+                        jid_val = r["jid"] if isinstance(r, dict) else r[0]
+                        if jid_val:
+                            direct_cost_jids.append(int(jid_val))
+
+            # ------------------------------------------------------------
+            # 4. Reverse each journal via reverse_journal
+            # ------------------------------------------------------------
+            all_target_jids = list(dict.fromkeys(dep_jids + labour_jids + direct_cost_jids))
+
+            rev_reason = reason or f"Reversal of production posting for MO #{manufacturing_order_id}"
+            payload = {
+                "date": date.today().isoformat(),
+                "reason": rev_reason,
+            }
+
+            for target_jid in all_target_jids:
+                # Check if already reversed
+                c.execute(
+                    f"SELECT reversed_by_journal_id FROM {schema}.journal WHERE id = %s",
+                    (target_jid,),
+                )
+                j_row = c.fetchone()
+                if j_row:
+                    reversed_by = j_row["reversed_by_journal_id"] if isinstance(j_row, dict) else j_row[0]
+                    if reversed_by:
+                        continue  # Already reversed, skip
+
+                rev_id = self.reverse_journal(
+                    company_id=company_id,
+                    journal_id=target_jid,
+                    payload=payload,
+                )
+                reversed_journal_ids.append(rev_id)
+
+            return reversed_journal_ids
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            res = _run(cur2)
+            conn.commit()
+            return res
 
     def post_manufacturing_order_asset_depreciation(
         self,
