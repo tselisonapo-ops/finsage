@@ -129760,12 +129760,8 @@ async function openManufacturingOrderDetail(orderId) {
   const getEmployeeRole = employee => String(employee?.role || employee?.job_title || employee?.position || employee?.designation || employee?.job_role || "").trim();
 
   const getHourlyRate = setup => {
-    const contractType = String(setup?.contract?.salary_type || "").trim().toLowerCase();
     const contractRate = Number(setup?.contract?.hourly_rate ?? 0);
-
-    if ((contractType === "hourly" || contractType === "hourly_rate") && contractRate > 0) {
-      return contractRate;
-    }
+    if (contractRate > 0) return contractRate;
 
     const payBasis = String(setup?.pay_basis || "").trim().toLowerCase();
     const setupRate = Number(setup?.rate ?? 0);
