@@ -187,17 +187,68 @@ def get_pnl_full_v2(
     def _is_manufacturing_row(r: Dict[str, Any]) -> bool:
         if not is_manufacturing:
             return False
-        role = str(r.get("role") or (r.get("raw_row") or {}).get("role") or "").strip().lower()
+
+        raw = r.get("raw_row") or {}
+
+        role = str(
+            r.get("role")
+            or raw.get("role")
+            or ""
+        ).strip().lower()
+
         if role in (
             "direct_materials_cost",
             "direct_labour_cost",
+            "direct_labor_cost",
             "direct_subcontractor_cost",
             "manufacturing_overhead",
             "manufacturing_wip",
         ):
             return True
-        code = _row_key(r)
-        return code.startswith("PL_MFG_") or code.startswith("MFG_")
+
+        code = _row_key(r).upper()
+
+        if code.startswith("PL_MFG_") or code.startswith("MFG_"):
+            return True
+
+        # Manufacturing production-cost accounts may arrive from the
+        # trial balance without their COA role. Fall back to the
+        # account's descriptive fields in that case.
+        text = " ".join(
+            str(r.get(k) or raw.get(k) or "")
+            for k in (
+                "name",
+                "account_name",
+                "description",
+                "category",
+                "subcategory",
+                "section",
+                "standard",
+            )
+        ).strip().lower()
+
+        if any(x in text for x in (
+            "direct material",
+            "materials consumed",
+            "material consumed",
+            "direct labour",
+            "direct labor",
+            "production labour",
+            "production labor",
+            "direct production wage",
+            "production line wage",
+            "direct subcontractor",
+            "subcontracted production",
+            "subcontracted manufacturing",
+            "manufacturing overhead",
+            "production overhead",
+            "factory overhead",
+            "manufacturing cost",
+            "production cost",
+        )):
+            return True
+
+        return False
 
     def _is_pnl_row(r: Dict[str, Any]) -> bool:
         if _is_manufacturing_row(r):
