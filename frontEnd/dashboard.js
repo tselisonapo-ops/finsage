@@ -130472,11 +130472,105 @@ function renderManufacturingDispatchDocument(documentData) {
   const doc =
     documentData || {};
 
+  const company =
+    doc.company || {};
+
+  const production =
+    doc.production_order || {};
+
+  const product =
+    doc.product || {};
+
+  const sections =
+    doc.sections || {};
+
   const modal =
     document.createElement("div");
 
   modal.className =
     "fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4";
+
+  const destination =
+    sections.issue_to ||
+    sections.to_location ||
+    sections.sales_location ||
+    sections.delivery_to ||
+    doc.destination ||
+    "—";
+
+  const documentTitle =
+    doc.document_title ||
+    doc.title ||
+    "Dispatch Document";
+
+  const documentType =
+    doc.document_short_title ||
+    doc.short_title ||
+    doc.document_type ||
+    "—";
+
+  const documentDate =
+    doc.date ||
+    doc.tx_date ||
+    "—";
+
+  const productionNumber =
+    production.number ||
+    doc.mo_no ||
+    "—";
+
+  const finishedProduct =
+    product.name ||
+    doc.finished_item_name ||
+    "Finished Goods";
+
+  const quantity =
+    product.quantity ??
+    doc.quantity ??
+    0;
+
+  const unit =
+    product.unit ||
+    doc.unit ||
+    "";
+
+  const receivedBy =
+    doc.received_by ||
+    sections.received_by ||
+    "—";
+
+  const companyName =
+    company.name ||
+    doc.company_name ||
+    "Company";
+
+  const companyAddress =
+    company.physical_address ||
+    "";
+
+  const companyPostalAddress =
+    company.postal_address ||
+    "";
+
+  const companyPhone =
+    company.company_phone ||
+    "";
+
+  const companyEmail =
+    company.company_email ||
+    "";
+
+  const companyRegNo =
+    company.company_reg_no ||
+    "";
+
+  const companyTin =
+    company.tin ||
+    "";
+
+  const companyVat =
+    company.vat ||
+    "";
 
   modal.innerHTML = `
     <div
@@ -130487,7 +130581,7 @@ function renderManufacturingDispatchDocument(documentData) {
 
         <div>
           <div class="font-semibold text-slate-800">
-            ${esc(doc.title || "Dispatch Document")}
+            ${esc(documentTitle)}
           </div>
 
           <div class="text-xs text-slate-500 font-mono">
@@ -130521,51 +130615,131 @@ function renderManufacturingDispatchDocument(documentData) {
           id="manufacturingDispatchDocument"
           class="bg-white mx-auto shadow-sm p-8 max-w-3xl">
 
-          <div class="flex justify-between gap-6 border-b pb-5">
+          <!-- COMPANY HEADER -->
 
-            <div>
+          <div
+            class="flex justify-between gap-8 border-b-2 border-slate-800 pb-5">
+
+            <div class="flex-1">
+
+              ${
+                company.logo_url
+                  ? `
+                    <img
+                      src="${esc(company.logo_url)}"
+                      alt="${esc(companyName)}"
+                      class="max-h-16 max-w-[220px] object-contain mb-2">
+                  `
+                  : ""
+              }
+
               <div class="text-xl font-bold text-slate-900">
-                ${esc(doc.company_name || "")}
+                ${esc(companyName)}
               </div>
 
               ${
-                doc.company_address
+                companyAddress
                   ? `
-                    <div class="text-xs text-slate-500 mt-1">
-                      ${esc(doc.company_address)}
+                    <div class="text-xs text-slate-600 mt-1">
+                      ${esc(companyAddress)}
                     </div>
                   `
                   : ""
               }
+
+              ${
+                companyPostalAddress
+                  ? `
+                    <div class="text-xs text-slate-500 mt-0.5">
+                      ${esc(companyPostalAddress)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyPhone
+                  ? `
+                    <div class="text-xs text-slate-500 mt-1">
+                      Tel: ${esc(companyPhone)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyEmail
+                  ? `
+                    <div class="text-xs text-slate-500">
+                      ${esc(companyEmail)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyRegNo
+                  ? `
+                    <div class="text-xs text-slate-500 mt-1">
+                      Reg No: ${esc(companyRegNo)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyTin
+                  ? `
+                    <div class="text-xs text-slate-500">
+                      TIN: ${esc(companyTin)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyVat
+                  ? `
+                    <div class="text-xs text-slate-500">
+                      VAT: ${esc(companyVat)}
+                    </div>
+                  `
+                  : ""
+              }
+
             </div>
 
-            <div class="text-right">
+            <div class="text-right min-w-[220px]">
 
               <div class="text-2xl font-bold text-slate-900">
-                ${esc(doc.title || "Dispatch Document")}
+                ${esc(documentTitle)}
               </div>
 
-              <div class="font-mono text-sm mt-1">
+              <div class="font-mono text-sm mt-2">
                 ${esc(doc.reference_no || "—")}
               </div>
 
               <div class="text-xs text-slate-500 mt-1">
-                Date: ${esc(doc.tx_date || "—")}
+                Date: ${esc(documentDate)}
               </div>
 
             </div>
 
           </div>
 
-          <div class="grid grid-cols-2 gap-6 py-5 text-sm">
+
+          <!-- DOCUMENT DETAILS -->
+
+          <div
+            class="grid grid-cols-2 gap-x-8 gap-y-5 py-6 text-sm">
 
             <div>
               <div class="text-xs text-slate-500">
                 Production Order
               </div>
 
-              <div class="font-semibold">
-                ${esc(doc.mo_no || "—")}
+              <div class="font-semibold text-slate-900">
+                ${esc(productionNumber)}
               </div>
             </div>
 
@@ -130574,8 +130748,8 @@ function renderManufacturingDispatchDocument(documentData) {
                 Document Type
               </div>
 
-              <div class="font-semibold">
-                ${esc(doc.short_title || doc.document_type || "—")}
+              <div class="font-semibold text-slate-900">
+                ${esc(documentType)}
               </div>
             </div>
 
@@ -130584,18 +130758,28 @@ function renderManufacturingDispatchDocument(documentData) {
                 Finished Product
               </div>
 
-              <div class="font-semibold">
-                ${esc(doc.finished_item_name || "Finished Goods")}
+              <div class="font-semibold text-slate-900">
+                ${esc(finishedProduct)}
               </div>
             </div>
 
             <div>
               <div class="text-xs text-slate-500">
-                Destination
+                ${
+                  doc.channel === "internal_usage"
+                    ? "Issued To"
+                    : doc.channel === "branch_transfer"
+                    ? "Transfer To"
+                    : doc.channel === "retail_sales"
+                    ? "Sales Location"
+                    : doc.channel === "customer_delivery"
+                    ? "Deliver To"
+                    : "Destination"
+                }
               </div>
 
-              <div class="font-semibold">
-                ${esc(doc.destination || "—")}
+              <div class="font-semibold text-slate-900">
+                ${esc(destination)}
               </div>
             </div>
 
@@ -130607,7 +130791,7 @@ function renderManufacturingDispatchDocument(documentData) {
                       Customer
                     </div>
 
-                    <div class="font-semibold">
+                    <div class="font-semibold text-slate-900">
                       ${esc(doc.customer_name)}
                     </div>
                   </div>
@@ -130615,40 +130799,43 @@ function renderManufacturingDispatchDocument(documentData) {
                 : ""
             }
 
-            ${
-              doc.received_by
-                ? `
-                  <div>
-                    <div class="text-xs text-slate-500">
-                      Received / Handled By
-                    </div>
+            <div>
+              <div class="text-xs text-slate-500">
+                Received / Handled By
+              </div>
 
-                    <div class="font-semibold">
-                      ${esc(doc.received_by)}
-                    </div>
-                  </div>
-                `
-                : ""
-            }
+              <div class="font-semibold text-slate-900">
+                ${esc(receivedBy)}
+              </div>
+            </div>
 
           </div>
 
-          <table class="w-full text-sm border-collapse border">
+
+          <!-- DISPATCH TABLE -->
+
+          <table
+            class="w-full text-sm border-collapse border border-slate-300">
 
             <thead class="bg-slate-50">
 
               <tr>
-                <th class="border px-3 py-2 text-left">
+
+                <th
+                  class="border border-slate-300 px-3 py-2 text-left">
                   Finished Goods
                 </th>
 
-                <th class="border px-3 py-2 text-right">
+                <th
+                  class="border border-slate-300 px-3 py-2 text-right">
                   Quantity
                 </th>
 
-                <th class="border px-3 py-2 text-left">
+                <th
+                  class="border border-slate-300 px-3 py-2 text-left">
                   Unit
                 </th>
+
               </tr>
 
             </thead>
@@ -130656,54 +130843,98 @@ function renderManufacturingDispatchDocument(documentData) {
             <tbody>
 
               <tr>
-                <td class="border px-3 py-3 font-semibold">
-                  ${esc(doc.finished_item_name || "Finished Goods")}
+
+                <td
+                  class="border border-slate-300 px-3 py-3 font-semibold">
+                  ${esc(finishedProduct)}
                 </td>
 
-                <td class="border px-3 py-3 text-right font-semibold">
-                  ${esc(doc.quantity ?? 0)}
+                <td
+                  class="border border-slate-300 px-3 py-3 text-right font-semibold">
+                  ${esc(quantity)}
                 </td>
 
-                <td class="border px-3 py-3">
-                  ${esc(doc.unit || "")}
+                <td
+                  class="border border-slate-300 px-3 py-3">
+                  ${esc(unit)}
                 </td>
+
               </tr>
 
             </tbody>
 
           </table>
 
+
+          <!-- NOTES -->
+
           ${
             doc.notes
               ? `
-                <div class="mt-5 border rounded p-3 text-sm">
-                  <div class="text-xs text-slate-500 mb-1">
-                    Notes
+                <div
+                  class="mt-5 border border-slate-300 rounded p-3 text-sm">
+
+                  <div
+                    class="text-xs text-slate-500 mb-1">
+                    Notes / Remarks
                   </div>
 
-                  ${esc(doc.notes)}
+                  <div class="text-slate-800">
+                    ${esc(doc.notes)}
+                  </div>
+
                 </div>
               `
               : ""
           }
 
-          <div class="grid grid-cols-2 gap-10 mt-14">
 
-            <div class="border-t pt-2 text-xs text-slate-500">
+          <!-- SIGNATURES -->
+
+          <div
+            class="grid grid-cols-2 gap-10 mt-16">
+
+            <div
+              class="border-t border-slate-800 pt-2 text-xs text-slate-500">
               Released / Prepared By
+              ${
+                doc.created_by
+                  ? `
+                    <div class="text-sm text-slate-800 font-semibold mt-1">
+                      ${esc(doc.created_by)}
+                    </div>
+                  `
+                  : ""
+              }
             </div>
 
-            <div class="border-t pt-2 text-xs text-slate-500">
+            <div
+              class="border-t border-slate-800 pt-2 text-xs text-slate-500">
               Received By
+              ${
+                receivedBy !== "—"
+                  ? `
+                    <div class="text-sm text-slate-800 font-semibold mt-1">
+                      ${esc(receivedBy)}
+                    </div>
+                  `
+                  : ""
+              }
             </div>
 
           </div>
 
-          <div class="mt-8 pt-4 border-t text-[10px] text-slate-400 text-center">
+
+          <!-- FOOTER -->
+
+          <div
+            class="mt-8 pt-4 border-t text-[10px] text-slate-400 text-center">
+
             ${esc(
               doc.footer_text ||
-              "Generated from FinSage Manufacturing"
+              `${companyName} — ${documentTitle} — ${doc.reference_no || ""}`
             )}
+
           </div>
 
         </div>
@@ -130756,42 +130987,73 @@ function printManufacturingDispatchDocument(modal) {
   printWindow.document.write(`
     <!DOCTYPE html>
     <html>
-      <head>
-        <title>FinSage Dispatch Document</title>
 
-        <meta
-          charset="UTF-8">
+      <head>
+
+        <title>
+          FinSage Dispatch Document
+        </title>
+
+        <meta charset="UTF-8">
 
         <script src="https://cdn.tailwindcss.com"></script>
 
         <style>
+
           @page {
             size: A4;
             margin: 15mm;
           }
 
+          html,
           body {
+            margin: 0;
+            padding: 0;
             background: white;
             font-family: Arial, sans-serif;
           }
 
+          body {
+            padding: 0;
+          }
+
+          #manufacturingDispatchDocument {
+            box-shadow: none !important;
+            max-width: none !important;
+            margin: 0 !important;
+          }
+
           @media print {
+
             body {
               margin: 0;
+              padding: 0;
             }
+
+            #manufacturingDispatchDocument {
+              box-shadow: none !important;
+            }
+
           }
+
         </style>
+
       </head>
 
       <body>
+
         ${documentElement.outerHTML}
 
         <script>
+
           window.onload = function () {
             window.print();
           };
+
         <\/script>
+
       </body>
+
     </html>
   `);
 
