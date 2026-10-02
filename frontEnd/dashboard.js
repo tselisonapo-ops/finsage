@@ -129774,16 +129774,18 @@ async function openManufacturingOrderDetail(orderId) {
       return setupRate;
     }
 
-    const basicSalary = Number(
-      setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0
-    );
-    const normalHours = Number(
-      setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0
-    );
+    const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
+    const normalHours = Number(setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0);
 
-    return basicSalary > 0 && normalHours > 0
-      ? basicSalary / normalHours
-      : 0;
+    return basicSalary > 0 && normalHours > 0 ? basicSalary / normalHours : 0;
+  };
+
+  const updateLabourCost = () => {
+    const hours = Number(labourHours?.value || 0);
+    const rate = Number(labourRate?.value || 0);
+    const cost = Number.isFinite(hours) && Number.isFinite(rate) ? hours * rate : 0;
+
+    if (labourCostInput) labourCostInput.value = fmtMoney(cost);
   };
 
   const populateLabourRateFromSetup = setup => {
@@ -129791,12 +129793,8 @@ async function openManufacturingOrderDetail(orderId) {
 
     const hourlyRate = getHourlyRate(setup);
     const contractType = String(setup?.contract?.salary_type || "").trim().toLowerCase();
-    const basicSalary = Number(
-      setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0
-    );
-    const normalHours = Number(
-      setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0
-    );
+    const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
+    const normalHours = Number(setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0);
 
     if (labourRate) labourRate.value = hourlyRate > 0 ? hourlyRate.toFixed(2) : "";
 
@@ -129804,8 +129802,7 @@ async function openManufacturingOrderDetail(orderId) {
       if ((contractType === "hourly" || contractType === "hourly_rate") && hourlyRate > 0) {
         labourRateInfo.textContent = `Contract hourly rate: ${fmtMoney(hourlyRate)}`;
       } else if (basicSalary > 0 && normalHours > 0 && hourlyRate > 0) {
-        labourRateInfo.textContent =
-          `Basic salary ${fmtMoney(basicSalary)} ÷ ${normalHours.toFixed(2)} hrs = ${fmtMoney(hourlyRate)}/hr`;
+        labourRateInfo.textContent = `Basic salary ${fmtMoney(basicSalary)} ÷ ${normalHours.toFixed(2)} hrs = ${fmtMoney(hourlyRate)}/hr`;
       } else {
         labourRateInfo.textContent = "No valid hourly labour rate is configured in Payroll.";
       }
