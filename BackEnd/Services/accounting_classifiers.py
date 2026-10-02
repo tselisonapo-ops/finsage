@@ -1412,9 +1412,6 @@ def _coa_role_from_text(
         if has_any(
             "project work-in-progress",
             "project work in progress",
-            "work-in-progress",
-            "work in progress",
-            "wip",
             "contract work in progress",
             "engineering projects",
             "unbilled time and costs",
