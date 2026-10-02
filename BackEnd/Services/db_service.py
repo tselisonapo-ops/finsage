@@ -92603,43 +92603,79 @@ class DatabaseService:
                 # 7. Post Accounting Journal Where Required
                 # ----------------------------------------------------------
                 if journal_lines:
-                    journal_id = self.post_journal(
-                        company_id=company_id,
-                        entry={
-                            "date": dispatch_date,
-                            "ref": official_ref,
-                            "description": (
-                                f"Dispatch "
-                                f"({channel.replace('_', ' ').title()}): "
-                                f"{quantity} {default_unit} of "
-                                f"{finished_item}"
-                            ),
-                            "source": "manufacturing_order_dispatch",
-                            "source_id": int(dispatch_id),
-                            "source_table": (
-                                "manufacturing_order_dispatches"
-                            ),
-                            "module_name": "manufacturing",
-                            "event_type": "posted",
-                            "created_by_user_id": created_by_user_id,
-                            "updated_by_user_id": created_by_user_id,
-                            "lines": journal_lines,
-                        },
-                        cur=c,
-                    )
+                    # Prevent duplicate journal posting for the same dispatch.
+                    # The journal uniqueness rule is:
+                    #   (company_id, source, source_id)
+                    #
+                    # If this dispatch was already posted, reuse its existing journal
+                    # instead of attempting to create another one.
 
                     c.execute(
                         f"""
-                        UPDATE {schema}.manufacturing_order_dispatches
-                        SET posted_journal_id = %s
-                        WHERE id = %s
+                        SELECT posted_journal_id
+                        FROM {schema}.manufacturing_order_dispatches
+                        WHERE company_id = %s
+                        AND id = %s
+                        FOR UPDATE
                         """,
                         (
-                            journal_id,
-                            dispatch_id,
+                            company_id,
+                            int(dispatch_id),
                         ),
                     )
 
+                    existing_dispatch = c.fetchone()
+
+                    existing_journal_id = (
+                        existing_dispatch["posted_journal_id"]
+                        if isinstance(existing_dispatch, dict)
+                        else existing_dispatch[0]
+                        if existing_dispatch
+                        else None
+                    )
+
+                    if existing_journal_id:
+                        journal_id = int(existing_journal_id)
+
+                    else:
+                        journal_id = self.post_journal(
+                            company_id=company_id,
+                            entry={
+                                "date": dispatch_date,
+                                "ref": official_ref,
+                                "description": (
+                                    f"Dispatch "
+                                    f"({channel.replace('_', ' ').title()}): "
+                                    f"{quantity} {default_unit} of "
+                                    f"{finished_item}"
+                                ),
+                                "source": "manufacturing_order_dispatch",
+                                "source_id": int(dispatch_id),
+                                "source_table": (
+                                    "manufacturing_order_dispatches"
+                                ),
+                                "module_name": "manufacturing",
+                                "event_type": "posted",
+                                "created_by_user_id": created_by_user_id,
+                                "updated_by_user_id": created_by_user_id,
+                                "lines": journal_lines,
+                            },
+                            cur=c,
+                        )
+
+                        c.execute(
+                            f"""
+                            UPDATE {schema}.manufacturing_order_dispatches
+                            SET posted_journal_id = %s
+                            WHERE company_id = %s
+                            AND id = %s
+                            """,
+                            (
+                                journal_id,
+                                company_id,
+                                int(dispatch_id),
+                            ),
+                        )
             # --------------------------------------------------------------
             # 8. Return Result
             # --------------------------------------------------------------
