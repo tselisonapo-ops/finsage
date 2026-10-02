@@ -13980,56 +13980,81 @@ def get_manufacturing_bom(cid: int, bom_id: int):
 
 @app.route(
     "/api/companies/<int:cid>/manufacturing/boms/<int:bom_id>/lines",
-    methods=["POST", "PUT"],
+    methods=["POST", "PUT", "OPTIONS"],
 )
-@require_auth
 def replace_manufacturing_bom_lines(cid: int, bom_id: int):
-    company_id = int(cid)
+    if request.method == "OPTIONS":
+        return "", 204
 
-    user, err = _company_auth_or_403(company_id)
-    if err:
-        return err
+    @require_auth
+    def _handle():
+        company_id = int(cid)
 
-    try:
-        payload = request.get_json(silent=True) or {}
+        user, err = _company_auth_or_403(company_id)
+        if err:
+            return err
 
-        lines = payload.get("lines")
+        try:
+            payload = request.get_json(silent=True) or {}
 
-        if not isinstance(lines, list):
+            if request.method == "POST":
+                line_id = db_service.add_manufacturing_bom_line(
+                    company_id=company_id,
+                    bom_id=int(bom_id),
+                    item_id=int(payload.get("item_id") or 0),
+                    quantity=payload.get("quantity"),
+                    unit=payload.get("unit"),
+                    scrap_percent=payload.get(
+                        "scrap_percent",
+                        payload.get("scrap_pct", 0),
+                    ),
+                    user_id=int(user.get("id") or 0) or None,
+                )
+
+                return jsonify({
+                    "ok": True,
+                    "line_id": line_id,
+                }), 200
+
+            lines = payload.get("lines")
+
+            if not isinstance(lines, list):
+                return jsonify({
+                    "error": "BOM lines must be provided as a list.",
+                }), 400
+
+            line_ids = db_service.replace_manufacturing_bom_lines(
+                company_id=company_id,
+                bom_id=int(bom_id),
+                lines=lines,
+                user_id=int(user.get("id") or 0) or None,
+            )
+
+            bom = db_service.get_manufacturing_bom(
+                company_id=company_id,
+                bom_id=int(bom_id),
+            )
+
             return jsonify({
-                "error": "BOM lines must be provided as a list.",
+                "ok": True,
+                "line_ids": line_ids,
+                "bom": bom,
+            }), 200
+
+        except ValueError as e:
+            return jsonify({
+                "error": str(e),
             }), 400
 
-        line_ids = db_service.replace_manufacturing_bom_lines(
-            company_id=company_id,
-            bom_id=int(bom_id),
-            lines=lines,
-            user_id=int(user.get("id") or 0) or None,
-        )
+        except Exception as e:
+            current_app.logger.exception(
+                "replace_manufacturing_bom_lines failed"
+            )
+            return jsonify({
+                "error": str(e),
+            }), 400
 
-        bom = db_service.get_manufacturing_bom(
-            company_id=company_id,
-            bom_id=int(bom_id),
-        )
-
-        return jsonify({
-            "ok": True,
-            "line_ids": line_ids,
-            "bom": bom,
-        }), 200
-
-    except ValueError as e:
-        return jsonify({
-            "error": str(e),
-        }), 400
-
-    except Exception as e:
-        current_app.logger.exception(
-            "replace_manufacturing_bom_lines failed"
-        )
-        return jsonify({
-            "error": str(e),
-        }), 400
+    return _handle()
 # ================================================================
 # MANUFACTURING — BOM LINE ADD
 # ================================================================
