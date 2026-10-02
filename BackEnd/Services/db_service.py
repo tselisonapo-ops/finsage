@@ -87150,9 +87150,7 @@ class DatabaseService:
                         "ref": journal_ref,
                         "description": line_desc,
                         "source": "asset_depreciation",
-                        "source_id": int(
-                            manufacturing_order_id
-                        ),
+                        "source_id": overhead_id,
                         "lines": [
                             {
                                 "account_code": wip_code,
