@@ -30792,7 +30792,9 @@ function renderPnLClassicHtml(stmt) {
       `;
     }
 
-    if (b.totals) {
+    // Avoid printing duplicate total row if lines already ended with a subtotal row
+    const hasSubtotalLine = lines.some(ln => ln.is_subtotal && ln.code === "COGM");
+    if (b.totals && !hasSubtotalLine) {
       rows += `
         <tr>
           <td class="py-2 px-2 font-semibold text-slate-900">${esc((b.label || "Total") + " total")}</td>
@@ -31214,20 +31216,28 @@ function renderStatementV2Html(stmt) {
 
     const totals = subtotalRow(`${sec.label} total`, sec.totals, { isTotal: true });
 
-    return `
-      <div class="mb-4">
-        <div class="text-xs font-semibold text-slate-600 mb-1">${esc(sec.label)}</div>
-        <div class="border border-slate-100 rounded-lg overflow-hidden bg-white">
-          <table class="w-full text-xs">
-            <tbody>
-              ${lines}
-              ${totals}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  }
+        // ✅ Add badge check here
+        const isMfg = sec.key === "manufacturing_account";
+        const badge = isMfg 
+          ? `<span class="ml-2 text-[10px] font-normal uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">Production Schedule</span>` 
+          : "";
+
+        return `
+          <div class="mb-4">
+            <div class="text-xs font-semibold text-slate-600 mb-1">
+              ${esc(sec.label)}${badge}
+            </div>
+            <div class="border border-slate-100 rounded-lg overflow-hidden bg-white">
+              <table class="w-full text-xs">
+                <tbody>
+                  ${lines}
+                  ${totals}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+    }
 
   // Hunter blocks renderer (unchanged)
   function renderBlocks() {

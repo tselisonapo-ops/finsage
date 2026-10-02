@@ -17,25 +17,21 @@ def get_pnl_full_v2(
     template: str = "ifrs",
     basis: str = "external",
     compare: str = "none",
-    cols_mode: int = 1,   # kept for API compatibility but forced to 1 internally
+    cols_mode: int = 1,
     detail: str = "summary",
     ctx: Optional[Dict[str, Any]] = None,
-
-    # ✅ NEW: allow caller-supplied priors (resolved by resolver)
     prior_from: Optional[date] = None,
     prior_to: Optional[date] = None,
-
     comparison_ranges: Optional[List[Tuple[date, date]]] = None,
     comparison_years: int = 1,
-
-    # ✅ swallow any future kwargs safely
     **_unused: Any,
 ) -> Dict[str, Any]:
     """
-    IAS 1-style multi-tier P&L (external reporting only).
+    IAS 1-style multi-tier P&L with optional Manufacturing Account section.
     - basis is always treated as 'external'
     - cols_mode is always 1 (Amount / Prior / Delta)
     - detail controls line density: summary | mid | full
+    - when is_manufacturing is True, renders a Manufacturing Account before Revenue
     """
 
     # -----------------------------
@@ -64,7 +60,6 @@ def get_pnl_full_v2(
     if template not in ("ifrs", "npo"):
         template = "ifrs"
 
-    # IAS 1 engine is always external
     basis = (basis or "external").lower()
     if basis not in ("external", "management"):
         basis = "external"
@@ -74,34 +69,20 @@ def get_pnl_full_v2(
         compare = "none"
 
     detail = (detail or "summary").lower()
-    if detail not in (
-        "summary", "mid", "semi", "full", "detailed",
-        "semi-detailed", "semidetailed", "ias1", "collapsed"
-    ):
-        detail = "summary"
-
-    # cols_mode is fixed for IAS 1
-    cols_mode = 1
-
     DETAIL_MAP = {
         "summary": "summary",
         "ias1": "summary",
         "collapsed": "summary",
-        "mid": "mid",
-        "semi": "mid",
-        "semi-detailed": "mid",
-        "semidetailed": "mid",
+        "mid": "semi",
+        "semi": "semi",
+        "semi-detailed": "semi",
+        "semidetailed": "semi",
         "full": "full",
         "detailed": "full",
     }
-    detail = DETAIL_MAP.get(detail, "summary")
+    mode = DETAIL_MAP.get(detail, "summary")
 
-    if detail == "summary":
-        mode = "summary"
-    elif detail == "mid":
-        mode = "semi"
-    else:
-        mode = "full"
+    cols_mode = 1
 
     # -----------------------------
     # Industry switches
@@ -110,12 +91,15 @@ def get_pnl_full_v2(
     is_service_only = bool(prof.get("is_service_only", False))
     show_cogs = uses_cogs and not is_service_only
 
-    # -----------------------------
-    # Inventory method switch
-    # -----------------------------
-    # External = perpetual (show only COGS)
-    # Management/internal = periodic (show trading breakdown)
-    inventory_method = "perpetual" if basis == "external" else "periodic"
+    # ✅ Manufacturing detection
+    pnl_layout_key = (prof.get("pnl_layout") or "").strip().lower()
+    is_manufacturing = bool(
+        prof.get("is_manufacturing")
+        or prof.get("uses_manufacturing")
+        or pnl_layout_key in ("manufacturing", "manufacturing_multi_step", "factory")
+    )
+
+    inventory_method = (prof.get("inventory_method") or "perpetual").lower()
 
     # -----------------------------
     # TB rows for current + comparisons
@@ -156,7 +140,6 @@ def get_pnl_full_v2(
         comparison_labels_by_key[key] = rh.label_period(pf, pt)
 
     has_prior = len(comparison_ranges) > 0
-
     pri_from, pri_to = comparison_ranges[0] if has_prior else (None, None)
     pri_rows = comparison_rows_by_key.get("pri", []) if has_prior else []
 
@@ -164,16 +147,14 @@ def get_pnl_full_v2(
     pri_label = comparison_labels_by_key.get("pri", "") if has_prior else ""
 
     # -----------------------------
-    # Columns (IAS 1: cur/pri(/delta))
+    # Columns
     # -----------------------------
     columns = [{"key": "cur", "label": "Current"}]
 
     if has_prior:
         columns.append({"key": "pri", "label": "Prior"})
-
         for idx in range(2, len(comparison_ranges) + 1):
             columns.append({"key": f"p{idx}", "label": f"Prior {idx}"})
-
         columns.append({"key": "delta", "label": "Δ"})
 
     # -----------------------------
@@ -183,11 +164,6 @@ def get_pnl_full_v2(
         return str(r.get("code") or r.get("account") or "").strip()
 
     def _pnl_contrib(r: Dict[str, Any]) -> float:
-        """
-        Signed contribution:
-          + revenue increases profit
-          - cogs/expense decrease profit
-        """
         kind = ac._classify_tb_row(r)
         dr = float(r.get("debit") or r.get("debit_total") or 0.0)
         cr = float(r.get("credit") or r.get("credit_total") or 0.0)
@@ -202,29 +178,48 @@ def get_pnl_full_v2(
             return cr - dr
         return -(dr - cr)
 
-    def _emit(code: str, name: str, values: Dict[str, float],
-              meta: Optional[dict] = None) -> Dict[str, Any]:
+    def _emit(code: str, name: str, values: Dict[str, float], meta: Optional[dict] = None) -> Dict[str, Any]:
         out = {"code": code or "", "name": name or "", "values": values}
         if meta:
             out["meta"] = meta
         return out
 
+    def _is_manufacturing_row(r: Dict[str, Any]) -> bool:
+        if not is_manufacturing:
+            return False
+        role = str(r.get("role") or (r.get("raw_row") or {}).get("role") or "").strip().lower()
+        if role in (
+            "direct_materials_cost",
+            "direct_labour_cost",
+            "direct_subcontractor_cost",
+            "manufacturing_overhead",
+            "manufacturing_wip",
+        ):
+            return True
+        code = _row_key(r)
+        return code.startswith("PL_MFG_") or code.startswith("MFG_")
+
     def _is_pnl_row(r: Dict[str, Any]) -> bool:
+        if _is_manufacturing_row(r):
+            return True
         k = ac._classify_tb_row(r)
-
-        if basis == "management":
-            # internal view: more permissive
-            return k in ("revenue", "cogs", "expense", "other", "unknown")
-
-        # external view
         return k in ("revenue", "cogs", "expense", "other")
 
     cur_rows = [r for r in cur_rows if _is_pnl_row(r)]
     pri_rows = [r for r in pri_rows if _is_pnl_row(r)] if has_prior else []
 
     def _group_rows(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-        groups = {"revenue": [], "cogs": [], "expense": [], "other": []}
+        groups = {
+            "manufacturing": [],
+            "revenue": [],
+            "cogs": [],
+            "expense": [],
+            "other": [],
+        }
         for r in rows:
+            if _is_manufacturing_row(r):
+                groups["manufacturing"].append(r)
+                continue
             k = ac._classify_tb_row(r)
             if k in groups:
                 groups[k].append(r)
@@ -240,61 +235,43 @@ def get_pnl_full_v2(
         if code in ("1410", "2310"):
             return False
 
-        if "income tax" in text or "corporate tax" in text:
-            return True
-        if "ias 12" in tag:
+        if "income tax" in text or "corporate tax" in text or "ias 12" in tag:
             return True
         return False
 
     def _without_tax(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return [r for r in rows if not _is_tax(r)]
 
-    # -----------------------------
-    # Groups + prior mapping
-    # -----------------------------
     cur_tax_rows = [r for r in cur_rows if _is_tax(r)]
-
     cur_g = _group_rows(_without_tax(cur_rows))
-
     pri_g = _group_rows(_without_tax(pri_rows)) if has_prior else {
-        "revenue": [], "cogs": [], "expense": [], "other": []
-    } 
+        "manufacturing": [], "revenue": [], "cogs": [], "expense": [], "other": []
+    }
 
-    # ----------------------------------
-    # Perpetual view (external only)
-    # Hide periodic trading components
-    # ----------------------------------
-    inventory_method = (prof.get("inventory_method") or "perpetual").lower()
-
+    # Perpetual filter for external view
     if show_cogs and inventory_method == "perpetual":
-        # Only show true COGS lines (from sales inventory hook)
-        # Hide periodic/trading breakdown lines
         def keep_cogs_row(r):
             code = str(r.get("code") or r.get("account") or "")
             if code.startswith("PL_COS_"):
-                return True  # ✅ keep real COGS postings in perpetual
+                return True
             b = ac._pnl_bucket(r, prof)
-            return b not in ("PURCHASES","PURCHASE_DISCOUNTS","PURCHASE_RETURNS","INV_BEGIN","INV_END","FREIGHT_IN")
+            return b not in ("PURCHASES", "PURCHASE_DISCOUNTS", "PURCHASE_RETURNS", "INV_BEGIN", "INV_END", "FREIGHT_IN")
 
         cur_g["cogs"] = [r for r in cur_g["cogs"] if keep_cogs_row(r)]
         if has_prior:
             pri_g["cogs"] = [r for r in pri_g["cogs"] if keep_cogs_row(r)]
-            
 
     # -----------------------------
-    # Prior maps for all comparison periods
+    # Comparison maps
     # -----------------------------
     comparison_by_code: Dict[str, Dict[str, Dict[str, Any]]] = {}
-
     for key, rows_for_key in comparison_rows_by_key.items():
         comparison_by_code[key] = {
-            _row_key(r): r
-            for r in (rows_for_key or [])
+            _row_key(r): r for r in (rows_for_key or [])
         }
 
     def _vals_multi(cur_amt: float, comparison_amounts: Optional[Dict[str, float]] = None) -> Dict[str, float]:
         v = {"cur": float(cur_amt)}
-
         comparison_amounts = comparison_amounts or {}
 
         if has_prior:
@@ -302,31 +279,22 @@ def get_pnl_full_v2(
             v["pri"] = pri_amt
 
             for idx in range(2, len(comparison_ranges) + 1):
-                key = f"p{idx}"
-                v[key] = float(comparison_amounts.get(key, 0.0))
+                k = f"p{idx}"
+                v[k] = float(comparison_amounts.get(k, 0.0))
 
             v["delta"] = float(v["cur"] - v["pri"])
 
         return v
 
-
     def _line_amounts_from_rows(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], float]:
         ranked = sorted(rows, key=lambda r: abs(_pnl_contrib(r)), reverse=True)
-
-        if mode == "summary":
-            show = ranked
-        elif mode == "semi":
-            show = ranked[:8]
-        else:
-            show = ranked
+        show = ranked[:8] if mode == "semi" else ranked
 
         lines: List[Dict[str, Any]] = []
-
         for r in show:
             code = _row_key(r)
             name = r.get("name") or code
 
-            # ✅ Perpetual external view: rename purchases-like COS lines for display
             if show_cogs and inventory_method == "perpetual":
                 if (
                     code.startswith("PL_COS_")
@@ -335,60 +303,52 @@ def get_pnl_full_v2(
                     name = "Cost of sales"
 
             cur_amt = _pnl_contrib(r)
-
             comparison_amounts: Dict[str, float] = {}
 
             if has_prior:
                 for key, by_code in comparison_by_code.items():
                     comparison_row = by_code.get(code)
                     comparison_amounts[key] = (
-                        _pnl_contrib(comparison_row)
-                        if comparison_row
-                        else 0.0
+                        _pnl_contrib(comparison_row) if comparison_row else 0.0
                     )
 
             v = _vals_multi(cur_amt, comparison_amounts)
-
             if not rh.line_has_amount({"values": v}):
                 continue
 
             lines.append(_emit(code, name, v, meta={
                 "section": r.get("section"),
-                "category": r.get("category")
+                "category": r.get("category"),
             }))
 
         total = float(sum(_pnl_contrib(r) for r in rows))
         return lines, total
 
-
     # -----------------------------
-    # Labels / totals
+    # Group totals
     # -----------------------------
     pnl_labels = prof.get("pnl_labels") or {}
     cogs_label = pnl_labels.get("cogs") or ("Cost of sales" if show_cogs else "Cost of revenue")
 
+    mfg_lines, mfg_total   = _line_amounts_from_rows(cur_g["manufacturing"])
     rev_lines, rev_total   = _line_amounts_from_rows(cur_g["revenue"])
     cogs_lines, cogs_total = _line_amounts_from_rows(cur_g["cogs"])
     exp_lines, exp_total   = _line_amounts_from_rows(cur_g["expense"])
     oth_lines, oth_total   = _line_amounts_from_rows(cur_g["other"])
 
-
     def _total_for_group(key: str, group_name: str) -> float:
         rows_for_key = comparison_rows_by_key.get(key, []) or []
         rows_for_key = [r for r in rows_for_key if _is_pnl_row(r)]
-
         tax_filtered = _without_tax(rows_for_key)
         grouped = _group_rows(tax_filtered)
-
         return float(sum(_pnl_contrib(r) for r in grouped.get(group_name, [])))
-
 
     def _tax_total_for_key(key: str) -> float:
         rows_for_key = comparison_rows_by_key.get(key, []) or []
         rows_for_key = [r for r in rows_for_key if _is_pnl_row(r)]
         return float(sum(_pnl_contrib(r) for r in rows_for_key if _is_tax(r)))
 
-
+    mfg_totals_cmp: Dict[str, float] = {}
     rev_totals_cmp: Dict[str, float] = {}
     cogs_totals_cmp: Dict[str, float] = {}
     exp_totals_cmp: Dict[str, float] = {}
@@ -398,7 +358,7 @@ def get_pnl_full_v2(
     if has_prior:
         for idx in range(1, len(comparison_ranges) + 1):
             key = "pri" if idx == 1 else f"p{idx}"
-
+            mfg_totals_cmp[key] = _total_for_group(key, "manufacturing")
             rev_totals_cmp[key] = _total_for_group(key, "revenue")
             cogs_totals_cmp[key] = _total_for_group(key, "cogs")
             exp_totals_cmp[key] = _total_for_group(key, "expense")
@@ -409,7 +369,6 @@ def get_pnl_full_v2(
 
     def _calc_comparison_totals() -> Dict[str, Dict[str, float]]:
         out: Dict[str, Dict[str, float]] = {}
-
         if not has_prior:
             return out
 
@@ -441,35 +400,26 @@ def get_pnl_full_v2(
 
         return out
 
-
     cmp_totals = _calc_comparison_totals()
-
     gross_cur = rev_total + (cogs_total if show_cogs else 0.0)
     op_profit_cur = gross_cur + exp_total
     pbt_cur = op_profit_cur + oth_total
     net_cur = pbt_cur + tax_cur
-
     net_pri = cmp_totals.get("pri", {}).get("net", 0.0)
-
 
     def _comparison_amounts_for(total_key: str) -> Dict[str, float]:
         out: Dict[str, float] = {}
-
         if not has_prior:
             return out
-
         for idx in range(1, len(comparison_ranges) + 1):
             k = "pri" if idx == 1 else f"p{idx}"
             out[k] = float(cmp_totals.get(k, {}).get(total_key, 0.0))
-
         return out
 
-
     # -----------------------------
-    # Sections (IAS 1 style)
+    # Sections Assembly
     # -----------------------------
     out_sections: List[Dict[str, Any]] = []
-
 
     def _section(
         key: str,
@@ -479,7 +429,6 @@ def get_pnl_full_v2(
         comparison_amounts: Optional[Dict[str, float]] = None,
     ):
         totals = _vals_multi(total_cur, comparison_amounts if has_prior else None)
-
         out_sections.append({
             "key": key,
             "label": label,
@@ -487,7 +436,17 @@ def get_pnl_full_v2(
             "totals": totals,
         })
 
+    # ✅ 1. Manufacturing Account Section (Precedes Revenue)
+    if is_manufacturing:
+        _section(
+            "manufacturing_account",
+            "Manufacturing Account (Cost of Production)",
+            mfg_lines,
+            abs(mfg_total),
+            {k: abs(v) for k, v in mfg_totals_cmp.items()},
+        )
 
+    # 2. Revenue
     _section(
         "revenue",
         "Revenue",
@@ -496,6 +455,7 @@ def get_pnl_full_v2(
         rev_totals_cmp,
     )
 
+    # 3. Cost of Sales & Gross Profit
     if show_cogs:
         _section(
             "cogs",
@@ -504,7 +464,6 @@ def get_pnl_full_v2(
             cogs_total,
             cogs_totals_cmp,
         )
-
         _section(
             "gross_profit",
             org_labels["gross_profit"],
@@ -521,6 +480,7 @@ def get_pnl_full_v2(
             rev_totals_cmp,
         )
 
+    # 4. Operating Expenses & Profit
     _section(
         "operating_expenses",
         "Operating expenses",
@@ -528,7 +488,6 @@ def get_pnl_full_v2(
         exp_total,
         exp_totals_cmp,
     )
-
     _section(
         "operating_profit",
         org_labels["operating_income"],
@@ -537,6 +496,7 @@ def get_pnl_full_v2(
         _comparison_amounts_for("operating_profit"),
     )
 
+    # 5. Other & Profit Before Tax
     _section(
         "other",
         "Other income/(expense)",
@@ -544,7 +504,6 @@ def get_pnl_full_v2(
         oth_total,
         oth_totals_cmp,
     )
-
     _section(
         "profit_before_tax",
         org_labels["profit_before_tax"],
@@ -553,11 +512,10 @@ def get_pnl_full_v2(
         _comparison_amounts_for("profit_before_tax"),
     )
 
+    # 6. Tax
     net_values = _vals_multi(net_cur, _comparison_amounts_for("net"))
-
     if abs(tax_cur) > 1e-9 or any(abs(v or 0.0) > 1e-9 for v in tax_totals_cmp.values()):
         tax_lines, _ = _line_amounts_from_rows(cur_tax_rows)
-
         _section(
             "tax",
             org_labels["tax"],
@@ -566,7 +524,9 @@ def get_pnl_full_v2(
             tax_totals_cmp,
         )
 
-
+    # -----------------------------
+    # Comparison periods metadata
+    # -----------------------------
     comparison_periods = []
     if has_prior:
         for idx, (pf, pt) in enumerate(comparison_ranges, start=1):
@@ -585,11 +545,10 @@ def get_pnl_full_v2(
             k = f"p{idx}"
             labels[k] = comparison_labels_by_key.get(k, "")
 
-
     # -----------------------------
-    # Base stmt
+    # Statement response
     # -----------------------------
-    stmt: Dict[str, Any] = {
+    return {
         "meta": {
             "company_id": company_id,
             "company_name": company_name,
@@ -602,7 +561,7 @@ def get_pnl_full_v2(
             "detail": mode,
             "compare": compare if has_prior else "none",
             "cols_mode": cols_mode,
-            "layout": "multi_tier_pnl",
+            "layout": "manufacturing_pnl" if is_manufacturing else "multi_tier_pnl",
             "industry_profile": prof,
             "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
             "prior_period": {"from": pri_from.isoformat(), "to": pri_to.isoformat()} if has_prior else None,

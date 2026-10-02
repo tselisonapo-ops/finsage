@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from typing import Any, Callable, Dict, List, Optional
 from BackEnd.Services import accounting_classifiers as ac
 from . import reporting_helpers as rh
+
 # -----------------------------
 # Shared normalisers (single source of truth)
 # -----------------------------
@@ -15,9 +16,11 @@ def _norm_preview_columns(preview_columns: Any) -> int:
         v = 2
     return 2 if v == 2 else 1
 
+
 def _norm_compare(compare_mode: Optional[str]) -> str:
     cm = (compare_mode or "none").lower().strip()
     return cm if cm in ("none", "prior_period", "prior_year", "multi_year") else "none"
+
 
 def _resolve_cf_columns(
     *,
@@ -99,6 +102,7 @@ def _resolve_cf_columns(
         "columns": columns,
     }
 
+
 def _cf_group_label(row: Dict[str, Any]) -> str:
     role = str(row.get("cf_role") or "").lower()
     bucket = str(row.get("cf_bucket") or "").lower()
@@ -161,6 +165,7 @@ def _aggregate_cf_detail_lines(lines: List[Dict[str, Any]]) -> List[Dict[str, An
         if abs(float(row.get("amount") or 0.0)) > 0.000001
     ]
 
+
 def _has_non_zero(values: dict) -> bool:
     if not values:
         return False
@@ -178,21 +183,19 @@ def _filter_statement_lines(lines):
     for line in lines:
         row_type = str(line.get("row_type") or "").lower()
 
-        # Always keep structural rows
         if row_type in ("header", "subtotal", "total"):
             out.append(line)
             continue
 
-        # Keep rows with expandable detail
         if line.get("detail"):
             out.append(line)
             continue
 
-        # Keep only rows with a value
         if _has_non_zero(line.get("values", {})):
             out.append(line)
 
     return out
+
 
 def _build_cash_journal_analysis(
     *,
@@ -275,6 +278,7 @@ def _build_cash_journal_analysis(
         ),
     }
 
+
 def _aggregate_adjustment_lines(lines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     grouped: Dict[str, Dict[str, Any]] = {}
 
@@ -295,6 +299,7 @@ def _aggregate_adjustment_lines(lines: List[Dict[str, Any]]) -> List[Dict[str, A
         row for row in grouped.values()
         if abs(float(row.get("amount") or 0.0)) > 0.000001
     ]
+
 
 # -----------------------------
 # Types (hooks)
@@ -322,21 +327,12 @@ def build_cashflow_full_v2(
     comparison_years: int = 1,
     prior_from: Optional[date] = None,
     prior_to: Optional[date] = None,
-    preview_columns: int = 2,  # 2 = inflow/outflow UI, 1 = compare-capable
-    cols_mode: int = 1,   # ✅ ADD THIS
+    preview_columns: int = 2,
+    cols_mode: int = 1,
 ) -> Dict[str, Any]:
-    """
-    Cash Flow Statement (Direct method), v2 JSON shape.
-    preview_columns rules:
-      - 2 => force compare_mode="none" (ignore priors)
-      - 1 => allow compare_mode prior_period/prior_year (if priors provided)
-    """
-
-    # ✅ Normalize once
     preview_columns = _norm_preview_columns(preview_columns)
     compare_mode = _norm_compare(compare_mode)
 
-    # ✅ Single source of truth for columns + compare rules
     cfg = _resolve_cf_columns(
         basis=basis,
         cols_mode=cols_mode,
@@ -386,7 +382,6 @@ def build_cashflow_full_v2(
             date_to=dt,
         )
 
-    # Snapshots
     open_as_of_cur = date_from - timedelta(days=1)
     close_as_of_cur = date_to
 
@@ -557,6 +552,7 @@ def build_cashflow_full_v2(
         },
     }
 
+
 def build_cashflow_indirect_v2(
     *,
     get_company_context_fn: GetCompanyContextFn,
@@ -573,20 +569,11 @@ def build_cashflow_indirect_v2(
     prior_from: Optional[date] = None,
     prior_to: Optional[date] = None,
     preview_columns: int = 1,
-    cols_mode: int = 1,  
+    cols_mode: int = 1,
 ) -> Dict[str, Any]:
-    """
-    Cash Flow Statement (Indirect method), v2 JSON shape.
-    preview_columns rules:
-      - 2 => force compare_mode="none" (ignore priors)
-      - 1 => allow compare_mode prior_period/prior_year (if priors provided)
-    """
-
-    # ✅ Normalize once
     preview_columns = _norm_preview_columns(preview_columns)
     compare_mode = _norm_compare(compare_mode)
 
-    # ✅ Single source of truth for columns + compare rules
     cfg = _resolve_cf_columns(
         basis=basis,
         cols_mode=cols_mode,
@@ -651,7 +638,7 @@ def build_cashflow_indirect_v2(
         return out
 
     def _kind_from_row(r: Dict[str, Any]) -> str:
-        return ac._classify_tb_row(r)  # ✅
+        return ac._classify_tb_row(r)
 
     def _bs_signed(kind: str, r: Dict[str, Any]) -> float:
         dr = float(r.get("debit") or r.get("debit_total") or 0.0)
@@ -751,14 +738,14 @@ def build_cashflow_indirect_v2(
                             total += amt
 
             return total
-        
+
         interest_paid = _cash_paid_by_name("interest")
         tax_paid = _cash_paid_by_name("income tax", "tax expense", "tax payable")
         interest_received = _cash_received_by_name("interest income", "interest received")
         dividends_received = _cash_received_by_name("dividend income", "dividends received")
 
         all_codes = set(tb_open.keys()) | set(tb_close.keys())
-        
+
         # --- Get depreciation/amortisation from TB + COA metadata ---
         adjustment_lines: List[Dict[str, Any]] = []
         adjustments_total = 0.0
@@ -792,23 +779,21 @@ def build_cashflow_indirect_v2(
                 bal_open = ac._pnl_amount(r_open) if r_open else 0.0
 
             delta = bal_close - bal_open
-
             adj_amt = None
-
-            # only expense-side accounts belong in operating adjustments
             name_l = name.lower()
 
-            # IAS 7 indirect method adjustments:
-            # Add back non-cash expenses/losses, deduct non-operating income/gains.
+            # ✅ Check for depreciation/amortisation, avoiding capitalized WIP double-counts
             if (
                 role.startswith("depreciation_expense")
                 or role.startswith("amortisation_expense")
+                or role in ("manufacturing_overhead", "direct_machinery_depreciation")
                 or "depreciation" in name_l
                 or "amortisation" in name_l
                 or "amortization" in name_l
             ):
-                adj_amt = abs(delta)
-                detail_group = "Depreciation and amortisation"
+                if role != "manufacturing_wip":
+                    adj_amt = abs(delta)
+                    detail_group = "Depreciation and amortisation"
 
             elif "impairment" in name_l:
                 adj_amt = abs(delta)
@@ -892,7 +877,13 @@ def build_cashflow_indirect_v2(
             for j in journals
         )
 
-        if dep_journal_exists and not resolved_adjustments:
+        # ✅ Check if depreciation was absorbed into WIP
+        mfg_wip_exists = any(
+            str(ac.resolve_account_cf_meta(tb_close.get(c) or tb_open.get(c) or {}).get("role") or "").lower() == "manufacturing_wip"
+            for c in all_codes
+        )
+
+        if dep_journal_exists and not resolved_adjustments and not mfg_wip_exists:
             raise RuntimeError(
                 f"Cash flow rendering blocked: asset_depreciation journals exist for company {company_id}, "
                 f"but no depreciation/amortisation account could be resolved from TB/COA metadata "
@@ -912,6 +903,7 @@ def build_cashflow_indirect_v2(
 
             meta = ac.resolve_account_cf_meta(row_any)
             bucket = str(meta.get("bucket") or "").lower()
+            role = str(meta.get("role") or "").lower()
 
             kind_close = _kind_from_row(r_close) if r_close else _kind_from_row(r_open)
             bal_close = _bs_signed(kind_close, r_close)
@@ -922,7 +914,11 @@ def build_cashflow_indirect_v2(
                 wc["receivables"] += delta
             elif bucket in ("payables", "grni_control", "unallocated_receipts", "deferred_revenue"):
                 wc["payables"] += delta
-            elif bucket == "inventory":
+            # ✅ Captures raw materials, WIP, and finished goods inventory deltas
+            elif (
+                bucket in ("inventory", "wip", "manufacturing_wip", "raw_materials", "finished_goods")
+                or role in ("manufacturing_wip", "raw_materials_inventory", "finished_goods_inventory")
+            ):
                 wc["inventory"] += delta
             elif bucket == "prepaids":
                 wc["prepaids"] += delta
@@ -933,7 +929,7 @@ def build_cashflow_indirect_v2(
         inventory_effect   = -wc["inventory"]
         vat_effect         = -wc["vat"]
         payables_effect    = +wc["payables"]
-        prepaids_effect = -wc["prepaids"]
+        prepaids_effect    = -wc["prepaids"]
 
         operating_profit_before_wc = net_profit + adjustments_total
         cash_generated_from_ops = (
@@ -951,6 +947,7 @@ def build_cashflow_indirect_v2(
             + interest_received
             + dividends_received
         )
+
         if is_ws_2 or is_ws_3:
             lines = [
                 {
@@ -1427,7 +1424,6 @@ def build_cashflow_indirect_v2(
         },
     }
 
-    # Force indirect operating cash to reconcile with direct operating cash
     op_cur["total"] = float(cf_cur["totals"].get("operating") or 0.0)
 
     # Comparisons

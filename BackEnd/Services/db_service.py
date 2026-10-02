@@ -53289,6 +53289,93 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_mfg_eod_disposals_company_mo_idx
         ON {schema}.manufacturing_order_eod_disposals(company_id, manufacturing_order_id);
 
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_outputs (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            manufacturing_order_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_orders(id)
+                ON DELETE RESTRICT,
+
+            bom_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_boms(id)
+                ON DELETE RESTRICT,
+
+            finished_item_name TEXT NOT NULL,
+
+            output_date DATE NOT NULL DEFAULT CURRENT_DATE,
+
+            quantity NUMERIC(18,4) NOT NULL,
+            unit TEXT NULL,
+
+            unit_cost NUMERIC(18,6) NOT NULL DEFAULT 0,
+            total_cost NUMERIC(18,6) NOT NULL DEFAULT 0,
+
+            location TEXT NULL,
+            batch_no TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'posted',
+
+            posted_journal_id INT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id, manufacturing_order_id),
+
+            CHECK (quantity > 0),
+            CHECK (unit_cost >= 0),
+            CHECK (total_cost >= 0),
+
+            CHECK (
+                status IN (
+                    'draft',
+                    'posted',
+                    'cancelled'
+                )
+            )
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_finished_goods_layers (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            manufacturing_order_output_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_order_outputs(id)
+                ON DELETE RESTRICT,
+
+            manufacturing_order_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_orders(id)
+                ON DELETE RESTRICT,
+
+            finished_item_name TEXT NOT NULL,
+
+            location TEXT NULL,
+            batch_no TEXT NULL,
+
+            quantity_in NUMERIC(18,4) NOT NULL DEFAULT 0,
+            quantity_out NUMERIC(18,4) NOT NULL DEFAULT 0,
+
+            unit TEXT NULL,
+
+            unit_cost NUMERIC(18,6) NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK (quantity_in >= 0),
+            CHECK (quantity_out >= 0),
+            CHECK (unit_cost >= 0)
+        );
+
+
+        ALTER TABLE {schema}.manufacturing_orders
+        ADD COLUMN IF NOT EXISTS output_id INT NULL;
+
         -- ============================================================
         -- INVENTORY WRITE-DOWN REASONS TABLE & AUDIT HOOKS
         -- ============================================================
@@ -85719,47 +85806,553 @@ class DatabaseService:
 
         schema = self.company_schema(company_id)
 
-        def _resolve_wip_account(c) -> str | None:
+        def _resolve_role_account(c, role: str) -> str | None:
             """
-            Look up the manufacturing WIP / production WIP account by COA role.
+            Resolve a posting account strictly by COA role.
+
+            Manufacturing posting must never depend on hardcoded account
+            codes because companies may map the same manufacturing role
+            to different account codes.
             """
-            # 1. Try helper if available on db_service
-            if hasattr(self, "ensure_required_coa_account") and callable(getattr(self, "ensure_required_coa_account")):
+            if hasattr(self, "ensure_required_coa_account") and callable(
+                getattr(self, "ensure_required_coa_account")
+            ):
                 row = self.ensure_required_coa_account(
                     company_id,
-                    "manufacturing_wip",
+                    role,
                     cur=c,
                     required=False,
                 )
                 if row and row.get("code"):
-                    return row["code"].strip()
+                    return str(row["code"]).strip()
 
-            # 2. Query COA by role directly
             c.execute(
                 f"""
                 SELECT code
                 FROM {schema}.coa
                 WHERE company_id = %s
-                  AND LOWER(TRIM(COALESCE(role, ''))) IN (
-                      'manufacturing_wip',
-                      'production_wip',
-                      'wip_inventory',
-                      'work_in_progress'
-                  )
-                  AND posting IS TRUE
+                AND LOWER(TRIM(COALESCE(role, ''))) = LOWER(%s)
+                AND posting IS TRUE
                 ORDER BY code
                 LIMIT 1
                 """,
-                (company_id,),
+                (company_id, role),
             )
-            r = c.fetchone()
-            if r:
-                return (r["code"] if isinstance(r, dict) else r[0]).strip()
 
-            return None
+            row = c.fetchone()
+
+            if not row:
+                return None
+
+            return str(
+                row["code"] if isinstance(row, dict) else row[0]
+            ).strip()
+
+        def _require_role_account(c, role: str, label: str) -> str:
+            code = _resolve_role_account(c, role)
+
+            if not code:
+                raise ValueError(
+                    f"UNRESOLVED_MANUFACTURING_ACCOUNT|"
+                    f"Unable to resolve COA role '{role}' for {label}"
+                )
+
+            return code
+
+        def _rows_to_dicts(c):
+            rows = c.fetchall()
+
+            columns = [d[0] for d in c.description]
+
+            return [
+                dict(r) if isinstance(r, dict) else dict(zip(columns, r))
+                for r in rows
+            ]
+
+        def _post_production_cost(
+            c,
+            *,
+            amount: float,
+            credit_account_code: str,
+            credit_role: str,
+            journal_ref: str,
+            description: str,
+            tx_date,
+            source_table: str,
+            source_id: int,
+        ):
+            """
+            Absorb one production cost into Manufacturing WIP.
+
+            Dr Manufacturing WIP
+            Cr Production Cost Account
+            """
+
+            amount = round(float(amount or 0.0), 2)
+
+            if amount <= 0:
+                return None
+
+            wip_code = _require_role_account(
+                c,
+                "manufacturing_wip",
+                "manufacturing WIP absorption",
+            )
+
+            if not credit_account_code:
+                raise ValueError(
+                    f"UNRESOLVED_MANUFACTURING_ACCOUNT|"
+                    f"Unable to resolve credit account for role "
+                    f"'{credit_role}'"
+                )
+
+            journal_payload: Dict[str, Any] = {
+                "date": (
+                    tx_date.isoformat()
+                    if hasattr(tx_date, "isoformat")
+                    else str(tx_date)
+                ),
+                "ref": journal_ref,
+                "description": description,
+                "source": "manufacturing",
+                "source_id": int(source_id),
+                "source_table": source_table,
+                "module_name": "manufacturing",
+                "event_type": "posted",
+                "created_by_user_id": user_id,
+                "updated_by_user_id": user_id,
+                "prepared_by_user_id": user_id,
+                "lines": [
+                    {
+                        "account_code": wip_code,
+                        "debit": amount,
+                        "credit": 0.0,
+                        "description": (
+                            f"Manufacturing WIP Absorption - "
+                            f"{description}"
+                        ),
+                    },
+                    {
+                        "account_code": credit_account_code,
+                        "debit": 0.0,
+                        "credit": amount,
+                        "description": (
+                            f"Production Cost - {credit_role} - "
+                            f"{description}"
+                        ),
+                    },
+                ],
+            }
+
+            return self.post_journal(
+                company_id=company_id,
+                entry=journal_payload,
+                cur=c,
+            )
 
         def _run(c):
-            # 1. Fetch unposted overhead lines linked to assets
+
+            # ============================================================
+            # 1. FETCH PRODUCTION ORDER
+            # ============================================================
+
+            c.execute(
+                f"""
+                SELECT *
+                FROM {schema}.manufacturing_orders
+                WHERE company_id = %s
+                AND id = %s
+                FOR UPDATE
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+
+            order_row = c.fetchone()
+
+            if not order_row:
+                raise ValueError(
+                    f"MANUFACTURING_ORDER_NOT_FOUND|"
+                    f"Production order {manufacturing_order_id} "
+                    f"does not exist"
+                )
+
+            order_columns = [d[0] for d in c.description]
+
+            order = (
+                dict(order_row)
+                if isinstance(order_row, dict)
+                else dict(zip(order_columns, order_row))
+            )
+
+            tx_date = order.get("tx_date") or date.today()
+
+            actual_output = float(
+                order.get("actual_qty")
+                or order.get("actual_output")
+                or 0
+            )
+
+            if actual_output <= 0:
+                raise ValueError(
+                    f"INVALID_ACTUAL_OUTPUT|"
+                    f"Production order {mo_no} has no actual output"
+                )
+
+            # ============================================================
+            # 2. RESOLVE MANUFACTURING ROLES
+            # ============================================================
+
+            wip_code = _require_role_account(
+                c,
+                "manufacturing_wip",
+                "manufacturing production posting",
+            )
+
+            direct_materials_code = _resolve_role_account(
+                c,
+                "direct_materials_cost",
+            )
+
+            direct_labour_code = _resolve_role_account(
+                c,
+                "direct_labour_cost",
+            )
+
+            direct_subcontractor_code = _resolve_role_account(
+                c,
+                "direct_subcontractor_cost",
+            )
+
+            manufacturing_overhead_code = _resolve_role_account(
+                c,
+                "manufacturing_overhead",
+            )
+
+            # ============================================================
+            # 3. DIRECT MATERIALS
+            #
+            # Materials are absorbed into WIP only when they have not
+            # already been posted by the material-usage process.
+            # ============================================================
+
+            material_rows = []
+
+            c.execute(
+                f"""
+                SELECT *
+                FROM {schema}.manufacturing_order_materials
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                FOR UPDATE
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+
+            material_rows = _rows_to_dicts(c)
+
+            material_total = 0.0
+
+            for material in material_rows:
+
+                amount = float(
+                    material.get("total_cost")
+                    or material.get("cost")
+                    or material.get("extended_cost")
+                    or 0
+                )
+
+                if amount <= 0:
+                    continue
+
+                # Material usage is already responsible for the actual
+                # inventory -> WIP journal. Therefore we do NOT create
+                # another material journal here.
+                material_total += amount
+
+            # ============================================================
+            # 4. DIRECT LABOUR
+            #
+            # Dr Manufacturing WIP
+            # Cr account with role = direct_labour_cost
+            # ============================================================
+
+            labour_tables = [
+                "manufacturing_order_labour",
+                "manufacturing_order_labor",
+            ]
+
+            labour_table = None
+
+            for table_name in labour_tables:
+                c.execute(
+                    """
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = %s
+                    AND table_name = %s
+                    LIMIT 1
+                    """,
+                    (schema, table_name),
+                )
+
+                if c.fetchone():
+                    labour_table = table_name
+                    break
+
+            if labour_table and direct_labour_code:
+
+                c.execute(
+                    f"""
+                    SELECT *
+                    FROM {schema}.{labour_table}
+                    WHERE company_id = %s
+                    AND manufacturing_order_id = %s
+                    FOR UPDATE
+                    """,
+                    (company_id, int(manufacturing_order_id)),
+                )
+
+                labour_rows = _rows_to_dicts(c)
+
+                for labour in labour_rows:
+
+                    amount = float(
+                        labour.get("total_cost")
+                        or labour.get("labour_cost")
+                        or labour.get("labor_cost")
+                        or labour.get("amount")
+                        or labour.get("cost")
+                        or 0
+                    )
+
+                    if amount <= 0:
+                        continue
+
+                    labour_id = int(
+                        labour.get("id")
+                        or 0
+                    )
+
+                    journal_ref = (
+                        f"LAB/{mo_no}/{labour_id}"
+                    )
+
+                    journal_id = _post_production_cost(
+                        c,
+                        amount=amount,
+                        credit_account_code=direct_labour_code,
+                        credit_role="direct_labour_cost",
+                        journal_ref=journal_ref,
+                        description=(
+                            f"Direct Labour - {mo_no}"
+                        ),
+                        tx_date=tx_date,
+                        source_table=labour_table,
+                        source_id=(
+                            labour_id
+                            or int(manufacturing_order_id)
+                        ),
+                    )
+
+                    # Stamp journal where the table supports it.
+                    c.execute(
+                        """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = %s
+                        AND table_name = %s
+                        AND column_name IN (
+                            'posted_journal_id',
+                            'journal_id',
+                            'journal_entry_id'
+                        )
+                        ORDER BY CASE column_name
+                            WHEN 'posted_journal_id' THEN 1
+                            WHEN 'journal_id' THEN 2
+                            ELSE 3
+                        END
+                        LIMIT 1
+                        """,
+                        (schema, labour_table),
+                    )
+
+                    journal_col = c.fetchone()
+
+                    if journal_col and labour_id:
+
+                        journal_column = (
+                            journal_col["column_name"]
+                            if isinstance(journal_col, dict)
+                            else journal_col[0]
+                        )
+
+                        c.execute(
+                            f"""
+                            UPDATE {schema}.{labour_table}
+                            SET {journal_column} = %s
+                            WHERE company_id = %s
+                            AND id = %s
+                            """,
+                            (
+                                journal_id,
+                                company_id,
+                                labour_id,
+                            ),
+                        )
+
+            # ============================================================
+            # 5. DIRECT PRODUCTION COSTS
+            #
+            # Dr Manufacturing WIP
+            # Cr direct subcontractor / other production cost role
+            # ============================================================
+
+            direct_cost_table = "manufacturing_order_direct_costs"
+
+            c.execute(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = %s
+                AND table_name = %s
+                LIMIT 1
+                """,
+                (schema, direct_cost_table),
+            )
+
+            if c.fetchone():
+
+                c.execute(
+                    f"""
+                    SELECT *
+                    FROM {schema}.{direct_cost_table}
+                    WHERE company_id = %s
+                    AND manufacturing_order_id = %s
+                    FOR UPDATE
+                    """,
+                    (
+                        company_id,
+                        int(manufacturing_order_id),
+                    ),
+                )
+
+                direct_rows = _rows_to_dicts(c)
+
+                for direct_cost in direct_rows:
+
+                    amount = float(
+                        direct_cost.get("amount")
+                        or direct_cost.get("total_cost")
+                        or direct_cost.get("cost")
+                        or 0
+                    )
+
+                    if amount <= 0:
+                        continue
+
+                    cost_id = int(
+                        direct_cost.get("id")
+                        or 0
+                    )
+
+                    cost_type = str(
+                        direct_cost.get("cost_type")
+                        or direct_cost.get("type")
+                        or direct_cost.get("category")
+                        or ""
+                    ).lower()
+
+                    if (
+                        "subcontract" in cost_type
+                        and direct_subcontractor_code
+                    ):
+                        credit_code = direct_subcontractor_code
+                        credit_role = "direct_subcontractor_cost"
+
+                    elif manufacturing_overhead_code:
+                        credit_code = manufacturing_overhead_code
+                        credit_role = "manufacturing_overhead"
+
+                    else:
+                        raise ValueError(
+                            f"UNRESOLVED_MANUFACTURING_ACCOUNT|"
+                            f"Direct production cost {cost_id} cannot "
+                            f"be mapped to a configured production role"
+                        )
+
+                    journal_ref = (
+                        f"DIR/{mo_no}/{cost_id}"
+                    )
+
+                    journal_id = _post_production_cost(
+                        c,
+                        amount=amount,
+                        credit_account_code=credit_code,
+                        credit_role=credit_role,
+                        journal_ref=journal_ref,
+                        description=(
+                            f"Direct Production Cost - {mo_no}"
+                        ),
+                        tx_date=tx_date,
+                        source_table=direct_cost_table,
+                        source_id=(
+                            cost_id
+                            or int(manufacturing_order_id)
+                        ),
+                    )
+
+                    c.execute(
+                        """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = %s
+                        AND table_name = %s
+                        AND column_name IN (
+                            'posted_journal_id',
+                            'journal_id',
+                            'journal_entry_id'
+                        )
+                        ORDER BY CASE column_name
+                            WHEN 'posted_journal_id' THEN 1
+                            WHEN 'journal_id' THEN 2
+                            ELSE 3
+                        END
+                        LIMIT 1
+                        """,
+                        (schema, direct_cost_table),
+                    )
+
+                    journal_col = c.fetchone()
+
+                    if journal_col and cost_id:
+
+                        journal_column = (
+                            journal_col["column_name"]
+                            if isinstance(journal_col, dict)
+                            else journal_col[0]
+                        )
+
+                        c.execute(
+                            f"""
+                            UPDATE {schema}.{direct_cost_table}
+                            SET {journal_column} = %s
+                            WHERE company_id = %s
+                            AND id = %s
+                            """,
+                            (
+                                journal_id,
+                                company_id,
+                                cost_id,
+                            ),
+                        )
+
+            # ============================================================
+            # 6. ASSET DEPRECIATION / MANUFACTURING OVERHEAD
+            #
+            # Existing UOP depreciation logic retained, but the debit is
+            # ALWAYS Manufacturing WIP.
+            # ============================================================
+
             c.execute(
                 f"""
                 SELECT
@@ -85781,182 +86374,270 @@ class DatabaseService:
                     ON mo.id = o.manufacturing_order_id
                     AND mo.company_id = o.company_id
                 WHERE o.company_id = %s
-                  AND o.manufacturing_order_id = %s
-                  AND o.asset_id IS NOT NULL
-                  AND o.asset_depreciation_id IS NULL
-                  AND COALESCE(o.allocated_amount, 0) > 0
+                AND o.manufacturing_order_id = %s
+                AND o.asset_id IS NOT NULL
+                AND o.asset_depreciation_id IS NULL
+                AND COALESCE(o.allocated_amount, 0) > 0
                 FOR UPDATE OF o
                 """,
-                (company_id, int(manufacturing_order_id)),
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
             )
 
-            overhead_rows = c.fetchall()
-            if not overhead_rows:
-                return
+            overhead_rows = _rows_to_dicts(c)
 
-            from BackEnd.Services.assets.posting import resolve_depreciation_accounts
+            if overhead_rows:
 
-            columns = [d[0] for d in c.description]
-            overheads = [
-                dict(r) if isinstance(r, dict) else dict(zip(columns, r))
-                for r in overhead_rows
-            ]
-
-            # Detect journal FK column (in DDL it is 'posted_journal_id')
-            c.execute(
-                f"""
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = %s
-                  AND table_name = 'asset_depreciation'
-                  AND column_name IN ('posted_journal_id', 'journal_id', 'journal_entry_id')
-                ORDER BY CASE column_name
-                    WHEN 'posted_journal_id' THEN 1
-                    WHEN 'journal_id' THEN 2
-                    ELSE 3
-                END
-                LIMIT 1
-                """,
-                (schema,),
-            )
-            col_match = c.fetchone()
-            journal_fk_col = (col_match["column_name"] if isinstance(col_match, dict) else col_match[0]) if col_match else "posted_journal_id"
-
-            for item in overheads:
-                amount = round(float(item.get("allocated_amount") or 0.0), 2)
-                if amount <= 0:
-                    continue
-
-                overhead_id = int(item["overhead_id"])
-                asset_id = int(item["asset_id"])
-                asset_name = item.get("name") or item.get("asset_name") or f"Asset #{asset_id}"
-                tx_date = item.get("tx_date") or date.today()
-                tx_date_str = tx_date.isoformat() if hasattr(tx_date, "isoformat") else str(tx_date)
-
-                # 2. Resolve accounts using resolve_depreciation_accounts
-                dep_exp_code, acc_dep_code = resolve_depreciation_accounts(
-                    cur=c,
-                    schema=schema,
-                    company_id=company_id,
-                    asset=item,
-                    persist=True,
-                    return_names=False,
+                from BackEnd.Services.assets.posting import (
+                    resolve_depreciation_accounts,
                 )
 
-                if not acc_dep_code:
-                    raise ValueError(
-                        f"UNRESOLVED_ACCUM_DEPR_ACCOUNT|Unable to resolve accumulated depreciation "
-                        f"account for asset '{asset_name}' (ID={asset_id})"
-                    )
-
-                # 3. For Manufacturing absorption: Debit Manufacturing WIP
-                wip_code = _resolve_wip_account(c)
-                debit_account_code = wip_code or dep_exp_code
-
-                if not debit_account_code:
-                    raise ValueError(
-                        f"UNRESOLVED_DEBIT_ACCOUNT|Unable to resolve manufacturing WIP or depreciation "
-                        f"expense account for asset '{asset_name}' (ID={asset_id})"
-                    )
-
-                # Unique reference to prevent DUPLICATE_JOURNAL_REF in post_journal
-                journal_ref = f"DEP/{mo_no}/{overhead_id}"
-                line_desc = (
-                    f"UOP Depreciation ({asset_name}) - "
-                    f"{item.get('quantity', 0)} {item.get('basis', 'hrs')} @ {item.get('rate', 0)} via {mo_no}"
-                )
-
-                # 4. Build payload for post_journal
-                journal_payload: Dict[str, Any] = {
-                    "date": tx_date_str,
-                    "ref": journal_ref,
-                    "description": line_desc,
-                    "source": "asset_depreciation",
-                    "source_id": int(manufacturing_order_id),
-                    "source_table": "manufacturing_order_overhead",
-                    "module_name": "manufacturing",
-                    "event_type": "posted",
-                    "created_by_user_id": user_id,
-                    "updated_by_user_id": user_id,
-                    "prepared_by_user_id": user_id,
-                    "lines": [
-                        {
-                            "account_code": debit_account_code,
-                            "debit": amount,
-                            "credit": 0.0,
-                            "description": f"Manufacturing WIP Absorption - {asset_name} ({mo_no})",
-                        },
-                        {
-                            "account_code": acc_dep_code,
-                            "debit": 0.0,
-                            "credit": amount,
-                            "description": f"Accumulated Depreciation - {asset_name} ({mo_no})",
-                        },
-                    ],
-                }
-
-                # Post through the universal journal engine
-                journal_id = self.post_journal(
-                    company_id=company_id,
-                    entry=journal_payload,
-                    cur=c,
-                )
-
-                # 5. Insert ledger record matching actual asset_depreciation DDL
+                # Detect journal FK column on asset_depreciation.
                 c.execute(
                     f"""
-                    INSERT INTO {schema}.asset_depreciation (
-                        company_id,
-                        asset_id,
-                        period_start,
-                        period_end,
-                        depreciation_amount,
-                        depreciation_method_basis,
-                        {journal_fk_col},
-                        status,
-                        posted_at,
-                        source_type,
-                        source_id,
-                        source_ref,
-                        uop_units_used_basis,
-                        uop_unit_name_basis,
-                        created_by_user_id,
-                        created_at
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = %s
+                    AND table_name = 'asset_depreciation'
+                    AND column_name IN (
+                        'posted_journal_id',
+                        'journal_id',
+                        'journal_entry_id'
                     )
-                    VALUES (
-                        %s, %s, %s, %s, %s, 'UOP', %s, 'posted', NOW(),
-                        'manufacturing_order', %s, %s, %s, %s, %s, NOW()
-                    )
-                    RETURNING id
+                    ORDER BY CASE column_name
+                        WHEN 'posted_journal_id' THEN 1
+                        WHEN 'journal_id' THEN 2
+                        ELSE 3
+                    END
+                    LIMIT 1
                     """,
+                    (schema,),
+                )
+
+                col_match = c.fetchone()
+
+                journal_fk_col = (
                     (
-                        company_id,
-                        asset_id,
-                        tx_date_str,
-                        tx_date_str,
-                        amount,
-                        journal_id,
-                        manufacturing_order_id,
-                        mo_no,
-                        item.get("quantity"),
-                        item.get("basis") or "Machine hours",
-                        user_id,
-                    ),
+                        col_match["column_name"]
+                        if isinstance(col_match, dict)
+                        else col_match[0]
+                    )
+                    if col_match
+                    else "posted_journal_id"
                 )
-                depr_row = c.fetchone()
-                depr_id = int(depr_row["id"] if isinstance(depr_row, dict) else depr_row[0])
 
-                # 6. Stamp asset_depreciation_id onto manufacturing_order_overhead
-                c.execute(
-                    f"""
-                    UPDATE {schema}.manufacturing_order_overhead
-                    SET asset_depreciation_id = %s,
-                        updated_at = NOW()
-                    WHERE company_id = %s
-                      AND id = %s
-                    """,
-                    (depr_id, company_id, overhead_id),
-                )
+                for item in overhead_rows:
+
+                    amount = round(
+                        float(
+                            item.get("allocated_amount")
+                            or 0
+                        ),
+                        2,
+                    )
+
+                    if amount <= 0:
+                        continue
+
+                    overhead_id = int(
+                        item["overhead_id"]
+                    )
+
+                    asset_id = int(
+                        item["asset_id"]
+                    )
+
+                    asset_name = (
+                        item.get("name")
+                        or item.get("asset_name")
+                        or f"Asset #{asset_id}"
+                    )
+
+                    tx_date_value = (
+                        item.get("tx_date")
+                        or tx_date
+                        or date.today()
+                    )
+
+                    tx_date_str = (
+                        tx_date_value.isoformat()
+                        if hasattr(
+                            tx_date_value,
+                            "isoformat",
+                        )
+                        else str(tx_date_value)
+                    )
+
+                    # Resolve the accumulated depreciation account
+                    # from the asset itself. This is NOT hardcoded.
+                    dep_exp_code, acc_dep_code = (
+                        resolve_depreciation_accounts(
+                            cur=c,
+                            schema=schema,
+                            company_id=company_id,
+                            asset=item,
+                            persist=True,
+                            return_names=False,
+                        )
+                    )
+
+                    if not acc_dep_code:
+                        raise ValueError(
+                            f"UNRESOLVED_ACCUM_DEPR_ACCOUNT|"
+                            f"Unable to resolve accumulated depreciation "
+                            f"account for asset '{asset_name}' "
+                            f"(ID={asset_id})"
+                        )
+
+                    journal_ref = (
+                        f"DEP/{mo_no}/{overhead_id}"
+                    )
+
+                    line_desc = (
+                        f"UOP Depreciation ({asset_name}) - "
+                        f"{item.get('quantity', 0)} "
+                        f"{item.get('basis', 'hrs')} @ "
+                        f"{item.get('rate', 0)} via {mo_no}"
+                    )
+
+                    journal_payload: Dict[str, Any] = {
+                        "date": tx_date_str,
+                        "ref": journal_ref,
+                        "description": line_desc,
+                        "source": "asset_depreciation",
+                        "source_id": int(
+                            manufacturing_order_id
+                        ),
+                        "source_table": (
+                            "manufacturing_order_overhead"
+                        ),
+                        "module_name": "manufacturing",
+                        "event_type": "posted",
+                        "created_by_user_id": user_id,
+                        "updated_by_user_id": user_id,
+                        "prepared_by_user_id": user_id,
+                        "lines": [
+                            {
+                                "account_code": wip_code,
+                                "debit": amount,
+                                "credit": 0.0,
+                                "description": (
+                                    f"Manufacturing WIP Absorption - "
+                                    f"{asset_name} ({mo_no})"
+                                ),
+                            },
+                            {
+                                "account_code": acc_dep_code,
+                                "debit": 0.0,
+                                "credit": amount,
+                                "description": (
+                                    f"Accumulated Depreciation - "
+                                    f"{asset_name} ({mo_no})"
+                                ),
+                            },
+                        ],
+                    }
+
+                    journal_id = self.post_journal(
+                        company_id=company_id,
+                        entry=journal_payload,
+                        cur=c,
+                    )
+
+                    c.execute(
+                        f"""
+                        INSERT INTO {schema}.asset_depreciation (
+                            company_id,
+                            asset_id,
+                            period_start,
+                            period_end,
+                            depreciation_amount,
+                            depreciation_method_basis,
+                            {journal_fk_col},
+                            status,
+                            posted_at,
+                            source_type,
+                            source_id,
+                            source_ref,
+                            uop_units_used_basis,
+                            uop_unit_name_basis,
+                            created_by_user_id,
+                            created_at
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s, 'UOP',
+                            %s, 'posted', NOW(),
+                            'manufacturing_order', %s, %s,
+                            %s, %s, %s, NOW()
+                        )
+                        RETURNING id
+                        """,
+                        (
+                            company_id,
+                            asset_id,
+                            tx_date_str,
+                            tx_date_str,
+                            amount,
+                            journal_id,
+                            manufacturing_order_id,
+                            mo_no,
+                            item.get("quantity"),
+                            item.get("basis")
+                            or "Machine hours",
+                            user_id,
+                        ),
+                    )
+
+                    depr_row = c.fetchone()
+
+                    depr_id = int(
+                        depr_row["id"]
+                        if isinstance(depr_row, dict)
+                        else depr_row[0]
+                    )
+
+                    c.execute(
+                        f"""
+                        UPDATE {schema}.manufacturing_order_overhead
+                        SET asset_depreciation_id = %s,
+                            updated_at = NOW()
+                        WHERE company_id = %s
+                        AND id = %s
+                        """,
+                        (
+                            depr_id,
+                            company_id,
+                            overhead_id,
+                        ),
+                    )
+
+            # ============================================================
+            # 7. RETURN POSTING SUMMARY
+            # ============================================================
+
+            return {
+                "company_id": company_id,
+                "manufacturing_order_id": int(
+                    manufacturing_order_id
+                ),
+                "mo_no": mo_no,
+                "actual_output": actual_output,
+                "wip_account": wip_code,
+                "direct_materials_account": (
+                    direct_materials_code
+                ),
+                "direct_labour_account": (
+                    direct_labour_code
+                ),
+                "direct_subcontractor_account": (
+                    direct_subcontractor_code
+                ),
+                "manufacturing_overhead_account": (
+                    manufacturing_overhead_code
+                ),
+            }
 
         if cur is not None:
             return _run(cur)

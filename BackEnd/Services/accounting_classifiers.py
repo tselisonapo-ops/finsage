@@ -1464,6 +1464,17 @@ def _coa_role_from_text(
     # ----------------------------
     if is_expense:
         if has_any(
+            "direct labour",
+            "direct labor",
+            "production labour",
+            "production labor",
+            "direct production wages",
+            "production line wages",
+        ):
+            return "direct_labour_cost"
+
+    if is_expense:
+        if has_any(
             "direct materials",
             "material purchases",
             "materials consumed",
