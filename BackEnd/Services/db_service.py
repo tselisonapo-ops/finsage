@@ -85412,6 +85412,124 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _insert(cur2)
     
+    def replace_manufacturing_bom_lines(
+        self,
+        company_id: int,
+        bom_id: int,
+        *,
+        lines: list[dict],
+        user_id=None,
+        cur=None,
+    ) -> list[int]:
+        schema = self.company_schema(company_id)
+
+        def _replace(c):
+            c.execute(
+                f"""
+                DELETE FROM {schema}.manufacturing_bom_lines
+                WHERE company_id = %s
+                AND bom_id = %s
+                """,
+                (
+                    company_id,
+                    int(bom_id),
+                ),
+            )
+
+            line_ids = []
+
+            for index, line in enumerate(lines, start=1):
+                item_id = int(line.get("item_id") or 0)
+                quantity = Decimal(str(line.get("quantity") or 0))
+                unit = line.get("unit")
+                scrap_percent = Decimal(
+                    str(
+                        line.get(
+                            "scrap_percent",
+                            line.get("scrap_pct", 0),
+                        )
+                        or 0
+                    )
+                )
+                is_optional = bool(
+                    line.get("is_optional", False)
+                )
+                memo = line.get("memo")
+
+                if item_id <= 0:
+                    raise ValueError(
+                        "BOM component item is required"
+                    )
+
+                if quantity <= 0:
+                    raise ValueError(
+                        "BOM line quantity must be greater than zero"
+                    )
+
+                if scrap_percent < 0 or scrap_percent > 100:
+                    raise ValueError(
+                        "Scrap percentage must be between 0 and 100"
+                    )
+
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_bom_lines (
+                        company_id,
+                        bom_id,
+                        line_no,
+                        item_id,
+                        quantity,
+                        unit,
+                        scrap_percent,
+                        is_optional,
+                        memo,
+                        created_by_user_id,
+                        updated_by_user_id
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        company_id,
+                        int(bom_id),
+                        index,
+                        item_id,
+                        quantity,
+                        unit,
+                        scrap_percent,
+                        is_optional,
+                        memo,
+                        (
+                            int(user_id)
+                            if user_id
+                            else None
+                        ),
+                        (
+                            int(user_id)
+                            if user_id
+                            else None
+                        ),
+                    ),
+                )
+
+                row = c.fetchone()
+
+                if isinstance(row, dict):
+                    line_ids.append(int(row["id"]))
+                else:
+                    line_ids.append(int(row[0]))
+
+            return line_ids
+
+        if cur is not None:
+            return _replace(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _replace(cur2)
+
     def get_manufacturing_bom(
         self,
         company_id: int,
