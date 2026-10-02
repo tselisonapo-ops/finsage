@@ -81914,6 +81914,99 @@ class DatabaseService:
 
         return code
 
+    def resolve_manufacturing_account(
+        self,
+        company_id: int,
+        account_type: str,
+        *,
+        cur,
+    ) -> str | None:
+        """
+        Resolve manufacturing accounts strictly from manufacturing-related COA roles.
+
+        This resolver intentionally does NOT use project_wip or the generic
+        inventory resolver. Manufacturing accounting must remain independent
+        from IFRS 15 project accounting.
+        """
+        role_map = {
+            "wip": [
+                "manufacturing_wip",
+            ],
+            "raw_materials": [
+                "inventory_raw_materials",
+                "inventory_spares_consumables",
+                "inventory_food",
+                "inventory_beverage",
+                "inventory_catering",
+                "inventory",
+            ],
+            "finished_goods": [
+                "inventory_finished_goods",
+            ],
+            "direct_labour": [
+                "direct_labour_cost",
+            ],
+            "direct_materials": [
+                "direct_materials_cost",
+            ],
+            "overhead": [
+                "manufacturing_overhead",
+            ],
+            "subcontractor": [
+                "direct_subcontractor_cost",
+            ],
+        }
+
+        roles = role_map.get(str(account_type or "").strip().lower())
+        if not roles:
+            return None
+
+        self.ensure_coa_roles_for_posting(
+            company_id,
+            roles,
+            cur=cur,
+        )
+
+        schema = f"company_{company_id}"
+
+        cur.execute(
+            f"""
+            SELECT code, name, role
+            FROM {schema}.coa
+            WHERE company_id=%s
+            AND posting=true
+            AND role = ANY(%s)
+            ORDER BY
+                CASE role
+                    WHEN 'manufacturing_wip' THEN 1
+                    WHEN 'inventory_raw_materials' THEN 2
+                    WHEN 'inventory_spares_consumables' THEN 3
+                    WHEN 'inventory_food' THEN 4
+                    WHEN 'inventory_beverage' THEN 5
+                    WHEN 'inventory_catering' THEN 6
+                    WHEN 'inventory_finished_goods' THEN 7
+                    WHEN 'direct_labour_cost' THEN 8
+                    WHEN 'direct_materials_cost' THEN 9
+                    WHEN 'manufacturing_overhead' THEN 10
+                    WHEN 'direct_subcontractor_cost' THEN 11
+                    WHEN 'inventory' THEN 99
+                    ELSE 500
+                END,
+                id ASC
+            LIMIT 1
+            """,
+            (int(company_id), roles),
+        )
+
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        return (
+            row.get("code")
+            if isinstance(row, dict)
+            else row[0]
+        ) or None
 
     def find_default_cogs_account_code(self, company_id: int, *, cur) -> str | None:
         """
@@ -87606,7 +87699,7 @@ class DatabaseService:
                 manufacturing_order_id=int(manufacturing_order_id),
                 cur=c,
             )
-            
+
             # Fetch materials
             c.execute(
                 f"""
@@ -88625,31 +88718,34 @@ class DatabaseService:
             # 3) RESOLVE MANUFACTURING DEBIT ACCOUNT
             # ==========================================================
 
-            debit_row = self.resolve_coa_account_by_roles_for_posting(
+            manufacturing_debit_account = self.resolve_manufacturing_account(
                 company_id,
-                [
-                    "manufacturing_wip",
-                    "production_wip",
-                    "manufacturing",
-                    "wip",
-                    "work_in_progress",
-                ],
+                "wip",
                 cur=cur,
-                required=False,
             )
 
-            if not debit_row:
+            if not manufacturing_debit_account:
                 raise ValueError(
                     "MANUFACTURING_WIP_ACCOUNT_NOT_CONFIGURED"
                 )
 
+            debit_row = self.get_account_row_for_posting(
+                company_id,
+                manufacturing_debit_account,
+            )
+
+            if not debit_row:
+                raise ValueError(
+                    f"MANUFACTURING_WIP_ACCOUNT_NOT_FOUND|"
+                    f"{manufacturing_debit_account}"
+                )
+
             manufacturing_debit_account = str(
-                debit_row.get("code") or ""
+                debit_row[1] or manufacturing_debit_account
             ).strip()
 
             manufacturing_debit_name = str(
-                debit_row.get("name")
-                or manufacturing_debit_account
+                debit_row[0] or manufacturing_debit_account
             ).strip()
 
             if not manufacturing_debit_account:
@@ -88713,6 +88809,40 @@ class DatabaseService:
             inv_credit_totals: dict[str, dict] = {}
             total_issue_cost = 0.0
 
+            # ------------------------------------------------------
+            # Manufacturing inventory account
+            # ------------------------------------------------------
+
+            inventory_account = self.resolve_manufacturing_account(
+                company_id,
+                "raw_materials",
+                cur=cur,
+            )
+
+            if not inventory_account:
+                raise ValueError(
+                    "MANUFACTURING_RAW_MATERIAL_ACCOUNT_NOT_CONFIGURED"
+                )
+
+            inv_row = self.get_account_row_for_posting(
+                company_id,
+                inventory_account,
+            )
+
+            if not inv_row:
+                raise ValueError(
+                    f"MANUFACTURING_RAW_MATERIAL_ACCOUNT_NOT_FOUND|"
+                    f"{inventory_account}"
+                )
+
+            inventory_account = str(
+                inv_row[1] or inventory_account
+            ).strip()
+
+            inventory_account_name = str(
+                inv_row[0] or inventory_account
+            ).strip()
+            
             # ==========================================================
             # 6) PROCESS MATERIAL LINES
             # ==========================================================
@@ -88824,49 +88954,6 @@ class DatabaseService:
                 track_stock = bool(
                     item.get("track_stock", True)
                 )
-
-                # ------------------------------------------------------
-                # Inventory account
-                # ------------------------------------------------------
-
-                inv_raw = str(
-                    item.get("inventory_account") or ""
-                ).strip()
-
-                inv_row = None
-
-                if inv_raw:
-                    inv_row = self.get_account_row_for_posting(
-                        company_id,
-                        inv_raw,
-                    )
-
-                if not inv_row:
-                    inv_raw = str(
-                        self.find_default_inventory_account_code(
-                            company_id,
-                            cur=cur,
-                        ) or ""
-                    ).strip()
-
-                    if inv_raw:
-                        inv_row = self.get_account_row_for_posting(
-                            company_id,
-                            inv_raw,
-                        )
-
-                if not inv_row:
-                    raise ValueError(
-                        f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}"
-                    )
-
-                inventory_account = str(
-                    inv_row[1] or inv_raw
-                ).strip()
-
-                inventory_account_name = str(
-                    inv_row[0] or inventory_account
-                ).strip()
 
                 # ------------------------------------------------------
                 # Valuation
@@ -89397,17 +89484,20 @@ class DatabaseService:
             # 3) RESOLVE MANUFACTURING WIP ACCOUNT
             # ==========================================================
 
-            debit_row = self.resolve_coa_account_by_roles_for_posting(
+            manufacturing_wip_code = self.resolve_manufacturing_account(
                 company_id,
-                [
-                    "manufacturing_wip",
-                    "production_wip",
-                    "manufacturing",
-                    "wip",
-                    "work_in_progress",
-                ],
+                "wip",
                 cur=cur,
-                required=False,
+            )
+
+            if not manufacturing_wip_code:
+                raise ValueError(
+                    "MANUFACTURING_WIP_ACCOUNT_NOT_CONFIGURED"
+                )
+
+            debit_row = self.get_account_row_for_posting(
+                company_id,
+                manufacturing_wip_code,
             )
 
             if not debit_row:
@@ -89487,6 +89577,41 @@ class DatabaseService:
 
             inventory_credits = {}
             total_material_cost = 0.0
+
+            manufacturing_inventory_account = (
+                self.resolve_manufacturing_account(
+                    company_id,
+                    "raw_materials",
+                    cur=cur,
+                )
+            )
+
+            if not manufacturing_inventory_account:
+                raise ValueError(
+                    "MANUFACTURING_RAW_MATERIAL_ACCOUNT_NOT_CONFIGURED"
+                )
+
+            manufacturing_inventory_row = (
+                self.get_account_row_for_posting(
+                    company_id,
+                    manufacturing_inventory_account,
+                )
+            )
+
+            if not manufacturing_inventory_row:
+                raise ValueError(
+                    "MANUFACTURING_RAW_MATERIAL_ACCOUNT_NOT_FOUND"
+                )
+
+            manufacturing_inventory_account = str(
+                manufacturing_inventory_row[1]
+                or manufacturing_inventory_account
+            ).strip()
+
+            manufacturing_inventory_name = str(
+                manufacturing_inventory_row[0]
+                or manufacturing_inventory_account
+            ).strip()
 
             for idx, line in enumerate(lines, start=1):
 
@@ -89576,48 +89701,11 @@ class DatabaseService:
                     )
 
                 # ------------------------------------------------------
-                # Inventory account
+                # Manufacturing inventory account
                 # ------------------------------------------------------
 
-                inventory_raw = str(
-                    material.get("inventory_account") or ""
-                ).strip()
-
-                inv_row = None
-
-                if inventory_raw:
-                    inv_row = self.get_account_row_for_posting(
-                        company_id,
-                        inventory_raw,
-                    )
-
-                if not inv_row:
-                    inventory_raw = str(
-                        self.find_default_inventory_account_code(
-                            company_id,
-                            cur=cur,
-                        ) or ""
-                    ).strip()
-
-                    if inventory_raw:
-                        inv_row = self.get_account_row_for_posting(
-                            company_id,
-                            inventory_raw,
-                        )
-
-                if not inv_row:
-                    raise ValueError(
-                        f"INVENTORY_ACCOUNT_NOT_FOUND|"
-                        f"item_id={item_id}|{inventory_raw}"
-                    )
-
-                inventory_account = str(
-                    inv_row[1] or inventory_raw
-                ).strip()
-
-                inventory_account_name = str(
-                    inv_row[0] or inventory_account
-                ).strip()
+                inventory_account = manufacturing_inventory_account
+                inventory_account_name = manufacturing_inventory_name
 
                 # ------------------------------------------------------
                 # Stock valuation
@@ -144044,6 +144132,41 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             inv_credit_totals: dict[str, dict] = {}
             total_issue_cost = 0.0
 
+            manufacturing_inventory_account = (
+                self.resolve_manufacturing_account(
+                    company_id,
+                    "raw_materials",
+                    cur=cur,
+                )
+            )
+
+            if not manufacturing_inventory_account:
+                raise ValueError(
+                    "MANUFACTURING_RAW_MATERIAL_ACCOUNT_NOT_CONFIGURED"
+                )
+
+            manufacturing_inventory_row = (
+                self.get_account_row_for_posting(
+                    company_id,
+                    manufacturing_inventory_account,
+                )
+            )
+
+            if not manufacturing_inventory_row:
+                raise ValueError(
+                    "MANUFACTURING_RAW_MATERIAL_ACCOUNT_NOT_FOUND"
+                )
+
+            manufacturing_inventory_account = str(
+                manufacturing_inventory_row[1]
+                or manufacturing_inventory_account
+            ).strip()
+
+            manufacturing_inventory_name = str(
+                manufacturing_inventory_row[0]
+                or manufacturing_inventory_account
+            ).strip()
+
             # 4) Lines + costing
             for idx, ln in enumerate(lines, start=1):
                 item_id = _to_int(ln.get("item_id") or ln.get("itemId"), 0)
@@ -144109,8 +144232,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}"
                     )
 
-                inventory_account = (inv_row[1] or inv_raw).strip()
-                inventory_account_name = (inv_row[0] or inventory_account).strip()
+                inventory_account = manufacturing_inventory_account
+                inventory_account_name = manufacturing_inventory_name
 
                 valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
                 if valuation_method not in ("AVG", "FIFO"):
