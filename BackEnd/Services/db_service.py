@@ -86466,6 +86466,87 @@ class DatabaseService:
                 cur=c,
             )
 
+        def _ensure_depreciation_accounts(c, asset):
+            """
+            Ensure the depreciation accounts required for this asset exist
+            before the depreciation resolver is called.
+
+            This deliberately uses ensure_required_coa_account() because
+            actual manufacturing posting must be able to provision missing
+            depreciation accounts from the master COA pool.
+
+            resolve_depreciation_accounts() remains unchanged and continues
+            to use strict_role=True when resolving the authoritative roles.
+            """
+
+            rou = is_rou_asset_record(asset)
+
+            if rou:
+                required_roles = (
+                    "amortisation_expense_rou",
+                    "accumulated_depreciation_rou",
+                )
+
+                for role in required_roles:
+                    self.ensure_required_coa_account(
+                        company_id,
+                        role,
+                        cur=c,
+                        required=True,
+                        persist=True,
+                        strict_role=False,
+                    )
+
+                return required_roles
+
+            asset_class = str(
+                asset.get("asset_class") or ""
+            ).strip().lower()
+
+            class_roles = ASSET_CLASS_DEPRECIATION_ROLES.get(
+                asset_class
+            )
+
+            if class_roles is not None:
+                dep_role, acc_dep_role = class_roles
+
+                required_roles = (
+                    dep_role,
+                    acc_dep_role,
+                )
+
+                for role in required_roles:
+                    if not role:
+                        continue
+
+                    self.ensure_required_coa_account(
+                        company_id,
+                        role,
+                        cur=c,
+                        required=True,
+                        persist=True,
+                        strict_role=False,
+                    )
+
+                return required_roles
+
+            required_roles = (
+                "depreciation_expense_ppe",
+                "accumulated_depreciation_ppe",
+            )
+
+            for role in required_roles:
+                self.ensure_required_coa_account(
+                    company_id,
+                    role,
+                    cur=c,
+                    required=True,
+                    persist=True,
+                    strict_role=False,
+                )
+
+            return required_roles
+
         def _run(c):
 
             # ============================================================
@@ -86779,10 +86860,16 @@ class DatabaseService:
                         or ""
                     ).lower()
 
-                    if (
-                        "subcontract" in cost_type
-                        and direct_subcontractor_code
-                    ):
+                    if "subcontract" in cost_type:
+                        if not direct_subcontractor_code:
+                            raise ValueError(
+                                f"UNRESOLVED_MANUFACTURING_ACCOUNT|"
+                                f"Direct production cost {cost_id} is a "
+                                f"subcontractor cost but the "
+                                f"'direct_subcontractor_cost' role is "
+                                f"not configured"
+                            )
+
                         credit_code = direct_subcontractor_code
                         credit_role = "direct_subcontractor_cost"
 
@@ -86867,8 +86954,13 @@ class DatabaseService:
             # ============================================================
             # 6. ASSET DEPRECIATION / MANUFACTURING OVERHEAD
             #
-            # Existing UOP depreciation logic retained, but the debit is
-            # ALWAYS Manufacturing WIP.
+            # First explicitly ensure/provision the depreciation accounts.
+            # Then use the existing depreciation resolver unchanged.
+            #
+            # Final manufacturing entry:
+            #
+            # Dr Manufacturing WIP
+            # Cr Accumulated Depreciation
             # ============================================================
 
             c.execute(
@@ -86988,8 +87080,26 @@ class DatabaseService:
                         else str(tx_date_value)
                     )
 
-                    # Resolve the accumulated depreciation account
-                    # from the asset itself. This is NOT hardcoded.
+                    # ----------------------------------------------------
+                    # IMPORTANT:
+                    #
+                    # Explicitly provision the depreciation roles BEFORE
+                    # calling resolve_depreciation_accounts().
+                    #
+                    # This restores the previous posting behaviour where
+                    # missing depreciation accounts could be created from
+                    # the master COA pool.
+                    # ----------------------------------------------------
+
+                    depreciation_required_roles = (
+                        _ensure_depreciation_accounts(
+                            c,
+                            item,
+                        )
+                    )
+
+                    # Existing depreciation resolver remains unchanged.
+                    # It will now find the accounts that were ensured above.
                     dep_exp_code, acc_dep_code = (
                         resolve_depreciation_accounts(
                             cur=c,
@@ -86998,8 +87108,21 @@ class DatabaseService:
                             asset=item,
                             persist=True,
                             return_names=False,
+                            required_roles=(
+                                depreciation_required_roles
+                                if depreciation_required_roles
+                                else None
+                            ),
                         )
                     )
+
+                    if not dep_exp_code:
+                        raise ValueError(
+                            f"UNRESOLVED_DEP_EXPENSE_ACCOUNT|"
+                            f"Unable to resolve depreciation expense "
+                            f"account for asset '{asset_name}' "
+                            f"(ID={asset_id})"
+                        )
 
                     if not acc_dep_code:
                         raise ValueError(
@@ -87028,14 +87151,6 @@ class DatabaseService:
                         "source_id": int(
                             manufacturing_order_id
                         ),
-                        "source_table": (
-                            "manufacturing_order_overhead"
-                        ),
-                        "module_name": "manufacturing",
-                        "event_type": "posted",
-                        "created_by_user_id": user_id,
-                        "updated_by_user_id": user_id,
-                        "prepared_by_user_id": user_id,
                         "lines": [
                             {
                                 "account_code": wip_code,
