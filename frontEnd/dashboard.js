@@ -125956,18 +125956,20 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       }
     );
 
-    window._MFG_ITEM_CACHE = inventoryData;
-
     const inventoryItems =
       Array.isArray(inventoryData?.items)
         ? inventoryData.items
         : Array.isArray(inventoryData?.data)
           ? inventoryData.data
-          : Array.isArray(inventoryData)
-            ? inventoryData
-            : [];
+          : Array.isArray(inventoryData?.rows)
+            ? inventoryData.rows
+            : Array.isArray(inventoryData)
+              ? inventoryData
+              : [];
 
-    window._MFG_ITEM_CACHE = inventoryItems;
+    window._MFG_ITEM_CACHE = {
+      rows: inventoryItems
+    };
     modal.classList.remove("hidden");
     // Now load the BOM itself if editing
     if (!bomId) {
