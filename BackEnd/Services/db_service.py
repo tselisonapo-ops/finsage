@@ -86307,19 +86307,7 @@ class DatabaseService:
                         cur.execute(
                             f"""
                             SELECT
-                                COALESCE(
-                                    SUM(
-                                        COALESCE(
-                                            total_cost,
-                                            labour_cost,
-                                            labor_cost,
-                                            amount,
-                                            cost,
-                                            0
-                                        )
-                                    ),
-                                    0
-                                ) AS total
+                                COALESCE(SUM(labour_cost), 0) AS total
                             FROM {schema}.{labour_table}
                             WHERE company_id = %s
                             AND manufacturing_order_id = %s
