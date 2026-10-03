@@ -6142,45 +6142,45 @@ console.log("[bootstrap] ENDPOINTS.users =", window.ENDPOINTS?.users);
     return MAP[r] || "viewer";
   };
 
-  window.normalizeRoleForRank = window.normalizeRole || function normalizeRoleForRank(raw) {
-    const canonical = window.normalizeRole(raw);
+window.normalizeRoleForRank = window.normalizeRole || function normalizeRoleForRank(raw) {
+  const canonical = window.normalizeRole(raw);
 
-    const rankMap = {
-      viewer: "viewer",
+  const rankMap = {
+    viewer: "viewer",
 
-      // General / production employee.
-      // This is a basic operational role, not an accounting rank.
-      production_worker: "viewer",
+    // General / production employee.
+    // This is a basic operational role, not an accounting rank.
+    production_worker: "viewer",
 
-      clerk: "clerk",
-      assistant: "assistant",
-      junior: "junior",
-      senior: "senior",
-      accountant: "accountant",
-      manager: "manager",
-      "credit controller": "credit controller",
-      cfo: "cfo",
-      owner: "owner",
-      admin: "admin",
+    clerk: "clerk",
+    assistant: "assistant",
+    junior: "junior",
+    senior: "senior",
+    accountant: "accountant",
+    manager: "manager",
+    "credit controller": "credit controller",
+    cfo: "cfo",
+    owner: "owner",
+    admin: "admin",
 
-      audit_trainee: "assistant",
-      accounting_trainee: "assistant",
-      audit_staff: "assistant",
-      senior_associate: "senior",
-      audit_manager: "manager",
-      audit_partner: "owner",
-      engagement_partner: "owner",
-      quality_control_reviewer: "manager",
-      client_service_manager: "manager",
-      fs_compiler: "junior",
-      reviewer: "senior",
-      bookkeeper: "clerk",
-      tax_preparer: "junior",
-      tax_reviewer: "senior",
-    };
-
-    return rankMap[canonical] || "viewer";
+    audit_trainee: "assistant",
+    accounting_trainee: "assistant",
+    audit_staff: "assistant",
+    senior_associate: "senior",
+    audit_manager: "manager",
+    audit_partner: "owner",
+    engagement_partner: "owner",
+    quality_control_reviewer: "manager",
+    client_service_manager: "manager",
+    fs_compiler: "junior",
+    reviewer: "senior",
+    bookkeeper: "clerk",
+    tax_preparer: "junior",
+    tax_reviewer: "senior",
   };
+
+  return rankMap[canonical] || "viewer";
+};
 
 window.getCurrentSystemRole = function getCurrentSystemRole() {
   const u = window.currentUser || {};
@@ -6319,29 +6319,24 @@ window.populateInviteRoleSelect = function populateInviteRoleSelect() {
   }
 
   let allowedRoles = effectiveRolePool.filter((r) => {
+
+    // Production / General Worker is a special
+    // Core / Internal manufacturing role and does
+    // not participate in the accounting rank hierarchy.
+    if (
+      r === "production_worker" &&
+      !isAssignment &&
+      isManufacturingCompany
+    ) {
+      return true;
+    }
+
     const candidateRankRole = window.normalizeRoleForRank(r);
     const candidateRank =
       window.ROLE_RANK[candidateRankRole] ?? -1;
 
     return candidateRank <= myRank;
   });
-
-  /*
-   * Production worker is intentionally a basic employee role.
-   *
-   * If the current user's hierarchy would otherwise exclude it,
-   * allow it for manufacturing Core / Internal invitations.
-   *
-   * It is still restricted by the conditions above.
-   */
-  if (
-    !isAssignment &&
-    isManufacturingCompany &&
-    effectiveRolePool.includes("production_worker") &&
-    !allowedRoles.includes("production_worker")
-  ) {
-    allowedRoles.push("production_worker");
-  }
 
   /*
    * Existing owner logic preserved.
