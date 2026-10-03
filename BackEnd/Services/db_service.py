@@ -86328,7 +86328,6 @@ class DatabaseService:
                             )
                             or 0
                         )
-
                     # ========================================================
                     # 6. OTHER DIRECT PRODUCTION COSTS
                     # ========================================================
@@ -86351,17 +86350,7 @@ class DatabaseService:
                         cur.execute(
                             f"""
                             SELECT
-                                COALESCE(
-                                    SUM(
-                                        COALESCE(
-                                            amount,
-                                            total_cost,
-                                            cost,
-                                            0
-                                        )
-                                    ),
-                                    0
-                                ) AS total
+                                COALESCE(SUM(amount), 0) AS total
                             FROM {schema}.manufacturing_order_direct_costs
                             WHERE company_id = %s
                             AND manufacturing_order_id = %s
@@ -86382,7 +86371,6 @@ class DatabaseService:
                             )
                             or 0
                         )
-
                     # ========================================================
                     # 7. MANUFACTURING OVERHEAD
                     # ========================================================
