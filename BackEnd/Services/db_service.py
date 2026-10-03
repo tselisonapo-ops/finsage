@@ -86165,6 +86165,35 @@ class DatabaseService:
                 # ============================================================
                 # 3. CHECK FOR EXISTING OUTPUT
                 # ============================================================
+                cur.execute(
+                    """
+                    SELECT
+                        current_database() AS database_name,
+                        current_user AS database_user,
+                        inet_server_addr() AS server_address,
+                        inet_server_port() AS server_port,
+                        %s AS schema_name,
+                        to_regclass(%s) AS resolved_table,
+                        EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_schema = %s
+                            AND table_name = 'manufacturing_order_outputs'
+                            AND column_name = 'total_cost'
+                        ) AS has_total_cost
+                    """,
+                    (
+                        schema,
+                        f"{schema}.manufacturing_order_outputs",
+                        schema,
+                    ),
+                )
+
+                debug_row = cur.fetchone()
+
+                raise RuntimeError(
+                    f"MANUFACTURING OUTPUT DB DEBUG: {debug_row}"
+                )
 
                 cur.execute(
                     f"""
