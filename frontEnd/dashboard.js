@@ -125423,7 +125423,10 @@ function showManufacturingMsg(text = "", kind = "info") {
 }
 
 function manufacturingItemOptions(selectedId = "") {
-  const items = window._MFG_ITEM_CACHE?.items || [];
+  const items = Array.isArray(window._MFG_ITEM_CACHE?.rows)
+    ? window._MFG_ITEM_CACHE.rows
+    : [];
+
   const sid = String(selectedId || "");
 
   return `<option value="">Select item…</option>` +
@@ -125943,12 +125946,17 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       "active=1&limit=500"
     );
 
-    const inventoryData = await window.apiFetch(inventoryUrl, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
-    });
+    const inventoryData = await window.apiFetch(
+      ENDPOINTS.inventory.items(cid, "active=1&limit=500"),
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      }
+    );
+
+    window._MFG_ITEM_CACHE = inventoryData;
 
     const inventoryItems =
       Array.isArray(inventoryData?.items)
