@@ -6258,17 +6258,89 @@ window.populateInviteRoleSelect = function populateInviteRoleSelect() {
   const accessScope = scopeSel?.value || "core";
   const isAssignment = accessScope === "assignment";
 
+  /*
+   * Keep the existing role pools exactly as defined elsewhere.
+   * Access scope remains the driver:
+   *
+   *   assignment -> ASSIGNMENT_ROLE_ORDER
+   *   core       -> CORE_ROLE_ORDER
+   */
   const rolePool = isAssignment
     ? (window.ASSIGNMENT_ROLE_ORDER || [])
     : (window.CORE_ROLE_ORDER || []);
 
-  let allowedRoles = rolePool.filter((r) => {
+  /*
+   * ---------------------------------------------------------
+   * COMPANY INDUSTRY
+   * ---------------------------------------------------------
+   *
+   * Production / General Worker is only relevant to
+   * manufacturing companies and only under Core / Internal.
+   */
+  const company =
+    window.CURRENT_COMPANY ||
+    window.currentUser?.company ||
+    {};
+
+  const industrySlug = String(
+    company.industry_slug ||
+    company.industrySlug ||
+    company.industry?.slug ||
+    ""
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  const isManufacturingCompany =
+    industrySlug === "manufacturing";
+
+  /*
+   * Start with the existing role pool.
+   */
+  let effectiveRolePool = [...rolePool];
+
+  /*
+   * Production workers are CORE / INTERNAL only.
+   *
+   * Do not add them to Engagement / Assignment.
+   */
+  if (
+    !isAssignment &&
+    isManufacturingCompany &&
+    !effectiveRolePool.includes("production_worker")
+  ) {
+    effectiveRolePool.push("production_worker");
+  }
+
+  let allowedRoles = effectiveRolePool.filter((r) => {
     const candidateRankRole = window.normalizeRoleForRank(r);
-    const candidateRank = window.ROLE_RANK[candidateRankRole] ?? -1;
+    const candidateRank =
+      window.ROLE_RANK[candidateRankRole] ?? -1;
+
     return candidateRank <= myRank;
   });
 
-  const company = window.CURRENT_COMPANY || window.currentUser?.company || {};
+  /*
+   * Production worker is intentionally a basic employee role.
+   *
+   * If the current user's hierarchy would otherwise exclude it,
+   * allow it for manufacturing Core / Internal invitations.
+   *
+   * It is still restricted by the conditions above.
+   */
+  if (
+    !isAssignment &&
+    isManufacturingCompany &&
+    effectiveRolePool.includes("production_worker") &&
+    !allowedRoles.includes("production_worker")
+  ) {
+    allowedRoles.push("production_worker");
+  }
+
+  /*
+   * Existing owner logic preserved.
+   */
   const hasOwner = !!company.owner_user_id;
   const forceOwnerInvite = !hasOwner;
 
@@ -6276,9 +6348,16 @@ window.populateInviteRoleSelect = function populateInviteRoleSelect() {
     allowedRoles = [...allowedRoles, "owner"];
   }
 
+  /*
+   * Existing admin restriction preserved.
+   */
   allowedRoles = allowedRoles.filter(r => r !== "admin");
 
+  /*
+   * Populate the selector.
+   */
   sel.innerHTML = `<option value="">Select role…</option>`;
+
   allowedRoles.forEach((r) => {
     const opt = document.createElement("option");
     opt.value = r;
@@ -6286,10 +6365,17 @@ window.populateInviteRoleSelect = function populateInviteRoleSelect() {
     sel.appendChild(opt);
   });
 
+  /*
+   * Existing diagnostics preserved, with manufacturing
+   * diagnostics added.
+   */
   console.log("[Roles] raw =", window.getCurrentSystemRole?.());
   console.log("[Roles] actual =", meActual);
   console.log("[Roles] rank role =", meRankRole, "rank =", myRank);
   console.log("[Roles] scope =", accessScope);
+  console.log("[Roles] industry slug =", industrySlug);
+  console.log("[Roles] manufacturing =", isManufacturingCompany);
+  console.log("[Roles] role pool =", effectiveRolePool);
   console.log("[Roles] allowed =", allowedRoles);
 };
 
