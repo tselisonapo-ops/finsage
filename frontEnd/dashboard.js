@@ -5961,7 +5961,9 @@ console.log("[bootstrap] ENDPOINTS.users =", window.ENDPOINTS?.users);
     sgb_treasurer: "SGB Treasurer",
     sgb_member: "SGB Member",
     educator: "Educator / Teacher",
-    admin_staff: "Administrative Staff"
+    admin_staff: "Administrative Staff",
+
+    production_worker: "Production / General Worker",
   };
 
   window.ROLE_ORDER = window.ROLE_ORDER || [
@@ -6127,6 +6129,14 @@ console.log("[bootstrap] ENDPOINTS.users =", window.ENDPOINTS?.users);
 
       tax_reviewer: "tax_reviewer",
       tax_manager: "tax_reviewer",
+
+      production_worker: "production_worker",
+      production_employee: "production_worker",
+      general_worker: "production_worker",
+      general_employee: "production_worker",
+      factory_worker: "production_worker",
+      production_staff: "production_worker",
+      warehouse_worker: "production_worker",
     };
 
     return MAP[r] || "viewer";
@@ -10489,12 +10499,113 @@ function companyUsesCogs(company = window.CURRENT_COMPANY) {
   );
 }
 
+function isGeneralEmployeeDashboardUser() {
+  // Backend build_permissions() gives production/general employees
+  // enterprise-dashboard access, but they must remain isolated from
+  // accounting workspaces.
+
+  const perms = window.CURRENT_USER?.permissions
+    || window.currentUser?.permissions
+    || window.FS_USER_PERMISSIONS
+    || {};
+
+  const role = typeof window.normalizeRole === "function"
+    ? window.normalizeRole(
+        window.CURRENT_USER?.role
+        || window.currentUser?.role
+        || window.FS_USER_ROLE
+        || localStorage.getItem("userRole")
+      )
+    : String(
+        window.CURRENT_USER?.role
+        || window.currentUser?.role
+        || window.FS_USER_ROLE
+        || localStorage.getItem("userRole")
+        || ""
+      ).trim().toLowerCase();
+
+  // Prefer the explicit backend permission/profile signal.
+  if (
+    perms.can_access_enterprise_dashboard === true &&
+    perms.can_access_practitioner_dashboard === false &&
+    perms.can_access_delegated_posting_workspace === true
+  ) {
+    return true;
+  }
+
+  // Defensive role fallback.
+  const generalRoles = new Set([
+    "production_worker",
+    "general_employee",
+    "employee",
+    "production_employee",
+    "warehouse_worker",
+    "factory_worker",
+  ]);
+
+  return generalRoles.has(role);
+}
+
 function shouldShowNavItem(item) {
   if (!item) return false;
 
   if (window.isSeniorFullAccess?.()) return true;
 
-  if (item.enterpriseOnly && !window.CURRENT_COMPANY?.is_enterprise) return false;
+  // ==========================================================
+  // GENERAL / PRODUCTION EMPLOYEE ISOLATION
+  // ==========================================================
+  //
+  // These users are allowed into the Enterprise Dashboard by
+  // backend policy, but their dashboard navigation is restricted
+  // to Catalog Studio.
+  //
+  // IMPORTANT:
+  // This is NAVIGATION visibility only.
+  // switchScreen() / guardScreenAccess() remains the final security
+  // boundary.
+  //
+  if (isGeneralEmployeeDashboardUser()) {
+    const itemName = String(item.name || "").trim().toLowerCase();
+
+    // The Catalog Studio parent itself must remain visible.
+    if (itemName === "catalog studio") {
+      return true;
+    }
+
+    // Only allow the catalogue screens that a general employee
+    // actually needs.
+    const generalEmployeeScreens = new Set([
+      "inventory-items",
+      "service-items",
+      "inventory-movements",
+      "inventory-write-downs",
+      "stocktake",
+      "reorder",
+      "inventory-valuation",
+      "manufacturing",
+      "purchase-orders",
+      "goods-receipts",
+    ]);
+
+    const screen = item.screen
+      ? (resolveScreenName?.(item.screen) || item.screen)
+      : null;
+
+    if (screen) {
+      return generalEmployeeScreens.has(screen);
+    }
+
+    // Any other parent is hidden.
+    return false;
+  }
+
+  // ==========================================================
+  // NORMAL ENTERPRISE / ACCOUNTING NAVIGATION
+  // ==========================================================
+
+  if (item.enterpriseOnly && !window.CURRENT_COMPANY?.is_enterprise) {
+    return false;
+  }
 
   if (item.feature) {
     const ok = typeof featureAllowed === "function"
@@ -10521,10 +10632,19 @@ function shouldShowNavItem(item) {
   // ---- Public School: hide irrelevant nav items ----
   if (typeof isPublicSchool === "function" && isPublicSchool()) {
     const _schScreen = item.screen
-      ? (typeof resolveScreenName === "function" ? resolveScreenName(item.screen) || item.screen : item.screen)
+      ? (
+          typeof resolveScreenName === "function"
+            ? resolveScreenName(item.screen) || item.screen
+            : item.screen
+        )
       : null;
+
     const _schName = String(item.name || "").trim().toLowerCase();
-    if ((_schScreen && SCHOOL_HIDDEN_SCREENS[_schScreen]) || SCHOOL_HIDDEN_PARENT_NAMES[_schName]) {
+
+    if (
+      (_schScreen && SCHOOL_HIDDEN_SCREENS[_schScreen]) ||
+      SCHOOL_HIDDEN_PARENT_NAMES[_schName]
+    ) {
       return false;
     }
   }
@@ -10533,34 +10653,36 @@ function shouldShowNavItem(item) {
     ? (resolveScreenName?.(item.screen) || item.screen)
     : null;
 
-  // ✅ delegated workspace: show broad workspace nav,
-  // but hide admin/governance-only screens.
+  // ==========================================================
+  // DELEGATED WORKSPACE
+  // ==========================================================
+
   if (isDelegatedWorkspaceToken?.()) {
     if (screen && DELEGATED_HIDDEN_SCREENS.has(screen)) {
       return false;
     }
 
-    // For parent items, show parent if at least one child is visible.
     if (!screen && Array.isArray(item.children)) {
       return item.children.some(shouldShowNavItem);
     }
 
-    // For parent items without screen/children, still respect menu permissions.
     if (!screen) {
       return canSeeMenuItem(item);
     }
 
-    // For screen items, only require it to be enabled in app allowlist.
-    // Actual opening still goes through switchScreen + guardScreenAccess.
     return canOpenScreen(screen);
   }
 
-  // ✅ core/internal: show nav broadly; screen opening still guarded later
+  // ==========================================================
+  // CORE / INTERNAL
+  // ==========================================================
+
   if (screen) {
     if (!canOpenScreen(screen)) return false;
 
     if (!isCoreInternalToken?.()) {
       const access = window.guardScreenAccess?.(screen);
+
       if (!access?.ok) return false;
     }
   }
@@ -11804,75 +11926,203 @@ function companyHasCapability(capability) {
 function guardScreenAccess(name) {
   const resolved = resolveScreenName(name);
   const rule = SCREEN_POLICY[resolved];
-  if (!rule) return { ok: false, reason: "unknown" };
 
-  // Auth gate
+  if (!rule) {
+    return { ok: false, reason: "unknown" };
+  }
+
+  // ==========================================================
+  // AUTH GATE
+  // ==========================================================
   if (rule.auth !== "public" && !isLoggedIn()) {
     return { ok: false, reason: "auth" };
   }
 
-  // ✅ Senior Accountant full-access override
+  // ==========================================================
+  // SENIOR ACCOUNTANT FULL-ACCESS OVERRIDE
+  // ==========================================================
   if (window.isSeniorFullAccess?.()) {
     return { ok: true, resolved };
   }
 
-  // Delegated provisioned workspace unlock
-  // This is checked before normal permission/role denial so operational setup
-  // screens can still open in provisioned delegated workspaces.
-  if (canUseDelegatedProvisionedScreen(resolved, rule)) {
-    // still respect feature gate if present
-    if (rule.feature && !hasFeature(rule.feature)) {
-      return { ok: false, reason: "feature" };
+  // ==========================================================
+  // PRODUCTION / GENERAL WORKER ISOLATION
+  // ==========================================================
+  //
+  // Production/general employees enter through the Enterprise
+  // shell because Catalog Studio lives there.
+  //
+  // They may ONLY open Catalog Studio screens.
+  // Everything else is denied here, even if someone attempts
+  // to open the screen directly.
+  //
+  const currentRole = typeof window.normalizeRole === "function"
+    ? window.normalizeRole(
+        window.CURRENT_USER?.role
+        || window.currentUser?.role
+        || window.FS_USER_ROLE
+        || localStorage.getItem("userRole")
+        || ""
+      )
+    : String(
+        window.FS_USER_ROLE
+        || localStorage.getItem("userRole")
+        || ""
+      ).trim().toLowerCase();
+
+  if (currentRole === "production_worker") {
+
+    const productionCatalogScreens = new Set([
+      "inventory",
+      "inventory-items",
+      "inventory-movements",
+      "inventory-write-downs",
+      "stocktake",
+      "reorder",
+      "inventory-valuation",
+      "manufacturing",
+      "service-items",
+    ]);
+
+    if (!productionCatalogScreens.has(resolved)) {
+      return {
+        ok: false,
+        reason: "catalog_only",
+        resolved,
+      };
     }
 
-    // still respect policy gates that should remain active
+    // Still respect the company's feature entitlement.
+    if (rule.feature && !hasFeature(rule.feature)) {
+      return {
+        ok: false,
+        reason: "feature",
+        resolved,
+      };
+    }
+
+    return {
+      ok: true,
+      resolved,
+      via: "production_worker_catalog_only",
+    };
+  }
+
+  // ==========================================================
+  // DELEGATED PROVISIONED WORKSPACE UNLOCK
+  // ==========================================================
+  if (canUseDelegatedProvisionedScreen(resolved, rule)) {
+
+    // Still respect feature gate if present.
+    if (rule.feature && !hasFeature(rule.feature)) {
+      return {
+        ok: false,
+        reason: "feature",
+        resolved,
+      };
+    }
+
+    // Still respect policy gates that should remain active.
     if (rule.policy === "approveCustomer") {
       const cid = FS?.control?.resolveCid?.() || null;
       const meRole = window.getCurrentRole?.() || "viewer";
-      const allowed = FS?.policy?.canApproveCustomer?.(meRole, cid) === true;
-      if (!allowed) return { ok: false, reason: "policy" };
+
+      const allowed =
+        FS?.policy?.canApproveCustomer?.(meRole, cid) === true;
+
+      if (!allowed) {
+        return {
+          ok: false,
+          reason: "policy",
+          resolved,
+        };
+      }
     }
 
-    return { ok: true, resolved, via: "delegated_provisioned_unlock" };
+    return {
+      ok: true,
+      resolved,
+      via: "delegated_provisioned_unlock",
+    };
   }
 
-  // Permission-first gate
-
+  // ==========================================================
+  // PERMISSION-FIRST GATE
+  // ==========================================================
   if (Array.isArray(rule.permissionAny) && rule.permissionAny.length) {
+
     const perms = window.currentUser?.permissions || {};
 
-    const ok = rule.permissionAny.some((p) => perms[p] === true);
+    const ok = rule.permissionAny.some(
+      (p) => perms[p] === true
+    );
 
     if (!ok) {
-      return { ok: false, reason: "permission" };
+      return {
+        ok: false,
+        reason: "permission",
+        resolved,
+      };
     }
   }
 
   else if (rule.permission) {
+
     if (!window.hasPermission?.(rule.permission)) {
-      return { ok: false, reason: "permission" };
+      return {
+        ok: false,
+        reason: "permission",
+        resolved,
+      };
     }
   }
 
   else if (rule.minRole && !window.canSeeRole(rule.minRole)) {
-    return { ok: false, reason: "role" };
+
+    return {
+      ok: false,
+      reason: "role",
+      resolved,
+    };
   }
 
-  // Feature gate
+  // ==========================================================
+  // FEATURE GATE
+  // ==========================================================
   if (rule.feature && !hasFeature(rule.feature)) {
-    return { ok: false, reason: "feature" };
+    return {
+      ok: false,
+      reason: "feature",
+      resolved,
+    };
   }
 
-  // Policy gate
+  // ==========================================================
+  // POLICY GATE
+  // ==========================================================
   if (rule.policy === "approveCustomer") {
+
     const cid = FS?.control?.resolveCid?.() || null;
     const meRole = window.getCurrentRole?.() || "viewer";
-    const allowed = FS?.policy?.canApproveCustomer?.(meRole, cid) === true;
-    if (!allowed) return { ok: false, reason: "policy" };
+
+    const allowed =
+      FS?.policy?.canApproveCustomer?.(meRole, cid) === true;
+
+    if (!allowed) {
+      return {
+        ok: false,
+        reason: "policy",
+        resolved,
+      };
+    }
   }
 
-  return { ok: true, resolved };
+  return {
+    ok: true,
+    resolved,
+  };
 }
+
 window.guardScreenAccess = guardScreenAccess;
 
 function canUseDelegatedProvisionedScreen(screenName, rule) {

@@ -123,6 +123,15 @@ def normalize_role(role: str) -> str:
         "sgb_member": "viewer",
         "educator": "viewer",
         "teacher": "viewer",
+
+        # general / production employee
+        "production_worker": "production_worker",
+        "production_employee": "production_worker",
+        "general_worker": "production_worker",
+        "general_employee": "production_worker",
+        "factory_worker": "production_worker",
+        "production_staff": "production_worker",
+        "warehouse_worker": "production_worker",
     }
 
     return mapping.get(s2, "other")
@@ -187,9 +196,20 @@ POS_ROLES = {
     "driver",
 }
 
+GENERAL_EMPLOYEE_ROLES = {
+    "production_worker",
+}
+
 def get_dashboard_access(role: str, access_scope: str):
     role = normalize_role(role)
     scope = (access_scope or "core").strip().lower()
+
+    # General / production employees do not get an accounting dashboard.
+    if role in GENERAL_EMPLOYEE_ROLES:
+        return {
+            "enterprise": False,
+            "practitioner": False,
+        }
 
     if role in DUAL_DASHBOARD_ROLES:
         return {"enterprise": True, "practitioner": True}
@@ -372,6 +392,36 @@ ROLE_PERMISSION_PROFILE = {
         "can_view_pos_summaries": True,
     },
 
+    # -----------------------------
+    # production / general worker
+    # -----------------------------
+    "production_worker": {
+        "can_view_dashboard": False,
+
+        "can_access_enterprise_dashboard": True,
+        "can_access_practitioner_dashboard": False,
+        "can_access_catalog": True,
+
+        "can_post_journals": False,
+        "can_manage_ar": False,
+        "can_manage_ap": False,
+        "can_manage_banking": False,
+        "can_manage_loans": False,
+        "can_view_reports": False,
+        "can_prepare_financials": False,
+        "can_manage_fixed_assets": False,
+        "can_view_control_room": False,
+        "can_view_ar_ap_controls": False,
+        "can_approve": False,
+        "can_lock_periods": False,
+        "can_manage_users": False,
+        "can_manage_company_setup": False,
+        "can_edit_tax_settings": False,
+
+        "can_access_pos": False,
+        "can_manage_pos": False,
+        "can_view_pos_summaries": False,
+    },
     # -----------------------------
     # practitioner roles
     # -----------------------------
@@ -585,20 +635,74 @@ def build_permissions(
     norm_role = normalize_role(role)
     scope = (access_scope or "core").strip().lower()
 
-    base = ROLE_PERMISSION_PROFILE.get(norm_role, ROLE_PERMISSION_PROFILE["viewer"]).copy()
+    # ---------------------------------------------------------
+    # PRODUCTION / GENERAL WORKER
+    # ---------------------------------------------------------
+    # These users enter through the Enterprise shell because
+    # Catalog Studio lives inside that dashboard.
+    #
+    # They must NOT receive access to accounting workspaces,
+    # accounting posting, reports, settings, controls, POS,
+    # or delegated accounting work.
+    #
+    # The frontend navigation will use can_access_catalog to
+    # leave only Catalog Studio visible.
+    # ---------------------------------------------------------
+    if norm_role in GENERAL_EMPLOYEE_ROLES:
+        base = ROLE_PERMISSION_PROFILE["production_worker"].copy()
+
+        base["can_access_enterprise_dashboard"] = True
+        base["can_access_practitioner_dashboard"] = False
+        base["can_access_delegated_posting_workspace"] = False
+        base["can_access_catalog"] = True
+
+        # Explicitly enforce accounting isolation.
+        base["can_view_dashboard"] = False
+        base["can_post_journals"] = False
+        base["can_manage_ar"] = False
+        base["can_manage_ap"] = False
+        base["can_manage_banking"] = False
+        base["can_manage_loans"] = False
+        base["can_view_reports"] = False
+        base["can_prepare_financials"] = False
+        base["can_manage_fixed_assets"] = False
+        base["can_view_control_room"] = False
+        base["can_view_ar_ap_controls"] = False
+        base["can_approve"] = False
+        base["can_lock_periods"] = False
+        base["can_manage_users"] = False
+        base["can_manage_company_setup"] = False
+        base["can_edit_tax_settings"] = False
+
+        # No POS access.
+        base["can_access_pos"] = False
+        base["can_manage_pos"] = False
+        base["can_view_pos_summaries"] = False
+
+        return base
+
+    # ---------------------------------------------------------
+    # NORMAL ACCOUNTING / PRACTITIONER ROLES
+    # ---------------------------------------------------------
+    base = ROLE_PERMISSION_PROFILE.get(
+        norm_role,
+        ROLE_PERMISSION_PROFILE["viewer"]
+    ).copy()
 
     base["can_access_enterprise_dashboard"] = (
-        norm_role in ENTERPRISE_DASHBOARD_ROLES or norm_role in DUAL_DASHBOARD_ROLES
+        norm_role in ENTERPRISE_DASHBOARD_ROLES
+        or norm_role in DUAL_DASHBOARD_ROLES
     )
 
     base["can_access_practitioner_dashboard"] = (
-        norm_role in PRACTITIONER_DASHBOARD_ROLES or norm_role in DUAL_DASHBOARD_ROLES
+        norm_role in PRACTITIONER_DASHBOARD_ROLES
+        or norm_role in DUAL_DASHBOARD_ROLES
     )
 
     base["can_access_delegated_posting_workspace"] = bool(
         scope == "assignment" and (
-            base.get("can_post_journals", False) or
-            base.get("can_prepare_financials", False)
+            base.get("can_post_journals", False)
+            or base.get("can_prepare_financials", False)
         )
     )
 
