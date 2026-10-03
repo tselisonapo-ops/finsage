@@ -6,9 +6,17 @@ def validate_role_for_scope(role: str, access_scope: str) -> str:
     norm_role = normalize_role(role)
     scope = (access_scope or "core").strip().lower()
 
+    # Production / General Worker is Core / Internal only.
+    if norm_role == "production_worker" and scope != "core":
+        raise ValueError(
+            f"Role '{norm_role}' is not allowed for access scope '{scope}'"
+        )
+
     allowed = ASSIGNMENT_ROLES if scope == "assignment" else CORE_ROLES
 
     if norm_role not in allowed:
-        raise ValueError(f"Role '{norm_role}' is not allowed for access scope '{scope}'")
+        raise ValueError(
+            f"Role '{norm_role}' is not allowed for access scope '{scope}'"
+        )
 
     return norm_role

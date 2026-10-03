@@ -137,10 +137,16 @@ def normalize_role(role: str) -> str:
     return mapping.get(s2, "other")
 
 CORE_ROLES = {
-    "owner", "admin", "cfo", "manager", "senior",
-    "accountant", "clerk", "viewer"
+    "owner",
+    "admin",
+    "cfo",
+    "manager",
+    "senior",
+    "accountant",
+    "clerk",
+    "viewer",
+    "production_worker",
 }
-
 ASSIGNMENT_ROLES = {
     "bookkeeper",
     "fs_compiler",
