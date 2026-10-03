@@ -88185,22 +88185,7 @@ class DatabaseService:
             if status != "draft":
                 return False
 
-            c.execute(
-                f"""
-                SELECT id
-                FROM {schema}.manufacturing_order_materials
-                WHERE company_id = %s
-                AND manufacturing_order_id = %s
-                LIMIT 1
-                """,
-                (
-                    int(company_id),
-                    int(manufacturing_order_id),
-                ),
-            )
-
-            if c.fetchone():
-                return False
+            bom_id = int(order["bom_id"])
 
             batch_qty = Decimal(
                 str(order.get("batch_qty") or 0)
@@ -88231,14 +88216,13 @@ class DatabaseService:
                 """,
                 (
                     int(company_id),
-                    int(order["bom_id"]),
+                    bom_id,
                 ),
             )
 
             rows = c.fetchall()
 
-            if not rows:
-                return False
+            bom_lines = []
 
             factor = planned_qty / batch_qty
 
@@ -88283,46 +88267,199 @@ class DatabaseService:
                     )
                 )
 
-                c.execute(
-                    f"""
-                    INSERT INTO {schema}.manufacturing_order_materials (
-                        company_id,
-                        manufacturing_order_id,
-                        bom_line_id,
-                        item_id,
-                        line_no,
-                        planned_qty,
-                        actual_qty,
-                        unit,
-                        unit_cost,
-                        total_cost,
-                        memo
-                    )
-                    VALUES (
-                        %s, %s, %s, %s, %s,
-                        %s, 0, %s, 0, 0, %s
-                    )
-                    """,
-                    (
-                        int(company_id),
-                        int(manufacturing_order_id),
-                        int(bom_line_id),
-                        int(item_id),
-                        int(line_no),
-                        planned_material_qty,
-                        unit,
-                        memo,
-                    ),
+                bom_lines.append(
+                    {
+                        "bom_line_id": int(bom_line_id),
+                        "line_no": int(line_no or 0),
+                        "item_id": int(item_id),
+                        "planned_qty": planned_material_qty,
+                        "unit": unit,
+                        "memo": memo,
+                    }
                 )
 
-            return True
+            c.execute(
+                f"""
+                SELECT
+                    id,
+                    bom_line_id,
+                    item_id,
+                    actual_qty,
+                    unit_cost,
+                    total_cost,
+                    inventory_tx_id,
+                    inventory_tx_line_id,
+                    memo
+                FROM {schema}.manufacturing_order_materials
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                ORDER BY line_no, id
+                """,
+                (
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            existing_rows = c.fetchall()
+
+            existing = {}
+
+            for line in existing_rows:
+                if isinstance(line, dict):
+                    material_id = line["id"]
+                    bom_line_id = line["bom_line_id"]
+                    item_id = line["item_id"]
+                    actual_qty = line["actual_qty"]
+                    unit_cost = line["unit_cost"]
+                    total_cost = line["total_cost"]
+                    inventory_tx_id = line["inventory_tx_id"]
+                    inventory_tx_line_id = line["inventory_tx_line_id"]
+                    memo = line["memo"]
+                else:
+                    (
+                        material_id,
+                        bom_line_id,
+                        item_id,
+                        actual_qty,
+                        unit_cost,
+                        total_cost,
+                        inventory_tx_id,
+                        inventory_tx_line_id,
+                        memo,
+                    ) = line
+
+                if bom_line_id is not None:
+                    existing[int(bom_line_id)] = {
+                        "id": int(material_id),
+                        "item_id": item_id,
+                        "actual_qty": actual_qty,
+                        "unit_cost": unit_cost,
+                        "total_cost": total_cost,
+                        "inventory_tx_id": inventory_tx_id,
+                        "inventory_tx_line_id": inventory_tx_line_id,
+                        "memo": memo,
+                    }
+
+            current_bom_line_ids = set()
+
+            changed = False
+
+            for bom_line in bom_lines:
+                bom_line_id = bom_line["bom_line_id"]
+                current_bom_line_ids.add(bom_line_id)
+
+                planned_material_qty = bom_line["planned_qty"]
+                line_no = bom_line["line_no"]
+                item_id = bom_line["item_id"]
+                unit = bom_line["unit"]
+                memo = bom_line["memo"]
+
+                existing_line = existing.get(bom_line_id)
+
+                if existing_line:
+                    c.execute(
+                        f"""
+                        UPDATE {schema}.manufacturing_order_materials
+                        SET
+                            item_id = %s,
+                            line_no = %s,
+                            planned_qty = %s,
+                            unit = %s,
+                            memo = %s,
+                            updated_at = NOW()
+                        WHERE company_id = %s
+                        AND id = %s
+                        AND manufacturing_order_id = %s
+                        """,
+                        (
+                            item_id,
+                            line_no,
+                            planned_material_qty,
+                            unit,
+                            memo,
+                            int(company_id),
+                            existing_line["id"],
+                            int(manufacturing_order_id),
+                        ),
+                    )
+
+                    changed = True
+
+                else:
+                    c.execute(
+                        f"""
+                        INSERT INTO {schema}.manufacturing_order_materials (
+                            company_id,
+                            manufacturing_order_id,
+                            bom_line_id,
+                            item_id,
+                            line_no,
+                            planned_qty,
+                            actual_qty,
+                            unit,
+                            unit_cost,
+                            total_cost,
+                            memo
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s,
+                            %s, 0, %s, 0, 0, %s
+                        )
+                        """,
+                        (
+                            int(company_id),
+                            int(manufacturing_order_id),
+                            bom_line_id,
+                            item_id,
+                            line_no,
+                            planned_material_qty,
+                            unit,
+                            memo,
+                        ),
+                    )
+
+                    changed = True
+
+            # Remove BOM lines that no longer exist, but only when they have
+            # never been consumed and have no inventory transaction attached.
+            for bom_line_id, existing_line in existing.items():
+                if bom_line_id in current_bom_line_ids:
+                    continue
+
+                actual_qty = Decimal(
+                    str(existing_line.get("actual_qty") or 0)
+                )
+
+                if (
+                    actual_qty == 0
+                    and existing_line.get("inventory_tx_id") is None
+                    and existing_line.get("inventory_tx_line_id") is None
+                ):
+                    c.execute(
+                        f"""
+                        DELETE FROM {schema}.manufacturing_order_materials
+                        WHERE company_id = %s
+                        AND id = %s
+                        AND manufacturing_order_id = %s
+                        """,
+                        (
+                            int(company_id),
+                            existing_line["id"],
+                            int(manufacturing_order_id),
+                        ),
+                    )
+
+                    changed = True
+
+            return changed
 
         if cur is not None:
             return _sync(cur)
 
         with self._conn_cursor() as (conn, cur2):
             return _sync(cur2)
-
+    
     def get_manufacturing_order(
         self,
         company_id: int,
