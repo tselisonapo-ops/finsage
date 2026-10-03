@@ -125922,13 +125922,6 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
 
   title.textContent = bomId ? "Edit BOM" : "New BOM";
 
-  modal.classList.remove("hidden");
-
-  if (!bomId) {
-    addManufacturingBomDefinitionLine();
-    return;
-  }
-
   try {
     if (typeof window.apiFetch !== "function") {
       throw new Error("apiFetch is not available");
@@ -125941,6 +125934,37 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
 
     if (!cid) {
       throw new Error("Active company could not be determined");
+    }
+
+    // Refresh inventory items every time the BOM modal opens
+    // so newly-created inventory items are immediately available.
+    const inventoryUrl = ENDPOINTS.inventory.items(
+      cid,
+      "active=1&limit=500"
+    );
+
+    const inventoryData = await window.apiFetch(inventoryUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    const inventoryItems =
+      Array.isArray(inventoryData?.items)
+        ? inventoryData.items
+        : Array.isArray(inventoryData?.data)
+          ? inventoryData.data
+          : Array.isArray(inventoryData)
+            ? inventoryData
+            : [];
+
+    window._MFG_ITEM_CACHE = inventoryItems;
+    modal.classList.remove("hidden");
+    // Now load the BOM itself if editing
+    if (!bomId) {
+      addManufacturingBomDefinitionLine();
+      return;
     }
 
     const url = ENDPOINTS.manufacturing.bom(cid, bomId);
