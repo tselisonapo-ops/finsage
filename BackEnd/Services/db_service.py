@@ -86165,6 +86165,7 @@ class DatabaseService:
                 # ============================================================
                 # 3. CHECK FOR EXISTING OUTPUT
                 # ============================================================
+
                 cur.execute(
                     """
                     SELECT
@@ -86178,8 +86179,8 @@ class DatabaseService:
                             SELECT 1
                             FROM information_schema.columns
                             WHERE table_schema = %s
-                            AND table_name = 'manufacturing_order_outputs'
-                            AND column_name = 'total_cost'
+                              AND table_name = 'manufacturing_order_outputs'
+                              AND column_name = 'total_cost'
                         ) AS has_total_cost
                     """,
                     (
@@ -86191,8 +86192,10 @@ class DatabaseService:
 
                 debug_row = cur.fetchone()
 
-                raise RuntimeError(
-                    f"MANUFACTURING OUTPUT DB DEBUG: {debug_row}"
+                print(
+                    "MANUFACTURING OUTPUT DB DEBUG:",
+                    debug_row,
+                    flush=True,
                 )
 
                 cur.execute(
