@@ -85392,7 +85392,7 @@ class DatabaseService:
             )
             VALUES (
                 %s, %s, %s, %s, %s, %s,
-                %s, %s, 'draft',
+                %s, %s, %s, 'draft',
                 %s, %s, %s, TRUE,
                 %s, %s
             )
