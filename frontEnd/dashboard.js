@@ -6142,11 +6142,16 @@ console.log("[bootstrap] ENDPOINTS.users =", window.ENDPOINTS?.users);
     return MAP[r] || "viewer";
   };
 
-  window.normalizeRoleForRank = window.normalizeRoleForRank || function normalizeRoleForRank(raw) {
+  window.normalizeRoleForRank = window.normalizeRole || function normalizeRoleForRank(raw) {
     const canonical = window.normalizeRole(raw);
 
     const rankMap = {
       viewer: "viewer",
+
+      // General / production employee.
+      // This is a basic operational role, not an accounting rank.
+      production_worker: "viewer",
+
       clerk: "clerk",
       assistant: "assistant",
       junior: "junior",
