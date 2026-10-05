@@ -109206,10 +109206,43 @@ class DatabaseService:
                         "IFRS 15 invoice net amount must be greater than zero"
                     )
 
-                obligation_id = (
-                    inv.get("revenue_obligation_id")
-                    or inv.get("obligation_id")
-                )
+                # IFRS 15 obligation is stored on invoice lines, not the
+                # invoice header. Derive the billing obligation from the
+                # invoice lines.
+                invoice_lines = inv.get("lines") or []
+
+                obligation_ids = [
+                    line.get("revenue_obligation_id")
+                    for line in invoice_lines
+                    if line.get("revenue_obligation_id") not in (None, "", 0, "0")
+                ]
+
+                unique_obligation_ids = {
+                    int(oid)
+                    for oid in obligation_ids
+                }
+
+                if len(unique_obligation_ids) == 1:
+                    obligation_id = next(iter(unique_obligation_ids))
+
+                    # For an obligation-linked invoice, use the amount of
+                    # the lines linked to that obligation.
+                    billing_amount = money(sum(
+                        float(line.get("net_amount") or 0.0)
+                        for line in invoice_lines
+                        if line.get("revenue_obligation_id") not in (
+                            None, "", 0, "0"
+                        )
+                        and int(line.get("revenue_obligation_id")) == obligation_id
+                    ))
+                elif len(unique_obligation_ids) > 1:
+                    # Do not incorrectly assign a multi-obligation invoice
+                    # to one obligation.
+                    obligation_id = None
+                    billing_amount = invoice_net_amount
+                else:
+                    obligation_id = None
+                    billing_amount = invoice_net_amount
 
                 billing_position = (
                     self.calculate_revenue_billing_position(
@@ -109217,10 +109250,10 @@ class DatabaseService:
                         contract_id=int(revenue_contract_id),
                         obligation_id=(
                             int(obligation_id)
-                            if obligation_id not in (None, "", 0, "0")
+                            if obligation_id is not None
                             else None
                         ),
-                        billing_amount=invoice_net_amount,
+                        billing_amount=billing_amount,
                         cur=_cur,
                     )
                 )
@@ -109231,13 +109264,13 @@ class DatabaseService:
                     data={
                         "obligation_id": (
                             int(obligation_id)
-                            if obligation_id not in (None, "", 0, "0")
+                            if obligation_id is not None
                             else None
                         ),
                         "event_date": inv_date,
                         "event_type": "invoice",
                         "source_invoice_id": int(invoice_id),
-                        "amount": invoice_net_amount,
+                        "amount": billing_amount,
                         "currency": (
                             inv.get("currency")
                             or contract.get("contract_currency")
@@ -109252,6 +109285,8 @@ class DatabaseService:
                                 revenue_contract_id
                             ),
                             "ifrs15_billing_position": billing_position,
+                            "obligation_id": obligation_id,
+                            "billing_amount": float(billing_amount),
                         },
                     },
                     user_id=inv.get("created_by_user_id"),
