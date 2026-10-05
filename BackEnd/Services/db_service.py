@@ -109244,54 +109244,132 @@ class DatabaseService:
                     obligation_id = None
                     billing_amount = invoice_net_amount
 
-                billing_position = (
-                    self.calculate_revenue_billing_position(
+                # ---------------------------------------------------------
+                # IFRS 15 BILLING EVENT IDEMPOTENCY GUARD
+                #
+                # Do not create another billing event when this invoice
+                # number has already billed the same obligation.
+                #
+                # The invoice itself may still need to be posted to GL;
+                # this guard only prevents duplicate IFRS 15 billing.
+                # ---------------------------------------------------------
+                existing_billing_event = None
+
+                if obligation_id is not None:
+                    _cur.execute(
+                        f"""
+                        SELECT *
+                        FROM {schema}.revenue_billing_events
+                        WHERE contract_id = %s
+                          AND obligation_id = %s
+                          AND event_type = 'invoice'
+                          AND payload_json->>'invoice_number' = %s
+                        ORDER BY id
+                        LIMIT 1
+                        """,
+                        (
+                            int(revenue_contract_id),
+                            int(obligation_id),
+                            inv_no,
+                        ),
+                    )
+
+                    existing_billing_event = _cur.fetchone()
+
+                if existing_billing_event:
+                    # -----------------------------------------------------
+                    # Duplicate billing event found.
+                    #
+                    # Reuse the original event and its original billing
+                    # position. DO NOT calculate a new billing position
+                    # using billing_amount, because that would effectively
+                    # count this invoice twice.
+                    # -----------------------------------------------------
+                    billing_event = {
+                        "event": dict(existing_billing_event)
+                    }
+
+                    existing_payload = (
+                        existing_billing_event.get("payload_json")
+                        or {}
+                    )
+
+                    if isinstance(existing_payload, str):
+                        try:
+                            existing_payload = json.loads(existing_payload)
+                        except Exception:
+                            existing_payload = {}
+
+                    billing_position = (
+                        existing_payload.get("ifrs15_billing_position")
+                        or {}
+                    )
+
+                    current_app.logger.warning(
+                        "[post_invoice_to_gl] IFRS 15 duplicate billing "
+                        "event skipped: company=%s contract=%s "
+                        "obligation=%s invoice=%s existing_event_id=%s",
+                        company_id,
+                        revenue_contract_id,
+                        obligation_id,
+                        inv_no,
+                        existing_billing_event.get("id"),
+                    )
+
+                else:
+                    # -----------------------------------------------------
+                    # No existing billing event for this obligation +
+                    # invoice number. Calculate the position and create
+                    # the billing event normally.
+                    # -----------------------------------------------------
+                    billing_position = (
+                        self.calculate_revenue_billing_position(
+                            company_id=int(company_id),
+                            contract_id=int(revenue_contract_id),
+                            obligation_id=(
+                                int(obligation_id)
+                                if obligation_id is not None
+                                else None
+                            ),
+                            billing_amount=billing_amount,
+                            cur=_cur,
+                        )
+                    )
+
+                    billing_event = self.record_revenue_billing_event(
                         company_id=int(company_id),
                         contract_id=int(revenue_contract_id),
-                        obligation_id=(
-                            int(obligation_id)
-                            if obligation_id is not None
-                            else None
-                        ),
-                        billing_amount=billing_amount,
+                        data={
+                            "obligation_id": (
+                                int(obligation_id)
+                                if obligation_id is not None
+                                else None
+                            ),
+                            "event_date": inv_date,
+                            "event_type": "invoice",
+                            "source_invoice_id": int(invoice_id),
+                            "amount": billing_amount,
+                            "currency": (
+                                inv.get("currency")
+                                or contract.get("contract_currency")
+                                or "USD"
+                            ),
+                            "notes": f"Invoice {inv_no}",
+                            "payload_json": {
+                                "invoice_id": int(invoice_id),
+                                "invoice_number": inv_no,
+                                "customer_id": int(cust_id),
+                                "revenue_contract_id": int(
+                                    revenue_contract_id
+                                ),
+                                "ifrs15_billing_position": billing_position,
+                                "obligation_id": obligation_id,
+                                "billing_amount": float(billing_amount),
+                            },
+                        },
+                        user_id=inv.get("created_by_user_id"),
                         cur=_cur,
                     )
-                )
-
-                billing_event = self.record_revenue_billing_event(
-                    company_id=int(company_id),
-                    contract_id=int(revenue_contract_id),
-                    data={
-                        "obligation_id": (
-                            int(obligation_id)
-                            if obligation_id is not None
-                            else None
-                        ),
-                        "event_date": inv_date,
-                        "event_type": "invoice",
-                        "source_invoice_id": int(invoice_id),
-                        "amount": billing_amount,
-                        "currency": (
-                            inv.get("currency")
-                            or contract.get("contract_currency")
-                            or "USD"
-                        ),
-                        "notes": f"Invoice {inv_no}",
-                        "payload_json": {
-                            "invoice_id": int(invoice_id),
-                            "invoice_number": inv_no,
-                            "customer_id": int(cust_id),
-                            "revenue_contract_id": int(
-                                revenue_contract_id
-                            ),
-                            "ifrs15_billing_position": billing_position,
-                            "obligation_id": obligation_id,
-                            "billing_amount": float(billing_amount),
-                        },
-                    },
-                    user_id=inv.get("created_by_user_id"),
-                    cur=_cur,
-                )
 
             # 3) credit enforcement (NO extra connections)
             if enforce_credit:
