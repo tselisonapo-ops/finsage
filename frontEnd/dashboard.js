@@ -126022,25 +126022,19 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       "fixed inset-0 z-50 hidden bg-black/40 flex items-center justify-center p-4";
 
     modal.innerHTML = `
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-auto">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-auto">
 
         <div class="flex items-center justify-between border-b px-4 py-3">
           <div>
-            <div id="mfgBomDefinitionTitle" class="font-semibold">
-              New BOM
-            </div>
-
+            <div id="mfgBomDefinitionTitle" class="font-semibold">New BOM</div>
             <div class="text-xs text-slate-500">
-              Define the finished item and the materials or components required to produce it.
+              Define the finished product, its materials, and the standard
+              production costs. These costs are applied automatically to
+              every production order created from this BOM.
             </div>
           </div>
-
-          <button
-            type="button"
-            id="mfgBomDefinitionCloseBtn"
-            class="text-slate-500 text-lg">
-            ×
-          </button>
+          <button type="button" id="mfgBomDefinitionCloseBtn"
+                  class="text-slate-500 text-lg">×</button>
         </div>
 
         <div class="p-4">
@@ -126051,133 +126045,211 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
 
             <label class="text-xs">
               <div class="text-slate-600 mb-1">BOM Code</div>
-
-              <input
-                id="mfgBomDefinitionCode"
-                class="w-full border rounded px-2 py-2 text-sm"
-                placeholder="e.g. BOM-001">
+              <input id="mfgBomDefinitionCode"
+                     class="w-full border rounded px-2 py-2 text-sm"
+                     placeholder="e.g. BOM-001">
             </label>
 
             <label class="text-xs">
               <div class="text-slate-600 mb-1">BOM Name</div>
-
-              <input
-                id="mfgBomDefinitionName"
-                class="w-full border rounded px-2 py-2 text-sm"
-                placeholder="e.g. Standard Product BOM">
+              <input id="mfgBomDefinitionName"
+                     class="w-full border rounded px-2 py-2 text-sm"
+                     placeholder="e.g. Standard Product BOM">
             </label>
 
             <label class="text-xs md:col-span-2">
               <div class="text-slate-600 mb-1">Finished Item</div>
-
-              <input
-                id="mfgBomDefinitionFinishedItem"
-                type="text"
-                class="w-full border rounded px-2 py-2 text-sm"
-                placeholder="e.g. Office Desk">
+              <input id="mfgBomDefinitionFinishedItem" type="text"
+                     class="w-full border rounded px-2 py-2 text-sm"
+                     placeholder="e.g. Chicken Pie">
             </label>
 
             <label class="text-xs">
               <div class="text-slate-600 mb-1">Selling Price</div>
-
-              <input
-                id="mfgBomDefinitionSellingPrice"
-                type="number"
-                min="0"
-                step="0.01"
-                class="w-full border rounded px-2 py-2 text-sm"
-                placeholder="0.00">
+              <input id="mfgBomDefinitionSellingPrice" type="number"
+                     min="0" step="0.01"
+                     class="w-full border rounded px-2 py-2 text-sm"
+                     placeholder="0.00">
             </label>
 
             <label class="text-xs">
-              <div class="text-slate-600 mb-1">Output Quantity</div>
-
-              <input
-                id="mfgBomDefinitionBatchQty"
-                type="number"
-                min="0.0001"
-                step="0.0001"
-                class="w-full border rounded px-2 py-2 text-sm"
-                value="1">
+              <div class="text-slate-600 mb-1">Output Quantity (per batch)</div>
+              <input id="mfgBomDefinitionBatchQty" type="number"
+                     min="0.0001" step="0.0001"
+                     class="w-full border rounded px-2 py-2 text-sm" value="1">
             </label>
 
             <label class="text-xs">
               <div class="text-slate-600 mb-1">Output Unit</div>
-
-              <input
-                id="mfgBomDefinitionBatchUnit"
-                class="w-full border rounded px-2 py-2 text-sm"
-                placeholder="units / kg / metres">
+              <input id="mfgBomDefinitionBatchUnit"
+                     class="w-full border rounded px-2 py-2 text-sm"
+                     placeholder="units / kg / trays">
             </label>
 
             <label class="text-xs md:col-span-2">
               <div class="text-slate-600 mb-1">Description</div>
-
-              <textarea
-                id="mfgBomDefinitionDescription"
-                rows="2"
-                class="w-full border rounded px-2 py-2 text-sm"></textarea>
+              <textarea id="mfgBomDefinitionDescription" rows="2"
+                        class="w-full border rounded px-2 py-2 text-sm"></textarea>
             </label>
 
           </div>
 
+          <!-- ================= 1. DIRECT MATERIALS ================= -->
           <div class="mt-5 flex items-center justify-between">
-
             <div>
-              <div class="font-semibold text-sm">
-                BOM Components
-              </div>
-
+              <div class="font-semibold text-sm">1. Direct Materials</div>
               <div class="text-xs text-slate-500">
-                Define the standard materials or components required for the output quantity.
+                Standard materials required for one batch, with unit costs.
               </div>
             </div>
-
-            <button
-              type="button"
-              id="mfgBomDefinitionAddLineBtn"
-              class="px-2 py-1 border rounded text-xs">
-              + Add Component
-            </button>
-
+            <button type="button" id="mfgBomDefinitionAddLineBtn"
+                    class="px-2 py-1 border rounded text-xs">+ Add Component</button>
           </div>
 
           <div class="overflow-auto border rounded mt-2">
-
             <table class="w-full text-xs">
-
               <thead class="bg-slate-50 border-b">
                 <tr>
                   <th class="text-left px-2 py-2">Component</th>
                   <th class="text-right px-2 py-2">Quantity</th>
                   <th class="text-left px-2 py-2">Unit</th>
                   <th class="text-right px-2 py-2">Scrap %</th>
+                  <th class="text-right px-2 py-2">Unit Cost</th>
                   <th class="text-center px-2 py-2"></th>
                 </tr>
               </thead>
-
               <tbody id="mfgBomDefinitionLinesTbody"></tbody>
-
             </table>
+          </div>
 
+          <!-- ================= 2. DIRECT LABOUR ================= -->
+          <div class="mt-5 flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-sm">2. Direct Labour</div>
+              <div class="text-xs text-slate-500">
+                Standard labour per batch. Cost auto-fills as hours × rate
+                unless you type a cost.
+              </div>
+            </div>
+            <button type="button" id="mfgBomAddLabourBtn"
+                    class="px-2 py-1 border rounded text-xs">+ Add Labour</button>
+          </div>
+
+          <div class="overflow-auto border rounded mt-2">
+            <table class="w-full text-xs">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-2 py-2">Worker</th>
+                  <th class="text-left px-2 py-2">Role</th>
+                  <th class="text-right px-2 py-2">Hours</th>
+                  <th class="text-right px-2 py-2">Rate</th>
+                  <th class="text-right px-2 py-2">Cost</th>
+                  <th class="text-center px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody id="mfgBomLabourTbody"></tbody>
+            </table>
+          </div>
+
+          <!-- ================= 3. OTHER DIRECT COSTS ================= -->
+          <div class="mt-5 flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-sm">3. Other Direct Costs</div>
+              <div class="text-xs text-slate-500">
+                e.g. packaging, gas — standard amount per batch.
+              </div>
+            </div>
+            <button type="button" id="mfgBomAddDirectBtn"
+                    class="px-2 py-1 border rounded text-xs">+ Add Cost</button>
+          </div>
+
+          <div class="overflow-auto border rounded mt-2">
+            <table class="w-full text-xs">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-2 py-2">Description</th>
+                  <th class="text-left px-2 py-2">Type</th>
+                  <th class="text-right px-2 py-2">Amount</th>
+                  <th class="text-center px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody id="mfgBomDirectTbody"></tbody>
+            </table>
+          </div>
+
+          <!-- ================= 4. MANUFACTURING OVERHEAD ================= -->
+          <div class="mt-5 flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-sm">4. Manufacturing Overhead</div>
+              <div class="text-xs text-slate-500">
+                e.g. electricity, water. Allocated auto-fills as
+                quantity × rate unless you type an amount.
+              </div>
+            </div>
+            <button type="button" id="mfgBomAddOverheadBtn"
+                    class="px-2 py-1 border rounded text-xs">+ Add Overhead</button>
+          </div>
+
+          <div class="overflow-auto border rounded mt-2">
+            <table class="w-full text-xs">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-2 py-2">Overhead</th>
+                  <th class="text-left px-2 py-2">Basis</th>
+                  <th class="text-right px-2 py-2">Quantity</th>
+                  <th class="text-right px-2 py-2">Rate</th>
+                  <th class="text-right px-2 py-2">Allocated</th>
+                  <th class="text-center px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody id="mfgBomOverheadTbody"></tbody>
+            </table>
+          </div>
+
+          <!-- ================= SUMMARY ================= -->
+          <div class="mt-4 border rounded p-3 bg-slate-50 text-xs">
+            <div class="font-semibold text-sm mb-2">
+              Standard Cost Summary (per batch)
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1">
+              <div class="flex justify-between">
+                <span class="text-slate-500">Materials</span>
+                <span id="mfgBomTotMaterials">0.00</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Labour</span>
+                <span id="mfgBomTotLabour">0.00</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Other Direct</span>
+                <span id="mfgBomTotDirect">0.00</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Overhead</span>
+                <span id="mfgBomTotOverhead">0.00</span>
+              </div>
+              <div class="flex justify-between font-semibold">
+                <span>Total</span>
+                <span id="mfgBomTotTotal">0.00</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Cost / Unit</span>
+                <span id="mfgBomTotUnit">—</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Margin / Unit</span>
+                <span id="mfgBomTotMargin" class="text-emerald-700 font-semibold">—</span>
+              </div>
+            </div>
           </div>
 
           <div class="flex justify-end gap-2 mt-4">
-
-            <button
-              type="button"
-              id="mfgBomDefinitionCancelBtn"
-              class="px-3 py-2 border rounded text-xs">
-              Cancel
-            </button>
-
-            <button
-              type="button"
-              id="mfgBomDefinitionSaveBtn"
-              class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
+            <button type="button" id="mfgBomDefinitionCancelBtn"
+                    class="px-3 py-2 border rounded text-xs">Cancel</button>
+            <button type="button" id="mfgBomDefinitionSaveBtn"
+                    class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
               Save BOM
             </button>
-
           </div>
 
         </div>
@@ -126187,61 +126259,46 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     document.body.appendChild(modal);
 
     document.getElementById("mfgBomDefinitionCloseBtn")
-      ?.addEventListener(
-        "click",
-        closeManufacturingBomDefinitionModal
-      );
+      ?.addEventListener("click", closeManufacturingBomDefinitionModal);
 
     document.getElementById("mfgBomDefinitionCancelBtn")
-      ?.addEventListener(
-        "click",
-        closeManufacturingBomDefinitionModal
-      );
+      ?.addEventListener("click", closeManufacturingBomDefinitionModal);
 
     document.getElementById("mfgBomDefinitionAddLineBtn")
-      ?.addEventListener(
-        "click",
-        () => addManufacturingBomDefinitionLine()
-      );
+      ?.addEventListener("click", () => addManufacturingBomDefinitionLine());
+
+    document.getElementById("mfgBomAddLabourBtn")
+      ?.addEventListener("click", () => addMfgBomLabourRow());
+
+    document.getElementById("mfgBomAddDirectBtn")
+      ?.addEventListener("click", () => addMfgBomDirectCostRow());
+
+    document.getElementById("mfgBomAddOverheadBtn")
+      ?.addEventListener("click", () => addMfgBomOverheadRow());
 
     document.getElementById("mfgBomDefinitionSaveBtn")
-      ?.addEventListener(
-        "click",
-        saveManufacturingBomDefinition
-      );
+      ?.addEventListener("click", saveManufacturingBomDefinition);
+
+    // one listener: auto-fill labour cost / overhead allocation,
+    // then refresh the summary — covers every input in the modal
+    modal.addEventListener("input", handleMfgBomModalInput);
   }
 
   modal.dataset.bomId = String(bomId || 0);
 
-  const codeInput =
-    document.getElementById("mfgBomDefinitionCode");
-
-  const nameInput =
-    document.getElementById("mfgBomDefinitionName");
-
-  const finishedItemInput =
-    document.getElementById("mfgBomDefinitionFinishedItem");
-
-  const sellingPriceInput =
-    document.getElementById("mfgBomDefinitionSellingPrice");
-
-  const batchQtyInput =
-    document.getElementById("mfgBomDefinitionBatchQty");
-
-  const batchUnitInput =
-    document.getElementById("mfgBomDefinitionBatchUnit");
-
-  const descriptionInput =
-    document.getElementById("mfgBomDefinitionDescription");
-
-  const title =
-    document.getElementById("mfgBomDefinitionTitle");
-
-  const msg =
-    document.getElementById("mfgBomDefinitionMsg");
-
-  const tbody =
-    document.getElementById("mfgBomDefinitionLinesTbody");
+  const codeInput = document.getElementById("mfgBomDefinitionCode");
+  const nameInput = document.getElementById("mfgBomDefinitionName");
+  const finishedItemInput = document.getElementById("mfgBomDefinitionFinishedItem");
+  const sellingPriceInput = document.getElementById("mfgBomDefinitionSellingPrice");
+  const batchQtyInput = document.getElementById("mfgBomDefinitionBatchQty");
+  const batchUnitInput = document.getElementById("mfgBomDefinitionBatchUnit");
+  const descriptionInput = document.getElementById("mfgBomDefinitionDescription");
+  const title = document.getElementById("mfgBomDefinitionTitle");
+  const msg = document.getElementById("mfgBomDefinitionMsg");
+  const tbody = document.getElementById("mfgBomDefinitionLinesTbody");
+  const labourTbody = document.getElementById("mfgBomLabourTbody");
+  const directTbody = document.getElementById("mfgBomDirectTbody");
+  const overheadTbody = document.getElementById("mfgBomOverheadTbody");
 
   codeInput.value = "";
   nameInput.value = "";
@@ -126251,13 +126308,19 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
   batchUnitInput.value = "";
   descriptionInput.value = "";
 
-  if (msg) {
-    msg.innerHTML = "";
-  }
+  if (msg) msg.innerHTML = "";
 
-  if (tbody) {
-    tbody.innerHTML = "";
-  }
+  if (tbody) tbody.innerHTML = "";
+  if (labourTbody) labourTbody.innerHTML = "";
+  if (directTbody) directTbody.innerHTML = "";
+  if (overheadTbody) overheadTbody.innerHTML = "";
+
+  // start with one blank row in each section
+  addManufacturingBomDefinitionLine();
+  addMfgBomLabourRow();
+  addMfgBomDirectCostRow();
+  addMfgBomOverheadRow();
+  recalcMfgBomTotals();
 
   title.textContent = bomId ? "Edit BOM" : "New BOM";
 
@@ -126275,21 +126338,10 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       throw new Error("Active company could not be determined");
     }
 
-    // Refresh inventory items every time the BOM modal opens
-    // so newly-created inventory items are immediately available.
-    const inventoryUrl = ENDPOINTS.inventory.items(
-      cid,
-      "active=1&limit=500"
-    );
-
+    // refresh inventory items each open so new items are selectable
     const inventoryData = await window.apiFetch(
       ENDPOINTS.inventory.items(cid, "active=1&limit=500"),
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-      }
+      { method: "GET", headers: { Accept: "application/json" } }
     );
 
     const inventoryItems =
@@ -126303,83 +126355,80 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
               ? inventoryData
               : [];
 
-    window._MFG_ITEM_CACHE = {
-      rows: inventoryItems
-    };
+    window._MFG_ITEM_CACHE = { rows: inventoryItems };
+
     modal.classList.remove("hidden");
-    // Now load the BOM itself if editing
-    if (!bomId) {
-      addManufacturingBomDefinitionLine();
-      return;
-    }
 
-    const url = ENDPOINTS.manufacturing.bom(cid, bomId);
+    if (!bomId) return;
 
-    const data = await window.apiFetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
-    });
+    const data = await window.apiFetch(
+      ENDPOINTS.manufacturing.bom(cid, bomId),
+      { method: "GET", headers: { Accept: "application/json" } }
+    );
 
     if (!data?.ok || !data?.bom) {
-      throw new Error(
-        data?.error || "Unable to load manufacturing BOM"
-      );
+      throw new Error(data?.error || "Unable to load manufacturing BOM");
     }
 
     const bom = data.bom;
 
-    codeInput.value =
-      bom.bom_code ?? "";
-
-    nameInput.value =
-      bom.name ?? "";
-
-    finishedItemInput.value =
-      bom.finished_item_name ?? "";
-
-    sellingPriceInput.value =
-      bom.selling_price ?? "";
-
-    batchQtyInput.value =
-      bom.batch_qty ?? "1";
-
-    batchUnitInput.value =
-      bom.batch_unit ?? "";
-
-    descriptionInput.value =
-      bom.description ?? "";
+    codeInput.value = bom.bom_code ?? "";
+    nameInput.value = bom.name ?? "";
+    finishedItemInput.value = bom.finished_item_name ?? "";
+    sellingPriceInput.value = bom.selling_price ?? "";
+    batchQtyInput.value = bom.batch_qty ?? "1";
+    batchUnitInput.value = bom.batch_unit ?? "";
+    descriptionInput.value = bom.description ?? "";
 
     if (tbody) {
       tbody.innerHTML = "";
-
-      const lines = Array.isArray(bom.lines)
-        ? bom.lines
-        : [];
-
+      const lines = Array.isArray(bom.lines) ? bom.lines : [];
       if (lines.length) {
-        lines.forEach(line => {
-          addManufacturingBomDefinitionLine(line);
-        });
+        lines.forEach(line => addManufacturingBomDefinitionLine(line));
       } else {
         addManufacturingBomDefinitionLine();
       }
     }
 
+    if (labourTbody) {
+      labourTbody.innerHTML = "";
+      const rows = Array.isArray(bom.labour) ? bom.labour : [];
+      if (rows.length) {
+        rows.forEach(r => addMfgBomLabourRow(r));
+      } else {
+        addMfgBomLabourRow();
+      }
+    }
+
+    if (directTbody) {
+      directTbody.innerHTML = "";
+      const rows = Array.isArray(bom.direct_costs) ? bom.direct_costs : [];
+      if (rows.length) {
+        rows.forEach(r => addMfgBomDirectCostRow(r));
+      } else {
+        addMfgBomDirectCostRow();
+      }
+    }
+
+    if (overheadTbody) {
+      overheadTbody.innerHTML = "";
+      const rows = Array.isArray(bom.overheads) ? bom.overheads : [];
+      if (rows.length) {
+        rows.forEach(r => addMfgBomOverheadRow(r));
+      } else {
+        addMfgBomOverheadRow();
+      }
+    }
+
+    recalcMfgBomTotals();
+
   } catch (e) {
-    console.error(
-      "[Manufacturing BOM] failed to load:",
-      e
-    );
+    console.error("[Manufacturing BOM] failed to load:", e);
 
     if (msg) {
       msg.innerHTML = `
         <div class="mb-3 border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2 text-xs">
-          ${esc(
-            e?.message ||
-            "Unable to load manufacturing BOM."
-          )}
+          ${esc(e?.message || "Unable to load manufacturing BOM.")}
         </div>
       `;
     }
@@ -126393,7 +126442,6 @@ function addManufacturingBomDefinitionLine(line = {}) {
   if (!tbody) return;
 
   const tr = document.createElement("tr");
-
   tr.className = "border-b";
 
   tr.innerHTML = `
@@ -126403,35 +126451,28 @@ function addManufacturingBomDefinitionLine(line = {}) {
         ${manufacturingItemOptions(line.item_id || "")}
       </select>
     </td>
-
     <td class="px-2 py-2">
-      <input
-        type="number"
-        min="0"
-        step="0.0001"
+      <input type="number" min="0" step="0.0001"
         class="mfg-bom-definition-line-qty w-full border rounded px-2 py-1 text-right"
         value="${esc(line.quantity ?? line.qty ?? "")}">
     </td>
-
     <td class="px-2 py-2">
-      <input
-        type="text"
+      <input type="text"
         class="mfg-bom-definition-line-unit w-full border rounded px-2 py-1"
         value="${esc(line.unit || line.uom || "")}">
     </td>
-
     <td class="px-2 py-2">
-      <input
-        type="number"
-        min="0"
-        step="0.01"
+      <input type="number" min="0" step="0.01"
         class="mfg-bom-definition-line-scrap w-full border rounded px-2 py-1 text-right"
         value="${esc(line.scrap_pct ?? line.scrap_percent ?? 0)}">
     </td>
-
+    <td class="px-2 py-2">
+      <input type="number" min="0" step="0.01"
+        class="mfg-bom-definition-line-cost w-full border rounded px-2 py-1 text-right"
+        value="${esc(line.unit_cost ?? "")}" placeholder="0.00">
+    </td>
     <td class="px-2 py-2 text-center">
-      <button
-        type="button"
+      <button type="button"
         class="text-red-600 underline text-xs"
         data-mfg-bom-definition-remove>
         Remove
@@ -126439,11 +126480,11 @@ function addManufacturingBomDefinitionLine(line = {}) {
     </td>
   `;
 
-  tr.querySelector(
-    "[data-mfg-bom-definition-remove]"
-  )?.addEventListener("click", () => {
-    tr.remove();
-  });
+  tr.querySelector("[data-mfg-bom-definition-remove]")
+    ?.addEventListener("click", () => {
+      tr.remove();
+      recalcMfgBomTotals();
+    });
 
   tbody.appendChild(tr);
 }
@@ -126480,286 +126521,211 @@ function showManufacturingBomDefinitionMsg(
 
 async function saveManufacturingBomDefinition() {
   const cid =
-    getActiveCompanyId?.() ||
-    window.CURRENT_COMPANY_ID;
+    getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
 
   const modal =
     document.getElementById("mfgBomDefinitionModal");
 
   if (!cid || !modal) return;
 
-  showManufacturingBomDefinitionMsg(
-    "Saving BOM...",
-    "info"
-  );
+  showManufacturingBomDefinitionMsg("Saving BOM...", "info");
 
   const payload = {
     bom_code:
-      document.getElementById(
-        "mfgBomDefinitionCode"
-      )?.value.trim(),
-
+      document.getElementById("mfgBomDefinitionCode")?.value.trim(),
     name:
-      document.getElementById(
-        "mfgBomDefinitionName"
-      )?.value.trim(),
-
-    finished_item_name: 
-      document.getElementById( 
-        "mfgBomDefinitionFinishedItem" 
-      )?.value.trim(), 
-
-    selling_price: 
-      Number( 
-        document.getElementById( 
-          "mfgBomDefinitionSellingPrice" 
-        )?.value || 0 
-      ), 
-    
-    batch_qty:
-      Number(
-        document.getElementById(
-          "mfgBomDefinitionBatchQty"
-        )?.value || 0
-      ),
-
+      document.getElementById("mfgBomDefinitionName")?.value.trim(),
+    finished_item_name:
+      document.getElementById("mfgBomDefinitionFinishedItem")?.value.trim(),
+    selling_price: Number(
+      document.getElementById("mfgBomDefinitionSellingPrice")?.value || 0
+    ),
+    batch_qty: Number(
+      document.getElementById("mfgBomDefinitionBatchQty")?.value || 0
+    ),
     batch_unit:
-      document.getElementById(
-        "mfgBomDefinitionBatchUnit"
-      )?.value.trim(),
-
+      document.getElementById("mfgBomDefinitionBatchUnit")?.value.trim(),
     description:
-      document.getElementById(
-        "mfgBomDefinitionDescription"
-      )?.value.trim()
+      document.getElementById("mfgBomDefinitionDescription")?.value.trim() || null
   };
 
-  if (!payload.bom_code) {
-    showManufacturingBomDefinitionMsg(
-      "BOM code is required.",
-      "error"
-    );
-    return;
-  }
+  if (!payload.bom_code)
+    return showManufacturingBomDefinitionMsg("BOM code is required.", "error");
 
-  console.log(
-    "[Manufacturing] Finished item field:",
-    document.getElementById("mfgBomDefinitionFinishedItem")
-  );
+  if (!payload.name)
+    return showManufacturingBomDefinitionMsg("BOM name is required.", "error");
 
-  console.log(
-    "[Manufacturing] Finished item value:",
-    document.getElementById("mfgBomDefinitionFinishedItem")?.value
-  );
+  if (!payload.finished_item_name)
+    return showManufacturingBomDefinitionMsg("Finished item is required.", "error");
 
-  console.log(
-    "[Manufacturing] Payload:",
-    payload
-  );
-  if (!payload.name) {
-    showManufacturingBomDefinitionMsg(
-      "BOM name is required.",
-      "error"
-    );
-    return;
-  }
+  if (!(payload.selling_price >= 0))
+    return showManufacturingBomDefinitionMsg("Selling price cannot be negative.", "error");
 
-  if (!payload.finished_item_name) {
-    showManufacturingBomDefinitionMsg(
-      "Finished item is required.",
-      "error"
-    );
-    return;
-  }
+  if (!(payload.batch_qty > 0))
+    return showManufacturingBomDefinitionMsg("Output quantity must be greater than zero.", "error");
 
-  if (!(payload.selling_price >= 0)) { 
-    showManufacturingBomDefinitionMsg( 
-      "Selling price cannot be negative.", 
-      "error" 
-    ); 
-    return; 
-  }
-
-  if (!(payload.batch_qty > 0)) {
-    showManufacturingBomDefinitionMsg(
-      "Output quantity must be greater than zero.",
-      "error"
-    );
-    return;
-  }
-
-  const rows = [
-    ...document.querySelectorAll(
-      "#mfgBomDefinitionLinesTbody tr"
-    )
-  ];
-
+  // ---------- 1. direct materials ----------
   const lines = [];
 
-  for (const row of rows) {
-    const itemId =
-      Number(
-        row.querySelector(
-          ".mfg-bom-definition-line-item"
-        )?.value || 0
-      );
-
-    const quantity =
-      Number(
-        row.querySelector(
-          ".mfg-bom-definition-line-qty"
-        )?.value || 0
-      );
-
+  for (const row of document.querySelectorAll("#mfgBomDefinitionLinesTbody tr")) {
+    const itemId = Number(
+      row.querySelector(".mfg-bom-definition-line-item")?.value || 0
+    );
+    const quantity = Number(
+      row.querySelector(".mfg-bom-definition-line-qty")?.value || 0
+    );
     const unit =
-      row.querySelector(
-        ".mfg-bom-definition-line-unit"
-      )?.value.trim() || "";
+      row.querySelector(".mfg-bom-definition-line-unit")?.value.trim() || "";
+    const scrapPct = Number(
+      row.querySelector(".mfg-bom-definition-line-scrap")?.value || 0
+    );
+    const unitCost = Number(
+      row.querySelector(".mfg-bom-definition-line-cost")?.value || 0
+    );
 
-    const scrapPct =
-      Number(
-        row.querySelector(
-          ".mfg-bom-definition-line-scrap"
-        )?.value || 0
-      );
+    if (!itemId && !quantity && !unit && !unitCost) continue;
 
-    if (!itemId && !quantity && !unit) {
-      continue;
-    }
-
-    if (!itemId) {
-      showManufacturingBomDefinitionMsg(
+    if (!itemId)
+      return showManufacturingBomDefinitionMsg(
         "Each BOM component must have an item.",
         "error"
       );
-      return;
-    }
 
-    if (!(quantity > 0)) {
-      showManufacturingBomDefinitionMsg(
+    if (!(quantity > 0))
+      return showManufacturingBomDefinitionMsg(
         "Each BOM component must have a quantity greater than zero.",
         "error"
       );
-      return;
-    }
 
-    if (scrapPct < 0) {
-      showManufacturingBomDefinitionMsg(
-        "Scrap percentage cannot be negative.",
+    if (unitCost < 0)
+      return showManufacturingBomDefinitionMsg(
+        "Unit cost cannot be negative.",
         "error"
       );
-      return;
-    }
 
     lines.push({
       item_id: itemId,
       quantity,
       unit,
-      scrap_pct: scrapPct
+      scrap_pct: scrapPct,
+      unit_cost: unitCost
     });
   }
 
-  if (!lines.length) {
-    showManufacturingBomDefinitionMsg(
+  if (!lines.length)
+    return showManufacturingBomDefinitionMsg(
       "Add at least one BOM component.",
       "error"
     );
-    return;
+
+  // ---------- 2. direct labour ----------
+  const labour = [];
+
+  for (const tr of document.querySelectorAll("#mfgBomLabourTbody tr")) {
+    const worker_name =
+      tr.querySelector(".mfg-lab-name")?.value.trim() || null;
+    const role =
+      tr.querySelector(".mfg-lab-role")?.value.trim() || null;
+    const hours = mfgBomNullableNum(tr.querySelector(".mfg-lab-hours"));
+    const rate = mfgBomNullableNum(tr.querySelector(".mfg-lab-rate"));
+    const labour_cost = mfgBomNullableNum(tr.querySelector(".mfg-lab-cost"));
+
+    // fully blank row -> skip
+    if (!worker_name && !role && hours === null && rate === null && labour_cost === null)
+      continue;
+
+    // must be able to produce a cost: hours × rate, or an explicit cost
+    if (!(hours > 0 && rate > 0) && !(labour_cost > 0)) {
+      return showManufacturingBomDefinitionMsg(
+        "Each labour row needs hours and rate, or a cost.",
+        "error"
+      );
+    }
+
+    labour.push({ worker_name, role, hours, rate, labour_cost });
+  }
+
+  // ---------- 3. other direct costs ----------
+  const direct_costs = [];
+
+  for (const tr of document.querySelectorAll("#mfgBomDirectTbody tr")) {
+    const description =
+      tr.querySelector(".mfg-dc-desc")?.value.trim() || null;
+    const cost_type =
+      tr.querySelector(".mfg-dc-type")?.value.trim() || null;
+    const amount = mfgBomNullableNum(tr.querySelector(".mfg-dc-amount"));
+
+    if (!description && amount === null) continue;
+
+    if (!(amount > 0)) {
+      return showManufacturingBomDefinitionMsg(
+        "Each other-cost row needs an amount greater than zero.",
+        "error"
+      );
+    }
+
+    direct_costs.push({ description, cost_type, amount });
+  }
+
+  // ---------- 4. manufacturing overhead ----------
+  const overheads = [];
+
+  for (const tr of document.querySelectorAll("#mfgBomOverheadTbody tr")) {
+    const allocation_name =
+      tr.querySelector(".mfg-oh-name")?.value.trim() || null;
+    const basis =
+      tr.querySelector(".mfg-oh-basis")?.value.trim() || null;
+    const quantity = mfgBomNullableNum(tr.querySelector(".mfg-oh-qty"));
+    const rate = mfgBomNullableNum(tr.querySelector(".mfg-oh-rate"));
+    const allocated_amount = mfgBomNullableNum(tr.querySelector(".mfg-oh-alloc"));
+
+    if (!allocation_name && quantity === null && allocated_amount === null)
+      continue;
+
+    if (!(quantity > 0 && rate > 0) && !(allocated_amount > 0)) {
+      return showManufacturingBomDefinitionMsg(
+        "Each overhead row needs quantity × rate, or an allocated amount.",
+        "error"
+      );
+    }
+
+    overheads.push({ allocation_name, basis, quantity, rate, allocated_amount });
+  }
+
+  payload.lines = lines;
+  payload.labour = labour;
+  payload.direct_costs = direct_costs;
+  payload.overheads = overheads;
+
+  const btn = document.getElementById("mfgBomDefinitionSaveBtn");
+  const oldText = btn?.textContent || "Save BOM";
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Saving…";
   }
 
   try {
-    const bomId =
-      Number(modal.dataset.bomId || 0);
+    const bomId = Number(modal.dataset.bomId || 0);
 
-    let savedBom;
-
-    if (bomId) {
-      savedBom = await apiFetch(
-        ENDPOINTS.manufacturing.bom(cid, bomId),
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        }
-      );
-    } else {
-      savedBom = await apiFetch(
-        ENDPOINTS.manufacturing.boms(cid),
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        }
-      );
-    }
-
-    console.log(
-      "[Manufacturing] Saved BOM response:",
-      savedBom
-    );
-
-    console.log(
-      "[Manufacturing] Saved BOM response JSON:",
-      JSON.stringify(savedBom, null, 2)
-    );
-
-    const savedBomId =
-      Number(
-        savedBom?.id ||
-        savedBom?.bom_id ||
-        savedBom?.row?.id ||
-        savedBom?.bom?.id ||
-        bomId
-      );
-
-    if (!savedBomId) {
-      throw new Error(
-        "BOM was saved but no BOM ID was returned."
-      );
-    }
-
-    if (!bomId) {
-      for (const line of lines) {
-        await apiFetch(
-          ENDPOINTS.manufacturing.bomLines(
-            cid,
-            savedBomId
-          ),
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(line)
-          }
-        );
+    // ONE request — header + lines + cost sections + standard
+    // cost recalculation all happen server-side in one transaction
+    const saved = await apiFetch(
+      bomId
+        ? ENDPOINTS.manufacturing.bom(cid, bomId)
+        : ENDPOINTS.manufacturing.boms(cid),
+      {
+        method: bomId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
       }
-    } else {
-      await apiFetch(
-        ENDPOINTS.manufacturing.bomLines(
-          cid,
-          savedBomId
-        ),
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            lines
-          })
-        }
-      );
+    );
+
+    if (!saved?.ok) {
+      throw new Error(saved?.error || "Failed to save BOM.");
     }
 
-    showManufacturingBomDefinitionMsg(
-      "BOM saved successfully.",
-      "ok"
-    );
+    showManufacturingBomDefinitionMsg("BOM saved successfully.", "ok");
 
     await loadManufacturingBoms();
 
@@ -126768,18 +126734,272 @@ async function saveManufacturingBomDefinition() {
     }, 500);
 
   } catch (err) {
-    console.error(
-      "[Manufacturing] save BOM failed:",
-      err
-    );
-
+    console.error("[Manufacturing] save BOM failed:", err);
     showManufacturingBomDefinitionMsg(
-      err?.message ||
-        "Failed to save BOM.",
+      err?.message || "Failed to save BOM.",
       "error"
     );
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
   }
 }
+// =====================================================
+// Costed BOM Definition Modal (single-request save)
+// =====================================================
+
+function mfgBomNum(el) {
+  const v = parseFloat(el?.value);
+  return Number.isFinite(v) ? v : 0;
+}
+
+function mfgBomNullableNum(el) {
+  const raw = el?.value;
+  if (raw === undefined || raw === null || String(raw).trim() === "") return null;
+  const v = parseFloat(raw);
+  return Number.isFinite(v) ? v : null;
+}
+
+// ---------- section row builders ----------
+
+function addMfgBomLabourRow(row = {}) {
+  const tbody = document.getElementById("mfgBomLabourTbody");
+  if (!tbody) return;
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b";
+
+  tr.innerHTML = `
+    <td class="px-2 py-2">
+      <input class="mfg-lab-name w-full border rounded px-2 py-1"
+             value="${esc(row.worker_name || "")}" placeholder="e.g. Baker 1">
+    </td>
+    <td class="px-2 py-2">
+      <input class="mfg-lab-role w-full border rounded px-2 py-1"
+             value="${esc(row.role || "")}" placeholder="Baker">
+    </td>
+    <td class="px-2 py-2">
+      <input type="number" min="0" step="0.01"
+             class="mfg-lab-hours w-full border rounded px-2 py-1 text-right"
+             value="${esc(row.hours ?? "")}">
+    </td>
+    <td class="px-2 py-2">
+      <input type="number" min="0" step="0.01"
+             class="mfg-lab-rate w-full border rounded px-2 py-1 text-right"
+             value="${esc(row.rate ?? "")}">
+    </td>
+    <td class="px-2 py-2">
+      <input type="number" min="0" step="0.01"
+             class="mfg-lab-cost w-full border rounded px-2 py-1 text-right"
+             value="${esc(row.labour_cost ?? "")}" placeholder="auto">
+    </td>
+    <td class="px-2 py-2 text-center">
+      <button type="button" class="text-red-600 underline text-xs"
+              data-mfg-bom-row-remove>Remove</button>
+    </td>
+  `;
+
+  tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    recalcMfgBomTotals();
+  });
+
+  tbody.appendChild(tr);
+}
+
+function addMfgBomDirectCostRow(row = {}) {
+  const tbody = document.getElementById("mfgBomDirectTbody");
+  if (!tbody) return;
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b";
+
+  tr.innerHTML = `
+    <td class="px-2 py-2">
+      <input class="mfg-dc-desc w-full border rounded px-2 py-1"
+             value="${esc(row.description || "")}" placeholder="e.g. Packaging">
+    </td>
+    <td class="px-2 py-2">
+      <input class="mfg-dc-type w-full border rounded px-2 py-1"
+             value="${esc(row.cost_type || "")}" placeholder="packaging / fuel">
+    </td>
+    <td class="px-2 py-2">
+      <input type="number" min="0" step="0.01"
+             class="mfg-dc-amount w-full border rounded px-2 py-1 text-right"
+             value="${esc(row.amount ?? "")}">
+    </td>
+    <td class="px-2 py-2 text-center">
+      <button type="button" class="text-red-600 underline text-xs"
+              data-mfg-bom-row-remove>Remove</button>
+    </td>
+  `;
+
+  tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    recalcMfgBomTotals();
+  });
+
+  tbody.appendChild(tr);
+}
+
+function addMfgBomOverheadRow(row = {}) {
+  const tbody = document.getElementById("mfgBomOverheadTbody");
+  if (!tbody) return;
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b";
+
+  tr.innerHTML = `
+    <td class="px-2 py-2">
+      <input class="mfg-oh-name w-full border rounded px-2 py-1"
+             value="${esc(row.allocation_name || "")}" placeholder="e.g. Electricity">
+    </td>
+    <td class="px-2 py-2">
+      <input class="mfg-oh-basis w-full border rounded px-2 py-1"
+             value="${esc(row.basis || "")}" placeholder="per batch / per hour">
+    </td>
+    <td class="px-2 py-2">
+      <input type="number" min="0" step="0.01"
+             class="mfg-oh-qty w-full border rounded px-2 py-1 text-right"
+             value="${esc(row.quantity ?? "")}">
+    </td>
+    <td class="px-2 py-2">
+      <input type="number" min="0" step="0.01"
+             class="mfg-oh-rate w-full border rounded px-2 py-1 text-right"
+             value="${esc(row.rate ?? "")}">
+    </td>
+    <td class="px-2 py-2">
+      <input type="number" min="0" step="0.01"
+             class="mfg-oh-alloc w-full border rounded px-2 py-1 text-right"
+             value="${esc(row.allocated_amount ?? "")}" placeholder="auto">
+    </td>
+    <td class="px-2 py-2 text-center">
+      <button type="button" class="text-red-600 underline text-xs"
+              data-mfg-bom-row-remove>Remove</button>
+    </td>
+  `;
+
+  tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    recalcMfgBomTotals();
+  });
+
+  tbody.appendChild(tr);
+}
+
+// ---------- live totals ----------
+
+function recalcMfgBomTotals() {
+  let materials = 0, labour = 0, direct = 0, overhead = 0;
+
+  document
+    .querySelectorAll("#mfgBomDefinitionLinesTbody tr")
+    .forEach(tr => {
+      const itemId = tr.querySelector(".mfg-bom-definition-line-item")?.value;
+      const qty = mfgBomNum(tr.querySelector(".mfg-bom-definition-line-qty"));
+      const scrap = mfgBomNum(tr.querySelector(".mfg-bom-definition-line-scrap"));
+      const uc = mfgBomNum(tr.querySelector(".mfg-bom-definition-line-cost"));
+
+      if (!itemId && qty === 0 && uc === 0) return;
+
+      // mirrors the backend formula:
+      // qty * (1 + scrap/100) * unit_cost
+      materials += qty * (1 + scrap / 100) * uc;
+    });
+
+  document
+    .querySelectorAll("#mfgBomLabourTbody tr")
+    .forEach(tr => {
+      const hours = mfgBomNum(tr.querySelector(".mfg-lab-hours"));
+      const rate = mfgBomNum(tr.querySelector(".mfg-lab-rate"));
+      const costEl = tr.querySelector(".mfg-lab-cost");
+      const manual = costEl && costEl.value.trim() !== "" ? mfgBomNum(costEl) : 0;
+      labour += manual > 0 ? manual : hours * rate;
+    });
+
+  document
+    .querySelectorAll("#mfgBomDirectTbody tr")
+    .forEach(tr => {
+      direct += mfgBomNum(tr.querySelector(".mfg-dc-amount"));
+    });
+
+  document
+    .querySelectorAll("#mfgBomOverheadTbody tr")
+    .forEach(tr => {
+      const qty = mfgBomNum(tr.querySelector(".mfg-oh-qty"));
+      const rate = mfgBomNum(tr.querySelector(".mfg-oh-rate"));
+      const allocEl = tr.querySelector(".mfg-oh-alloc");
+      const manual = allocEl && allocEl.value.trim() !== "" ? mfgBomNum(allocEl) : 0;
+      overhead += manual > 0 ? manual : qty * rate;
+    });
+
+  const total = materials + labour + direct + overhead;
+
+  const batchQty =
+    mfgBomNum(document.getElementById("mfgBomDefinitionBatchQty"));
+
+  const selling =
+    mfgBomNum(document.getElementById("mfgBomDefinitionSellingPrice"));
+
+  const unit = batchQty > 0 ? total / batchQty : 0;
+
+  const fmt = v =>
+    v.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v;
+  };
+
+  set("mfgBomTotMaterials", fmt(materials));
+  set("mfgBomTotLabour", fmt(labour));
+  set("mfgBomTotDirect", fmt(direct));
+  set("mfgBomTotOverhead", fmt(overhead));
+  set("mfgBomTotTotal", fmt(total));
+  set("mfgBomTotUnit", batchQty > 0 ? fmt(unit) : "—");
+
+  const marginEl = document.getElementById("mfgBomTotMargin");
+  if (marginEl) {
+    marginEl.textContent =
+      selling > 0 && batchQty > 0 ? fmt(selling - unit) : "—";
+  }
+}
+
+// one delegated listener handles auto-fill + recalc for the whole modal
+function handleMfgBomModalInput(e) {
+  const t = e.target;
+  const tr = t.closest?.("tr");
+
+  if (tr) {
+    if (
+      t.classList.contains("mfg-lab-hours") ||
+      t.classList.contains("mfg-lab-rate")
+    ) {
+      const h = mfgBomNum(tr.querySelector(".mfg-lab-hours"));
+      const r = mfgBomNum(tr.querySelector(".mfg-lab-rate"));
+      const costEl = tr.querySelector(".mfg-lab-cost");
+      if (costEl && h > 0 && r > 0) costEl.value = (h * r).toFixed(2);
+    }
+
+    if (
+      t.classList.contains("mfg-oh-qty") ||
+      t.classList.contains("mfg-oh-rate")
+    ) {
+      const q = mfgBomNum(tr.querySelector(".mfg-oh-qty"));
+      const r = mfgBomNum(tr.querySelector(".mfg-oh-rate"));
+      const allocEl = tr.querySelector(".mfg-oh-alloc");
+      if (allocEl && q > 0 && r > 0) allocEl.value = (q * r).toFixed(2);
+    }
+  }
+
+  recalcMfgBomTotals();
+}
+
 // =====================================================
 // BOM Modal
 // =====================================================
@@ -128934,6 +129154,158 @@ function refreshManufacturingOrderManagementSummary(modal, order) {
   );
 }
 
+const MFG_ORDER_COST_EDIT_SPECS = {
+  labour: {
+    title: "Update Labour",
+    url: (cid, orderId, id) =>
+      `/api/companies/${cid}/manufacturing/orders/${orderId}/labour/${id}`,
+    fields: [
+      { key: "worker_name", label: "Worker", type: "text", full: true },
+      { key: "role", label: "Role", type: "text" },
+      { key: "hours", label: "Hours", type: "number", step: "0.01" },
+      { key: "rate", label: "Rate", type: "number", step: "0.01" },
+      { key: "labour_cost", label: "Labour Cost", type: "number", step: "0.01" }
+    ]
+  },
+  direct_costs: {
+    title: "Update Direct Cost",
+    url: (cid, orderId, id) =>
+      `/api/companies/${cid}/manufacturing/orders/${orderId}/direct-costs/${id}`,
+    fields: [
+      { key: "description", label: "Description", type: "text", full: true },
+      { key: "cost_type", label: "Cost Type", type: "text" },
+      { key: "amount", label: "Amount", type: "number", step: "0.01" }
+    ]
+  },
+  overhead: {
+    title: "Update Overhead",
+    url: (cid, orderId, id) =>
+      `/api/companies/${cid}/manufacturing/orders/${orderId}/overhead/${id}`,
+    fields: [
+      { key: "allocation_name", label: "Cost / Allocation", type: "text", full: true },
+      { key: "basis", label: "Basis", type: "text" },
+      { key: "quantity", label: "Quantity", type: "number", step: "0.01" },
+      { key: "rate", label: "Rate", type: "number", step: "0.01" },
+      { key: "allocated_amount", label: "Allocated Amount", type: "number", step: "0.01" }
+    ]
+  }
+};
+
+function openMfgOrderCostRowEditModal(orderId, section, line) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid || !orderId || !line?.id) return;
+
+  const spec = MFG_ORDER_COST_EDIT_SPECS[section];
+  if (!spec) return;
+
+  const modal = document.createElement("div");
+  modal.className =
+    "fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4";
+
+  modal.innerHTML = `
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-auto">
+      <div class="flex items-center justify-between border-b px-4 py-3">
+        <div class="font-semibold text-sm">${esc(spec.title)}</div>
+        <button type="button" data-cancel class="text-slate-500 text-lg">×</button>
+      </div>
+      <div class="p-4">
+        <div data-edit-msg class="hidden mb-3 border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2 text-xs"></div>
+        <div class="text-xs text-slate-500 mb-3">
+          Adjust this cost to reflect what actually happened. Updated rows are
+          preserved even when the order is re-synced from the BOM.
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          ${spec.fields.map(f => `
+            <label class="text-xs ${f.full ? "md:col-span-2" : ""}">
+              <div class="text-slate-600 mb-1">${esc(f.label)}</div>
+              <input
+                type="${f.type || "text"}"
+                ${f.type === "number" ? `step="${f.step || "any"}" min="0"` : ""}
+                data-field="${esc(f.key)}"
+                class="w-full border rounded px-2 py-2 text-sm"
+                value="${esc(line[f.key] ?? "")}">
+            </label>
+          `).join("")}
+        </div>
+        <div class="flex justify-end gap-2 mt-4">
+          <button type="button" data-cancel class="px-3 py-2 border rounded text-xs">Cancel</button>
+          <button type="button" data-save class="px-3 py-2 bg-slate-900 text-white rounded text-xs">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+  modal.querySelectorAll("[data-cancel]")
+    .forEach(b => b.addEventListener("click", close));
+
+  // live auto-fill: hours × rate -> cost, qty × rate -> allocated
+  const num = v => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  modal.addEventListener("input", e => {
+    const f = e.target?.dataset?.field;
+    if (!f) return;
+
+    if (section === "labour" && (f === "hours" || f === "rate")) {
+      const h = num(modal.querySelector('[data-field="hours"]')?.value);
+      const r = num(modal.querySelector('[data-field="rate"]')?.value);
+      const c = modal.querySelector('[data-field="labour_cost"]');
+      if (c && h > 0 && r > 0) c.value = (h * r).toFixed(2);
+    }
+
+    if (section === "overhead" && (f === "quantity" || f === "rate")) {
+      const q = num(modal.querySelector('[data-field="quantity"]')?.value);
+      const r = num(modal.querySelector('[data-field="rate"]')?.value);
+      const a = modal.querySelector('[data-field="allocated_amount"]');
+      if (a && q > 0 && r > 0) a.value = (q * r).toFixed(2);
+    }
+  });
+
+  modal.querySelector("[data-save]")?.addEventListener("click", async () => {
+    const body = {};
+
+    for (const f of spec.fields) {
+      const raw = modal.querySelector(`[data-field="${f.key}"]`)?.value ?? "";
+      body[f.key] =
+        f.type === "number"
+          ? (raw === "" ? null : Number(raw))
+          : (raw.trim() || null);
+    }
+
+    const btn = modal.querySelector("[data-save]");
+    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+
+    try {
+      const res = await apiFetch(spec.url(cid, orderId, Number(line.id)), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+
+      if (!res?.ok) throw new Error(res?.error || "Failed to update.");
+
+      close();
+
+      // refresh the detail modal underneath
+      document.querySelector("[data-mfg-order-detail]")?.remove();
+      await openManufacturingOrderDetail(orderId);
+
+    } catch (err) {
+      const msg = modal.querySelector("[data-edit-msg]");
+      if (msg) {
+        msg.classList.remove("hidden");
+        msg.textContent = err?.message || "Failed to update.";
+      }
+      if (btn) { btn.disabled = false; btn.textContent = "Save Changes"; }
+    }
+  });
+}
+
 async function openManufacturingOrderDetail(orderId) {
   const cid =
     getActiveCompanyId?.() ||
@@ -129686,6 +130058,16 @@ async function openManufacturingOrderDetail(orderId) {
                         </td>
 
                         <td class="px-3 py-2 text-right">
+                          ${
+                            canRecordUsage
+                              ? `<button
+                                  type="button"
+                                  class="text-xs text-indigo-600 hover:underline mr-2"
+                                  data-edit-labour="${Number(line.id)}">
+                                  Update
+                                </button>`
+                              : ""
+                          }
                           <button
                             type="button"
                             class="text-xs text-red-600 hover:underline"
@@ -129767,7 +130149,14 @@ async function openManufacturingOrderDetail(orderId) {
                         <td class="px-3 py-2">${esc(line.cost_type || "")}</td>
                         <td class="px-3 py-2 text-right">${line.amount != null ? fmtMoney(line.amount) : "—"}</td>
                         <td class="px-3 py-2 text-right">
-                          <button type="button" class="text-xs text-red-600 hover:underline" data-delete-direct-cost="${Number(line.id)}">Delete</button>
+                          ${
+                            canRecordUsage
+                              ? `<button type="button" class="text-xs text-indigo-600 hover:underline mr-2"
+                                         data-edit-direct-cost="${Number(line.id)}">Update</button>`
+                              : ""
+                          }
+                          <button type="button" class="text-xs text-red-600 hover:underline"
+                                  data-delete-direct-cost="${Number(line.id)}">Delete</button>
                         </td>
                       </tr>
                     `).join("")
@@ -129914,6 +130303,12 @@ async function openManufacturingOrderDetail(orderId) {
                             line.asset_depreciation_id
                               ? `<span class="inline-block px-2 py-0.5 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Depreciation Posted</span>`
                               : `
+                                ${
+                                  canRecordUsage
+                                    ? `<button type="button" class="text-xs text-indigo-600 hover:underline mr-2"
+                                               data-edit-overhead="${Number(line.id)}">Update</button>`
+                                    : ""
+                                }
                                 <button
                                   type="button"
                                   class="text-xs text-red-600 hover:underline"
@@ -130057,6 +130452,35 @@ async function openManufacturingOrderDetail(orderId) {
   `;
 
   document.body.appendChild(modal);
+  modal.dataset.mfgOrderDetail = "1";
+
+  /* -------------------------------------------------------
+     COST ROW EDIT (labour / direct costs / overhead)
+  ------------------------------------------------------- */
+  const labourById = new Map(labourLines.map(l => [Number(l.id), l]));
+  const directById = new Map(directCostLines.map(l => [Number(l.id), l]));
+  const overheadById = new Map(overheadLines.map(l => [Number(l.id), l]));
+
+  modal.querySelectorAll("[data-edit-labour]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const line = labourById.get(Number(btn.dataset.editLabour));
+      if (line) openMfgOrderCostRowEditModal(orderId, "labour", line);
+    });
+  });
+
+  modal.querySelectorAll("[data-edit-direct-cost]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const line = directById.get(Number(btn.dataset.editDirectCost));
+      if (line) openMfgOrderCostRowEditModal(orderId, "direct_costs", line);
+    });
+  });
+
+  modal.querySelectorAll("[data-edit-overhead]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const line = overheadById.get(Number(btn.dataset.editOverhead));
+      if (line) openMfgOrderCostRowEditModal(orderId, "overhead", line);
+    });
+  });
 
   /* -------------------------------------------------------
      CLOSE

@@ -13869,6 +13869,10 @@ def manufacturing_boms(cid: int):
             effective_from=payload.get("effective_from"),
             effective_to=payload.get("effective_to"),
             is_default=payload.get("is_default", False),
+            lines=payload.get("lines"),
+            labour=payload.get("labour"),
+            direct_costs=payload.get("direct_costs"),
+            overheads=payload.get("overheads"),
             created_by_user_id=int(user.get("id") or 0) or None,
         )
 
@@ -13895,7 +13899,36 @@ def manufacturing_boms(cid: int):
             "error": str(e),
         }), 400
 
-
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/labour/<int:labour_id>",
+    methods=["PUT", "PATCH"]
+)
+@require_auth
+def update_manufacturing_order_labour(cid, order_id, labour_id):
+    company_id = int(cid)
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+    try:
+        payload = request.get_json(silent=True) or {}
+        updated = db_service.update_manufacturing_order_labour(
+            company_id=company_id,
+            labour_id=int(labour_id),
+            worker_name=payload.get("worker_name"),
+            role=payload.get("role"),
+            hours=payload.get("hours"),
+            rate=payload.get("rate"),
+            labour_cost=payload.get("labour_cost"),
+            updated_by_user_id=int(user.get("id") or 0) or None,
+        )
+        if not updated:
+            return jsonify({"error": "Labour record not found"}), 404
+        return jsonify({"ok": True}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("update_manufacturing_order_labour failed")
+        return jsonify({"error": str(e)}), 500
 # ================================================================
 # MANUFACTURING — BOM GET
 # ================================================================
@@ -13945,23 +13978,6 @@ def get_manufacturing_bom(cid: int, bom_id: int):
                     "being used by a released or active production order."
                 ),
             }), 409
-
-        updated = db_service.update_manufacturing_bom(
-            company_id=company_id,
-            bom_id=bom_id,
-            finished_item_name=payload.get("finished_item_name"),
-            selling_price=payload.get("selling_price"),
-            bom_code=payload.get("bom_code"),
-            name=payload.get("name"),
-            batch_qty=payload.get("batch_qty"),
-            batch_unit=payload.get("batch_unit"),
-            description=payload.get("description"),
-            version_no=payload.get("version_no"),
-            effective_from=payload.get("effective_from"),
-            effective_to=payload.get("effective_to"),
-            is_default=payload.get("is_default"),
-            updated_by_user_id=int(user.get("id") or 0) or None,
-        )
 
         updated = db_service.update_manufacturing_bom(
             company_id=company_id,

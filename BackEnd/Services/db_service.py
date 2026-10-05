@@ -64,6 +64,7 @@ from psycopg2.extras import Json, execute_values
 from psycopg2.pool import SimpleConnectionPool
 import uuid
 
+from typing import TypedDict
 import logging
 from BackEnd.Services import accounting_classifiers as ac
 from BackEnd.Services.company_context import get_company_context, normalize_role
@@ -1174,8 +1175,11 @@ def _company_slug(value:str)->str:
 def _json_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
-from typing import TypedDict
+def _money(v) -> Decimal:
+    return Decimal(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+def _qty6(v) -> Decimal:
+    return Decimal(v).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 class PayrollEmployeeRecord(TypedDict):
     """Type definition for payroll employee records."""
     employee_id: str
@@ -52953,7 +52957,7 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             created_by_user_id INTEGER,
-            updated_by_user_id INTEGER
+            updated_by_user_id INTEGER,
 
             UNIQUE(bom_id, line_no),
 
@@ -52961,12 +52965,107 @@ class DatabaseService:
             CHECK (scrap_percent >= 0 AND scrap_percent <= 100)
         );
 
+        -- Material standard cost on BOM lines
+        ALTER TABLE {schema}.manufacturing_bom_lines
+        ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(18,6) NOT NULL DEFAULT 0;
+
+        -- Standard cost roll-up on BOM header
+        ALTER TABLE {schema}.manufacturing_boms
+        ADD COLUMN IF NOT EXISTS standard_material_cost  NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS standard_labour_cost    NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS standard_direct_cost    NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS standard_overhead_cost  NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS standard_total_cost     NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS standard_unit_cost      NUMERIC(18,6) NOT NULL DEFAULT 0;
+
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_bom_lines_company_bom_idx
         ON {schema}.manufacturing_bom_lines(company_id, bom_id);
 
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_bom_lines_company_item_idx
         ON {schema}.manufacturing_bom_lines(company_id, item_id);
 
+
+        -- ================================================================
+        -- BOM STANDARD COST TEMPLATES
+        -- (mirror manufacturing_order_labour / _direct_costs / _overhead)
+        -- ================================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_bom_labour (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            bom_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_boms(id)
+                ON DELETE CASCADE,
+
+            worker_name TEXT NULL,
+            worker_reference TEXT NULL,
+            role TEXT NULL,
+
+            hours NUMERIC(18,6) NULL,
+            rate NUMERIC(18,6) NULL,
+            labour_cost NUMERIC(18,6) NULL,
+
+            memo TEXT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_bom_labour_company_bom_idx
+        ON {schema}.manufacturing_bom_labour(company_id, bom_id);
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_bom_direct_costs (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            bom_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_boms(id)
+                ON DELETE CASCADE,
+
+            description TEXT NULL,
+            cost_type TEXT NULL,
+            amount NUMERIC(18,6) NULL,
+
+            memo TEXT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_bom_direct_costs_company_bom_idx
+        ON {schema}.manufacturing_bom_direct_costs(company_id, bom_id);
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_bom_overhead (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            bom_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_boms(id)
+                ON DELETE CASCADE,
+
+            allocation_name TEXT NULL,
+            basis TEXT NULL,
+            quantity NUMERIC(18,6) NULL,
+            rate NUMERIC(18,6) NULL,
+            allocated_amount NUMERIC(18,6) NULL,
+
+            memo TEXT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_manufacturing_bom_overhead_company_bom_idx
+        ON {schema}.manufacturing_bom_overhead(company_id, bom_id);
 
         # 3) MANUFACTURING ORDERS / PRODUCTION BATCHES
         CREATE TABLE IF NOT EXISTS {schema}.manufacturing_orders (
@@ -85343,6 +85442,10 @@ class DatabaseService:
         effective_from=None,
         effective_to=None,
         is_default=False,
+        lines: list[dict] | None = None,
+        labour: list[dict] | None = None,
+        direct_costs: list[dict] | None = None,
+        overheads: list[dict] | None = None,
         created_by_user_id=None,
         cur=None,
     ) -> int:
@@ -85416,18 +85519,55 @@ class DatabaseService:
             created_by_user_id,
         )
 
+        def _create(c):
+            c.execute(sql, params)
+            row = c.fetchone()
+
+            if isinstance(row, dict):
+                bom_id = int(row["id"])
+            else:
+                bom_id = int(row[0])
+
+            # Material lines (with unit_cost) — None = skip
+            if lines is not None:
+                self.replace_manufacturing_bom_lines(
+                    company_id=company_id,
+                    bom_id=bom_id,
+                    lines=lines,
+                    user_id=created_by_user_id,
+                    cur=c,
+                )
+
+            # Standard cost sections — None for all three = skip
+            if (
+                labour is not None
+                or direct_costs is not None
+                or overheads is not None
+            ):
+                self.set_manufacturing_bom_cost_structure(
+                    company_id=company_id,
+                    bom_id=bom_id,
+                    labour=labour,
+                    direct_costs=direct_costs,
+                    overheads=overheads,
+                    user_id=created_by_user_id,
+                    cur=c,
+                )
+
+            # Roll up standard costs (safe even if everything is empty)
+            self.recalculate_manufacturing_bom_standard_cost(
+                company_id=company_id,
+                bom_id=bom_id,
+                cur=c,
+            )
+
+            return bom_id
+
         if cur is not None:
-            cur.execute(sql, params)
-            row = cur.fetchone()
-        else:
-            with self._conn_cursor() as (conn, cur2):
-                cur2.execute(sql, params)
-                row = cur2.fetchone()
+            return _create(cur)
 
-        if isinstance(row, dict):
-            return int(row["id"])
-
-        return int(row[0])
+        with self._conn_cursor() as (conn, cur2):
+            return _create(cur2)
 
     def add_manufacturing_bom_line(
         self,
@@ -85439,6 +85579,7 @@ class DatabaseService:
         line_no=None,
         unit=None,
         scrap_percent=0,
+        unit_cost=0,
         is_optional=False,
         memo=None,
         created_by_user_id=None,
@@ -85449,6 +85590,7 @@ class DatabaseService:
 
         quantity = Decimal(str(quantity or 0))
         scrap_percent = Decimal(str(scrap_percent or 0))
+        unit_cost = Decimal(str(unit_cost or 0))
 
         if quantity <= 0:
             raise ValueError("BOM line quantity must be greater than zero")
@@ -85456,6 +85598,11 @@ class DatabaseService:
         if scrap_percent < 0 or scrap_percent > 100:
             raise ValueError(
                 "Scrap percentage must be between 0 and 100"
+            )
+
+        if unit_cost < 0:
+            raise ValueError(
+                "BOM line unit cost cannot be negative"
             )
 
         def _insert(c):
@@ -85492,6 +85639,7 @@ class DatabaseService:
                     quantity,
                     unit,
                     scrap_percent,
+                    unit_cost,
                     is_optional,
                     memo,
                     created_by_user_id,
@@ -85499,7 +85647,7 @@ class DatabaseService:
                 )
                 VALUES (
                     %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s
                 )
                 RETURNING id
                 """,
@@ -85511,6 +85659,7 @@ class DatabaseService:
                     quantity,
                     unit,
                     scrap_percent,
+                    unit_cost,
                     bool(is_optional),
                     memo,
                     (
@@ -85529,9 +85678,17 @@ class DatabaseService:
             row = c.fetchone()
 
             if isinstance(row, dict):
-                return int(row["id"])
+                line_id = int(row["id"])
+            else:
+                line_id = int(row[0])
 
-            return int(row[0])
+            self.recalculate_manufacturing_bom_standard_cost(
+                company_id=company_id,
+                bom_id=int(bom_id),
+                cur=c,
+            )
+
+            return line_id
 
         if cur is not None:
             return _insert(cur)
@@ -85539,6 +85696,137 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _insert(cur2)
     
+    def recalculate_manufacturing_bom_standard_cost(
+        self,
+        company_id: int,
+        bom_id: int,
+        *,
+        cur=None,
+    ) -> dict:
+        """
+        Rolls materials + labour + direct costs + overheads into the BOM
+        header's standard costs. Call after any BOM save.
+        """
+        schema = self.company_schema(company_id)
+
+        def _scalar(c, sql, params):
+            c.execute(sql, params)
+            r = c.fetchone()
+            return Decimal(str((r["total"] if isinstance(r, dict) else r[0]) or 0))
+
+        def _run(c):
+            c.execute(
+                f"""
+                SELECT batch_qty FROM {schema}.manufacturing_boms
+                WHERE company_id = %s AND id = %s
+                FOR UPDATE
+                """,
+                (company_id, int(bom_id)),
+            )
+            row = c.fetchone()
+            if not row:
+                raise ValueError(f"BOM not found: {bom_id}")
+
+            batch_qty = Decimal(str(
+                row["batch_qty"] if isinstance(row, dict) else row[0]
+            ))
+
+            # Materials — includes scrap allowance, consistent with
+            # how create_manufacturing_order scales planned quantities
+            material_cost = _scalar(
+                c,
+                f"""
+                SELECT COALESCE(SUM(
+                    quantity * (1 + scrap_percent / 100) * unit_cost
+                ), 0) AS total
+                FROM {schema}.manufacturing_bom_lines
+                WHERE company_id = %s AND bom_id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
+
+            labour_cost = _scalar(
+                c,
+                f"""
+                SELECT COALESCE(SUM(COALESCE(labour_cost, hours * rate, 0)), 0) AS total
+                FROM {schema}.manufacturing_bom_labour
+                WHERE company_id = %s AND bom_id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
+
+            direct_cost = _scalar(
+                c,
+                f"""
+                SELECT COALESCE(SUM(COALESCE(amount, 0)), 0) AS total
+                FROM {schema}.manufacturing_bom_direct_costs
+                WHERE company_id = %s AND bom_id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
+
+            overhead_cost = _scalar(
+                c,
+                f"""
+                SELECT COALESCE(SUM(COALESCE(allocated_amount, quantity * rate, 0)), 0) AS total
+                FROM {schema}.manufacturing_bom_overhead
+                WHERE company_id = %s AND bom_id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
+
+            Q2 = Decimal("0.01")
+            Q6 = Decimal("0.000001")
+            material_cost = material_cost.quantize(Q2)
+            labour_cost = labour_cost.quantize(Q2)
+            direct_cost = direct_cost.quantize(Q2)
+            overhead_cost = overhead_cost.quantize(Q2)
+
+            total_cost = (
+                material_cost + labour_cost + direct_cost + overhead_cost
+            ).quantize(Q2)
+
+            unit_cost = (
+                (total_cost / batch_qty).quantize(Q6)
+                if batch_qty > 0 else Decimal("0")
+            )
+
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_boms
+                SET
+                    standard_material_cost = %s,
+                    standard_labour_cost   = %s,
+                    standard_direct_cost   = %s,
+                    standard_overhead_cost = %s,
+                    standard_total_cost    = %s,
+                    standard_unit_cost     = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s
+                """,
+                (
+                    material_cost, labour_cost, direct_cost,
+                    overhead_cost, total_cost, unit_cost,
+                    company_id, int(bom_id),
+                ),
+            )
+
+            return {
+                "bom_id": int(bom_id),
+                "material_cost": float(material_cost),
+                "labour_cost": float(labour_cost),
+                "direct_cost": float(direct_cost),
+                "overhead_cost": float(overhead_cost),
+                "total_cost": float(total_cost),
+                "unit_cost": float(unit_cost),
+            }
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
     def replace_manufacturing_bom_lines(
         self,
         company_id: int,
@@ -85578,6 +85866,9 @@ class DatabaseService:
                         or 0
                     )
                 )
+                unit_cost = Decimal(
+                    str(line.get("unit_cost") or 0)
+                )
                 is_optional = bool(
                     line.get("is_optional", False)
                 )
@@ -85598,6 +85889,11 @@ class DatabaseService:
                         "Scrap percentage must be between 0 and 100"
                     )
 
+                if unit_cost < 0:
+                    raise ValueError(
+                        "BOM line unit cost cannot be negative"
+                    )
+
                 c.execute(
                     f"""
                     INSERT INTO {schema}.manufacturing_bom_lines (
@@ -85608,6 +85904,7 @@ class DatabaseService:
                         quantity,
                         unit,
                         scrap_percent,
+                        unit_cost,
                         is_optional,
                         memo,
                         created_by_user_id,
@@ -85615,7 +85912,7 @@ class DatabaseService:
                     )
                     VALUES (
                         %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s
                     )
                     RETURNING id
                     """,
@@ -85627,6 +85924,7 @@ class DatabaseService:
                         quantity,
                         unit,
                         scrap_percent,
+                        unit_cost,
                         is_optional,
                         memo,
                         (
@@ -85656,7 +85954,7 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur2):
             return _replace(cur2)
-
+        
     def get_manufacturing_bom(
         self,
         company_id: int,
@@ -85678,6 +85976,12 @@ class DatabaseService:
                     b.version_no,
                     b.batch_qty,
                     b.batch_unit,
+                    b.standard_material_cost,
+                    b.standard_labour_cost,
+                    b.standard_direct_cost,
+                    b.standard_overhead_cost,
+                    b.standard_total_cost,
+                    b.standard_unit_cost,
                     b.status,
                     b.effective_from,
                     b.effective_to,
@@ -85718,6 +86022,7 @@ class DatabaseService:
                     l.quantity,
                     l.unit,
                     l.scrap_percent,
+                    l.unit_cost,
                     l.is_optional,
                     l.memo,
                     l.created_at,
@@ -85743,6 +86048,44 @@ class DatabaseService:
                     dict(zip(line_columns, r))
                     for r in line_rows
                 ]
+
+            for key, table, cols in (
+                ("labour", "manufacturing_bom_labour",
+                 "worker_name, worker_reference, role, hours, rate, labour_cost, memo"),
+                ("direct_costs", "manufacturing_bom_direct_costs",
+                 "description, cost_type, amount, memo"),
+                ("overheads", "manufacturing_bom_overhead",
+                 "allocation_name, basis, quantity, rate, allocated_amount, memo"),
+            ):
+                c.execute(
+                    f"""
+                    SELECT id, {cols}
+                    FROM {schema}.{table}
+                    WHERE company_id = %s AND bom_id = %s
+                    ORDER BY id
+                    """,
+                    (company_id, int(bom_id)),
+                )
+                kcols = [d[0] for d in c.description]
+                krows = c.fetchall()
+                if krows and isinstance(krows[0], dict):
+                    bom[key] = [dict(r) for r in krows]
+                else:
+                    bom[key] = [dict(zip(kcols, r)) for r in krows]
+
+            bom["cost_summary"] = {
+                "materials": float(bom.get("standard_material_cost") or 0),
+                "labour": float(bom.get("standard_labour_cost") or 0),
+                "direct_costs": float(bom.get("standard_direct_cost") or 0),
+                "overhead": float(bom.get("standard_overhead_cost") or 0),
+                "total": float(bom.get("standard_total_cost") or 0),
+                "unit_cost": float(bom.get("standard_unit_cost") or 0),
+                "selling_price": float(bom.get("selling_price") or 0),
+                "margin_per_unit": float(
+                    (Decimal(str(bom.get("selling_price") or 0))
+                    - Decimal(str(bom.get("standard_unit_cost") or 0)))
+                ),
+            }
 
             return bom
 
@@ -85844,55 +86187,39 @@ class DatabaseService:
         effective_from=None,
         effective_to=None,
         is_default=None,
+        lines: list[dict] | None = None,
+        labour: list[dict] | None = None,
+        direct_costs: list[dict] | None = None,
+        overheads: list[dict] | None = None,
         updated_by_user_id=None,
         cur=None,
     ) -> bool:
         schema = self.company_schema(company_id)
 
-        finished_item_name = str(
-            finished_item_name or ""
-        ).strip()
-
-        bom_code = str(
-            bom_code or ""
-        ).strip()
-
-        name = str(
-            name or ""
-        ).strip()
+        finished_item_name = str(finished_item_name or "").strip()
+        bom_code = str(bom_code or "").strip()
+        name = str(name or "").strip()
 
         if not finished_item_name:
-            raise ValueError(
-                "Finished item is required"
-            )
+            raise ValueError("Finished item is required")
 
         if not bom_code:
-            raise ValueError(
-                "BOM code is required"
-            )
+            raise ValueError("BOM code is required")
 
         if not name:
-            raise ValueError(
-                "BOM name is required"
-            )
+            raise ValueError("BOM name is required")
 
-        batch_qty = Decimal(
-            str(batch_qty or 0)
-        )
+        batch_qty = Decimal(str(batch_qty or 0))
 
         if batch_qty <= 0:
             raise ValueError(
                 "BOM batch quantity must be greater than zero"
             )
 
-        selling_price = Decimal(
-            str(selling_price or 0)
-        )
+        selling_price = Decimal(str(selling_price or 0))
 
         if selling_price < 0:
-            raise ValueError(
-                "Selling price cannot be negative"
-            )
+            raise ValueError("Selling price cannot be negative")
 
         def _update(c):
             c.execute(
@@ -85933,7 +86260,40 @@ class DatabaseService:
                 ),
             )
 
-            return c.rowcount > 0
+            if c.rowcount == 0:
+                return False
+
+            if lines is not None:
+                self.replace_manufacturing_bom_lines(
+                    company_id=company_id,
+                    bom_id=int(bom_id),
+                    lines=lines,
+                    user_id=updated_by_user_id,
+                    cur=c,
+                )
+
+            if (
+                labour is not None
+                or direct_costs is not None
+                or overheads is not None
+            ):
+                self.set_manufacturing_bom_cost_structure(
+                    company_id=company_id,
+                    bom_id=int(bom_id),
+                    labour=labour,
+                    direct_costs=direct_costs,
+                    overheads=overheads,
+                    user_id=updated_by_user_id,
+                    cur=c,
+                )
+
+            self.recalculate_manufacturing_bom_standard_cost(
+                company_id=company_id,
+                bom_id=int(bom_id),
+                cur=c,
+            )
+
+            return True
 
         if cur is not None:
             return _update(cur)
@@ -85941,6 +86301,735 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _update(cur2)
 
+    def set_manufacturing_bom_cost_structure(
+        self,
+        company_id: int,
+        bom_id: int,
+        *,
+        labour: list[dict] | None = None,
+        direct_costs: list[dict] | None = None,
+        overheads: list[dict] | None = None,
+        user_id=None,
+        cur=None,
+    ) -> dict:
+        """
+        Replaces the standard cost structure of a BOM.
+
+        labour / direct_costs / overheads:
+            None -> leave that section untouched
+            []   -> clear that section
+            list -> replace with these rows
+        """
+        schema = self.company_schema(company_id)
+
+        def _dec(v):
+            return Decimal(str(v)) if v is not None else None
+
+        def _insert_labour(c, rows):
+            for r in rows:
+                hours = _dec(r.get("hours"))
+                rate = _dec(r.get("rate"))
+                cost = _dec(r.get("labour_cost"))
+
+                if cost is None and hours is not None and rate is not None:
+                    cost = _money(hours * rate)
+
+                if (hours is not None and hours < 0) or (rate is not None and rate < 0) or (cost is not None and cost < 0):
+                    raise ValueError("Labour hours, rate and cost cannot be negative")
+
+                if hours is None and cost is None:
+                    continue  # nothing usable on this line
+
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_bom_labour (
+                        company_id, bom_id, worker_name, worker_reference,
+                        role, hours, rate, labour_cost, memo,
+                        created_by_user_id, updated_by_user_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        company_id, int(bom_id),
+                        r.get("worker_name"), r.get("worker_reference"),
+                        r.get("role"), hours, rate, cost, r.get("memo"),
+                        user_id, user_id,
+                    ),
+                )
+
+        def _insert_direct(c, rows):
+            for r in rows:
+                amount = _dec(r.get("amount"))
+                if amount is None:
+                    continue
+                if amount < 0:
+                    raise ValueError("Direct cost amount cannot be negative")
+
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_bom_direct_costs (
+                        company_id, bom_id, description, cost_type,
+                        amount, memo, created_by_user_id, updated_by_user_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        company_id, int(bom_id),
+                        r.get("description"), r.get("cost_type"),
+                        amount, r.get("memo"), user_id, user_id,
+                    ),
+                )
+
+        def _insert_overhead(c, rows):
+            for r in rows:
+                qty = _dec(r.get("quantity"))
+                rate = _dec(r.get("rate"))
+                allocated = _dec(r.get("allocated_amount"))
+
+                if allocated is None and qty is not None and rate is not None:
+                    allocated = _money(qty * rate)
+
+                if allocated is None and qty is None:
+                    continue
+
+                if (qty is not None and qty < 0) or (rate is not None and rate < 0) or (allocated is not None and allocated < 0):
+                    raise ValueError("Overhead quantity, rate and amount cannot be negative")
+
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_bom_overhead (
+                        company_id, bom_id, allocation_name, basis,
+                        quantity, rate, allocated_amount, memo,
+                        created_by_user_id, updated_by_user_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        company_id, int(bom_id),
+                        r.get("allocation_name"), r.get("basis"),
+                        qty, rate, allocated, r.get("memo"),
+                        user_id, user_id,
+                    ),
+                )
+
+        def _run(c):
+            c.execute(
+                f"""
+                SELECT id FROM {schema}.manufacturing_boms
+                WHERE company_id = %s AND id = %s
+                FOR UPDATE
+                """,
+                (company_id, int(bom_id)),
+            )
+            if not c.fetchone():
+                raise ValueError(f"BOM not found: {bom_id}")
+
+            if labour is not None:
+                c.execute(
+                    f"DELETE FROM {schema}.manufacturing_bom_labour WHERE company_id = %s AND bom_id = %s",
+                    (company_id, int(bom_id)),
+                )
+                _insert_labour(c, labour)
+
+            if direct_costs is not None:
+                c.execute(
+                    f"DELETE FROM {schema}.manufacturing_bom_direct_costs WHERE company_id = %s AND bom_id = %s",
+                    (company_id, int(bom_id)),
+                )
+                _insert_direct(c, direct_costs)
+
+            if overheads is not None:
+                c.execute(
+                    f"DELETE FROM {schema}.manufacturing_bom_overhead WHERE company_id = %s AND bom_id = %s",
+                    (company_id, int(bom_id)),
+                )
+                _insert_overhead(c, overheads)
+
+            return {"ok": True, "bom_id": int(bom_id)}
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def copy_bom_costs_to_manufacturing_order(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        user_id=None,
+        cur=None,
+    ) -> dict:
+        """
+        Snapshots the BOM's standard labour / direct costs / overheads onto a
+        manufacturing order, scaled by (planned_qty / bom.batch_qty).
+
+        - Rows are tagged source = 'bom' so re-syncs replace only snapshot
+          rows (manual rows survive).
+        - Rows the user edited are re-tagged 'bom_edited' by the update
+          functions; those rows are preserved and the matching BOM row is
+          skipped here, so edits are never wiped or duplicated.
+        - Only allowed while the order is in 'draft'.
+        - Call inside the same transaction that creates the order (pass cur).
+        """
+        schema = self.company_schema(company_id)
+        Q2 = Decimal("0.01")
+        Q6 = Decimal("0.000001")
+
+        def _row(c, row):
+            if isinstance(row, dict):
+                return row
+            cols = [d[0] for d in c.description]
+            return dict(zip(cols, row))
+
+        def _run(c):
+            # 1. Lock the order
+            c.execute(
+                f"""
+                SELECT id, mo_no, bom_id, planned_qty, status
+                FROM {schema}.manufacturing_orders
+                WHERE company_id = %s AND id = %s
+                FOR UPDATE
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+            r = c.fetchone()
+            if not r:
+                raise ValueError(f"Manufacturing order not found: {manufacturing_order_id}")
+            mo = _row(c, r)
+
+            mo_id = int(mo["id"])
+            mo_no = mo["mo_no"]
+            status = str(mo.get("status") or "").strip().lower()
+
+            if status != "draft":
+                raise ValueError(
+                    f"Costs can only be synced from BOM while the order is draft "
+                    f"(order {mo_no} is '{status}')"
+                )
+
+            def _edited_source_ids(table):
+                # BOM rows already copied to this order and then edited by
+                # the user (source flipped to 'bom_edited') must not be
+                # overwritten or duplicated by this sync.
+                c.execute(
+                    f"""
+                    SELECT DISTINCT source_id
+                    FROM {schema}.{table}
+                    WHERE company_id = %s
+                    AND manufacturing_order_id = %s
+                    AND source = 'bom_edited'
+                    AND source_id IS NOT NULL
+                    """,
+                    (company_id, mo_id),
+                )
+                rows = c.fetchall() or []
+                return {
+                    int((x["source_id"] if isinstance(x, dict) else x[0]))
+                    for x in rows
+                }
+
+            bom_id = mo.get("bom_id")
+            if not bom_id:
+                raise ValueError(f"Order {mo_no} has no BOM")
+
+            c.execute(
+                f"""
+                SELECT batch_qty FROM {schema}.manufacturing_boms
+                WHERE company_id = %s AND id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
+            b = c.fetchone()
+            if not b:
+                raise ValueError(f"BOM not found: {bom_id}")
+            batch_qty = Decimal(str(_row(c, b)["batch_qty"]))
+
+            # 2. Clear previous snapshot rows only
+            #    ('bom' rows are replaced; 'manual' and 'bom_edited' survive)
+            for table in (
+                "manufacturing_order_labour",
+                "manufacturing_order_direct_costs",
+                "manufacturing_order_overhead",
+            ):
+                c.execute(
+                    f"""
+                    DELETE FROM {schema}.{table}
+                    WHERE company_id = %s
+                    AND manufacturing_order_id = %s
+                    AND source = 'bom'
+                    """,
+                    (company_id, mo_id),
+                )
+
+            totals = {"labour_cost": Decimal("0"), "direct_costs": Decimal("0"), "overhead": Decimal("0")}
+            counts = {"labour": 0, "direct_costs": 0, "overhead": 0}
+
+            planned_qty = Decimal(str(mo.get("planned_qty") or 0))
+
+            if planned_qty <= 0:
+                return {
+                    "ok": True, "mo_no": mo_no, "scaled": False,
+                    "labour_cost": 0.0, "direct_costs": 0.0, "overhead": 0.0,
+                    "rows": counts,
+                }
+
+            scale = planned_qty / batch_qty
+
+            # 3. LABOUR: scale hours, keep rate, recompute cost
+            edited_labour = _edited_source_ids("manufacturing_order_labour")
+
+            c.execute(
+                f"""
+                SELECT id, worker_name, worker_reference, role, hours, rate, labour_cost, memo
+                FROM {schema}.manufacturing_bom_labour
+                WHERE company_id = %s AND bom_id = %s
+                ORDER BY id
+                """,
+                (company_id, int(bom_id)),
+            )
+            for br in (c.fetchall() or []):
+                s = _row(c, br)
+
+                if int(s["id"]) in edited_labour:
+                    continue  # keep the user's edited order row
+
+                hours_b = s.get("hours")
+                rate_b = s.get("rate")
+                cost_b = s.get("labour_cost")
+
+                hours = _qty6(Decimal(str(hours_b)) * scale) if hours_b is not None else None
+
+                if hours is not None and rate_b is not None:
+                    cost = _money(hours * Decimal(str(rate_b)))
+                elif cost_b is not None:
+                    cost = _money(Decimal(str(cost_b)) * scale)
+                else:
+                    continue
+
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_order_labour (
+                        company_id, manufacturing_order_id, worker_name,
+                        worker_reference, role, hours, rate, labour_cost,
+                        source, source_id, memo,
+                        created_by_user_id, updated_by_user_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'bom', %s, %s, %s, %s)
+                    """,
+                    (
+                        company_id, mo_id,
+                        s.get("worker_name"), s.get("worker_reference"),
+                        s.get("role"), hours, rate_b, cost,
+                        int(bom_id), s.get("memo"), user_id, user_id,
+                    ),
+                )
+                totals["labour_cost"] += cost
+                counts["labour"] += 1
+
+            # 4. OTHER DIRECT COSTS: scale amount
+            edited_direct = _edited_source_ids("manufacturing_order_direct_costs")
+
+            c.execute(
+                f"""
+                SELECT id, description, cost_type, amount, memo
+                FROM {schema}.manufacturing_bom_direct_costs
+                WHERE company_id = %s AND bom_id = %s
+                ORDER BY id
+                """,
+                (company_id, int(bom_id)),
+            )
+            for br in (c.fetchall() or []):
+                s = _row(c, br)
+
+                if int(s["id"]) in edited_direct:
+                    continue
+
+                amount_b = s.get("amount")
+                if amount_b is None:
+                    continue
+                amount = _money(Decimal(str(amount_b)) * scale)
+
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_order_direct_costs (
+                        company_id, manufacturing_order_id, description,
+                        cost_type, amount, source, source_id, memo,
+                        created_by_user_id, updated_by_user_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, 'bom', %s, %s, %s, %s)
+                    """,
+                    (
+                        company_id, mo_id,
+                        s.get("description"), s.get("cost_type"),
+                        amount, int(bom_id), s.get("memo"), user_id, user_id,
+                    ),
+                )
+                totals["direct_costs"] += amount
+                counts["direct_costs"] += 1
+
+            # 5. OVERHEAD: scale quantity, keep rate, recompute; else scale amount
+            edited_overhead = _edited_source_ids("manufacturing_order_overhead")
+
+            c.execute(
+                f"""
+                SELECT id, allocation_name, basis, quantity, rate, allocated_amount, memo
+                FROM {schema}.manufacturing_bom_overhead
+                WHERE company_id = %s AND bom_id = %s
+                ORDER BY id
+                """,
+                (company_id, int(bom_id)),
+            )
+            for br in (c.fetchall() or []):
+                s = _row(c, br)
+
+                if int(s["id"]) in edited_overhead:
+                    continue
+
+                qty_b = s.get("quantity")
+                rate_b = s.get("rate")
+                alloc_b = s.get("allocated_amount")
+
+                qty = _qty6(Decimal(str(qty_b)) * scale) if qty_b is not None else None
+
+                if qty is not None and rate_b is not None:
+                    allocated = _money(qty * Decimal(str(rate_b)))
+                elif alloc_b is not None:
+                    allocated = _money(Decimal(str(alloc_b)) * scale)
+                else:
+                    continue
+
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_order_overhead (
+                        company_id, manufacturing_order_id, allocation_name,
+                        basis, quantity, rate, allocated_amount,
+                        source, source_id, memo,
+                        created_by_user_id, updated_by_user_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'bom', %s, %s, %s, %s)
+                    """,
+                    (
+                        company_id, mo_id,
+                        s.get("allocation_name"), s.get("basis"),
+                        qty, rate_b, allocated,
+                        int(bom_id), s.get("memo"), user_id, user_id,
+                    ),
+                )
+                totals["overhead"] += allocated
+                counts["overhead"] += 1
+
+            return {
+                "ok": True,
+                "mo_no": mo_no,
+                "scaled": True,
+                "scale": str(scale),
+                "labour_cost": float(totals["labour_cost"]),
+                "direct_costs": float(totals["direct_costs"]),
+                "overhead": float(totals["overhead"]),
+                "rows": counts,
+            }
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+        
+    def _bom_edited_source_ids(
+        self, cur, schema, company_id, mo_id, table
+    ) -> set:
+        cur.execute(
+            f"""
+            SELECT DISTINCT source_id
+            FROM {schema}.{table}
+            WHERE company_id = %s
+            AND manufacturing_order_id = %s
+            AND source = 'bom_edited'
+            AND source_id IS NOT NULL
+            """,
+            (company_id, mo_id),
+        )
+        rows = cur.fetchall() or []
+        return {
+            int((r["source_id"] if isinstance(r, dict) else r[0]))
+            for r in rows
+        }
+
+    def update_manufacturing_order_labour(
+        self,
+        company_id: int,
+        labour_id: int,
+        *,
+        worker_name=None,
+        role=None,
+        hours=None,
+        rate=None,
+        labour_cost=None,
+        updated_by_user_id=None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        def _dec(v):
+            return Decimal(str(v)) if v is not None else None
+
+        hours = _dec(hours)
+        rate = _dec(rate)
+        cost = _dec(labour_cost)
+
+        if hours is not None and hours < 0:
+            raise ValueError("Labour hours cannot be negative")
+        if rate is not None and rate < 0:
+            raise ValueError("Labour rate cannot be negative")
+
+        if cost is None and hours is not None and rate is not None:
+            cost = _money(hours * rate)
+
+        if cost is None or cost < 0:
+            raise ValueError(
+                "Labour cost is required: provide hours and rate, or a cost"
+            )
+
+        def _update(c):
+            c.execute(
+                f"""
+                SELECT l.id, l.source, mo.status
+                FROM {schema}.manufacturing_order_labour l
+                JOIN {schema}.manufacturing_orders mo
+                    ON mo.id = l.manufacturing_order_id
+                    AND mo.company_id = l.company_id
+                WHERE l.company_id = %s AND l.id = %s
+                FOR UPDATE OF l
+                """,
+                (company_id, int(labour_id)),
+            )
+            row = c.fetchone()
+            if not row:
+                raise ValueError("Labour record not found")
+
+            r = (
+                row if isinstance(row, dict)
+                else dict(zip(
+                    [d[0] for d in c.description], row
+                ))
+            )
+
+            status = str(r.get("status") or "").lower()
+            if status in ("completed", "cancelled"):
+                raise ValueError(
+                    f"Cannot update labour on a {status} production order"
+                )
+
+            new_source = (
+                "bom_edited"
+                if str(r.get("source") or "") == "bom"
+                else r.get("source")
+            )
+
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_order_labour
+                SET
+                    worker_name = %s,
+                    role = %s,
+                    hours = %s,
+                    rate = %s,
+                    labour_cost = %s,
+                    source = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s
+                """,
+                (
+                    worker_name, role, hours, rate, cost,
+                    new_source, updated_by_user_id,
+                    company_id, int(labour_id),
+                ),
+            )
+            return c.rowcount > 0
+
+        with self._conn_cursor() as (conn, cur):
+            return _update(cur)
+
+    def update_manufacturing_order_direct_cost(
+        self,
+        company_id: int,
+        direct_cost_id: int,
+        *,
+        description=None,
+        cost_type=None,
+        amount=None,
+        updated_by_user_id=None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        cost = Decimal(str(amount)) if amount is not None else None
+
+        if cost is None or cost < 0:
+            raise ValueError(
+                "Direct cost amount is required and cannot be negative"
+            )
+
+        def _update(c):
+            c.execute(
+                f"""
+                SELECT d.id, d.source, mo.status
+                FROM {schema}.manufacturing_order_direct_costs d
+                JOIN {schema}.manufacturing_orders mo
+                    ON mo.id = d.manufacturing_order_id
+                    AND mo.company_id = d.company_id
+                WHERE d.company_id = %s AND d.id = %s
+                FOR UPDATE OF d
+                """,
+                (company_id, int(direct_cost_id)),
+            )
+            row = c.fetchone()
+            if not row:
+                raise ValueError("Direct cost record not found")
+
+            r = (
+                row if isinstance(row, dict)
+                else dict(zip(
+                    [d[0] for d in c.description], row
+                ))
+            )
+
+            status = str(r.get("status") or "").lower()
+            if status in ("completed", "cancelled"):
+                raise ValueError(
+                    f"Cannot update direct costs on a {status} production order"
+                )
+
+            new_source = (
+                "bom_edited"
+                if str(r.get("source") or "") == "bom"
+                else r.get("source")
+            )
+
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_order_direct_costs
+                SET
+                    description = %s,
+                    cost_type = %s,
+                    amount = %s,
+                    source = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s
+                """,
+                (
+                    description, cost_type, cost,
+                    new_source, updated_by_user_id,
+                    company_id, int(direct_cost_id),
+                ),
+            )
+            return c.rowcount > 0
+
+        with self._conn_cursor() as (conn, cur):
+            return _update(cur)
+
+    def update_manufacturing_order_overhead(
+        self,
+        company_id: int,
+        overhead_id: int,
+        *,
+        allocation_name=None,
+        basis=None,
+        quantity=None,
+        rate=None,
+        allocated_amount=None,
+        updated_by_user_id=None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        def _dec(v):
+            return Decimal(str(v)) if v is not None else None
+
+        qty = _dec(quantity)
+        rte = _dec(rate)
+        alloc = _dec(allocated_amount)
+
+        if qty is not None and qty < 0:
+            raise ValueError("Overhead quantity cannot be negative")
+        if rte is not None and rte < 0:
+            raise ValueError("Overhead rate cannot be negative")
+
+        if alloc is None and qty is not None and rte is not None:
+            alloc = _money(qty * rte)
+
+        if alloc is None or alloc < 0:
+            raise ValueError(
+                "Allocated amount is required: provide quantity and rate, or an amount"
+            )
+
+        def _update(c):
+            c.execute(
+                f"""
+                SELECT o.id, o.source, o.asset_depreciation_id, mo.status
+                FROM {schema}.manufacturing_order_overhead o
+                JOIN {schema}.manufacturing_orders mo
+                    ON mo.id = o.manufacturing_order_id
+                    AND mo.company_id = o.company_id
+                WHERE o.company_id = %s AND o.id = %s
+                FOR UPDATE OF o
+                """,
+                (company_id, int(overhead_id)),
+            )
+            row = c.fetchone()
+            if not row:
+                raise ValueError("Overhead record not found")
+
+            r = (
+                row if isinstance(row, dict)
+                else dict(zip(
+                    [d[0] for d in c.description], row
+                ))
+            )
+
+            if r.get("asset_depreciation_id"):
+                raise ValueError(
+                    "Cannot update overhead with posted asset depreciation"
+                )
+
+            status = str(r.get("status") or "").lower()
+            if status in ("completed", "cancelled"):
+                raise ValueError(
+                    f"Cannot update overhead on a {status} production order"
+                )
+
+            new_source = (
+                "bom_edited"
+                if str(r.get("source") or "") == "bom"
+                else r.get("source")
+            )
+
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_order_overhead
+                SET
+                    allocation_name = %s,
+                    basis = %s,
+                    quantity = %s,
+                    rate = %s,
+                    allocated_amount = %s,
+                    source = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s
+                """,
+                (
+                    allocation_name, basis, qty, rte, alloc,
+                    new_source, updated_by_user_id,
+                    company_id, int(overhead_id),
+                ),
+            )
+            return c.rowcount > 0
+
+        with self._conn_cursor() as (conn, cur):
+            return _update(cur)
+        
     def count_manufacturing_bom_non_draft_orders(
         self,
         company_id: int,
@@ -88012,7 +89101,7 @@ class DatabaseService:
                     planned_finish_date,
                     production_tracking_method,
                     planned_qty,
-                    Decimal("0"),         # <--- FIXED: Default actual_qty to 0
+                    Decimal("0"),
                     production_unit,
                     location,
                     batch_no,
@@ -88029,6 +89118,7 @@ class DatabaseService:
             else:
                 mo_id = int(order_row[0])
 
+            # CHANGED: unit_cost added to the SELECT
             c.execute(
                 f"""
                 SELECT
@@ -88039,7 +89129,8 @@ class DatabaseService:
                     unit,
                     scrap_percent,
                     is_optional,
-                    memo
+                    memo,
+                    unit_cost
                 FROM {schema}.manufacturing_bom_lines
                 WHERE company_id = %s
                 AND bom_id = %s
@@ -88064,6 +89155,7 @@ class DatabaseService:
                     bom_unit = line["unit"]
                     scrap_percent = line["scrap_percent"]
                     memo = line["memo"]
+                    bom_unit_cost = line["unit_cost"]   # CHANGED
                 else:
                     (
                         bom_line_id,
@@ -88074,6 +89166,7 @@ class DatabaseService:
                         scrap_percent,
                         is_optional,
                         memo,
+                        bom_unit_cost,                   # CHANGED
                     ) = line
 
                 bom_qty = Decimal(
@@ -88096,6 +89189,17 @@ class DatabaseService:
                     )
                 )
 
+                # CHANGED: cost this material line from the BOM's
+                # standard unit cost, scaled to the planned quantity
+                unit_cost = Decimal(str(bom_unit_cost or 0))
+
+                line_total_cost = (
+                    planned_material_qty * unit_cost
+                ).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+
                 c.execute(
                     f"""
                     INSERT INTO {schema}.manufacturing_order_materials (
@@ -88113,7 +89217,7 @@ class DatabaseService:
                     )
                     VALUES (
                         %s, %s, %s, %s, %s,
-                        %s, 0, %s, 0, 0, %s
+                        %s, 0, %s, %s, %s, %s
                     )
                     """,
                     (
@@ -88124,9 +89228,21 @@ class DatabaseService:
                         int(line_no),
                         planned_material_qty,
                         bom_unit,
+                        unit_cost,
+                        line_total_cost,
                         memo,
                     ),
                 )
+
+            # CHANGED: snapshot the BOM's standard labour, direct costs
+            # and overheads into the order tables — same cursor, same
+            # transaction as the order creation above
+            self.copy_bom_costs_to_manufacturing_order(
+                company_id,
+                mo_id,
+                user_id=created_by_user_id,
+                cur=c,
+            )
 
             return mo_id
 
@@ -88198,6 +89314,7 @@ class DatabaseService:
             if batch_qty <= 0 or planned_qty <= 0:
                 return False
 
+            # CHANGED: unit_cost added to the SELECT
             c.execute(
                 f"""
                 SELECT
@@ -88208,7 +89325,8 @@ class DatabaseService:
                     unit,
                     scrap_percent,
                     is_optional,
-                    memo
+                    memo,
+                    unit_cost
                 FROM {schema}.manufacturing_bom_lines
                 WHERE company_id = %s
                 AND bom_id = %s
@@ -88235,6 +89353,7 @@ class DatabaseService:
                     unit = line["unit"]
                     scrap_percent = line["scrap_percent"]
                     memo = line["memo"]
+                    bom_unit_cost = line["unit_cost"]   # CHANGED
                 else:
                     (
                         bom_line_id,
@@ -88245,6 +89364,7 @@ class DatabaseService:
                         scrap_percent,
                         is_optional,
                         memo,
+                        bom_unit_cost,                   # CHANGED
                     ) = line
 
                 bom_qty = Decimal(
@@ -88253,6 +89373,10 @@ class DatabaseService:
 
                 scrap_percent = Decimal(
                     str(scrap_percent or 0)
+                )
+
+                bom_unit_cost = Decimal(
+                    str(bom_unit_cost or 0)
                 )
 
                 planned_material_qty = (
@@ -88267,6 +89391,15 @@ class DatabaseService:
                     )
                 )
 
+                # CHANGED: re-cost this line from the BOM's standard
+                # unit cost, scaled to the planned quantity
+                line_total_cost = (
+                    planned_material_qty * bom_unit_cost
+                ).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+
                 bom_lines.append(
                     {
                         "bom_line_id": int(bom_line_id),
@@ -88274,6 +89407,8 @@ class DatabaseService:
                         "item_id": int(item_id),
                         "planned_qty": planned_material_qty,
                         "unit": unit,
+                        "unit_cost": bom_unit_cost,
+                        "total_cost": line_total_cost,
                         "memo": memo,
                     }
                 )
@@ -88354,6 +89489,8 @@ class DatabaseService:
                 item_id = bom_line["item_id"]
                 unit = bom_line["unit"]
                 memo = bom_line["memo"]
+                unit_cost = bom_line["unit_cost"]
+                total_cost = bom_line["total_cost"]
 
                 existing_line = existing.get(bom_line_id)
 
@@ -88367,6 +89504,8 @@ class DatabaseService:
                             planned_qty = %s,
                             unit = %s,
                             memo = %s,
+                            unit_cost = %s,
+                            total_cost = %s,
                             updated_at = NOW()
                         WHERE company_id = %s
                         AND id = %s
@@ -88378,6 +89517,8 @@ class DatabaseService:
                             planned_material_qty,
                             unit,
                             memo,
+                            unit_cost,
+                            total_cost,
                             int(company_id),
                             existing_line["id"],
                             int(manufacturing_order_id),
@@ -88404,7 +89545,7 @@ class DatabaseService:
                         )
                         VALUES (
                             %s, %s, %s, %s, %s,
-                            %s, 0, %s, 0, 0, %s
+                            %s, 0, %s, %s, %s, %s
                         )
                         """,
                         (
@@ -88415,6 +89556,8 @@ class DatabaseService:
                             line_no,
                             planned_material_qty,
                             unit,
+                            unit_cost,
+                            total_cost,
                             memo,
                         ),
                     )
@@ -88480,6 +89623,7 @@ class DatabaseService:
                     b.bom_code,
                     b.name AS bom_name,
                     b.finished_item_name,
+                    b.batch_qty AS bom_batch_qty,   -- NEW: for variance scaling
                     -- Fallback to finished item sales price if BOM price is NULL
                     COALESCE(b.selling_price, ii.sales_price, 0) AS bom_selling_price,
 
@@ -88529,6 +89673,18 @@ class DatabaseService:
                 manufacturing_order_id=int(manufacturing_order_id),
                 cur=c,
             )
+
+            # NEW: re-sync the BOM cost snapshot for draft orders so it
+            # follows planned-qty changes and BOM edits. Replaces only
+            # source='bom' rows (manual rows survive). No-op for BOMs
+            # without a cost structure, and never runs for non-draft
+            # orders, so posted history stays frozen.
+            if str(order.get("status") or "").strip().lower() == "draft":
+                self.copy_bom_costs_to_manufacturing_order(
+                    company_id=company_id,
+                    manufacturing_order_id=int(manufacturing_order_id),
+                    cur=c,
+                )
 
             # Fetch materials
             c.execute(
@@ -88580,6 +89736,18 @@ class DatabaseService:
                     manufacturing_order_id=int(manufacturing_order_id),
                     cur=c,
                 )
+            )
+
+            # NEW: BOM standard cost summary — lets the frontend show the
+            # recipe costs and decide which flow to offer (simple mode
+            # when the BOM carries costs, legacy manual mode when not).
+            bom_ref = self.get_manufacturing_bom(
+                company_id=company_id,
+                bom_id=int(order.get("bom_id") or 0),
+                cur=c,
+            )
+            order["bom_cost_summary"] = (
+                (bom_ref or {}).get("cost_summary") or {}
             )
 
             order["production_progress"] = (
@@ -88672,6 +89840,68 @@ class DatabaseService:
                 "remaining_qty": remaining_qty,
                 "progress_percent": progress_percent,
             }
+
+            # -------------------------------------------------------------
+            # NEW: STANDARD vs ACTUAL — the management-accounting payoff.
+            # Only populated when the BOM carries a standard cost structure;
+            # stays None for legacy BOMs, so the current flow is untouched.
+            # Variance = actual - standard (positive = over standard).
+            # -------------------------------------------------------------
+            bom_summary = order.get("bom_cost_summary") or {}
+            bom_batch_qty = Decimal(
+                str(order.get("bom_batch_qty") or 0)
+            )
+            standard_vs_actual = None
+
+            if (
+                bom_summary.get("total")
+                and Decimal(str(bom_summary["total"])) > 0
+                and bom_batch_qty > 0
+                and planned_qty > 0
+            ):
+                std_scale = planned_qty / bom_batch_qty
+
+                def _scaled(key):
+                    return (
+                        Decimal(str(bom_summary.get(key) or 0))
+                        * std_scale
+                    ).quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP,
+                    )
+
+                std_materials = _scaled("materials")
+                std_labour = _scaled("labour")
+                std_direct = _scaled("direct_costs")
+                std_overhead = _scaled("overhead")
+                std_total = _scaled("total")
+
+                standard_vs_actual = {
+                    "scale": str(std_scale),
+                    "standard": {
+                        "materials": float(std_materials),
+                        "labour": float(std_labour),
+                        "other_direct_costs": float(std_direct),
+                        "manufacturing_overhead": float(std_overhead),
+                        "total": float(std_total),
+                    },
+                    "actual": {
+                        "materials": float(material_cost),
+                        "labour": float(labour_cost),
+                        "other_direct_costs": float(direct_cost_total),
+                        "manufacturing_overhead": float(overhead_total),
+                        "total": float(full_production_cost),
+                    },
+                    "variance": {
+                        "materials": float(material_cost - std_materials),
+                        "labour": float(labour_cost - std_labour),
+                        "other_direct_costs": float(direct_cost_total - std_direct),
+                        "manufacturing_overhead": float(overhead_total - std_overhead),
+                        "total": float(full_production_cost - std_total),
+                    },
+                }
+
+            order["standard_vs_actual"] = standard_vs_actual
 
             # -------------------------------------------------------------
             # DISPATCHES & EOD DISPOSITION (Produced Goods Flow)
