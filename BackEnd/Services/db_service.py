@@ -68568,6 +68568,230 @@ class DatabaseService:
 
         return out
     
+    def _reverse_invoice_revenue_billing_event(
+        self,
+        company_id: int,
+        invoice_id: int,
+        reversal_date: date,
+        cur,
+    ) -> dict | None:
+        """
+        Reverse the IFRS 15 billing event created for an invoice.
+
+        The original invoice billing event is retained for audit purposes.
+        A separate negative `invoice_reversal` event is inserted instead.
+
+        This helper is transaction-safe and MUST be called with the caller's
+        existing database cursor.
+        """
+        schema = self.company_schema(company_id)
+
+        # Find the original invoice billing event(s).
+        cur.execute(
+            f"""
+            SELECT
+                id,
+                contract_id,
+                obligation_id,
+                event_date,
+                event_type,
+                source_invoice_id,
+                amount,
+                currency,
+                notes,
+                payload_json
+            FROM {schema}.revenue_billing_events
+            WHERE company_id = %s
+              AND source_invoice_id = %s
+              AND event_type = 'invoice'
+            ORDER BY id ASC
+            """,
+            (
+                int(company_id),
+                int(invoice_id),
+            ),
+        )
+
+        original_events = cur.fetchall() or []
+
+        if not original_events:
+            return None
+
+        reversed_events = []
+
+        for original in original_events:
+            original = (
+                dict(original)
+                if isinstance(original, dict)
+                else {
+                    "id": original[0],
+                    "contract_id": original[1],
+                    "obligation_id": original[2],
+                    "event_date": original[3],
+                    "event_type": original[4],
+                    "source_invoice_id": original[5],
+                    "amount": original[6],
+                    "currency": original[7],
+                    "notes": original[8],
+                    "payload_json": original[9],
+                }
+            )
+
+            original_event_id = int(original["id"])
+            contract_id = int(original["contract_id"])
+            obligation_id = original.get("obligation_id")
+            original_amount = float(original.get("amount") or 0.0)
+
+            if original_amount == 0:
+                continue
+
+            # Idempotency:
+            # If this exact original billing event has already been reversed,
+            # do not create another negative event.
+            cur.execute(
+                f"""
+                SELECT id, amount
+                FROM {schema}.revenue_billing_events
+                WHERE company_id = %s
+                  AND contract_id = %s
+                  AND source_invoice_id = %s
+                  AND event_type = 'invoice_reversal'
+                  AND COALESCE(payload_json ->> 'reversal_of_billing_event_id', '') = %s
+                LIMIT 1
+                """,
+                (
+                    int(company_id),
+                    contract_id,
+                    int(invoice_id),
+                    str(original_event_id),
+                ),
+            )
+
+            existing_reversal = cur.fetchone()
+
+            if existing_reversal:
+                existing_reversal = (
+                    dict(existing_reversal)
+                    if isinstance(existing_reversal, dict)
+                    else {
+                        "id": existing_reversal[0],
+                        "amount": existing_reversal[1],
+                    }
+                )
+
+                reversed_events.append(existing_reversal)
+                continue
+
+            payload_json = original.get("payload_json") or {}
+
+            if isinstance(payload_json, str):
+                try:
+                    payload_json = json.loads(payload_json)
+                except Exception:
+                    payload_json = {}
+
+            if not isinstance(payload_json, dict):
+                payload_json = {}
+            else:
+                payload_json = dict(payload_json)
+
+            # Preserve the original billing-event payload, but explicitly
+            # identify this event as the reversal.
+            payload_json["billing_reversal"] = True
+            payload_json["reversal_of_billing_event_id"] = original_event_id
+            payload_json["reversal_of_invoice_id"] = int(invoice_id)
+            payload_json["original_billing_amount"] = original_amount
+            payload_json["reversal_amount"] = -original_amount
+            payload_json["reversal_date"] = reversal_date.isoformat()
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.revenue_billing_events (
+                    company_id,
+                    contract_id,
+                    obligation_id,
+                    event_date,
+                    event_type,
+                    source_invoice_id,
+                    amount,
+                    currency,
+                    notes,
+                    payload_json
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb
+                )
+                RETURNING *
+                """,
+                (
+                    int(company_id),
+                    contract_id,
+                    int(obligation_id) if obligation_id is not None else None,
+                    reversal_date,
+                    "invoice_reversal",
+                    int(invoice_id),
+                    -original_amount,
+                    original.get("currency") or "USD",
+                    f"Reversal of invoice billing event {original_event_id}",
+                    _json_dumps(payload_json),
+                ),
+            )
+
+            reversal_event = cur.fetchone()
+            reversal_event = (
+                dict(reversal_event)
+                if isinstance(reversal_event, dict)
+                else reversal_event
+            )
+
+            reversed_events.append(reversal_event)
+
+        # Recalculate billed_to_date for every affected contract.
+        affected_contract_ids = {
+            int(original["contract_id"])
+            for original in original_events
+            if original.get("contract_id") is not None
+        }
+
+        for contract_id in affected_contract_ids:
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_contracts
+                SET billed_to_date = COALESCE((
+                        SELECT SUM(amount)
+                        FROM {schema}.revenue_billing_events
+                        WHERE contract_id = %s
+                    ), 0),
+                    billing_status = CASE
+                        WHEN COALESCE((
+                            SELECT SUM(amount)
+                            FROM {schema}.revenue_billing_events
+                            WHERE contract_id = %s
+                        ), 0) <= 0 THEN 'unbilled'
+                        WHEN COALESCE((
+                            SELECT SUM(amount)
+                            FROM {schema}.revenue_billing_events
+                            WHERE contract_id = %s
+                        ), 0) >= transaction_price THEN 'fully_billed'
+                        ELSE 'partially_billed'
+                    END,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (
+                    contract_id,
+                    contract_id,
+                    contract_id,
+                    contract_id,
+                ),
+            )
+
+        return {
+            "invoice_id": int(invoice_id),
+            "reversal_events": reversed_events,
+            "affected_contract_ids": sorted(affected_contract_ids),
+        }
+    
     def reverse_journal(self, company_id: int, journal_id: int, payload: Optional[Dict[str, Any]] = None) -> int:
         payload = payload or {}
         schema = self.company_schema(company_id)
@@ -68701,6 +68925,48 @@ class DatabaseService:
             source = (j.get("source") or "").strip().lower()
             source_id = j.get("source_id")
 
+            # ==================================================
+            # ACCOUNTS RECEIVABLE / IFRS 15 INVOICE REVERSAL
+            # ==================================================
+            if source == "invoice" and source_id:
+                invoice_id = int(source_id)
+
+                # --------------------------------------------------
+                # 1. Mark original invoice as reversed
+                # --------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.invoices
+                    SET
+                        status = 'reversed',
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                      AND id = %s
+                      AND posted_journal_id = %s
+                    """,
+                    (
+                        int(company_id),
+                        invoice_id,
+                        int(journal_id),
+                    ),
+                )
+
+                if cur.rowcount != 1:
+                    raise ValueError(
+                        f"INVOICE_REVERSAL_UPDATE_FAILED|"
+                        f"invoice_id={invoice_id}|"
+                        f"journal_id={journal_id}"
+                    )
+
+                # --------------------------------------------------
+                # 2. Reverse the IFRS 15 billing event
+                # --------------------------------------------------
+                self._reverse_invoice_revenue_billing_event(
+                    company_id=int(company_id),
+                    invoice_id=invoice_id,
+                    reversal_date=rev_date,
+                    cur=cur,
+                )
             # ==================================================
             # IFRS 16 LESSEE — INCEPTION REVERSAL
             # ==================================================
@@ -111145,65 +111411,122 @@ class DatabaseService:
         schema = f"company_{company_id}"
         reversal_date = reversal_date or date.today()
 
+        if self.is_date_locked(
+            company_id,
+            tx_date=reversal_date,
+            module="gl",
+        ):
+            raise ValueError(
+                f"PERIOD_LOCKED|gl|{reversal_date.isoformat()}"
+            )
+
         inv = self.get_invoice_with_lines(company_id, invoice_id)
+
         if not inv:
             raise ValueError("Invoice not found")
 
-        inv_no = (inv.get("number") or f"INV-{invoice_id}").strip()
+        inv_no = (
+            inv.get("number")
+            or f"INV-{invoice_id}"
+        ).strip()
+
         desc = f"Reversal of invoice: {inv_no}"
+
         if reason:
             desc = f"{desc} | {reason}"
 
         with self._conn_cursor() as (conn, cur):
             try:
-                # 1) lock invoice
+                # --------------------------------------------------
+                # 1. Lock invoice
+                # --------------------------------------------------
                 cur.execute(
                     f"""
-                    SELECT status, posted_journal_id
+                    SELECT
+                        status,
+                        posted_journal_id
                     FROM {schema}.invoices
-                    WHERE id=%s
-                    FOR UPDATE;
+                    WHERE id = %s
+                    FOR UPDATE
                     """,
-                    (invoice_id,),
+                    (int(invoice_id),),
                 )
+
                 hdr = cur.fetchone() or {}
-                status = (hdr.get("status") or "").lower()
-                orig_journal_id = hdr.get("posted_journal_id")
+
+                if isinstance(hdr, dict):
+                    status = (hdr.get("status") or "").lower()
+                    orig_journal_id = hdr.get("posted_journal_id")
+                else:
+                    status = str(hdr[0] or "").lower()
+                    orig_journal_id = hdr[1]
 
                 if not orig_journal_id or status != "posted":
-                    raise ValueError("Only posted invoices can be reversed")
+                    raise ValueError(
+                        "Only posted invoices can be reversed"
+                    )
 
-                # 2) prevent double reversal (simple guard)
-                # If you add invoice.reversed_journal_id later, use that instead.
+                orig_journal_id = int(orig_journal_id)
+
+                # --------------------------------------------------
+                # 2. Prevent double journal reversal
+                #
+                # Support both reversal relationship columns because
+                # reverse_journal() uses reversal_of_journal_id while
+                # this function historically used reversed_journal_id.
+                # --------------------------------------------------
                 cur.execute(
                     f"""
-                    SELECT 1
+                    SELECT id
                     FROM {schema}.journal
                     WHERE is_reversal = TRUE
-                    AND reversed_journal_id = %s
-                    LIMIT 1;
+                      AND (
+                          reversed_journal_id = %s
+                          OR reversal_of_journal_id = %s
+                      )
+                    LIMIT 1
                     """,
-                    (int(orig_journal_id),),
+                    (
+                        orig_journal_id,
+                        orig_journal_id,
+                    ),
                 )
-                if cur.fetchone():
-                    raise ValueError("Invoice journal already reversed")
 
-                # 3) fetch original ledger lines
+                if cur.fetchone():
+                    raise ValueError(
+                        "Invoice journal already reversed"
+                    )
+
+                # --------------------------------------------------
+                # 3. Fetch original ledger lines
+                # --------------------------------------------------
                 cur.execute(
                     f"""
-                    SELECT account, debit, credit, memo, customer_id
+                    SELECT
+                        account,
+                        debit,
+                        credit,
+                        memo,
+                        customer_id
                     FROM {schema}.ledger
                     WHERE journal_id = %s
-                    ORDER BY id ASC;
+                    ORDER BY id ASC
                     """,
-                    (int(orig_journal_id),),
+                    (orig_journal_id,),
                 )
-                orig_lines = cur.fetchall() or []
-                if not orig_lines:
-                    raise ValueError("Original journal has no ledger lines")
 
-                # 4) create reversal journal header
+                orig_lines = cur.fetchall() or []
+
+                if not orig_lines:
+                    raise ValueError(
+                        "Original journal has no ledger lines"
+                    )
+
+                # --------------------------------------------------
+                # 4. Create reversal journal
+                # --------------------------------------------------
                 rev_ref = f"REV-{inv_no}"
+
                 journal_entry = {
                     "date": reversal_date,
                     "ref": rev_ref,
@@ -111212,7 +111535,11 @@ class DatabaseService:
                     "net_amount": 0.0,
                     "vat_amount": 0.0,
                     "is_reversal": True,
-                    "reversed_journal_id": int(orig_journal_id),
+
+                    # Keep both relationships explicit.
+                    "reversed_journal_id": orig_journal_id,
+                    "reversal_of_journal_id": orig_journal_id,
+
                     "source": "invoice_reversal",
                     "source_id": int(invoice_id),
                 }
@@ -111220,56 +111547,153 @@ class DatabaseService:
                 reversal_lines = []
 
                 for ln in orig_lines:
+                    ln = (
+                        dict(ln)
+                        if isinstance(ln, dict)
+                        else {
+                            "account": ln[0],
+                            "debit": ln[1],
+                            "credit": ln[2],
+                            "memo": ln[3],
+                            "customer_id": ln[4],
+                        }
+                    )
+
                     acct = (ln.get("account") or "").strip()
+
                     dr = float(ln.get("debit") or 0.0)
                     cr = float(ln.get("credit") or 0.0)
 
                     if not acct:
-                        raise ValueError("Bad ledger line: missing account")
+                        raise ValueError(
+                            "Bad ledger line: missing account"
+                        )
 
-                    reversal_lines.append({
-                        "account_code": acct,
-                        "debit": cr,
-                        "credit": dr,
-                        "description": desc,
-                        "memo": ln.get("memo") or desc,
-                        "customer_id": ln.get("customer_id"),
-                    })
+                    reversal_lines.append(
+                        {
+                            "account_code": acct,
+                            "debit": cr,
+                            "credit": dr,
+                            "description": desc,
+                            "memo": ln.get("memo") or desc,
+                            "customer_id": ln.get("customer_id"),
+                        }
+                    )
 
-                journal_entry.update({
-                    "lines": reversal_lines,
-                    "currency": inv.get("currency") or "USD",
-                    "module_name": "accounts_receivable",
-                    "engagement_company_id": inv.get("engagement_company_id") or inv.get("source_company_id"),
-                    "engagement_id": inv.get("engagement_id"),
-                    "prepared_by_user_id": inv.get("prepared_by_user_id"),
-                    "reviewer_user_id": inv.get("reviewer_user_id"),
-                    "created_by_user_id": inv.get("created_by_user_id"),
-                    "updated_by_user_id": inv.get("updated_by_user_id"),
-                })
+                journal_entry.update(
+                    {
+                        "lines": reversal_lines,
+                        "currency": inv.get("currency") or "USD",
+                        "module_name": "accounts_receivable",
+                        "engagement_company_id": (
+                            inv.get("engagement_company_id")
+                            or inv.get("source_company_id")
+                        ),
+                        "engagement_id": inv.get("engagement_id"),
+                        "prepared_by_user_id": inv.get(
+                            "prepared_by_user_id"
+                        ),
+                        "reviewer_user_id": inv.get(
+                            "reviewer_user_id"
+                        ),
+                        "created_by_user_id": inv.get(
+                            "created_by_user_id"
+                        ),
+                        "updated_by_user_id": inv.get(
+                            "updated_by_user_id"
+                        ),
+                    }
+                )
 
-                rev_journal_id = int(self.post_journal(company_id, journal_entry, cur=cur) or 0)
+                rev_journal_id = int(
+                    self.post_journal(
+                        company_id,
+                        journal_entry,
+                        cur=cur,
+                    )
+                    or 0
+                )
 
                 if rev_journal_id <= 0:
-                    raise ValueError("Failed to create reversal journal")
-                # 6) mark invoice reversed (audit-safe)
+                    raise ValueError(
+                        "Failed to create reversal journal"
+                    )
+
+                # --------------------------------------------------
+                # 5. Explicitly link original journal to reversal
+                # --------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.journal
+                    SET reversed_by_journal_id = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        int(rev_journal_id),
+                        orig_journal_id,
+                    ),
+                )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.journal
+                    SET reversal_of_journal_id = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        orig_journal_id,
+                        int(rev_journal_id),
+                    ),
+                )
+
+                # --------------------------------------------------
+                # 6. Mark invoice reversed
+                # --------------------------------------------------
                 cur.execute(
                     f"""
                     UPDATE {schema}.invoices
-                    SET status='reversed',
-                        updated_at=NOW()
-                    WHERE id=%s;
+                    SET
+                        status = 'reversed',
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                      AND id = %s
+                      AND posted_journal_id = %s
                     """,
-                    (invoice_id,),
+                    (
+                        int(company_id),
+                        int(invoice_id),
+                        orig_journal_id,
+                    ),
                 )
 
+                if cur.rowcount != 1:
+                    raise ValueError(
+                        f"INVOICE_REVERSAL_UPDATE_FAILED|"
+                        f"invoice_id={invoice_id}|"
+                        f"journal_id={orig_journal_id}"
+                    )
+
+                # --------------------------------------------------
+                # 7. Reverse IFRS 15 billing event
+                # --------------------------------------------------
+                self._reverse_invoice_revenue_billing_event(
+                    company_id=int(company_id),
+                    invoice_id=int(invoice_id),
+                    reversal_date=reversal_date,
+                    cur=cur,
+                )
+
+                # --------------------------------------------------
+                # 8. Commit everything together
+                # --------------------------------------------------
                 conn.commit()
-                return rev_journal_id
+
+                return int(rev_journal_id)
 
             except Exception:
                 conn.rollback()
                 raise
-
+            
     def writeoff_invoice(
         self,
         company_id: int,
