@@ -109334,13 +109334,33 @@ class DatabaseService:
             if not hdr:
                 raise ValueError("Invoice not found")
 
+            # ---------------------------------------------------------
+            # HARD POSTING IDEMPOTENCY GATE
+            #
+            # An invoice may be posted to GL only once.
+            # Once posted_journal_id exists, this function must NOT
+            # create another journal, inventory posting, or IFRS 15
+            # billing event.
+            # ---------------------------------------------------------
+            invoice_status = str(hdr.get("status") or "").strip().lower()
             already_jid = hdr.get("posted_journal_id")
+
             if already_jid:
+                current_app.logger.warning(
+                    "[post_invoice_to_gl] BLOCKED duplicate posting | "
+                    "company_id=%s invoice_id=%s status=%s existing_journal_id=%s",
+                    company_id,
+                    invoice_id,
+                    invoice_status,
+                    already_jid,
+                )
                 return int(already_jid)
 
-            if (hdr.get("status") or "").lower() == "posted":
-                raise ValueError("Invoice status is posted but posted_journal_id is NULL (data inconsistency)")
-
+            if invoice_status in {"posted", "reversed"}:
+                raise ValueError(
+                    f"Invoice {invoice_id} is already {invoice_status} "
+                    "and cannot be posted to GL again"
+                )
             # 2) load invoice WITH SAME CURSOR (consistent snapshot)
             inv = self.get_invoice_with_lines_cur(company_id, int(invoice_id), _cur)
             if not inv:
@@ -111693,7 +111713,7 @@ class DatabaseService:
             except Exception:
                 conn.rollback()
                 raise
-            
+
     def writeoff_invoice(
         self,
         company_id: int,
