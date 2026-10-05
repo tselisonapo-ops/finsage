@@ -126094,7 +126094,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
 
           </div>
 
-          <!-- ================= 1. DIRECT MATERIALS ================= -->
+          <!-- 1. DIRECT MATERIALS -->
           <div class="mt-5 flex items-center justify-between">
             <div>
               <div class="font-semibold text-sm">1. Direct Materials</div>
@@ -126122,13 +126122,13 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             </table>
           </div>
 
-          <!-- ================= 2. DIRECT LABOUR ================= -->
+          <!-- 2. DIRECT LABOUR -->
           <div class="mt-5 flex items-center justify-between">
             <div>
               <div class="font-semibold text-sm">2. Direct Labour</div>
               <div class="text-xs text-slate-500">
-                Standard labour per batch. Cost auto-fills as hours × rate
-                unless you type a cost.
+                Pick a payroll employee to auto-fill name and rate, or type a
+                worker manually. Cost auto-fills as hours × rate.
               </div>
             </div>
             <button type="button" id="mfgBomAddLabourBtn"
@@ -126151,7 +126151,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             </table>
           </div>
 
-          <!-- ================= 3. OTHER DIRECT COSTS ================= -->
+          <!-- 3. OTHER DIRECT COSTS -->
           <div class="mt-5 flex items-center justify-between">
             <div>
               <div class="font-semibold text-sm">3. Other Direct Costs</div>
@@ -126177,13 +126177,13 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             </table>
           </div>
 
-          <!-- ================= 4. MANUFACTURING OVERHEAD ================= -->
+          <!-- 4. MANUFACTURING OVERHEAD -->
           <div class="mt-5 flex items-center justify-between">
             <div>
               <div class="font-semibold text-sm">4. Manufacturing Overhead</div>
               <div class="text-xs text-slate-500">
-                e.g. electricity, water. Allocated auto-fills as
-                quantity × rate unless you type an amount.
+                Optionally link a machine to prefill its rate, or allocate
+                manually. Allocation auto-fills as quantity × rate.
               </div>
             </div>
             <button type="button" id="mfgBomAddOverheadBtn"
@@ -126206,7 +126206,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             </table>
           </div>
 
-          <!-- ================= SUMMARY ================= -->
+          <!-- SUMMARY -->
           <div class="mt-4 border rounded p-3 bg-slate-50 text-xs">
             <div class="font-semibold text-sm mb-2">
               Standard Cost Summary (per batch)
@@ -126279,8 +126279,6 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     document.getElementById("mfgBomDefinitionSaveBtn")
       ?.addEventListener("click", saveManufacturingBomDefinition);
 
-    // one listener: auto-fill labour cost / overhead allocation,
-    // then refresh the summary — covers every input in the modal
     modal.addEventListener("input", handleMfgBomModalInput);
   }
 
@@ -126309,20 +126307,14 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
   descriptionInput.value = "";
 
   if (msg) msg.innerHTML = "";
-
   if (tbody) tbody.innerHTML = "";
   if (labourTbody) labourTbody.innerHTML = "";
   if (directTbody) directTbody.innerHTML = "";
   if (overheadTbody) overheadTbody.innerHTML = "";
 
-  // start with one blank row in each section
-  addManufacturingBomDefinitionLine();
-  addMfgBomLabourRow();
-  addMfgBomDirectCostRow();
-  addMfgBomOverheadRow();
-  recalcMfgBomTotals();
-
   title.textContent = bomId ? "Edit BOM" : "New BOM";
+
+  modal.classList.remove("hidden");
 
   try {
     if (typeof window.apiFetch !== "function") {
@@ -126338,11 +126330,21 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       throw new Error("Active company could not be determined");
     }
 
-    // refresh inventory items each open so new items are selectable
-    const inventoryData = await window.apiFetch(
-      ENDPOINTS.inventory.items(cid, "active=1&limit=500"),
-      { method: "GET", headers: { Accept: "application/json" } }
-    );
+    // ---- fetch inventory + payroll employees + assets in parallel ----
+    const [inventoryData, payrollRes, assetsRes] = await Promise.all([
+      window.apiFetch(
+        ENDPOINTS.inventory.items(cid, "active=1&limit=500"),
+        { method: "GET", headers: { Accept: "application/json" } }
+      ),
+      window.apiFetch(
+        `/api/companies/${encodeURIComponent(cid)}/payroll/employees?status=active`
+      ).catch(() => null),
+      window.apiFetch(
+        ENDPOINTS?.assets?.list
+          ? ENDPOINTS.assets.list(cid, { limit: 100 })
+          : `/api/companies/${encodeURIComponent(cid)}/assets?limit=100`
+      ).catch(() => null)
+    ]);
 
     const inventoryItems =
       Array.isArray(inventoryData?.items)
@@ -126357,9 +126359,38 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
 
     window._MFG_ITEM_CACHE = { rows: inventoryItems };
 
-    modal.classList.remove("hidden");
+    const payrollEmployees = Array.isArray(payrollRes?.items)
+      ? payrollRes.items
+      : Array.isArray(payrollRes?.data)
+        ? payrollRes.data
+        : Array.isArray(payrollRes)
+          ? payrollRes
+          : [];
 
-    if (!bomId) return;
+    const assets = Array.isArray(assetsRes?.data)
+      ? assetsRes.data
+      : Array.isArray(assetsRes?.items)
+        ? assetsRes.items
+        : Array.isArray(assetsRes?.assets)
+          ? assetsRes.assets
+          : Array.isArray(assetsRes)
+            ? assetsRes
+            : [];
+
+    window.__MFG_BOM_REF = {
+      cid,
+      payroll: payrollEmployees,
+      assets
+    };
+
+    if (!bomId) {
+      addManufacturingBomDefinitionLine();
+      addMfgBomLabourRow();
+      addMfgBomDirectCostRow();
+      addMfgBomOverheadRow();
+      recalcMfgBomTotals();
+      return;
+    }
 
     const data = await window.apiFetch(
       ENDPOINTS.manufacturing.bom(cid, bomId),
@@ -126768,13 +126799,26 @@ function addMfgBomLabourRow(row = {}) {
   const tbody = document.getElementById("mfgBomLabourTbody");
   if (!tbody) return;
 
+  const payroll = window.__MFG_BOM_REF?.payroll || [];
+
+  const payrollOptions =
+    `<option value="">-- Pick from payroll (optional) --</option>` +
+    payroll.map(e => {
+      const eid = e?.id ?? e?.employee_id;
+      return `<option value="${esc(eid)}">${esc(mfgBomEmployeeName(e))}</option>`;
+    }).join("");
+
   const tr = document.createElement("tr");
   tr.className = "border-b";
 
   tr.innerHTML = `
     <td class="px-2 py-2">
+      <select class="mfg-lab-pick w-full border rounded px-2 py-1 mb-1 text-xs">
+        ${payrollOptions}
+      </select>
       <input class="mfg-lab-name w-full border rounded px-2 py-1"
-             value="${esc(row.worker_name || "")}" placeholder="e.g. Baker 1">
+             value="${esc(row.worker_name || "")}"
+             placeholder="Or type worker name">
     </td>
     <td class="px-2 py-2">
       <input class="mfg-lab-role w-full border rounded px-2 py-1"
@@ -126788,7 +126832,8 @@ function addMfgBomLabourRow(row = {}) {
     <td class="px-2 py-2">
       <input type="number" min="0" step="0.01"
              class="mfg-lab-rate w-full border rounded px-2 py-1 text-right"
-             value="${esc(row.rate ?? "")}">
+             value="${esc(row.rate ?? "")}" placeholder="0.00">
+      <div class="mfg-lab-rate-info text-[10px] text-slate-500"></div>
     </td>
     <td class="px-2 py-2">
       <input type="number" min="0" step="0.01"
@@ -126800,6 +126845,54 @@ function addMfgBomLabourRow(row = {}) {
               data-mfg-bom-row-remove>Remove</button>
     </td>
   `;
+
+  tr.querySelector(".mfg-lab-pick")
+    ?.addEventListener("change", async (e) => {
+      const pickedId = e.target.value;
+      const emp = payroll.find(
+        p => String(p?.id ?? p?.employee_id) === String(pickedId)
+      );
+
+      const nameInput = tr.querySelector(".mfg-lab-name");
+      const roleInput = tr.querySelector(".mfg-lab-role");
+      const rateInput = tr.querySelector(".mfg-lab-rate");
+      const info = tr.querySelector(".mfg-lab-rate-info");
+
+      if (!emp) {
+        if (info) info.textContent = "";
+        return;
+      }
+
+      nameInput.value = mfgBomEmployeeName(emp);
+
+      const role = mfgBomEmployeeRole(emp);
+      if (role) roleInput.value = role;
+
+      const cid = window.__MFG_BOM_REF?.cid ||
+        getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+
+      if (info) info.textContent = "Loading rate from payroll…";
+
+      try {
+        const res = await apiFetch(
+          `/api/companies/${encodeURIComponent(cid)}/payroll/employees/${encodeURIComponent(emp.id ?? emp.employee_id)}/pay-setup`
+        );
+
+        const setup = res?.setup || res?.data || res;
+        const rate = mfgBomHourlyRateFromSetup(setup);
+
+        if (rate > 0) {
+          rateInput.value = rate.toFixed(2);
+          if (info) info.textContent = `From payroll: ${fmtMoney(rate)}/hr (editable)`;
+        } else {
+          if (info) info.textContent = "No hourly rate in payroll — enter manually.";
+        }
+      } catch (err) {
+        if (info) info.textContent = "Could not load payroll rate — enter manually.";
+      }
+
+      recalcMfgBomTotals();
+    });
 
   tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
     tr.remove();
@@ -126848,17 +126941,42 @@ function addMfgBomOverheadRow(row = {}) {
   const tbody = document.getElementById("mfgBomOverheadTbody");
   if (!tbody) return;
 
+  const assets = window.__MFG_BOM_REF?.assets || [];
+
+  const assetOptions =
+    `<option value="">-- None / Manual allocation --</option>` +
+    assets.map(a => {
+      const cost = Number(a.cost || 0);
+      const residual = Number(a.residual_value || 0);
+      const totalUnits = Number(a.uop_total_units || 0);
+      const calculatedRate = totalUnits > 0 ? (cost - residual) / totalUnits : 0;
+      const basisName = a.uop_unit_name || "Machine hours";
+
+      return `
+        <option value="${esc(a.id)}"
+                data-name="${esc(a.asset_name || '')}"
+                data-basis="${esc(basisName)}"
+                data-rate="${calculatedRate > 0 ? calculatedRate.toFixed(2) : ''}">
+          ${esc(a.asset_code)} - ${esc(a.asset_name)} (${calculatedRate > 0 ? fmtMoney(calculatedRate) + '/hr' : 'UOP'})
+        </option>
+      `;
+    }).join("");
+
   const tr = document.createElement("tr");
   tr.className = "border-b";
 
   tr.innerHTML = `
     <td class="px-2 py-2">
+      <select class="mfg-oh-asset w-full border rounded px-2 py-1 mb-1 text-xs">
+        ${assetOptions}
+      </select>
       <input class="mfg-oh-name w-full border rounded px-2 py-1"
-             value="${esc(row.allocation_name || "")}" placeholder="e.g. Electricity">
+             value="${esc(row.allocation_name || "")}"
+             placeholder="e.g. Electricity">
     </td>
     <td class="px-2 py-2">
       <input class="mfg-oh-basis w-full border rounded px-2 py-1"
-             value="${esc(row.basis || "")}" placeholder="per batch / per hour">
+             value="${esc(row.basis || "")}" placeholder="per batch / machine hours">
     </td>
     <td class="px-2 py-2">
       <input type="number" min="0" step="0.01"
@@ -126881,6 +126999,20 @@ function addMfgBomOverheadRow(row = {}) {
     </td>
   `;
 
+  tr.querySelector(".mfg-oh-asset")
+    ?.addEventListener("change", (e) => {
+      const opt = e.target.selectedOptions[0];
+      if (!opt || !opt.value) return;
+
+      tr.querySelector(".mfg-oh-name").value = opt.dataset.name || "";
+      tr.querySelector(".mfg-oh-basis").value = opt.dataset.basis || "";
+
+      const rate = Number(opt.dataset.rate || 0);
+      if (rate > 0) tr.querySelector(".mfg-oh-rate").value = rate.toFixed(2);
+
+      recalcMfgBomTotals();
+    });
+
   tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
     tr.remove();
     recalcMfgBomTotals();
@@ -126889,6 +127021,60 @@ function addMfgBomOverheadRow(row = {}) {
   tbody.appendChild(tr);
 }
 
+// =====================================================
+// BOM Modal — payroll & asset reference helpers
+// =====================================================
+
+window.__MFG_BOM_REF = window.__MFG_BOM_REF || { cid: null, payroll: [], assets: [] };
+
+function mfgBomEmployeeName(employee) {
+  const firstName = employee?.first_name || employee?.firstName || "";
+  const lastName = employee?.last_name || employee?.lastName || "";
+  const fullName = `${firstName} ${lastName}`.trim();
+  return (
+    employee?.full_name ||
+    employee?.name ||
+    fullName ||
+    employee?.employee_name ||
+    employee?.employee_no ||
+    employee?.employee_number ||
+    `Employee ${employee?.id || ""}`
+  ).trim();
+}
+
+function mfgBomEmployeeRole(employee) {
+  return String(
+    employee?.role ||
+    employee?.job_title ||
+    employee?.position ||
+    employee?.designation ||
+    employee?.job_role ||
+    ""
+  ).trim();
+}
+
+function mfgBomHourlyRateFromSetup(setup) {
+  const contractRate = Number(setup?.contract?.hourly_rate ?? 0);
+  if (contractRate > 0) return contractRate;
+
+  const payBasis = String(setup?.pay_basis || "").trim().toLowerCase();
+  const setupRate = Number(setup?.rate ?? 0);
+
+  if ((payBasis === "hourly" || payBasis === "hourly_rate") && setupRate > 0) {
+    return setupRate;
+  }
+
+  const basicSalary = Number(
+    setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0
+  );
+  const normalHours = Number(
+    setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0
+  );
+
+  return basicSalary > 0 && normalHours > 0
+    ? basicSalary / normalHours
+    : 0;
+}
 // ---------- live totals ----------
 
 function recalcMfgBomTotals() {
