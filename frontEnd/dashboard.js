@@ -126136,15 +126136,17 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <div class="overflow-auto border rounded mt-2">
-            <table class="w-full min-w-[900px] text-xs">
+            <!-- Labour Table Header -->
+            <table class="w-full table-fixed text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-2 py-2 w-[240px]">Worker</th>
+                  <th class="text-left px-2 py-2 w-[220px]">Worker / Payroll</th>
+                  <th class="text-left px-2 py-2 w-[160px]">Worker Name</th>
                   <th class="text-left px-2 py-2 w-[130px]">Role</th>
                   <th class="text-right px-2 py-2 w-[90px]">Hours</th>
-                  <th class="text-right px-2 py-2 w-[120px]">Rate</th>
-                  <th class="text-right px-2 py-2 w-[120px]">Cost</th>
-                  <th class="text-center px-2 py-2 w-[75px]"></th>
+                  <th class="text-right px-2 py-2 w-[110px]">Rate</th>
+                  <th class="text-right px-2 py-2 w-[110px]">Cost</th>
+                  <th class="text-center px-2 py-2 w-[60px]"></th>
                 </tr>
               </thead>
               <tbody id="mfgBomLabourTbody"></tbody>
@@ -126800,48 +126802,49 @@ function addMfgBomLabourRow(row = {}) {
   if (!tbody) return;
 
   const payroll = window.__MFG_BOM_REF?.payroll || [];
-
   const payrollOptions =
-    `<option value="">-- Pick from payroll (optional) --</option>` +
+    `<option value="">-- Manual (not on payroll) --</option>` +
     payroll.map(e => {
       const eid = e?.id ?? e?.employee_id;
       return `<option value="${esc(eid)}">${esc(mfgBomEmployeeName(e))}</option>`;
     }).join("");
 
   const tr = document.createElement("tr");
-  tr.className = "border-b";
+  tr.className = "border-b align-top";
 
   tr.innerHTML = `
     <td class="px-2 py-2">
-      <select class="mfg-lab-pick w-full border rounded px-2 py-1 mb-1 text-xs">
-        ${payrollOptions}
-      </select>
-      <input class="mfg-lab-name w-full border rounded px-2 py-1"
-             value="${esc(row.worker_name || "")}"
-             placeholder="Or type worker name">
+      <div class="flex flex-col gap-1">
+        <select class="mfg-lab-pick w-full border rounded px-2 py-1 text-xs bg-slate-50">
+          ${payrollOptions}
+        </select>
+        <input class="mfg-lab-name w-full border rounded px-2 py-1 text-xs"
+               value="${esc(row.worker_name || "")}"
+               placeholder="Worker name">
+      </div>
     </td>
     <td class="px-2 py-2">
-      <input class="mfg-lab-role w-full border rounded px-2 py-1"
-             value="${esc(row.role || "")}" placeholder="Baker">
-    </td>
-    <td class="px-2 py-2">
-      <input type="number" min="0" step="0.01"
-             class="mfg-lab-hours w-full border rounded px-2 py-1 text-right"
-             value="${esc(row.hours ?? "")}">
+      <input class="mfg-lab-role w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.role || "")}" placeholder="e.g. Baker">
     </td>
     <td class="px-2 py-2">
       <input type="number" min="0" step="0.01"
-             class="mfg-lab-rate w-full border rounded px-2 py-1 text-right"
+             class="mfg-lab-hours w-full border rounded px-2 py-1 text-right text-xs"
+             value="${esc(row.hours ?? "")}" placeholder="0.00">
+    </td>
+    <td class="px-2 py-2">
+      <input type="number" min="0" step="0.01"
+             class="mfg-lab-rate w-full border rounded px-2 py-1 text-right text-xs"
              value="${esc(row.rate ?? "")}" placeholder="0.00">
-      <div class="mfg-lab-rate-info text-[10px] text-slate-500"></div>
+      <div class="mfg-lab-rate-info text-[10px] text-slate-500 mt-0.5"></div>
     </td>
     <td class="px-2 py-2">
-      <input type="number" min="0" step="0.01"
-             class="mfg-lab-cost w-full border rounded px-2 py-1 text-right"
-             value="${esc(row.labour_cost ?? "")}" placeholder="auto">
+      <input type="number" min="0" step="0.01" readonly
+             class="mfg-lab-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-600 cursor-not-allowed"
+             value="${esc(row.labour_cost ?? "")}" placeholder="0.00">
     </td>
     <td class="px-2 py-2 text-center">
-      <button type="button" class="text-red-600 underline text-xs"
+      <button type="button" class="text-red-600 hover:text-red-800 text-xs mt-1"
               data-mfg-bom-row-remove>Remove</button>
     </td>
   `;
@@ -126942,7 +126945,6 @@ function addMfgBomOverheadRow(row = {}) {
   if (!tbody) return;
 
   const assets = window.__MFG_BOM_REF?.assets || [];
-
   const assetOptions =
     `<option value="">-- None / Manual allocation --</option>` +
     assets.map(a => {
@@ -126957,61 +126959,70 @@ function addMfgBomOverheadRow(row = {}) {
                 data-name="${esc(a.asset_name || '')}"
                 data-basis="${esc(basisName)}"
                 data-rate="${calculatedRate > 0 ? calculatedRate.toFixed(2) : ''}">
-          ${esc(a.asset_code)} - ${esc(a.asset_name)} (${calculatedRate > 0 ? fmtMoney(calculatedRate) + '/hr' : 'UOP'})
+          ${esc(a.asset_code)} - ${esc(a.asset_name)}
         </option>
       `;
     }).join("");
 
   const tr = document.createElement("tr");
-  tr.className = "border-b";
+  tr.className = "border-b align-top";
 
   tr.innerHTML = `
     <td class="px-2 py-2">
-      <select class="mfg-oh-asset w-full border rounded px-2 py-1 mb-1 text-xs">
-        ${assetOptions}
-      </select>
-      <input class="mfg-oh-name w-full border rounded px-2 py-1"
-             value="${esc(row.allocation_name || "")}"
-             placeholder="e.g. Electricity">
+      <div class="flex flex-col gap-1">
+        <select class="mfg-oh-asset w-full border rounded px-2 py-1 text-xs bg-slate-50">
+          ${assetOptions}
+        </select>
+        <input class="mfg-oh-name w-full border rounded px-2 py-1 text-xs"
+               value="${esc(row.allocation_name || "")}"
+               placeholder="e.g. Electricity / Oven">
+      </div>
     </td>
     <td class="px-2 py-2">
-      <input class="mfg-oh-basis w-full border rounded px-2 py-1"
-             value="${esc(row.basis || "")}" placeholder="per batch / machine hours">
-    </td>
-    <td class="px-2 py-2">
-      <input type="number" min="0" step="0.01"
-             class="mfg-oh-qty w-full border rounded px-2 py-1 text-right"
-             value="${esc(row.quantity ?? "")}">
+      <input class="mfg-oh-basis w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.basis || "")}" placeholder="per batch / hours">
     </td>
     <td class="px-2 py-2">
       <input type="number" min="0" step="0.01"
-             class="mfg-oh-rate w-full border rounded px-2 py-1 text-right"
-             value="${esc(row.rate ?? "")}">
+             class="mfg-oh-qty w-full border rounded px-2 py-1 text-right text-xs"
+             value="${esc(row.quantity ?? "")}" placeholder="0.00">
     </td>
     <td class="px-2 py-2">
       <input type="number" min="0" step="0.01"
-             class="mfg-oh-alloc w-full border rounded px-2 py-1 text-right"
-             value="${esc(row.allocated_amount ?? "")}" placeholder="auto">
+             class="mfg-oh-rate w-full border rounded px-2 py-1 text-right text-xs"
+             value="${esc(row.rate ?? "")}" placeholder="0.00">
+    </td>
+    <td class="px-2 py-2">
+      <input type="number" min="0" step="0.01" readonly
+             class="mfg-oh-alloc w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-600 cursor-not-allowed"
+             value="${esc(row.allocated_amount ?? "")}" placeholder="0.00">
     </td>
     <td class="px-2 py-2 text-center">
-      <button type="button" class="text-red-600 underline text-xs"
+      <button type="button" class="text-red-600 hover:text-red-800 text-xs mt-1"
               data-mfg-bom-row-remove>Remove</button>
     </td>
   `;
 
-  tr.querySelector(".mfg-oh-asset")
-    ?.addEventListener("change", (e) => {
-      const opt = e.target.selectedOptions[0];
-      if (!opt || !opt.value) return;
+  tr.querySelector(".mfg-oh-asset")?.addEventListener("change", (e) => {
+    const opt = e.target.selectedOptions[0];
+    const nameInput = tr.querySelector(".mfg-oh-name");
+    const basisInput = tr.querySelector(".mfg-oh-basis");
+    const rateInput = tr.querySelector(".mfg-oh-rate");
 
-      tr.querySelector(".mfg-oh-name").value = opt.dataset.name || "";
-      tr.querySelector(".mfg-oh-basis").value = opt.dataset.basis || "";
-
+    if (!opt || !opt.value) {
+      // Clear values when switching back to manual
+      nameInput.value = "";
+      basisInput.value = "";
+      rateInput.value = "";
+    } else {
+      nameInput.value = opt.dataset.name || "";
+      basisInput.value = opt.dataset.basis || "";
       const rate = Number(opt.dataset.rate || 0);
-      if (rate > 0) tr.querySelector(".mfg-oh-rate").value = rate.toFixed(2);
+      rateInput.value = rate > 0 ? rate.toFixed(2) : "";
+    }
 
-      recalcMfgBomTotals();
-    });
+    recalcMfgBomTotals();
+  });
 
   tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
     tr.remove();
@@ -127020,7 +127031,6 @@ function addMfgBomOverheadRow(row = {}) {
 
   tbody.appendChild(tr);
 }
-
 // =====================================================
 // BOM Modal — payroll & asset reference helpers
 // =====================================================
