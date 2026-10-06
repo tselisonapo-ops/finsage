@@ -85845,7 +85845,7 @@ class DatabaseService:
         line_no=None,
         unit=None,
         scrap_percent=0,
-        unit_cost=0,
+        unit_cost=None,
         is_optional=False,
         memo=None,
         created_by_user_id=None,
@@ -85856,22 +85856,31 @@ class DatabaseService:
 
         quantity = Decimal(str(quantity or 0))
         scrap_percent = Decimal(str(scrap_percent or 0))
-        unit_cost = Decimal(str(unit_cost or 0))
 
         if quantity <= 0:
-            raise ValueError("BOM line quantity must be greater than zero")
+            raise ValueError(
+                "BOM line quantity must be greater than zero"
+            )
 
         if scrap_percent < 0 or scrap_percent > 100:
             raise ValueError(
                 "Scrap percentage must be between 0 and 100"
             )
 
-        if unit_cost < 0:
-            raise ValueError(
-                "BOM line unit cost cannot be negative"
+        def _insert(c):
+            # IMPORTANT:
+            # Never trust a frontend-supplied unit_cost.
+            # The backend derives it from the inventory item's
+            # standard/planned cost and the BOM unit.
+            calculated_unit_cost = (
+                self._get_manufacturing_bom_standard_unit_cost(
+                    company_id=company_id,
+                    item_id=int(item_id),
+                    bom_unit=unit,
+                    cur=c,
+                )
             )
 
-        def _insert(c):
             if line_no is None:
                 c.execute(
                     f"""
@@ -85880,18 +85889,18 @@ class DatabaseService:
                     WHERE company_id = %s
                     AND bom_id = %s
                     """,
-                    (company_id, bom_id),
+                    (
+                        company_id,
+                        bom_id,
+                    ),
                 )
 
                 row = c.fetchone()
 
                 if isinstance(row, dict):
-                    next_line_no = int(
-                        next(iter(row.values()))
-                    )
+                    next_line_no = int(next(iter(row.values())))
                 else:
                     next_line_no = int(row[0])
-
             else:
                 next_line_no = int(line_no)
 
@@ -85925,7 +85934,7 @@ class DatabaseService:
                     quantity,
                     unit,
                     scrap_percent,
-                    unit_cost,
+                    calculated_unit_cost,
                     bool(is_optional),
                     memo,
                     (
@@ -85962,136 +85971,529 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _insert(cur2)
     
-    def recalculate_manufacturing_bom_standard_cost(
+    def _get_manufacturing_bom_standard_unit_cost(
         self,
         company_id: int,
-        bom_id: int,
+        item_id: int,
+        bom_unit=None,
         *,
         cur=None,
-    ) -> dict:
+    ) -> Decimal:
         """
-        Rolls materials + labour + direct costs + overheads into the BOM
-        header's standard costs. Call after any BOM save.
+        Returns the authoritative standard material cost per BOM unit.
+
+        The inventory item's sales_price is treated as the planned/standard
+        material cost per inventory unit.
+
+        Example:
+            inventory item = Flour
+            inventory unit = kg
+            sales_price = 120
+            BOM unit = g
+
+            120 / kg -> 0.12 / g
+
+        Universal unit conversions are supported for:
+            mass, volume, length, area and count.
+
+        Packaging units such as box/carton/bag/bottle/pack/pallet/roll/sheet
+        are only compatible with themselves unless an item-specific conversion
+        is defined in inventory_items.meta["unit_conversions"].
+
+        The frontend-supplied unit_cost is deliberately NOT used.
         """
+
         schema = self.company_schema(company_id)
 
-        def _scalar(c, sql, params):
-            c.execute(sql, params)
-            r = c.fetchone()
-            return Decimal(str((r["total"] if isinstance(r, dict) else r[0]) or 0))
+        def _normalize_unit(value):
+            if value is None:
+                return ""
+
+            u = str(value).strip().lower()
+
+            aliases = {
+                # Mass
+                "kg": "kg",
+                "kgs": "kg",
+                "kilogram": "kg",
+                "kilograms": "kg",
+
+                "g": "g",
+                "gram": "g",
+                "grams": "g",
+
+                "mg": "mg",
+                "milligram": "mg",
+                "milligrams": "mg",
+
+                "t": "t",
+                "ton": "t",
+                "tons": "t",
+                "tonne": "t",
+                "tonnes": "t",
+
+                # Volume
+                "l": "l",
+                "lt": "l",
+                "ltr": "l",
+                "liter": "l",
+                "litre": "l",
+                "liters": "l",
+                "litres": "l",
+
+                "ml": "ml",
+                "milliliter": "ml",
+                "milliliters": "ml",
+                "millilitre": "ml",
+                "millilitres": "ml",
+
+                "m3": "m3",
+                "m³": "m3",
+                "cubic meter": "m3",
+                "cubic metre": "m3",
+
+                # Length
+                "m": "m",
+                "meter": "m",
+                "meters": "m",
+                "metre": "m",
+                "metres": "m",
+
+                "cm": "cm",
+                "centimeter": "cm",
+                "centimeters": "cm",
+                "centimetre": "cm",
+                "centimetres": "cm",
+
+                "mm": "mm",
+                "millimeter": "mm",
+                "millimeters": "mm",
+                "millimetre": "mm",
+                "millimetres": "mm",
+
+                "km": "km",
+                "kilometer": "km",
+                "kilometers": "km",
+                "kilometre": "km",
+                "kilometres": "km",
+
+                # Area
+                "m2": "m2",
+                "m²": "m2",
+                "square meter": "m2",
+                "square metre": "m2",
+
+                "cm2": "cm2",
+                "cm²": "cm2",
+                "square centimeter": "cm2",
+                "square centimetre": "cm2",
+
+                "mm2": "mm2",
+                "mm²": "mm2",
+                "square millimeter": "mm2",
+                "square millimetre": "mm2",
+
+                # Count
+                "unit": "unit",
+                "units": "unit",
+                "each": "unit",
+                "piece": "unit",
+                "pieces": "unit",
+                "pc": "unit",
+                "pcs": "unit",
+
+                "dozen": "dozen",
+                "dozens": "dozen",
+
+                # Packaging
+                "box": "box",
+                "boxes": "box",
+                "carton": "carton",
+                "cartons": "carton",
+                "bag": "bag",
+                "bags": "bag",
+                "bottle": "bottle",
+                "bottles": "bottle",
+                "pack": "pack",
+                "packs": "pack",
+                "pallet": "pallet",
+                "pallets": "pallet",
+                "roll": "roll",
+                "rolls": "roll",
+                "sheet": "sheet",
+                "sheets": "sheet",
+            }
+
+            return aliases.get(u, u)
+
+        def _family_and_factor(unit):
+            """
+            Returns:
+                (family, factor_to_base_unit)
+
+            Base units:
+                mass   = kg
+                volume = l
+                length = m
+                area   = m2
+                count  = unit
+            """
+
+            unit = _normalize_unit(unit)
+
+            factors = {
+                # Mass -> kg
+                "kg": ("mass", Decimal("1")),
+                "g": ("mass", Decimal("0.001")),
+                "mg": ("mass", Decimal("0.000001")),
+                "t": ("mass", Decimal("1000")),
+
+                # Volume -> L
+                "l": ("volume", Decimal("1")),
+                "ml": ("volume", Decimal("0.001")),
+                "m3": ("volume", Decimal("1000")),
+
+                # Length -> m
+                "m": ("length", Decimal("1")),
+                "cm": ("length", Decimal("0.01")),
+                "mm": ("length", Decimal("0.001")),
+                "km": ("length", Decimal("1000")),
+
+                # Area -> m2
+                "m2": ("area", Decimal("1")),
+                "cm2": ("area", Decimal("0.0001")),
+                "mm2": ("area", Decimal("0.000001")),
+
+                # Count -> unit
+                "unit": ("count", Decimal("1")),
+                "dozen": ("count", Decimal("12")),
+            }
+
+            return factors.get(unit)
+
+        def _item_specific_factor(meta, from_unit, to_unit):
+            """
+            Optional item-specific conversion support.
+
+            Expected meta structure:
+
+            {
+                "unit_conversions": [
+                    {
+                        "from_unit": "box",
+                        "to_unit": "kg",
+                        "factor": 5
+                    }
+                ]
+            }
+
+            Meaning:
+                1 box = 5 kg
+
+            Reverse conversion is automatically supported.
+            """
+
+            if not isinstance(meta, dict):
+                return None
+
+            conversions = meta.get("unit_conversions")
+
+            if not isinstance(conversions, list):
+                return None
+
+            from_unit = _normalize_unit(from_unit)
+            to_unit = _normalize_unit(to_unit)
+
+            for conversion in conversions:
+                if not isinstance(conversion, dict):
+                    continue
+
+                cf = _normalize_unit(conversion.get("from_unit"))
+                ct = _normalize_unit(conversion.get("to_unit"))
+
+                try:
+                    factor = Decimal(str(conversion.get("factor")))
+                except Exception:
+                    continue
+
+                if factor <= 0:
+                    continue
+
+                if cf == from_unit and ct == to_unit:
+                    return factor
+
+                if cf == to_unit and ct == from_unit:
+                    return Decimal("1") / factor
+
+            return None
 
         def _run(c):
             c.execute(
                 f"""
-                SELECT batch_qty FROM {schema}.manufacturing_boms
-                WHERE company_id = %s AND id = %s
-                FOR UPDATE
-                """,
-                (company_id, int(bom_id)),
-            )
-            row = c.fetchone()
-            if not row:
-                raise ValueError(f"BOM not found: {bom_id}")
-
-            batch_qty = Decimal(str(
-                row["batch_qty"] if isinstance(row, dict) else row[0]
-            ))
-
-            # Materials — includes scrap allowance, consistent with
-            # how create_manufacturing_order scales planned quantities
-            material_cost = _scalar(
-                c,
-                f"""
-                SELECT COALESCE(SUM(
-                    quantity * (1 + scrap_percent / 100) * unit_cost
-                ), 0) AS total
-                FROM {schema}.manufacturing_bom_lines
-                WHERE company_id = %s AND bom_id = %s
-                """,
-                (company_id, int(bom_id)),
-            )
-
-            labour_cost = _scalar(
-                c,
-                f"""
-                SELECT COALESCE(SUM(COALESCE(labour_cost, hours * rate, 0)), 0) AS total
-                FROM {schema}.manufacturing_bom_labour
-                WHERE company_id = %s AND bom_id = %s
-                """,
-                (company_id, int(bom_id)),
-            )
-
-            direct_cost = _scalar(
-                c,
-                f"""
-                SELECT COALESCE(SUM(COALESCE(amount, 0)), 0) AS total
-                FROM {schema}.manufacturing_bom_direct_costs
-                WHERE company_id = %s AND bom_id = %s
-                """,
-                (company_id, int(bom_id)),
-            )
-
-            overhead_cost = _scalar(
-                c,
-                f"""
-                SELECT COALESCE(SUM(COALESCE(allocated_amount, quantity * rate, 0)), 0) AS total
-                FROM {schema}.manufacturing_bom_overhead
-                WHERE company_id = %s AND bom_id = %s
-                """,
-                (company_id, int(bom_id)),
-            )
-
-            Q2 = Decimal("0.01")
-            Q6 = Decimal("0.000001")
-            material_cost = material_cost.quantize(Q2)
-            labour_cost = labour_cost.quantize(Q2)
-            direct_cost = direct_cost.quantize(Q2)
-            overhead_cost = overhead_cost.quantize(Q2)
-
-            total_cost = (
-                material_cost + labour_cost + direct_cost + overhead_cost
-            ).quantize(Q2)
-
-            unit_cost = (
-                (total_cost / batch_qty).quantize(Q6)
-                if batch_qty > 0 else Decimal("0")
-            )
-
-            c.execute(
-                f"""
-                UPDATE {schema}.manufacturing_boms
-                SET
-                    standard_material_cost = %s,
-                    standard_labour_cost   = %s,
-                    standard_direct_cost   = %s,
-                    standard_overhead_cost = %s,
-                    standard_total_cost    = %s,
-                    standard_unit_cost     = %s,
-                    updated_at = NOW()
-                WHERE company_id = %s AND id = %s
+                SELECT
+                    id,
+                    name,
+                    unit,
+                    sales_price,
+                    meta,
+                    is_active
+                FROM {schema}.inventory_items
+                WHERE company_id = %s
+                AND id = %s
                 """,
                 (
-                    material_cost, labour_cost, direct_cost,
-                    overhead_cost, total_cost, unit_cost,
-                    company_id, int(bom_id),
+                    int(company_id),
+                    int(item_id),
                 ),
             )
 
-            return {
-                "bom_id": int(bom_id),
-                "material_cost": float(material_cost),
-                "labour_cost": float(labour_cost),
-                "direct_cost": float(direct_cost),
-                "overhead_cost": float(overhead_cost),
-                "total_cost": float(total_cost),
-                "unit_cost": float(unit_cost),
-            }
+            row = c.fetchone()
+
+            if not row:
+                raise ValueError(
+                    f"Manufacturing BOM item not found: {item_id}"
+                )
+
+            if isinstance(row, dict):
+                item_name = row.get("name")
+                inventory_unit = row.get("unit")
+                sales_price = row.get("sales_price")
+                meta = row.get("meta")
+                is_active = row.get("is_active")
+            else:
+                item_name = row[1]
+                inventory_unit = row[2]
+                sales_price = row[3]
+                meta = row[4]
+                is_active = row[5]
+
+            if is_active is False:
+                raise ValueError(
+                    f"Manufacturing BOM item is inactive: {item_name}"
+                )
+
+            try:
+                standard_cost_per_inventory_unit = Decimal(
+                    str(sales_price or 0)
+                )
+            except Exception:
+                raise ValueError(
+                    f"Invalid standard cost for manufacturing item: "
+                    f"{item_name}"
+                )
+
+            if standard_cost_per_inventory_unit < 0:
+                raise ValueError(
+                    f"Standard material cost cannot be negative: "
+                    f"{item_name}"
+                )
+
+            inventory_unit = _normalize_unit(inventory_unit)
+            bom_unit = _normalize_unit(
+                bom_unit if bom_unit else inventory_unit
+            )
+
+            if not inventory_unit:
+                raise ValueError(
+                    f"Inventory unit is not defined for item: {item_name}"
+                )
+
+            if not bom_unit:
+                raise ValueError(
+                    f"BOM unit is not defined for item: {item_name}"
+                )
+
+            # Same unit: no conversion required.
+            if inventory_unit == bom_unit:
+                conversion_to_inventory_unit = Decimal("1")
+
+            else:
+                # First try universal measurement conversion.
+                inventory_family = _family_and_factor(inventory_unit)
+                bom_family = _family_and_factor(bom_unit)
+
+                if inventory_family and bom_family:
+                    inventory_family_name, inventory_factor = inventory_family
+                    bom_family_name, bom_factor = bom_family
+
+                    if inventory_family_name != bom_family_name:
+                        raise ValueError(
+                            f"Incompatible BOM unit '{bom_unit}' for "
+                            f"inventory item '{item_name}' "
+                            f"(inventory unit: '{inventory_unit}'). "
+                            f"These units cannot be converted."
+                        )
+
+                    # bom unit -> base -> inventory unit
+                    conversion_to_inventory_unit = (
+                        bom_factor / inventory_factor
+                    )
+
+                else:
+                    # Packaging / custom item-specific conversion.
+                    conversion_to_inventory_unit = (
+                        _item_specific_factor(
+                            meta,
+                            bom_unit,
+                            inventory_unit,
+                        )
+                    )
+
+                    if conversion_to_inventory_unit is None:
+                        raise ValueError(
+                            f"No conversion exists from BOM unit "
+                            f"'{bom_unit}' to inventory unit "
+                            f"'{inventory_unit}' for item "
+                            f"'{item_name}'. "
+                            f"An item-specific unit conversion is required."
+                        )
+
+            # Cost per ONE BOM unit.
+            standard_cost_per_bom_unit = (
+                standard_cost_per_inventory_unit
+                * conversion_to_inventory_unit
+            )
+
+            return standard_cost_per_bom_unit.quantize(
+                Decimal("0.000001")
+            )
 
         if cur is not None:
             return _run(cur)
 
         with self._conn_cursor() as (conn, cur2):
             return _run(cur2)
+            
+        def recalculate_manufacturing_bom_standard_cost(
+            self,
+            company_id: int,
+            bom_id: int,
+            *,
+            cur=None,
+        ) -> dict:
+            """
+            Rolls materials + labour + direct costs + overheads into the BOM
+            header's standard costs. Call after any BOM save.
+            """
+            schema = self.company_schema(company_id)
+
+            def _scalar(c, sql, params):
+                c.execute(sql, params)
+                r = c.fetchone()
+                return Decimal(str((r["total"] if isinstance(r, dict) else r[0]) or 0))
+
+            def _run(c):
+                c.execute(
+                    f"""
+                    SELECT batch_qty FROM {schema}.manufacturing_boms
+                    WHERE company_id = %s AND id = %s
+                    FOR UPDATE
+                    """,
+                    (company_id, int(bom_id)),
+                )
+                row = c.fetchone()
+                if not row:
+                    raise ValueError(f"BOM not found: {bom_id}")
+
+                batch_qty = Decimal(str(
+                    row["batch_qty"] if isinstance(row, dict) else row[0]
+                ))
+
+                # Materials — includes scrap allowance, consistent with
+                # how create_manufacturing_order scales planned quantities
+                material_cost = _scalar(
+                    c,
+                    f"""
+                    SELECT COALESCE(SUM(
+                        quantity * (1 + scrap_percent / 100) * unit_cost
+                    ), 0) AS total
+                    FROM {schema}.manufacturing_bom_lines
+                    WHERE company_id = %s AND bom_id = %s
+                    """,
+                    (company_id, int(bom_id)),
+                )
+
+                labour_cost = _scalar(
+                    c,
+                    f"""
+                    SELECT COALESCE(SUM(COALESCE(labour_cost, hours * rate, 0)), 0) AS total
+                    FROM {schema}.manufacturing_bom_labour
+                    WHERE company_id = %s AND bom_id = %s
+                    """,
+                    (company_id, int(bom_id)),
+                )
+
+                direct_cost = _scalar(
+                    c,
+                    f"""
+                    SELECT COALESCE(SUM(COALESCE(amount, 0)), 0) AS total
+                    FROM {schema}.manufacturing_bom_direct_costs
+                    WHERE company_id = %s AND bom_id = %s
+                    """,
+                    (company_id, int(bom_id)),
+                )
+
+                overhead_cost = _scalar(
+                    c,
+                    f"""
+                    SELECT COALESCE(SUM(COALESCE(allocated_amount, quantity * rate, 0)), 0) AS total
+                    FROM {schema}.manufacturing_bom_overhead
+                    WHERE company_id = %s AND bom_id = %s
+                    """,
+                    (company_id, int(bom_id)),
+                )
+
+                Q2 = Decimal("0.01")
+                Q6 = Decimal("0.000001")
+                material_cost = material_cost.quantize(Q2)
+                labour_cost = labour_cost.quantize(Q2)
+                direct_cost = direct_cost.quantize(Q2)
+                overhead_cost = overhead_cost.quantize(Q2)
+
+                total_cost = (
+                    material_cost + labour_cost + direct_cost + overhead_cost
+                ).quantize(Q2)
+
+                unit_cost = (
+                    (total_cost / batch_qty).quantize(Q6)
+                    if batch_qty > 0 else Decimal("0")
+                )
+
+                c.execute(
+                    f"""
+                    UPDATE {schema}.manufacturing_boms
+                    SET
+                        standard_material_cost = %s,
+                        standard_labour_cost   = %s,
+                        standard_direct_cost   = %s,
+                        standard_overhead_cost = %s,
+                        standard_total_cost    = %s,
+                        standard_unit_cost     = %s,
+                        updated_at = NOW()
+                    WHERE company_id = %s AND id = %s
+                    """,
+                    (
+                        material_cost, labour_cost, direct_cost,
+                        overhead_cost, total_cost, unit_cost,
+                        company_id, int(bom_id),
+                    ),
+                )
+
+                return {
+                    "bom_id": int(bom_id),
+                    "material_cost": float(material_cost),
+                    "labour_cost": float(labour_cost),
+                    "direct_cost": float(direct_cost),
+                    "overhead_cost": float(overhead_cost),
+                    "total_cost": float(total_cost),
+                    "unit_cost": float(unit_cost),
+                }
+
+            if cur is not None:
+                return _run(cur)
+
+            with self._conn_cursor() as (conn, cur2):
+                return _run(cur2)
 
     def replace_manufacturing_bom_lines(
         self,
@@ -86121,8 +86523,13 @@ class DatabaseService:
 
             for index, line in enumerate(lines, start=1):
                 item_id = int(line.get("item_id") or 0)
-                quantity = Decimal(str(line.get("quantity") or 0))
+
+                quantity = Decimal(
+                    str(line.get("quantity") or 0)
+                )
+
                 unit = line.get("unit")
+
                 scrap_percent = Decimal(
                     str(
                         line.get(
@@ -86132,12 +86539,11 @@ class DatabaseService:
                         or 0
                     )
                 )
-                unit_cost = Decimal(
-                    str(line.get("unit_cost") or 0)
-                )
+
                 is_optional = bool(
                     line.get("is_optional", False)
                 )
+
                 memo = line.get("memo")
 
                 if item_id <= 0:
@@ -86155,10 +86561,17 @@ class DatabaseService:
                         "Scrap percentage must be between 0 and 100"
                     )
 
-                if unit_cost < 0:
-                    raise ValueError(
-                        "BOM line unit cost cannot be negative"
+                # IMPORTANT:
+                # Ignore any unit_cost supplied by the browser.
+                # Always derive the authoritative standard cost here.
+                calculated_unit_cost = (
+                    self._get_manufacturing_bom_standard_unit_cost(
+                        company_id=company_id,
+                        item_id=item_id,
+                        bom_unit=unit,
+                        cur=c,
                     )
+                )
 
                 c.execute(
                     f"""
@@ -86190,7 +86603,7 @@ class DatabaseService:
                         quantity,
                         unit,
                         scrap_percent,
-                        unit_cost,
+                        calculated_unit_cost,
                         is_optional,
                         memo,
                         (
@@ -86220,7 +86633,7 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur2):
             return _replace(cur2)
-        
+            
     def get_manufacturing_bom(
         self,
         company_id: int,
