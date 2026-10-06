@@ -126018,13 +126018,14 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
   if (!modal) {
     modal = document.createElement("div");
     modal.id = "mfgBomDefinitionModal";
+    // Fixed: overflow-y-auto and items-start so top of modal is never cut off
     modal.className =
-      "fixed inset-0 z-50 hidden bg-black/40 flex items-center justify-center p-4";
+      "fixed inset-0 z-50 hidden bg-black/40 overflow-y-auto p-4 sm:p-6 flex justify-center items-start";
 
     modal.innerHTML = `
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-auto">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl my-6 flex flex-col">
 
-        <div class="flex items-center justify-between border-b px-4 py-3">
+        <div class="flex items-center justify-between border-b px-4 py-3 sticky top-0 bg-white rounded-t-lg z-10">
           <div>
             <div id="mfgBomDefinitionTitle" class="font-semibold">New BOM</div>
             <div class="text-xs text-slate-500">
@@ -126034,7 +126035,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             </div>
           </div>
           <button type="button" id="mfgBomDefinitionCloseBtn"
-                  class="text-slate-500 text-lg">×</button>
+                  class="text-slate-500 hover:text-slate-800 text-xl font-bold px-2">×</button>
         </div>
 
         <div class="p-4">
@@ -126136,8 +126137,8 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <div class="overflow-auto border rounded mt-2">
-            <!-- Labour Table Header -->
-            <table class="w-full table-fixed text-xs">
+            <!-- Fixed: 7 clean columns matching the rows -->
+            <table class="w-full min-w-[850px] text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
                   <th class="text-left px-2 py-2 w-[220px]">Worker / Payroll</th>
@@ -126193,15 +126194,17 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <div class="overflow-auto border rounded mt-2">
-            <table class="w-full min-w-[950px] text-xs">
+            <!-- Fixed: 7 clean columns matching the rows -->
+            <table class="w-full min-w-[850px] text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-2 py-2 w-[280px]">Overhead</th>
-                  <th class="text-left px-2 py-2 w-[150px]">Basis</th>
-                  <th class="text-right px-2 py-2 w-[100px]">Quantity</th>
-                  <th class="text-right px-2 py-2 w-[120px]">Rate</th>
-                  <th class="text-right px-2 py-2 w-[130px]">Allocated</th>
-                  <th class="text-center px-2 py-2 w-[75px]"></th>
+                  <th class="text-left px-2 py-2 w-[220px]">Asset / Machine</th>
+                  <th class="text-left px-2 py-2 w-[150px]">Overhead Name</th>
+                  <th class="text-left px-2 py-2 w-[120px]">Basis</th>
+                  <th class="text-right px-2 py-2 w-[90px]">Quantity</th>
+                  <th class="text-right px-2 py-2 w-[110px]">Rate</th>
+                  <th class="text-right px-2 py-2 w-[110px]">Allocated</th>
+                  <th class="text-center px-2 py-2 w-[60px]"></th>
                 </tr>
               </thead>
               <tbody id="mfgBomOverheadTbody"></tbody>
@@ -126332,7 +126335,6 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       throw new Error("Active company could not be determined");
     }
 
-    // ---- fetch inventory + payroll employees + assets in parallel ----
     const [inventoryData, payrollRes, assetsRes] = await Promise.all([
       window.apiFetch(
         ENDPOINTS.inventory.items(cid, "active=1&limit=500"),
@@ -126802,6 +126804,7 @@ function addMfgBomLabourRow(row = {}) {
   if (!tbody) return;
 
   const payroll = window.__MFG_BOM_REF?.payroll || [];
+
   const payrollOptions =
     `<option value="">-- Manual (not on payroll) --</option>` +
     payroll.map(e => {
@@ -126810,22 +126813,22 @@ function addMfgBomLabourRow(row = {}) {
     }).join("");
 
   const tr = document.createElement("tr");
-  tr.className = "border-b align-top";
+  tr.className = "border-b";
 
   tr.innerHTML = `
     <td class="px-2 py-2">
-      <div class="flex flex-col gap-1">
-        <select class="mfg-lab-pick w-full border rounded px-2 py-1 text-xs bg-slate-50">
-          ${payrollOptions}
-        </select>
-        <input class="mfg-lab-name w-full border rounded px-2 py-1 text-xs"
-               value="${esc(row.worker_name || "")}"
-               placeholder="Worker name">
-      </div>
+      <select class="mfg-lab-pick w-full border rounded px-2 py-1 text-xs">
+        ${payrollOptions}
+      </select>
+    </td>
+    <td class="px-2 py-2">
+      <input class="mfg-lab-name w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.worker_name || "")}"
+             placeholder="Worker name">
     </td>
     <td class="px-2 py-2">
       <input class="mfg-lab-role w-full border rounded px-2 py-1 text-xs"
-             value="${esc(row.role || "")}" placeholder="e.g. Baker">
+             value="${esc(row.role || "")}" placeholder="Baker">
     </td>
     <td class="px-2 py-2">
       <input type="number" min="0" step="0.01"
@@ -126836,7 +126839,7 @@ function addMfgBomLabourRow(row = {}) {
       <input type="number" min="0" step="0.01"
              class="mfg-lab-rate w-full border rounded px-2 py-1 text-right text-xs"
              value="${esc(row.rate ?? "")}" placeholder="0.00">
-      <div class="mfg-lab-rate-info text-[10px] text-slate-500 mt-0.5"></div>
+      <div class="mfg-lab-rate-info text-[10px] text-slate-500"></div>
     </td>
     <td class="px-2 py-2">
       <input type="number" min="0" step="0.01" readonly
@@ -126844,7 +126847,7 @@ function addMfgBomLabourRow(row = {}) {
              value="${esc(row.labour_cost ?? "")}" placeholder="0.00">
     </td>
     <td class="px-2 py-2 text-center">
-      <button type="button" class="text-red-600 hover:text-red-800 text-xs mt-1"
+      <button type="button" class="text-red-600 underline text-xs"
               data-mfg-bom-row-remove>Remove</button>
     </td>
   `;
@@ -126874,7 +126877,7 @@ function addMfgBomLabourRow(row = {}) {
       const cid = window.__MFG_BOM_REF?.cid ||
         getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
 
-      if (info) info.textContent = "Loading rate from payroll…";
+      if (info) info.textContent = "Loading rate…";
 
       try {
         const res = await apiFetch(
@@ -126886,12 +126889,12 @@ function addMfgBomLabourRow(row = {}) {
 
         if (rate > 0) {
           rateInput.value = rate.toFixed(2);
-          if (info) info.textContent = `From payroll: ${fmtMoney(rate)}/hr (editable)`;
+          if (info) info.textContent = `Payroll: ${fmtMoney(rate)}/hr`;
         } else {
-          if (info) info.textContent = "No hourly rate in payroll — enter manually.";
+          if (info) info.textContent = "No hourly rate set.";
         }
       } catch (err) {
-        if (info) info.textContent = "Could not load payroll rate — enter manually.";
+        if (info) info.textContent = "Could not load rate.";
       }
 
       recalcMfgBomTotals();
@@ -126945,6 +126948,7 @@ function addMfgBomOverheadRow(row = {}) {
   if (!tbody) return;
 
   const assets = window.__MFG_BOM_REF?.assets || [];
+
   const assetOptions =
     `<option value="">-- None / Manual allocation --</option>` +
     assets.map(a => {
@@ -126965,18 +126969,18 @@ function addMfgBomOverheadRow(row = {}) {
     }).join("");
 
   const tr = document.createElement("tr");
-  tr.className = "border-b align-top";
+  tr.className = "border-b";
 
   tr.innerHTML = `
     <td class="px-2 py-2">
-      <div class="flex flex-col gap-1">
-        <select class="mfg-oh-asset w-full border rounded px-2 py-1 text-xs bg-slate-50">
-          ${assetOptions}
-        </select>
-        <input class="mfg-oh-name w-full border rounded px-2 py-1 text-xs"
-               value="${esc(row.allocation_name || "")}"
-               placeholder="e.g. Electricity / Oven">
-      </div>
+      <select class="mfg-oh-asset w-full border rounded px-2 py-1 text-xs">
+        ${assetOptions}
+      </select>
+    </td>
+    <td class="px-2 py-2">
+      <input class="mfg-oh-name w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.allocation_name || "")}"
+             placeholder="e.g. Electricity / Oven">
     </td>
     <td class="px-2 py-2">
       <input class="mfg-oh-basis w-full border rounded px-2 py-1 text-xs"
@@ -126998,31 +127002,31 @@ function addMfgBomOverheadRow(row = {}) {
              value="${esc(row.allocated_amount ?? "")}" placeholder="0.00">
     </td>
     <td class="px-2 py-2 text-center">
-      <button type="button" class="text-red-600 hover:text-red-800 text-xs mt-1"
+      <button type="button" class="text-red-600 underline text-xs"
               data-mfg-bom-row-remove>Remove</button>
     </td>
   `;
 
-  tr.querySelector(".mfg-oh-asset")?.addEventListener("change", (e) => {
-    const opt = e.target.selectedOptions[0];
-    const nameInput = tr.querySelector(".mfg-oh-name");
-    const basisInput = tr.querySelector(".mfg-oh-basis");
-    const rateInput = tr.querySelector(".mfg-oh-rate");
+  tr.querySelector(".mfg-oh-asset")
+    ?.addEventListener("change", (e) => {
+      const opt = e.target.selectedOptions[0];
+      const nameInput = tr.querySelector(".mfg-oh-name");
+      const basisInput = tr.querySelector(".mfg-oh-basis");
+      const rateInput = tr.querySelector(".mfg-oh-rate");
 
-    if (!opt || !opt.value) {
-      // Clear values when switching back to manual
-      nameInput.value = "";
-      basisInput.value = "";
-      rateInput.value = "";
-    } else {
-      nameInput.value = opt.dataset.name || "";
-      basisInput.value = opt.dataset.basis || "";
-      const rate = Number(opt.dataset.rate || 0);
-      rateInput.value = rate > 0 ? rate.toFixed(2) : "";
-    }
+      if (!opt || !opt.value) {
+        nameInput.value = "";
+        basisInput.value = "";
+        rateInput.value = "";
+      } else {
+        nameInput.value = opt.dataset.name || "";
+        basisInput.value = opt.dataset.basis || "";
+        const rate = Number(opt.dataset.rate || 0);
+        rateInput.value = rate > 0 ? rate.toFixed(2) : "";
+      }
 
-    recalcMfgBomTotals();
-  });
+      recalcMfgBomTotals();
+    });
 
   tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
     tr.remove();
