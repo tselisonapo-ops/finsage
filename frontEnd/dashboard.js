@@ -126430,96 +126430,164 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
 // 2. DIRECT MATERIALS ROW
 // --------------------------------------------------------------------------
 function addManufacturingBomDefinitionLine(line = {}) {
-  const tbody = document.getElementById("mfgBomDefinitionLinesTbody");
+  const tbody =
+    document.getElementById("mfgBomDefinitionLinesTbody");
+
   if (!tbody) return;
 
-  const items = window._MFG_ITEM_CACHE?.rows || [];
+  const items =
+    window._MFG_ITEM_CACHE?.rows || [];
 
   const itemOptions =
     `<option value="">-- Select Material Item --</option>` +
     items.map(i => {
-      // Pull planned material cost from sales_price / cost_price
-      const cost = Number(i.sales_price ?? i.cost_price ?? i.unit_cost ?? 0);
       return `
-        <option value="${esc(i.id)}"
-                data-sku="${esc(i.sku || '')}"
-                data-unit="${esc(i.unit || 'unit')}"
-                data-cost="${cost > 0 ? cost.toFixed(6) : '0.000000'}">
-          ${esc(i.sku ? i.sku + ' — ' : '')}${esc(i.name)}
+        <option
+          value="${esc(i.id)}"
+          data-unit="${esc(i.unit || "unit")}"
+        >
+          ${esc(i.sku ? i.sku + " — " : "")}${esc(i.name || "")}
         </option>
       `;
     }).join("");
-
-  let initialCost = Number(line.unit_cost ?? 0);
-  if (initialCost <= 0 && (line.item_id || line.id)) {
-    const cached = items.find(i => String(i.id) === String(line.item_id || line.id));
-    if (cached) initialCost = Number(cached.sales_price ?? cached.cost_price ?? 0);
-  }
 
   const tr = document.createElement("tr");
   tr.className = "border-b";
 
   tr.innerHTML = `
     <td class="px-3 py-2">
-      <select class="mfg-line-item w-full border rounded px-2 py-1 text-xs bg-white">
+      <select
+        class="mfg-line-item w-full border rounded px-2 py-1 text-xs bg-white">
         ${itemOptions}
       </select>
     </td>
+
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.000001"
-             class="mfg-line-qty w-full border rounded px-2 py-1 text-right text-xs"
-             value="${esc(line.quantity ?? "")}" placeholder="0.000000">
+      <input
+        type="number"
+        min="0"
+        step="0.000001"
+        class="mfg-line-qty w-full border rounded px-2 py-1 text-right text-xs"
+        value="${esc(line.quantity ?? "")}"
+        placeholder="0.000000">
     </td>
+
     <td class="px-3 py-2">
-      <input type="text"
-             class="mfg-line-unit w-full border rounded px-2 py-1 text-xs bg-slate-50 text-slate-600"
-             value="${esc(line.unit || "unit")}" placeholder="unit" readonly>
+      <input
+        type="text"
+        class="mfg-line-unit w-full border rounded px-2 py-1 text-xs bg-slate-50 text-slate-600"
+        value="${esc(line.unit || "")}"
+        placeholder="e.g. kg, g, L, ml, unit"
+        readonly>
     </td>
+
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.01"
-             class="mfg-line-scrap w-full border rounded px-2 py-1 text-right text-xs"
-             value="${esc(line.scrap_percent ?? "0.00")}" placeholder="0.00">
+      <input
+        type="number"
+        min="0"
+        max="100"
+        step="0.01"
+        class="mfg-line-scrap w-full border rounded px-2 py-1 text-right text-xs"
+        value="${esc(
+          line.scrap_percent ??
+          line.scrap_pct ??
+          "0"
+        )}"
+        placeholder="0.00">
     </td>
+
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.000001"
-             class="mfg-line-cost w-full border rounded px-2 py-1 text-right text-xs font-medium text-slate-800"
-             value="${initialCost > 0 ? initialCost.toFixed(6) : ""}" placeholder="0.000000">
+      <input
+        type="text"
+        class="mfg-line-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-500 font-medium"
+        value=""
+        placeholder="Calculated on save"
+        readonly>
     </td>
+
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.01" readonly
-             class="mfg-line-total w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
-             placeholder="0.00">
+      <input
+        type="text"
+        class="mfg-line-total w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold"
+        value=""
+        placeholder="Calculated on save"
+        readonly>
     </td>
+
     <td class="px-3 py-2 text-center">
-      <button type="button" class="text-red-600 hover:text-red-800 text-xs"
-              data-mfg-bom-line-remove>Remove</button>
+      <button
+        type="button"
+        class="text-red-600 hover:text-red-800 text-xs"
+        data-mfg-bom-line-remove>
+        Remove
+      </button>
     </td>
   `;
 
-  if (line.item_id || line.id) {
-    const itemSelect = tr.querySelector(".mfg-line-item");
-    if (itemSelect) itemSelect.value = String(line.item_id || line.id);
+  // Restore existing item
+  if (line.item_id) {
+    const itemSelect =
+      tr.querySelector(".mfg-line-item");
+
+    if (itemSelect) {
+      itemSelect.value =
+        String(line.item_id);
+    }
   }
 
-  // Auto-populates Unit and Planned Material Cost when item is selected
-  tr.querySelector(".mfg-line-item")?.addEventListener("change", (e) => {
-    const opt = e.target.selectedOptions[0];
-    const unitInput = tr.querySelector(".mfg-line-unit");
-    const costInput = tr.querySelector(".mfg-line-cost");
+  // Restore / determine unit
+  const itemSelect =
+    tr.querySelector(".mfg-line-item");
 
-    if (opt && opt.value) {
-      unitInput.value = opt.dataset.unit || "unit";
-      const cost = Number(opt.dataset.cost || 0);
-      costInput.value = cost > 0 ? cost.toFixed(6) : "";
-    } else {
-      unitInput.value = "unit";
+  const unitInput =
+    tr.querySelector(".mfg-line-unit");
+
+  if (itemSelect?.value && unitInput) {
+    const selected =
+      itemSelect.selectedOptions?.[0];
+
+    unitInput.value =
+      line.unit ||
+      selected?.dataset?.unit ||
+      "unit";
+  }
+
+  // Item selection changes the consumption unit.
+  // It does NOT calculate or populate cost.
+  itemSelect?.addEventListener("change", (e) => {
+    const opt =
+      e.target.selectedOptions?.[0];
+
+    if (unitInput) {
+      unitInput.value =
+        opt?.dataset?.unit ||
+        "unit";
+    }
+
+    const costInput =
+      tr.querySelector(".mfg-line-cost");
+
+    const totalInput =
+      tr.querySelector(".mfg-line-total");
+
+    if (costInput) {
       costInput.value = "";
+      costInput.placeholder =
+        "Calculated on save";
+    }
+
+    if (totalInput) {
+      totalInput.value = "";
+      totalInput.placeholder =
+        "Calculated on save";
     }
 
     recalcMfgBomTotals();
   });
 
-  tr.querySelector("[data-mfg-bom-line-remove]")?.addEventListener("click", () => {
+  tr.querySelector(
+    "[data-mfg-bom-line-remove]"
+  )?.addEventListener("click", () => {
     tr.remove();
     recalcMfgBomTotals();
   });
@@ -126569,132 +126637,270 @@ async function saveManufacturingBomDefinition() {
 
   showManufacturingBomDefinitionMsg("Saving BOM...", "info");
 
+  // ============================================================
+  // 1. BOM HEADER
+  // ============================================================
+
   const payload = {
     bom_code:
       document.getElementById("mfgBomDefinitionCode")?.value.trim(),
+
     name:
       document.getElementById("mfgBomDefinitionName")?.value.trim(),
+
     finished_item_name:
       document.getElementById("mfgBomDefinitionFinishedItem")?.value.trim(),
+
     selling_price: Number(
       document.getElementById("mfgBomDefinitionSellingPrice")?.value || 0
     ),
+
     batch_qty: Number(
       document.getElementById("mfgBomDefinitionBatchQty")?.value || 0
     ),
+
     batch_unit:
       document.getElementById("mfgBomDefinitionBatchUnit")?.value.trim(),
+
     description:
       document.getElementById("mfgBomDefinitionDescription")?.value.trim() || null
   };
 
-  if (!payload.bom_code)
-    return showManufacturingBomDefinitionMsg("BOM code is required.", "error");
+  if (!payload.bom_code) {
+    return showManufacturingBomDefinitionMsg(
+      "BOM code is required.",
+      "error"
+    );
+  }
 
-  if (!payload.name)
-    return showManufacturingBomDefinitionMsg("BOM name is required.", "error");
+  if (!payload.name) {
+    return showManufacturingBomDefinitionMsg(
+      "BOM name is required.",
+      "error"
+    );
+  }
 
-  if (!payload.finished_item_name)
-    return showManufacturingBomDefinitionMsg("Finished item is required.", "error");
+  if (!payload.finished_item_name) {
+    return showManufacturingBomDefinitionMsg(
+      "Finished item is required.",
+      "error"
+    );
+  }
 
-  if (!(payload.selling_price >= 0))
-    return showManufacturingBomDefinitionMsg("Selling price cannot be negative.", "error");
+  if (!(payload.selling_price >= 0)) {
+    return showManufacturingBomDefinitionMsg(
+      "Selling price cannot be negative.",
+      "error"
+    );
+  }
 
-  if (!(payload.batch_qty > 0))
-    return showManufacturingBomDefinitionMsg("Output quantity must be greater than zero.", "error");
+  if (!(payload.batch_qty > 0)) {
+    return showManufacturingBomDefinitionMsg(
+      "Output quantity must be greater than zero.",
+      "error"
+    );
+  }
 
-  // ---------- 1. direct materials ----------
+  // ============================================================
+  // 2. DIRECT MATERIALS
+  //
+  // IMPORTANT:
+  // Do NOT read or send unit_cost.
+  // The backend calculates it from:
+  //
+  // inventory item standard/planned cost
+  // + BOM consumption unit
+  // + universal/item-specific conversion
+  // + scrap
+  // ============================================================
+
   const lines = [];
 
-  for (const row of document.querySelectorAll("#mfgBomDefinitionLinesTbody tr")) {
-    const itemId = Number(
-      row.querySelector(".mfg-bom-definition-line-item")?.value || 0
+  const materialRows =
+    document.querySelectorAll(
+      "#mfgBomDefinitionLinesTbody tr"
     );
+
+  for (const row of materialRows) {
+
+    const itemEl =
+      row.querySelector(".mfg-bom-definition-line-item");
+
+    const qtyEl =
+      row.querySelector(".mfg-bom-definition-line-qty");
+
+    const unitEl =
+      row.querySelector(".mfg-bom-definition-line-unit");
+
+    const scrapEl =
+      row.querySelector(".mfg-bom-definition-line-scrap");
+
+    const itemId = Number(itemEl?.value || 0);
+
     const quantity = Number(
-      row.querySelector(".mfg-bom-definition-line-qty")?.value || 0
+      qtyEl?.value || 0
     );
+
     const unit =
-      row.querySelector(".mfg-bom-definition-line-unit")?.value.trim() || "";
+      unitEl?.value?.trim() || "";
+
     const scrapPct = Number(
-      row.querySelector(".mfg-bom-definition-line-scrap")?.value || 0
-    );
-    const unitCost = Number(
-      row.querySelector(".mfg-bom-definition-line-cost")?.value || 0
+      scrapEl?.value || 0
     );
 
-    if (!itemId && !quantity && !unit && !unitCost) continue;
+    // Completely empty row
+    if (
+      !itemId &&
+      !quantity &&
+      !unit &&
+      !scrapPct
+    ) {
+      continue;
+    }
 
-    if (!itemId)
+    if (!itemId) {
       return showManufacturingBomDefinitionMsg(
         "Each BOM component must have an item.",
         "error"
       );
+    }
 
-    if (!(quantity > 0))
+    if (!(quantity > 0)) {
       return showManufacturingBomDefinitionMsg(
         "Each BOM component must have a quantity greater than zero.",
         "error"
       );
+    }
 
-    if (unitCost < 0)
+    if (!unit) {
       return showManufacturingBomDefinitionMsg(
-        "Unit cost cannot be negative.",
+        "Each BOM component must have a consumption unit.",
         "error"
       );
+    }
+
+    if (scrapPct < 0 || scrapPct > 100) {
+      return showManufacturingBomDefinitionMsg(
+        "Scrap percentage must be between 0 and 100.",
+        "error"
+      );
+    }
 
     lines.push({
       item_id: itemId,
-      quantity,
-      unit,
-      scrap_pct: scrapPct,
-      unit_cost: unitCost
+      quantity: quantity,
+      unit: unit,
+      scrap_pct: scrapPct
     });
   }
 
-  if (!lines.length)
+  if (!lines.length) {
     return showManufacturingBomDefinitionMsg(
       "Add at least one BOM component.",
       "error"
     );
+  }
 
-  // ---------- 2. direct labour ----------
+  // ============================================================
+  // 3. DIRECT LABOUR
+  // ============================================================
+
   const labour = [];
 
-  for (const tr of document.querySelectorAll("#mfgBomLabourTbody tr")) {
+  for (
+    const tr of document.querySelectorAll(
+      "#mfgBomLabourTbody tr"
+    )
+  ) {
+
+    const workerId =
+      Number(
+        tr.querySelector(".mfg-lab-worker")?.value || 0
+      ) || null;
+
     const worker_name =
       tr.querySelector(".mfg-lab-name")?.value.trim() || null;
+
     const role =
       tr.querySelector(".mfg-lab-role")?.value.trim() || null;
-    const hours = mfgBomNullableNum(tr.querySelector(".mfg-lab-hours"));
-    const rate = mfgBomNullableNum(tr.querySelector(".mfg-lab-rate"));
-    const labour_cost = mfgBomNullableNum(tr.querySelector(".mfg-lab-cost"));
 
-    // fully blank row -> skip
-    if (!worker_name && !role && hours === null && rate === null && labour_cost === null)
+    const hours =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-lab-hours")
+      );
+
+    const rate =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-lab-rate")
+      );
+
+    const labour_cost =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-lab-cost")
+      );
+
+    // Completely blank row
+    if (
+      !workerId &&
+      !worker_name &&
+      !role &&
+      hours === null &&
+      rate === null &&
+      labour_cost === null
+    ) {
       continue;
+    }
 
-    // must be able to produce a cost: hours × rate, or an explicit cost
-    if (!(hours > 0 && rate > 0) && !(labour_cost > 0)) {
+    if (
+      !(hours > 0 && rate > 0) &&
+      !(labour_cost > 0)
+    ) {
       return showManufacturingBomDefinitionMsg(
         "Each labour row needs hours and rate, or a cost.",
         "error"
       );
     }
 
-    labour.push({ worker_name, role, hours, rate, labour_cost });
+    labour.push({
+      employee_id: workerId,
+      worker_name,
+      role,
+      hours,
+      rate,
+      labour_cost
+    });
   }
 
-  // ---------- 3. other direct costs ----------
+  // ============================================================
+  // 4. OTHER DIRECT COSTS
+  // ============================================================
+
   const direct_costs = [];
 
-  for (const tr of document.querySelectorAll("#mfgBomDirectTbody tr")) {
+  for (
+    const tr of document.querySelectorAll(
+      "#mfgBomDirectTbody tr"
+    )
+  ) {
+
     const description =
       tr.querySelector(".mfg-dc-desc")?.value.trim() || null;
+
     const cost_type =
       tr.querySelector(".mfg-dc-type")?.value.trim() || null;
-    const amount = mfgBomNullableNum(tr.querySelector(".mfg-dc-amount"));
 
-    if (!description && amount === null) continue;
+    const amount =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-dc-amount")
+      );
+
+    // Completely blank row
+    if (
+      !description &&
+      amount === null
+    ) {
+      continue;
+    }
 
     if (!(amount > 0)) {
       return showManufacturingBomDefinitionMsg(
@@ -126703,41 +126909,94 @@ async function saveManufacturingBomDefinition() {
       );
     }
 
-    direct_costs.push({ description, cost_type, amount });
+    direct_costs.push({
+      description,
+      cost_type,
+      amount
+    });
   }
 
-  // ---------- 4. manufacturing overhead ----------
+  // ============================================================
+  // 5. MANUFACTURING OVERHEAD
+  // ============================================================
+
   const overheads = [];
 
-  for (const tr of document.querySelectorAll("#mfgBomOverheadTbody tr")) {
+  for (
+    const tr of document.querySelectorAll(
+      "#mfgBomOverheadTbody tr"
+    )
+  ) {
+
     const allocation_name =
       tr.querySelector(".mfg-oh-name")?.value.trim() || null;
+
     const basis =
       tr.querySelector(".mfg-oh-basis")?.value.trim() || null;
-    const quantity = mfgBomNullableNum(tr.querySelector(".mfg-oh-qty"));
-    const rate = mfgBomNullableNum(tr.querySelector(".mfg-oh-rate"));
-    const allocated_amount = mfgBomNullableNum(tr.querySelector(".mfg-oh-alloc"));
 
-    if (!allocation_name && quantity === null && allocated_amount === null)
+    const quantity =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-oh-qty")
+      );
+
+    const rate =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-oh-rate")
+      );
+
+    const allocated_amount =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-oh-alloc")
+      );
+
+    // Completely blank row
+    if (
+      !allocation_name &&
+      quantity === null &&
+      rate === null &&
+      allocated_amount === null
+    ) {
       continue;
+    }
 
-    if (!(quantity > 0 && rate > 0) && !(allocated_amount > 0)) {
+    if (
+      !(quantity > 0 && rate > 0) &&
+      !(allocated_amount > 0)
+    ) {
       return showManufacturingBomDefinitionMsg(
         "Each overhead row needs quantity × rate, or an allocated amount.",
         "error"
       );
     }
 
-    overheads.push({ allocation_name, basis, quantity, rate, allocated_amount });
+    overheads.push({
+      allocation_name,
+      basis,
+      quantity,
+      rate,
+      allocated_amount
+    });
   }
+
+  // ============================================================
+  // FINAL PAYLOAD
+  //
+  // Material unit_cost is intentionally NOT included.
+  // Backend owns material costing.
+  // ============================================================
 
   payload.lines = lines;
   payload.labour = labour;
   payload.direct_costs = direct_costs;
   payload.overheads = overheads;
 
-  const btn = document.getElementById("mfgBomDefinitionSaveBtn");
-  const oldText = btn?.textContent || "Save BOM";
+  const btn =
+    document.getElementById(
+      "mfgBomDefinitionSaveBtn"
+    );
+
+  const oldText =
+    btn?.textContent || "Save BOM";
 
   if (btn) {
     btn.disabled = true;
@@ -126745,26 +127004,46 @@ async function saveManufacturingBomDefinition() {
   }
 
   try {
-    const bomId = Number(modal.dataset.bomId || 0);
 
-    // ONE request — header + lines + cost sections + standard
-    // cost recalculation all happen server-side in one transaction
+    const bomId =
+      Number(
+        modal.dataset.bomId || 0
+      );
+
+    // ONE request.
+    //
+    // Backend transaction:
+    //   1. Saves BOM header
+    //   2. Saves material inputs
+    //   3. Calculates authoritative material unit costs
+    //   4. Applies unit conversion
+    //   5. Saves labour/direct/overhead
+    //   6. Recalculates BOM standard costs
+    //
     const saved = await apiFetch(
       bomId
         ? ENDPOINTS.manufacturing.bom(cid, bomId)
         : ENDPOINTS.manufacturing.boms(cid),
       {
         method: bomId ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify(payload)
       }
     );
 
     if (!saved?.ok) {
-      throw new Error(saved?.error || "Failed to save BOM.");
+      throw new Error(
+        saved?.error ||
+        "Failed to save BOM."
+      );
     }
 
-    showManufacturingBomDefinitionMsg("BOM saved successfully.", "ok");
+    showManufacturingBomDefinitionMsg(
+      "BOM saved successfully.",
+      "ok"
+    );
 
     await loadManufacturingBoms();
 
@@ -126773,12 +127052,20 @@ async function saveManufacturingBomDefinition() {
     }, 500);
 
   } catch (err) {
-    console.error("[Manufacturing] save BOM failed:", err);
+
+    console.error(
+      "[Manufacturing] save BOM failed:",
+      err
+    );
+
     showManufacturingBomDefinitionMsg(
-      err?.message || "Failed to save BOM.",
+      err?.message ||
+      "Failed to save BOM.",
       "error"
     );
+
   } finally {
+
     if (btn) {
       btn.disabled = false;
       btn.textContent = oldText;
@@ -126807,117 +127094,308 @@ function mfgBomNullableNum(el) {
 // 3. DIRECT LABOUR ROW
 // --------------------------------------------------------------------------
 function addMfgBomLabourRow(row = {}) {
-  const tbody = document.getElementById("mfgBomLabourTbody");
+  const tbody =
+    document.getElementById("mfgBomLabourTbody");
+
   if (!tbody) return;
 
-  const payroll = window.__MFG_BOM_REF?.payroll || [];
+  const payroll =
+    window.__MFG_BOM_REF?.payroll || [];
+
   const payrollOptions =
     `<option value="">-- Manual (not on payroll) --</option>` +
     payroll.map(e => {
-      const eid = e?.id ?? e?.employee_id;
-      const name = mfgGetEmployeeName(e);
-      const empNo = e?.employee_no || e?.employee_number || "";
-      return `<option value="${esc(eid)}">${esc(empNo ? `${name} (${empNo})` : name)}</option>`;
+      const eid =
+        e?.id ??
+        e?.employee_id;
+
+      const name =
+        mfgGetEmployeeName(e);
+
+      const empNo =
+        e?.employee_no ||
+        e?.employee_number ||
+        "";
+
+      return `
+        <option value="${esc(eid)}">
+          ${esc(
+            empNo
+              ? `${name} (${empNo})`
+              : name
+          )}
+        </option>
+      `;
     }).join("");
 
-  const tr = document.createElement("tr");
+  const initialLabourCost =
+    Number(
+      row.labour_cost ??
+      (
+        Number(row.hours || 0) *
+        Number(row.rate || 0)
+      )
+    );
+
+  const tr =
+    document.createElement("tr");
+
   tr.className = "border-b";
 
   tr.innerHTML = `
     <td class="px-3 py-2">
-      <select class="mfg-lab-worker w-full border rounded px-2 py-1 text-xs bg-white">
+      <select
+        class="mfg-lab-worker w-full border rounded px-2 py-1 text-xs bg-white">
         ${payrollOptions}
       </select>
     </td>
+
     <td class="px-3 py-2">
-      <input type="text"
-             class="mfg-lab-name w-full border rounded px-2 py-1 text-xs"
-             value="${esc(row.worker_name || "")}"
-             placeholder="Worker name">
+      <input
+        type="text"
+        class="mfg-lab-name w-full border rounded px-2 py-1 text-xs"
+        value="${esc(row.worker_name || "")}"
+        placeholder="Worker name">
     </td>
+
     <td class="px-3 py-2">
-      <input type="text"
-             class="mfg-lab-role w-full border rounded px-2 py-1 text-xs"
-             value="${esc(row.role || "")}"
-             placeholder="Role">
+      <input
+        type="text"
+        class="mfg-lab-role w-full border rounded px-2 py-1 text-xs"
+        value="${esc(row.role || "")}"
+        placeholder="Role">
     </td>
+
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.0001"
-             class="mfg-lab-hours w-full border rounded px-2 py-1 text-right text-xs"
-             value="${esc(row.hours ?? "")}"
-             placeholder="0.00">
+      <input
+        type="number"
+        min="0"
+        step="0.0001"
+        class="mfg-lab-hours w-full border rounded px-2 py-1 text-right text-xs"
+        value="${esc(row.hours ?? "")}"
+        placeholder="0.00">
     </td>
+
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.01"
-             class="mfg-lab-rate w-full border rounded px-2 py-1 text-right text-xs font-medium text-slate-800"
-             value="${esc(row.rate ?? "")}"
-             placeholder="0.00">
-      <div class="mfg-lab-rate-info text-[10px] text-slate-500 mt-0.5 truncate"></div>
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        class="mfg-lab-rate w-full border rounded px-2 py-1 text-right text-xs font-medium text-slate-800"
+        value="${esc(row.rate ?? "")}"
+        placeholder="0.00">
+
+      <div
+        class="mfg-lab-rate-info text-[10px] text-slate-500 mt-0.5 truncate">
+      </div>
     </td>
+
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.01" readonly
-             class="mfg-lab-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
-             placeholder="0.00">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        readonly
+        class="mfg-lab-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
+        value="${initialLabourCost > 0
+          ? initialLabourCost.toFixed(2)
+          : ""}"
+        placeholder="0.00">
     </td>
+
     <td class="px-3 py-2 text-center">
-      <button type="button" class="text-red-600 hover:text-red-800 text-xs"
-              data-mfg-bom-row-remove>Remove</button>
+      <button
+        type="button"
+        class="text-red-600 hover:text-red-800 text-xs"
+        data-mfg-bom-row-remove>
+        Remove
+      </button>
     </td>
   `;
 
   if (row.employee_id) {
-    const workerSelect = tr.querySelector(".mfg-lab-worker");
-    if (workerSelect) workerSelect.value = String(row.employee_id);
+    const workerSelect =
+      tr.querySelector(".mfg-lab-worker");
+
+    if (workerSelect) {
+      workerSelect.value =
+        String(row.employee_id);
+    }
   }
 
-  tr.querySelector(".mfg-lab-worker")?.addEventListener("change", async (e) => {
-    const employeeId = e.target.value;
-    const nameInput = tr.querySelector(".mfg-lab-name");
-    const roleInput = tr.querySelector(".mfg-lab-role");
-    const rateInput = tr.querySelector(".mfg-lab-rate");
-    const info = tr.querySelector(".mfg-lab-rate-info");
+  const calculateLabourCost = () => {
+    const hours =
+      Number(
+        tr.querySelector(".mfg-lab-hours")?.value || 0
+      );
 
-    if (!employeeId) {
-      if (info) info.textContent = "";
-      return;
+    const rate =
+      Number(
+        tr.querySelector(".mfg-lab-rate")?.value || 0
+      );
+
+    const cost =
+      hours > 0 && rate > 0
+        ? hours * rate
+        : 0;
+
+    const costInput =
+      tr.querySelector(".mfg-lab-cost");
+
+    if (costInput) {
+      costInput.value =
+        cost > 0
+          ? cost.toFixed(2)
+          : "";
     }
+  };
 
-    const employee = payroll.find(p => String(p?.id ?? p?.employee_id) === String(employeeId));
-    if (employee) {
-      nameInput.value = mfgGetEmployeeName(employee);
-      const role = mfgGetEmployeeRole(employee);
-      if (role) roleInput.value = role;
-    }
+  tr.querySelector(".mfg-lab-hours")
+    ?.addEventListener("input", () => {
+      calculateLabourCost();
+      recalcMfgBomTotals();
+    });
 
-    const cid = window.__MFG_BOM_REF?.cid || getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-    if (info) info.textContent = "Loading rate...";
+  tr.querySelector(".mfg-lab-rate")
+    ?.addEventListener("input", () => {
+      calculateLabourCost();
+      recalcMfgBomTotals();
+    });
 
-    try {
-      const res = await apiFetch(`/api/companies/${encodeURIComponent(cid)}/payroll/employees/${encodeURIComponent(employeeId)}/pay-setup`);
-      const setup = res?.data || res?.setup || res;
-      const hourlyRate = mfgGetHourlyRateFromSetup(setup);
-      const contractType = String(setup?.contract?.salary_type || "").trim().toLowerCase();
-      const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
-      const normalHours = Number(setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0);
+  tr.querySelector(".mfg-lab-worker")
+    ?.addEventListener("change", async (e) => {
 
-      if (hourlyRate > 0) {
-        rateInput.value = hourlyRate.toFixed(2);
-        if (contractType === "hourly" || contractType === "hourly_rate") {
-          if (info) info.textContent = `Contract: ${fmtMoney(hourlyRate)}`;
-        } else if (basicSalary > 0 && normalHours > 0) {
-          if (info) info.textContent = `${fmtMoney(basicSalary)} ÷ ${normalHours} hrs`;
-        } else {
-          if (info) info.textContent = `Payroll: ${fmtMoney(hourlyRate)}/hr`;
+      const employeeId =
+        e.target.value;
+
+      const nameInput =
+        tr.querySelector(".mfg-lab-name");
+
+      const roleInput =
+        tr.querySelector(".mfg-lab-role");
+
+      const rateInput =
+        tr.querySelector(".mfg-lab-rate");
+
+      const info =
+        tr.querySelector(".mfg-lab-rate-info");
+
+      if (!employeeId) {
+        if (info) info.textContent = "";
+        return;
+      }
+
+      const employee =
+        payroll.find(
+          p =>
+            String(
+              p?.id ??
+              p?.employee_id
+            ) === String(employeeId)
+        );
+
+      if (employee) {
+        nameInput.value =
+          mfgGetEmployeeName(employee);
+
+        const role =
+          mfgGetEmployeeRole(employee);
+
+        if (role) {
+          roleInput.value = role;
         }
       }
-    } catch (err) {
-      if (info) info.textContent = "Rate not found.";
-    }
 
-    recalcMfgBomTotals();
-  });
+      const cid =
+        window.__MFG_BOM_REF?.cid ||
+        getActiveCompanyId?.() ||
+        window.CURRENT_COMPANY_ID;
 
-  tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
+      if (info) {
+        info.textContent =
+          "Loading rate...";
+      }
+
+      try {
+        const res =
+          await apiFetch(
+            `/api/companies/${encodeURIComponent(cid)}/payroll/employees/${encodeURIComponent(employeeId)}/pay-setup`
+          );
+
+        const setup =
+          res?.data ||
+          res?.setup ||
+          res;
+
+        const hourlyRate =
+          mfgGetHourlyRateFromSetup(setup);
+
+        const contractType =
+          String(
+            setup?.contract?.salary_type || ""
+          )
+            .trim()
+            .toLowerCase();
+
+        const basicSalary =
+          Number(
+            setup?.fixed_basic_amount ??
+            setup?.contract?.basic_salary ??
+            0
+          );
+
+        const normalHours =
+          Number(
+            setup?.contract?.normal_hours_per_month ??
+            setup?.standard_quantity ??
+            0
+          );
+
+        if (hourlyRate > 0) {
+
+          rateInput.value =
+            hourlyRate.toFixed(2);
+
+          if (
+            contractType === "hourly" ||
+            contractType === "hourly_rate"
+          ) {
+            info.textContent =
+              `Contract: ${fmtMoney(hourlyRate)}`;
+
+          } else if (
+            basicSalary > 0 &&
+            normalHours > 0
+          ) {
+            info.textContent =
+              `${fmtMoney(basicSalary)} ÷ ${normalHours} hrs`;
+
+          } else {
+            info.textContent =
+              `Payroll: ${fmtMoney(hourlyRate)}/hr`;
+          }
+
+          calculateLabourCost();
+        }
+
+      } catch (err) {
+        console.warn(
+          "[Manufacturing BOM] payroll rate lookup failed:",
+          err
+        );
+
+        if (info) {
+          info.textContent =
+            "Rate not found.";
+        }
+      }
+
+      recalcMfgBomTotals();
+    });
+
+  tr.querySelector(
+    "[data-mfg-bom-row-remove]"
+  )?.addEventListener("click", () => {
     tr.remove();
     recalcMfgBomTotals();
   });
@@ -126967,111 +127445,251 @@ function addMfgBomDirectCostRow(row = {}) {
 // 5. MANUFACTURING OVERHEAD ROW
 // --------------------------------------------------------------------------
 function addMfgBomOverheadRow(row = {}) {
-  const tbody = document.getElementById("mfgBomOverheadTbody");
+  const tbody =
+    document.getElementById("mfgBomOverheadTbody");
+
   if (!tbody) return;
 
-  const assets = window.__MFG_BOM_REF?.assets || [];
+  const assets =
+    window.__MFG_BOM_REF?.assets || [];
+
   const assetOptions =
     `<option value="">-- None / Manual Allocation --</option>` +
     assets.map(a => {
-      const cost = Number(a.cost || 0);
-      const residual = Number(a.residual_value || 0);
-      const totalUnits = Number(a.uop_total_units || 0);
-      const calculatedRate = totalUnits > 0 ? (cost - residual) / totalUnits : 0;
-      const basisName = a.uop_unit_name || "Machine hours";
+
+      const cost =
+        Number(a.cost || 0);
+
+      const residual =
+        Number(a.residual_value || 0);
+
+      const totalUnits =
+        Number(a.uop_total_units || 0);
+
+      const calculatedRate =
+        totalUnits > 0
+          ? (cost - residual) / totalUnits
+          : 0;
+
+      const basisName =
+        a.uop_unit_name ||
+        "Machine hours";
 
       return `
-        <option value="${esc(a.id)}"
-                data-name="${esc(a.asset_name || '')}"
-                data-code="${esc(a.asset_code || '')}"
-                data-rate="${calculatedRate > 0 ? calculatedRate.toFixed(2) : ''}"
-                data-basis="${esc(basisName)}">
-          ${esc(a.asset_code)} - ${esc(a.asset_name)} (${calculatedRate > 0 ? fmtMoney(calculatedRate) + '/hr' : 'UOP'})
+        <option
+          value="${esc(a.id)}"
+          data-name="${esc(a.asset_name || "")}"
+          data-code="${esc(a.asset_code || "")}"
+          data-rate="${calculatedRate > 0
+            ? calculatedRate.toFixed(2)
+            : ""}"
+          data-basis="${esc(basisName)}">
+          ${esc(a.asset_code || "")} -
+          ${esc(a.asset_name || "")}
+          ${
+            calculatedRate > 0
+              ? `(${fmtMoney(calculatedRate)}/hr)`
+              : "(UOP)"
+          }
         </option>
       `;
     }).join("");
 
-  const tr = document.createElement("tr");
+  const initialAllocated =
+    Number(
+      row.allocated_amount ??
+      (
+        Number(row.quantity || 0) *
+        Number(row.rate || 0)
+      )
+    );
+
+  const tr =
+    document.createElement("tr");
+
   tr.className = "border-b";
 
   tr.innerHTML = `
     <td class="px-3 py-2">
-      <select class="mfg-oh-asset w-full border rounded px-2 py-1 text-xs bg-white">
+      <select
+        class="mfg-oh-asset w-full border rounded px-2 py-1 text-xs bg-white">
         ${assetOptions}
       </select>
     </td>
+
     <td class="px-3 py-2">
-      <input type="text"
-             class="mfg-oh-name w-full border rounded px-2 py-1 text-xs"
-             value="${esc(row.allocation_name || "")}"
-             placeholder="e.g. Machinery depreciation">
+      <input
+        type="text"
+        class="mfg-oh-name w-full border rounded px-2 py-1 text-xs"
+        value="${esc(row.allocation_name || "")}"
+        placeholder="e.g. Machinery depreciation">
     </td>
+
     <td class="px-3 py-2">
-      <input type="text"
-             class="mfg-oh-basis w-full border rounded px-2 py-1 text-xs"
-             value="${esc(row.basis || "")}"
-             placeholder="e.g. Machine hours">
+      <input
+        type="text"
+        class="mfg-oh-basis w-full border rounded px-2 py-1 text-xs"
+        value="${esc(row.basis || "")}"
+        placeholder="e.g. Machine hours">
     </td>
+
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.0001"
-             class="mfg-oh-qty w-full border rounded px-2 py-1 text-right text-xs"
-             value="${esc(row.quantity ?? "")}"
-             placeholder="0.00">
+      <input
+        type="number"
+        min="0"
+        step="0.0001"
+        class="mfg-oh-qty w-full border rounded px-2 py-1 text-right text-xs"
+        value="${esc(row.quantity ?? "")}"
+        placeholder="0.00">
     </td>
+
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.01"
-             class="mfg-oh-rate w-full border rounded px-2 py-1 text-right text-xs font-medium text-slate-800"
-             value="${esc(row.rate ?? "")}"
-             placeholder="0.00">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        class="mfg-oh-rate w-full border rounded px-2 py-1 text-right text-xs font-medium text-slate-800"
+        value="${esc(row.rate ?? "")}"
+        placeholder="0.00">
     </td>
+
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.01" readonly
-             class="mfg-oh-alloc w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
-             placeholder="0.00">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        readonly
+        class="mfg-oh-alloc w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
+        value="${initialAllocated > 0
+          ? initialAllocated.toFixed(2)
+          : ""}"
+        placeholder="0.00">
     </td>
+
     <td class="px-3 py-2 text-center">
-      <button type="button" class="text-red-600 hover:text-red-800 text-xs"
-              data-mfg-bom-row-remove>Remove</button>
+      <button
+        type="button"
+        class="text-red-600 hover:text-red-800 text-xs"
+        data-mfg-bom-row-remove>
+        Remove
+      </button>
     </td>
   `;
 
   if (row.asset_id) {
-    const assetSelect = tr.querySelector(".mfg-oh-asset");
-    if (assetSelect) assetSelect.value = String(row.asset_id);
+    const assetSelect =
+      tr.querySelector(".mfg-oh-asset");
+
+    if (assetSelect) {
+      assetSelect.value =
+        String(row.asset_id);
+    }
   }
 
-  tr.querySelector(".mfg-oh-asset")?.addEventListener("change", (e) => {
-    const opt = e.target.selectedOptions[0];
-    const assetId = e.target.value;
-    const nameInput = tr.querySelector(".mfg-oh-name");
-    const basisInput = tr.querySelector(".mfg-oh-basis");
-    const rateInput = tr.querySelector(".mfg-oh-rate");
+  const calculateOverhead =
+    () => {
 
-    if (assetId && opt) {
-      const assetName = opt.dataset.name || opt.textContent.trim();
-      const defaultBasisName = opt.dataset.basis || "Machine hours";
-      const defaultRate = opt.dataset.rate || "";
+      const qty =
+        Number(
+          tr.querySelector(".mfg-oh-qty")?.value || 0
+        );
 
-      nameInput.value = `Machinery depreciation (${assetName})`;
-      basisInput.value = defaultBasisName;
-      if (defaultRate) rateInput.value = defaultRate;
-    } else {
-      nameInput.value = "";
-      basisInput.value = "";
-      rateInput.value = "";
-    }
+      const rate =
+        Number(
+          tr.querySelector(".mfg-oh-rate")?.value || 0
+        );
 
-    recalcMfgBomTotals();
-  });
+      const amount =
+        qty > 0 && rate > 0
+          ? qty * rate
+          : 0;
 
-  tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
+      const allocInput =
+        tr.querySelector(".mfg-oh-alloc");
+
+      if (allocInput) {
+        allocInput.value =
+          amount > 0
+            ? amount.toFixed(2)
+            : "";
+      }
+    };
+
+  tr.querySelector(".mfg-oh-qty")
+    ?.addEventListener("input", () => {
+      calculateOverhead();
+      recalcMfgBomTotals();
+    });
+
+  tr.querySelector(".mfg-oh-rate")
+    ?.addEventListener("input", () => {
+      calculateOverhead();
+      recalcMfgBomTotals();
+    });
+
+  tr.querySelector(".mfg-oh-asset")
+    ?.addEventListener("change", (e) => {
+
+      const opt =
+        e.target.selectedOptions?.[0];
+
+      const assetId =
+        e.target.value;
+
+      const nameInput =
+        tr.querySelector(".mfg-oh-name");
+
+      const basisInput =
+        tr.querySelector(".mfg-oh-basis");
+
+      const rateInput =
+        tr.querySelector(".mfg-oh-rate");
+
+      if (assetId && opt) {
+
+        const assetName =
+          opt.dataset.name ||
+          opt.textContent.trim();
+
+        const defaultBasis =
+          opt.dataset.basis ||
+          "Machine hours";
+
+        const defaultRate =
+          opt.dataset.rate ||
+          "";
+
+        nameInput.value =
+          `Machinery depreciation (${assetName})`;
+
+        basisInput.value =
+          defaultBasis;
+
+        if (defaultRate) {
+          rateInput.value =
+            defaultRate;
+        }
+
+      } else {
+
+        nameInput.value = "";
+        basisInput.value = "";
+        rateInput.value = "";
+      }
+
+      calculateOverhead();
+      recalcMfgBomTotals();
+    });
+
+  tr.querySelector(
+    "[data-mfg-bom-row-remove]"
+  )?.addEventListener("click", () => {
     tr.remove();
     recalcMfgBomTotals();
   });
 
   tbody.appendChild(tr);
 }
-
 // --------------------------------------------------------------------------
 // 6. TOTALS & UNIT MARGIN CALCULATION
 // --------------------------------------------------------------------------
@@ -127080,80 +127698,359 @@ function handleMfgBomModalInput() {
 }
 
 function recalcMfgBomTotals() {
-  const outputQty = Math.max(Number(document.getElementById("mfgBomDefinitionBatchQty")?.value || 1), 0.0001);
-  const sellingPricePerUnit = Number(document.getElementById("mfgBomDefinitionSellingPrice")?.value || 0);
 
-  // 1. Direct Materials Total
-  let totMaterials = 0;
-  document.querySelectorAll("#mfgBomDefinitionLinesTbody tr").forEach(tr => {
-    const qty = Number(tr.querySelector(".mfg-line-qty")?.value || 0);
-    const cost = Number(tr.querySelector(".mfg-line-cost")?.value || 0);
-    const scrap = Number(tr.querySelector(".mfg-line-scrap")?.value || 0);
+  const outputQty =
+    Math.max(
+      Number(
+        document.getElementById(
+          "mfgBomDefinitionBatchQty"
+        )?.value || 1
+      ),
+      0.0001
+    );
 
-    const lineCost = qty * (1 + scrap / 100) * cost;
-    totMaterials += lineCost;
+  const sellingPricePerUnit =
+    Number(
+      document.getElementById(
+        "mfgBomDefinitionSellingPrice"
+      )?.value || 0
+    );
 
-    const totalInput = tr.querySelector(".mfg-line-total");
-    if (totalInput) totalInput.value = lineCost.toFixed(2);
-  });
+  // ============================================================
+  // 1. MATERIALS
+  //
+  // Material costing is backend-authoritative.
+  // The frontend does NOT invent a cost here.
+  // ============================================================
 
-  // 2. Direct Labour Total
+  let materialDisplayTotal = 0;
+  let hasMaterialCost = false;
+
+  document
+    .querySelectorAll(
+      "#mfgBomDefinitionLinesTbody tr"
+    )
+    .forEach(tr => {
+
+      const cost =
+        Number(
+          tr.querySelector(
+            ".mfg-line-cost"
+          )?.value || 0
+        );
+
+      const qty =
+        Number(
+          tr.querySelector(
+            ".mfg-line-qty"
+          )?.value || 0
+        );
+
+      const scrap =
+        Number(
+          tr.querySelector(
+            ".mfg-line-scrap"
+          )?.value || 0
+        );
+
+      const totalInput =
+        tr.querySelector(
+          ".mfg-line-total"
+        );
+
+      /*
+       * Only use a material cost if one has
+       * actually been returned/populated by
+       * the backend.
+       */
+      if (
+        cost > 0 &&
+        qty > 0
+      ) {
+        const lineCost =
+          qty *
+          (1 + scrap / 100) *
+          cost;
+
+        materialDisplayTotal +=
+          lineCost;
+
+        hasMaterialCost = true;
+
+        if (totalInput) {
+          totalInput.value =
+            lineCost.toFixed(2);
+        }
+      } else if (totalInput) {
+        totalInput.value = "";
+        totalInput.placeholder =
+          "Calculated on save";
+      }
+    });
+
+  // ============================================================
+  // 2. DIRECT LABOUR
+  // ============================================================
+
   let totLabour = 0;
-  document.querySelectorAll("#mfgBomLabourTbody tr").forEach(tr => {
-    const hours = Number(tr.querySelector(".mfg-lab-hours")?.value || 0);
-    const rate = Number(tr.querySelector(".mfg-lab-rate")?.value || 0);
 
-    const lineCost = hours * rate;
-    totLabour += lineCost;
+  document
+    .querySelectorAll(
+      "#mfgBomLabourTbody tr"
+    )
+    .forEach(tr => {
 
-    const costInput = tr.querySelector(".mfg-lab-cost");
-    if (costInput) costInput.value = lineCost.toFixed(2);
-  });
+      const hours =
+        Number(
+          tr.querySelector(
+            ".mfg-lab-hours"
+          )?.value || 0
+        );
 
-  // 3. Other Direct Costs Total
+      const rate =
+        Number(
+          tr.querySelector(
+            ".mfg-lab-rate"
+          )?.value || 0
+        );
+
+      const cost =
+        hours > 0 && rate > 0
+          ? hours * rate
+          : 0;
+
+      totLabour += cost;
+
+      const costInput =
+        tr.querySelector(
+          ".mfg-lab-cost"
+        );
+
+      if (costInput) {
+        costInput.value =
+          cost > 0
+            ? cost.toFixed(2)
+            : "";
+      }
+    });
+
+  // ============================================================
+  // 3. OTHER DIRECT COSTS
+  // ============================================================
+
   let totDirect = 0;
-  document.querySelectorAll("#mfgBomDirectTbody tr").forEach(tr => {
-    totDirect += Number(tr.querySelector(".mfg-dc-amount")?.value || 0);
-  });
 
-  // 4. Manufacturing Overhead Total
+  document
+    .querySelectorAll(
+      "#mfgBomDirectTbody tr"
+    )
+    .forEach(tr => {
+
+      const amount =
+        Number(
+          tr.querySelector(
+            ".mfg-dc-amount"
+          )?.value || 0
+        );
+
+      if (amount > 0) {
+        totDirect += amount;
+      }
+    });
+
+  // ============================================================
+  // 4. MANUFACTURING OVERHEAD
+  // ============================================================
+
   let totOverhead = 0;
-  document.querySelectorAll("#mfgBomOverheadTbody tr").forEach(tr => {
-    const qty = Number(tr.querySelector(".mfg-oh-qty")?.value || 0);
-    const rate = Number(tr.querySelector(".mfg-oh-rate")?.value || 0);
 
-    const lineCost = qty * rate;
-    totOverhead += lineCost;
+  document
+    .querySelectorAll(
+      "#mfgBomOverheadTbody tr"
+    )
+    .forEach(tr => {
 
-    const allocInput = tr.querySelector(".mfg-oh-alloc");
-    if (allocInput) allocInput.value = lineCost.toFixed(2);
-  });
+      const qty =
+        Number(
+          tr.querySelector(
+            ".mfg-oh-qty"
+          )?.value || 0
+        );
 
-  // Summary Totals
-  const totDirectTotal = totMaterials + totLabour + totDirect;
-  const totFullCost = totDirectTotal + totOverhead;
-  const costPerUnit = totFullCost / outputQty;
-  const marginPerUnit = sellingPricePerUnit - costPerUnit;
+      const rate =
+        Number(
+          tr.querySelector(
+            ".mfg-oh-rate"
+          )?.value || 0
+        );
 
-  // Render to Summary
-  document.getElementById("mfgBomTotMaterials").textContent = fmtMoney(totMaterials);
-  document.getElementById("mfgBomTotLabour").textContent = fmtMoney(totLabour);
-  document.getElementById("mfgBomTotDirect").textContent = fmtMoney(totDirect);
-  document.getElementById("mfgBomTotDirectTotal").textContent = fmtMoney(totDirectTotal);
-  document.getElementById("mfgBomTotOverhead").textContent = fmtMoney(totOverhead);
-  document.getElementById("mfgBomTotTotal").textContent = fmtMoney(totFullCost);
+      const amount =
+        qty > 0 && rate > 0
+          ? qty * rate
+          : 0;
 
-  document.getElementById("mfgBomTotUnit").textContent = fmtMoney(costPerUnit);
-  document.getElementById("mfgBomSummaryPriceUnit").textContent = fmtMoney(sellingPricePerUnit);
+      totOverhead += amount;
 
-  const marginEl = document.getElementById("mfgBomTotMargin");
-  if (sellingPricePerUnit > 0) {
-    const marginPercent = ((marginPerUnit / sellingPricePerUnit) * 100).toFixed(1);
-    marginEl.textContent = `${fmtMoney(marginPerUnit)} (${marginPercent}%)`;
-    marginEl.className = marginPerUnit >= 0 ? "text-emerald-700 font-bold" : "text-red-600 font-bold";
-  } else {
-    marginEl.textContent = "—";
-    marginEl.className = "text-slate-500 font-normal";
+      const allocInput =
+        tr.querySelector(
+          ".mfg-oh-alloc"
+        );
+
+      if (allocInput) {
+        allocInput.value =
+          amount > 0
+            ? amount.toFixed(2)
+            : "";
+      }
+    });
+
+  // ============================================================
+  // SUMMARY
+  //
+  // Until backend material costing is returned,
+  // do not present a fake "full standard cost".
+  // ============================================================
+
+  const totDirectTotal =
+    materialDisplayTotal +
+    totLabour +
+    totDirect;
+
+  const totFullCost =
+    totDirectTotal +
+    totOverhead;
+
+  const costPerUnit =
+    totFullCost /
+    outputQty;
+
+  const marginPerUnit =
+    sellingPricePerUnit -
+    costPerUnit;
+
+  const materialEl =
+    document.getElementById(
+      "mfgBomTotMaterials"
+    );
+
+  const labourEl =
+    document.getElementById(
+      "mfgBomTotLabour"
+    );
+
+  const directEl =
+    document.getElementById(
+      "mfgBomTotDirect"
+    );
+
+  const directTotalEl =
+    document.getElementById(
+      "mfgBomTotDirectTotal"
+    );
+
+  const overheadEl =
+    document.getElementById(
+      "mfgBomTotOverhead"
+    );
+
+  const totalEl =
+    document.getElementById(
+      "mfgBomTotTotal"
+    );
+
+  const unitEl =
+    document.getElementById(
+      "mfgBomTotUnit"
+    );
+
+  const priceEl =
+    document.getElementById(
+      "mfgBomSummaryPriceUnit"
+    );
+
+  const marginEl =
+    document.getElementById(
+      "mfgBomTotMargin"
+    );
+
+  if (materialEl) {
+    materialEl.textContent =
+      hasMaterialCost
+        ? fmtMoney(materialDisplayTotal)
+        : "—";
+  }
+
+  if (labourEl) {
+    labourEl.textContent =
+      fmtMoney(totLabour);
+  }
+
+  if (directEl) {
+    directEl.textContent =
+      fmtMoney(totDirect);
+  }
+
+  if (directTotalEl) {
+    directTotalEl.textContent =
+      hasMaterialCost
+        ? fmtMoney(totDirectTotal)
+        : "—";
+  }
+
+  if (overheadEl) {
+    overheadEl.textContent =
+      fmtMoney(totOverhead);
+  }
+
+  if (totalEl) {
+    totalEl.textContent =
+      hasMaterialCost
+        ? fmtMoney(totFullCost)
+        : "—";
+  }
+
+  if (unitEl) {
+    unitEl.textContent =
+      hasMaterialCost
+        ? fmtMoney(costPerUnit)
+        : "—";
+  }
+
+  if (priceEl) {
+    priceEl.textContent =
+      fmtMoney(sellingPricePerUnit);
+  }
+
+  if (marginEl) {
+
+    if (
+      sellingPricePerUnit > 0 &&
+      hasMaterialCost
+    ) {
+
+      const marginPercent =
+        (
+          marginPerUnit /
+          sellingPricePerUnit *
+          100
+        ).toFixed(1);
+
+      marginEl.textContent =
+        `${fmtMoney(marginPerUnit)} (${marginPercent}%)`;
+
+      marginEl.className =
+        marginPerUnit >= 0
+          ? "text-emerald-700 font-bold"
+          : "text-red-600 font-bold";
+
+    } else {
+
+      marginEl.textContent =
+        "—";
+
+      marginEl.className =
+        "text-slate-500 font-normal";
+    }
   }
 }
 
