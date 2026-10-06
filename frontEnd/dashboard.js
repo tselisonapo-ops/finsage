@@ -126705,13 +126705,13 @@ async function saveManufacturingBomDefinition() {
   // 2. DIRECT MATERIALS
   //
   // IMPORTANT:
-  // Do NOT read or send unit_cost.
-  // The backend calculates it from:
+  // Material unit_cost is NOT read from the browser.
   //
-  // inventory item standard/planned cost
-  // + BOM consumption unit
-  // + universal/item-specific conversion
-  // + scrap
+  // The backend calculates authoritative material cost from:
+  //   - inventory item's planned/standard cost
+  //   - BOM consumption unit
+  //   - universal/item-specific unit conversion
+  //   - scrap percentage
   // ============================================================
 
   const lines = [];
@@ -126723,30 +126723,31 @@ async function saveManufacturingBomDefinition() {
 
   for (const row of materialRows) {
 
+    // IMPORTANT:
+    // These selectors match addManufacturingBomDefinitionLine()
     const itemEl =
-      row.querySelector(".mfg-bom-definition-line-item");
+      row.querySelector(".mfg-line-item");
 
     const qtyEl =
-      row.querySelector(".mfg-bom-definition-line-qty");
+      row.querySelector(".mfg-line-qty");
 
     const unitEl =
-      row.querySelector(".mfg-bom-definition-line-unit");
+      row.querySelector(".mfg-line-unit");
 
     const scrapEl =
-      row.querySelector(".mfg-bom-definition-line-scrap");
+      row.querySelector(".mfg-line-scrap");
 
-    const itemId = Number(itemEl?.value || 0);
+    const itemId =
+      Number(itemEl?.value || 0);
 
-    const quantity = Number(
-      qtyEl?.value || 0
-    );
+    const quantity =
+      Number(qtyEl?.value || 0);
 
     const unit =
       unitEl?.value?.trim() || "";
 
-    const scrapPct = Number(
-      scrapEl?.value || 0
-    );
+    const scrapPct =
+      Number(scrapEl?.value || 0);
 
     // Completely empty row
     if (
@@ -126779,7 +126780,10 @@ async function saveManufacturingBomDefinition() {
       );
     }
 
-    if (scrapPct < 0 || scrapPct > 100) {
+    if (
+      scrapPct < 0 ||
+      scrapPct > 100
+    ) {
       return showManufacturingBomDefinitionMsg(
         "Scrap percentage must be between 0 and 100.",
         "error"
@@ -127010,25 +127014,17 @@ async function saveManufacturingBomDefinition() {
         modal.dataset.bomId || 0
       );
 
-    // ONE request.
-    //
-    // Backend transaction:
-    //   1. Saves BOM header
-    //   2. Saves material inputs
-    //   3. Calculates authoritative material unit costs
-    //   4. Applies unit conversion
-    //   5. Saves labour/direct/overhead
-    //   6. Recalculates BOM standard costs
-    //
     const saved = await apiFetch(
       bomId
         ? ENDPOINTS.manufacturing.bom(cid, bomId)
         : ENDPOINTS.manufacturing.boms(cid),
       {
         method: bomId ? "PATCH" : "POST",
+
         headers: {
           "Content-Type": "application/json"
         },
+
         body: JSON.stringify(payload)
       }
     );
