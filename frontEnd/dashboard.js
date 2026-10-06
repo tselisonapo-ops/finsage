@@ -126438,55 +126438,98 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
 }
 
 function addManufacturingBomDefinitionLine(line = {}) {
-  const tbody =
-    document.getElementById("mfgBomDefinitionLinesTbody");
-
+  const tbody = document.getElementById("mfgBomDefinitionLinesTbody");
   if (!tbody) return;
+
+  const items = window._MFG_ITEM_CACHE?.rows || [];
+
+  const itemOptions =
+    `<option value="">-- Select Component Item --</option>` +
+    items.map(i => {
+      // Pull planned cost from sales_price or fallback cost fields
+      const cost = Number(i.sales_price ?? i.cost_price ?? i.unit_cost ?? 0);
+      return `
+        <option value="${esc(i.id)}"
+                data-sku="${esc(i.sku || '')}"
+                data-unit="${esc(i.unit || 'unit')}"
+                data-cost="${cost > 0 ? cost.toFixed(6) : '0.000000'}">
+          ${esc(i.sku ? i.sku + ' — ' : '')}${esc(i.name)}
+        </option>
+      `;
+    }).join("");
 
   const tr = document.createElement("tr");
   tr.className = "border-b";
 
   tr.innerHTML = `
-    <td class="px-2 py-2">
-      <select
-        class="mfg-bom-definition-line-item w-full border rounded px-2 py-1">
-        ${manufacturingItemOptions(line.item_id || "")}
+    <td class="px-3 py-2">
+      <select class="mfg-line-item w-full border rounded px-2 py-1 text-xs bg-white">
+        ${itemOptions}
       </select>
     </td>
-    <td class="px-2 py-2">
-      <input type="number" min="0" step="0.0001"
-        class="mfg-bom-definition-line-qty w-full border rounded px-2 py-1 text-right"
-        value="${esc(line.quantity ?? line.qty ?? "")}">
+    <td class="px-3 py-2">
+      <select class="mfg-line-basis w-full border rounded px-2 py-1 text-xs bg-slate-50 font-medium">
+        <option value="unit" ${line.cost_basis === "batch" ? "" : "selected"}>Per Unit (1 Roll)</option>
+        <option value="batch" ${line.cost_basis === "batch" ? "selected" : ""}>Per Batch</option>
+      </select>
     </td>
-    <td class="px-2 py-2">
+    <td class="px-3 py-2">
+      <input type="number" min="0" step="0.000001"
+             class="mfg-line-qty w-full border rounded px-2 py-1 text-right text-xs"
+             value="${esc(line.quantity ?? "")}" placeholder="0.000000">
+    </td>
+    <td class="px-3 py-2">
       <input type="text"
-        class="mfg-bom-definition-line-unit w-full border rounded px-2 py-1"
-        value="${esc(line.unit || line.uom || "")}">
+             class="mfg-line-unit w-full border rounded px-2 py-1 text-xs bg-slate-50 text-slate-600"
+             value="${esc(line.unit || "")}" placeholder="kg" readonly>
     </td>
-    <td class="px-2 py-2">
+    <td class="px-3 py-2">
       <input type="number" min="0" step="0.01"
-        class="mfg-bom-definition-line-scrap w-full border rounded px-2 py-1 text-right"
-        value="${esc(line.scrap_pct ?? line.scrap_percent ?? 0)}">
+             class="mfg-line-scrap w-full border rounded px-2 py-1 text-right text-xs"
+             value="${esc(line.scrap_percent ?? "0.00")}" placeholder="0.00">
     </td>
-    <td class="px-2 py-2">
-      <input type="number" min="0" step="0.01"
-        class="mfg-bom-definition-line-cost w-full border rounded px-2 py-1 text-right"
-        value="${esc(line.unit_cost ?? "")}" placeholder="0.00">
+    <td class="px-3 py-2">
+      <input type="number" min="0" step="0.000001"
+             class="mfg-line-cost w-full border rounded px-2 py-1 text-right text-xs"
+             value="${esc(line.unit_cost ?? "")}" placeholder="0.000000">
     </td>
-    <td class="px-2 py-2 text-center">
-      <button type="button"
-        class="text-red-600 underline text-xs"
-        data-mfg-bom-definition-remove>
-        Remove
-      </button>
+    <td class="px-3 py-2 text-right font-medium text-slate-700 mfg-line-total">
+      0.00
+    </td>
+    <td class="px-3 py-2 text-center">
+      <button type="button" class="text-red-600 hover:text-red-800 text-xs"
+              data-mfg-bom-line-remove>Remove</button>
     </td>
   `;
 
-  tr.querySelector("[data-mfg-bom-definition-remove]")
-    ?.addEventListener("click", () => {
-      tr.remove();
-      recalcMfgBomTotals();
-    });
+  // Select existing item if editing
+  if (line.item_id || line.id) {
+    const itemSelect = tr.querySelector(".mfg-line-item");
+    if (itemSelect) itemSelect.value = String(line.item_id || line.id);
+  }
+
+  // When an item is selected from dropdown: auto-fill unit and sales_price as the cost!
+  tr.querySelector(".mfg-line-item")?.addEventListener("change", (e) => {
+    const opt = e.target.selectedOptions[0];
+    const unitInput = tr.querySelector(".mfg-line-unit");
+    const costInput = tr.querySelector(".mfg-line-cost");
+
+    if (opt && opt.value) {
+      unitInput.value = opt.dataset.unit || "kg";
+      // Auto-fills sales_price into the unit cost field:
+      costInput.value = opt.dataset.cost || "0.000000";
+    } else {
+      unitInput.value = "";
+      costInput.value = "0.000000";
+    }
+
+    recalcMfgBomTotals();
+  });
+
+  tr.querySelector("[data-mfg-bom-line-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    recalcMfgBomTotals();
+  });
 
   tbody.appendChild(tr);
 }
