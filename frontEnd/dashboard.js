@@ -126012,64 +126012,111 @@ function renderManufacturingBoms(rows) {
   });
 }
 
+function mfgGetEmployeeName(employee) {
+  const firstName = employee?.first_name || employee?.firstName || "";
+  const lastName = employee?.last_name || employee?.lastName || "";
+  const fullName = `${firstName} ${lastName}`.trim();
+  return (
+    employee?.full_name ||
+    employee?.name ||
+    fullName ||
+    employee?.employee_name ||
+    employee?.employee_no ||
+    employee?.employee_number ||
+    `Employee ${employee?.id || ""}`
+  ).trim();
+}
+
+function mfgGetEmployeeRole(employee) {
+  return String(
+    employee?.role ||
+    employee?.job_title ||
+    employee?.position ||
+    employee?.designation ||
+    employee?.job_role ||
+    ""
+  ).trim();
+}
+
+function mfgGetHourlyRateFromSetup(setup) {
+  const contractRate = Number(setup?.contract?.hourly_rate ?? 0);
+  if (contractRate > 0) return contractRate;
+
+  const payBasis = String(setup?.pay_basis || "").trim().toLowerCase();
+  const setupRate = Number(setup?.rate ?? 0);
+
+  if ((payBasis === "hourly" || payBasis === "hourly_rate") && setupRate > 0) {
+    return setupRate;
+  }
+
+  const basicSalary = Number(
+    setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0
+  );
+  const normalHours = Number(
+    setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0
+  );
+
+  return basicSalary > 0 && normalHours > 0 ? basicSalary / normalHours : 0;
+}
+
+// --------------------------------------------------------------------------
+// MAIN MODAL
+// --------------------------------------------------------------------------
 async function openManufacturingBomDefinitionModal(bomId = 0) {
   let modal = document.getElementById("mfgBomDefinitionModal");
 
   if (!modal) {
     modal = document.createElement("div");
     modal.id = "mfgBomDefinitionModal";
-    // Fixed: overflow-y-auto and items-start so top of modal is never cut off
     modal.className =
       "fixed inset-0 z-50 hidden bg-black/40 overflow-y-auto p-4 sm:p-6 flex justify-center items-start";
 
     modal.innerHTML = `
       <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl my-6 flex flex-col">
 
-        <div class="flex items-center justify-between border-b px-4 py-3 sticky top-0 bg-white rounded-t-lg z-10">
+        <!-- HEADER -->
+        <div class="flex items-center justify-between border-b px-5 py-4 sticky top-0 bg-white rounded-t-lg z-10">
           <div>
-            <div id="mfgBomDefinitionTitle" class="font-semibold">New BOM</div>
+            <div id="mfgBomDefinitionTitle" class="text-lg font-semibold">New BOM</div>
             <div class="text-xs text-slate-500">
-              Define the finished product, its materials, and the standard
-              production costs. These costs are applied automatically to
-              every production order created from this BOM.
+              Define the finished product, its materials, and standard production costs.
             </div>
           </div>
           <button type="button" id="mfgBomDefinitionCloseBtn"
-                  class="text-slate-500 hover:text-slate-800 text-xl font-bold px-2">×</button>
+                  class="text-slate-400 hover:text-slate-700 text-2xl font-bold px-2">×</button>
         </div>
 
-        <div class="p-4">
-
+        <div class="p-5">
           <div id="mfgBomDefinitionMsg"></div>
 
+          <!-- BOM HEADER FORM -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-
             <label class="text-xs">
               <div class="text-slate-600 mb-1">BOM Code</div>
               <input id="mfgBomDefinitionCode"
-                     class="w-full border rounded px-2 py-2 text-sm"
+                     class="w-full border rounded px-3 py-2 text-sm"
                      placeholder="e.g. BOM-001">
             </label>
 
             <label class="text-xs">
               <div class="text-slate-600 mb-1">BOM Name</div>
               <input id="mfgBomDefinitionName"
-                     class="w-full border rounded px-2 py-2 text-sm"
+                     class="w-full border rounded px-3 py-2 text-sm"
                      placeholder="e.g. Standard Product BOM">
             </label>
 
             <label class="text-xs md:col-span-2">
               <div class="text-slate-600 mb-1">Finished Item</div>
               <input id="mfgBomDefinitionFinishedItem" type="text"
-                     class="w-full border rounded px-2 py-2 text-sm"
+                     class="w-full border rounded px-3 py-2 text-sm"
                      placeholder="e.g. Chicken Pie">
             </label>
 
             <label class="text-xs">
-              <div class="text-slate-600 mb-1">Selling Price</div>
+              <div class="text-slate-600 mb-1">Selling Price (per batch)</div>
               <input id="mfgBomDefinitionSellingPrice" type="number"
                      min="0" step="0.01"
-                     class="w-full border rounded px-2 py-2 text-sm"
+                     class="w-full border rounded px-3 py-2 text-sm"
                      placeholder="0.00">
             </label>
 
@@ -126077,26 +126124,25 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
               <div class="text-slate-600 mb-1">Output Quantity (per batch)</div>
               <input id="mfgBomDefinitionBatchQty" type="number"
                      min="0.0001" step="0.0001"
-                     class="w-full border rounded px-2 py-2 text-sm" value="1">
+                     class="w-full border rounded px-3 py-2 text-sm" value="1">
             </label>
 
             <label class="text-xs">
               <div class="text-slate-600 mb-1">Output Unit</div>
               <input id="mfgBomDefinitionBatchUnit"
-                     class="w-full border rounded px-2 py-2 text-sm"
+                     class="w-full border rounded px-3 py-2 text-sm"
                      placeholder="units / kg / trays">
             </label>
 
             <label class="text-xs md:col-span-2">
               <div class="text-slate-600 mb-1">Description</div>
               <textarea id="mfgBomDefinitionDescription" rows="2"
-                        class="w-full border rounded px-2 py-2 text-sm"></textarea>
+                        class="w-full border rounded px-3 py-2 text-sm"></textarea>
             </label>
-
           </div>
 
           <!-- 1. DIRECT MATERIALS -->
-          <div class="mt-5 flex items-center justify-between">
+          <div class="mt-6 flex items-center justify-between">
             <div>
               <div class="font-semibold text-sm">1. Direct Materials</div>
               <div class="text-xs text-slate-500">
@@ -126104,19 +126150,20 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
               </div>
             </div>
             <button type="button" id="mfgBomDefinitionAddLineBtn"
-                    class="px-2 py-1 border rounded text-xs">+ Add Component</button>
+                    class="px-2.5 py-1 border rounded text-xs hover:bg-slate-50">+ Add Component</button>
           </div>
 
-          <div class="overflow-auto border rounded mt-2">
+          <div class="overflow-x-auto border rounded mt-2">
             <table class="w-full text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-2 py-2">Component</th>
-                  <th class="text-right px-2 py-2">Quantity</th>
-                  <th class="text-left px-2 py-2">Unit</th>
-                  <th class="text-right px-2 py-2">Scrap %</th>
-                  <th class="text-right px-2 py-2">Unit Cost</th>
-                  <th class="text-center px-2 py-2"></th>
+                  <th class="text-left px-3 py-2">Component</th>
+                  <th class="text-right px-3 py-2 w-28">Quantity</th>
+                  <th class="text-left px-3 py-2 w-20">Unit</th>
+                  <th class="text-right px-3 py-2 w-24">Scrap %</th>
+                  <th class="text-right px-3 py-2 w-28">Unit Cost</th>
+                  <th class="text-right px-3 py-2 w-28">Total Cost</th>
+                  <th class="text-center px-3 py-2 w-16"></th>
                 </tr>
               </thead>
               <tbody id="mfgBomDefinitionLinesTbody"></tbody>
@@ -126124,30 +126171,28 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <!-- 2. DIRECT LABOUR -->
-          <div class="mt-5 flex items-center justify-between">
+          <div class="mt-6 flex items-center justify-between">
             <div>
               <div class="font-semibold text-sm">2. Direct Labour</div>
               <div class="text-xs text-slate-500">
-                Pick a payroll employee to auto-fill name and rate, or type a
-                worker manually. Cost auto-fills as hours × rate.
+                Labour directly attributable to this BOM. Cost auto-fills as Hours × Hourly Rate.
               </div>
             </div>
             <button type="button" id="mfgBomAddLabourBtn"
-                    class="px-2 py-1 border rounded text-xs">+ Add Labour</button>
+                    class="px-2.5 py-1 border rounded text-xs hover:bg-slate-50">+ Add Labour</button>
           </div>
 
-          <div class="overflow-auto border rounded mt-2">
-            <!-- Fixed: 7 clean columns matching the rows -->
-            <table class="w-full min-w-[850px] text-xs">
+          <div class="overflow-x-auto border rounded mt-2">
+            <table class="w-full min-w-[900px] text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-2 py-2 w-[220px]">Worker / Payroll</th>
-                  <th class="text-left px-2 py-2 w-[160px]">Worker Name</th>
-                  <th class="text-left px-2 py-2 w-[130px]">Role</th>
-                  <th class="text-right px-2 py-2 w-[90px]">Hours</th>
-                  <th class="text-right px-2 py-2 w-[110px]">Rate</th>
-                  <th class="text-right px-2 py-2 w-[110px]">Cost</th>
-                  <th class="text-center px-2 py-2 w-[60px]"></th>
+                  <th class="text-left px-3 py-2 w-[220px]">Employee / Worker (Payroll)</th>
+                  <th class="text-left px-3 py-2 w-[160px]">Worker Name</th>
+                  <th class="text-left px-3 py-2 w-[130px]">Role</th>
+                  <th class="text-right px-3 py-2 w-[90px]">Hours</th>
+                  <th class="text-right px-3 py-2 w-[120px]">Hourly Rate</th>
+                  <th class="text-right px-3 py-2 w-[120px]">Labour Cost</th>
+                  <th class="text-center px-3 py-2 w-[60px]"></th>
                 </tr>
               </thead>
               <tbody id="mfgBomLabourTbody"></tbody>
@@ -126155,25 +126200,25 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <!-- 3. OTHER DIRECT COSTS -->
-          <div class="mt-5 flex items-center justify-between">
+          <div class="mt-6 flex items-center justify-between">
             <div>
               <div class="font-semibold text-sm">3. Other Direct Costs</div>
               <div class="text-xs text-slate-500">
-                e.g. packaging, gas — standard amount per batch.
+                Other costs directly attributable to this production order (e.g. packaging, fuel).
               </div>
             </div>
             <button type="button" id="mfgBomAddDirectBtn"
-                    class="px-2 py-1 border rounded text-xs">+ Add Cost</button>
+                    class="px-2.5 py-1 border rounded text-xs hover:bg-slate-50">+ Add Direct Cost</button>
           </div>
 
-          <div class="overflow-auto border rounded mt-2">
+          <div class="overflow-x-auto border rounded mt-2">
             <table class="w-full text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-2 py-2">Description</th>
-                  <th class="text-left px-2 py-2">Type</th>
-                  <th class="text-right px-2 py-2">Amount</th>
-                  <th class="text-center px-2 py-2"></th>
+                  <th class="text-left px-3 py-2">Description</th>
+                  <th class="text-left px-3 py-2 w-48">Cost Type</th>
+                  <th class="text-right px-3 py-2 w-32">Amount</th>
+                  <th class="text-center px-3 py-2 w-16"></th>
                 </tr>
               </thead>
               <tbody id="mfgBomDirectTbody"></tbody>
@@ -126181,78 +126226,81 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <!-- 4. MANUFACTURING OVERHEAD -->
-          <div class="mt-5 flex items-center justify-between">
+          <div class="mt-6 flex items-center justify-between">
             <div>
               <div class="font-semibold text-sm">4. Manufacturing Overhead</div>
               <div class="text-xs text-slate-500">
-                Optionally link a machine to prefill its rate, or allocate
-                manually. Allocation auto-fills as quantity × rate.
+                Optionally link an asset/machine to prefill rate, or allocate manually (Quantity × Rate).
               </div>
             </div>
             <button type="button" id="mfgBomAddOverheadBtn"
-                    class="px-2 py-1 border rounded text-xs">+ Add Overhead</button>
+                    class="px-2.5 py-1 border rounded text-xs hover:bg-slate-50">+ Add Overhead</button>
           </div>
 
-          <div class="overflow-auto border rounded mt-2">
-            <!-- Fixed: 7 clean columns matching the rows -->
-            <table class="w-full min-w-[850px] text-xs">
+          <div class="overflow-x-auto border rounded mt-2">
+            <table class="w-full min-w-[900px] text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-2 py-2 w-[220px]">Asset / Machine</th>
-                  <th class="text-left px-2 py-2 w-[150px]">Overhead Name</th>
-                  <th class="text-left px-2 py-2 w-[120px]">Basis</th>
-                  <th class="text-right px-2 py-2 w-[90px]">Quantity</th>
-                  <th class="text-right px-2 py-2 w-[110px]">Rate</th>
-                  <th class="text-right px-2 py-2 w-[110px]">Allocated</th>
-                  <th class="text-center px-2 py-2 w-[60px]"></th>
+                  <th class="text-left px-3 py-2 w-[220px]">Machine / Asset</th>
+                  <th class="text-left px-3 py-2 w-[160px]">Cost / Allocation</th>
+                  <th class="text-left px-3 py-2 w-[130px]">Basis</th>
+                  <th class="text-right px-3 py-2 w-[90px]">Quantity</th>
+                  <th class="text-right px-3 py-2 w-[110px]">Rate</th>
+                  <th class="text-right px-3 py-2 w-[120px]">Allocated Amount</th>
+                  <th class="text-center px-3 py-2 w-[60px]"></th>
                 </tr>
               </thead>
               <tbody id="mfgBomOverheadTbody"></tbody>
             </table>
           </div>
 
-          <!-- SUMMARY -->
-          <div class="mt-4 border rounded p-3 bg-slate-50 text-xs">
-            <div class="font-semibold text-sm mb-2">
+          <!-- SUMMARY (Matching Management View) -->
+          <div class="mt-6 border rounded p-4 bg-slate-50 text-xs">
+            <div class="font-semibold text-sm mb-3">
               Standard Cost Summary (per batch)
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1">
-              <div class="flex justify-between">
-                <span class="text-slate-500">Materials</span>
-                <span id="mfgBomTotMaterials">0.00</span>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-2">
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-500">Direct Materials</span>
+                <strong id="mfgBomTotMaterials">0.00</strong>
               </div>
-              <div class="flex justify-between">
-                <span class="text-slate-500">Labour</span>
-                <span id="mfgBomTotLabour">0.00</span>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-500">Direct Labour</span>
+                <strong id="mfgBomTotLabour">0.00</strong>
               </div>
-              <div class="flex justify-between">
-                <span class="text-slate-500">Other Direct</span>
-                <span id="mfgBomTotDirect">0.00</span>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-500">Other Direct Costs</span>
+                <strong id="mfgBomTotDirect">0.00</strong>
               </div>
-              <div class="flex justify-between">
-                <span class="text-slate-500">Overhead</span>
-                <span id="mfgBomTotOverhead">0.00</span>
+              <div class="flex justify-between border-b pb-1 font-semibold">
+                <span>Total Direct Cost</span>
+                <strong id="mfgBomTotDirectTotal">0.00</strong>
               </div>
-              <div class="flex justify-between font-semibold">
-                <span>Total</span>
-                <span id="mfgBomTotTotal">0.00</span>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-500">Manufacturing Overhead</span>
+                <strong id="mfgBomTotOverhead">0.00</strong>
               </div>
-              <div class="flex justify-between">
+              <div class="flex justify-between border-b pb-1 font-semibold">
+                <span>Full Production Cost</span>
+                <strong id="mfgBomTotTotal">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
                 <span class="text-slate-500">Cost / Unit</span>
-                <span id="mfgBomTotUnit">—</span>
+                <strong id="mfgBomTotUnit">—</strong>
               </div>
-              <div class="flex justify-between">
+              <div class="flex justify-between border-b pb-1">
                 <span class="text-slate-500">Margin / Unit</span>
-                <span id="mfgBomTotMargin" class="text-emerald-700 font-semibold">—</span>
+                <strong id="mfgBomTotMargin" class="text-emerald-700">—</strong>
               </div>
             </div>
           </div>
 
-          <div class="flex justify-end gap-2 mt-4">
+          <!-- MODAL ACTIONS -->
+          <div class="flex justify-end gap-2 mt-5">
             <button type="button" id="mfgBomDefinitionCancelBtn"
-                    class="px-3 py-2 border rounded text-xs">Cancel</button>
+                    class="px-4 py-2 border rounded text-xs hover:bg-slate-50">Cancel</button>
             <button type="button" id="mfgBomDefinitionSaveBtn"
-                    class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
+                    class="px-4 py-2 bg-slate-900 text-white rounded text-xs hover:bg-slate-800">
               Save BOM
             </button>
           </div>
@@ -126265,85 +126313,51 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
 
     document.getElementById("mfgBomDefinitionCloseBtn")
       ?.addEventListener("click", closeManufacturingBomDefinitionModal);
-
     document.getElementById("mfgBomDefinitionCancelBtn")
       ?.addEventListener("click", closeManufacturingBomDefinitionModal);
-
     document.getElementById("mfgBomDefinitionAddLineBtn")
       ?.addEventListener("click", () => addManufacturingBomDefinitionLine());
-
     document.getElementById("mfgBomAddLabourBtn")
       ?.addEventListener("click", () => addMfgBomLabourRow());
-
     document.getElementById("mfgBomAddDirectBtn")
       ?.addEventListener("click", () => addMfgBomDirectCostRow());
-
     document.getElementById("mfgBomAddOverheadBtn")
       ?.addEventListener("click", () => addMfgBomOverheadRow());
-
     document.getElementById("mfgBomDefinitionSaveBtn")
       ?.addEventListener("click", saveManufacturingBomDefinition);
 
+    // Live calculation listeners across the modal
     modal.addEventListener("input", handleMfgBomModalInput);
   }
 
   modal.dataset.bomId = String(bomId || 0);
 
-  const codeInput = document.getElementById("mfgBomDefinitionCode");
-  const nameInput = document.getElementById("mfgBomDefinitionName");
-  const finishedItemInput = document.getElementById("mfgBomDefinitionFinishedItem");
-  const sellingPriceInput = document.getElementById("mfgBomDefinitionSellingPrice");
-  const batchQtyInput = document.getElementById("mfgBomDefinitionBatchQty");
-  const batchUnitInput = document.getElementById("mfgBomDefinitionBatchUnit");
-  const descriptionInput = document.getElementById("mfgBomDefinitionDescription");
-  const title = document.getElementById("mfgBomDefinitionTitle");
-  const msg = document.getElementById("mfgBomDefinitionMsg");
-  const tbody = document.getElementById("mfgBomDefinitionLinesTbody");
-  const labourTbody = document.getElementById("mfgBomLabourTbody");
-  const directTbody = document.getElementById("mfgBomDirectTbody");
-  const overheadTbody = document.getElementById("mfgBomOverheadTbody");
+  // Clear inputs
+  document.getElementById("mfgBomDefinitionCode").value = "";
+  document.getElementById("mfgBomDefinitionName").value = "";
+  document.getElementById("mfgBomDefinitionFinishedItem").value = "";
+  document.getElementById("mfgBomDefinitionSellingPrice").value = "";
+  document.getElementById("mfgBomDefinitionBatchQty").value = "1";
+  document.getElementById("mfgBomDefinitionBatchUnit").value = "";
+  document.getElementById("mfgBomDefinitionDescription").value = "";
 
-  codeInput.value = "";
-  nameInput.value = "";
-  finishedItemInput.value = "";
-  sellingPriceInput.value = "";
-  batchQtyInput.value = "1";
-  batchUnitInput.value = "";
-  descriptionInput.value = "";
+  document.getElementById("mfgBomDefinitionLinesTbody").innerHTML = "";
+  document.getElementById("mfgBomLabourTbody").innerHTML = "";
+  document.getElementById("mfgBomDirectTbody").innerHTML = "";
+  document.getElementById("mfgBomOverheadTbody").innerHTML = "";
 
-  if (msg) msg.innerHTML = "";
-  if (tbody) tbody.innerHTML = "";
-  if (labourTbody) labourTbody.innerHTML = "";
-  if (directTbody) directTbody.innerHTML = "";
-  if (overheadTbody) overheadTbody.innerHTML = "";
-
-  title.textContent = bomId ? "Edit BOM" : "New BOM";
-
+  document.getElementById("mfgBomDefinitionTitle").textContent = bomId ? "Edit BOM" : "New BOM";
   modal.classList.remove("hidden");
 
   try {
-    if (typeof window.apiFetch !== "function") {
-      throw new Error("apiFetch is not available");
-    }
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    if (!cid) throw new Error("Active company could not be determined");
 
-    const cid =
-      typeof window.getActiveCompanyId === "function"
-        ? window.getActiveCompanyId()
-        : null;
-
-    if (!cid) {
-      throw new Error("Active company could not be determined");
-    }
-
+    // Fetch Inventory, Active Payroll Employees, and Assets in parallel
     const [inventoryData, payrollRes, assetsRes] = await Promise.all([
-      window.apiFetch(
-        ENDPOINTS.inventory.items(cid, "active=1&limit=500"),
-        { method: "GET", headers: { Accept: "application/json" } }
-      ),
-      window.apiFetch(
-        `/api/companies/${encodeURIComponent(cid)}/payroll/employees?status=active`
-      ).catch(() => null),
-      window.apiFetch(
+      apiFetch(ENDPOINTS.inventory.items(cid, "active=1&limit=500")),
+      apiFetch(`/api/companies/${encodeURIComponent(cid)}/payroll/employees?status=active`).catch(() => null),
+      apiFetch(
         ENDPOINTS?.assets?.list
           ? ENDPOINTS.assets.list(cid, { limit: 100 })
           : `/api/companies/${encodeURIComponent(cid)}/assets?limit=100`
@@ -126351,40 +126365,18 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     ]);
 
     const inventoryItems =
-      Array.isArray(inventoryData?.items)
-        ? inventoryData.items
-        : Array.isArray(inventoryData?.data)
-          ? inventoryData.data
-          : Array.isArray(inventoryData?.rows)
-            ? inventoryData.rows
-            : Array.isArray(inventoryData)
-              ? inventoryData
-              : [];
+      inventoryData?.items || inventoryData?.data || inventoryData?.rows || inventoryData || [];
+    window._MFG_ITEM_CACHE = { rows: Array.isArray(inventoryItems) ? inventoryItems : [] };
 
-    window._MFG_ITEM_CACHE = { rows: inventoryItems };
-
-    const payrollEmployees = Array.isArray(payrollRes?.items)
-      ? payrollRes.items
-      : Array.isArray(payrollRes?.data)
-        ? payrollRes.data
-        : Array.isArray(payrollRes)
-          ? payrollRes
-          : [];
-
-    const assets = Array.isArray(assetsRes?.data)
-      ? assetsRes.data
-      : Array.isArray(assetsRes?.items)
-        ? assetsRes.items
-        : Array.isArray(assetsRes?.assets)
-          ? assetsRes.assets
-          : Array.isArray(assetsRes)
-            ? assetsRes
-            : [];
+    const payrollEmployees =
+      payrollRes?.items || payrollRes?.data || payrollRes || [];
+    const assets =
+      assetsRes?.data || assetsRes?.items || assetsRes?.assets || assetsRes || [];
 
     window.__MFG_BOM_REF = {
       cid,
-      payroll: payrollEmployees,
-      assets
+      payroll: Array.isArray(payrollEmployees) ? payrollEmployees : [],
+      assets: Array.isArray(assets) ? assets : []
     };
 
     if (!bomId) {
@@ -126396,77 +126388,32 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       return;
     }
 
-    const data = await window.apiFetch(
-      ENDPOINTS.manufacturing.bom(cid, bomId),
-      { method: "GET", headers: { Accept: "application/json" } }
-    );
-
-    if (!data?.ok || !data?.bom) {
-      throw new Error(data?.error || "Unable to load manufacturing BOM");
-    }
+    // Load existing BOM
+    const data = await apiFetch(ENDPOINTS.manufacturing.bom(cid, bomId));
+    if (!data?.ok || !data?.bom) throw new Error(data?.error || "Unable to load BOM");
 
     const bom = data.bom;
+    document.getElementById("mfgBomDefinitionCode").value = bom.bom_code ?? "";
+    document.getElementById("mfgBomDefinitionName").value = bom.name ?? "";
+    document.getElementById("mfgBomDefinitionFinishedItem").value = bom.finished_item_name ?? "";
+    document.getElementById("mfgBomDefinitionSellingPrice").value = bom.selling_price ?? "";
+    document.getElementById("mfgBomDefinitionBatchQty").value = bom.batch_qty ?? "1";
+    document.getElementById("mfgBomDefinitionBatchUnit").value = bom.batch_unit ?? "";
+    document.getElementById("mfgBomDefinitionDescription").value = bom.description ?? "";
 
-    codeInput.value = bom.bom_code ?? "";
-    nameInput.value = bom.name ?? "";
-    finishedItemInput.value = bom.finished_item_name ?? "";
-    sellingPriceInput.value = bom.selling_price ?? "";
-    batchQtyInput.value = bom.batch_qty ?? "1";
-    batchUnitInput.value = bom.batch_unit ?? "";
-    descriptionInput.value = bom.description ?? "";
-
-    if (tbody) {
-      tbody.innerHTML = "";
-      const lines = Array.isArray(bom.lines) ? bom.lines : [];
-      if (lines.length) {
-        lines.forEach(line => addManufacturingBomDefinitionLine(line));
-      } else {
-        addManufacturingBomDefinitionLine();
-      }
-    }
-
-    if (labourTbody) {
-      labourTbody.innerHTML = "";
-      const rows = Array.isArray(bom.labour) ? bom.labour : [];
-      if (rows.length) {
-        rows.forEach(r => addMfgBomLabourRow(r));
-      } else {
-        addMfgBomLabourRow();
-      }
-    }
-
-    if (directTbody) {
-      directTbody.innerHTML = "";
-      const rows = Array.isArray(bom.direct_costs) ? bom.direct_costs : [];
-      if (rows.length) {
-        rows.forEach(r => addMfgBomDirectCostRow(r));
-      } else {
-        addMfgBomDirectCostRow();
-      }
-    }
-
-    if (overheadTbody) {
-      overheadTbody.innerHTML = "";
-      const rows = Array.isArray(bom.overheads) ? bom.overheads : [];
-      if (rows.length) {
-        rows.forEach(r => addMfgBomOverheadRow(r));
-      } else {
-        addMfgBomOverheadRow();
-      }
-    }
+    (bom.lines || []).forEach(l => addManufacturingBomDefinitionLine(l));
+    (bom.labour || []).forEach(r => addMfgBomLabourRow(r));
+    (bom.direct_costs || []).forEach(r => addMfgBomDirectCostRow(r));
+    (bom.overheads || []).forEach(r => addMfgBomOverheadRow(r));
 
     recalcMfgBomTotals();
-
-  } catch (e) {
-    console.error("[Manufacturing BOM] failed to load:", e);
-
-    if (msg) {
-      msg.innerHTML = `
-        <div class="mb-3 border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2 text-xs">
-          ${esc(e?.message || "Unable to load manufacturing BOM.")}
-        </div>
-      `;
-    }
+  } catch (err) {
+    console.error("[Manufacturing BOM] failed to load:", err);
+    document.getElementById("mfgBomDefinitionMsg").innerHTML = `
+      <div class="mb-3 border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2 text-xs">
+        ${esc(err?.message || "Unable to load manufacturing BOM.")}
+      </div>
+    `;
   }
 }
 
@@ -126804,101 +126751,123 @@ function addMfgBomLabourRow(row = {}) {
   if (!tbody) return;
 
   const payroll = window.__MFG_BOM_REF?.payroll || [];
-
   const payrollOptions =
     `<option value="">-- Manual (not on payroll) --</option>` +
     payroll.map(e => {
       const eid = e?.id ?? e?.employee_id;
-      return `<option value="${esc(eid)}">${esc(mfgBomEmployeeName(e))}</option>`;
+      const name = mfgGetEmployeeName(e);
+      const empNo = e?.employee_no || e?.employee_number || "";
+      return `<option value="${esc(eid)}">${esc(empNo ? `${name} (${empNo})` : name)}</option>`;
     }).join("");
 
   const tr = document.createElement("tr");
   tr.className = "border-b";
 
   tr.innerHTML = `
-    <td class="px-2 py-2">
-      <select class="mfg-lab-pick w-full border rounded px-2 py-1 text-xs">
+    <td class="px-3 py-2">
+      <select class="mfg-lab-worker w-full border rounded px-2 py-1 text-xs bg-white">
         ${payrollOptions}
       </select>
     </td>
-    <td class="px-2 py-2">
-      <input class="mfg-lab-name w-full border rounded px-2 py-1 text-xs"
+    <td class="px-3 py-2">
+      <input type="text"
+             class="mfg-lab-name w-full border rounded px-2 py-1 text-xs"
              value="${esc(row.worker_name || "")}"
              placeholder="Worker name">
     </td>
-    <td class="px-2 py-2">
-      <input class="mfg-lab-role w-full border rounded px-2 py-1 text-xs"
-             value="${esc(row.role || "")}" placeholder="Baker">
+    <td class="px-3 py-2">
+      <input type="text"
+             class="mfg-lab-role w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.role || "")}"
+             placeholder="Role">
     </td>
-    <td class="px-2 py-2">
+    <td class="px-3 py-2">
       <input type="number" min="0" step="0.01"
              class="mfg-lab-hours w-full border rounded px-2 py-1 text-right text-xs"
-             value="${esc(row.hours ?? "")}" placeholder="0.00">
+             value="${esc(row.hours ?? "")}"
+             placeholder="0.00">
     </td>
-    <td class="px-2 py-2">
+    <td class="px-3 py-2">
       <input type="number" min="0" step="0.01"
              class="mfg-lab-rate w-full border rounded px-2 py-1 text-right text-xs"
-             value="${esc(row.rate ?? "")}" placeholder="0.00">
-      <div class="mfg-lab-rate-info text-[10px] text-slate-500"></div>
+             value="${esc(row.rate ?? "")}"
+             placeholder="0.00">
+      <div class="mfg-lab-rate-info text-[10px] text-slate-500 mt-0.5 truncate"></div>
     </td>
-    <td class="px-2 py-2">
+    <td class="px-3 py-2">
       <input type="number" min="0" step="0.01" readonly
-             class="mfg-lab-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-600 cursor-not-allowed"
-             value="${esc(row.labour_cost ?? "")}" placeholder="0.00">
+             class="mfg-lab-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-700 cursor-not-allowed font-medium"
+             value="${esc(row.labour_cost ?? "")}"
+             placeholder="0.00">
     </td>
-    <td class="px-2 py-2 text-center">
-      <button type="button" class="text-red-600 underline text-xs"
+    <td class="px-3 py-2 text-center">
+      <button type="button" class="text-red-600 hover:text-red-800 text-xs"
               data-mfg-bom-row-remove>Remove</button>
     </td>
   `;
 
-  tr.querySelector(".mfg-lab-pick")
-    ?.addEventListener("change", async (e) => {
-      const pickedId = e.target.value;
-      const emp = payroll.find(
-        p => String(p?.id ?? p?.employee_id) === String(pickedId)
-      );
+  // Select pre-existing employee ID if editing
+  if (row.employee_id) {
+    const workerSelect = tr.querySelector(".mfg-lab-worker");
+    if (workerSelect) workerSelect.value = String(row.employee_id);
+  }
 
-      const nameInput = tr.querySelector(".mfg-lab-name");
-      const roleInput = tr.querySelector(".mfg-lab-role");
-      const rateInput = tr.querySelector(".mfg-lab-rate");
-      const info = tr.querySelector(".mfg-lab-rate-info");
+  // Employee Selection -> Fetch /pay-setup -> Match openManufacturingOrderDetail algorithm
+  tr.querySelector(".mfg-lab-worker")?.addEventListener("change", async (e) => {
+    const employeeId = e.target.value;
+    const nameInput = tr.querySelector(".mfg-lab-name");
+    const roleInput = tr.querySelector(".mfg-lab-role");
+    const rateInput = tr.querySelector(".mfg-lab-rate");
+    const info = tr.querySelector(".mfg-lab-rate-info");
 
-      if (!emp) {
-        if (info) info.textContent = "";
-        return;
-      }
+    if (!employeeId) {
+      if (info) info.textContent = "";
+      return;
+    }
 
-      nameInput.value = mfgBomEmployeeName(emp);
-
-      const role = mfgBomEmployeeRole(emp);
+    const employee = payroll.find(p => String(p?.id ?? p?.employee_id) === String(employeeId));
+    if (employee) {
+      nameInput.value = mfgGetEmployeeName(employee);
+      const role = mfgGetEmployeeRole(employee);
       if (role) roleInput.value = role;
+    }
 
-      const cid = window.__MFG_BOM_REF?.cid ||
-        getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    const cid = window.__MFG_BOM_REF?.cid || getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    if (info) info.textContent = "Loading rate...";
 
-      if (info) info.textContent = "Loading rate…";
+    try {
+      const res = await apiFetch(
+        `/api/companies/${encodeURIComponent(cid)}/payroll/employees/${encodeURIComponent(employeeId)}/pay-setup`
+      );
+      const setup = res?.data || res?.setup || res;
+      const hourlyRate = mfgGetHourlyRateFromSetup(setup);
+      const contractType = String(setup?.contract?.salary_type || "").trim().toLowerCase();
+      const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
+      const normalHours = Number(setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0);
 
-      try {
-        const res = await apiFetch(
-          `/api/companies/${encodeURIComponent(cid)}/payroll/employees/${encodeURIComponent(emp.id ?? emp.employee_id)}/pay-setup`
-        );
-
-        const setup = res?.setup || res?.data || res;
-        const rate = mfgBomHourlyRateFromSetup(setup);
-
-        if (rate > 0) {
-          rateInput.value = rate.toFixed(2);
-          if (info) info.textContent = `Payroll: ${fmtMoney(rate)}/hr`;
+      if (hourlyRate > 0) {
+        rateInput.value = hourlyRate.toFixed(2);
+        if ((contractType === "hourly" || contractType === "hourly_rate")) {
+          if (info) info.textContent = `Contract rate: ${fmtMoney(hourlyRate)}`;
+        } else if (basicSalary > 0 && normalHours > 0) {
+          if (info) info.textContent = `${fmtMoney(basicSalary)} ÷ ${normalHours} hrs`;
         } else {
-          if (info) info.textContent = "No hourly rate set.";
+          if (info) info.textContent = `Payroll: ${fmtMoney(hourlyRate)}/hr`;
         }
-      } catch (err) {
-        if (info) info.textContent = "Could not load rate.";
+      } else {
+        if (info) info.textContent = "No hourly rate set in Payroll.";
       }
+    } catch (err) {
+      if (info) info.textContent = "Unable to fetch payroll rate.";
+    }
 
-      recalcMfgBomTotals();
-    });
+    // Auto-calculate cost
+    const hours = Number(tr.querySelector(".mfg-lab-hours")?.value || 0);
+    const rate = Number(rateInput?.value || 0);
+    tr.querySelector(".mfg-lab-cost").value = (hours * rate).toFixed(2);
+
+    recalcMfgBomTotals();
+  });
 
   tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
     tr.remove();
@@ -126908,6 +126877,9 @@ function addMfgBomLabourRow(row = {}) {
   tbody.appendChild(tr);
 }
 
+// --------------------------------------------------------------------------
+// 4. OTHER DIRECT COSTS ROW
+// --------------------------------------------------------------------------
 function addMfgBomDirectCostRow(row = {}) {
   const tbody = document.getElementById("mfgBomDirectTbody");
   if (!tbody) return;
@@ -126916,21 +126888,21 @@ function addMfgBomDirectCostRow(row = {}) {
   tr.className = "border-b";
 
   tr.innerHTML = `
-    <td class="px-2 py-2">
-      <input class="mfg-dc-desc w-full border rounded px-2 py-1"
+    <td class="px-3 py-2">
+      <input type="text" class="mfg-dc-desc w-full border rounded px-2 py-1 text-xs"
              value="${esc(row.description || "")}" placeholder="e.g. Packaging">
     </td>
-    <td class="px-2 py-2">
-      <input class="mfg-dc-type w-full border rounded px-2 py-1"
-             value="${esc(row.cost_type || "")}" placeholder="packaging / fuel">
+    <td class="px-3 py-2">
+      <input type="text" class="mfg-dc-type w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.cost_type || "")}" placeholder="e.g. Packaging / fuel">
     </td>
-    <td class="px-2 py-2">
+    <td class="px-3 py-2">
       <input type="number" min="0" step="0.01"
-             class="mfg-dc-amount w-full border rounded px-2 py-1 text-right"
-             value="${esc(row.amount ?? "")}">
+             class="mfg-dc-amount w-full border rounded px-2 py-1 text-right text-xs"
+             value="${esc(row.amount ?? "")}" placeholder="0.00">
     </td>
-    <td class="px-2 py-2 text-center">
-      <button type="button" class="text-red-600 underline text-xs"
+    <td class="px-3 py-2 text-center">
+      <button type="button" class="text-red-600 hover:text-red-800 text-xs"
               data-mfg-bom-row-remove>Remove</button>
     </td>
   `;
@@ -126943,14 +126915,109 @@ function addMfgBomDirectCostRow(row = {}) {
   tbody.appendChild(tr);
 }
 
+// --------------------------------------------------------------------------
+// 5. LIVE RECALCULATION & TOTALS
+// --------------------------------------------------------------------------
+function handleMfgBomModalInput(e) {
+  const tr = e.target.closest("tr");
+  if (!tr) {
+    if (e.target.id === "mfgBomDefinitionBatchQty" || e.target.id === "mfgBomDefinitionSellingPrice") {
+      recalcMfgBomTotals();
+    }
+    return;
+  }
+
+  // Recalculate Labour line
+  if (tr.querySelector(".mfg-lab-cost")) {
+    const hours = Number(tr.querySelector(".mfg-lab-hours")?.value || 0);
+    const rate = Number(tr.querySelector(".mfg-lab-rate")?.value || 0);
+    tr.querySelector(".mfg-lab-cost").value = (hours * rate).toFixed(2);
+  }
+
+  // Recalculate Overhead line
+  if (tr.querySelector(".mfg-oh-alloc")) {
+    const qty = Number(tr.querySelector(".mfg-oh-qty")?.value || 0);
+    const rate = Number(tr.querySelector(".mfg-oh-rate")?.value || 0);
+    tr.querySelector(".mfg-oh-alloc").value = (qty * rate).toFixed(2);
+  }
+
+  recalcMfgBomTotals();
+}
+
+function recalcMfgBomTotals() {
+  // 1. Direct Materials
+  let totMaterials = 0;
+  document.querySelectorAll("#mfgBomDefinitionLinesTbody tr").forEach(tr => {
+    const qty = Number(tr.querySelector(".mfg-line-qty")?.value || 0);
+    const cost = Number(tr.querySelector(".mfg-line-cost")?.value || 0);
+    const scrap = Number(tr.querySelector(".mfg-line-scrap")?.value || 0);
+    const totalLine = qty * (1 + scrap / 100) * cost;
+    totMaterials += totalLine;
+    const totCell = tr.querySelector(".mfg-line-total");
+    if (totCell) totCell.textContent = fmtMoney(totalLine);
+  });
+
+  // 2. Direct Labour
+  let totLabour = 0;
+  document.querySelectorAll("#mfgBomLabourTbody tr").forEach(tr => {
+    const hours = Number(tr.querySelector(".mfg-lab-hours")?.value || 0);
+    const rate = Number(tr.querySelector(".mfg-lab-rate")?.value || 0);
+    totLabour += hours * rate;
+  });
+
+  // 3. Other Direct Costs
+  let totDirect = 0;
+  document.querySelectorAll("#mfgBomDirectTbody tr").forEach(tr => {
+    totDirect += Number(tr.querySelector(".mfg-dc-amount")?.value || 0);
+  });
+
+  // 4. Overhead
+  let totOverhead = 0;
+  document.querySelectorAll("#mfgBomOverheadTbody tr").forEach(tr => {
+    const qty = Number(tr.querySelector(".mfg-oh-qty")?.value || 0);
+    const rate = Number(tr.querySelector(".mfg-oh-rate")?.value || 0);
+    totOverhead += qty * rate;
+  });
+
+  const totDirectTotal = totMaterials + totLabour + totDirect;
+  const totFullCost = totDirectTotal + totOverhead;
+
+  const batchQty = Number(document.getElementById("mfgBomDefinitionBatchQty")?.value || 1);
+  const sellingPrice = Number(document.getElementById("mfgBomDefinitionSellingPrice")?.value || 0);
+
+  const unitCost = batchQty > 0 ? totFullCost / batchQty : 0;
+  const marginPerUnit = sellingPrice > 0 ? sellingPrice - unitCost : 0;
+
+  // Render to Summary
+  document.getElementById("mfgBomTotMaterials").textContent = fmtMoney(totMaterials);
+  document.getElementById("mfgBomTotLabour").textContent = fmtMoney(totLabour);
+  document.getElementById("mfgBomTotDirect").textContent = fmtMoney(totDirect);
+  document.getElementById("mfgBomTotDirectTotal").textContent = fmtMoney(totDirectTotal);
+  document.getElementById("mfgBomTotOverhead").textContent = fmtMoney(totOverhead);
+  document.getElementById("mfgBomTotTotal").textContent = fmtMoney(totFullCost);
+
+  document.getElementById("mfgBomTotUnit").textContent = unitCost > 0 ? fmtMoney(unitCost) : "—";
+
+  const marginEl = document.getElementById("mfgBomTotMargin");
+  if (sellingPrice > 0) {
+    marginEl.textContent = `${fmtMoney(marginPerUnit)} (${((marginPerUnit / sellingPrice) * 100).toFixed(1)}%)`;
+    marginEl.className = marginPerUnit >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold";
+  } else {
+    marginEl.textContent = "—";
+    marginEl.className = "text-slate-500 font-normal";
+  }
+}
+
+// --------------------------------------------------------------------------
+// 3. MANUFACTURING OVERHEAD ROW (Exact match with Order Detail)
+// --------------------------------------------------------------------------
 function addMfgBomOverheadRow(row = {}) {
   const tbody = document.getElementById("mfgBomOverheadTbody");
   if (!tbody) return;
 
   const assets = window.__MFG_BOM_REF?.assets || [];
-
   const assetOptions =
-    `<option value="">-- None / Manual allocation --</option>` +
+    `<option value="">-- None / Manual Allocation --</option>` +
     assets.map(a => {
       const cost = Number(a.cost || 0);
       const residual = Number(a.residual_value || 0);
@@ -126961,9 +127028,10 @@ function addMfgBomOverheadRow(row = {}) {
       return `
         <option value="${esc(a.id)}"
                 data-name="${esc(a.asset_name || '')}"
-                data-basis="${esc(basisName)}"
-                data-rate="${calculatedRate > 0 ? calculatedRate.toFixed(2) : ''}">
-          ${esc(a.asset_code)} - ${esc(a.asset_name)}
+                data-code="${esc(a.asset_code || '')}"
+                data-rate="${calculatedRate > 0 ? calculatedRate.toFixed(2) : ''}"
+                data-basis="${esc(basisName)}">
+          ${esc(a.asset_code)} - ${esc(a.asset_name)} (${calculatedRate > 0 ? fmtMoney(calculatedRate) + '/hr' : 'UOP'})
         </option>
       `;
     }).join("");
@@ -126972,61 +127040,81 @@ function addMfgBomOverheadRow(row = {}) {
   tr.className = "border-b";
 
   tr.innerHTML = `
-    <td class="px-2 py-2">
-      <select class="mfg-oh-asset w-full border rounded px-2 py-1 text-xs">
+    <td class="px-3 py-2">
+      <select class="mfg-oh-asset w-full border rounded px-2 py-1 text-xs bg-white">
         ${assetOptions}
       </select>
     </td>
-    <td class="px-2 py-2">
-      <input class="mfg-oh-name w-full border rounded px-2 py-1 text-xs"
+    <td class="px-3 py-2">
+      <input type="text"
+             class="mfg-oh-name w-full border rounded px-2 py-1 text-xs"
              value="${esc(row.allocation_name || "")}"
-             placeholder="e.g. Electricity / Oven">
+             placeholder="e.g. Machinery depreciation">
     </td>
-    <td class="px-2 py-2">
-      <input class="mfg-oh-basis w-full border rounded px-2 py-1 text-xs"
-             value="${esc(row.basis || "")}" placeholder="per batch / hours">
+    <td class="px-3 py-2">
+      <input type="text"
+             class="mfg-oh-basis w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.basis || "")}"
+             placeholder="e.g. Machine hours">
     </td>
-    <td class="px-2 py-2">
+    <td class="px-3 py-2">
       <input type="number" min="0" step="0.01"
              class="mfg-oh-qty w-full border rounded px-2 py-1 text-right text-xs"
-             value="${esc(row.quantity ?? "")}" placeholder="0.00">
+             value="${esc(row.quantity ?? "")}"
+             placeholder="0.00">
     </td>
-    <td class="px-2 py-2">
+    <td class="px-3 py-2">
       <input type="number" min="0" step="0.01"
              class="mfg-oh-rate w-full border rounded px-2 py-1 text-right text-xs"
-             value="${esc(row.rate ?? "")}" placeholder="0.00">
+             value="${esc(row.rate ?? "")}"
+             placeholder="0.00">
     </td>
-    <td class="px-2 py-2">
+    <td class="px-3 py-2">
       <input type="number" min="0" step="0.01" readonly
-             class="mfg-oh-alloc w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-600 cursor-not-allowed"
-             value="${esc(row.allocated_amount ?? "")}" placeholder="0.00">
+             class="mfg-oh-alloc w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-700 cursor-not-allowed font-medium"
+             value="${esc(row.allocated_amount ?? "")}"
+             placeholder="0.00">
     </td>
-    <td class="px-2 py-2 text-center">
-      <button type="button" class="text-red-600 underline text-xs"
+    <td class="px-3 py-2 text-center">
+      <button type="button" class="text-red-600 hover:text-red-800 text-xs"
               data-mfg-bom-row-remove>Remove</button>
     </td>
   `;
 
-  tr.querySelector(".mfg-oh-asset")
-    ?.addEventListener("change", (e) => {
-      const opt = e.target.selectedOptions[0];
-      const nameInput = tr.querySelector(".mfg-oh-name");
-      const basisInput = tr.querySelector(".mfg-oh-basis");
-      const rateInput = tr.querySelector(".mfg-oh-rate");
+  if (row.asset_id) {
+    const assetSelect = tr.querySelector(".mfg-oh-asset");
+    if (assetSelect) assetSelect.value = String(row.asset_id);
+  }
 
-      if (!opt || !opt.value) {
-        nameInput.value = "";
-        basisInput.value = "";
-        rateInput.value = "";
-      } else {
-        nameInput.value = opt.dataset.name || "";
-        basisInput.value = opt.dataset.basis || "";
-        const rate = Number(opt.dataset.rate || 0);
-        rateInput.value = rate > 0 ? rate.toFixed(2) : "";
-      }
+  // Asset selection -> Prefill name, basis, and rate identically to Order Detail
+  tr.querySelector(".mfg-oh-asset")?.addEventListener("change", (e) => {
+    const opt = e.target.selectedOptions[0];
+    const assetId = e.target.value;
+    const nameInput = tr.querySelector(".mfg-oh-name");
+    const basisInput = tr.querySelector(".mfg-oh-basis");
+    const rateInput = tr.querySelector(".mfg-oh-rate");
 
-      recalcMfgBomTotals();
-    });
+    if (assetId && opt) {
+      const assetName = opt.dataset.name || opt.textContent.trim();
+      const defaultBasis = opt.dataset.basis || "Machine hours";
+      const defaultRate = opt.dataset.rate || "";
+
+      nameInput.value = `Machinery depreciation (${assetName})`;
+      basisInput.value = defaultBasis;
+      if (defaultRate) rateInput.value = defaultRate;
+    } else {
+      nameInput.value = "";
+      basisInput.value = "";
+      rateInput.value = "";
+    }
+
+    // Auto-calculate allocated amount
+    const qty = Number(tr.querySelector(".mfg-oh-qty")?.value || 0);
+    const rate = Number(rateInput?.value || 0);
+    tr.querySelector(".mfg-oh-alloc").value = (qty * rate).toFixed(2);
+
+    recalcMfgBomTotals();
+  });
 
   tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
     tr.remove();
@@ -127035,6 +127123,7 @@ function addMfgBomOverheadRow(row = {}) {
 
   tbody.appendChild(tr);
 }
+
 // =====================================================
 // BOM Modal — payroll & asset reference helpers
 // =====================================================
