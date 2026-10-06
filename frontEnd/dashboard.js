@@ -126136,15 +126136,15 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <div class="overflow-auto border rounded mt-2">
-            <table class="w-full text-xs">
+            <table class="w-full min-w-[900px] text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-2 py-2">Worker</th>
-                  <th class="text-left px-2 py-2">Role</th>
-                  <th class="text-right px-2 py-2">Hours</th>
-                  <th class="text-right px-2 py-2">Rate</th>
-                  <th class="text-right px-2 py-2">Cost</th>
-                  <th class="text-center px-2 py-2"></th>
+                  <th class="text-left px-2 py-2 w-[240px]">Worker</th>
+                  <th class="text-left px-2 py-2 w-[130px]">Role</th>
+                  <th class="text-right px-2 py-2 w-[90px]">Hours</th>
+                  <th class="text-right px-2 py-2 w-[120px]">Rate</th>
+                  <th class="text-right px-2 py-2 w-[120px]">Cost</th>
+                  <th class="text-center px-2 py-2 w-[75px]"></th>
                 </tr>
               </thead>
               <tbody id="mfgBomLabourTbody"></tbody>
@@ -126191,15 +126191,15 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <div class="overflow-auto border rounded mt-2">
-            <table class="w-full text-xs">
+            <table class="w-full min-w-[950px] text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-2 py-2">Overhead</th>
-                  <th class="text-left px-2 py-2">Basis</th>
-                  <th class="text-right px-2 py-2">Quantity</th>
-                  <th class="text-right px-2 py-2">Rate</th>
-                  <th class="text-right px-2 py-2">Allocated</th>
-                  <th class="text-center px-2 py-2"></th>
+                  <th class="text-left px-2 py-2 w-[280px]">Overhead</th>
+                  <th class="text-left px-2 py-2 w-[150px]">Basis</th>
+                  <th class="text-right px-2 py-2 w-[100px]">Quantity</th>
+                  <th class="text-right px-2 py-2 w-[120px]">Rate</th>
+                  <th class="text-right px-2 py-2 w-[130px]">Allocated</th>
+                  <th class="text-center px-2 py-2 w-[75px]"></th>
                 </tr>
               </thead>
               <tbody id="mfgBomOverheadTbody"></tbody>

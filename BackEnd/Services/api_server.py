@@ -1771,83 +1771,83 @@ def record_invoice_revenue_billing_and_allocation(
         billing_obligation_id = None
 
     invoice_number = str(inv.get("number") or invoice_id).strip()
-    invoice_date = inv.get("invoice_date")
 
-    if invoice_number and invoice_date:
-        existing_event = db_service.fetch_one(
-            f"""
-            SELECT id
-            FROM company_{company_id}.revenue_billing_events
-            WHERE contract_id = %s
-            AND event_type = 'invoice'
-            AND event_date >= DATE_TRUNC('month', %s::date)::date
-            AND event_date < (
-                DATE_TRUNC('month', %s::date) + INTERVAL '1 month'
-            )::date
-            AND payload_json->>'invoice_number' = %s
-            ORDER BY id
-            LIMIT 1
-            """,
-            (
-                int(revenue_contract_id),
-                invoice_date,
-                invoice_date,
-                invoice_number,
-            ),
-        )
-
-        if existing_event:
-            current_app.logger.warning(
-                "Duplicate revenue billing prevented | "
-                "contract_id=%s invoice_number=%s billing_period=%s "
-                "existing_event_id=%s invoice_id=%s",
-                int(revenue_contract_id),
-                invoice_number,
-                str(invoice_date)[:7],
-                existing_event.get("id"),
-                int(invoice_id),
-            )
-            return True
-    
-    db_service.record_revenue_billing_event(
-        company_id=company_id,
-        contract_id=int(revenue_contract_id),
-        data={
-            "event_date": inv.get("invoice_date"),
-            "event_type": "invoice",
-            "source_invoice_id": int(invoice_id),
-            "obligation_id": billing_obligation_id,
-            "amount": billing_amount,
-            "currency": inv.get("currency") or "USD",
-            "notes": f"From AR invoice {inv.get('number') or invoice_id}",
-            "payload_json": {
-                "customer_id": int(inv.get("customer_id") or 0),
-                "source": "ar_invoice_post",
-                "invoice_number": invoice_number,
-                "auto_allocate": True,
-                "settlement_pattern": settlement_pattern,
-                "journal_id": int(journal_id),
-            },
-        },
-        user_id=int(user_id or 0),
+    # -------------------------------------------------------------
+    # Idempotency guard: one 'invoice' billing event per invoice.
+    # Keyed on source_invoice_id (not payload invoice_number) so it
+    # also works when this snapshot has no number yet — the number is
+    # assigned during posting by post_invoice_to_gl.
+    # -------------------------------------------------------------
+    existing_event = db_service.fetch_one(
+        f"""
+        SELECT id
+        FROM company_{company_id}.revenue_billing_events
+        WHERE contract_id = %s
+          AND event_type = 'invoice'
+          AND source_invoice_id = %s
+        ORDER BY id
+        LIMIT 1
+        """,
+        (int(revenue_contract_id), int(invoice_id)),
     )
 
-    if settlement_pattern == "cash_before_service":
-        allocation = db_service.auto_allocate_customer_advance_to_invoice(
+    if existing_event:
+        current_app.logger.warning(
+            "Duplicate revenue billing prevented | "
+            "contract_id=%s invoice_id=%s invoice_number=%s existing_event_id=%s",
+            int(revenue_contract_id),
+            int(invoice_id),
+            invoice_number,
+            existing_event.get("id"),
+        )
+        # NOTE: no early return — the advance allocation below must still run.
+    else:
+        db_service.record_revenue_billing_event(
             company_id=company_id,
-            customer_id=int(inv.get("customer_id") or 0),
             contract_id=int(revenue_contract_id),
-            invoice_id=int(invoice_id),
-            amount=float(billing_amount),
-            currency=inv.get("currency") or "USD",
+            data={
+                "event_date": inv.get("invoice_date"),
+                "event_type": "invoice",
+                "source_invoice_id": int(invoice_id),
+                "obligation_id": billing_obligation_id,
+                "amount": billing_amount,
+                "currency": inv.get("currency") or "USD",
+                "notes": f"From AR invoice {inv.get('number') or invoice_id}",
+                "payload_json": {
+                    "customer_id": int(inv.get("customer_id") or 0),
+                    "source": "ar_invoice_post",
+                    "invoice_number": invoice_number,
+                    "auto_allocate": True,
+                    "settlement_pattern": settlement_pattern,
+                    "journal_id": int(journal_id),
+                },
+            },
+            user_id=int(user_id or 0),
         )
 
-        current_app.logger.info("Auto allocation result: %s", allocation)
+    if settlement_pattern == "cash_before_service":
+        try:
+            allocation = db_service.auto_allocate_customer_advance_to_invoice(
+                company_id=company_id,
+                customer_id=int(inv.get("customer_id") or 0),
+                contract_id=int(revenue_contract_id),
+                invoice_id=int(invoice_id),
+                amount=float(billing_amount),
+                currency=inv.get("currency") or "USD",
+            )
 
-        if allocation.get("remaining", 0) > 0:
-            current_app.logger.warning(
-                "Invoice not fully covered by advances. Remaining: %s",
-                allocation["remaining"],
+            current_app.logger.info("Auto allocation result: %s", allocation)
+
+            if allocation.get("remaining", 0) > 0:
+                current_app.logger.warning(
+                    "Invoice not fully covered by advances. Remaining: %s",
+                    allocation["remaining"],
+                )
+        except Exception:
+            current_app.logger.exception(
+                "Invoice advance allocation failed | invoice_id=%s contract_id=%r",
+                invoice_id,
+                revenue_contract_id,
             )
 
     return True
@@ -8578,110 +8578,24 @@ def create_invoice(cid: int):
         )
 
         try:
-            revenue_contract_id = header.get("revenue_contract_id")
-
-            if revenue_contract_id:
-                contract = db_service.get_revenue_contract(
+            if header.get("revenue_contract_id"):
+                # FRESH fetch: post_invoice_to_gl assigned the invoice number
+                # during posting; the earlier `inv` snapshot still has number=NULL
+                posted_inv = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
+                record_invoice_revenue_billing_and_allocation(
                     company_id=company_id,
-                    contract_id=int(revenue_contract_id),
-                ) or {}
-
-                payload_json = contract.get("payload_json") or {}
-                if isinstance(payload_json, str):
-                    import json
-                    try:
-                        payload_json = json.loads(payload_json)
-                    except Exception:
-                        payload_json = {}
-
-                settlement_pattern = (
-                    payload_json.get("settlement_pattern")
-                    or payload_json.get("ifrs15_settlement_pattern")
-                    or ""
-                ).strip().lower()
-
-                obligation_ids = [
-                    l.get("revenue_obligation_id")
-                    for l in inv.get("lines", [])
-                    if l.get("revenue_obligation_id")
-                ]
-
-                if obligation_ids:
-                    billing_amount = float(sum(
-                        float(l.get("net_amount") or 0.0)
-                        for l in inv.get("lines", [])
-                        if l.get("revenue_obligation_id")
-                    ))
-
-                    billing_obligation_id = (
-                        int(obligation_ids[0])
-                        if len(set(obligation_ids)) == 1
-                        else None
-                    )
-                else:
-                    billing_amount = float(sum(
-                        float(l.get("net_amount") or 0.0)
-                        for l in inv.get("lines", [])
-                    ))
-
-                    billing_obligation_id = None
-
-                db_service.record_revenue_billing_event(
-                    company_id=company_id,
-                    contract_id=int(revenue_contract_id),
-                    data={
-                        "event_date": header.get("invoice_date"),
-                        "event_type": "invoice",
-                        "source_invoice_id": int(invoice_id),
-                        "obligation_id": billing_obligation_id,
-                        "amount": billing_amount,
-                        "currency": inv.get("currency") or header.get("currency") or "USD",
-                        "notes": f"From AR invoice {inv.get('number') or invoice_id}",
-                        "payload_json": {
-                            "customer_id": int(cust_id),
-                            "source": "ar_invoice_post",
-                            "invoice_number": inv.get("number"),
-                            "auto_allocate": True,
-                            "settlement_pattern": settlement_pattern,
-                            "journal_id": int(journal_id),
-                        },
-                    },
+                    invoice_id=int(invoice_id),
+                    inv=posted_inv,
+                    journal_id=int(journal_id),
                     user_id=int(user.get("id") or 0),
                 )
-
-                if settlement_pattern == "cash_before_service":
-                    try:
-                        allocation = db_service.auto_allocate_customer_advance_to_invoice(
-                            company_id=company_id,
-                            customer_id=int(cust_id),
-                            contract_id=int(revenue_contract_id),
-                            invoice_id=int(invoice_id),
-                            amount=float(billing_amount),
-                            currency=inv.get("currency") or header.get("currency") or "USD",
-                        )
-
-                        current_app.logger.info("Auto allocation result: %s", allocation)
-
-                        if allocation.get("remaining", 0) > 0:
-                            current_app.logger.warning(
-                                "Invoice not fully covered by advances. Remaining: %s",
-                                allocation["remaining"],
-                            )
-
-                    except Exception:
-                        current_app.logger.exception(
-                            "create_invoice: auto allocation failed | invoice_id=%s contract_id=%r",
-                            invoice_id,
-                            revenue_contract_id,
-                        )
-
         except Exception:
             current_app.logger.exception(
                 "create_invoice: record_revenue_billing_event failed | invoice_id=%s contract_id=%r",
                 invoice_id,
                 header.get("revenue_contract_id"),
             )
-
+            
         current_app.logger.info("create_invoice: before reload posted invoice")
         posted = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
         current_app.logger.info("create_invoice: reload posted invoice done")
