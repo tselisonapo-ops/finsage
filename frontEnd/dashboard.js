@@ -126072,7 +126072,7 @@ function mfgGetHourlyRateFromSetup(setup) {
 }
 
 // --------------------------------------------------------------------------
-// 1. OPEN BOM MODAL (Wider: max-w-6xl)
+// 1. MODAL CONTAINER
 // --------------------------------------------------------------------------
 async function openManufacturingBomDefinitionModal(bomId = 0) {
   let modal = document.getElementById("mfgBomDefinitionModal");
@@ -126080,7 +126080,6 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
   if (!modal) {
     modal = document.createElement("div");
     modal.id = "mfgBomDefinitionModal";
-    // Fixed: max-w-6xl for wider view, items-start and overflow-y-auto so top is never cut off
     modal.className =
       "fixed inset-0 z-50 hidden bg-black/40 overflow-y-auto p-4 sm:p-6 flex justify-center items-start";
 
@@ -126092,7 +126091,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           <div>
             <div id="mfgBomDefinitionTitle" class="text-lg font-semibold text-slate-900">New BOM</div>
             <div class="text-xs text-slate-500">
-              Define standard recipe and costs. Full shift/batch inputs are automatically converted to cost per single unit.
+              Define the finished item, standard recipe materials, and unit production costs.
             </div>
           </div>
           <button type="button" id="mfgBomDefinitionCloseBtn"
@@ -126115,31 +126114,30 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
               <div class="text-slate-600 mb-1 font-medium">BOM Name</div>
               <input id="mfgBomDefinitionName"
                      class="w-full border rounded px-3 py-2 text-sm"
-                     placeholder="e.g. Portuguese Roll BOM">
+                     placeholder="e.g. Standard Product BOM">
             </label>
 
             <label class="text-xs md:col-span-2">
               <div class="text-slate-600 mb-1 font-medium">Finished Item</div>
               <input id="mfgBomDefinitionFinishedItem" type="text"
                      class="w-full border rounded px-3 py-2 text-sm"
-                     placeholder="e.g. Portuguese Roll">
+                     placeholder="e.g. Finished Product Name">
             </label>
 
             <label class="text-xs">
-              <div class="text-slate-600 mb-1 font-medium">Selling Price (per 1 roll)</div>
+              <div class="text-slate-600 mb-1 font-medium">Selling Price (per unit)</div>
               <input id="mfgBomDefinitionSellingPrice" type="number"
                      min="0" step="0.01"
                      class="w-full border rounded px-3 py-2 text-sm font-semibold text-slate-800"
-                     placeholder="10.00">
+                     placeholder="0.00">
             </label>
 
             <label class="text-xs">
-              <div class="text-slate-600 mb-1 font-medium">Batch Yield (Expected Output Rolls per Run)</div>
+              <div class="text-slate-600 mb-1 font-medium">Output Quantity</div>
               <input id="mfgBomDefinitionBatchQty" type="number"
-                     min="1" step="1"
-                     class="w-full border rounded px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50/40"
-                     value="450">
-              <div class="text-[10px] text-slate-500 mt-1">Full shift labor, oven, and batch costs are divided by this number to calculate 1 roll.</div>
+                     min="0.0001" step="0.0001"
+                     class="w-full border rounded px-3 py-2 text-sm font-semibold text-slate-800"
+                     value="1">
             </label>
 
             <label class="text-xs">
@@ -126147,7 +126145,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
               <input id="mfgBomDefinitionBatchUnit"
                      class="w-full border rounded px-3 py-2 text-sm"
                      value="unit"
-                     placeholder="unit / roll">
+                     placeholder="unit / piece / kg">
             </label>
 
             <label class="text-xs md:col-span-2">
@@ -126162,7 +126160,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             <div>
               <div class="font-semibold text-sm text-slate-900">1. Direct Materials</div>
               <div class="text-xs text-slate-500">
-                Ingredients per roll or full batch. Unit costs are auto-pulled from inventory.
+                Standard raw materials and components required. Unit costs auto-load from material inventory.
               </div>
             </div>
             <button type="button" id="mfgBomDefinitionAddLineBtn"
@@ -126170,17 +126168,15 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <div class="overflow-x-auto border rounded mt-2">
-            <table class="w-full min-w-[950px] text-xs">
+            <table class="w-full min-w-[850px] text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-3 py-2 w-[220px]">Component</th>
-                  <th class="text-left px-3 py-2 w-[140px]">Input Basis</th>
-                  <th class="text-right px-3 py-2 w-[100px]">Quantity</th>
-                  <th class="text-left px-3 py-2 w-[60px]">Unit</th>
-                  <th class="text-right px-3 py-2 w-[80px]">Scrap %</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Unit Cost (LSL)</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Batch Cost</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Cost / Roll</th>
+                  <th class="text-left px-3 py-2 w-[280px]">Component</th>
+                  <th class="text-right px-3 py-2 w-[120px]">Quantity</th>
+                  <th class="text-left px-3 py-2 w-[80px]">Unit</th>
+                  <th class="text-right px-3 py-2 w-[100px]">Scrap %</th>
+                  <th class="text-right px-3 py-2 w-[140px]">Unit Cost</th>
+                  <th class="text-right px-3 py-2 w-[140px]">Total Material Cost</th>
                   <th class="text-center px-3 py-2 w-[60px]"></th>
                 </tr>
               </thead>
@@ -126193,7 +126189,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             <div>
               <div class="font-semibold text-sm text-slate-900">2. Direct Labour</div>
               <div class="text-xs text-slate-500">
-                Enter full shift hours (Per Batch) or time per roll. Automatically converts to cost per roll.
+                Labour hours directly required to produce this product. Cost auto-fills as Hours × Hourly Rate.
               </div>
             </div>
             <button type="button" id="mfgBomAddLabourBtn"
@@ -126201,17 +126197,15 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <div class="overflow-x-auto border rounded mt-2">
-            <table class="w-full min-w-[950px] text-xs">
+            <table class="w-full min-w-[850px] text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-3 py-2 w-[220px]">Employee / Worker (Payroll)</th>
-                  <th class="text-left px-3 py-2 w-[140px]">Worker Name</th>
-                  <th class="text-left px-3 py-2 w-[100px]">Role</th>
-                  <th class="text-left px-3 py-2 w-[140px]">Input Basis</th>
-                  <th class="text-right px-3 py-2 w-[80px]">Hours</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Hourly Rate</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Batch Cost</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Cost / Roll</th>
+                  <th class="text-left px-3 py-2 w-[240px]">Employee / Worker (Payroll)</th>
+                  <th class="text-left px-3 py-2 w-[160px]">Worker Name</th>
+                  <th class="text-left px-3 py-2 w-[120px]">Role</th>
+                  <th class="text-right px-3 py-2 w-[100px]">Hours</th>
+                  <th class="text-right px-3 py-2 w-[120px]">Hourly Rate</th>
+                  <th class="text-right px-3 py-2 w-[130px]">Labour Cost</th>
                   <th class="text-center px-3 py-2 w-[60px]"></th>
                 </tr>
               </thead>
@@ -126224,7 +126218,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             <div>
               <div class="font-semibold text-sm text-slate-900">3. Other Direct Costs</div>
               <div class="text-xs text-slate-500">
-                Packaging, fuel, or gas per batch or per roll.
+                Direct costs directly attributable to this product (e.g. packaging, consumables).
               </div>
             </div>
             <button type="button" id="mfgBomAddDirectBtn"
@@ -126232,15 +126226,12 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <div class="overflow-x-auto border rounded mt-2">
-            <table class="w-full min-w-[850px] text-xs">
+            <table class="w-full min-w-[700px] text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
                   <th class="text-left px-3 py-2">Description</th>
-                  <th class="text-left px-3 py-2 w-[160px]">Cost Type</th>
-                  <th class="text-left px-3 py-2 w-[140px]">Input Basis</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Amount</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Batch Cost</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Cost / Roll</th>
+                  <th class="text-left px-3 py-2 w-[200px]">Cost Type</th>
+                  <th class="text-right px-3 py-2 w-[150px]">Amount</th>
                   <th class="text-center px-3 py-2 w-[60px]"></th>
                 </tr>
               </thead>
@@ -126253,7 +126244,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             <div>
               <div class="font-semibold text-sm text-slate-900">4. Manufacturing Overhead</div>
               <div class="text-xs text-slate-500">
-                Oven/machinery runtime or factory power for the full run. Automatically converts to cost per roll.
+                Machine runtime or factory allocations required to produce this product (Quantity × Rate).
               </div>
             </div>
             <button type="button" id="mfgBomAddOverheadBtn"
@@ -126261,17 +126252,15 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
           </div>
 
           <div class="overflow-x-auto border rounded mt-2">
-            <table class="w-full min-w-[950px] text-xs">
+            <table class="w-full min-w-[850px] text-xs">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left px-3 py-2 w-[220px]">Machine / Asset</th>
-                  <th class="text-left px-3 py-2 w-[160px]">Cost / Allocation</th>
-                  <th class="text-left px-3 py-2 w-[120px]">Basis</th>
-                  <th class="text-left px-3 py-2 w-[140px]">Input Basis</th>
-                  <th class="text-right px-3 py-2 w-[80px]">Quantity</th>
-                  <th class="text-right px-3 py-2 w-[100px]">Rate</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Batch Cost</th>
-                  <th class="text-right px-3 py-2 w-[110px]">Cost / Roll</th>
+                  <th class="text-left px-3 py-2 w-[240px]">Machine / Asset</th>
+                  <th class="text-left px-3 py-2 w-[180px]">Cost / Allocation</th>
+                  <th class="text-left px-3 py-2 w-[140px]">Basis</th>
+                  <th class="text-right px-3 py-2 w-[100px]">Quantity</th>
+                  <th class="text-right px-3 py-2 w-[110px]">Rate</th>
+                  <th class="text-right px-3 py-2 w-[130px]">Allocated Amount</th>
                   <th class="text-center px-3 py-2 w-[60px]"></th>
                 </tr>
               </thead>
@@ -126279,65 +126268,48 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             </table>
           </div>
 
-          <!-- DUAL SUMMARY TABLE (Per 1 Roll vs Total Batch) -->
+          <!-- STANDARD COST SUMMARY -->
           <div class="mt-7 border rounded p-4 bg-slate-50 text-xs">
-            <div class="flex justify-between items-center mb-3">
-              <div class="font-semibold text-sm text-slate-900">Standard Cost & Profit Summary</div>
-              <div class="text-slate-500">Batch Yield: <strong id="mfgBomSummaryYieldLabel" class="text-indigo-700 font-bold">450</strong> rolls</div>
+            <div class="font-semibold text-sm text-slate-900 mb-3">
+              Standard Cost & Margin Summary
             </div>
-
-            <div class="overflow-x-auto">
-              <table class="w-full text-xs">
-                <thead>
-                  <tr class="border-b text-slate-600 font-semibold bg-white/60">
-                    <th class="text-left py-2 px-3">Cost Component</th>
-                    <th class="text-right py-2 px-3">Cost per 1 Roll</th>
-                    <th class="text-right py-2 px-3">Full Batch Total</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200">
-                  <tr>
-                    <td class="py-2 px-3 text-slate-600">Direct Materials</td>
-                    <td class="text-right py-2 px-3 font-medium text-slate-800" id="mfgBomUnitMaterials">0.00</td>
-                    <td class="text-right py-2 px-3 text-slate-500" id="mfgBomTotMaterials">0.00</td>
-                  </tr>
-                  <tr>
-                    <td class="py-2 px-3 text-slate-600">Direct Labour</td>
-                    <td class="text-right py-2 px-3 font-medium text-slate-800" id="mfgBomUnitLabour">0.00</td>
-                    <td class="text-right py-2 px-3 text-slate-500" id="mfgBomTotLabour">0.00</td>
-                  </tr>
-                  <tr>
-                    <td class="py-2 px-3 text-slate-600">Other Direct Costs</td>
-                    <td class="text-right py-2 px-3 font-medium text-slate-800" id="mfgBomUnitDirect">0.00</td>
-                    <td class="text-right py-2 px-3 text-slate-500" id="mfgBomTotDirect">0.00</td>
-                  </tr>
-                  <tr class="font-semibold bg-slate-100/60">
-                    <td class="py-2 px-3">Total Direct Cost</td>
-                    <td class="text-right py-2 px-3 font-bold text-slate-900" id="mfgBomUnitDirectTotal">0.00</td>
-                    <td class="text-right py-2 px-3 font-bold text-slate-700" id="mfgBomTotDirectTotal">0.00</td>
-                  </tr>
-                  <tr>
-                    <td class="py-2 px-3 text-slate-600">Manufacturing Overhead</td>
-                    <td class="text-right py-2 px-3 font-medium text-slate-800" id="mfgBomUnitOverhead">0.00</td>
-                    <td class="text-right py-2 px-3 text-slate-500" id="mfgBomTotOverhead">0.00</td>
-                  </tr>
-                  <tr class="font-bold text-sm bg-slate-100 border-t-2 border-b-2">
-                    <td class="py-2.5 px-3">Full Production Cost</td>
-                    <td class="text-right py-2.5 px-3 text-indigo-700" id="mfgBomTotUnit">0.00</td>
-                    <td class="text-right py-2.5 px-3 text-slate-800" id="mfgBomTotTotal">0.00</td>
-                  </tr>
-                  <tr>
-                    <td class="py-2 px-3 text-slate-600">Selling Price</td>
-                    <td class="text-right py-2 px-3 font-semibold text-slate-800" id="mfgBomSummaryPriceUnit">0.00</td>
-                    <td class="text-right py-2 px-3 text-slate-500" id="mfgBomSummaryPriceBatch">0.00</td>
-                  </tr>
-                  <tr class="font-bold text-sm">
-                    <td class="py-2.5 px-3">Net Profit / Margin</td>
-                    <td class="text-right py-2.5 px-3" id="mfgBomTotMargin">—</td>
-                    <td class="text-right py-2.5 px-3" id="mfgBomTotMarginBatch">—</td>
-                  </tr>
-                </tbody>
-              </table>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-2">
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Direct Materials</span>
+                <strong id="mfgBomTotMaterials">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Direct Labour</span>
+                <strong id="mfgBomTotLabour">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Other Direct Costs</span>
+                <strong id="mfgBomTotDirect">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1 font-semibold">
+                <span>Total Direct Cost</span>
+                <strong id="mfgBomTotDirectTotal">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Manufacturing Overhead</span>
+                <strong id="mfgBomTotOverhead">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1 font-semibold">
+                <span>Total Standard Cost</span>
+                <strong id="mfgBomTotTotal">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Cost / Unit</span>
+                <strong id="mfgBomTotUnit" class="text-indigo-700 font-bold">—</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Selling Price / Unit</span>
+                <strong id="mfgBomSummaryPriceUnit">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1 font-semibold">
+                <span>Margin / Unit</span>
+                <strong id="mfgBomTotMargin">—</strong>
+              </div>
             </div>
           </div>
 
@@ -126375,7 +126347,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
   document.getElementById("mfgBomDefinitionName").value = "";
   document.getElementById("mfgBomDefinitionFinishedItem").value = "";
   document.getElementById("mfgBomDefinitionSellingPrice").value = "";
-  document.getElementById("mfgBomDefinitionBatchQty").value = "450";
+  document.getElementById("mfgBomDefinitionBatchQty").value = "1";
   document.getElementById("mfgBomDefinitionBatchUnit").value = "unit";
   document.getElementById("mfgBomDefinitionDescription").value = "";
 
@@ -126402,11 +126374,14 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       ).catch(() => null)
     ]);
 
-    const inventoryItems = inventoryData?.items || inventoryData?.data || inventoryData?.rows || inventoryData || [];
+    const inventoryItems =
+      inventoryData?.items || inventoryData?.data || inventoryData?.rows || inventoryData || [];
     window._MFG_ITEM_CACHE = { rows: Array.isArray(inventoryItems) ? inventoryItems : [] };
 
-    const payrollEmployees = payrollRes?.items || payrollRes?.data || payrollRes || [];
-    const assets = assetsRes?.data || assetsRes?.items || assetsRes?.assets || assetsRes || [];
+    const payrollEmployees =
+      payrollRes?.items || payrollRes?.data || payrollRes || [];
+    const assets =
+      assetsRes?.data || assetsRes?.items || assetsRes?.assets || assetsRes || [];
 
     window.__MFG_BOM_REF = {
       cid,
@@ -126431,7 +126406,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     document.getElementById("mfgBomDefinitionName").value = bom.name ?? "";
     document.getElementById("mfgBomDefinitionFinishedItem").value = bom.finished_item_name ?? "";
     document.getElementById("mfgBomDefinitionSellingPrice").value = bom.selling_price ?? "";
-    document.getElementById("mfgBomDefinitionBatchQty").value = bom.batch_qty ?? "450";
+    document.getElementById("mfgBomDefinitionBatchQty").value = bom.batch_qty ?? "1";
     document.getElementById("mfgBomDefinitionBatchUnit").value = bom.batch_unit ?? "unit";
     document.getElementById("mfgBomDefinitionDescription").value = bom.description ?? "";
 
@@ -126452,7 +126427,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
 }
 
 // --------------------------------------------------------------------------
-// 2. DIRECT MATERIALS ROW (Auto-populates sales_price as Unit Cost)
+// 2. DIRECT MATERIALS ROW
 // --------------------------------------------------------------------------
 function addManufacturingBomDefinitionLine(line = {}) {
   const tbody = document.getElementById("mfgBomDefinitionLinesTbody");
@@ -126463,20 +126438,18 @@ function addManufacturingBomDefinitionLine(line = {}) {
   const itemOptions =
     `<option value="">-- Select Material Item --</option>` +
     items.map(i => {
+      // Pull planned material cost from sales_price / cost_price
       const cost = Number(i.sales_price ?? i.cost_price ?? i.unit_cost ?? 0);
       return `
         <option value="${esc(i.id)}"
                 data-sku="${esc(i.sku || '')}"
-                data-unit="${esc(i.unit || 'kg')}"
-                data-cost="${cost > 0 ? cost.toFixed(4) : '0.0000'}">
+                data-unit="${esc(i.unit || 'unit')}"
+                data-cost="${cost > 0 ? cost.toFixed(6) : '0.000000'}">
           ${esc(i.sku ? i.sku + ' — ' : '')}${esc(i.name)}
         </option>
       `;
     }).join("");
 
-  const defaultBasis = line.cost_basis || (Number(line.quantity || 0) > 5 ? "batch" : "unit");
-
-  // If existing unit_cost is missing or 0, attempt to look up from cache
   let initialCost = Number(line.unit_cost ?? 0);
   if (initialCost <= 0 && (line.item_id || line.id)) {
     const cached = items.find(i => String(i.id) === String(line.item_id || line.id));
@@ -126493,20 +126466,14 @@ function addManufacturingBomDefinitionLine(line = {}) {
       </select>
     </td>
     <td class="px-3 py-2">
-      <select class="mfg-line-basis w-full border rounded px-2 py-1 text-xs bg-slate-50 font-medium">
-        <option value="unit" ${defaultBasis === "unit" ? "selected" : ""}>Per Unit (1 Roll)</option>
-        <option value="batch" ${defaultBasis === "batch" ? "selected" : ""}>Per Batch (Full Run)</option>
-      </select>
-    </td>
-    <td class="px-3 py-2">
       <input type="number" min="0" step="0.000001"
              class="mfg-line-qty w-full border rounded px-2 py-1 text-right text-xs"
-             value="${esc(line.quantity ?? "")}" placeholder="0.111100">
+             value="${esc(line.quantity ?? "")}" placeholder="0.000000">
     </td>
     <td class="px-3 py-2">
       <input type="text"
              class="mfg-line-unit w-full border rounded px-2 py-1 text-xs bg-slate-50 text-slate-600"
-             value="${esc(line.unit || "kg")}" placeholder="kg" readonly>
+             value="${esc(line.unit || "unit")}" placeholder="unit" readonly>
     </td>
     <td class="px-3 py-2">
       <input type="number" min="0" step="0.01"
@@ -126514,19 +126481,14 @@ function addManufacturingBomDefinitionLine(line = {}) {
              value="${esc(line.scrap_percent ?? "0.00")}" placeholder="0.00">
     </td>
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.0001"
+      <input type="number" min="0" step="0.000001"
              class="mfg-line-cost w-full border rounded px-2 py-1 text-right text-xs font-medium text-slate-800"
-             value="${initialCost > 0 ? initialCost.toFixed(4) : ""}" placeholder="0.0000">
+             value="${initialCost > 0 ? initialCost.toFixed(6) : ""}" placeholder="0.000000">
     </td>
     <td class="px-3 py-2">
       <input type="number" min="0" step="0.01" readonly
-             class="mfg-line-batch-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-500 cursor-not-allowed"
+             class="mfg-line-total w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
              placeholder="0.00">
-    </td>
-    <td class="px-3 py-2">
-      <input type="number" min="0" step="0.0001" readonly
-             class="mfg-line-unit-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-indigo-700 font-semibold cursor-not-allowed"
-             placeholder="0.0000">
     </td>
     <td class="px-3 py-2 text-center">
       <button type="button" class="text-red-600 hover:text-red-800 text-xs"
@@ -126539,18 +126501,18 @@ function addManufacturingBomDefinitionLine(line = {}) {
     if (itemSelect) itemSelect.value = String(line.item_id || line.id);
   }
 
-  // When an item is picked: auto-fill unit AND sales_price as the unit cost!
+  // Auto-populates Unit and Planned Material Cost when item is selected
   tr.querySelector(".mfg-line-item")?.addEventListener("change", (e) => {
     const opt = e.target.selectedOptions[0];
     const unitInput = tr.querySelector(".mfg-line-unit");
     const costInput = tr.querySelector(".mfg-line-cost");
 
     if (opt && opt.value) {
-      unitInput.value = opt.dataset.unit || "kg";
+      unitInput.value = opt.dataset.unit || "unit";
       const cost = Number(opt.dataset.cost || 0);
-      costInput.value = cost > 0 ? cost.toFixed(4) : "";
+      costInput.value = cost > 0 ? cost.toFixed(6) : "";
     } else {
-      unitInput.value = "kg";
+      unitInput.value = "unit";
       costInput.value = "";
     }
 
@@ -126564,6 +126526,7 @@ function addManufacturingBomDefinitionLine(line = {}) {
 
   tbody.appendChild(tr);
 }
+
 
 function closeManufacturingBomDefinitionModal() {
   const modal =
@@ -126841,7 +126804,7 @@ function mfgBomNullableNum(el) {
 // ---------- section row builders ----------
 
 // --------------------------------------------------------------------------
-// 3. DIRECT LABOUR ROW (Full shift hours -> converts to Cost / Roll)
+// 3. DIRECT LABOUR ROW
 // --------------------------------------------------------------------------
 function addMfgBomLabourRow(row = {}) {
   const tbody = document.getElementById("mfgBomLabourTbody");
@@ -126856,8 +126819,6 @@ function addMfgBomLabourRow(row = {}) {
       const empNo = e?.employee_no || e?.employee_number || "";
       return `<option value="${esc(eid)}">${esc(empNo ? `${name} (${empNo})` : name)}</option>`;
     }).join("");
-
-  const defaultBasis = row.cost_basis || (Number(row.hours || 0) >= 1 ? "batch" : "batch");
 
   const tr = document.createElement("tr");
   tr.className = "border-b";
@@ -126881,16 +126842,10 @@ function addMfgBomLabourRow(row = {}) {
              placeholder="Role">
     </td>
     <td class="px-3 py-2">
-      <select class="mfg-lab-basis w-full border rounded px-2 py-1 text-xs bg-slate-50 font-medium">
-        <option value="batch" ${defaultBasis === "batch" ? "selected" : ""}>Per Batch (Full Shift)</option>
-        <option value="unit" ${defaultBasis === "unit" ? "selected" : ""}>Per Unit (1 Roll)</option>
-      </select>
-    </td>
-    <td class="px-3 py-2">
-      <input type="number" min="0" step="0.01"
+      <input type="number" min="0" step="0.0001"
              class="mfg-lab-hours w-full border rounded px-2 py-1 text-right text-xs"
              value="${esc(row.hours ?? "")}"
-             placeholder="8.00">
+             placeholder="0.00">
     </td>
     <td class="px-3 py-2">
       <input type="number" min="0" step="0.01"
@@ -126901,13 +126856,8 @@ function addMfgBomLabourRow(row = {}) {
     </td>
     <td class="px-3 py-2">
       <input type="number" min="0" step="0.01" readonly
-             class="mfg-lab-batch-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-500 cursor-not-allowed"
+             class="mfg-lab-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
              placeholder="0.00">
-    </td>
-    <td class="px-3 py-2">
-      <input type="number" min="0" step="0.0001" readonly
-             class="mfg-lab-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-indigo-700 font-semibold cursor-not-allowed"
-             placeholder="0.0000">
     </td>
     <td class="px-3 py-2 text-center">
       <button type="button" class="text-red-600 hover:text-red-800 text-xs"
@@ -126982,40 +126932,22 @@ function addMfgBomDirectCostRow(row = {}) {
   const tbody = document.getElementById("mfgBomDirectTbody");
   if (!tbody) return;
 
-  const defaultBasis = row.cost_basis || "batch";
-
   const tr = document.createElement("tr");
   tr.className = "border-b";
 
   tr.innerHTML = `
     <td class="px-3 py-2">
       <input type="text" class="mfg-dc-desc w-full border rounded px-2 py-1 text-xs"
-             value="${esc(row.description || "")}" placeholder="e.g. Packaging Plastics">
+             value="${esc(row.description || "")}" placeholder="e.g. Packaging, consumables">
     </td>
     <td class="px-3 py-2">
       <input type="text" class="mfg-dc-type w-full border rounded px-2 py-1 text-xs"
-             value="${esc(row.cost_type || "")}" placeholder="Packaging / Fuel">
-    </td>
-    <td class="px-3 py-2">
-      <select class="mfg-dc-basis w-full border rounded px-2 py-1 text-xs bg-slate-50 font-medium">
-        <option value="batch" ${defaultBasis === "batch" ? "selected" : ""}>Per Batch (Full Run)</option>
-        <option value="unit" ${defaultBasis === "unit" ? "selected" : ""}>Per Unit (1 Roll)</option>
-      </select>
+             value="${esc(row.cost_type || "")}" placeholder="e.g. Packaging / Fuel">
     </td>
     <td class="px-3 py-2">
       <input type="number" min="0" step="0.01"
-             class="mfg-dc-amount w-full border rounded px-2 py-1 text-right text-xs font-medium text-slate-800"
-             value="${esc(row.amount ?? "")}" placeholder="12.00">
-    </td>
-    <td class="px-3 py-2">
-      <input type="number" min="0" step="0.01" readonly
-             class="mfg-dc-batch-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-500 cursor-not-allowed"
-             placeholder="0.00">
-    </td>
-    <td class="px-3 py-2">
-      <input type="number" min="0" step="0.0001" readonly
-             class="mfg-dc-unit-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-indigo-700 font-semibold cursor-not-allowed"
-             placeholder="0.0000">
+             class="mfg-dc-amount w-full border rounded px-2 py-1 text-right text-xs font-semibold text-slate-800"
+             value="${esc(row.amount ?? "")}" placeholder="0.00">
     </td>
     <td class="px-3 py-2 text-center">
       <button type="button" class="text-red-600 hover:text-red-800 text-xs"
@@ -127059,8 +126991,6 @@ function addMfgBomOverheadRow(row = {}) {
       `;
     }).join("");
 
-  const defaultBasis = row.cost_basis || (Number(row.quantity || 0) >= 10 ? "batch" : "batch");
-
   const tr = document.createElement("tr");
   tr.className = "border-b";
 
@@ -127083,32 +127013,21 @@ function addMfgBomOverheadRow(row = {}) {
              placeholder="e.g. Machine hours">
     </td>
     <td class="px-3 py-2">
-      <select class="mfg-oh-basis-type w-full border rounded px-2 py-1 text-xs bg-slate-50 font-medium">
-        <option value="batch" ${defaultBasis === "batch" ? "selected" : ""}>Per Batch (Full Run)</option>
-        <option value="unit" ${defaultBasis === "unit" ? "selected" : ""}>Per Unit (1 Roll)</option>
-      </select>
-    </td>
-    <td class="px-3 py-2">
-      <input type="number" min="0" step="0.01"
+      <input type="number" min="0" step="0.0001"
              class="mfg-oh-qty w-full border rounded px-2 py-1 text-right text-xs"
              value="${esc(row.quantity ?? "")}"
-             placeholder="9.00">
+             placeholder="0.00">
     </td>
     <td class="px-3 py-2">
       <input type="number" min="0" step="0.01"
              class="mfg-oh-rate w-full border rounded px-2 py-1 text-right text-xs font-medium text-slate-800"
              value="${esc(row.rate ?? "")}"
-             placeholder="0.14">
-    </td>
-    <td class="px-3 py-2">
-      <input type="number" min="0" step="0.01" readonly
-             class="mfg-oh-batch-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-500 cursor-not-allowed"
              placeholder="0.00">
     </td>
     <td class="px-3 py-2">
-      <input type="number" min="0" step="0.0001" readonly
-             class="mfg-oh-alloc w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-indigo-700 font-semibold cursor-not-allowed"
-             placeholder="0.0000">
+      <input type="number" min="0" step="0.01" readonly
+             class="mfg-oh-alloc w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
+             placeholder="0.00">
     </td>
     <td class="px-3 py-2 text-center">
       <button type="button" class="text-red-600 hover:text-red-800 text-xs"
@@ -127154,196 +127073,91 @@ function addMfgBomOverheadRow(row = {}) {
 }
 
 // --------------------------------------------------------------------------
-// 6. CALCULATION ENGINE: Real-time Unit Cost (1 Roll) + Full Batch
+// 6. TOTALS & UNIT MARGIN CALCULATION
 // --------------------------------------------------------------------------
 function handleMfgBomModalInput() {
   recalcMfgBomTotals();
 }
 
 function recalcMfgBomTotals() {
-  const batchYield = Math.max(Number(document.getElementById("mfgBomDefinitionBatchQty")?.value || 1), 1);
+  const outputQty = Math.max(Number(document.getElementById("mfgBomDefinitionBatchQty")?.value || 1), 0.0001);
   const sellingPricePerUnit = Number(document.getElementById("mfgBomDefinitionSellingPrice")?.value || 0);
 
-  const yieldLabel = document.getElementById("mfgBomSummaryYieldLabel");
-  if (yieldLabel) yieldLabel.textContent = batchYield;
-
-  // 1. Direct Materials
-  let unitMaterials = 0;
-  let batchMaterials = 0;
-
+  // 1. Direct Materials Total
+  let totMaterials = 0;
   document.querySelectorAll("#mfgBomDefinitionLinesTbody tr").forEach(tr => {
     const qty = Number(tr.querySelector(".mfg-line-qty")?.value || 0);
     const cost = Number(tr.querySelector(".mfg-line-cost")?.value || 0);
     const scrap = Number(tr.querySelector(".mfg-line-scrap")?.value || 0);
-    const lineBasis = tr.querySelector(".mfg-line-basis")?.value || "unit";
 
-    const rawCost = qty * (1 + scrap / 100) * cost;
+    const lineCost = qty * (1 + scrap / 100) * cost;
+    totMaterials += lineCost;
 
-    let lineUnitCost = 0;
-    let lineBatchCost = 0;
-
-    if (lineBasis === "unit") {
-      lineUnitCost = rawCost;
-      lineBatchCost = rawCost * batchYield;
-    } else {
-      lineBatchCost = rawCost;
-      lineUnitCost = rawCost / batchYield;
-    }
-
-    unitMaterials += lineUnitCost;
-    batchMaterials += lineBatchCost;
-
-    const batchCostInput = tr.querySelector(".mfg-line-batch-cost");
-    if (batchCostInput) batchCostInput.value = lineBatchCost.toFixed(2);
-
-    const unitCostInput = tr.querySelector(".mfg-line-unit-cost");
-    if (unitCostInput) unitCostInput.value = lineUnitCost.toFixed(4);
+    const totalInput = tr.querySelector(".mfg-line-total");
+    if (totalInput) totalInput.value = lineCost.toFixed(2);
   });
 
-  // 2. Direct Labour
-  let unitLabour = 0;
-  let batchLabour = 0;
-
+  // 2. Direct Labour Total
+  let totLabour = 0;
   document.querySelectorAll("#mfgBomLabourTbody tr").forEach(tr => {
     const hours = Number(tr.querySelector(".mfg-lab-hours")?.value || 0);
     const rate = Number(tr.querySelector(".mfg-lab-rate")?.value || 0);
-    const basis = tr.querySelector(".mfg-lab-basis")?.value || "batch";
 
-    const totalRaw = hours * rate;
-    let lineUnitCost = 0;
-    let lineBatchCost = 0;
+    const lineCost = hours * rate;
+    totLabour += lineCost;
 
-    if (basis === "batch") {
-      lineBatchCost = totalRaw;
-      lineUnitCost = totalRaw / batchYield;
-    } else {
-      lineUnitCost = totalRaw;
-      lineBatchCost = totalRaw * batchYield;
-    }
-
-    unitLabour += lineUnitCost;
-    batchLabour += lineBatchCost;
-
-    const batchCostInput = tr.querySelector(".mfg-lab-batch-cost");
-    if (batchCostInput) batchCostInput.value = lineBatchCost.toFixed(2);
-
-    const unitCostInput = tr.querySelector(".mfg-lab-cost");
-    if (unitCostInput) unitCostInput.value = lineUnitCost.toFixed(4);
+    const costInput = tr.querySelector(".mfg-lab-cost");
+    if (costInput) costInput.value = lineCost.toFixed(2);
   });
 
-  // 3. Other Direct Costs
-  let unitDirect = 0;
-  let batchDirect = 0;
-
+  // 3. Other Direct Costs Total
+  let totDirect = 0;
   document.querySelectorAll("#mfgBomDirectTbody tr").forEach(tr => {
-    const amount = Number(tr.querySelector(".mfg-dc-amount")?.value || 0);
-    const basis = tr.querySelector(".mfg-dc-basis")?.value || "batch";
-
-    let lineUnitCost = 0;
-    let lineBatchCost = 0;
-
-    if (basis === "batch") {
-      lineBatchCost = amount;
-      lineUnitCost = amount / batchYield;
-    } else {
-      lineUnitCost = amount;
-      lineBatchCost = amount * batchYield;
-    }
-
-    unitDirect += lineUnitCost;
-    batchDirect += lineBatchCost;
-
-    const batchCostInput = tr.querySelector(".mfg-dc-batch-cost");
-    if (batchCostInput) batchCostInput.value = lineBatchCost.toFixed(2);
-
-    const unitCostInput = tr.querySelector(".mfg-dc-unit-cost");
-    if (unitCostInput) unitCostInput.value = lineUnitCost.toFixed(4);
+    totDirect += Number(tr.querySelector(".mfg-dc-amount")?.value || 0);
   });
 
-  // 4. Manufacturing Overhead
-  let unitOverhead = 0;
-  let batchOverhead = 0;
-
+  // 4. Manufacturing Overhead Total
+  let totOverhead = 0;
   document.querySelectorAll("#mfgBomOverheadTbody tr").forEach(tr => {
     const qty = Number(tr.querySelector(".mfg-oh-qty")?.value || 0);
     const rate = Number(tr.querySelector(".mfg-oh-rate")?.value || 0);
-    const basis = tr.querySelector(".mfg-oh-basis-type")?.value || "batch";
 
-    const totalRaw = qty * rate;
-    let lineUnitCost = 0;
-    let lineBatchCost = 0;
+    const lineCost = qty * rate;
+    totOverhead += lineCost;
 
-    if (basis === "batch") {
-      lineBatchCost = totalRaw;
-      lineUnitCost = totalRaw / batchYield;
-    } else {
-      lineUnitCost = totalRaw;
-      lineBatchCost = totalRaw * batchYield;
-    }
-
-    unitOverhead += lineUnitCost;
-    batchOverhead += lineBatchCost;
-
-    const batchCostInput = tr.querySelector(".mfg-oh-batch-cost");
-    if (batchCostInput) batchCostInput.value = lineBatchCost.toFixed(2);
-
-    const unitCostInput = tr.querySelector(".mfg-oh-alloc");
-    if (unitCostInput) unitCostInput.value = lineUnitCost.toFixed(4);
+    const allocInput = tr.querySelector(".mfg-oh-alloc");
+    if (allocInput) allocInput.value = lineCost.toFixed(2);
   });
 
-  // Totals
-  const unitDirectTotal = unitMaterials + unitLabour + unitDirect;
-  const batchDirectTotal = batchMaterials + batchLabour + batchDirect;
+  // Summary Totals
+  const totDirectTotal = totMaterials + totLabour + totDirect;
+  const totFullCost = totDirectTotal + totOverhead;
+  const costPerUnit = totFullCost / outputQty;
+  const marginPerUnit = sellingPricePerUnit - costPerUnit;
 
-  const unitFullCost = unitDirectTotal + unitOverhead;
-  const batchFullCost = batchDirectTotal + batchOverhead;
+  // Render to Summary
+  document.getElementById("mfgBomTotMaterials").textContent = fmtMoney(totMaterials);
+  document.getElementById("mfgBomTotLabour").textContent = fmtMoney(totLabour);
+  document.getElementById("mfgBomTotDirect").textContent = fmtMoney(totDirect);
+  document.getElementById("mfgBomTotDirectTotal").textContent = fmtMoney(totDirectTotal);
+  document.getElementById("mfgBomTotOverhead").textContent = fmtMoney(totOverhead);
+  document.getElementById("mfgBomTotTotal").textContent = fmtMoney(totFullCost);
 
-  const batchSellingPrice = sellingPricePerUnit * batchYield;
-  const unitMargin = sellingPricePerUnit - unitFullCost;
-  const batchMargin = batchSellingPrice - batchFullCost;
-
-  // Render to Dual Summary Table
-  document.getElementById("mfgBomUnitMaterials").textContent = fmtMoney(unitMaterials);
-  document.getElementById("mfgBomTotMaterials").textContent = fmtMoney(batchMaterials);
-
-  document.getElementById("mfgBomUnitLabour").textContent = fmtMoney(unitLabour);
-  document.getElementById("mfgBomTotLabour").textContent = fmtMoney(batchLabour);
-
-  document.getElementById("mfgBomUnitDirect").textContent = fmtMoney(unitDirect);
-  document.getElementById("mfgBomTotDirect").textContent = fmtMoney(batchDirect);
-
-  document.getElementById("mfgBomUnitDirectTotal").textContent = fmtMoney(unitDirectTotal);
-  document.getElementById("mfgBomTotDirectTotal").textContent = fmtMoney(batchDirectTotal);
-
-  document.getElementById("mfgBomUnitOverhead").textContent = fmtMoney(unitOverhead);
-  document.getElementById("mfgBomTotOverhead").textContent = fmtMoney(batchOverhead);
-
-  document.getElementById("mfgBomTotUnit").textContent = fmtMoney(unitFullCost);
-  document.getElementById("mfgBomTotTotal").textContent = fmtMoney(batchFullCost);
-
+  document.getElementById("mfgBomTotUnit").textContent = fmtMoney(costPerUnit);
   document.getElementById("mfgBomSummaryPriceUnit").textContent = fmtMoney(sellingPricePerUnit);
-  document.getElementById("mfgBomSummaryPriceBatch").textContent = fmtMoney(batchSellingPrice);
 
-  const marginUnitEl = document.getElementById("mfgBomTotMargin");
-  const marginBatchEl = document.getElementById("mfgBomTotMarginBatch");
-
+  const marginEl = document.getElementById("mfgBomTotMargin");
   if (sellingPricePerUnit > 0) {
-    const marginPercent = ((unitMargin / sellingPricePerUnit) * 100).toFixed(1);
-    marginUnitEl.textContent = `${fmtMoney(unitMargin)} (${marginPercent}%)`;
-    marginUnitEl.className = unitMargin >= 0 ? "text-right py-2 px-3 text-emerald-700 font-bold" : "text-right py-2 px-3 text-red-600 font-bold";
-
-    marginBatchEl.textContent = fmtMoney(batchMargin);
-    marginBatchEl.className = batchMargin >= 0 ? "text-right py-2 px-3 text-emerald-700 font-medium" : "text-right py-2 px-3 text-red-600 font-medium";
+    const marginPercent = ((marginPerUnit / sellingPricePerUnit) * 100).toFixed(1);
+    marginEl.textContent = `${fmtMoney(marginPerUnit)} (${marginPercent}%)`;
+    marginEl.className = marginPerUnit >= 0 ? "text-emerald-700 font-bold" : "text-red-600 font-bold";
   } else {
-    marginUnitEl.textContent = "—";
-    marginUnitEl.className = "text-right py-2 px-3 text-slate-500 font-normal";
-    marginBatchEl.textContent = "—";
-    marginBatchEl.className = "text-right py-2 px-3 text-slate-500 font-normal";
+    marginEl.textContent = "—";
+    marginEl.className = "text-slate-500 font-normal";
   }
 }
 
 window.__MFG_BOM_REF = window.__MFG_BOM_REF || { cid: null, payroll: [], assets: [] };
-
 // =====================================================
 // BOM Modal
 // =====================================================
