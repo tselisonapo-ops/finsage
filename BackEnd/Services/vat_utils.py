@@ -864,8 +864,26 @@ def resolve_account_by_role(company_id: int, role: str) -> dict:
         (int(company_id), role_norm),
     )
 
-    # 2) Do NOT fallback cash_bank to cf_bucket='cash'
-    # because it may pick Petty Cash or Bank Clearing.
+    # 2) If the role is missing, use the central posting-time
+    #    COA repairer. This will semantically classify existing
+    #    COA accounts and persist the correct role when unambiguous.
+    if not row:
+        repaired = db_service.ensure_coa_role_for_posting(
+            int(company_id),
+            role_norm,
+            required=False,
+        )
+
+        if repaired:
+            row = {
+                "code": repaired["code"],
+                "name": repaired["name"],
+                "role": repaired.get("role"),
+                "cf_bucket": repaired.get("cf_bucket"),
+            }
+
+    # 3) Do NOT fallback cash_bank to cf_bucket='cash'
+    #    because it may pick Petty Cash or Bank Clearing.
     if not row and role_norm != "cash_bank":
         row = db_service.fetch_one(
             f"""

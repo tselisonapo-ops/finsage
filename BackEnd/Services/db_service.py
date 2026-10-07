@@ -537,8 +537,139 @@ def build_pos_recipe_payload_from_bakers_percent(
 # Seed for the "What do you want to produce?" catalog. Seeded per
 # company schema on first use (ensure_production_catalog). All of it
 # is editable/addable per company via create_production_catalog_product.
+
+def resolve_batch_tier(meta, batch_key):
+    """
+    Resolve a standard production batch tier from formula_meta.
+
+    Bakery batch cards (e.g. "12.5 kg flour -> yeast 60 g, premix
+    1.875 kg @15%, water 7.5 L") are stored as
+    formula_meta["batch_tiers"]. Each tier may carry exact shop
+    quantities (yeast_g, water_l) that override the percentage
+    defaults for that batch size.
+
+    Returns:
+        {
+            "key": "12.5kg",
+            "label": "12.5 kg bag batch",
+            "flour_g": Decimal,
+            "yeast_g": Decimal | None,
+            "water_g": Decimal | None,
+        }
+    """
+    if not isinstance(meta, dict):
+        meta = {}
+
+    tiers = [
+        t for t in (meta.get("batch_tiers") or [])
+        if isinstance(t, dict)
+    ]
+
+    if not tiers:
+        raise ValueError(
+            "This product has no standard batch tiers; pass "
+            "batch_flour_g (grams) instead"
+        )
+
+    wanted = str(batch_key or "").strip().lower()
+
+    selected = None
+    for t in tiers:
+        try:
+            flour_kg = float(t.get("flour_kg"))
+        except Exception:
+            continue
+
+        keys = {str(t.get("key") or "").strip().lower()}
+        keys.add(f"{flour_kg:g}".lower())
+        keys.add(f"{flour_kg:g}kg".lower())
+        keys.add(f"{flour_kg:g} kg".lower())
+
+        if wanted and wanted in keys:
+            selected = t
+            break
+
+    if selected is None:
+        available = ", ".join(
+            str(
+                t.get("key")
+                or f"{float(t['flour_kg']):g}kg"
+            )
+            for t in tiers
+            if t.get("flour_kg") is not None
+        )
+        raise ValueError(
+            f"Unknown batch size '{batch_key}'. "
+            f"Available batch sizes: {available}"
+        )
+
+    flour_g = _bpe_d(selected.get("flour_kg")) * 1000
+    if flour_g <= 0:
+        raise ValueError(
+            "Batch tier flour_kg must be greater than zero"
+        )
+
+    yeast_g = selected.get("yeast_g")
+    water_l = selected.get("water_l")
+
+    return {
+        "key": str(
+            selected.get("key")
+            or f"{float(selected['flour_kg']):g}kg"
+        ),
+        "label": str(
+            selected.get("label")
+            or f"{float(selected['flour_kg']):g} kg flour batch"
+        ),
+        "flour_g": flour_g,
+        "yeast_g": (
+            _bpe_d(yeast_g) if yeast_g is not None else None
+        ),
+        "water_g": (
+            _bpe_d(water_l) * 1000 if water_l is not None else None
+        ),
+    }
+
+
+def resolve_bakers_pcts(meta, pct_by_key=None, tier=None):
+    """
+    Effective baker's percentages for a batch.
+
+    Percentages come from formula_meta["ingredients"]; a resolved
+    batch tier overrides yeast / water with the shop's exact card
+    quantities converted back to % of flour.
+    """
+    if pct_by_key is None:
+        pct_by_key = {}
+        for i in ((meta or {}).get("ingredients") or []):
+            if isinstance(i, dict):
+                k = str(i.get("key") or "").strip().lower()
+                pct_by_key[k] = _bpe_d(i.get("pct") or 0)
+
+    premix_pct = pct_by_key.get("premix", 0)
+    yeast_pct = pct_by_key.get("yeast", 0)
+    water_pct = pct_by_key.get("water", 0)
+
+    if tier:
+        flour_g = tier["flour_g"]
+
+        if tier.get("yeast_g") is not None:
+            yeast_pct = tier["yeast_g"] / flour_g * Decimal("100")
+
+        if tier.get("water_g") is not None:
+            water_pct = tier["water_g"] / flour_g * Decimal("100")
+
+    return premix_pct, yeast_pct, water_pct
+
 PRODUCTION_CATALOG_SEED = [
     # ---------------- BAKERY (baker's percentage formulas) ----------------
+    # Batch cards captured from the bakery floor:
+    #   12.5 kg flour -> premix 1.875 kg (15%), yeast 60 g, water 7.5 L
+    #   10 kg -> premix 1.500 kg, yeast 50 g, water 7 L
+    #    8 kg -> premix 1.200 kg, yeast 45 g, water 6 L
+    #    6 kg -> yeast 40 g | 5 kg -> 30 g | 4 kg -> 25 g | 3 kg -> 20 g
+    # Tiers carry the shop's exact quantities; the percentage lines
+    # are the fallback for custom batch sizes.
     {
         "industry": "Bakery", "category": "Bread & Rolls",
         "product_name": "Portuguese Roll 120g", "product_uom": "roll",
@@ -547,9 +678,25 @@ PRODUCTION_CATALOG_SEED = [
             "target_baked_weight_g": 120, "bake_loss_pct": 12,
             "ingredients": [
                 {"key": "flour", "label": "Cake flour", "pct": 100},
-                {"key": "premix", "label": "Galitos premix", "pct": 10},
-                {"key": "yeast", "label": "Instant yeast", "pct": 1.5},
+                {"key": "premix", "label": "Galitos premix", "pct": 15},
+                {"key": "yeast", "label": "Instant yeast", "pct": 0.5},
                 {"key": "water", "label": "Process water", "pct": 60},
+            ],
+            "batch_tiers": [
+                {"key": "12.5kg", "flour_kg": 12.5, "yeast_g": 60,
+                 "water_l": 7.5, "label": "12.5 kg bag batch"},
+                {"key": "10kg", "flour_kg": 10, "yeast_g": 50,
+                 "water_l": 7.0, "label": "10 kg batch"},
+                {"key": "8kg", "flour_kg": 8, "yeast_g": 45,
+                 "water_l": 6.0, "label": "8 kg batch"},
+                {"key": "6kg", "flour_kg": 6, "yeast_g": 40,
+                 "label": "6 kg batch"},
+                {"key": "5kg", "flour_kg": 5, "yeast_g": 30,
+                 "label": "5 kg batch"},
+                {"key": "4kg", "flour_kg": 4, "yeast_g": 25,
+                 "label": "4 kg batch"},
+                {"key": "3kg", "flour_kg": 3, "yeast_g": 20,
+                 "label": "3 kg batch"},
             ],
         },
         "default_yield_percent": 88,
@@ -562,9 +709,25 @@ PRODUCTION_CATALOG_SEED = [
             "target_baked_weight_g": 75, "bake_loss_pct": 12,
             "ingredients": [
                 {"key": "flour", "label": "Cake flour", "pct": 100},
-                {"key": "premix", "label": "Galitos premix", "pct": 10},
-                {"key": "yeast", "label": "Instant yeast", "pct": 1.5},
+                {"key": "premix", "label": "Galitos premix", "pct": 15},
+                {"key": "yeast", "label": "Instant yeast", "pct": 0.5},
                 {"key": "water", "label": "Process water", "pct": 60},
+            ],
+            "batch_tiers": [
+                {"key": "12.5kg", "flour_kg": 12.5, "yeast_g": 60,
+                 "water_l": 7.5, "label": "12.5 kg bag batch"},
+                {"key": "10kg", "flour_kg": 10, "yeast_g": 50,
+                 "water_l": 7.0, "label": "10 kg batch"},
+                {"key": "8kg", "flour_kg": 8, "yeast_g": 45,
+                 "water_l": 6.0, "label": "8 kg batch"},
+                {"key": "6kg", "flour_kg": 6, "yeast_g": 40,
+                 "label": "6 kg batch"},
+                {"key": "5kg", "flour_kg": 5, "yeast_g": 30,
+                 "label": "5 kg batch"},
+                {"key": "4kg", "flour_kg": 4, "yeast_g": 25,
+                 "label": "4 kg batch"},
+                {"key": "3kg", "flour_kg": 3, "yeast_g": 20,
+                 "label": "3 kg batch"},
             ],
         },
         "default_yield_percent": 88,
@@ -792,6 +955,199 @@ PRODUCTION_CATALOG_SEED = [
         },
         "default_yield_percent": 95,
     },
+    # ---------------- BUTCHERY ----------------
+    {
+        "industry": "Butchery", "category": "Fresh Meat Packs",
+        "product_name": "Beef Stew Pack 1kg", "product_uom": "pack",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "beef", "label": "Beef stewing meat",
+                 "qty": 1.05, "unit": "kg", "scrap_percent": 5},
+                {"key": "tray", "label": "Butchery tray / pack",
+                 "qty": 1, "unit": "unit"},
+                {"key": "label", "label": "Product label",
+                 "qty": 1, "unit": "unit"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    {
+        "industry": "Butchery", "category": "Processed Meats",
+        "product_name": "Fresh Sausage 500g Pack", "product_uom": "pack",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "meat", "label": "Sausage meat",
+                 "qty": 0.52, "unit": "kg", "scrap_percent": 4},
+                {"key": "spice", "label": "Sausage spice mix",
+                 "qty": 15, "unit": "g"},
+                {"key": "casing", "label": "Sausage casing",
+                 "qty": 1, "unit": "unit"},
+                {"key": "tray", "label": "Butchery tray / pack",
+                 "qty": 1, "unit": "unit"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    # ---------------- HOT MEALS & KITCHEN ----------------
+    {
+        "industry": "Hot Meals & Kitchen", "category": "Plated Meals",
+        "product_name": "Pap & Wors Plate", "product_uom": "plate",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "pap", "label": "Maize meal (pap)",
+                 "qty": 0.4, "unit": "kg"},
+                {"key": "wors", "label": "Wors / sausage",
+                 "qty": 0.15, "unit": "kg"},
+                {"key": "relish", "label": "Tomato & onion relish",
+                 "qty": 0.15, "unit": "kg"},
+                {"key": "disposable", "label": "Plate & cutlery set",
+                 "qty": 1, "unit": "unit"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    # ---------------- CONFECTIONERY & CAKES ----------------
+    {
+        "industry": "Confectionery & Cakes", "category": "Cakes",
+        "product_name": "Vanilla Cake 500g", "product_uom": "cake",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "flour", "label": "Cake flour",
+                 "qty": 0.25, "unit": "kg"},
+                {"key": "sugar", "label": "Sugar",
+                 "qty": 0.2, "unit": "kg"},
+                {"key": "butter", "label": "Butter / margarine",
+                 "qty": 0.15, "unit": "kg"},
+                {"key": "eggs", "label": "Eggs",
+                 "qty": 3, "unit": "unit"},
+                {"key": "milk", "label": "Milk",
+                 "qty": 0.1, "unit": "l"},
+                {"key": "baking_powder", "label": "Baking powder",
+                 "qty": 5, "unit": "g"},
+            ],
+        },
+        "default_yield_percent": 97,
+    },
+    # ---------------- BEVERAGES ----------------
+    {
+        "industry": "Beverages", "category": "Juices & Drinks",
+        "product_name": "Fresh Orange Juice 1L", "product_uom": "bottle",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "oranges", "label": "Oranges",
+                 "qty": 1.5, "unit": "kg"},
+                {"key": "sugar", "label": "Sugar",
+                 "qty": 50, "unit": "g"},
+                {"key": "bottle", "label": "1L bottle + cap",
+                 "qty": 1, "unit": "unit"},
+            ],
+        },
+        "default_yield_percent": 98,
+    },
+    # ---------------- SOAP & DETERGENTS ----------------
+    {
+        "industry": "Soap & Detergents", "category": "Cleaning Products",
+        "product_name": "Liquid Soap 5L", "product_uom": "container",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "base", "label": "Soap base",
+                 "qty": 4, "unit": "kg"},
+                {"key": "fragrance", "label": "Fragrance oil",
+                 "qty": 50, "unit": "ml"},
+                {"key": "colour", "label": "Colourant",
+                 "qty": 20, "unit": "ml"},
+                {"key": "water", "label": "Process water",
+                 "qty": 1, "unit": "l"},
+                {"key": "container", "label": "5L container + label",
+                 "qty": 1, "unit": "unit"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    # ---------------- CANDLE MAKING ----------------
+    {
+        "industry": "Candle Making", "category": "Candles",
+        "product_name": "Candle Pack of 6", "product_uom": "pack",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "wax", "label": "Paraffin wax",
+                 "qty": 0.6, "unit": "kg"},
+                {"key": "wick", "label": "Candle wick",
+                 "qty": 6, "unit": "unit"},
+                {"key": "dye", "label": "Dye / scent",
+                 "qty": 10, "unit": "g"},
+                {"key": "pack", "label": "Retail pack",
+                 "qty": 1, "unit": "unit"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    # ---------------- METALWORK & WELDING ----------------
+    {
+        "industry": "Metalwork & Welding", "category": "Fabrication",
+        "product_name": "Burglar Bar Window Frame", "product_uom": "frame",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "tube", "label": "Square tube 25mm",
+                 "qty": 6, "unit": "m", "scrap_percent": 8},
+                {"key": "rods", "label": "Welding rods",
+                 "qty": 15, "unit": "unit"},
+                {"key": "disc", "label": "Cutting / grinding disc",
+                 "qty": 1, "unit": "unit"},
+                {"key": "paint", "label": "Enamel paint",
+                 "qty": 100, "unit": "ml"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    # ---------------- BLOCK MAKING ----------------
+    {
+        "industry": "Block Making", "category": "Blocks",
+        "product_name": "Hollow Block 140mm (per 100)",
+        "product_uom": "per100",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "cement", "label": "Cement 42.5N",
+                 "qty": 380, "unit": "kg"},
+                {"key": "river_sand", "label": "River sand",
+                 "qty": 0.7, "unit": "m3"},
+                {"key": "stone_dust", "label": "Stone dust",
+                 "qty": 0.3, "unit": "m3"},
+            ],
+        },
+        "default_yield_percent": 95,
+    },
+    # ---------------- CUSTOM (user-defined) ----------------
+    {
+        "industry": "Custom", "category": "Other",
+        "product_name": "Custom Product (define your own)",
+        "product_uom": "unit",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [],
+        },
+        "default_yield_percent": 100,
+    },
+
 ]
 
 def _parse_reporting_code(code: str) -> Tuple[Optional[str], Optional[int]]:
@@ -87349,6 +87705,362 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _run(cur2)
 
+    def list_catalog_industries(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> list[str]:
+        """
+        Distinct active industries for the "What do you want to
+        produce?" first dropdown.
+        """
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            self.ensure_production_catalog(company_id, cur=c)
+
+            c.execute(
+                f"""
+                SELECT DISTINCT industry
+                FROM {schema}.production_catalog
+                WHERE company_id = %s
+                AND is_active = TRUE
+                ORDER BY industry
+                """,
+                (int(company_id),),
+            )
+
+            rows = c.fetchall()
+            return [
+                (r["industry"] if isinstance(r, dict) else r[0])
+                for r in rows
+            ]
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def list_catalog_categories(
+        self,
+        company_id: int,
+        industry: str,
+        *,
+        cur=None,
+    ) -> list[str]:
+        """
+        Distinct active categories inside one industry.
+        """
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            self.ensure_production_catalog(company_id, cur=c)
+
+            c.execute(
+                f"""
+                SELECT DISTINCT category
+                FROM {schema}.production_catalog
+                WHERE company_id = %s
+                AND is_active = TRUE
+                AND LOWER(industry) = LOWER(%s)
+                ORDER BY category
+                """,
+                (int(company_id), str(industry or "").strip()),
+            )
+
+            rows = c.fetchall()
+            return [
+                (r["category"] if isinstance(r, dict) else r[0])
+                for r in rows
+            ]
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def list_catalog_batch_sizes(
+        self,
+        company_id: int,
+        catalog_product_id: int,
+        *,
+        cur=None,
+    ) -> list[dict]:
+        """
+        Standard production batch sizes for a catalog product
+        (from formula_meta["batch_tiers"]). Empty list for absolute
+        products - those drive the batch by unit quantity instead.
+        """
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            product = self.get_production_catalog_product(
+                company_id,
+                catalog_product_id,
+                cur=c,
+            )
+            if not product:
+                raise ValueError(
+                    f"Production catalog product not found: "
+                    f"{catalog_product_id}"
+                )
+
+            meta = product.get("formula_meta") or {}
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except Exception:
+                    meta = {}
+
+            out = []
+            for t in (meta.get("batch_tiers") or []):
+                if not isinstance(t, dict):
+                    continue
+                try:
+                    flour_kg = float(t.get("flour_kg"))
+                except Exception:
+                    continue
+
+                key = str(
+                    t.get("key") or f"{flour_kg:g}kg"
+                )
+                label = str(
+                    t.get("label")
+                    or f"{flour_kg:g} kg flour batch"
+                )
+
+                out.append(
+                    {
+                        "key": key,
+                        "label": label,
+                        "flour_kg": flour_kg,
+                        "yeast_g": t.get("yeast_g"),
+                        "water_l": t.get("water_l"),
+                    }
+                )
+
+            return out
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def update_production_catalog_product(
+        self,
+        company_id: int,
+        catalog_product_id: int,
+        *,
+        product_name=None,
+        product_uom=None,
+        formula_type=None,
+        formula_meta=None,
+        default_yield_percent=None,
+        is_active=None,
+        cur=None,
+    ) -> dict:
+        """
+        Edit any catalog product (seeded or user-created). This is
+        how a shop records its own batch cards on "Custom Product"
+        rows or corrects tier yeast / water values.
+        """
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            sets = []
+            params = []
+
+            if product_name is not None:
+                name = str(product_name).strip()
+                if not name:
+                    raise ValueError(
+                        "product_name cannot be blank"
+                    )
+                sets.append("product_name = %s")
+                params.append(name)
+
+            if product_uom is not None:
+                sets.append("product_uom = %s")
+                params.append(
+                    str(product_uom).strip() or "unit"
+                )
+
+            if formula_type is not None:
+                ft = str(formula_type).strip().lower()
+                if ft not in ("bakers_pct", "absolute"):
+                    raise ValueError(
+                        "formula_type must be 'bakers_pct' or "
+                        "'absolute'"
+                    )
+                sets.append("formula_type = %s")
+                params.append(ft)
+
+            if formula_meta is not None:
+                if not isinstance(formula_meta, dict):
+                    raise ValueError(
+                        "formula_meta must be a dict"
+                    )
+                sets.append("formula_meta = %s")
+                params.append(json.dumps(formula_meta))
+
+            if default_yield_percent is not None:
+                dyp = Decimal(str(default_yield_percent))
+                if dyp <= 0 or dyp > 100:
+                    raise ValueError(
+                        "default_yield_percent must be in (0, 100]"
+                    )
+                sets.append("default_yield_percent = %s")
+                params.append(dyp)
+
+            if is_active is not None:
+                sets.append("is_active = %s")
+                params.append(bool(is_active))
+
+            if not sets:
+                raise ValueError(
+                    "Nothing to update: pass at least one field"
+                )
+
+            params.extend(
+                [int(company_id), int(catalog_product_id)]
+            )
+
+            c.execute(
+                f"""
+                UPDATE {schema}.production_catalog
+                SET {', '.join(sets)}, updated_at = NOW()
+                WHERE company_id = %s AND id = %s
+                RETURNING *
+                """,
+                tuple(params),
+            )
+
+            row = c.fetchone()
+            if not row:
+                raise ValueError(
+                    f"Production catalog product not found: "
+                    f"{catalog_product_id}"
+                )
+
+            if isinstance(row, dict):
+                return dict(row)
+
+            cols = [d[0] for d in c.description]
+            return dict(zip(cols, row))
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def reseed_production_catalog(
+        self,
+        company_id: int,
+        *,
+        overwrite_seed_rows=False,
+        cur=None,
+    ) -> dict:
+        """
+        Make sure every seed row exists (including industries added
+        in later versions) without touching user-created rows.
+
+        overwrite_seed_rows=True also refreshes the seed rows
+        themselves (formula_meta, uom, default yield) - use this to
+        pick up corrected bakery batch cards on databases that were
+        seeded with the old percentages.
+        """
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            self.ensure_production_catalog(company_id, cur=c)
+
+            inserted = 0
+
+            for item in PRODUCTION_CATALOG_SEED:
+                meta_json = json.dumps(
+                    item.get("formula_meta") or {}
+                )
+                dyp = Decimal(str(
+                    item.get("default_yield_percent") or 100
+                ))
+
+                if overwrite_seed_rows:
+                    c.execute(
+                        f"""
+                        INSERT INTO {schema}.production_catalog (
+                            company_id, industry, category,
+                            product_name, product_uom,
+                            formula_type, formula_meta,
+                            default_yield_percent
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (company_id, industry,
+                                     category, product_name)
+                        DO UPDATE SET
+                            product_uom = EXCLUDED.product_uom,
+                            formula_type = EXCLUDED.formula_type,
+                            formula_meta = EXCLUDED.formula_meta,
+                            default_yield_percent =
+                                EXCLUDED.default_yield_percent,
+                            is_active = TRUE,
+                            updated_at = NOW()
+                        """,
+                        (
+                            int(company_id),
+                            item["industry"],
+                            item["category"],
+                            item["product_name"],
+                            item.get("product_uom") or "unit",
+                            item.get("formula_type") or "absolute",
+                            meta_json,
+                            dyp,
+                        ),
+                    )
+                else:
+                    c.execute(
+                        f"""
+                        INSERT INTO {schema}.production_catalog (
+                            company_id, industry, category,
+                            product_name, product_uom,
+                            formula_type, formula_meta,
+                            default_yield_percent
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (company_id, industry,
+                                     category, product_name)
+                        DO NOTHING
+                        """,
+                        (
+                            int(company_id),
+                            item["industry"],
+                            item["category"],
+                            item["product_name"],
+                            item.get("product_uom") or "unit",
+                            item.get("formula_type") or "absolute",
+                            meta_json,
+                            dyp,
+                        ),
+                    )
+                    inserted += int(c.rowcount or 0)
+
+            return {
+                "status": "ok",
+                "seed_rows": len(PRODUCTION_CATALOG_SEED),
+                "rows_inserted": inserted,
+                "overwrite_seed_rows": bool(overwrite_seed_rows),
+            }
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
     def get_production_catalog_product(
         self,
         company_id: int,
@@ -87521,6 +88233,7 @@ class DatabaseService:
         catalog_product_id: int,
         *,
         batch_flour_g=None,
+        batch_key=None,
         batch_qty=None,
         item_map=None,
         units=None,
@@ -87601,11 +88314,21 @@ class DatabaseService:
                         "ingredients"
                     )
 
-                if batch_flour_g is None or _bpe_d(batch_flour_g) <= 0:
+                tier = None
+                if batch_key:
+                    tier = resolve_batch_tier(meta, batch_key)
+                    flour_g = tier["flour_g"]
+                elif (
+                    batch_flour_g is not None
+                    and _bpe_d(batch_flour_g) > 0
+                ):
+                    flour_g = _bpe_d(batch_flour_g)
+                else:
                     raise ValueError(
-                        "batch_flour_g is required for baker's "
-                        "percentage products (batch flour mass in "
-                        "grams)"
+                        "batch_key (standard batch size) or "
+                        "batch_flour_g (custom flour mass in "
+                        "grams) is required for baker's "
+                        "percentage products"
                     )
 
                 pct_by_key = {}
@@ -87628,14 +88351,20 @@ class DatabaseService:
                     if k not in ("flour", "premix", "yeast", "water")
                 }
 
+                (
+                    eff_premix_pct,
+                    eff_yeast_pct,
+                    eff_water_pct,
+                ) = resolve_bakers_pcts(meta, pct_by_key, tier)
+
                 recipe = calculate_bakers_percentage_recipe(
                     target_baked_weight_g=target,
                     bake_loss_pct=meta.get("bake_loss_pct", 0),
-                    premix_pct=pct_by_key.get("premix", 0),
-                    yeast_pct=pct_by_key.get("yeast", 0),
-                    water_pct=pct_by_key.get("water", 0),
+                    premix_pct=eff_premix_pct,
+                    yeast_pct=eff_yeast_pct,
+                    water_pct=eff_water_pct,
                     extra_ingredients_pct=extras,
-                    batch_flour_g=batch_flour_g,
+                    batch_flour_g=flour_g,
                 )
 
                 yield_percent = Decimal(str(
@@ -87677,6 +88406,13 @@ class DatabaseService:
                     "expected_good_output": (
                         recipe["expected_good_rolls"]
                     ),
+                    "batch_key": (
+                        tier["key"] if tier is not None else None
+                    ),
+                    "batch_label": (
+                        tier["label"] if tier is not None else None
+                    ),
+                    "batch_flour_g": float(flour_g),
                 }
 
             else:
@@ -87824,6 +88560,7 @@ class DatabaseService:
         catalog_product_id: int,
         *,
         batch_flour_g=None,
+        batch_key=None,
         batch_qty=None,
         item_map=None,
         units=None,
@@ -87865,6 +88602,7 @@ class DatabaseService:
                 company_id,
                 catalog_product_id,
                 batch_flour_g=batch_flour_g,
+                batch_key=batch_key,
                 batch_qty=batch_qty,
                 item_map=item_map,
                 units=units,
@@ -101634,6 +102372,7 @@ class DatabaseService:
         menu_item_id: int,
         *,
         batch_flour_g=None,
+        batch_key=None,
         batch_qty=None,
         item_map=None,
         units=None,
@@ -101711,6 +102450,20 @@ class DatabaseService:
                 if k not in ("flour", "premix", "yeast", "water")
             }
 
+            tier = None
+            flour_for_batch = None
+            if batch_key:
+                tier = resolve_batch_tier(meta, batch_key)
+                flour_for_batch = tier["flour_g"]
+            elif batch_flour_g is not None:
+                flour_for_batch = _bpe_d(batch_flour_g)
+
+            (
+                eff_premix_pct,
+                eff_yeast_pct,
+                eff_water_pct,
+            ) = resolve_bakers_pcts(meta, pct_by_key, tier)
+
             payload = build_pos_recipe_payload_from_bakers_percent(
                 recipe_name=str(
                     recipe_name or product["product_name"]
@@ -101721,11 +102474,11 @@ class DatabaseService:
                 wastage_percent=wastage_percent,
                 target_baked_weight_g=target,
                 bake_loss_pct=meta.get("bake_loss_pct", 0),
-                premix_pct=pct_by_key.get("premix", 0),
-                yeast_pct=pct_by_key.get("yeast", 0),
-                water_pct=pct_by_key.get("water", 0),
+                premix_pct=eff_premix_pct,
+                yeast_pct=eff_yeast_pct,
+                water_pct=eff_water_pct,
                 extra_ingredients_pct=extras,
-                batch_flour_g=batch_flour_g,
+                batch_flour_g=flour_for_batch,
             )
 
         else:
