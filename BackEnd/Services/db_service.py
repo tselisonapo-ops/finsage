@@ -86364,136 +86364,136 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _run(cur2)
             
-        def recalculate_manufacturing_bom_standard_cost(
-            self,
-            company_id: int,
-            bom_id: int,
-            *,
-            cur=None,
-        ) -> dict:
-            """
-            Rolls materials + labour + direct costs + overheads into the BOM
-            header's standard costs. Call after any BOM save.
-            """
-            schema = self.company_schema(company_id)
+    def recalculate_manufacturing_bom_standard_cost(
+        self,
+        company_id: int,
+        bom_id: int,
+        *,
+        cur=None,
+    ) -> dict:
+        """
+        Rolls materials + labour + direct costs + overheads into the BOM
+        header's standard costs. Call after any BOM save.
+        """
+        schema = self.company_schema(company_id)
 
-            def _scalar(c, sql, params):
-                c.execute(sql, params)
-                r = c.fetchone()
-                return Decimal(str((r["total"] if isinstance(r, dict) else r[0]) or 0))
+        def _scalar(c, sql, params):
+            c.execute(sql, params)
+            r = c.fetchone()
+            return Decimal(str((r["total"] if isinstance(r, dict) else r[0]) or 0))
 
-            def _run(c):
-                c.execute(
-                    f"""
-                    SELECT batch_qty FROM {schema}.manufacturing_boms
-                    WHERE company_id = %s AND id = %s
-                    FOR UPDATE
-                    """,
-                    (company_id, int(bom_id)),
-                )
-                row = c.fetchone()
-                if not row:
-                    raise ValueError(f"BOM not found: {bom_id}")
+        def _run(c):
+            c.execute(
+                f"""
+                SELECT batch_qty FROM {schema}.manufacturing_boms
+                WHERE company_id = %s AND id = %s
+                FOR UPDATE
+                """,
+                (company_id, int(bom_id)),
+            )
+            row = c.fetchone()
+            if not row:
+                raise ValueError(f"BOM not found: {bom_id}")
 
-                batch_qty = Decimal(str(
-                    row["batch_qty"] if isinstance(row, dict) else row[0]
-                ))
+            batch_qty = Decimal(str(
+                row["batch_qty"] if isinstance(row, dict) else row[0]
+            ))
 
-                # Materials — includes scrap allowance, consistent with
-                # how create_manufacturing_order scales planned quantities
-                material_cost = _scalar(
-                    c,
-                    f"""
-                    SELECT COALESCE(SUM(
-                        quantity * (1 + scrap_percent / 100) * unit_cost
-                    ), 0) AS total
-                    FROM {schema}.manufacturing_bom_lines
-                    WHERE company_id = %s AND bom_id = %s
-                    """,
-                    (company_id, int(bom_id)),
-                )
+            # Materials — includes scrap allowance, consistent with
+            # how create_manufacturing_order scales planned quantities
+            material_cost = _scalar(
+                c,
+                f"""
+                SELECT COALESCE(SUM(
+                    quantity * (1 + scrap_percent / 100) * unit_cost
+                ), 0) AS total
+                FROM {schema}.manufacturing_bom_lines
+                WHERE company_id = %s AND bom_id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
 
-                labour_cost = _scalar(
-                    c,
-                    f"""
-                    SELECT COALESCE(SUM(COALESCE(labour_cost, hours * rate, 0)), 0) AS total
-                    FROM {schema}.manufacturing_bom_labour
-                    WHERE company_id = %s AND bom_id = %s
-                    """,
-                    (company_id, int(bom_id)),
-                )
+            labour_cost = _scalar(
+                c,
+                f"""
+                SELECT COALESCE(SUM(COALESCE(labour_cost, hours * rate, 0)), 0) AS total
+                FROM {schema}.manufacturing_bom_labour
+                WHERE company_id = %s AND bom_id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
 
-                direct_cost = _scalar(
-                    c,
-                    f"""
-                    SELECT COALESCE(SUM(COALESCE(amount, 0)), 0) AS total
-                    FROM {schema}.manufacturing_bom_direct_costs
-                    WHERE company_id = %s AND bom_id = %s
-                    """,
-                    (company_id, int(bom_id)),
-                )
+            direct_cost = _scalar(
+                c,
+                f"""
+                SELECT COALESCE(SUM(COALESCE(amount, 0)), 0) AS total
+                FROM {schema}.manufacturing_bom_direct_costs
+                WHERE company_id = %s AND bom_id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
 
-                overhead_cost = _scalar(
-                    c,
-                    f"""
-                    SELECT COALESCE(SUM(COALESCE(allocated_amount, quantity * rate, 0)), 0) AS total
-                    FROM {schema}.manufacturing_bom_overhead
-                    WHERE company_id = %s AND bom_id = %s
-                    """,
-                    (company_id, int(bom_id)),
-                )
+            overhead_cost = _scalar(
+                c,
+                f"""
+                SELECT COALESCE(SUM(COALESCE(allocated_amount, quantity * rate, 0)), 0) AS total
+                FROM {schema}.manufacturing_bom_overhead
+                WHERE company_id = %s AND bom_id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
 
-                Q2 = Decimal("0.01")
-                Q6 = Decimal("0.000001")
-                material_cost = material_cost.quantize(Q2)
-                labour_cost = labour_cost.quantize(Q2)
-                direct_cost = direct_cost.quantize(Q2)
-                overhead_cost = overhead_cost.quantize(Q2)
+            Q2 = Decimal("0.01")
+            Q6 = Decimal("0.000001")
+            material_cost = material_cost.quantize(Q2)
+            labour_cost = labour_cost.quantize(Q2)
+            direct_cost = direct_cost.quantize(Q2)
+            overhead_cost = overhead_cost.quantize(Q2)
 
-                total_cost = (
-                    material_cost + labour_cost + direct_cost + overhead_cost
-                ).quantize(Q2)
+            total_cost = (
+                material_cost + labour_cost + direct_cost + overhead_cost
+            ).quantize(Q2)
 
-                unit_cost = (
-                    (total_cost / batch_qty).quantize(Q6)
-                    if batch_qty > 0 else Decimal("0")
-                )
+            unit_cost = (
+                (total_cost / batch_qty).quantize(Q6)
+                if batch_qty > 0 else Decimal("0")
+            )
 
-                c.execute(
-                    f"""
-                    UPDATE {schema}.manufacturing_boms
-                    SET
-                        standard_material_cost = %s,
-                        standard_labour_cost   = %s,
-                        standard_direct_cost   = %s,
-                        standard_overhead_cost = %s,
-                        standard_total_cost    = %s,
-                        standard_unit_cost     = %s,
-                        updated_at = NOW()
-                    WHERE company_id = %s AND id = %s
-                    """,
-                    (
-                        material_cost, labour_cost, direct_cost,
-                        overhead_cost, total_cost, unit_cost,
-                        company_id, int(bom_id),
-                    ),
-                )
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_boms
+                SET
+                    standard_material_cost = %s,
+                    standard_labour_cost   = %s,
+                    standard_direct_cost   = %s,
+                    standard_overhead_cost = %s,
+                    standard_total_cost    = %s,
+                    standard_unit_cost     = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s
+                """,
+                (
+                    material_cost, labour_cost, direct_cost,
+                    overhead_cost, total_cost, unit_cost,
+                    company_id, int(bom_id),
+                ),
+            )
 
-                return {
-                    "bom_id": int(bom_id),
-                    "material_cost": float(material_cost),
-                    "labour_cost": float(labour_cost),
-                    "direct_cost": float(direct_cost),
-                    "overhead_cost": float(overhead_cost),
-                    "total_cost": float(total_cost),
-                    "unit_cost": float(unit_cost),
-                }
+            return {
+                "bom_id": int(bom_id),
+                "material_cost": float(material_cost),
+                "labour_cost": float(labour_cost),
+                "direct_cost": float(direct_cost),
+                "overhead_cost": float(overhead_cost),
+                "total_cost": float(total_cost),
+                "unit_cost": float(unit_cost),
+            }
 
-            if cur is not None:
-                return _run(cur)
+        if cur is not None:
+            return _run(cur)
 
-            with self._conn_cursor() as (conn, cur2):
-                return _run(cur2)
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
 
     def replace_manufacturing_bom_lines(
         self,
