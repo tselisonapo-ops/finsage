@@ -31,7 +31,7 @@ import string
 import sqlparse
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 from decimal import InvalidOperation
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 from datetime import date as _date
@@ -211,6 +211,588 @@ def _is_cash_bank_tb_row(r: Dict[str, Any]) -> bool:
 
 def normalize_invoice_candidate(s: str) -> str:
     return s.upper().replace(" ", "").replace("_", "-")
+
+# ────────────────────────────────────────────────────────────────
+# BAKER'S PERCENTAGE ENGINE (flour = 100%) + unit helpers.
+# Used by the production catalog ("What do you want to produce?")
+# for BOM preview/creation, and reusable for POS recipes.
+#
+# Reference (Galitos 120g roll, 12% bake loss, 10% premix, 1.5%
+# yeast, 60% water; flour LSL120/12.5kg, premix LSL800/5kg,
+# yeast LSL68.75/500g):
+#   factor 1.715 | raw dough 136.3636g | flour 79.5123g
+#   premix 7.9512g | yeast 1.1927g | water 47.7074g | LSL 2.20/roll
+#   12.5kg batch -> 178.6458 nominal rolls -> 157.2083 good rolls
+#   1,000 rolls -> 79.51kg flour = 6 full 12.5kg bags + 4.51kg loose
+#
+# ANTI-DOUBLE-COUNT RULE:
+#   BOM batch_qty = NOMINAL output (raw dough mass / baked weight)
+#   yield_percent = 100 - bake loss (e.g. 88 for 12% oven loss)
+#   If line quantities were already hand-inflated for bake loss,
+#   leave yield_percent = 100 on that BOM. Never apply loss twice.
+# ────────────────────────────────────────────────────────────────
+
+def _bpe_d(value, default="0"):
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return Decimal(default)
+
+
+def _bpe_f(dec):
+    return float(Decimal(str(dec)).quantize(Decimal("0.0001")))
+
+
+def _qty_in_unit(grams: Decimal, unit: str) -> Decimal:
+    """
+    Convert a gram quantity into the requested BOM line unit.
+
+    Mass units: g, kg, t.
+    Water bridge (1 g = 1 ml = 0.001 l): ml, l.
+    """
+    u = str(unit or "g").strip().lower()
+    table = {
+        "g": Decimal("1"), "gram": Decimal("1"), "grams": Decimal("1"),
+        "kg": Decimal("0.001"), "kgs": Decimal("0.001"),
+        "kilogram": Decimal("0.001"), "kilograms": Decimal("0.001"),
+        "t": Decimal("0.000001"), "ton": Decimal("0.000001"),
+        "tons": Decimal("0.000001"), "tonne": Decimal("0.000001"),
+        "tonnes": Decimal("0.000001"),
+        "ml": Decimal("1"), "milliliter": Decimal("1"),
+        "milliliters": Decimal("1"), "millilitre": Decimal("1"),
+        "millilitres": Decimal("1"),
+        "l": Decimal("0.001"), "lt": Decimal("0.001"),
+        "ltr": Decimal("0.001"), "liter": Decimal("0.001"),
+        "liters": Decimal("0.001"), "litre": Decimal("0.001"),
+        "litres": Decimal("0.001"),
+    }
+    factor = table.get(u)
+    if factor is None:
+        raise ValueError(
+            f"Unsupported recipe line unit '{unit}' -- "
+            f"use g / kg / t / ml / l"
+        )
+    return grams * factor
+
+
+def calculate_bakers_percentage_recipe(
+    *,
+    target_baked_weight_g,
+    bake_loss_pct=12.0,
+    premix_pct=10.0,
+    yeast_pct=1.5,
+    water_pct=60.0,
+    extra_ingredients_pct=None,
+    batch_flour_g=None,
+    target_roll_qty=None,
+    flour_pack_size_g=None,
+    ingredient_costs=None,
+):
+    """
+    Baker's-percentage calculation engine.
+
+    Step A: total formula factor = 1 + sum(ingredient % of flour).
+    Step B: raw dough per roll = target / (1 - bake loss).
+    Step C: flour per roll = raw dough / factor (the 100% anchor).
+    Step D: every other ingredient = flour per roll x its %.
+
+    Modes (exactly one of the two batch drivers, or neither):
+        batch_flour_g   -> 'batch' mode: known flour mass scaled out.
+        target_roll_qty -> 'order' mode: reverse-engineer ingredients
+                           for a wanted number of GOOD baked units.
+        neither         -> 'unit' mode: per-roll figures only.
+    """
+    target = _bpe_d(target_baked_weight_g)
+    if target <= 0:
+        raise ValueError("target_baked_weight_g must be greater than zero")
+
+    bake_loss = _bpe_d(bake_loss_pct)
+    if bake_loss < 0 or bake_loss >= 100:
+        raise ValueError("bake_loss_pct must be in [0, 100)")
+
+    pcts = {"flour": Decimal("100")}
+    for key, val in (
+        ("premix", premix_pct),
+        ("yeast", yeast_pct),
+        ("water", water_pct),
+    ):
+        p = _bpe_d(val)
+        if p < 0:
+            raise ValueError(f"{key}_pct cannot be negative")
+        pcts[key] = p
+    for key, val in (extra_ingredients_pct or {}).items():
+        p = _bpe_d(val)
+        if p < 0:
+            raise ValueError(
+                f"extra ingredient '{key}' pct cannot be negative"
+            )
+        pcts[str(key).strip().lower()] = p
+
+    total_factor = sum(pcts.values()) / Decimal("100")
+    yield_percent = Decimal("100") - bake_loss
+
+    raw_dough_per_roll = target / (
+        Decimal("1") - bake_loss / Decimal("100")
+    )
+    flour_per_roll = raw_dough_per_roll / total_factor
+
+    per_roll = {
+        k: (flour_per_roll * p / Decimal("100"))
+        for k, p in pcts.items()
+        if k != "flour"
+    }
+
+    if batch_flour_g is not None and target_roll_qty is not None:
+        raise ValueError(
+            "Provide EITHER batch_flour_g OR target_roll_qty, not both"
+        )
+
+    if batch_flour_g is not None:
+        mode = "batch"
+        batch_flour = _bpe_d(batch_flour_g)
+        if batch_flour <= 0:
+            raise ValueError("batch_flour_g must be greater than zero")
+        total_dough = batch_flour * total_factor
+        nominal_batch_qty = total_dough / target
+        expected_good_rolls = (
+            nominal_batch_qty * yield_percent / Decimal("100")
+        )
+    elif target_roll_qty is not None:
+        mode = "order"
+        good_rolls = _bpe_d(target_roll_qty)
+        if good_rolls <= 0:
+            raise ValueError("target_roll_qty must be greater than zero")
+        expected_good_rolls = good_rolls
+        nominal_batch_qty = good_rolls / (yield_percent / Decimal("100"))
+        total_dough = nominal_batch_qty * target
+        batch_flour = total_dough / total_factor
+    else:
+        mode = "unit"
+        batch_flour = None
+        total_dough = None
+        nominal_batch_qty = None
+        expected_good_rolls = None
+
+    per_batch = None
+    if batch_flour is not None:
+        per_batch = {
+            k: (batch_flour * p / Decimal("100"))
+            for k, p in pcts.items()
+        }
+
+    flour_supply = None
+    if batch_flour is not None and flour_pack_size_g:
+        pack = _bpe_d(flour_pack_size_g)
+        if pack <= 0:
+            raise ValueError("flour_pack_size_g must be greater than zero")
+        full_packs = int(batch_flour // pack)
+        loose = batch_flour - full_packs * pack
+        packs_to_open = int(
+            (batch_flour / pack).to_integral_value(rounding=ROUND_CEILING)
+        )
+        flour_supply = {
+            "pack_size_g": _bpe_f(pack),
+            "full_packs": full_packs,
+            "loose_g": _bpe_f(loose),
+            "packs_to_open": packs_to_open,
+        }
+
+    material_cost = None
+    if ingredient_costs:
+        price_per_g = {}
+        for key, cfg in ingredient_costs.items():
+            k = str(key).strip().lower()
+            pp = _bpe_d((cfg or {}).get("pack_price"))
+            ps = _bpe_d((cfg or {}).get("pack_size_g"))
+            if pp < 0 or ps <= 0:
+                raise ValueError(
+                    f"ingredient_costs['{key}'] needs pack_price and a "
+                    f"positive pack_size_g"
+                )
+            price_per_g[k] = pp / ps
+
+        cost_per_roll = flour_per_roll * price_per_g.get(
+            "flour", Decimal("0")
+        )
+        for k, qty in per_roll.items():
+            cost_per_roll += qty * price_per_g.get(k, Decimal("0"))
+
+        material_cost = {
+            "per_roll": _bpe_f(cost_per_roll.quantize(Decimal("0.0001")))
+        }
+        if per_batch is not None:
+            cost_per_batch = Decimal("0")
+            for k, qty in per_batch.items():
+                cost_per_batch += qty * price_per_g.get(k, Decimal("0"))
+            material_cost["per_batch"] = _bpe_f(
+                cost_per_batch.quantize(Decimal("0.0001"))
+            )
+
+    return {
+        "mode": mode,
+        "total_formula_factor": _bpe_f(total_factor),
+        "bake_loss_pct": _bpe_f(bake_loss),
+        "yield_percent": _bpe_f(yield_percent),
+        "finished_roll_weight_g": _bpe_f(target),
+        "raw_dough_per_roll_g": _bpe_f(raw_dough_per_roll),
+        "flour_per_roll_g": _bpe_f(flour_per_roll),
+        "per_roll_grams": {k: _bpe_f(v) for k, v in per_roll.items()},
+        "batch_flour_g": (
+            _bpe_f(batch_flour) if batch_flour is not None else None
+        ),
+        "total_dough_g": (
+            _bpe_f(total_dough) if total_dough is not None else None
+        ),
+        "nominal_batch_qty": (
+            _bpe_f(nominal_batch_qty)
+            if nominal_batch_qty is not None
+            else None
+        ),
+        "expected_good_rolls": (
+            _bpe_f(expected_good_rolls)
+            if expected_good_rolls is not None
+            else None
+        ),
+        "per_batch_grams": (
+            {k: _bpe_f(v) for k, v in per_batch.items()}
+            if per_batch is not None
+            else None
+        ),
+        "flour_supply": flour_supply,
+        "material_cost": material_cost,
+    }
+
+
+def build_pos_recipe_payload_from_bakers_percent(
+    *,
+    recipe_name,
+    menu_item_id=None,
+    item_ids,
+    units=None,
+    wastage_percent=0.0,
+    **recipe_kwargs,
+):
+    """
+    Build a payload for the POS recipe tables (pos_recipe_headers /
+    pos_recipe_lines) with the bake loss already priced in.
+
+    POS consumption formula is:
+        ingredient_qty = (qty_required / yield_qty) * qty_sold
+                         * (1 + wastage_percent / 100)
+
+    yield_qty returned here is the LOSS-ADJUSTED good-unit count
+    (e.g. 157.2083 rolls per 12.5 kg flour batch), NOT the nominal
+    count. Entering the nominal count under-costs every sale by the
+    full bake loss (~12%).
+    """
+    recipe = calculate_bakers_percentage_recipe(**recipe_kwargs)
+    if recipe["mode"] == "unit":
+        raise ValueError(
+            "A POS recipe needs a batch basis: pass batch_flour_g or "
+            "target_roll_qty."
+        )
+
+    units = units or {}
+    lines = []
+    line_no = 0
+    for key, batch_grams in recipe["per_batch_grams"].items():
+        line_no += 1
+        k = str(key).strip().lower()
+        if k not in item_ids:
+            raise ValueError(
+                f"item_ids['{k}'] is required to build recipe line '{k}'"
+            )
+        unit = str(units.get(k, "g"))
+        qty = _qty_in_unit(Decimal(str(batch_grams)), unit).quantize(
+            Decimal("0.0001")
+        )
+        lines.append(
+            {
+                "line_no": line_no,
+                "ingredient_item_id": int(item_ids[k]),
+                "qty_required": float(qty),
+                "qty_uom": unit,
+                "wastage_percent": float(_bpe_d(wastage_percent)),
+            }
+        )
+
+    return {
+        "recipe_name": str(recipe_name),
+        "menu_item_id": (
+            int(menu_item_id) if menu_item_id is not None else None
+        ),
+        "yield_qty": recipe["expected_good_rolls"],
+        "yield_uom": "roll",
+        "notes": (
+            f"Baker's % engine: factor {recipe['total_formula_factor']}, "
+            f"bake loss {recipe['bake_loss_pct']}% "
+            f"(raw dough {recipe['raw_dough_per_roll_g']} g -> "
+            f"{recipe['finished_roll_weight_g']} g baked)."
+        ),
+        "lines": lines,
+        "recipe_breakdown": recipe,
+    }
+
+
+# Seed for the "What do you want to produce?" catalog. Seeded per
+# company schema on first use (ensure_production_catalog). All of it
+# is editable/addable per company via create_production_catalog_product.
+PRODUCTION_CATALOG_SEED = [
+    # ---------------- BAKERY (baker's percentage formulas) ----------------
+    {
+        "industry": "Bakery", "category": "Bread & Rolls",
+        "product_name": "Portuguese Roll 120g", "product_uom": "roll",
+        "formula_type": "bakers_pct",
+        "formula_meta": {
+            "target_baked_weight_g": 120, "bake_loss_pct": 12,
+            "ingredients": [
+                {"key": "flour", "label": "Cake flour", "pct": 100},
+                {"key": "premix", "label": "Galitos premix", "pct": 10},
+                {"key": "yeast", "label": "Instant yeast", "pct": 1.5},
+                {"key": "water", "label": "Process water", "pct": 60},
+            ],
+        },
+        "default_yield_percent": 88,
+    },
+    {
+        "industry": "Bakery", "category": "Bread & Rolls",
+        "product_name": "Portuguese Roll 75g", "product_uom": "roll",
+        "formula_type": "bakers_pct",
+        "formula_meta": {
+            "target_baked_weight_g": 75, "bake_loss_pct": 12,
+            "ingredients": [
+                {"key": "flour", "label": "Cake flour", "pct": 100},
+                {"key": "premix", "label": "Galitos premix", "pct": 10},
+                {"key": "yeast", "label": "Instant yeast", "pct": 1.5},
+                {"key": "water", "label": "Process water", "pct": 60},
+            ],
+        },
+        "default_yield_percent": 88,
+    },
+    {
+        "industry": "Bakery", "category": "Bread & Rolls",
+        "product_name": "Hot Dog Roll 85g", "product_uom": "roll",
+        "formula_type": "bakers_pct",
+        "formula_meta": {
+            "target_baked_weight_g": 85, "bake_loss_pct": 12,
+            "ingredients": [
+                {"key": "flour", "label": "Bread flour", "pct": 100},
+                {"key": "yeast", "label": "Instant yeast", "pct": 1.5},
+                {"key": "sugar", "label": "Sugar", "pct": 6},
+                {"key": "oil", "label": "Cooking oil", "pct": 5},
+                {"key": "salt", "label": "Salt", "pct": 1.5},
+                {"key": "water", "label": "Process water", "pct": 58},
+            ],
+        },
+        "default_yield_percent": 88,
+    },
+    {
+        "industry": "Bakery", "category": "Scones & Pastries",
+        "product_name": "Scone 60g", "product_uom": "scone",
+        "formula_type": "bakers_pct",
+        "formula_meta": {
+            "target_baked_weight_g": 60, "bake_loss_pct": 10,
+            "ingredients": [
+                {"key": "flour", "label": "Cake flour", "pct": 100},
+                {"key": "sugar", "label": "Sugar", "pct": 18},
+                {"key": "butter", "label": "Butter / margarine", "pct": 22},
+                {"key": "milk", "label": "Milk", "pct": 48},
+                {"key": "baking_powder", "label": "Baking powder", "pct": 3.5},
+            ],
+        },
+        "default_yield_percent": 90,
+    },
+    {
+        "industry": "Bakery", "category": "Breads",
+        "product_name": "White Bread Loaf 700g", "product_uom": "loaf",
+        "formula_type": "bakers_pct",
+        "formula_meta": {
+            "target_baked_weight_g": 700, "bake_loss_pct": 12,
+            "ingredients": [
+                {"key": "flour", "label": "Bread flour", "pct": 100},
+                {"key": "yeast", "label": "Instant yeast", "pct": 1.5},
+                {"key": "sugar", "label": "Sugar", "pct": 4},
+                {"key": "oil", "label": "Cooking oil", "pct": 3},
+                {"key": "salt", "label": "Salt", "pct": 1.8},
+                {"key": "water", "label": "Process water", "pct": 60},
+            ],
+        },
+        "default_yield_percent": 88,
+    },
+    # ---------------- CARPENTRY (absolute per-unit formulas) ----------------
+    {
+        "industry": "Carpentry", "category": "Furniture",
+        "product_name": "Kitchen Chair", "product_uom": "chair",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "pine_plank", "label": "Pine plank 38x114 (3.0m)",
+                 "qty": 2.5, "unit": "m", "scrap_percent": 10},
+                {"key": "wood_screws", "label": "Wood screws 40mm",
+                 "qty": 24, "unit": "unit"},
+                {"key": "wood_glue", "label": "Wood glue",
+                 "qty": 40, "unit": "ml"},
+                {"key": "sandpaper", "label": "Sandpaper sheet",
+                 "qty": 2, "unit": "sheet"},
+                {"key": "varnish", "label": "Clear varnish",
+                 "qty": 150, "unit": "ml"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    {
+        "industry": "Carpentry", "category": "Furniture",
+        "product_name": "Dining Table 6-Seater", "product_uom": "table",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "pine_plank", "label": "Pine plank 38x114 (3.0m)",
+                 "qty": 12, "unit": "m", "scrap_percent": 10},
+                {"key": "wood_screws", "label": "Wood screws 40mm",
+                 "qty": 60, "unit": "unit"},
+                {"key": "wood_glue", "label": "Wood glue",
+                 "qty": 150, "unit": "ml"},
+                {"key": "varnish", "label": "Clear varnish",
+                 "qty": 500, "unit": "ml"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    {
+        "industry": "Carpentry", "category": "Furniture",
+        "product_name": "Wardrobe 2-Door", "product_uom": "wardrobe",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "board", "label": "Supawood board 16mm",
+                 "qty": 18, "unit": "m", "scrap_percent": 8},
+                {"key": "hinges", "label": "Cabinet hinge",
+                 "qty": 4, "unit": "unit"},
+                {"key": "handles", "label": "Door handle",
+                 "qty": 2, "unit": "unit"},
+                {"key": "screws", "label": "Screws assorted",
+                 "qty": 120, "unit": "unit"},
+                {"key": "varnish", "label": "Clear varnish",
+                 "qty": 750, "unit": "ml"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    # ---------------- CLOTHING (absolute per-unit formulas) ----------------
+    {
+        "industry": "Clothing & Tailoring", "category": "Uniforms",
+        "product_name": "School Uniform Shirt", "product_uom": "shirt",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "fabric", "label": "Shirt fabric",
+                 "qty": 1.2, "unit": "m", "scrap_percent": 12},
+                {"key": "thread", "label": "Sewing thread",
+                 "qty": 50, "unit": "m"},
+                {"key": "buttons", "label": "Button 15mm",
+                 "qty": 8, "unit": "unit"},
+                {"key": "size_label", "label": "Size label",
+                 "qty": 1, "unit": "unit"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    {
+        "industry": "Clothing & Tailoring", "category": "Dresses",
+        "product_name": "Ladies Dress", "product_uom": "dress",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "fabric", "label": "Dress fabric",
+                 "qty": 2.5, "unit": "m", "scrap_percent": 12},
+                {"key": "thread", "label": "Sewing thread",
+                 "qty": 80, "unit": "m"},
+                {"key": "zip", "label": "Zip 40cm",
+                 "qty": 1, "unit": "unit"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    {
+        "industry": "Clothing & Tailoring", "category": "T-Shirts",
+        "product_name": "Basic T-Shirt", "product_uom": "tshirt",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "fabric", "label": "Cotton jersey",
+                 "qty": 0.8, "unit": "m", "scrap_percent": 10},
+                {"key": "thread", "label": "Sewing thread",
+                 "qty": 30, "unit": "m"},
+                {"key": "neck_rib", "label": "Neck ribbing",
+                 "qty": 0.7, "unit": "m"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    # ---------------- FOOTWEAR (absolute per-unit formulas) ----------------
+    {
+        "industry": "Footwear", "category": "Shoes",
+        "product_name": "Leather School Shoe", "product_uom": "pair",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "leather", "label": "Upper leather",
+                 "qty": 0.35, "unit": "m2", "scrap_percent": 8},
+                {"key": "sole", "label": "Injected sole",
+                 "qty": 1, "unit": "unit"},
+                {"key": "thread", "label": "Nylon thread",
+                 "qty": 40, "unit": "m"},
+                {"key": "shoe_glue", "label": "Contact glue",
+                 "qty": 60, "unit": "ml"},
+                {"key": "eyelets", "label": "Eyelet",
+                 "qty": 8, "unit": "unit"},
+            ],
+        },
+        "default_yield_percent": 100,
+    },
+    # ---------------- BRICK-MAKING (per 1,000 bricks, 5% breakage) ----------
+    {
+        "industry": "Brick-Making", "category": "Bricks",
+        "product_name": "Stock Brick (per 1,000)", "product_uom": "pallet",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "cement", "label": "Cement 42.5N",
+                 "qty": 42, "unit": "kg"},
+                {"key": "river_sand", "label": "River sand",
+                 "qty": 0.45, "unit": "m3"},
+                {"key": "stone_dust", "label": "Stone dust",
+                 "qty": 0.2, "unit": "m3"},
+            ],
+        },
+        "default_yield_percent": 95,
+    },
+    {
+        "industry": "Brick-Making", "category": "Bricks",
+        "product_name": "Maxi Brick (per 1,000)", "product_uom": "pallet",
+        "formula_type": "absolute",
+        "formula_meta": {
+            "batch_basis": "units",
+            "ingredients": [
+                {"key": "cement", "label": "Cement 42.5N",
+                 "qty": 65, "unit": "kg"},
+                {"key": "river_sand", "label": "River sand",
+                 "qty": 0.6, "unit": "m3"},
+                {"key": "stone_dust", "label": "Stone dust",
+                 "qty": 0.3, "unit": "m3"},
+            ],
+        },
+        "default_yield_percent": 95,
+    },
+]
 
 def _parse_reporting_code(code: str) -> Tuple[Optional[str], Optional[int]]:
     """
@@ -52889,6 +53471,7 @@ class DatabaseService:
 
             batch_qty NUMERIC(18,4) NOT NULL DEFAULT 1,
             batch_unit TEXT NULL,
+            yield_percent NUMERIC(9,4) NOT NULL DEFAULT 100.0000,
 
             status TEXT NOT NULL DEFAULT 'draft',
 
@@ -52909,6 +53492,11 @@ class DatabaseService:
             CHECK (batch_qty > 0),
 
             CHECK (
+                yield_percent > 0
+                AND yield_percent <= 100
+            ),
+
+            CHECK (
                 status IN (
                     'draft',
                     'active',
@@ -52922,6 +53510,10 @@ class DatabaseService:
 
         ALTER TABLE {schema}.manufacturing_boms
         ADD COLUMN IF NOT EXISTS selling_price NUMERIC(18,2);
+
+        ALTER TABLE {schema}.manufacturing_boms
+        ADD COLUMN IF NOT EXISTS yield_percent
+        NUMERIC(9,4) NOT NULL DEFAULT 100.0000;
 
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_boms_company_item_idx
         ON {schema}.manufacturing_boms(company_id, item_id);
@@ -74111,7 +74703,7 @@ class DatabaseService:
         - Does NOT update lease_schedule.posted_journal_id.
         That field is reserved for monthly IFRS 16 recognition postings.
         """
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x) -> Decimal:
             return Decimal(str(x or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -74536,7 +75128,7 @@ class DatabaseService:
         lease_id: int,
         schedule_id: int,
     ):
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x) -> Decimal:
             return Decimal(str(x or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -74635,7 +75227,7 @@ class DatabaseService:
         user_id: int | None,
         schedule_id: int | None = None,
     ) -> dict:
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x) -> Decimal:
             return Decimal(str(x or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -81555,7 +82147,7 @@ class DatabaseService:
         return header
 
     def post_pos_summary_to_gl(self, company_id: int, summary_id: int, jlines: list[dict]) -> int:
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
         from datetime import date
 
         def money(x) -> float:
@@ -81685,7 +82277,7 @@ class DatabaseService:
         desc: str,
         cur,
     ) -> None:
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x) -> float:
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -82508,7 +83100,7 @@ class DatabaseService:
         if not inv or not isinstance(inv, dict):
             return
 
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x) -> float:
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -84286,7 +84878,7 @@ class DatabaseService:
 
         NOTE: Update journal table name/columns if your schema differs.
         """
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
         from datetime import date as _date
 
         def money(x) -> float:
@@ -84364,7 +84956,7 @@ class DatabaseService:
         Idempotent by inventory_tx.posted_journal_id
         MUST be called inside the SAME DB transaction as receipt creation.
         """
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x) -> float:
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -84581,7 +85173,7 @@ class DatabaseService:
         bill: dict,
     ) -> list[dict]:
 
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x):
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -84697,7 +85289,7 @@ class DatabaseService:
         bill: dict,
         cur
     ) -> list[dict]:
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x):
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -84891,7 +85483,7 @@ class DatabaseService:
         Updates inventory_layers.qty_out and writes inventory_fifo_allocations rows.
         Returns total_cost consumed.
         """
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x):
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -85373,7 +85965,7 @@ class DatabaseService:
         - Creates inventory_tx_lines
         - Posts GL Journal: Dr Write-Down / Loss Expense, Cr Inventory Asset
         """
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x) -> float:
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -85703,6 +86295,7 @@ class DatabaseService:
         name: str,
         batch_qty=1,
         batch_unit=None,
+        yield_percent=100.0,
         description=None,
         version_no=1,
         effective_from=None,
@@ -85740,6 +86333,15 @@ class DatabaseService:
         if batch_qty <= 0:
             raise ValueError("BOM batch quantity must be greater than zero")
 
+        yield_percent = Decimal(
+            str(yield_percent if yield_percent is not None else 100)
+        )
+
+        if yield_percent <= 0 or yield_percent > 100:
+            raise ValueError(
+                "BOM yield percent must be greater than 0 and at most 100"
+            )
+
         sql = f"""
             INSERT INTO {schema}.manufacturing_boms (
                 company_id,
@@ -85751,6 +86353,7 @@ class DatabaseService:
                 version_no,
                 batch_qty,
                 batch_unit,
+                yield_percent,
                 status,
                 effective_from,
                 effective_to,
@@ -85761,7 +86364,7 @@ class DatabaseService:
             )
             VALUES (
                 %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, 'draft',
+                %s, %s, %s, %s, 'draft',
                 %s, %s, %s, TRUE,
                 %s, %s
             )
@@ -85778,6 +86381,7 @@ class DatabaseService:
             int(version_no or 1),
             batch_qty,
             batch_unit,
+            yield_percent,
             effective_from,
             effective_to,
             bool(is_default),
@@ -86392,7 +86996,8 @@ class DatabaseService:
         def _run(c):
             c.execute(
                 f"""
-                SELECT batch_qty FROM {schema}.manufacturing_boms
+                SELECT batch_qty, yield_percent
+                FROM {schema}.manufacturing_boms
                 WHERE company_id = %s AND id = %s
                 FOR UPDATE
                 """,
@@ -86402,9 +87007,18 @@ class DatabaseService:
             if not row:
                 raise ValueError(f"BOM not found: {bom_id}")
 
-            batch_qty = Decimal(str(
-                row["batch_qty"] if isinstance(row, dict) else row[0]
-            ))
+            if isinstance(row, dict):
+                batch_qty = Decimal(str(row["batch_qty"] or 0))
+                _yp = row.get("yield_percent")
+            else:
+                batch_qty = Decimal(str(row[0] or 0))
+                _yp = row[1]
+
+            yield_percent = (
+                Decimal(str(_yp))
+                if _yp is not None
+                else Decimal("100")
+            )
 
             # Materials — includes scrap allowance, consistent with
             # how create_manufacturing_order scales planned quantities
@@ -86461,9 +87075,15 @@ class DatabaseService:
                 material_cost + labour_cost + direct_cost + overhead_cost
             ).quantize(Q2)
 
+            effective_batch_qty = (
+                batch_qty
+                * yield_percent
+                / Decimal("100")
+            )
+
             unit_cost = (
-                (total_cost / batch_qty).quantize(Q6)
-                if batch_qty > 0 else Decimal("0")
+                (total_cost / effective_batch_qty).quantize(Q6)
+                if effective_batch_qty > 0 else Decimal("0")
             )
 
             c.execute(
@@ -86494,6 +87114,8 @@ class DatabaseService:
                 "overhead_cost": float(overhead_cost),
                 "total_cost": float(total_cost),
                 "unit_cost": float(unit_cost),
+                "yield_percent": float(yield_percent),
+                "effective_batch_qty": float(effective_batch_qty),
             }
 
         if cur is not None:
@@ -86501,6 +87123,948 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur2):
             return _run(cur2)
+
+    def ensure_manufacturing_bom_yield_column(
+        self,
+        company_id,
+        *,
+        cur=None,
+    ):
+        """
+        Idempotent migration for databases created before the
+        yield_percent column existed. Existing BOMs keep yield 100,
+        i.e. behaviour is unchanged until a yield is explicitly set.
+        """
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            c.execute(
+                f"""
+                ALTER TABLE {schema}.manufacturing_boms
+                ADD COLUMN IF NOT EXISTS yield_percent
+                NUMERIC(9,4) NOT NULL DEFAULT 100.0000
+                """
+            )
+            return True
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def recalculate_all_manufacturing_bom_standard_costs(
+        self,
+        company_id,
+        *,
+        cur=None,
+    ):
+        """
+        Re-roll standard costs for every active BOM in the schema.
+        Run once after enabling yields, and again any time
+        yield_percent is updated in bulk (e.g. seasonal 11% vs 13%
+        bake loss changes).
+        """
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            c.execute(
+                f"""
+                SELECT id
+                FROM {schema}.manufacturing_boms
+                WHERE company_id = %s
+                AND is_active = TRUE
+                """,
+                (int(company_id),),
+            )
+            rows = c.fetchall()
+            ids = [
+                int(r["id"] if isinstance(r, dict) else r[0])
+                for r in rows
+            ]
+
+            results = []
+            for bom_id in ids:
+                results.append(
+                    self.recalculate_manufacturing_bom_standard_cost(
+                        company_id=company_id,
+                        bom_id=bom_id,
+                        cur=c,
+                    )
+                )
+            return results
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    # ────────────────────────────────────────────────────────────
+    # PRODUCTION CATALOG
+    # "What do you want to produce?" -- industry -> category ->
+    # product. Products carry either a baker's-percentage formula
+    # (flour = 100% + bake loss) or an absolute per-unit formula.
+    # The BOM form is prefilled from a catalog product via
+    # preview_bom_from_catalog, then saved through the normal
+    # create_manufacturing_bom flow (with yield_percent).
+    # ────────────────────────────────────────────────────────────
+
+    def ensure_production_catalog(
+        self,
+        company_id,
+        *,
+        cur=None,
+    ):
+        """
+        Creates the production_catalog table if missing and seeds the
+        standard industry/product list on first use per schema.
+        """
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            c.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {schema}.production_catalog (
+                    id SERIAL PRIMARY KEY,
+                    company_id INT NOT NULL DEFAULT {company_id},
+                    industry TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    product_name TEXT NOT NULL,
+                    product_uom TEXT NOT NULL DEFAULT 'unit',
+                    formula_type TEXT NOT NULL DEFAULT 'absolute',
+                    formula_meta JSONB NULL,
+                    default_yield_percent NUMERIC(9,4)
+                        NOT NULL DEFAULT 100.0000,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_by_user_id INT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (company_id, industry, category, product_name)
+                )
+                """
+            )
+
+            c.execute(
+                f"""
+                SELECT COUNT(*) AS n
+                FROM {schema}.production_catalog
+                WHERE company_id = %s
+                """,
+                (int(company_id),),
+            )
+            row = c.fetchone()
+            count = (
+                row["n"] if isinstance(row, dict) else row[0]
+            ) or 0
+
+            if int(count) == 0:
+                for item in PRODUCTION_CATALOG_SEED:
+                    c.execute(
+                        f"""
+                        INSERT INTO {schema}.production_catalog (
+                            company_id, industry, category, product_name,
+                            product_uom, formula_type, formula_meta,
+                            default_yield_percent
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (company_id, industry, category,
+                                     product_name)
+                        DO NOTHING
+                        """,
+                        (
+                            int(company_id),
+                            item["industry"],
+                            item["category"],
+                            item["product_name"],
+                            item.get("product_uom") or "unit",
+                            item.get("formula_type") or "absolute",
+                            json.dumps(
+                                item.get("formula_meta") or {}
+                            ),
+                            Decimal(str(
+                                item.get("default_yield_percent") or 100
+                            )),
+                        ),
+                    )
+
+            return True
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def list_production_catalog(
+        self,
+        company_id: int,
+        *,
+        industry=None,
+        category=None,
+        cur=None,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            self.ensure_production_catalog(company_id, cur=c)
+
+            where = ["company_id = %s", "is_active = TRUE"]
+            params = [int(company_id)]
+
+            if industry:
+                where.append("LOWER(industry) = LOWER(%s)")
+                params.append(str(industry).strip())
+
+            if category:
+                where.append("LOWER(category) = LOWER(%s)")
+                params.append(str(category).strip())
+
+            c.execute(
+                f"""
+                SELECT id, company_id, industry, category, product_name,
+                       product_uom, formula_type, formula_meta,
+                       default_yield_percent, is_active,
+                       created_at, updated_at
+                FROM {schema}.production_catalog
+                WHERE {' AND '.join(where)}
+                ORDER BY industry, category, product_name
+                """,
+                tuple(params),
+            )
+
+            rows = c.fetchall()
+            if not rows:
+                return []
+
+            if isinstance(rows[0], dict):
+                return [dict(r) for r in rows]
+
+            columns = [d[0] for d in c.description]
+            return [dict(zip(columns, r)) for r in rows]
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def get_production_catalog_product(
+        self,
+        company_id: int,
+        catalog_product_id: int,
+        *,
+        cur=None,
+    ) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            c.execute(
+                f"""
+                SELECT *
+                FROM {schema}.production_catalog
+                WHERE company_id = %s
+                AND id = %s
+                AND is_active = TRUE
+                """,
+                (int(company_id), int(catalog_product_id)),
+            )
+
+            row = c.fetchone()
+
+            if not row:
+                return None
+
+            if isinstance(row, dict):
+                return dict(row)
+
+            columns = [d[0] for d in c.description]
+            return dict(zip(columns, row))
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def create_production_catalog_product(
+        self,
+        company_id: int,
+        data: dict,
+        *,
+        created_by_user_id=None,
+        cur=None,
+    ) -> dict:
+        """
+        Add (or update) a company-specific product in the catalog so
+        users in any production industry can define reusable BOM
+        recipes. formula_type is 'bakers_pct' (flour-anchored, e.g.
+        bakery) or 'absolute' (fixed quantities per unit, e.g.
+        furniture / clothing / bricks).
+        """
+        schema = self.company_schema(company_id)
+        data = dict(data or {})
+
+        industry = str(data.get("industry") or "").strip()
+        category = str(data.get("category") or "").strip()
+        product_name = str(data.get("product_name") or "").strip()
+        formula_type = str(
+            data.get("formula_type") or "absolute"
+        ).strip().lower()
+
+        if not industry:
+            raise ValueError("industry is required")
+        if not category:
+            raise ValueError("category is required")
+        if not product_name:
+            raise ValueError("product_name is required")
+        if formula_type not in ("bakers_pct", "absolute"):
+            raise ValueError(
+                "formula_type must be 'bakers_pct' or 'absolute'"
+            )
+
+        meta = data.get("formula_meta") or {}
+        if not isinstance(meta, dict):
+            raise ValueError("formula_meta must be an object")
+
+        ings = meta.get("ingredients")
+        if not isinstance(ings, list) or not ings:
+            raise ValueError(
+                "formula_meta.ingredients must be a non-empty list"
+            )
+
+        if formula_type == "bakers_pct":
+            has_flour = any(
+                str(i.get("key") or "").strip().lower() == "flour"
+                for i in ings
+                if isinstance(i, dict)
+            )
+            if not has_flour:
+                raise ValueError(
+                    "bakers_pct formulas need a 'flour' ingredient "
+                    "at 100%"
+                )
+            if not meta.get("target_baked_weight_g"):
+                raise ValueError(
+                    "bakers_pct formulas need target_baked_weight_g"
+                )
+
+        yield_pct = Decimal(str(
+            data.get("default_yield_percent") or 100
+        ))
+        if yield_pct <= 0 or yield_pct > 100:
+            raise ValueError(
+                "default_yield_percent must be greater than 0 and at "
+                "most 100"
+            )
+
+        def _run(c):
+            self.ensure_production_catalog(company_id, cur=c)
+
+            c.execute(
+                f"""
+                INSERT INTO {schema}.production_catalog (
+                    company_id, industry, category, product_name,
+                    product_uom, formula_type, formula_meta,
+                    default_yield_percent, created_by_user_id
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (company_id, industry, category,
+                             product_name)
+                DO UPDATE SET
+                    product_uom = EXCLUDED.product_uom,
+                    formula_type = EXCLUDED.formula_type,
+                    formula_meta = EXCLUDED.formula_meta,
+                    default_yield_percent =
+                        EXCLUDED.default_yield_percent,
+                    is_active = TRUE,
+                    updated_at = NOW()
+                RETURNING id
+                """,
+                (
+                    int(company_id),
+                    industry,
+                    category,
+                    product_name,
+                    str(data.get("product_uom") or "unit"),
+                    formula_type,
+                    json.dumps(meta),
+                    yield_pct,
+                    (
+                        int(created_by_user_id)
+                        if created_by_user_id
+                        else None
+                    ),
+                ),
+            )
+
+            row = c.fetchone()
+            new_id = int(
+                row["id"] if isinstance(row, dict) else row[0]
+            )
+
+            return self.get_production_catalog_product(
+                company_id,
+                new_id,
+                cur=c,
+            )
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def preview_bom_from_catalog(
+        self,
+        company_id: int,
+        catalog_product_id: int,
+        *,
+        batch_flour_g=None,
+        batch_qty=None,
+        item_map=None,
+        units=None,
+        cur=None,
+    ) -> dict:
+        """
+        The "What do you want to produce?" calculation engine.
+
+        Takes a production catalog product plus a batch driver:
+            batch_flour_g -> for baker's-percentage products
+                             (e.g. 12500 for one 12.5 kg bag)
+            batch_qty     -> for absolute products (number of units)
+
+        and returns the scaled BOM lines ready for the BOM form.
+
+        When item_map ({ingredient key -> inventory item id}) is
+        supplied, every mapped line is costed with the authoritative
+        conversion core (_get_manufacturing_bom_standard_unit_cost)
+        and an estimated materials cost per GOOD output unit is
+        returned (good output = batch_qty x yield_percent / 100).
+
+        Nothing is written to the database.
+        """
+        schema = self.company_schema(company_id)
+        item_map = dict(item_map or {})
+        units = dict(units or {})
+
+        def _run(c):
+            self.ensure_production_catalog(company_id, cur=c)
+
+            c.execute(
+                f"""
+                SELECT *
+                FROM {schema}.production_catalog
+                WHERE company_id = %s
+                AND id = %s
+                AND is_active = TRUE
+                """,
+                (int(company_id), int(catalog_product_id)),
+            )
+
+            row = c.fetchone()
+
+            if not row:
+                raise ValueError(
+                    f"Production catalog product not found: "
+                    f"{catalog_product_id}"
+                )
+
+            if isinstance(row, dict):
+                product = dict(row)
+            else:
+                columns = [d[0] for d in c.description]
+                product = dict(zip(columns, row))
+
+            meta = product.get("formula_meta") or {}
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except Exception:
+                    meta = {}
+
+            formula_type = str(
+                product.get("formula_type") or "absolute"
+            ).strip().lower()
+
+            lines_out = []
+            recipe = None
+            yield_percent = Decimal(str(
+                product.get("default_yield_percent") or 100
+            ))
+
+            if formula_type == "bakers_pct":
+                ings = meta.get("ingredients") or []
+                if not ings:
+                    raise ValueError(
+                        "Catalog product has no baker's percentage "
+                        "ingredients"
+                    )
+
+                if batch_flour_g is None or _bpe_d(batch_flour_g) <= 0:
+                    raise ValueError(
+                        "batch_flour_g is required for baker's "
+                        "percentage products (batch flour mass in "
+                        "grams)"
+                    )
+
+                pct_by_key = {}
+                for i in ings:
+                    if not isinstance(i, dict):
+                        continue
+                    k = str(i.get("key") or "").strip().lower()
+                    pct_by_key[k] = _bpe_d(i.get("pct") or 0)
+
+                target = meta.get("target_baked_weight_g")
+                if not target or _bpe_d(target) <= 0:
+                    raise ValueError(
+                        "Catalog product missing "
+                        "target_baked_weight_g"
+                    )
+
+                extras = {
+                    k: v
+                    for k, v in pct_by_key.items()
+                    if k not in ("flour", "premix", "yeast", "water")
+                }
+
+                recipe = calculate_bakers_percentage_recipe(
+                    target_baked_weight_g=target,
+                    bake_loss_pct=meta.get("bake_loss_pct", 0),
+                    premix_pct=pct_by_key.get("premix", 0),
+                    yeast_pct=pct_by_key.get("yeast", 0),
+                    water_pct=pct_by_key.get("water", 0),
+                    extra_ingredients_pct=extras,
+                    batch_flour_g=batch_flour_g,
+                )
+
+                yield_percent = Decimal(str(
+                    recipe["yield_percent"]
+                ))
+
+                for ing in ings:
+                    if not isinstance(ing, dict):
+                        continue
+                    key = str(ing.get("key") or "").strip().lower()
+                    grams = (recipe["per_batch_grams"] or {}).get(key)
+                    if grams is None:
+                        continue
+                    unit = str(units.get(key) or "g")
+                    qty = _qty_in_unit(
+                        _bpe_d(grams), unit
+                    ).quantize(Decimal("0.0001"))
+                    lines_out.append(
+                        {
+                            "key": key,
+                            "label": ing.get("label") or key,
+                            "quantity": float(qty),
+                            "unit": unit,
+                            "base_qty": float(grams),
+                            "base_unit": "g",
+                            "scrap_percent": float(
+                                _bpe_d(ing.get("scrap_percent") or 0)
+                            ),
+                            "item_id": item_map.get(key),
+                        }
+                    )
+
+                output = {
+                    "batch_qty": recipe["nominal_batch_qty"],
+                    "batch_unit": (
+                        product.get("product_uom") or "roll"
+                    ),
+                    "yield_percent": recipe["yield_percent"],
+                    "expected_good_output": (
+                        recipe["expected_good_rolls"]
+                    ),
+                }
+
+            else:
+                if batch_qty is None or _bpe_d(batch_qty) <= 0:
+                    raise ValueError(
+                        "batch_qty is required for this product "
+                        "(number of units to produce)"
+                    )
+
+                bq = _bpe_d(batch_qty)
+                ings = meta.get("ingredients") or []
+                if not ings:
+                    raise ValueError(
+                        "Catalog product has no ingredients"
+                    )
+
+                for ing in ings:
+                    if not isinstance(ing, dict):
+                        continue
+                    key = str(ing.get("key") or "").strip().lower()
+                    per_unit = _bpe_d(ing.get("qty") or 0)
+                    unit = str(
+                        units.get(key)
+                        or ing.get("unit")
+                        or "unit"
+                    )
+                    qty = (per_unit * bq).quantize(
+                        Decimal("0.0001")
+                    )
+                    base_qty = per_unit * bq
+                    lines_out.append(
+                        {
+                            "key": key,
+                            "label": ing.get("label") or key,
+                            "quantity": float(qty),
+                            "unit": unit,
+                            "base_qty": float(base_qty),
+                            "base_unit": str(
+                                ing.get("unit") or "unit"
+                            ),
+                            "scrap_percent": float(
+                                _bpe_d(ing.get("scrap_percent") or 0)
+                            ),
+                            "item_id": item_map.get(key),
+                        }
+                    )
+
+                output = {
+                    "batch_qty": float(bq),
+                    "batch_unit": (
+                        product.get("product_uom") or "unit"
+                    ),
+                    "yield_percent": _bpe_f(yield_percent),
+                    "expected_good_output": _bpe_f(
+                        bq * yield_percent / Decimal("100")
+                    ),
+                }
+
+            # Optional costing pass through the authoritative
+            # unit-conversion core for every mapped ingredient.
+            material_total = Decimal("0")
+            unmapped = []
+
+            for line in lines_out:
+                iid = line.get("item_id")
+
+                if not iid:
+                    unmapped.append(line["key"])
+                    line["unit_cost"] = None
+                    line["line_total_cost"] = None
+                    continue
+
+                unit_cost = (
+                    self._get_manufacturing_bom_standard_unit_cost(
+                        company_id=company_id,
+                        item_id=int(iid),
+                        bom_unit=line["unit"],
+                        cur=c,
+                    )
+                )
+
+                line_total = (
+                    _bpe_d(line["quantity"])
+                    * (
+                        Decimal("1")
+                        + _bpe_d(line["scrap_percent"])
+                        / Decimal("100")
+                    )
+                    * unit_cost
+                ).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+
+                line["unit_cost"] = float(
+                    unit_cost.quantize(Decimal("0.000001"))
+                )
+                line["line_total_cost"] = float(line_total)
+                material_total += line_total
+
+            good_out = _bpe_d(
+                output.get("expected_good_output") or 0
+            )
+
+            cost_block = {
+                "material_total": float(
+                    material_total.quantize(Decimal("0.01"))
+                ),
+                "unit_cost_estimate": (
+                    float(
+                        (material_total / good_out).quantize(
+                            Decimal("0.0001")
+                        )
+                    )
+                    if good_out > 0
+                    else None
+                ),
+                "unmapped_keys": unmapped,
+            }
+
+            return {
+                "product": {
+                    "id": product.get("id"),
+                    "industry": product.get("industry"),
+                    "category": product.get("category"),
+                    "product_name": product.get("product_name"),
+                    "product_uom": product.get("product_uom"),
+                    "formula_type": product.get("formula_type"),
+                },
+                "recipe": recipe,
+                "lines": lines_out,
+                "output": output,
+                "cost": cost_block,
+            }
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
+    def create_bom_from_catalog(
+        self,
+        company_id: int,
+        catalog_product_id: int,
+        *,
+        batch_flour_g=None,
+        batch_qty=None,
+        item_map=None,
+        units=None,
+        bom_code=None,
+        name=None,
+        description=None,
+        selling_price=None,
+        create_finished_item=False,
+        finished_sku=None,
+        labour: list[dict] | None = None,
+        direct_costs: list[dict] | None = None,
+        overheads: list[dict] | None = None,
+        created_by_user_id=None,
+        cur=None,
+    ) -> dict:
+        """
+        Final step of the "What do you want to produce?" wizard.
+
+        preview_bom_from_catalog() shows the scaled recipe and cost
+        estimate; this function SAVES it as a real manufacturing BOM:
+
+            1. Re-runs the preview (same batch driver).
+            2. Requires every ingredient key to be mapped to an
+               inventory item id via item_map={key: item_id}.
+            3. Optionally creates the finished-good inventory item
+               so the output can be stocked and sold.
+            4. Creates the BOM (yield_percent carried through), rolls
+               up the standard cost and returns the authoritative
+               standard_unit_cost per GOOD output unit.
+
+        Nothing is double-counted: line quantities stay the pure
+        recipe quantities; bake loss lives in yield_percent.
+        """
+        schema = self.company_schema(company_id)
+        item_map = dict(item_map or {})
+
+        def _run(c):
+            preview = self.preview_bom_from_catalog(
+                company_id,
+                catalog_product_id,
+                batch_flour_g=batch_flour_g,
+                batch_qty=batch_qty,
+                item_map=item_map,
+                units=units,
+                cur=c,
+            )
+
+            unmapped = preview["cost"]["unmapped_keys"]
+            if unmapped:
+                raise ValueError(
+                    "Cannot save BOM: map these ingredient keys to "
+                    f"inventory item ids first: "
+                    f"{', '.join(sorted(unmapped))}"
+                )
+
+            product = preview["product"]
+            output = preview["output"]
+
+            # Deterministic default code -> a second save for the
+            # same catalog product fails loudly instead of silently
+            # duplicating.
+            code = str(
+                bom_code or f"CAT-{int(catalog_product_id)}"
+            ).strip()
+            if not code:
+                raise ValueError("BOM code is required")
+
+            c.execute(
+                f"""
+                SELECT id FROM {schema}.manufacturing_boms
+                WHERE company_id = %s
+                AND bom_code = %s
+                AND version_no = 1
+                """,
+                (int(company_id), code),
+            )
+            if c.fetchone():
+                raise ValueError(
+                    f"A BOM with code '{code}' already exists. "
+                    "Pass a different bom_code or update the "
+                    "existing BOM."
+                )
+
+            # --- optional finished-good inventory item ------------
+            finished_item_id = None
+            if create_finished_item:
+                sku = str(finished_sku or f"FG-{code}").strip()
+                c.execute(
+                    f"""
+                    SELECT id FROM {schema}.inventory_items
+                    WHERE company_id = %s
+                    AND lower(sku) = lower(%s)
+                    LIMIT 1
+                    """,
+                    (int(company_id), sku),
+                )
+                row = c.fetchone()
+                if row:
+                    finished_item_id = int(
+                        row["id"] if isinstance(row, dict) else row[0]
+                    )
+                else:
+                    finished_item_id = int(
+                        self.create_inventory_item(
+                            company_id,
+                            {
+                                "sku": sku,
+                                "name": product["product_name"],
+                                "unit": (
+                                    product.get("product_uom")
+                                    or "unit"
+                                ),
+                                "category": product.get("industry"),
+                                "sales_price": float(
+                                    selling_price or 0
+                                ),
+                                "track_stock": True,
+                                "is_active": True,
+                            },
+                            cur=c,
+                        )
+                    )
+
+            # --- BOM lines from the preview -----------------------
+            bom_lines = []
+            for line in preview["lines"]:
+                if not line.get("item_id"):
+                    continue
+                bom_lines.append(
+                    {
+                        "item_id": int(line["item_id"]),
+                        "quantity": line["quantity"],
+                        "unit": line["unit"],
+                        "scrap_percent": (
+                            line.get("scrap_percent") or 0
+                        ),
+                        "memo": f"{line['key']} - {line['label']}",
+                    }
+                )
+
+            if not bom_lines:
+                raise ValueError(
+                    "Cannot save BOM: no mappable ingredient lines"
+                )
+
+            auto_desc = (
+                f"{product['industry']} / {product['category']} - "
+                f"{product['formula_type']} formula from production "
+                f"catalog #{int(catalog_product_id)}. "
+                f"Batch {output['batch_qty']} "
+                f"{output['batch_unit']} nominal, yield "
+                f"{output['yield_percent']}% -> "
+                f"{output['expected_good_output']} good units."
+            )
+            if finished_item_id:
+                auto_desc += (
+                    f" Finished-good inventory item id: "
+                    f"{finished_item_id}."
+                )
+
+            bom_id = self.create_manufacturing_bom(
+                company_id,
+                finished_item_name=product["product_name"],
+                selling_price=selling_price or 0,
+                bom_code=code,
+                name=str(
+                    name
+                    or f"{product['product_name']} - standard BOM"
+                ),
+                batch_qty=output["batch_qty"],
+                batch_unit=output["batch_unit"],
+                yield_percent=output["yield_percent"],
+                description=str(description or auto_desc),
+                lines=bom_lines,
+                labour=labour,
+                direct_costs=direct_costs,
+                overheads=overheads,
+                created_by_user_id=created_by_user_id,
+                cur=c,
+            )
+
+            c.execute(
+                f"""
+                SELECT standard_material_cost,
+                       standard_labour_cost,
+                       standard_direct_cost,
+                       standard_overhead_cost,
+                       standard_total_cost,
+                       standard_unit_cost,
+                       batch_qty,
+                       batch_unit,
+                       yield_percent
+                FROM {schema}.manufacturing_boms
+                WHERE company_id = %s AND id = %s
+                """,
+                (int(company_id), int(bom_id)),
+            )
+            row = c.fetchone()
+            if isinstance(row, dict):
+                header = dict(row)
+            else:
+                cols = [d[0] for d in c.description]
+                header = dict(zip(cols, row))
+
+            return {
+                "bom_id": int(bom_id),
+                "bom_code": code,
+                "catalog_product_id": int(catalog_product_id),
+                "finished_item_id": finished_item_id,
+                "batch_qty": float(header["batch_qty"]),
+                "batch_unit": header["batch_unit"],
+                "yield_percent": float(header["yield_percent"]),
+                "standard_costs": {
+                    "material": float(
+                        header["standard_material_cost"] or 0
+                    ),
+                    "labour": float(
+                        header["standard_labour_cost"] or 0
+                    ),
+                    "direct": float(
+                        header["standard_direct_cost"] or 0
+                    ),
+                    "overhead": float(
+                        header["standard_overhead_cost"] or 0
+                    ),
+                    "total": float(
+                        header["standard_total_cost"] or 0
+                    ),
+                    "unit_cost": float(
+                        header["standard_unit_cost"] or 0
+                    ),
+                },
+                "lines": bom_lines,
+            }
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
 
     def replace_manufacturing_bom_lines(
         self,
@@ -86663,6 +88227,7 @@ class DatabaseService:
                     b.version_no, 
                     b.batch_qty, 
                     b.batch_unit, 
+                    b.yield_percent, 
                     b.standard_material_cost, 
                     b.standard_labour_cost, 
                     b.standard_direct_cost, 
@@ -86822,6 +88387,7 @@ class DatabaseService:
                     b.version_no,
                     b.batch_qty,
                     b.batch_unit,
+                    b.yield_percent,
                     b.status,
                     b.effective_from,
                     b.effective_to,
@@ -86871,6 +88437,7 @@ class DatabaseService:
         name=None,
         batch_qty=None,
         batch_unit=None,
+        yield_percent=None,
         description=None,
         version_no=None,
         effective_from=None,
@@ -86911,6 +88478,34 @@ class DatabaseService:
             raise ValueError("Selling price cannot be negative")
 
         def _update(c):
+            # Keep the stored yield when the caller omits it, so
+            # existing update calls never silently reset it to 100.
+            if yield_percent is None:
+                c.execute(
+                    f"""
+                    SELECT yield_percent
+                    FROM {schema}.manufacturing_boms
+                    WHERE company_id = %s AND id = %s
+                    """,
+                    (company_id, int(bom_id)),
+                )
+                yp_row = c.fetchone()
+                if yp_row:
+                    yield_percent = Decimal(str(
+                        yp_row["yield_percent"]
+                        if isinstance(yp_row, dict)
+                        else yp_row[0]
+                    ) or 100)
+                else:
+                    yield_percent = Decimal("100")
+
+            yield_percent = Decimal(str(yield_percent or 100))
+
+            if yield_percent <= 0 or yield_percent > 100:
+                raise ValueError(
+                    "BOM yield percent must be greater than 0 and at most 100"
+                )
+
             c.execute(
                 f"""
                 UPDATE {schema}.manufacturing_boms
@@ -86921,6 +88516,7 @@ class DatabaseService:
                     name = %s,
                     batch_qty = %s,
                     batch_unit = %s,
+                    yield_percent = %s,
                     description = %s,
                     version_no = %s,
                     effective_from = %s,
@@ -86938,6 +88534,7 @@ class DatabaseService:
                     name,
                     batch_qty,
                     batch_unit,
+                    yield_percent,
                     description,
                     int(version_no or 1),
                     effective_from,
@@ -89709,7 +91306,8 @@ class DatabaseService:
                     id,
                     finished_item_name,
                     batch_qty,
-                    batch_unit
+                    batch_unit,
+                    yield_percent
                 FROM {schema}.manufacturing_boms
                 WHERE company_id = %s
                 AND id = %s
@@ -89734,6 +91332,7 @@ class DatabaseService:
                     "finished_item_name": bom_row["finished_item_name"],
                     "batch_qty": bom_row["batch_qty"],
                     "batch_unit": bom_row["batch_unit"],
+                    "yield_percent": bom_row["yield_percent"],
                 }
             else:
                 bom = {
@@ -89741,6 +91340,7 @@ class DatabaseService:
                     "finished_item_name": bom_row[1],
                     "batch_qty": bom_row[2],
                     "batch_unit": bom_row[3],
+                    "yield_percent": bom_row[4],
                 }
 
             batch_qty = Decimal(
@@ -89833,7 +91433,26 @@ class DatabaseService:
 
             bom_lines = c.fetchall()
 
-            factor = planned_qty / batch_qty
+            _yp = bom.get("yield_percent")
+
+            yield_percent = (
+                Decimal(str(_yp))
+                if _yp is not None
+                else Decimal("100")
+            )
+
+            if yield_percent <= 0:
+                raise ValueError(
+                    "BOM yield percent must be greater than zero"
+                )
+
+            effective_batch_qty = (
+                batch_qty
+                * yield_percent
+                / Decimal("100")
+            )
+
+            factor = planned_qty / effective_batch_qty
 
             for line in bom_lines:
                 if isinstance(line, dict):
@@ -89957,7 +91576,8 @@ class DatabaseService:
                     mo.bom_id,
                     mo.planned_qty,
                     mo.status,
-                    b.batch_qty
+                    b.batch_qty,
+                    b.yield_percent
                 FROM {schema}.manufacturing_orders mo
                 JOIN {schema}.manufacturing_boms b
                     ON b.company_id = mo.company_id
@@ -90031,7 +91651,25 @@ class DatabaseService:
 
             bom_lines = []
 
-            factor = planned_qty / batch_qty
+            _yp = order.get("yield_percent")
+
+            yield_percent = (
+                Decimal(str(_yp))
+                if _yp is not None
+                else Decimal("100")
+            )
+
+            effective_batch_qty = (
+                batch_qty
+                * yield_percent
+                / Decimal("100")
+            )
+
+            factor = (
+                planned_qty / effective_batch_qty
+                if effective_batch_qty > 0
+                else Decimal("0")
+            )
 
             for line in rows:
                 if isinstance(line, dict):
@@ -91353,7 +92991,7 @@ class DatabaseService:
             raise ValueError("lines required")
 
         def money(x) -> float:
-            from decimal import Decimal, ROUND_HALF_UP
+            from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
             return float(
                 Decimal(str(x or 0)).quantize(
                     Decimal("0.01"),
@@ -92103,7 +93741,7 @@ class DatabaseService:
         if not isinstance(lines, list) or not lines:
             raise ValueError("lines required")
 
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x):
             return float(
@@ -99989,6 +101627,210 @@ class DatabaseService:
             conn.commit()
             return recipe_id
 
+    def create_pos_recipe_from_catalog(
+        self,
+        company_id: int,
+        catalog_product_id: int,
+        menu_item_id: int,
+        *,
+        batch_flour_g=None,
+        batch_qty=None,
+        item_map=None,
+        units=None,
+        wastage_percent=0.0,
+        recipe_code=None,
+        recipe_name=None,
+        deactivate_existing=True,
+        notes=None,
+    ) -> dict:
+        """
+        Bridges the production catalog into a POS recipe with the
+        bake loss already priced in.
+
+        The critical fix: pos_recipe_headers.yield_qty is stored as
+        the LOSS-ADJUSTED good-unit count (e.g. 157.2083 rolls from
+        a 12.5 kg flour batch), NOT the nominal count, so the POS
+        consumption formula
+
+            ingredient_qty = (qty_required / yield_qty) * qty_sold
+                             * (1 + wastage_percent / 100)
+
+        deducts the true ingredient mass per sale. Entering the
+        nominal count (178.6458) under-costs every sale by the
+        bake loss (~12%).
+        """
+        schema = self.company_schema(company_id)
+        item_map = dict(item_map or {})
+
+        product = self.get_production_catalog_product(
+            company_id, catalog_product_id
+        )
+        if not product:
+            raise ValueError(
+                f"Production catalog product not found: "
+                f"{catalog_product_id}"
+            )
+
+        meta = product.get("formula_meta") or {}
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+
+        formula_type = str(
+            product.get("formula_type") or "absolute"
+        ).strip().lower()
+
+        uom = product.get("product_uom") or "roll"
+
+        if formula_type == "bakers_pct":
+            ings = meta.get("ingredients") or []
+            if not ings:
+                raise ValueError(
+                    "Catalog product has no baker's percentage "
+                    "ingredients"
+                )
+
+            pct_by_key = {}
+            for i in ings:
+                if not isinstance(i, dict):
+                    continue
+                k = str(i.get("key") or "").strip().lower()
+                pct_by_key[k] = _bpe_d(i.get("pct") or 0)
+
+            target = meta.get("target_baked_weight_g")
+            if not target or _bpe_d(target) <= 0:
+                raise ValueError(
+                    "Catalog product missing target_baked_weight_g"
+                )
+
+            extras = {
+                k: v
+                for k, v in pct_by_key.items()
+                if k not in ("flour", "premix", "yeast", "water")
+            }
+
+            payload = build_pos_recipe_payload_from_bakers_percent(
+                recipe_name=str(
+                    recipe_name or product["product_name"]
+                ),
+                menu_item_id=int(menu_item_id),
+                item_ids=item_map,
+                units=units,
+                wastage_percent=wastage_percent,
+                target_baked_weight_g=target,
+                bake_loss_pct=meta.get("bake_loss_pct", 0),
+                premix_pct=pct_by_key.get("premix", 0),
+                yeast_pct=pct_by_key.get("yeast", 0),
+                water_pct=pct_by_key.get("water", 0),
+                extra_ingredients_pct=extras,
+                batch_flour_g=batch_flour_g,
+            )
+
+        else:
+            preview = self.preview_bom_from_catalog(
+                company_id,
+                catalog_product_id,
+                batch_qty=batch_qty,
+                item_map=item_map,
+                units=units,
+            )
+
+            unmapped = preview["cost"]["unmapped_keys"]
+            if unmapped:
+                raise ValueError(
+                    "Cannot save POS recipe: map these ingredient "
+                    "keys to inventory item ids first: "
+                    f"{', '.join(sorted(unmapped))}"
+                )
+
+            payload = {
+                "recipe_name": str(
+                    recipe_name or product["product_name"]
+                ),
+                "menu_item_id": int(menu_item_id),
+                "yield_qty": _bpe_d(
+                    preview["output"]["expected_good_output"]
+                ),
+                "yield_uom": uom,
+                "notes": (
+                    f"Absolute formula from production catalog "
+                    f"#{int(catalog_product_id)}."
+                ),
+                "lines": [
+                    {
+                        "ingredient_item_id": int(ln["item_id"]),
+                        "qty_required": float(ln["quantity"]),
+                        "qty_uom": ln["unit"],
+                    }
+                    for ln in preview["lines"]
+                    if ln.get("item_id")
+                ],
+            }
+
+        if not payload["lines"]:
+            raise ValueError(
+                "Cannot save POS recipe: no mappable ingredient "
+                "lines"
+            )
+
+        payload["yield_uom"] = uom
+        payload["recipe_code"] = str(
+            recipe_code or f"RC-CAT-{int(catalog_product_id)}"
+        )
+        payload["notes"] = (
+            f"{payload.get('notes') or ''} {notes or ''}"
+        ).strip()
+
+        if deactivate_existing:
+            with self._conn_cursor() as (conn, cur):
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.pos_recipe_headers
+                    SET is_active = FALSE
+                    WHERE company_id = %s
+                    AND menu_item_id = %s
+                    AND is_active = TRUE
+                    """,
+                    (int(company_id), int(menu_item_id)),
+                )
+                conn.commit()
+
+        recipe_id = self.pos_create_recipe(
+            company_id,
+            {
+                "menu_item_id": payload["menu_item_id"],
+                "recipe_code": payload["recipe_code"],
+                "recipe_name": payload["recipe_name"],
+                "yield_qty": float(payload["yield_qty"]),
+                "yield_uom": payload["yield_uom"],
+                "is_active": True,
+                "notes": payload["notes"],
+                "lines": [
+                    {
+                        "ingredient_item_id": ln["ingredient_item_id"],
+                        "qty_required": ln["qty_required"],
+                        "uom": ln.get("qty_uom") or ln.get("uom"),
+                        "wastage_percent": ln.get(
+                            "wastage_percent", 0
+                        ),
+                    }
+                    for ln in payload["lines"]
+                ],
+            }
+        )
+
+        return {
+            "recipe_id": int(recipe_id),
+            "menu_item_id": int(menu_item_id),
+            "yield_qty": float(payload["yield_qty"]),
+            "yield_uom": payload["yield_uom"],
+            "line_count": len(payload["lines"]),
+            "notes": payload["notes"],
+        }
+
+
     def pos_list_recipes(self, company_id: int) -> list[dict]:
         schema = self.company_schema(company_id)
 
@@ -105124,7 +106966,7 @@ class DatabaseService:
         - store POSTING codes in bill_lines.account_code
         """
 
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x) -> float:
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -105504,7 +107346,7 @@ class DatabaseService:
         - other is added after discount allocation
         - VAT computed on discounted vatable net (other does NOT affect VAT)
         """
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x) -> float:
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -109718,7 +111560,7 @@ class DatabaseService:
         ar_account=None,
         cur=None,
     ) -> int:
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
         from datetime import date as _date
 
         def money(x) -> float:
@@ -120107,7 +121949,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         return base
 
     def asset_tax_calculate_run(self, company_id: int, run_id: int) -> dict:
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
         import json
 
         schema = self.company_schema(company_id)
@@ -134781,7 +136623,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         currency: str = "USD",
         cur=None,
     ) -> dict:
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         def money(x):
             return float(
@@ -134915,7 +136757,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         billing_amount=0,
         cur=None,
     ) -> dict:
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         schema = self.company_schema(company_id)
 
@@ -137203,7 +139045,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         entries: list[dict],
         cur=None,
     ) -> list[dict]:
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         acct = self.resolve_ifrs15_accounts(company_id, cur=cur, strict=True)
 
@@ -148003,7 +149845,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         usage_type = (usage_type or "consumed").strip().lower()
 
         def money(x) -> float:
-            from decimal import Decimal, ROUND_HALF_UP
+            from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
         def _to_int(v, default=None):
@@ -148611,7 +150453,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         usage_type = (usage_type or "consumed").strip().lower()
         
         def money(x) -> float:
-            from decimal import Decimal, ROUND_HALF_UP
+            from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         
         def _to_int(v, default=None):
@@ -148912,7 +150754,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ref = f"PMR-{int(project_id)}-{tx_date}".strip()
         
         def money(x) -> float:
-            from decimal import Decimal, ROUND_HALF_UP
+            from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         
         def _to_int(v, default=None):
@@ -149143,7 +150985,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ref = (ref or f"PMR-{int(project_id)}-{tx_date}").strip()
 
         def money(x) -> float:
-            from decimal import Decimal, ROUND_HALF_UP
+            from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
         def _to_int(v, default=None):
@@ -149697,7 +151539,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         - Revenue recognition remains controlled by the IFRS 15 module.
         """
 
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
         from datetime import date as _date
         from psycopg2.extras import Json
 
@@ -150275,7 +152117,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         company_id: int,
         item_id: int,
     ):
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         schema = self.company_schema(company_id)
 
@@ -154743,7 +156585,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ), fetchone=True)
         
     def _money2(self, v, default=0):
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
         if v is None or v == "":
             v = default
         return Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -188897,7 +190739,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         user_id: int | None = None,
     ) -> dict:
         from datetime import date
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
         ZERO = Decimal("0.00")
 

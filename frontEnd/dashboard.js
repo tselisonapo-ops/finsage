@@ -1,4 +1,4 @@
-(function hardTraceRedirects() {
+﻿(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -4777,6 +4777,12 @@ const ENDPOINTS = {
 
     bomLines: (cid, bomId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/boms/${encodeURIComponent(bomId)}/lines`,
+
+    productionCatalog: (cid, qs = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/production-catalog${qs ? `?${qs}` : ""}`,
+
+    bomPreviewFromCatalog: (cid) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/boms/preview-from-catalog`,
 
     orders: (cid, qs = "") =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders${qs ? `?${qs}` : ""}`,
@@ -125728,19 +125734,14 @@ async function ensureManufacturingItemCache() {
 
   window._MFG_ITEM_CACHE = {
     loaded: true,
-    items: (data?.rows || data?.items || []).map(r => ({
-      ...r,
+    items: (data?.rows || []).map(r => ({
       id: Number(r.id),
       sku: r.sku || "",
       name: r.name || "",
-      unit: r.unit || r.stock_unit || r.uom || "",
+      unit: r.unit || r.stock_unit || "",
       track_stock: !!r.track_stock
     }))
   };
-
-  // Expose the same array under the legacy `rows` key so every
-  // consumer (rows vs items) sees a populated cache.
-  window._MFG_ITEM_CACHE.rows = window._MFG_ITEM_CACHE.items;
 
   return window._MFG_ITEM_CACHE.items;
 }
@@ -125764,12 +125765,9 @@ function showManufacturingMsg(text = "", kind = "info") {
 }
 
 function manufacturingItemOptions(selectedId = "") {
-  const cache = window._MFG_ITEM_CACHE;
-  const items = Array.isArray(cache?.rows) && cache.rows.length
-    ? cache.rows
-    : Array.isArray(cache?.items)
-      ? cache.items
-      : [];
+  const items = Array.isArray(window._MFG_ITEM_CACHE?.rows)
+    ? window._MFG_ITEM_CACHE.rows
+    : [];
 
   const sid = String(selectedId || "");
 
@@ -126009,11 +126007,15 @@ function renderManufacturingBoms(rows) {
     </div>
   `;
 
-  // NOTE: "Open" clicks are handled exclusively by the delegated
-  // listener on the manufacturing mount (bindManufacturingUI).
-  // Do NOT bind direct per-button listeners here — that made every
-  // click fire openManufacturingBomDefinitionModal() twice, which
-  // fired the BOM GET twice and duplicated every modal row.
+  mount.querySelectorAll("[data-mfg-bom]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const bomId = Number(btn.dataset.mfgBom || 0);
+
+      if (bomId) {
+        openManufacturingBomDefinitionModal(bomId);
+      }
+    });
+  });
 }
 
 /* ==========================================================================
@@ -126105,6 +126107,55 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
         <div class="p-6">
           <div id="mfgBomDefinitionMsg"></div>
 
+          <!-- WHAT DO YOU WANT TO PRODUCE? -->
+          <div class="border rounded-lg p-4 mb-5 bg-slate-50">
+            <div class="font-semibold text-sm text-slate-900 mb-1">What do you want to produce?</div>
+            <div class="text-xs text-slate-500 mb-3">
+              Pick your industry, then the product. The BOM form below fills itself with the standard recipe and quantities.
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1 font-medium">Industry</div>
+                <select id="mfgCatalogIndustry"
+                        class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- Select industry --</option>
+                </select>
+              </label>
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1 font-medium">Category</div>
+                <select id="mfgCatalogCategory" disabled
+                        class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- Select category --</option>
+                </select>
+              </label>
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1 font-medium">Product</div>
+                <select id="mfgCatalogProduct" disabled
+                        class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- Select product --</option>
+                </select>
+              </label>
+              <label class="text-xs">
+                <div id="mfgCatalogBasisLabel" class="text-slate-600 mb-1 font-medium">Batch size</div>
+                <input id="mfgCatalogBasisQty" type="number" min="0" step="0.0001"
+                       class="w-full border rounded px-2 py-2 text-sm"
+                       placeholder="e.g. 12.5">
+              </label>
+            </div>
+            <div class="flex items-center gap-2 mt-3 flex-wrap">
+              <button type="button" id="mfgCatalogApplyBtn"
+                      class="px-3 py-1.5 bg-slate-800 text-white rounded text-xs hover:bg-slate-700 font-medium">
+                Fill BOM from product
+              </button>
+              <button type="button" id="mfgCatalogCostPreviewBtn"
+                      class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">
+                Cost preview
+              </button>
+              <div id="mfgCatalogMsg" class="text-xs text-slate-600"></div>
+            </div>
+            <div id="mfgCatalogCostBox" class="hidden mt-3 border rounded bg-white px-3 py-2 text-xs"></div>
+          </div>
+
           <!-- BOM HEADER FORM -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label class="text-xs">
@@ -126150,6 +126201,14 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
                      class="w-full border rounded px-3 py-2 text-sm"
                      value="unit"
                      placeholder="unit / piece / kg">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1 font-medium">Yield % (e.g. 88 = 12% bake/process loss)</div>
+              <input id="mfgBomDefinitionYieldPercent" type="number"
+                     min="0.0001" max="100" step="0.0001"
+                     class="w-full border rounded px-3 py-2 text-sm font-semibold text-slate-800"
+                     value="100">
             </label>
 
             <label class="text-xs md:col-span-2">
@@ -126341,27 +126400,15 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     document.getElementById("mfgBomAddOverheadBtn")?.addEventListener("click", () => addMfgBomOverheadRow());
     document.getElementById("mfgBomDefinitionSaveBtn")?.addEventListener("click", saveManufacturingBomDefinition);
 
+    document.getElementById("mfgCatalogIndustry")?.addEventListener("change", onMfgCatalogIndustryChange);
+    document.getElementById("mfgCatalogCategory")?.addEventListener("change", onMfgCatalogCategoryChange);
+    document.getElementById("mfgCatalogProduct")?.addEventListener("change", onMfgCatalogProductChange);
+    document.getElementById("mfgCatalogApplyBtn")?.addEventListener("click", applyCatalogProductToBomForm);
+    document.getElementById("mfgCatalogCostPreviewBtn")?.addEventListener("click", previewCatalogBomCost);
+
     modal.addEventListener("input", handleMfgBomModalInput);
     modal.addEventListener("change", handleMfgBomModalInput);
   }
-
-  // ------------------------------------------------------------
-  // Re-entrancy & stale-load protection.
-  // One click used to reach this function twice (delegated +
-  // direct handlers), firing the BOM GET twice and appending
-  // every material/labour row twice. Only the first invocation
-  // may load; a newer open supersedes older in-flight loads.
-  // ------------------------------------------------------------
-  if (modal.dataset.loading === "1") return;
-
-  modal.dataset.loading = "1";
-
-  const loadToken =
-    (window.__MFG_BOM_LOAD_SEQ =
-      (window.__MFG_BOM_LOAD_SEQ || 0) + 1);
-
-  const isCurrentLoad = () =>
-    window.__MFG_BOM_LOAD_SEQ === loadToken;
 
   modal.dataset.bomId = String(bomId || 0);
 
@@ -126372,6 +126419,8 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
   document.getElementById("mfgBomDefinitionBatchQty").value = "1";
   document.getElementById("mfgBomDefinitionBatchUnit").value = "unit";
   document.getElementById("mfgBomDefinitionDescription").value = "";
+  document.getElementById("mfgBomDefinitionYieldPercent").value = "100";
+  resetCatalogPicker();
 
   document.getElementById("mfgBomDefinitionLinesTbody").innerHTML = "";
   document.getElementById("mfgBomLabourTbody").innerHTML = "";
@@ -126397,17 +126446,8 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     ]);
 
     const inventoryItems =
-      inventoryData?.rows || inventoryData?.items || inventoryData?.data || inventoryData || [];
-    const itemRows = Array.isArray(inventoryItems) ? inventoryItems : [];
-
-    // Merge instead of clobber: keep whatever shape other screens
-    // expect (`items`) and populate the `rows` key this modal reads.
-    window._MFG_ITEM_CACHE = {
-      ...(window._MFG_ITEM_CACHE || {}),
-      loaded: true,
-      rows: itemRows,
-      items: itemRows
-    };
+      inventoryData?.items || inventoryData?.data || inventoryData?.rows || inventoryData || [];
+    window._MFG_ITEM_CACHE = { rows: Array.isArray(inventoryItems) ? inventoryItems : [] };
 
     const payrollEmployees =
       payrollRes?.items || payrollRes?.data || payrollRes || [];
@@ -126420,10 +126460,8 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       assets: Array.isArray(assets) ? assets : []
     };
 
-    // A newer open superseded this load — discard it silently.
-    if (!isCurrentLoad()) return;
-
     if (!bomId) {
+      await loadProductionCatalogPicker(cid);
       addManufacturingBomDefinitionLine();
       addMfgBomLabourRow();
       addMfgBomDirectCostRow();
@@ -126433,10 +126471,6 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     }
 
     const data = await apiFetch(ENDPOINTS.manufacturing.bom(cid, bomId));
-
-    // A newer open superseded this load — discard it silently.
-    if (!isCurrentLoad()) return;
-
     if (!data?.ok || !data?.bom) throw new Error(data?.error || "Unable to load BOM");
 
     const bom = data.bom;
@@ -126446,200 +126480,447 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     document.getElementById("mfgBomDefinitionSellingPrice").value = bom.selling_price ?? "";
     document.getElementById("mfgBomDefinitionBatchQty").value = bom.batch_qty ?? "1";
     document.getElementById("mfgBomDefinitionBatchUnit").value = bom.batch_unit ?? "unit";
+    document.getElementById("mfgBomDefinitionYieldPercent").value = bom.yield_percent ?? 100;
     document.getElementById("mfgBomDefinitionDescription").value = bom.description ?? "";
 
-    // Start the row tables from a clean slate right before appending,
-    // so a partially-rendered stale load can never combine with this
-    // one (this is what produced the duplicate rows).
-    document.getElementById("mfgBomDefinitionLinesTbody").innerHTML = "";
-    document.getElementById("mfgBomLabourTbody").innerHTML = "";
-    document.getElementById("mfgBomDirectTbody").innerHTML = "";
-    document.getElementById("mfgBomOverheadTbody").innerHTML = "";
-
-    mfgDedupeRows(
-      bom.lines,
-      ["item_id", "material_item_id", "inventory_item_id", "itemId",
-        "qty", "quantity", "unit_cost", "cost", "scrap_pct", "scrap_percent"]
-    ).forEach(l => addManufacturingBomDefinitionLine(l));
-    mfgDedupeRows(
-      bom.labour,
-      ["employee_id", "employee_name", "role", "hours", "hourly_rate", "cost"]
-    ).forEach(r => addMfgBomLabourRow(r));
-    mfgDedupeRows(
-      bom.direct_costs,
-      ["description", "name", "amount", "cost"]
-    ).forEach(r => addMfgBomDirectCostRow(r));
-    mfgDedupeRows(
-      bom.overheads,
-      ["description", "name", "amount", "cost"]
-    ).forEach(r => addMfgBomOverheadRow(r));
+    (bom.lines || []).forEach(l => addManufacturingBomDefinitionLine(l));
+    (bom.labour || []).forEach(r => addMfgBomLabourRow(r));
+    (bom.direct_costs || []).forEach(r => addMfgBomDirectCostRow(r));
+    (bom.overheads || []).forEach(r => addMfgBomOverheadRow(r));
 
     recalcMfgBomTotals();
   } catch (err) {
-    if (!isCurrentLoad()) return;
-
     console.error("[Manufacturing BOM] failed to load:", err);
     document.getElementById("mfgBomDefinitionMsg").innerHTML = `
       <div class="mb-3 border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2 text-xs">
         ${esc(err?.message || "Unable to load manufacturing BOM.")}
       </div>
     `;
-  } finally {
-    if (isCurrentLoad()) {
-      modal.dataset.loading = "0";
+  }
+}
+
+// --------------------------------------------------------------------------
+// 1b. "WHAT DO YOU WANT TO PRODUCE?" CATALOG PICKER
+// Industry -> Category -> Product. Fills the BOM form from the
+// production catalog (baker's-% recipes for bakery, absolute
+// per-unit recipes for furniture / clothing / footwear / bricks).
+// --------------------------------------------------------------------------
+
+const __MFG_CATALOG = { products: [], loaded: false };
+
+function mfgCatalogSetMsg(text, isError = false) {
+  const box = document.getElementById("mfgCatalogMsg");
+  if (!box) return;
+  box.textContent = text || "";
+  box.className = `text-xs ${isError ? "text-red-600" : "text-slate-600"}`;
+}
+
+function resetCatalogPicker() {
+  const ind = document.getElementById("mfgCatalogIndustry");
+  const cat = document.getElementById("mfgCatalogCategory");
+  const prod = document.getElementById("mfgCatalogProduct");
+  const qty = document.getElementById("mfgCatalogBasisQty");
+  const costBox = document.getElementById("mfgCatalogCostBox");
+
+  if (ind) ind.value = "";
+  if (cat) { cat.value = ""; cat.disabled = true; }
+  if (prod) { prod.value = ""; prod.disabled = true; }
+  if (qty) qty.value = "";
+  if (costBox) costBox.classList.add("hidden");
+  mfgCatalogSetMsg("");
+}
+
+async function loadProductionCatalogPicker(cid) {
+  try {
+    if (__MFG_CATALOG.loaded) {
+      onMfgCatalogIndustryChange();
+      return;
     }
+
+    mfgCatalogSetMsg("Loading product catalog...");
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.productionCatalog(cid)
+    );
+    if (!data?.ok) throw new Error(data?.error || "Unable to load catalog");
+
+    __MFG_CATALOG.products = data.products || [];
+    __MFG_CATALOG.loaded = true;
+
+    const ind = document.getElementById("mfgCatalogIndustry");
+    if (ind) {
+      ind.innerHTML =
+        `<option value="">-- Select industry --</option>` +
+        (data.industries || [])
+          .map(i => `<option value="${esc(i)}">${esc(i)}</option>`)
+          .join("");
+    }
+    onMfgCatalogIndustryChange();
+    mfgCatalogSetMsg("");
+  } catch (err) {
+    mfgCatalogSetMsg(
+      `Catalog unavailable: ${err?.message || err}`,
+      true
+    );
+  }
+}
+
+function onMfgCatalogIndustryChange() {
+  const industry =
+    document.getElementById("mfgCatalogIndustry")?.value || "";
+  const cat = document.getElementById("mfgCatalogCategory");
+  const prod = document.getElementById("mfgCatalogProduct");
+  if (!cat || !prod) return;
+
+  const categories = [...new Set(
+    __MFG_CATALOG.products
+      .filter(p => !industry || p.industry === industry)
+      .map(p => p.category)
+  )].sort();
+
+  cat.innerHTML =
+    `<option value="">-- Select category --</option>` +
+    categories
+      .map(c => `<option value="${esc(c)}">${esc(c)}</option>`)
+      .join("");
+  cat.disabled = !industry || categories.length === 0;
+
+  prod.innerHTML = `<option value="">-- Select product --</option>`;
+  prod.disabled = true;
+}
+
+function onMfgCatalogCategoryChange() {
+  const industry =
+    document.getElementById("mfgCatalogIndustry")?.value || "";
+  const category =
+    document.getElementById("mfgCatalogCategory")?.value || "";
+  const prod = document.getElementById("mfgCatalogProduct");
+  if (!prod) return;
+
+  const products = __MFG_CATALOG.products.filter(
+    p =>
+      (!industry || p.industry === industry) &&
+      (!category || p.category === category)
+  );
+
+  prod.innerHTML =
+    `<option value="">-- Select product --</option>` +
+    products
+      .map(p => `<option value="${esc(p.id)}">${esc(p.product_name)}</option>`)
+      .join("");
+  prod.disabled = products.length === 0;
+}
+
+function getSelectedCatalogProduct() {
+  const pid = Number(
+    document.getElementById("mfgCatalogProduct")?.value || 0
+  );
+  if (!pid) return null;
+  return (
+    __MFG_CATALOG.products.find(p => Number(p.id) === pid) || null
+  );
+}
+
+function onMfgCatalogProductChange() {
+  const product = getSelectedCatalogProduct();
+  const qtyLabel = document.getElementById("mfgCatalogBasisLabel");
+  const qtyInput = document.getElementById("mfgCatalogBasisQty");
+  if (!product || !qtyLabel || !qtyInput) return;
+
+  if (product.formula_type === "bakers_pct") {
+    qtyLabel.textContent = "Batch flour (kg)";
+    qtyInput.placeholder = "e.g. 12.5";
+    if (!qtyInput.value) qtyInput.value = "12.5";
+  } else {
+    qtyLabel.textContent = `How many units? (${product.product_uom || "unit"})`;
+    qtyInput.placeholder = "e.g. 50";
+    if (!qtyInput.value) qtyInput.value = "10";
+  }
+}
+
+function catalogBasisPayload() {
+  const product = getSelectedCatalogProduct();
+  if (!product) {
+    throw new Error(
+      "Select an industry, category and product first."
+    );
+  }
+
+  const raw = Number(
+    document.getElementById("mfgCatalogBasisQty")?.value || 0
+  );
+  if (!(raw > 0)) {
+    throw new Error(
+      "Enter the batch size for the selected product."
+    );
+  }
+
+  const body = { catalog_product_id: Number(product.id) };
+  if (product.formula_type === "bakers_pct") {
+    body.batch_flour_g = raw * 1000;
+  } else {
+    body.batch_qty = raw;
+  }
+  return body;
+}
+
+function mfgCatalogItemMapFromForm() {
+  const map = {};
+  document
+    .querySelectorAll("#mfgBomDefinitionLinesTbody tr")
+    .forEach(tr => {
+      const sel = tr.querySelector(".mfg-line-item");
+      const key = tr.dataset.catalogKey || "";
+      if (sel?.value && key) map[key] = Number(sel.value);
+    });
+  return map;
+}
+
+// Convert a quantity between same-family units (mass / volume /
+// length / area / count). Returns null when the families differ.
+function mfgCatalogConvertQty(value, fromUnit, toUnit) {
+  const u = String(fromUnit || "").trim().toLowerCase();
+  const v = String(toUnit || "").trim().toLowerCase();
+  if (!u || !v || u === v) return Number(value);
+
+  const families = {
+    mass: {
+      g: 1, gram: 1, grams: 1,
+      kg: 1000, kgs: 1000, kilogram: 1000, kilograms: 1000,
+      mg: 0.001, milligram: 0.001, milligrams: 0.001,
+      t: 1000000, ton: 1000000, tonne: 1000000, tonnes: 1000000
+    },
+    volume: {
+      ml: 1, milliliter: 1, milliliters: 1,
+      millilitre: 1, millilitres: 1,
+      l: 1000, lt: 1000, ltr: 1000,
+      liter: 1000, liters: 1000, litre: 1000, litres: 1000
+    },
+    length: {
+      mm: 1, millimeter: 1, millimeters: 1,
+      millimetre: 1, millimetres: 1,
+      cm: 10, centimeter: 10, centimeters: 10,
+      centimetre: 10, centimetres: 10,
+      m: 1000, meter: 1000, meters: 1000,
+      metre: 1000, metres: 1000
+    },
+    area: { mm2: 1, cm2: 100, m2: 1000000 },
+    count: {
+      unit: 1, units: 1, each: 1, piece: 1, pieces: 1,
+      pc: 1, pcs: 1, dozen: 12, dozens: 12,
+      sheet: 1, sheets: 1, pair: 1, pairs: 1
+    }
+  };
+
+  for (const name of Object.keys(families)) {
+    const fam = families[name];
+    if (fam[u] !== undefined && fam[v] !== undefined) {
+      return (Number(value) * fam[u]) / fam[v];
+    }
+  }
+  return null;
+}
+
+// When the user picks an inventory item, the row unit switches to
+// the inventory unit -- so the quantity must be re-expressed in that
+// unit too, using the catalog base quantity as the source of truth.
+function attachCatalogQtyCorrection(tr) {
+  const itemSelect = tr.querySelector(".mfg-line-item");
+  if (!itemSelect || tr.dataset.catalogQtyHook === "1") return;
+
+  tr.dataset.catalogQtyHook = "1";
+
+  itemSelect.addEventListener("change", () => {
+    const unitInput = tr.querySelector(".mfg-line-unit");
+    const qtyInput = tr.querySelector(".mfg-line-qty");
+    if (!unitInput || !qtyInput) return;
+
+    const baseQty = Number(tr.dataset.catalogBaseQty ?? "");
+    const baseUnit = tr.dataset.catalogBaseUnit || "";
+
+    if (!Number.isFinite(baseQty) || !baseUnit) return;
+
+    const converted = mfgCatalogConvertQty(
+      baseQty,
+      baseUnit,
+      unitInput.value
+    );
+
+    if (converted !== null && Number.isFinite(converted)) {
+      qtyInput.value = String(
+        Math.round(converted * 1e6) / 1e6
+      );
+    }
+  });
+}
+
+async function applyCatalogProductToBomForm() {
+  const cid =
+    getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return mfgCatalogSetMsg("No active company.", true);
+
+  try {
+    const body = catalogBasisPayload();
+    await fillBomFormFromCatalog(cid, body);
+  } catch (err) {
+    mfgCatalogSetMsg(err?.message || String(err), true);
+  }
+}
+
+async function fillBomFormFromCatalog(cid, body) {
+  mfgCatalogSetMsg("Calculating standard recipe...");
+
+  const data = await apiFetch(
+    ENDPOINTS.manufacturing.bomPreviewFromCatalog(cid),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+
+  if (!data?.ok) throw new Error(data?.error || "Preview failed");
+
+  const pv = data.preview || {};
+  const product = pv.product || {};
+
+  // Preserve inventory-item choices when re-applying a new batch size
+  const prevMap = mfgCatalogItemMapFromForm();
+
+  document.getElementById(
+    "mfgBomDefinitionFinishedItem"
+  ).value =
+    product.product_name ||
+    document.getElementById("mfgBomDefinitionFinishedItem").value;
+
+  if (!document.getElementById("mfgBomDefinitionName").value) {
+    document.getElementById("mfgBomDefinitionName").value =
+      `${product.product_name || "Product"} - standard BOM`;
+  }
+
+  document.getElementById("mfgBomDefinitionBatchQty").value =
+    pv.output?.batch_qty ?? "1";
+  document.getElementById("mfgBomDefinitionBatchUnit").value =
+    pv.output?.batch_unit || product.product_uom || "unit";
+  document.getElementById("mfgBomDefinitionYieldPercent").value =
+    pv.output?.yield_percent ?? 100;
+
+  const tbody =
+    document.getElementById("mfgBomDefinitionLinesTbody");
+  tbody.innerHTML = "";
+
+  (pv.lines || []).forEach(line => {
+    addManufacturingBomDefinitionLine({
+      item_id: line.item_id || prevMap[line.key] || null,
+      quantity: line.quantity,
+      unit: line.base_unit || line.unit,
+      scrap_percent: line.scrap_percent || 0
+    });
+
+    const tr = tbody.lastElementChild;
+    if (tr) {
+      tr.dataset.catalogKey = line.key || "";
+      tr.dataset.catalogBaseQty = String(
+        line.base_qty ?? line.quantity ?? ""
+      );
+      tr.dataset.catalogBaseUnit = String(
+        line.base_unit || line.unit || ""
+      );
+      attachCatalogQtyCorrection(tr);
+    }
+  });
+
+  recalcMfgBomTotals();
+  mfgCatalogSetMsg(
+    `Loaded ${(pv.lines || []).length} components from ` +
+    `${product.product_name || "catalog"}.`
+  );
+}
+
+async function previewCatalogBomCost() {
+  const cid =
+    getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return mfgCatalogSetMsg("No active company.", true);
+
+  try {
+    const product = getSelectedCatalogProduct();
+    if (!product) {
+      throw new Error("Select a product to preview cost.");
+    }
+
+    const body = catalogBasisPayload();
+    body.item_map = mfgCatalogItemMapFromForm();
+
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.bomPreviewFromCatalog(cid),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }
+    );
+
+    if (!data?.ok) throw new Error(data?.error || "Cost preview failed");
+
+    const pv = data.preview || {};
+    const cost = pv.cost || {};
+    const box = document.getElementById("mfgCatalogCostBox");
+    if (!box) return;
+
+    const unmapped = cost.unmapped_keys || [];
+    const good = pv.output?.expected_good_output;
+    const unit = pv.output?.batch_unit || "";
+
+    box.innerHTML = `
+      <div class="font-semibold text-slate-800 mb-1">
+        Materials cost estimate (inventory standard costs)
+      </div>
+      <div class="grid grid-cols-2 gap-x-6 gap-y-1">
+        <div>Batch output (nominal):</div>
+        <div class="text-right font-medium">${esc(String(pv.output?.batch_qty ?? "-"))} ${esc(unit)}</div>
+        <div>Good output after yield:</div>
+        <div class="text-right font-medium">${esc(String(good ?? "-"))} ${esc(unit)}</div>
+        <div>Materials total:</div>
+        <div class="text-right font-medium">${esc(String(cost.material_total ?? "-"))}</div>
+        <div>Cost per good unit:</div>
+        <div class="text-right font-bold">${esc(String(cost.unit_cost_estimate ?? "-"))}</div>
+      </div>
+      ${
+        unmapped.length
+          ? `<div class="mt-1 text-amber-700">Not costed yet (no inventory item chosen): ${esc(unmapped.join(", "))}</div>`
+          : `<div class="mt-1 text-emerald-700">All components mapped to inventory items.</div>`
+      }
+    `;
+    box.classList.remove("hidden");
+    mfgCatalogSetMsg("");
+  } catch (err) {
+    mfgCatalogSetMsg(err?.message || String(err), true);
   }
 }
 
 // --------------------------------------------------------------------------
 // 2. DIRECT MATERIALS ROW
 // --------------------------------------------------------------------------
-
-// Unified read access to the manufacturing item cache, which has
-// historically been written under two different keys (`rows` and `items`).
-function mfgGetItemCacheRows() {
-  const cache = window._MFG_ITEM_CACHE;
-  if (!cache) return [];
-  if (Array.isArray(cache.rows) && cache.rows.length) return cache.rows;
-  if (Array.isArray(cache.items)) return cache.items;
-  return [];
-}
-
-// Best-effort unit/standard cost for an inventory item row.
-// Used ONLY for the live preview in the modal; the backend remains
-// authoritative for the costing that is persisted on save.
-function mfgItemUnitCost(item) {
-  if (!item || typeof item !== "object") return 0;
-
-  const candidates = [
-    item.unit_cost,
-    item.standard_cost,
-    item.planned_cost,
-    item.cost_price,
-    item.avg_cost,
-    item.moving_avg_cost,
-    item.last_cost,
-    item.purchase_cost,
-    item.cost
-  ];
-
-  for (const v of candidates) {
-    const n = Number(v);
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-
-  return 0;
-}
-
-// Defensive dedupe for rows returned by GET /manufacturing/boms/{id}.
-// - Rows sharing the same DB id are collapsed (backend double-join).
-// - Id-less rows with an identical field signature are collapsed
-//   (legacy pollution from the earlier double-render bug).
-// - Distinct-id rows are ALWAYS kept: if a BOM still shows apparent
-//   duplicates after this fix, those are real database rows and should
-//   be removed once via the row's remove button, then saved.
-function mfgDedupeRows(rows, fields) {
-  const seen = new Set();
-  const out = [];
-
-  (Array.isArray(rows) ? rows : []).forEach(r => {
-    const id = r?.id ?? r?.line_id ?? null;
-    const key = id != null
-      ? `id:${id}`
-      : `c:${(fields || []).map(f => String(r?.[f] ?? "")).join("|")}`;
-
-    if (seen.has(key)) {
-      console.warn("[Manufacturing BOM] duplicate row skipped on load:", key);
-      return;
-    }
-
-    seen.add(key);
-    out.push(r);
-  });
-
-  return out;
-}
-
 function addManufacturingBomDefinitionLine(line = {}) {
   const tbody =
     document.getElementById("mfgBomDefinitionLinesTbody");
 
   if (!tbody) return;
 
-  const items = mfgGetItemCacheRows();
+  const items =
+    window._MFG_ITEM_CACHE?.rows || [];
 
-  // ---- Resolve saved-line identity with tolerant field aliases ----
-  // Backends have used item_id / material_item_id / nested item.id.
-  const lineItemId =
-    line.item_id ??
-    line.material_item_id ??
-    line.inventory_item_id ??
-    line.itemId ??
-    line.item?.id ??
-    0;
-
-  const idStr = lineItemId ? String(lineItemId) : "";
-
-  const lineUnit =
-    line.unit ||
-    line.uom ||
-    line.unit_of_measure ||
-    line.unit_name ||
-    "";
-
-  const lineUnitCost = Number(
-    line.unit_cost ??
-    line.material_unit_cost ??
-    line.cost ??
-    0
-  );
-
-  const lineTotal = Number(
-    line.line_total ??
-    line.total_cost ??
-    line.extended_cost ??
-    line.total ??
-    0
-  );
-
-  const knownItem = items.find(
-    i => String(i.id) === idStr
-  );
-
-  const fallbackLabel =
-    line.item_name ||
-    line.material_name ||
-    line.name ||
-    line.item_sku ||
-    line.sku ||
-    (lineItemId ? `Item #${lineItemId}` : "");
-
-  let itemOptions =
+  const itemOptions =
     `<option value="">-- Select Material Item --</option>` +
     items.map(i => {
       return `
         <option
           value="${esc(i.id)}"
-          data-unit="${esc(i.unit || i.stock_unit || i.uom || "unit")}"
+          data-unit="${esc(i.unit || "unit")}"
         >
           ${esc(i.sku ? i.sku + " — " : "")}${esc(i.name || "")}
         </option>
       `;
     }).join("");
-
-  // If the saved material is not in the (active-only, max 500) dropdown
-  // list, inject it so the previously saved component stays visible and
-  // survives a save round-trip instead of silently becoming "no item".
-  if (idStr && !knownItem) {
-    itemOptions += `
-      <option
-        value="${esc(idStr)}"
-        data-unit="${esc(lineUnit || "unit")}"
-      >
-        ${esc(fallbackLabel)} (not in active item list)
-      </option>
-    `;
-  }
 
   const tr = document.createElement("tr");
   tr.className = "border-b";
@@ -126658,7 +126939,7 @@ function addManufacturingBomDefinitionLine(line = {}) {
         min="0"
         step="0.000001"
         class="mfg-line-qty w-full border rounded px-2 py-1 text-right text-xs"
-        value="${esc(line.quantity ?? line.qty ?? "")}"
+        value="${esc(line.quantity ?? "")}"
         placeholder="0.000000">
     </td>
 
@@ -126666,7 +126947,7 @@ function addManufacturingBomDefinitionLine(line = {}) {
       <input
         type="text"
         class="mfg-line-unit w-full border rounded px-2 py-1 text-xs bg-slate-50 text-slate-600"
-        value="${esc(lineUnit)}"
+        value="${esc(line.unit || "")}"
         placeholder="e.g. kg, g, L, ml, unit"
         readonly>
     </td>
@@ -126690,7 +126971,7 @@ function addManufacturingBomDefinitionLine(line = {}) {
       <input
         type="text"
         class="mfg-line-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-500 font-medium"
-        value="${lineUnitCost > 0 ? esc(lineUnitCost) : ""}"
+        value=""
         placeholder="Calculated on save"
         readonly>
     </td>
@@ -126699,7 +126980,7 @@ function addManufacturingBomDefinitionLine(line = {}) {
       <input
         type="text"
         class="mfg-line-total w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold"
-        value="${lineTotal > 0 ? esc(lineTotal) : ""}"
+        value=""
         placeholder="Calculated on save"
         readonly>
     </td>
@@ -126714,30 +126995,36 @@ function addManufacturingBomDefinitionLine(line = {}) {
     </td>
   `;
 
-  // Restore existing item (alias-tolerant)
+  // Restore existing item
+  if (line.item_id) {
+    const itemSelect =
+      tr.querySelector(".mfg-line-item");
+
+    if (itemSelect) {
+      itemSelect.value =
+        String(line.item_id);
+    }
+  }
+
+  // Restore / determine unit
   const itemSelect =
     tr.querySelector(".mfg-line-item");
 
   const unitInput =
     tr.querySelector(".mfg-line-unit");
 
-  if (idStr && itemSelect) {
-    itemSelect.value = idStr;
-  }
-
-  // Restore / determine unit — decoupled from the item match so a
-  // saved unit is never lost when the item is missing from the list.
-  if (unitInput && !unitInput.value) {
+  if (itemSelect?.value && unitInput) {
     const selected =
-      itemSelect?.selectedOptions?.[0];
+      itemSelect.selectedOptions?.[0];
 
     unitInput.value =
-      selected?.dataset?.unit || "";
+      line.unit ||
+      selected?.dataset?.unit ||
+      "unit";
   }
 
-  // Item selection updates the consumption unit and re-estimates the
-  // unit-cost preview from the cached inventory item. The backend still
-  // recomputes the authoritative cost on save.
+  // Item selection changes the consumption unit.
+  // It does NOT calculate or populate cost.
   itemSelect?.addEventListener("change", (e) => {
     const opt =
       e.target.selectedOptions?.[0];
@@ -126754,20 +127041,16 @@ function addManufacturingBomDefinitionLine(line = {}) {
     const totalInput =
       tr.querySelector(".mfg-line-total");
 
-    const cached = mfgGetItemCacheRows().find(
-      i => String(i.id) === String(e.target.value || "")
-    );
-
-    const cachedCost = mfgItemUnitCost(cached);
-
     if (costInput) {
-      costInput.value = cachedCost > 0 ? String(cachedCost) : "";
-      costInput.placeholder = "Calculated on save";
+      costInput.value = "";
+      costInput.placeholder =
+        "Calculated on save";
     }
 
     if (totalInput) {
       totalInput.value = "";
-      totalInput.placeholder = "Calculated on save";
+      totalInput.placeholder =
+        "Calculated on save";
     }
 
     recalcMfgBomTotals();
@@ -126790,12 +127073,6 @@ function closeManufacturingBomDefinitionModal() {
 
   if (modal) {
     modal.classList.add("hidden");
-
-    // Release the load guard and invalidate any in-flight load so the
-    // next open always starts fresh.
-    modal.dataset.loading = "0";
-    window.__MFG_BOM_LOAD_SEQ =
-      (window.__MFG_BOM_LOAD_SEQ || 0) + 1;
   }
 }
 
@@ -126856,6 +127133,10 @@ async function saveManufacturingBomDefinition() {
     batch_unit:
       document.getElementById("mfgBomDefinitionBatchUnit")?.value.trim(),
 
+    yield_percent: Number(
+      document.getElementById("mfgBomDefinitionYieldPercent")?.value || 100
+    ),
+
     description:
       document.getElementById("mfgBomDefinitionDescription")?.value.trim() || null
   };
@@ -126915,11 +127196,7 @@ async function saveManufacturingBomDefinition() {
       "#mfgBomDefinitionLinesTbody tr"
     );
 
-  let materialRowNo = 0;
-
   for (const row of materialRows) {
-
-    materialRowNo++;
 
     // IMPORTANT:
     // These selectors match addManufacturingBomDefinitionLine()
@@ -126941,12 +127218,8 @@ async function saveManufacturingBomDefinition() {
     const quantity =
       Number(qtyEl?.value || 0);
 
-    // Fall back to the unit declared on the selected option so a
-    // display glitch can never block saving a valid component.
     const unit =
-      unitEl?.value?.trim() ||
-      itemEl?.selectedOptions?.[0]?.dataset?.unit ||
-      "";
+      unitEl?.value?.trim() || "";
 
     const scrapPct =
       Number(scrapEl?.value || 0);
@@ -126963,21 +127236,21 @@ async function saveManufacturingBomDefinition() {
 
     if (!itemId) {
       return showManufacturingBomDefinitionMsg(
-        `Component row ${materialRowNo}: select a material item (or remove the empty row).`,
+        "Each BOM component must have an item.",
         "error"
       );
     }
 
     if (!(quantity > 0)) {
       return showManufacturingBomDefinitionMsg(
-        `Component row ${materialRowNo}: quantity must be greater than zero.`,
+        "Each BOM component must have a quantity greater than zero.",
         "error"
       );
     }
 
     if (!unit) {
       return showManufacturingBomDefinitionMsg(
-        `Component row ${materialRowNo}: a consumption unit is required.`,
+        "Each BOM component must have a consumption unit.",
         "error"
       );
     }
@@ -126987,7 +127260,7 @@ async function saveManufacturingBomDefinition() {
       scrapPct > 100
     ) {
       return showManufacturingBomDefinitionMsg(
-        `Component row ${materialRowNo}: scrap percentage must be between 0 and 100.`,
+        "Scrap percentage must be between 0 and 100.",
         "error"
       );
     }
@@ -126996,8 +127269,7 @@ async function saveManufacturingBomDefinition() {
       item_id: itemId,
       quantity: quantity,
       unit: unit,
-      scrap_pct: scrapPct,
-      scrap_percent: scrapPct
+      scrap_pct: scrapPct
     });
   }
 
@@ -127237,67 +127509,6 @@ async function saveManufacturingBomDefinition() {
         saved?.error ||
         "Failed to save BOM."
       );
-    }
-
-    // If the backend returned the saved lines with authoritative
-    // costs, reflect them immediately in the grid and summary.
-    const savedBom =
-      saved?.bom || saved?.data?.bom || saved;
-
-    const savedLines =
-      savedBom?.lines ||
-      savedBom?.bom_lines ||
-      [];
-
-    if (Array.isArray(savedLines) && savedLines.length) {
-      const byItem = new Map(
-        savedLines.map(l => [
-          String(
-            l.item_id ??
-            l.material_item_id ??
-            l.inventory_item_id ??
-            l.item?.id ??
-            ""
-          ),
-          l
-        ])
-      );
-
-      document
-        .querySelectorAll("#mfgBomDefinitionLinesTbody tr")
-        .forEach(tr => {
-          const itemEl =
-            tr.querySelector(".mfg-line-item");
-
-          const line =
-            byItem.get(String(itemEl?.value || ""));
-
-          if (!line) return;
-
-          const unitCost = Number(
-            line.unit_cost ?? line.material_unit_cost ?? 0
-          );
-
-          const lineTotal = Number(
-            line.line_total ?? line.total_cost ?? line.total ?? 0
-          );
-
-          const costInput =
-            tr.querySelector(".mfg-line-cost");
-
-          const totalInput =
-            tr.querySelector(".mfg-line-total");
-
-          if (costInput && unitCost > 0) {
-            costInput.value = String(unitCost);
-          }
-
-          if (totalInput && lineTotal > 0) {
-            totalInput.value = lineTotal.toFixed(2);
-          }
-        });
-
-      recalcMfgBomTotals();
     }
 
     showManufacturingBomDefinitionMsg(
@@ -127992,14 +128203,11 @@ function recalcMfgBomTotals() {
     )
     .forEach(tr => {
 
-      const costInput =
-        tr.querySelector(
-          ".mfg-line-cost"
-        );
-
-      const itemEl =
-        tr.querySelector(
-          ".mfg-line-item"
+      const cost =
+        Number(
+          tr.querySelector(
+            ".mfg-line-cost"
+          )?.value || 0
         );
 
       const qty =
@@ -128021,44 +128229,10 @@ function recalcMfgBomTotals() {
           ".mfg-line-total"
         );
 
-      let cost =
-        Number(costInput?.value || 0);
-
-      /*
-       * Live preview: if no backend cost has been
-       * populated yet, estimate the unit cost from
-       * the cached inventory item so the summary
-       * reflects direct materials immediately. The
-       * backend remains authoritative for costing.
-       */
-      if (
-        !(cost > 0) &&
-        itemEl?.value
-      ) {
-        const cached =
-          mfgGetItemCacheRows().find(
-            i =>
-              String(i.id) ===
-              String(itemEl.value)
-          );
-
-        const cachedCost =
-          mfgItemUnitCost(cached);
-
-        if (cachedCost > 0) {
-          cost = cachedCost;
-
-          if (costInput) {
-            costInput.value =
-              String(cachedCost);
-          }
-        }
-      }
-
       /*
        * Only use a material cost if one has
        * actually been returned/populated by
-       * the backend (or previewed from cache).
+       * the backend.
        */
       if (
         cost > 0 &&

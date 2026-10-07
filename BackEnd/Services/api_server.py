@@ -1771,83 +1771,83 @@ def record_invoice_revenue_billing_and_allocation(
         billing_obligation_id = None
 
     invoice_number = str(inv.get("number") or invoice_id).strip()
+    invoice_date = inv.get("invoice_date")
 
-    # -------------------------------------------------------------
-    # Idempotency guard: one 'invoice' billing event per invoice.
-    # Keyed on source_invoice_id (not payload invoice_number) so it
-    # also works when this snapshot has no number yet — the number is
-    # assigned during posting by post_invoice_to_gl.
-    # -------------------------------------------------------------
-    existing_event = db_service.fetch_one(
-        f"""
-        SELECT id
-        FROM company_{company_id}.revenue_billing_events
-        WHERE contract_id = %s
-          AND event_type = 'invoice'
-          AND source_invoice_id = %s
-        ORDER BY id
-        LIMIT 1
-        """,
-        (int(revenue_contract_id), int(invoice_id)),
+    if invoice_number and invoice_date:
+        existing_event = db_service.fetch_one(
+            f"""
+            SELECT id
+            FROM company_{company_id}.revenue_billing_events
+            WHERE contract_id = %s
+            AND event_type = 'invoice'
+            AND event_date >= DATE_TRUNC('month', %s::date)::date
+            AND event_date < (
+                DATE_TRUNC('month', %s::date) + INTERVAL '1 month'
+            )::date
+            AND payload_json->>'invoice_number' = %s
+            ORDER BY id
+            LIMIT 1
+            """,
+            (
+                int(revenue_contract_id),
+                invoice_date,
+                invoice_date,
+                invoice_number,
+            ),
+        )
+
+        if existing_event:
+            current_app.logger.warning(
+                "Duplicate revenue billing prevented | "
+                "contract_id=%s invoice_number=%s billing_period=%s "
+                "existing_event_id=%s invoice_id=%s",
+                int(revenue_contract_id),
+                invoice_number,
+                str(invoice_date)[:7],
+                existing_event.get("id"),
+                int(invoice_id),
+            )
+            return True
+    
+    db_service.record_revenue_billing_event(
+        company_id=company_id,
+        contract_id=int(revenue_contract_id),
+        data={
+            "event_date": inv.get("invoice_date"),
+            "event_type": "invoice",
+            "source_invoice_id": int(invoice_id),
+            "obligation_id": billing_obligation_id,
+            "amount": billing_amount,
+            "currency": inv.get("currency") or "USD",
+            "notes": f"From AR invoice {inv.get('number') or invoice_id}",
+            "payload_json": {
+                "customer_id": int(inv.get("customer_id") or 0),
+                "source": "ar_invoice_post",
+                "invoice_number": invoice_number,
+                "auto_allocate": True,
+                "settlement_pattern": settlement_pattern,
+                "journal_id": int(journal_id),
+            },
+        },
+        user_id=int(user_id or 0),
     )
 
-    if existing_event:
-        current_app.logger.warning(
-            "Duplicate revenue billing prevented | "
-            "contract_id=%s invoice_id=%s invoice_number=%s existing_event_id=%s",
-            int(revenue_contract_id),
-            int(invoice_id),
-            invoice_number,
-            existing_event.get("id"),
-        )
-        # NOTE: no early return — the advance allocation below must still run.
-    else:
-        db_service.record_revenue_billing_event(
-            company_id=company_id,
-            contract_id=int(revenue_contract_id),
-            data={
-                "event_date": inv.get("invoice_date"),
-                "event_type": "invoice",
-                "source_invoice_id": int(invoice_id),
-                "obligation_id": billing_obligation_id,
-                "amount": billing_amount,
-                "currency": inv.get("currency") or "USD",
-                "notes": f"From AR invoice {inv.get('number') or invoice_id}",
-                "payload_json": {
-                    "customer_id": int(inv.get("customer_id") or 0),
-                    "source": "ar_invoice_post",
-                    "invoice_number": invoice_number,
-                    "auto_allocate": True,
-                    "settlement_pattern": settlement_pattern,
-                    "journal_id": int(journal_id),
-                },
-            },
-            user_id=int(user_id or 0),
-        )
-
     if settlement_pattern == "cash_before_service":
-        try:
-            allocation = db_service.auto_allocate_customer_advance_to_invoice(
-                company_id=company_id,
-                customer_id=int(inv.get("customer_id") or 0),
-                contract_id=int(revenue_contract_id),
-                invoice_id=int(invoice_id),
-                amount=float(billing_amount),
-                currency=inv.get("currency") or "USD",
-            )
+        allocation = db_service.auto_allocate_customer_advance_to_invoice(
+            company_id=company_id,
+            customer_id=int(inv.get("customer_id") or 0),
+            contract_id=int(revenue_contract_id),
+            invoice_id=int(invoice_id),
+            amount=float(billing_amount),
+            currency=inv.get("currency") or "USD",
+        )
 
-            current_app.logger.info("Auto allocation result: %s", allocation)
+        current_app.logger.info("Auto allocation result: %s", allocation)
 
-            if allocation.get("remaining", 0) > 0:
-                current_app.logger.warning(
-                    "Invoice not fully covered by advances. Remaining: %s",
-                    allocation["remaining"],
-                )
-        except Exception:
-            current_app.logger.exception(
-                "Invoice advance allocation failed | invoice_id=%s contract_id=%r",
-                invoice_id,
-                revenue_contract_id,
+        if allocation.get("remaining", 0) > 0:
+            current_app.logger.warning(
+                "Invoice not fully covered by advances. Remaining: %s",
+                allocation["remaining"],
             )
 
     return True
@@ -8578,24 +8578,110 @@ def create_invoice(cid: int):
         )
 
         try:
-            if header.get("revenue_contract_id"):
-                # FRESH fetch: post_invoice_to_gl assigned the invoice number
-                # during posting; the earlier `inv` snapshot still has number=NULL
-                posted_inv = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
-                record_invoice_revenue_billing_and_allocation(
+            revenue_contract_id = header.get("revenue_contract_id")
+
+            if revenue_contract_id:
+                contract = db_service.get_revenue_contract(
                     company_id=company_id,
-                    invoice_id=int(invoice_id),
-                    inv=posted_inv,
-                    journal_id=int(journal_id),
+                    contract_id=int(revenue_contract_id),
+                ) or {}
+
+                payload_json = contract.get("payload_json") or {}
+                if isinstance(payload_json, str):
+                    import json
+                    try:
+                        payload_json = json.loads(payload_json)
+                    except Exception:
+                        payload_json = {}
+
+                settlement_pattern = (
+                    payload_json.get("settlement_pattern")
+                    or payload_json.get("ifrs15_settlement_pattern")
+                    or ""
+                ).strip().lower()
+
+                obligation_ids = [
+                    l.get("revenue_obligation_id")
+                    for l in inv.get("lines", [])
+                    if l.get("revenue_obligation_id")
+                ]
+
+                if obligation_ids:
+                    billing_amount = float(sum(
+                        float(l.get("net_amount") or 0.0)
+                        for l in inv.get("lines", [])
+                        if l.get("revenue_obligation_id")
+                    ))
+
+                    billing_obligation_id = (
+                        int(obligation_ids[0])
+                        if len(set(obligation_ids)) == 1
+                        else None
+                    )
+                else:
+                    billing_amount = float(sum(
+                        float(l.get("net_amount") or 0.0)
+                        for l in inv.get("lines", [])
+                    ))
+
+                    billing_obligation_id = None
+
+                db_service.record_revenue_billing_event(
+                    company_id=company_id,
+                    contract_id=int(revenue_contract_id),
+                    data={
+                        "event_date": header.get("invoice_date"),
+                        "event_type": "invoice",
+                        "source_invoice_id": int(invoice_id),
+                        "obligation_id": billing_obligation_id,
+                        "amount": billing_amount,
+                        "currency": inv.get("currency") or header.get("currency") or "USD",
+                        "notes": f"From AR invoice {inv.get('number') or invoice_id}",
+                        "payload_json": {
+                            "customer_id": int(cust_id),
+                            "source": "ar_invoice_post",
+                            "invoice_number": inv.get("number"),
+                            "auto_allocate": True,
+                            "settlement_pattern": settlement_pattern,
+                            "journal_id": int(journal_id),
+                        },
+                    },
                     user_id=int(user.get("id") or 0),
                 )
+
+                if settlement_pattern == "cash_before_service":
+                    try:
+                        allocation = db_service.auto_allocate_customer_advance_to_invoice(
+                            company_id=company_id,
+                            customer_id=int(cust_id),
+                            contract_id=int(revenue_contract_id),
+                            invoice_id=int(invoice_id),
+                            amount=float(billing_amount),
+                            currency=inv.get("currency") or header.get("currency") or "USD",
+                        )
+
+                        current_app.logger.info("Auto allocation result: %s", allocation)
+
+                        if allocation.get("remaining", 0) > 0:
+                            current_app.logger.warning(
+                                "Invoice not fully covered by advances. Remaining: %s",
+                                allocation["remaining"],
+                            )
+
+                    except Exception:
+                        current_app.logger.exception(
+                            "create_invoice: auto allocation failed | invoice_id=%s contract_id=%r",
+                            invoice_id,
+                            revenue_contract_id,
+                        )
+
         except Exception:
             current_app.logger.exception(
                 "create_invoice: record_revenue_billing_event failed | invoice_id=%s contract_id=%r",
                 invoice_id,
                 header.get("revenue_contract_id"),
             )
-            
+
         current_app.logger.info("create_invoice: before reload posted invoice")
         posted = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
         current_app.logger.info("create_invoice: reload posted invoice done")
@@ -13778,6 +13864,7 @@ def manufacturing_boms(cid: int):
             name=payload.get("name"),
             batch_qty=payload.get("batch_qty", 1),
             batch_unit=payload.get("batch_unit"),
+            yield_percent=payload.get("yield_percent"),
             description=payload.get("description"),
             version_no=payload.get("version_no", 1),
             effective_from=payload.get("effective_from"),
@@ -13896,34 +13983,18 @@ def get_manufacturing_bom(cid: int, bom_id: int):
         updated = db_service.update_manufacturing_bom(
             company_id=company_id,
             bom_id=bom_id,
-
-            # ------------------------------------------------------------
-            # BOM HEADER
-            # ------------------------------------------------------------
             finished_item_name=payload.get("finished_item_name"),
             selling_price=payload.get("selling_price"),
             bom_code=payload.get("bom_code"),
             name=payload.get("name"),
             batch_qty=payload.get("batch_qty"),
             batch_unit=payload.get("batch_unit"),
+            yield_percent=payload.get("yield_percent"),
             description=payload.get("description"),
             version_no=payload.get("version_no"),
             effective_from=payload.get("effective_from"),
             effective_to=payload.get("effective_to"),
             is_default=payload.get("is_default"),
-
-            # ------------------------------------------------------------
-            # BOM COST STRUCTURE
-            #
-            # Material unit_cost is intentionally NOT supplied by the
-            # frontend. replace_manufacturing_bom_lines() calculates it
-            # authoritatively from the inventory item + unit conversion.
-            # ------------------------------------------------------------
-            lines=payload.get("lines"),
-            labour=payload.get("labour"),
-            direct_costs=payload.get("direct_costs"),
-            overheads=payload.get("overheads"),
-
             updated_by_user_id=int(user.get("id") or 0) or None,
         )
 
@@ -15275,6 +15346,135 @@ def create_manufacturing_order_dispatch(cid: int, order_id: int):
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         current_app.logger.exception("create_manufacturing_order_dispatch failed")
+        return jsonify({"error": str(e)}), 500
+    
+# ------------------------------------------------------------------
+# PRODUCTION CATALOG -- "What do you want to produce?"
+# industry -> category -> product. The BOM form is prefilled from a
+# catalog product (baker's-percentage recipes for bakery, absolute
+# per-unit recipes for furniture / clothing / footwear / bricks),
+# then saved through the normal BOM endpoints with yield_percent.
+# ------------------------------------------------------------------
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/production-catalog",
+    methods=["GET", "POST"],
+)
+@require_auth
+def manufacturing_production_catalog(cid: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        if request.method == "GET":
+            industry = request.args.get("industry")
+            category = request.args.get("category")
+
+            products = db_service.list_production_catalog(
+                company_id=company_id,
+                industry=industry,
+                category=category,
+            ) or []
+
+            industries = sorted({p["industry"] for p in products})
+            categories = sorted(
+                {
+                    p["category"]
+                    for p in products
+                    if not industry or p["industry"] == industry
+                }
+            )
+
+            return jsonify(
+                {
+                    "ok": True,
+                    "industries": industries,
+                    "categories": categories,
+                    "products": products,
+                }
+            ), 200
+
+        payload = request.get_json(silent=True) or {}
+
+        product = db_service.create_production_catalog_product(
+            company_id=company_id,
+            data=payload,
+            created_by_user_id=int(user.get("id") or 0) or None,
+        )
+
+        return jsonify(
+            {
+                "ok": True,
+                "product": product,
+            }
+        ), 201
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "manufacturing_production_catalog failed"
+        )
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/boms/preview-from-catalog",
+    methods=["POST"],
+)
+@require_auth
+def manufacturing_bom_preview_from_catalog(cid: int):
+    """
+    Scale a catalog product to a requested batch and (optionally)
+    cost the lines. Body:
+        catalog_product_id : int (required)
+        batch_flour_g      : number (baker's-% products, grams)
+        batch_qty          : number (absolute products, units)
+        item_map           : {"flour": 101, ...} optional -> costs lines
+        units              : {"flour": "kg", "water": "l"} optional
+    """
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        catalog_product_id = payload.get("catalog_product_id")
+        if not catalog_product_id:
+            return jsonify(
+                {"error": "catalog_product_id is required"}
+            ), 400
+
+        preview = db_service.preview_bom_from_catalog(
+            company_id=company_id,
+            catalog_product_id=int(catalog_product_id),
+            batch_flour_g=payload.get("batch_flour_g"),
+            batch_qty=payload.get("batch_qty"),
+            item_map=payload.get("item_map"),
+            units=payload.get("units"),
+        )
+
+        return jsonify(
+            {
+                "ok": True,
+                "preview": preview,
+            }
+        ), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "manufacturing_bom_preview_from_catalog failed"
+        )
         return jsonify({"error": str(e)}), 500
     
 @app.route("/api/companies/<int:cid>/services/items", methods=["POST"])
