@@ -1,4 +1,4 @@
-﻿(function hardTraceRedirects() {
+(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -125728,14 +125728,19 @@ async function ensureManufacturingItemCache() {
 
   window._MFG_ITEM_CACHE = {
     loaded: true,
-    items: (data?.rows || []).map(r => ({
+    items: (data?.rows || data?.items || []).map(r => ({
+      ...r,
       id: Number(r.id),
       sku: r.sku || "",
       name: r.name || "",
-      unit: r.unit || r.stock_unit || "",
+      unit: r.unit || r.stock_unit || r.uom || "",
       track_stock: !!r.track_stock
     }))
   };
+
+  // Expose the same array under the legacy `rows` key so every
+  // consumer (rows vs items) sees a populated cache.
+  window._MFG_ITEM_CACHE.rows = window._MFG_ITEM_CACHE.items;
 
   return window._MFG_ITEM_CACHE.items;
 }
@@ -125759,9 +125764,12 @@ function showManufacturingMsg(text = "", kind = "info") {
 }
 
 function manufacturingItemOptions(selectedId = "") {
-  const items = Array.isArray(window._MFG_ITEM_CACHE?.rows)
-    ? window._MFG_ITEM_CACHE.rows
-    : [];
+  const cache = window._MFG_ITEM_CACHE;
+  const items = Array.isArray(cache?.rows) && cache.rows.length
+    ? cache.rows
+    : Array.isArray(cache?.items)
+      ? cache.items
+      : [];
 
   const sid = String(selectedId || "");
 
@@ -126375,8 +126383,17 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     ]);
 
     const inventoryItems =
-      inventoryData?.items || inventoryData?.data || inventoryData?.rows || inventoryData || [];
-    window._MFG_ITEM_CACHE = { rows: Array.isArray(inventoryItems) ? inventoryItems : [] };
+      inventoryData?.rows || inventoryData?.items || inventoryData?.data || inventoryData || [];
+    const itemRows = Array.isArray(inventoryItems) ? inventoryItems : [];
+
+    // Merge instead of clobber: keep whatever shape other screens
+    // expect (`items`) and populate the `rows` key this modal reads.
+    window._MFG_ITEM_CACHE = {
+      ...(window._MFG_ITEM_CACHE || {}),
+      loaded: true,
+      rows: itemRows,
+      items: itemRows
+    };
 
     const payrollEmployees =
       payrollRes?.items || payrollRes?.data || payrollRes || [];
@@ -126429,27 +126446,123 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
 // --------------------------------------------------------------------------
 // 2. DIRECT MATERIALS ROW
 // --------------------------------------------------------------------------
+
+// Unified read access to the manufacturing item cache, which has
+// historically been written under two different keys (`rows` and `items`).
+function mfgGetItemCacheRows() {
+  const cache = window._MFG_ITEM_CACHE;
+  if (!cache) return [];
+  if (Array.isArray(cache.rows) && cache.rows.length) return cache.rows;
+  if (Array.isArray(cache.items)) return cache.items;
+  return [];
+}
+
+// Best-effort unit/standard cost for an inventory item row.
+// Used ONLY for the live preview in the modal; the backend remains
+// authoritative for the costing that is persisted on save.
+function mfgItemUnitCost(item) {
+  if (!item || typeof item !== "object") return 0;
+
+  const candidates = [
+    item.unit_cost,
+    item.standard_cost,
+    item.planned_cost,
+    item.cost_price,
+    item.avg_cost,
+    item.moving_avg_cost,
+    item.last_cost,
+    item.purchase_cost,
+    item.cost
+  ];
+
+  for (const v of candidates) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  return 0;
+}
+
 function addManufacturingBomDefinitionLine(line = {}) {
   const tbody =
     document.getElementById("mfgBomDefinitionLinesTbody");
 
   if (!tbody) return;
 
-  const items =
-    window._MFG_ITEM_CACHE?.rows || [];
+  const items = mfgGetItemCacheRows();
 
-  const itemOptions =
+  // ---- Resolve saved-line identity with tolerant field aliases ----
+  // Backends have used item_id / material_item_id / nested item.id.
+  const lineItemId =
+    line.item_id ??
+    line.material_item_id ??
+    line.inventory_item_id ??
+    line.itemId ??
+    line.item?.id ??
+    0;
+
+  const idStr = lineItemId ? String(lineItemId) : "";
+
+  const lineUnit =
+    line.unit ||
+    line.uom ||
+    line.unit_of_measure ||
+    line.unit_name ||
+    "";
+
+  const lineUnitCost = Number(
+    line.unit_cost ??
+    line.material_unit_cost ??
+    line.cost ??
+    0
+  );
+
+  const lineTotal = Number(
+    line.line_total ??
+    line.total_cost ??
+    line.extended_cost ??
+    line.total ??
+    0
+  );
+
+  const knownItem = items.find(
+    i => String(i.id) === idStr
+  );
+
+  const fallbackLabel =
+    line.item_name ||
+    line.material_name ||
+    line.name ||
+    line.item_sku ||
+    line.sku ||
+    (lineItemId ? `Item #${lineItemId}` : "");
+
+  let itemOptions =
     `<option value="">-- Select Material Item --</option>` +
     items.map(i => {
       return `
         <option
           value="${esc(i.id)}"
-          data-unit="${esc(i.unit || "unit")}"
+          data-unit="${esc(i.unit || i.stock_unit || i.uom || "unit")}"
         >
           ${esc(i.sku ? i.sku + " — " : "")}${esc(i.name || "")}
         </option>
       `;
     }).join("");
+
+  // If the saved material is not in the (active-only, max 500) dropdown
+  // list, inject it so the previously saved component stays visible and
+  // survives a save round-trip instead of silently becoming "no item".
+  if (idStr && !knownItem) {
+    itemOptions += `
+      <option
+        value="${esc(idStr)}"
+        data-unit="${esc(lineUnit || "unit")}"
+      >
+        ${esc(fallbackLabel)} (not in active item list)
+      </option>
+    `;
+  }
 
   const tr = document.createElement("tr");
   tr.className = "border-b";
@@ -126468,7 +126581,7 @@ function addManufacturingBomDefinitionLine(line = {}) {
         min="0"
         step="0.000001"
         class="mfg-line-qty w-full border rounded px-2 py-1 text-right text-xs"
-        value="${esc(line.quantity ?? "")}"
+        value="${esc(line.quantity ?? line.qty ?? "")}"
         placeholder="0.000000">
     </td>
 
@@ -126476,7 +126589,7 @@ function addManufacturingBomDefinitionLine(line = {}) {
       <input
         type="text"
         class="mfg-line-unit w-full border rounded px-2 py-1 text-xs bg-slate-50 text-slate-600"
-        value="${esc(line.unit || "")}"
+        value="${esc(lineUnit)}"
         placeholder="e.g. kg, g, L, ml, unit"
         readonly>
     </td>
@@ -126500,7 +126613,7 @@ function addManufacturingBomDefinitionLine(line = {}) {
       <input
         type="text"
         class="mfg-line-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-500 font-medium"
-        value=""
+        value="${lineUnitCost > 0 ? esc(lineUnitCost) : ""}"
         placeholder="Calculated on save"
         readonly>
     </td>
@@ -126509,7 +126622,7 @@ function addManufacturingBomDefinitionLine(line = {}) {
       <input
         type="text"
         class="mfg-line-total w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold"
-        value=""
+        value="${lineTotal > 0 ? esc(lineTotal) : ""}"
         placeholder="Calculated on save"
         readonly>
     </td>
@@ -126524,36 +126637,30 @@ function addManufacturingBomDefinitionLine(line = {}) {
     </td>
   `;
 
-  // Restore existing item
-  if (line.item_id) {
-    const itemSelect =
-      tr.querySelector(".mfg-line-item");
-
-    if (itemSelect) {
-      itemSelect.value =
-        String(line.item_id);
-    }
-  }
-
-  // Restore / determine unit
+  // Restore existing item (alias-tolerant)
   const itemSelect =
     tr.querySelector(".mfg-line-item");
 
   const unitInput =
     tr.querySelector(".mfg-line-unit");
 
-  if (itemSelect?.value && unitInput) {
-    const selected =
-      itemSelect.selectedOptions?.[0];
-
-    unitInput.value =
-      line.unit ||
-      selected?.dataset?.unit ||
-      "unit";
+  if (idStr && itemSelect) {
+    itemSelect.value = idStr;
   }
 
-  // Item selection changes the consumption unit.
-  // It does NOT calculate or populate cost.
+  // Restore / determine unit — decoupled from the item match so a
+  // saved unit is never lost when the item is missing from the list.
+  if (unitInput && !unitInput.value) {
+    const selected =
+      itemSelect?.selectedOptions?.[0];
+
+    unitInput.value =
+      selected?.dataset?.unit || "";
+  }
+
+  // Item selection updates the consumption unit and re-estimates the
+  // unit-cost preview from the cached inventory item. The backend still
+  // recomputes the authoritative cost on save.
   itemSelect?.addEventListener("change", (e) => {
     const opt =
       e.target.selectedOptions?.[0];
@@ -126570,16 +126677,20 @@ function addManufacturingBomDefinitionLine(line = {}) {
     const totalInput =
       tr.querySelector(".mfg-line-total");
 
+    const cached = mfgGetItemCacheRows().find(
+      i => String(i.id) === String(e.target.value || "")
+    );
+
+    const cachedCost = mfgItemUnitCost(cached);
+
     if (costInput) {
-      costInput.value = "";
-      costInput.placeholder =
-        "Calculated on save";
+      costInput.value = cachedCost > 0 ? String(cachedCost) : "";
+      costInput.placeholder = "Calculated on save";
     }
 
     if (totalInput) {
       totalInput.value = "";
-      totalInput.placeholder =
-        "Calculated on save";
+      totalInput.placeholder = "Calculated on save";
     }
 
     recalcMfgBomTotals();
@@ -126721,7 +126832,11 @@ async function saveManufacturingBomDefinition() {
       "#mfgBomDefinitionLinesTbody tr"
     );
 
+  let materialRowNo = 0;
+
   for (const row of materialRows) {
+
+    materialRowNo++;
 
     // IMPORTANT:
     // These selectors match addManufacturingBomDefinitionLine()
@@ -126743,8 +126858,12 @@ async function saveManufacturingBomDefinition() {
     const quantity =
       Number(qtyEl?.value || 0);
 
+    // Fall back to the unit declared on the selected option so a
+    // display glitch can never block saving a valid component.
     const unit =
-      unitEl?.value?.trim() || "";
+      unitEl?.value?.trim() ||
+      itemEl?.selectedOptions?.[0]?.dataset?.unit ||
+      "";
 
     const scrapPct =
       Number(scrapEl?.value || 0);
@@ -126761,21 +126880,21 @@ async function saveManufacturingBomDefinition() {
 
     if (!itemId) {
       return showManufacturingBomDefinitionMsg(
-        "Each BOM component must have an item.",
+        `Component row ${materialRowNo}: select a material item (or remove the empty row).`,
         "error"
       );
     }
 
     if (!(quantity > 0)) {
       return showManufacturingBomDefinitionMsg(
-        "Each BOM component must have a quantity greater than zero.",
+        `Component row ${materialRowNo}: quantity must be greater than zero.`,
         "error"
       );
     }
 
     if (!unit) {
       return showManufacturingBomDefinitionMsg(
-        "Each BOM component must have a consumption unit.",
+        `Component row ${materialRowNo}: a consumption unit is required.`,
         "error"
       );
     }
@@ -126785,7 +126904,7 @@ async function saveManufacturingBomDefinition() {
       scrapPct > 100
     ) {
       return showManufacturingBomDefinitionMsg(
-        "Scrap percentage must be between 0 and 100.",
+        `Component row ${materialRowNo}: scrap percentage must be between 0 and 100.`,
         "error"
       );
     }
@@ -126794,7 +126913,8 @@ async function saveManufacturingBomDefinition() {
       item_id: itemId,
       quantity: quantity,
       unit: unit,
-      scrap_pct: scrapPct
+      scrap_pct: scrapPct,
+      scrap_percent: scrapPct
     });
   }
 
@@ -127034,6 +127154,67 @@ async function saveManufacturingBomDefinition() {
         saved?.error ||
         "Failed to save BOM."
       );
+    }
+
+    // If the backend returned the saved lines with authoritative
+    // costs, reflect them immediately in the grid and summary.
+    const savedBom =
+      saved?.bom || saved?.data?.bom || saved;
+
+    const savedLines =
+      savedBom?.lines ||
+      savedBom?.bom_lines ||
+      [];
+
+    if (Array.isArray(savedLines) && savedLines.length) {
+      const byItem = new Map(
+        savedLines.map(l => [
+          String(
+            l.item_id ??
+            l.material_item_id ??
+            l.inventory_item_id ??
+            l.item?.id ??
+            ""
+          ),
+          l
+        ])
+      );
+
+      document
+        .querySelectorAll("#mfgBomDefinitionLinesTbody tr")
+        .forEach(tr => {
+          const itemEl =
+            tr.querySelector(".mfg-line-item");
+
+          const line =
+            byItem.get(String(itemEl?.value || ""));
+
+          if (!line) return;
+
+          const unitCost = Number(
+            line.unit_cost ?? line.material_unit_cost ?? 0
+          );
+
+          const lineTotal = Number(
+            line.line_total ?? line.total_cost ?? line.total ?? 0
+          );
+
+          const costInput =
+            tr.querySelector(".mfg-line-cost");
+
+          const totalInput =
+            tr.querySelector(".mfg-line-total");
+
+          if (costInput && unitCost > 0) {
+            costInput.value = String(unitCost);
+          }
+
+          if (totalInput && lineTotal > 0) {
+            totalInput.value = lineTotal.toFixed(2);
+          }
+        });
+
+      recalcMfgBomTotals();
     }
 
     showManufacturingBomDefinitionMsg(
@@ -127728,11 +127909,14 @@ function recalcMfgBomTotals() {
     )
     .forEach(tr => {
 
-      const cost =
-        Number(
-          tr.querySelector(
-            ".mfg-line-cost"
-          )?.value || 0
+      const costInput =
+        tr.querySelector(
+          ".mfg-line-cost"
+        );
+
+      const itemEl =
+        tr.querySelector(
+          ".mfg-line-item"
         );
 
       const qty =
@@ -127754,10 +127938,44 @@ function recalcMfgBomTotals() {
           ".mfg-line-total"
         );
 
+      let cost =
+        Number(costInput?.value || 0);
+
+      /*
+       * Live preview: if no backend cost has been
+       * populated yet, estimate the unit cost from
+       * the cached inventory item so the summary
+       * reflects direct materials immediately. The
+       * backend remains authoritative for costing.
+       */
+      if (
+        !(cost > 0) &&
+        itemEl?.value
+      ) {
+        const cached =
+          mfgGetItemCacheRows().find(
+            i =>
+              String(i.id) ===
+              String(itemEl.value)
+          );
+
+        const cachedCost =
+          mfgItemUnitCost(cached);
+
+        if (cachedCost > 0) {
+          cost = cachedCost;
+
+          if (costInput) {
+            costInput.value =
+              String(cachedCost);
+          }
+        }
+      }
+
       /*
        * Only use a material cost if one has
        * actually been returned/populated by
-       * the backend.
+       * the backend (or previewed from cache).
        */
       if (
         cost > 0 &&
