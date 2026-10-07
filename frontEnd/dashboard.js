@@ -1,4 +1,4 @@
-﻿(function hardTraceRedirects() {
+(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -126009,15 +126009,11 @@ function renderManufacturingBoms(rows) {
     </div>
   `;
 
-  mount.querySelectorAll("[data-mfg-bom]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const bomId = Number(btn.dataset.mfgBom || 0);
-
-      if (bomId) {
-        openManufacturingBomDefinitionModal(bomId);
-      }
-    });
-  });
+  // NOTE: "Open" clicks are handled exclusively by the delegated
+  // listener on the manufacturing mount (bindManufacturingUI).
+  // Do NOT bind direct per-button listeners here — that made every
+  // click fire openManufacturingBomDefinitionModal() twice, which
+  // fired the BOM GET twice and duplicated every modal row.
 }
 
 /* ==========================================================================
@@ -126349,6 +126345,24 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     modal.addEventListener("change", handleMfgBomModalInput);
   }
 
+  // ------------------------------------------------------------
+  // Re-entrancy & stale-load protection.
+  // One click used to reach this function twice (delegated +
+  // direct handlers), firing the BOM GET twice and appending
+  // every material/labour row twice. Only the first invocation
+  // may load; a newer open supersedes older in-flight loads.
+  // ------------------------------------------------------------
+  if (modal.dataset.loading === "1") return;
+
+  modal.dataset.loading = "1";
+
+  const loadToken =
+    (window.__MFG_BOM_LOAD_SEQ =
+      (window.__MFG_BOM_LOAD_SEQ || 0) + 1);
+
+  const isCurrentLoad = () =>
+    window.__MFG_BOM_LOAD_SEQ === loadToken;
+
   modal.dataset.bomId = String(bomId || 0);
 
   document.getElementById("mfgBomDefinitionCode").value = "";
@@ -126406,6 +126420,9 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       assets: Array.isArray(assets) ? assets : []
     };
 
+    // A newer open superseded this load — discard it silently.
+    if (!isCurrentLoad()) return;
+
     if (!bomId) {
       addManufacturingBomDefinitionLine();
       addMfgBomLabourRow();
@@ -126416,6 +126433,10 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     }
 
     const data = await apiFetch(ENDPOINTS.manufacturing.bom(cid, bomId));
+
+    // A newer open superseded this load — discard it silently.
+    if (!isCurrentLoad()) return;
+
     if (!data?.ok || !data?.bom) throw new Error(data?.error || "Unable to load BOM");
 
     const bom = data.bom;
@@ -126427,19 +126448,46 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     document.getElementById("mfgBomDefinitionBatchUnit").value = bom.batch_unit ?? "unit";
     document.getElementById("mfgBomDefinitionDescription").value = bom.description ?? "";
 
-    (bom.lines || []).forEach(l => addManufacturingBomDefinitionLine(l));
-    (bom.labour || []).forEach(r => addMfgBomLabourRow(r));
-    (bom.direct_costs || []).forEach(r => addMfgBomDirectCostRow(r));
-    (bom.overheads || []).forEach(r => addMfgBomOverheadRow(r));
+    // Start the row tables from a clean slate right before appending,
+    // so a partially-rendered stale load can never combine with this
+    // one (this is what produced the duplicate rows).
+    document.getElementById("mfgBomDefinitionLinesTbody").innerHTML = "";
+    document.getElementById("mfgBomLabourTbody").innerHTML = "";
+    document.getElementById("mfgBomDirectTbody").innerHTML = "";
+    document.getElementById("mfgBomOverheadTbody").innerHTML = "";
+
+    mfgDedupeRows(
+      bom.lines,
+      ["item_id", "material_item_id", "inventory_item_id", "itemId",
+        "qty", "quantity", "unit_cost", "cost", "scrap_pct", "scrap_percent"]
+    ).forEach(l => addManufacturingBomDefinitionLine(l));
+    mfgDedupeRows(
+      bom.labour,
+      ["employee_id", "employee_name", "role", "hours", "hourly_rate", "cost"]
+    ).forEach(r => addMfgBomLabourRow(r));
+    mfgDedupeRows(
+      bom.direct_costs,
+      ["description", "name", "amount", "cost"]
+    ).forEach(r => addMfgBomDirectCostRow(r));
+    mfgDedupeRows(
+      bom.overheads,
+      ["description", "name", "amount", "cost"]
+    ).forEach(r => addMfgBomOverheadRow(r));
 
     recalcMfgBomTotals();
   } catch (err) {
+    if (!isCurrentLoad()) return;
+
     console.error("[Manufacturing BOM] failed to load:", err);
     document.getElementById("mfgBomDefinitionMsg").innerHTML = `
       <div class="mb-3 border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2 text-xs">
         ${esc(err?.message || "Unable to load manufacturing BOM.")}
       </div>
     `;
+  } finally {
+    if (isCurrentLoad()) {
+      modal.dataset.loading = "0";
+    }
   }
 }
 
@@ -126481,6 +126529,35 @@ function mfgItemUnitCost(item) {
   }
 
   return 0;
+}
+
+// Defensive dedupe for rows returned by GET /manufacturing/boms/{id}.
+// - Rows sharing the same DB id are collapsed (backend double-join).
+// - Id-less rows with an identical field signature are collapsed
+//   (legacy pollution from the earlier double-render bug).
+// - Distinct-id rows are ALWAYS kept: if a BOM still shows apparent
+//   duplicates after this fix, those are real database rows and should
+//   be removed once via the row's remove button, then saved.
+function mfgDedupeRows(rows, fields) {
+  const seen = new Set();
+  const out = [];
+
+  (Array.isArray(rows) ? rows : []).forEach(r => {
+    const id = r?.id ?? r?.line_id ?? null;
+    const key = id != null
+      ? `id:${id}`
+      : `c:${(fields || []).map(f => String(r?.[f] ?? "")).join("|")}`;
+
+    if (seen.has(key)) {
+      console.warn("[Manufacturing BOM] duplicate row skipped on load:", key);
+      return;
+    }
+
+    seen.add(key);
+    out.push(r);
+  });
+
+  return out;
 }
 
 function addManufacturingBomDefinitionLine(line = {}) {
@@ -126713,6 +126790,12 @@ function closeManufacturingBomDefinitionModal() {
 
   if (modal) {
     modal.classList.add("hidden");
+
+    // Release the load guard and invalidate any in-flight load so the
+    // next open always starts fresh.
+    modal.dataset.loading = "0";
+    window.__MFG_BOM_LOAD_SEQ =
+      (window.__MFG_BOM_LOAD_SEQ || 0) + 1;
   }
 }
 
@@ -126986,6 +127069,7 @@ async function saveManufacturingBomDefinition() {
     }
 
     labour.push({
+      employee_id: workerId,
       worker_name,
       role,
       hours,
