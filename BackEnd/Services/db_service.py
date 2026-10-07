@@ -85985,25 +85985,20 @@ class DatabaseService:
         The inventory item's sales_price is treated as the planned/standard
         material cost per inventory unit.
 
-        Example:
-            inventory item = Flour
-            inventory unit = kg
-            sales_price = 120
-            BOM unit = g
-
-            120 / kg -> 0.12 / g
-
-        Universal unit conversions are supported for:
+        Universal conversions are supported for:
             mass, volume, length, area and count.
 
-        Packaging units such as box/carton/bag/bottle/pack/pallet/roll/sheet
-        are only compatible with themselves unless an item-specific conversion
-        is defined in inventory_items.meta["unit_conversions"].
+        Packaging/custom units require an item-specific conversion stored
+        in inventory_items.meta["unit_conversions"].
 
         The frontend-supplied unit_cost is deliberately NOT used.
         """
 
         schema = self.company_schema(company_id)
+
+        # Capture the requested BOM unit outside the nested cursor function.
+        # This avoids Python closure/local-variable ambiguity.
+        requested_bom_unit = bom_unit
 
         def _normalize_unit(value):
             if value is None:
@@ -86017,15 +86012,12 @@ class DatabaseService:
                 "kgs": "kg",
                 "kilogram": "kg",
                 "kilograms": "kg",
-
                 "g": "g",
                 "gram": "g",
                 "grams": "g",
-
                 "mg": "mg",
                 "milligram": "mg",
                 "milligrams": "mg",
-
                 "t": "t",
                 "ton": "t",
                 "tons": "t",
@@ -86040,13 +86032,11 @@ class DatabaseService:
                 "litre": "l",
                 "liters": "l",
                 "litres": "l",
-
                 "ml": "ml",
                 "milliliter": "ml",
                 "milliliters": "ml",
                 "millilitre": "ml",
                 "millilitres": "ml",
-
                 "m3": "m3",
                 "m³": "m3",
                 "cubic meter": "m3",
@@ -86058,19 +86048,16 @@ class DatabaseService:
                 "meters": "m",
                 "metre": "m",
                 "metres": "m",
-
                 "cm": "cm",
                 "centimeter": "cm",
                 "centimeters": "cm",
                 "centimetre": "cm",
                 "centimetres": "cm",
-
                 "mm": "mm",
                 "millimeter": "mm",
                 "millimeters": "mm",
                 "millimetre": "mm",
                 "millimetres": "mm",
-
                 "km": "km",
                 "kilometer": "km",
                 "kilometers": "km",
@@ -86082,12 +86069,10 @@ class DatabaseService:
                 "m²": "m2",
                 "square meter": "m2",
                 "square metre": "m2",
-
                 "cm2": "cm2",
                 "cm²": "cm2",
                 "square centimeter": "cm2",
                 "square centimetre": "cm2",
-
                 "mm2": "mm2",
                 "mm²": "mm2",
                 "square millimeter": "mm2",
@@ -86101,7 +86086,6 @@ class DatabaseService:
                 "pieces": "unit",
                 "pc": "unit",
                 "pcs": "unit",
-
                 "dozen": "dozen",
                 "dozens": "dozen",
 
@@ -86175,7 +86159,7 @@ class DatabaseService:
             """
             Optional item-specific conversion support.
 
-            Expected meta structure:
+            Example:
 
             {
                 "unit_conversions": [
@@ -86208,11 +86192,17 @@ class DatabaseService:
                 if not isinstance(conversion, dict):
                     continue
 
-                cf = _normalize_unit(conversion.get("from_unit"))
-                ct = _normalize_unit(conversion.get("to_unit"))
+                cf = _normalize_unit(
+                    conversion.get("from_unit")
+                )
+                ct = _normalize_unit(
+                    conversion.get("to_unit")
+                )
 
                 try:
-                    factor = Decimal(str(conversion.get("factor")))
+                    factor = Decimal(
+                        str(conversion.get("factor"))
+                    )
                 except Exception:
                     continue
 
@@ -86289,8 +86279,13 @@ class DatabaseService:
                 )
 
             inventory_unit = _normalize_unit(inventory_unit)
-            bom_unit = _normalize_unit(
-                bom_unit if bom_unit else inventory_unit
+
+            # Use the BOM line unit when supplied.
+            # Otherwise use the inventory item's own unit.
+            line_unit = _normalize_unit(
+                requested_bom_unit
+                if requested_bom_unit
+                else inventory_unit
             )
 
             if not inventory_unit:
@@ -86298,43 +86293,54 @@ class DatabaseService:
                     f"Inventory unit is not defined for item: {item_name}"
                 )
 
-            if not bom_unit:
+            if not line_unit:
                 raise ValueError(
                     f"BOM unit is not defined for item: {item_name}"
                 )
 
             # Same unit: no conversion required.
-            if inventory_unit == bom_unit:
+            if inventory_unit == line_unit:
                 conversion_to_inventory_unit = Decimal("1")
 
             else:
                 # First try universal measurement conversion.
-                inventory_family = _family_and_factor(inventory_unit)
-                bom_family = _family_and_factor(bom_unit)
+                inventory_family = _family_and_factor(
+                    inventory_unit
+                )
+                bom_family = _family_and_factor(
+                    line_unit
+                )
 
                 if inventory_family and bom_family:
-                    inventory_family_name, inventory_factor = inventory_family
-                    bom_family_name, bom_factor = bom_family
+                    (
+                        inventory_family_name,
+                        inventory_factor,
+                    ) = inventory_family
+
+                    (
+                        bom_family_name,
+                        bom_factor,
+                    ) = bom_family
 
                     if inventory_family_name != bom_family_name:
                         raise ValueError(
-                            f"Incompatible BOM unit '{bom_unit}' for "
-                            f"inventory item '{item_name}' "
+                            f"Incompatible BOM unit '{line_unit}' "
+                            f"for inventory item '{item_name}' "
                             f"(inventory unit: '{inventory_unit}'). "
                             f"These units cannot be converted."
                         )
 
-                    # bom unit -> base -> inventory unit
+                    # BOM unit -> base -> inventory unit
                     conversion_to_inventory_unit = (
                         bom_factor / inventory_factor
                     )
 
                 else:
-                    # Packaging / custom item-specific conversion.
+                    # Packaging/custom item-specific conversion.
                     conversion_to_inventory_unit = (
                         _item_specific_factor(
                             meta,
-                            bom_unit,
+                            line_unit,
                             inventory_unit,
                         )
                     )
@@ -86342,10 +86348,11 @@ class DatabaseService:
                     if conversion_to_inventory_unit is None:
                         raise ValueError(
                             f"No conversion exists from BOM unit "
-                            f"'{bom_unit}' to inventory unit "
+                            f"'{line_unit}' to inventory unit "
                             f"'{inventory_unit}' for item "
                             f"'{item_name}'. "
-                            f"An item-specific unit conversion is required."
+                            f"An item-specific unit conversion "
+                            f"is required."
                         )
 
             # Cost per ONE BOM unit.
