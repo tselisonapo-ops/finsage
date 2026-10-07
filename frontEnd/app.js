@@ -1414,10 +1414,15 @@ function handleRegistration(event) {
   var progressOverlay = showSignupProgress();
   var completedSteps = {};
 
+  // Allow the user to cancel the registration request.
+  var signupAbortController = new AbortController();
+  window._signupAbortController = signupAbortController;
+
   fetch(AUTH_SIGNUP_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: signupAbortController.signal
   })
   .then(function (response) {
     // Read the SSE stream
@@ -1489,9 +1494,26 @@ function handleRegistration(event) {
     }
   })
   .catch(function (err) {
+    // User deliberately cancelled the registration.
+    if (err && err.name === "AbortError") {
+      console.log("Registration cancelled by user.");
+      return;
+    }
+
     hideSignupProgress();
-    alert("Error: " + (err && err.message ? err.message : "Unexpected error"));
+
+    alert(
+      "Error: " +
+      (err && err.message ? err.message : "Unexpected error")
+    );
+
     console.error(err);
+  })
+  .finally(function () {
+    // Clear the controller when the request finishes.
+    if (window._signupAbortController === signupAbortController) {
+      window._signupAbortController = null;
+    }
   });
 }
 
@@ -1516,18 +1538,24 @@ const SPINNER_ICON = "\u23F3";  // ⏳
  */
 function showSignupProgress() {
   let container = document.getElementById(PROGRESS_CONTAINER_ID);
+
   if (!container) {
     container = document.createElement("div");
     container.id = PROGRESS_CONTAINER_ID;
-    // Insert at top of form or body
+
     const form = document.getElementById("registrationForm")
                  || document.querySelector("form")
                  || document.body;
+
     form.prepend(container);
   }
+
   container.style.cssText = `
     position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     background: rgba(0,0,0,0.5);
     display: flex;
     align-items: center;
@@ -1537,6 +1565,7 @@ function showSignupProgress() {
 
   container.innerHTML = `
     <div style="
+      position: relative;
       background: white;
       border-radius: 16px;
       padding: 32px 36px 24px;
@@ -1545,45 +1574,155 @@ function showSignupProgress() {
       box-shadow: 0 20px 60px rgba(0,0,0,0.3);
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     ">
+
+      <button
+        type="button"
+        id="${PROGRESS_CONTAINER_ID}_close"
+        aria-label="Cancel registration"
+        title="Cancel registration"
+        style="
+          position: absolute;
+          top: 10px;
+          right: 12px;
+          width: 34px;
+          height: 34px;
+          border: 0;
+          background: transparent;
+          color: #6b7280;
+          font-size: 26px;
+          line-height: 30px;
+          cursor: pointer;
+          border-radius: 8px;
+        "
+      >&times;</button>
+
       <div style="text-align:center; margin-bottom:20px;">
+
         <div style="
-          width:48px; height:48px;
-          border: 4px solid #e5e7eb;
-          border-top-color: #0d9488;
-          border-radius: 50%;
-          animation: fs-spin 0.8s linear infinite;
-          margin: 0 auto 12px;
+          width:48px;
+          height:48px;
+          border:4px solid #e5e7eb;
+          border-top-color:#0d9488;
+          border-radius:50%;
+          animation:fs-spin 0.8s linear infinite;
+          margin:0 auto 12px;
         "></div>
+
         <style>
-          @keyframes fs-spin { to { transform: rotate(360deg); } }
+          @keyframes fs-spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
         </style>
-        <h3 style="margin:0; font-size:1.15rem; color:#111827;">
+
+        <h3 style="
+          margin:0;
+          font-size:1.15rem;
+          color:#111827;
+        ">
           Creating your account
         </h3>
-        <p style="margin:6px 0 0; font-size:0.85rem; color:#6b7280;">
+
+        <p style="
+          margin:6px 0 0;
+          font-size:0.85rem;
+          color:#6b7280;
+        ">
           This may take a few seconds, please don't close this page.
         </p>
       </div>
-      <ul id="${PROGRESS_CONTAINER_ID}_steps"
-          style="
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            font-size: 0.875rem;
-            color: #374151;
-          ">
-      </ul>
-      <div id="${PROGRESS_CONTAINER_ID}_error"
-           style="display:none; margin-top:16px; padding:10px 14px;
-                  background:#fee2e2; border:1px solid #fecaca;
-                  border-radius:8px; color:#b91c1c; font-size:0.85rem;">
-      </div>
+
+      <ul
+        id="${PROGRESS_CONTAINER_ID}_steps"
+        style="
+          list-style:none;
+          padding:0;
+          margin:0;
+          font-size:0.875rem;
+          color:#374151;
+        "
+      ></ul>
+
+      <div
+        id="${PROGRESS_CONTAINER_ID}_error"
+        style="
+          display:none;
+          margin-top:16px;
+          padding:10px 14px;
+          background:#fee2e2;
+          border:1px solid #fecaca;
+          border-radius:8px;
+          color:#b91c1c;
+          font-size:0.85rem;
+        "
+      ></div>
     </div>
   `;
 
+  const closeBtn = document.getElementById(
+    `${PROGRESS_CONTAINER_ID}_close`
+  );
+
+  if (closeBtn) {
+    closeBtn.addEventListener("mouseenter", function () {
+      this.style.background = "#f3f4f6";
+      this.style.color = "#111827";
+    });
+
+    closeBtn.addEventListener("mouseleave", function () {
+      this.style.background = "transparent";
+      this.style.color = "#6b7280";
+    });
+
+    closeBtn.addEventListener("click", function () {
+
+      // Abort the active signup request if an AbortController exists.
+      try {
+        if (window._signupAbortController) {
+          window._signupAbortController.abort();
+          window._signupAbortController = null;
+        }
+      } catch (e) {
+        console.warn("Unable to abort signup request:", e);
+      }
+
+      // Stop the loading overlay.
+      container.style.display = "none";
+
+      // Re-enable the registration form.
+      const form = document.getElementById("registrationForm");
+
+      if (form) {
+        form.querySelectorAll(
+          "button, input, select, textarea"
+        ).forEach(function (el) {
+          el.disabled = false;
+        });
+
+        form.classList.remove(
+          "is-loading",
+          "loading",
+          "submitting"
+        );
+
+        form.removeAttribute("aria-busy");
+      }
+
+      // Re-enable submit buttons.
+      document.querySelectorAll(
+        '#registrationForm button[type="submit"], ' +
+        'button[type="submit"][data-signup-submit]'
+      ).forEach(function (btn) {
+        btn.disabled = false;
+        btn.classList.remove("loading", "is-loading");
+        btn.removeAttribute("aria-busy");
+      });
+    });
+  }
+
   return container;
 }
-
 /**
  * Add / update a step row in the progress list.
  */

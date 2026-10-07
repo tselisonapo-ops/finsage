@@ -54296,7 +54296,7 @@ class DatabaseService:
         );
 
         ALTER TABLE {schema}.manufacturing_order_dispatches
-        ADD COLUMN IF NOT EXISTS doc_type VARCHAR(50) DEFAULT ''dispatch'',
+        ADD COLUMN IF NOT EXISTS doc_type VARCHAR(50) DEFAULT 'dispatch',
         ADD COLUMN IF NOT EXISTS posted_journal_id INT NULL,
         ADD COLUMN IF NOT EXISTS customer_name VARCHAR(150) NULL,
         ADD COLUMN IF NOT EXISTS is_manual_ref BOOLEAN DEFAULT FALSE;
