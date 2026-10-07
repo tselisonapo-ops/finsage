@@ -53678,7 +53678,7 @@ class DatabaseService:
             UNIQUE(po_id, line_no)
         );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS {schema}_po_lines_uniq
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_po_lines_uniq
         ON {schema}.purchase_order_lines(po_id, line_no);
 
         -- FK tx_lines.po_line_id -> purchase_order_lines.id
@@ -54015,7 +54015,7 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_bom_overhead_company_bom_idx
         ON {schema}.manufacturing_bom_overhead(company_id, bom_id);
 
-        # 3) MANUFACTURING ORDERS / PRODUCTION BATCHES
+        --- 3) MANUFACTURING ORDERS / PRODUCTION BATCHES
         CREATE TABLE IF NOT EXISTS {schema}.manufacturing_orders (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
