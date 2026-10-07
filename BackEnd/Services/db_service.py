@@ -105872,11 +105872,35 @@ class DatabaseService:
             "reference": (data.get("reference") or "").strip() or None,
             "description": (data.get("description") or "").strip() or None,
             "auto_calculate_split": bool(data.get("auto_calculate_split", True)),
-            "principal_amount": _money(data.get("principal_amount")),
-            "interest_amount": _money(data.get("interest_amount")),
-            "accrued_interest_amount": _money(data.get("accrued_interest_amount")),
-            "fees_amount": _money(data.get("fees_amount")),
-            "penalties_amount": _money(data.get("penalties_amount")),
+
+            # These are normally calculated by the backend from the loan schedule.
+            # Preserve None when the caller does not explicitly provide them.
+            "principal_amount": (
+                _money(data["principal_amount"])
+                if data.get("principal_amount") is not None
+                else None
+            ),
+            "interest_amount": (
+                _money(data["interest_amount"])
+                if data.get("interest_amount") is not None
+                else None
+            ),
+            "accrued_interest_amount": (
+                _money(data["accrued_interest_amount"])
+                if data.get("accrued_interest_amount") is not None
+                else None
+            ),
+            "fees_amount": (
+                _money(data["fees_amount"])
+                if data.get("fees_amount") is not None
+                else None
+            ),
+            "penalties_amount": (
+                _money(data["penalties_amount"])
+                if data.get("penalties_amount") is not None
+                else None
+            ),
+
             "allocation_method": (data.get("allocation_method") or "").strip() or None,
             "status": "preview",
             "notes": (data.get("notes") or "").strip() or None,
