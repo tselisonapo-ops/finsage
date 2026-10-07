@@ -1,4 +1,4 @@
-(function hardTraceRedirects() {
+﻿(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -126986,7 +126986,6 @@ async function saveManufacturingBomDefinition() {
     }
 
     labour.push({
-      employee_id: workerId,
       worker_name,
       role,
       hours,

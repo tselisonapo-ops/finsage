@@ -13896,6 +13896,10 @@ def get_manufacturing_bom(cid: int, bom_id: int):
         updated = db_service.update_manufacturing_bom(
             company_id=company_id,
             bom_id=bom_id,
+
+            # ------------------------------------------------------------
+            # BOM HEADER
+            # ------------------------------------------------------------
             finished_item_name=payload.get("finished_item_name"),
             selling_price=payload.get("selling_price"),
             bom_code=payload.get("bom_code"),
@@ -13907,6 +13911,19 @@ def get_manufacturing_bom(cid: int, bom_id: int):
             effective_from=payload.get("effective_from"),
             effective_to=payload.get("effective_to"),
             is_default=payload.get("is_default"),
+
+            # ------------------------------------------------------------
+            # BOM COST STRUCTURE
+            #
+            # Material unit_cost is intentionally NOT supplied by the
+            # frontend. replace_manufacturing_bom_lines() calculates it
+            # authoritatively from the inventory item + unit conversion.
+            # ------------------------------------------------------------
+            lines=payload.get("lines"),
+            labour=payload.get("labour"),
+            direct_costs=payload.get("direct_costs"),
+            overheads=payload.get("overheads"),
+
             updated_by_user_id=int(user.get("id") or 0) or None,
         )
 
