@@ -38,6 +38,7 @@ export function CashierPage() {
   const [cart, setCart] = useState([]);
   const [selectedCartItemId, setSelectedCartItemId] = useState(null);
   const [message, setMessage] = useState("");
+  const [saleError, setSaleError] = useState("");
 
   const [showSignin, setShowSignin] = useState(false);
   const [employeeCode, setEmployeeCode] = useState("");
@@ -655,6 +656,7 @@ export function CashierPage() {
 
   async function finalisePayment() {
     console.log("FINALISE SALE", cart, totals);
+    setSaleError("");
 
     if (!cart.length) {
       setMessage("No items to complete.");
@@ -817,7 +819,12 @@ export function CashierPage() {
       setActivePanel("sale");
     } catch (err) {
       console.error(err);
-      setMessage(err.message || "Failed to complete sale.");
+
+      const errorMessage =
+        err?.message ||
+        "Failed to complete sale.";
+
+      setSaleError(errorMessage);
     }
   }
 
@@ -1671,7 +1678,13 @@ export function CashierPage() {
             >
               Complete Sale
             </button>
-            )}
+          )}
+
+          {saleError && (
+            <div className="pos-sale-error" role="alert">
+              {saleError}
+            </div>
+          )}
           </div>
         </section>
       )}
