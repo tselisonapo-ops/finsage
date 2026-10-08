@@ -1,4 +1,4 @@
-﻿(function hardTraceRedirects() {
+(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -8764,15 +8764,10 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
           minRole: "clerk",
           children: [
             {
-              name: "Lessee Leases",
+              name: "Lease Center (Lessee)",
+              screen: "lease-center",
               icon: "📥",
-              isParent: true,
-              minRole: "clerk",
-              children: [
-                { name: "Lease Register", screen: "lease-register", icon: "📚", minRole: "assistant" },
-                { name: "Lease Payments", screen: "lease-payments", icon: "💳", minRole: "clerk" },
-                { name: "Monthly Posting", screen: "lease-monthly", icon: "📅", minRole: "assistant" },
-              ],
+              minRole: "assistant",
             },
             {
               name: "Lessor Leases",
@@ -9055,6 +9050,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
     dashboard:"",
     journal:"workflows/journal",
 
+    "lease-center":"workflows/leases/center",
     "lease-register":"workflows/leases/register",
     "lease-payments":"workflows/leases/payments",
     "lease-monthly":"workflows/leases/monthly-posting",
@@ -10870,6 +10866,7 @@ const SCREEN_POLICY = {
   // Transactions
   journal: { auth: "private", minRole: "clerk", permission: "can_post_journals" },
   "journal-reversal": { auth: "private", minRole: "assistant", permission: "can_post_journals" },
+  "lease-center":   { auth: "private", minRole: "assistant", permissionAny: ["can_prepare_financials", "can_post_journals"] },
   "lease-payments": { auth: "private", minRole: "assistant", permission: "can_post_journals" },
   "lease-monthly":  { auth: "private", minRole: "assistant", permission: "can_post_journals" },
   "lease-register": { auth: "private", minRole: "assistant", permission: "can_prepare_financials" },
@@ -12763,6 +12760,7 @@ async function switchScreen(
         "inventory-valuation": "Catalog Studio - Inventory Valuation",
         manufacturing: "Catalog Studio - Manufacturing",
         "service-items": "Catalog Studio - Service Items",
+        "lease-center": "IFRS 16 - Lease Center (Lessee)",
         "lease-payments": "IFRS 16 - Lease Payments",
         "lease-monthly": "IFRS 16 - Monthly Posting",
         "lease-mods": "IFRS 16 - Modifications",
@@ -17355,6 +17353,7 @@ window.getSchoolTermInfo = getSchoolTermInfo;
 // ---- Public School nav visibility rules ----
 const SCHOOL_HIDDEN_SCREENS = {
   // IFRS 16
+  "lease-center": 1,
   "lease-register": 1, "lease-payments": 1, "lease-monthly": 1, "lessor-subsequent": 1,
   // Revenue Desk
   "ar-invoices": 1, "ar-quotes": 1, "revenue": 1,
@@ -42382,6 +42381,7 @@ window.bindLeasesScreen = async function bindLeasesScreen(routeName) {
   // 2) decide current tab from route
 // 2) decide current tab from route
 const routeToTab = {
+  "lease-center":   "center",
   "lease-payments": "payments",
   "lease-monthly":  "monthly",
   "lease-register": "register",  // ✅ default register screen shows Monthly Due
@@ -42399,8 +42399,9 @@ window.LEASE_UI.state = window.LEASE_UI.state || {};
 window.LEASE_UI.state.tab = tab;
 
 // 4) render correct header tabs based on ROUTE (not tab)
+//    lease-center renders its own in-view tabs → keep the header tabs empty
 if (tabsMount) {
-  tabsMount.innerHTML = window.renderLeaseHeaderTabs?.(routeName) || "";
+  tabsMount.innerHTML = tab === "center" ? "" : (window.renderLeaseHeaderTabs?.(routeName) || "");
 }
 
 // 5) highlight active tab button
@@ -42454,6 +42455,14 @@ window.renderLeaseScreen = async function renderLeaseScreen(opts = {}) {
       return window.renderLeaseMonthlyDueView(mount);
     }
     mount.innerHTML = `<div class="border rounded p-3 text-sm text-slate-600">Monthly Due view not loaded.</div>`;
+    return;
+  }
+
+  if (tab === "center") {
+    if (typeof window.renderLeaseCenterView === "function") {
+      return window.renderLeaseCenterView(mount);
+    }
+    mount.innerHTML = `<div class="border rounded p-3 text-sm text-slate-600">Lease Center view not loaded.</div>`;
     return;
   }
 
@@ -156956,4 +156965,836 @@ if (document.readyState === "loading") {
     rebind: wireAll,
     instances: _bound,
   };
+})();
+
+
+/* ============================================================
+   IFRS 16 LESSEE LEASE CENTER — consolidated single screen
+   (merges: lease-register + lease-payments + lease-monthly)
+   ------------------------------------------------------------
+   - Master-detail workspace: register list (left) ⇄ lease workspace
+   - Tabs: Overview / Schedule / Payments / Month-End / Mods / Terms
+   - Reuses existing app infrastructure:
+       · #leasePayModal            → window.openLeasePaymentModal(...)
+       · IFRS 16 Lease Wizard      → window.openLeaseWizard(...)  (same
+       · drawer the Manual Journal launches on lease-related account)
+       · Register modal            → window.openLeaseRegisterModal(...)
+       · Month-end "Post IFRS 16"  → loadJournalIntoLines(det, { mode:
+         "append" }) — identical to the Monthly Posting view, so the
+         IFRS 16 month-end journal still lands in Manual Journal
+   - Endpoints: window.endpoints.leases.* / window.endpoints.reports.*
+   - Gating: window.hasPermission("can_post_journals")
+   ============================================================ */
+(function () {
+  if (window.__FS_LEASE_CENTER__) return;
+  window.__FS_LEASE_CENTER__ = true;
+
+  const LC = {
+    leases: [], monthly: [], schedule: [], payments: [], mods: [], terms: [],
+    leaseId: null, lease: null,
+    tab: "overview", q: "", status: "all",
+    asOf: "", qME: "",
+    loading: {},
+    _dataFor: null, _monthlyLoaded: false,
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) =>
+    typeof window.escapeHtml === "function"
+      ? window.escapeHtml(s)
+      : String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m]));
+  const money = (v) => { try { return fmtMoney(Number(v) || 0); } catch (_) { return String(v ?? ""); } };
+  const cid = () => Number(window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || 0);
+  const canPost = () => window.isSeniorFullAccess?.() === true || window.hasPermission?.("can_post_journals") === true;
+  const iso = (v) => String(v || "").slice(0, 10);
+  const today = () => new Date().toISOString().slice(0, 10);
+  const debounce = (fn, ms = 200) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+  const leaseIdOf = (l) => Number(l?.id ?? l?.lease_id ?? 0);
+  const nameOf = (l) => l?.lease_name || l?.name || `Lease ${leaseIdOf(l)}`;
+  const lessorOf = (l) => l?.lessor_name || l?.lessor || "";
+  const statusOf = (l) => String(l?.status || (iso(l?.end_date) && iso(l.end_date) < today() ? "ended" : "active")).toLowerCase();
+  const rowsOf = (res, keys) => { for (const k of keys) if (Array.isArray(res?.[k])) return res[k]; return Array.isArray(res) ? res : []; };
+  const EP = () => window.endpoints?.leases || {};
+  const REP = () => window.endpoints?.reports || {};
+
+  function lcMsg(id, msg, type = "error") {
+    const el = typeof id === "string" ? $(id) : id;
+    if (!el) return;
+    el.textContent = msg || "";
+    el.classList.toggle("hidden", !msg);
+    el.classList.toggle("text-rose-600", type === "error");
+    el.classList.toggle("text-emerald-600", type === "ok");
+  }
+
+  function chipHtml(txt, tone) {
+    const tones = {
+      green: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      amber: "bg-amber-50 text-amber-700 border-amber-200",
+      red: "bg-rose-50 text-rose-700 border-rose-200",
+      slate: "bg-slate-50 text-slate-600 border-slate-200",
+    };
+    return `<span class="inline-flex items-center px-2 py-0.5 rounded border text-[11px] ${tones[tone] || tones.slate}">${esc(txt)}</span>`;
+  }
+
+  /* ── normalizers (defensive, same spirit as the existing views) ── */
+  function meRow(r) {
+    const leaseId = Number(r.lease_id ?? r.id ?? 0);
+    const periodNo = r.period_no ?? r.period ?? r.period_number ?? "";
+    const due = (r?.amounts?.payment ?? null) ?? r.amount_due ?? r.due_amount ?? r.payment ?? r.payment_amount ?? 0;
+    const ps = String(r.payment_status || "").toLowerCase();
+    const reversed = ["reversed", "void", "cancelled", "canceled"].includes(ps);
+    const isPaid = (!!r.paid || !!r.is_paid || ps === "posted" || Number(r.payment_journal_id || 0) > 0) && !reversed;
+    const isPosted = !!r.posted || !!r.is_posted || Number(r.posted_journal_id || 0) > 0;
+    return {
+      r, leaseId, periodNo, due, isPaid, isPosted, reversed,
+      interest: Number(r.amounts?.interest ?? r.interest ?? 0),
+      depreciation: Number(r.amounts?.depreciation ?? r.depreciation ?? 0),
+    };
+  }
+
+  const payFields = (p) => ({
+    date: iso(p.payment_date || p.date || p.tx_date),
+    ref: p.reference || p.ref || "",
+    desc: p.description || p.narr || p.memo || "",
+    gross: Number(p.amount_gross ?? p.amount ?? p.total ?? 0),
+    interest: Number(p.interest_amount ?? p.interest ?? 0),
+    principal: Number(p.principal_amount ?? p.principal ?? 0),
+    journal: Number(p.journal_id ?? p.journal ?? 0),
+  });
+
+  const schedFields = (s) => ({
+    no: s.period_no ?? s.period ?? "",
+    start: iso(s.period_start || s.start_date),
+    end: iso(s.period_end || s.end_date),
+    payment: Number(s.payment ?? s.payment_amount ?? 0),
+    interest: Number(s.interest ?? s.interest_amount ?? 0),
+    principal: Number(s.principal ?? s.principal_amount ?? 0),
+    depreciation: Number(s.depreciation ?? 0),
+    closingLiab: Number(s.closing_liability ?? s.closing_balance ?? 0),
+    scheduleId: s.schedule_id ?? s.id ?? null,
+  });
+
+  /* ── API ─────────────────────────────────────────────────────── */
+  const api = (url, opts) => window.apiFetch(url, opts || { method: "GET" });
+
+  async function loadLeases() {
+    const c = cid();
+    if (!c) return;
+    LC.loading.leases = true; paintRegister();
+    try {
+      const res = await api(EP().list(c, { limit: 200, offset: 0 }));
+      LC.leases = rowsOf(res, ["rows", "leases", "data"]);
+    } catch (e) { console.warn("[LeaseCenter] leases:", e); }
+    LC.loading.leases = false;
+    paintRegister(); paintKpis();
+  }
+
+  async function loadMonthly() {
+    const c = cid();
+    if (!c) return;
+    LC.loading.monthly = true; paintKpis(); if (LC.tab === "monthend") paintMonthEnd();
+    try {
+      const res = await api(EP().monthlyDue(c, { as_of: LC.asOf }));
+      LC.monthly = rowsOf(res, ["rows", "due", "leases"]);
+    } catch (e) { console.warn("[LeaseCenter] monthly:", e); LC.monthly = []; }
+    LC.loading.monthly = false;
+    LC._monthlyLoaded = true;
+    paintKpis(); paintOverview(); if (LC.tab === "monthend") paintMonthEnd();
+  }
+
+  async function ensureLeaseData(id, force = false) {
+    const key = String(id);
+    if (!force && LC._dataFor === key) return;
+    const c = cid();
+    if (!c || !id) return;
+    LC.loading.detail = true; paintPanel();
+    const tasks = [
+      api(EP().get(c, id)).then((r) => { const one = r?.lease || r?.row || r; if (one && typeof one === "object" && !Array.isArray(one)) LC.lease = { ...(LC.lease || {}), ...one }; }).catch(() => {}),
+      api(EP().listSchedule(c, id)).then((r) => { LC.schedule = rowsOf(r, ["rows", "schedule", "data"]); }).catch(() => { LC.schedule = []; }),
+      api(EP().payments.list(c, id)).then((r) => { LC.payments = rowsOf(r, ["payments", "rows", "data"]); }).catch(() => { LC.payments = []; }),
+      api(EP().listModifications(c, id)).then((r) => { LC.mods = rowsOf(r, ["rows", "modifications", "data"]); }).catch(() => { LC.mods = []; }),
+      api(EP().listTerminations(c, id)).then((r) => { LC.terms = rowsOf(r, ["rows", "terminations", "data"]); }).catch(() => { LC.terms = []; }),
+    ];
+    await Promise.all(tasks);
+    LC._dataFor = key;
+    LC.loading.detail = false;
+    paintWorkspace();
+  }
+
+  /* ── selection / navigation ──────────────────────────────────── */
+  async function selectLease(id, tab) {
+    LC.leaseId = Number(id) || null;
+    LC.lease = LC.leases.find((l) => leaseIdOf(l) === LC.leaseId) || null;
+    window.__ACTIVE_LEASE_ID = LC.leaseId;
+    window.LEASE_UI = window.LEASE_UI || { state: {} };
+    window.LEASE_UI.state = window.LEASE_UI.state || {};
+    window.LEASE_UI.state.leaseId = LC.leaseId;
+    if (tab) LC.tab = tab;
+    paintWorkspace();
+    if (LC.leaseId) await ensureLeaseData(LC.leaseId);
+  }
+
+  function setTab(tab) {
+    LC.tab = String(tab || "overview");
+    paintWorkspace();
+    if (LC.tab === "monthend" && !LC._monthlyLoaded) loadMonthly();
+  }
+
+  async function refreshAll() {
+    LC._dataFor = null; LC._monthlyLoaded = false;
+    await Promise.all([loadLeases(), loadMonthly()]);
+    if (LC.leaseId) await ensureLeaseData(LC.leaseId, true);
+  }
+
+  /* ── actions ─────────────────────────────────────────────────── */
+  function payModal({ leaseId, scheduleId = null, amount = "", date = "" } = {}) {
+    const lease = LC.leases.find((l) => leaseIdOf(l) === Number(leaseId)) || LC.lease;
+    window.openLeasePaymentModal?.({
+      lease_id: Number(leaseId),
+      lease_name: lease ? nameOf(lease) : "",
+      lessor_name: lease ? lessorOf(lease) : "",
+      schedule_id: scheduleId ? Number(scheduleId) : null,
+      default_amount: amount ? String(amount) : "",
+      default_date: date || today(),
+    });
+  }
+
+  function currentDueRow(leaseId) {
+    return LC.monthly.map(meRow).find((x) => x.leaseId === Number(leaseId)) || null;
+  }
+
+  /* Month-end IFRS 16 journal → Manual Journal form.
+     SAME hand-off as the Monthly Posting view (loadJournalIntoLines,
+     mode "append", ref LEASE-<id>-P<no>) — behaviour preserved. */
+  function postToManualJournal(leaseId, periodNo, msgEl) {
+    const row = LC.monthly.map(meRow).find((x) => x.leaseId === Number(leaseId) && String(x.periodNo) === String(periodNo));
+    if (!row) { lcMsg(msgEl, "Could not find monthly row in memory. Click Refresh first."); return; }
+
+    const lines = Array.isArray(row.r.preview_journal_lines) ? row.r.preview_journal_lines : [];
+    if (!lines.length) { lcMsg(msgEl, "No preview journal lines on this row."); return; }
+
+    const det = {
+      id: `lease-month-${row.leaseId}-${row.periodNo}`,
+      date: iso(row.r.period_end),
+      ref: `LEASE-${row.leaseId}-P${row.periodNo}`,
+      description: `IFRS 16 monthly posting – ${row.r.lease_name || `Lease ${row.leaseId}`} – P${row.periodNo}`,
+      lines: lines.map((ln) => ({
+        account_code: ln.account_code,
+        debit: Number(ln.debit) || 0,
+        credit: Number(ln.credit) || 0,
+        memo: ln.memo || "",
+      })),
+    };
+
+    if (typeof loadJournalIntoLines === "function") {
+      loadJournalIntoLines(det, { mode: "append" });
+      lcMsg(msgEl, `IFRS 16 journal ${det.ref} loaded into Manual Journal (${det.lines.length} lines, dated ${det.date}).`, "ok");
+    } else {
+      lcMsg(msgEl, "Manual Journal hand-off (loadJournalIntoLines) not available.");
+    }
+  }
+
+  /* ── shell ───────────────────────────────────────────────────── */
+  const LC_TABS = [
+    ["overview", "Overview"],
+    ["schedule", "Schedule"],
+    ["payments", "Payments"],
+    ["monthend", "Month-End (all leases)"],
+    ["mods", "Modifications"],
+    ["terms", "Terminations"],
+  ];
+
+  function shellHTML() {
+    return `
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+      <div class="min-w-0">
+        <div class="text-sm font-semibold">Lessee Lease Center</div>
+        <div class="text-[11px] text-slate-500">Register · Payments · Month-End — one workspace. New leases open the <b>IFRS 16 Lease Wizard</b> (same drawer as Manual Journal → lease-related account).</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="lcRefresh" class="px-3 py-1.5 rounded border text-sm bg-white">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <div id="lcKpis" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mb-3"></div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-[330px_minmax(0,1fr)] gap-3 items-start">
+      <aside class="border rounded-xl p-3 bg-slate-50/50 min-w-0">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[13px] font-semibold">Lease Register</div>
+          <div class="flex items-center gap-1.5">
+            <span id="lcRegCount" class="inline-flex items-center px-2 py-0.5 rounded border text-[11px] bg-slate-50 text-slate-600 border-slate-200">0</span>
+            <button id="lcAddLease" class="px-2 py-1 rounded border text-xs bg-white"
+              title="Opens the IFRS 16 Lease Wizard drawer (iframe data entry) — same modal Manual Journal launches on lease-related account selection">＋ Add lease</button>
+          </div>
+        </div>
+        <input id="lcSearch" placeholder="Search lease / lessor…" class="w-full border rounded px-2 py-1.5 text-sm mb-2 bg-white">
+        <div id="lcStatusChips" class="flex gap-1 mb-2 flex-wrap"></div>
+        <div id="lcLeaseList" class="flex flex-col gap-1 max-h-[520px] overflow-auto pr-1"></div>
+        <div class="mt-2 pt-2 border-t">
+          <button id="lcRegExport" class="w-full px-2 py-1.5 rounded border text-xs bg-white">⬇ Export register CSV</button>
+        </div>
+      </aside>
+
+      <main class="border rounded-xl p-4 bg-white min-w-0">
+        <div id="lcWsEmpty" class="text-center text-slate-500 text-sm py-16">
+          Select a lease from the register to open its workspace.
+        </div>
+        <div id="lcWs" class="hidden">
+          <div class="flex flex-wrap items-start gap-3 mb-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h4 id="lcWsTitle" class="font-bold text-[15px] truncate"></h4>
+                <span id="lcWsBadges" class="flex gap-1 flex-wrap"></span>
+              </div>
+              <div id="lcWsSub" class="text-xs text-slate-500 mt-0.5"></div>
+            </div>
+            <div class="ml-auto flex items-center gap-2 flex-wrap">
+              <button id="lcOpenRegister" class="px-2 py-1.5 rounded border text-xs bg-white" title="Opens the existing IFRS 16 register modal for this lease">Open register modal</button>
+              <button id="lcRecordPayment" class="px-3 py-1.5 rounded text-xs text-white" style="background:#00284F">💳 Record payment</button>
+            </div>
+          </div>
+          <div id="lcTabs" class="flex gap-1 border-b mb-3 overflow-x-auto pb-1"></div>
+          <div id="lcWsMsg" class="text-xs hidden mb-2"></div>
+          <div id="lcPanel" class="min-h-[300px]"></div>
+        </div>
+      </main>
+    </div>`;
+  }
+
+  /* ── painters ────────────────────────────────────────────────── */
+  function computeKpis() {
+    const cur = LC.monthly.map(meRow);
+    const unpaid = cur.filter((x) => !x.isPaid);
+    const unposted = cur.filter((x) => !x.isPosted);
+    return {
+      total: LC.leases.length,
+      dueTotal: unpaid.reduce((s, x) => s + Number(x.due || 0), 0),
+      dueCount: unpaid.length,
+      paidCount: cur.length - unpaid.length,
+      meCount: cur.length,
+      unpostedCount: unposted.length,
+      unpostedPnl: unposted.reduce((s, x) => s + x.interest + x.depreciation, 0),
+      liab: LC.leases.reduce((s, l) => s + Number(l.opening_lease_liability ?? l.opening_liability ?? 0), 0),
+      rou: LC.leases.reduce((s, l) => s + Number(l.opening_rou_asset ?? l.rou_asset ?? 0), 0),
+    };
+  }
+
+  function paintKpis() {
+    const el = $("lcKpis");
+    if (!el) return;
+    const k = computeKpis();
+    const cards = [
+      ["Active leases", k.total, "register", "leases in the register"],
+      ["Monthly due", money(k.dueTotal), "monthend", `${k.dueCount} of ${k.meCount} unpaid`],
+      ["Paid this period", k.meCount ? `${k.paidCount}/${k.meCount}` : "—", "monthend", "cash received"],
+      ["Unposted IFRS 16", k.unpostedCount, "monthend", k.unpostedCount ? `${money(k.unpostedPnl)} P&L` : "all posted"],
+      ["Lease liability", money(k.liab), "schedule", "opening balance"],
+      ["ROU assets", money(k.rou), "schedule", "opening balance"],
+    ];
+    el.innerHTML = cards.map(([label, value, tab, sub]) => `
+      <button data-lc-kpi="${tab}" class="text-left border rounded-xl p-3 bg-white hover:border-slate-400 transition-colors">
+        <div class="text-[11px] text-slate-500">${esc(label)}</div>
+        <div class="text-[15px] font-bold text-[#00284F] mt-0.5 truncate">${esc(value)}</div>
+        <div class="text-[10px] text-slate-400 mt-0.5">${esc(sub)}</div>
+      </button>`).join("");
+  }
+
+  function filteredLeases() {
+    const q = LC.q.trim().toLowerCase();
+    return LC.leases.filter((l) => {
+      const hay = `${nameOf(l)} ${lessorOf(l)}`.toLowerCase();
+      if (q && !hay.includes(q)) return false;
+      if (LC.status !== "all") {
+        const s = statusOf(l);
+        if (LC.status === "active" && s !== "active") return false;
+        if (LC.status === "ended" && s === "active") return false;
+      }
+      return true;
+    });
+  }
+
+  function paintRegister() {
+    const countEl = $("lcRegCount");
+    if (countEl) countEl.textContent = LC.loading.leases ? "…" : `${LC.leases.length}`;
+    const chipsEl = $("lcStatusChips");
+    if (chipsEl) {
+      const defs = [["all", "All"], ["active", "Active"], ["ended", "Ended"]];
+      chipsEl.innerHTML = defs.map(([v, label]) => `
+        <button data-lc-status="${v}" class="px-2 py-0.5 rounded-full border text-[11px] ${LC.status === v ? "bg-[#00284F] text-white border-[#00284F]" : "bg-white text-slate-600 border-slate-200"}">${label}</button>`).join("");
+    }
+    const listEl = $("lcLeaseList");
+    if (!listEl) return;
+    const rows = filteredLeases();
+    if (!rows.length) {
+      listEl.innerHTML = `<div class="text-xs text-slate-500 px-1 py-3">${LC.loading.leases ? "Loading leases…" : "No leases match."}</div>`;
+      return;
+    }
+    listEl.innerHTML = rows.map((l) => {
+      const id = leaseIdOf(l);
+      const sel = Number(id) === Number(LC.leaseId);
+      const st = statusOf(l);
+      return `
+      <button class="text-left w-full border rounded-lg px-3 py-2 transition-colors ${sel ? "border-[#00284F] bg-slate-50" : "border-slate-200 bg-white hover:border-slate-400"}" data-lc-lease="${esc(id)}">
+        <div class="flex items-center justify-between gap-2">
+          <div class="text-[13px] font-medium truncate">${esc(nameOf(l))}</div>
+          ${chipHtml(st, st === "active" ? "green" : "slate")}
+        </div>
+        <div class="flex items-center justify-between gap-2 text-[11px] text-slate-500 mt-0.5">
+          <div class="truncate">${esc(lessorOf(l))}</div>
+          <div class="whitespace-nowrap">${money(l.payment_amount ?? l.monthly_payment)}/mo</div>
+        </div>
+      </button>`;
+    }).join("");
+  }
+
+  function paintWorkspace() {
+    const empty = $("lcWsEmpty");
+    const ws = $("lcWs");
+    if (!empty || !ws) return;
+    if (!LC.leaseId) {
+      empty.classList.remove("hidden");
+      ws.classList.add("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+    ws.classList.remove("hidden");
+
+    const l = LC.lease || LC.leases.find((x) => leaseIdOf(x) === Number(LC.leaseId)) || {};
+    const title = $("lcWsTitle");
+    if (title) title.textContent = nameOf(l);
+    const badges = $("lcWsBadges");
+    if (badges) {
+      const st = statusOf(l);
+      badges.innerHTML = chipHtml(st, st === "active" ? "green" : "slate") +
+        (l.annual_rate ? chipHtml(String(l.annual_rate), "slate") : "") +
+        (l.currency ? chipHtml(String(l.currency), "slate") : "");
+    }
+    const sub = $("lcWsSub");
+    if (sub) {
+      const bits = [lessorOf(l), iso(l.start_date) && `${fmtDateSafe(l.start_date)} → ${fmtDateSafe(l.end_date)}`,
+        l.payment_amount && `${money(l.payment_amount)} / ${l.payment_frequency || "Monthly"}`, l.payment_timing].filter(Boolean);
+      sub.textContent = bits.join(" · ");
+    }
+    paintTabs(); paintPanel();
+  }
+
+  function fmtDateSafe(v) {
+    if (!v) return "—";
+    try { return new Date(v).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }); }
+    catch (_) { return String(v); }
+  }
+
+  function paintTabs() {
+    const el = $("lcTabs");
+    if (!el) return;
+    el.innerHTML = LC_TABS.map(([v, label]) => `
+      <button data-lc-tab="${v}" class="px-3 py-1.5 rounded-t-md text-xs whitespace-nowrap border border-b-0 ${LC.tab === v ? "bg-[#00284F] text-white border-[#00284F] font-semibold" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}">${label}</button>`).join("");
+  }
+
+  function paintPanel() {
+    if (LC.tab === "overview") return paintOverview();
+    if (LC.tab === "schedule") return paintSchedule();
+    if (LC.tab === "payments") return paintPayments();
+    if (LC.tab === "monthend") return paintMonthEnd();
+    if (LC.tab === "mods") return paintMods();
+    if (LC.tab === "terms") return paintTerms();
+  }
+
+  /* ── Overview ────────────────────────────────────────────────── */
+  function paintOverview() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "overview") return;
+    const l = LC.lease || {};
+    const id = LC.leaseId;
+    const row = currentDueRow(id);
+    const postOk = canPost();
+
+    const meta = [
+      ["Lessor", lessorOf(l)],
+      ["Commencement", fmtDateSafe(l.start_date)],
+      ["End date", fmtDateSafe(l.end_date)],
+      ["Payment", l.payment_amount ? `${money(l.payment_amount)}` : "—"],
+      ["Frequency", l.payment_frequency || "Monthly"],
+      ["Timing", l.payment_timing || "—"],
+      ["Discount rate", l.annual_rate || l.discount_rate || "—"],
+      ["VAT rate", l.vat_rate ?? "—"],
+      ["Currency", l.currency || "—"],
+      ["Lease ID", id ? `#${id}` : "—"],
+    ];
+
+    const snapshot = row ? `
+      <div class="border rounded-xl overflow-hidden">
+        <div class="px-3 py-2 bg-slate-50 border-b text-[13px] font-semibold">Current period snapshot</div>
+        <div class="p-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <div><div class="text-[11px] text-slate-500">Period</div><div class="font-semibold">P${esc(row.periodNo)}${row.r.period_end ? ` · ${fmtDateSafe(row.r.period_end)}` : ""}</div></div>
+          <div><div class="text-[11px] text-slate-500">Payment due</div><div class="font-semibold tabular-nums">${money(row.due)}</div></div>
+          <div><div class="text-[11px] text-slate-500">Interest / Depreciation</div><div class="font-semibold tabular-nums">${money(row.interest)} / ${money(row.depreciation)}</div></div>
+          <div><div class="text-[11px] text-slate-500">Status</div><div class="flex gap-1 mt-0.5">${chipHtml(row.isPaid ? "paid" : "due", row.isPaid ? "green" : "red")} ${chipHtml(row.isPosted ? "posted" : "pending", row.isPosted ? "green" : "amber")}</div></div>
+        </div>
+        <div class="px-3 pb-3 flex gap-2 flex-wrap">
+          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row.r.schedule_id ?? "")}" data-lc-due="${esc(row.due)}" data-lc-date="${esc(iso(row.r.period_start) || today())}"
+            class="px-3 py-1.5 rounded text-xs text-white" style="background:#00C8C8"
+            ${row.isPaid || !postOk ? "disabled" : ""} title="${postOk ? "Opens the lease payment modal (prefilled)" : "Requires can_post_journals"}">💳 Pay this period</button>
+          <button data-lc-post-row="${esc(id)}" data-lc-period="${esc(row.periodNo)}"
+            class="px-3 py-1.5 rounded text-xs ${row.isPosted || !postOk ? "bg-slate-300 text-white cursor-not-allowed" : "bg-[#00284F] text-white"}"
+            ${row.isPosted || !postOk ? "disabled" : ""} title="Loads the IFRS 16 month-end journal (interest + depreciation) into the Manual Journal form">📅 Post IFRS 16</button>
+          <span class="text-[11px] text-slate-400 self-center">Post IFRS 16 → Manual Journal (Dr Depreciation · Dr Interest · Cr Accum. ROU · Cr Lease liability)</span>
+        </div>
+      </div>` : `<div class="border rounded-xl p-3 text-xs text-slate-500">No current-period row (load Month-End or adjust the as-of date).</div>`;
+
+    panel.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+        <div class="border rounded-xl overflow-hidden">
+          <div class="px-3 py-2 bg-slate-50 border-b text-[13px] font-semibold">Contract metadata</div>
+          <div class="p-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+            ${meta.map(([k2, v]) => `<div><div class="text-[11px] text-slate-500">${esc(k2)}</div><div class="font-medium truncate">${esc(v)}</div></div>`).join("")}
+          </div>
+        </div>
+        <div class="border rounded-xl overflow-hidden">
+          <div class="px-3 py-2 bg-slate-50 border-b text-[13px] font-semibold">Opening recognition (day 1)</div>
+          <div class="p-3 grid grid-cols-2 gap-3 text-sm">
+            <div class="border rounded-lg p-3"><div class="text-[11px] text-slate-500">Lease liability</div><div class="text-[15px] font-bold text-[#00284F] mt-1">${money(l.opening_lease_liability ?? l.opening_liability)}</div></div>
+            <div class="border rounded-lg p-3"><div class="text-[11px] text-slate-500">ROU asset</div><div class="text-[15px] font-bold text-[#00284F] mt-1">${money(l.opening_rou_asset ?? l.rou_asset)}</div></div>
+          </div>
+        </div>
+      </div>
+      ${snapshot}`;
+  }
+
+  /* ── Schedule ────────────────────────────────────────────────── */
+  function paintSchedule() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "schedule") return;
+    const rows = LC.schedule.map(schedFields);
+    panel.innerHTML = `
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="text-[13px] font-semibold">IFRS 16 amortisation schedule${LC.loading.detail ? " · loading…" : ""}</div>
+      </div>
+      <div class="border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-[860px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 whitespace-nowrap">P</th>
+                <th class="text-left p-2 whitespace-nowrap">Period</th>
+                <th class="text-right p-2 whitespace-nowrap">Payment</th>
+                <th class="text-right p-2 whitespace-nowrap">Interest</th>
+                <th class="text-right p-2 whitespace-nowrap">Principal</th>
+                <th class="text-right p-2 whitespace-nowrap">Depreciation</th>
+                <th class="text-right p-2 whitespace-nowrap">Closing liability</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length ? rows.map((s) => `
+                <tr class="border-t">
+                  <td class="p-2 text-center">${esc(s.no)}</td>
+                  <td class="p-2 whitespace-nowrap">${esc(fmtDateSafe(s.start))} → ${esc(fmtDateSafe(s.end))}</td>
+                  <td class="p-2 text-right tabular-nums">${money(s.payment)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(s.interest)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(s.principal)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(s.depreciation)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(s.closingLiab)}</td>
+                </tr>`).join("") : `<tr><td colspan="7" class="p-3 text-xs text-slate-500">${LC.loading.detail ? "Loading schedule…" : "No schedule rows."}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  /* ── Payments ────────────────────────────────────────────────── */
+  function paintPayments() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "payments") return;
+    const rows = LC.payments.map(payFields);
+    const id = LC.leaseId;
+    const row = currentDueRow(id);
+    panel.innerHTML = `
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="text-[13px] font-semibold">Payment history${LC.loading.detail ? " · loading…" : ""}</div>
+        <div class="flex gap-2">
+          <button id="lcPayExport" class="px-2 py-1.5 rounded border text-xs bg-white">⬇ Export payments CSV</button>
+          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row?.r.schedule_id ?? "")}" data-lc-due="${esc(row && !row.isPaid ? row.due : "")}" data-lc-date="${esc(iso(row?.r.period_start) || today())}"
+            class="px-3 py-1.5 rounded text-xs text-white" style="background:#00C8C8" ${canPost() ? "" : "disabled"} title="${canPost() ? "Opens the lease payment modal" : "Requires can_post_journals"}">💳 Record payment</button>
+        </div>
+      </div>
+      <div class="border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-[760px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 whitespace-nowrap">Date</th>
+                <th class="text-left p-2 whitespace-nowrap">Reference</th>
+                <th class="text-left p-2 whitespace-nowrap">Description</th>
+                <th class="text-right p-2 whitespace-nowrap">Gross</th>
+                <th class="text-right p-2 whitespace-nowrap">Interest</th>
+                <th class="text-right p-2 whitespace-nowrap">Principal</th>
+                <th class="text-center p-2 whitespace-nowrap">Journal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length ? rows.map((p) => `
+                <tr class="border-t">
+                  <td class="p-2 whitespace-nowrap">${esc(fmtDateSafe(p.date))}</td>
+                  <td class="p-2">${esc(p.ref)}</td>
+                  <td class="p-2 text-slate-600">${esc(p.desc)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(p.gross)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(p.interest)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(p.principal)}</td>
+                  <td class="p-2 text-center">${p.journal ? chipHtml(`J${p.journal}`, "slate") : "—"}</td>
+                </tr>`).join("") : `<tr><td colspan="7" class="p-3 text-xs text-slate-500">${LC.loading.detail ? "Loading payments…" : "No payments recorded yet."}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="text-[11px] text-slate-400 mt-2">Record payment opens your existing <code>#leasePayModal</code> via <code>openLeasePaymentModal</code> — preview and posting run through <code>POST /leases/:id/payments/preview|post</code> exactly as before.</div>`;
+
+    const ex = panel.querySelector("#lcPayExport");
+    ex?.addEventListener("click", () => {
+      const c = cid();
+      if (!c) return;
+      try { downloadUrl(`${REP().leasePaymentsExport(c)}?lease_id=${encodeURIComponent(id)}`); } catch (_) {}
+    });
+  }
+
+  /* ── Month-End (all leases) ──────────────────────────────────── */
+  function paintMonthEnd() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "monthend") return;
+    const q = LC.qME.trim().toLowerCase();
+    const all = LC.monthly.map(meRow);
+    const rows = !q ? all : all.filter((x) => `${x.r.lease_name || ""} ${x.r.lessor_name || ""}`.toLowerCase().includes(q));
+    const postOk = canPost();
+
+    panel.innerHTML = `
+      <div class="flex flex-wrap items-end justify-between gap-2 mb-2">
+        <div class="text-[13px] font-semibold">Month-End — IFRS 16 postings for all leases</div>
+        <div class="flex items-end gap-2 flex-wrap">
+          <div><label class="text-[11px] text-slate-500 block">As of</label><input id="lcMeAsOf" type="date" value="${esc(LC.asOf)}" class="border rounded px-2 py-1 text-sm bg-white"></div>
+          <div><label class="text-[11px] text-slate-500 block">Search</label><input id="lcMeSearch" value="${esc(LC.qME)}" placeholder="lease / lessor" class="border rounded px-2 py-1 text-sm bg-white w-[180px]"></div>
+          <button id="lcMeExport" class="px-2 py-1.5 rounded border text-xs bg-white">⬇ Export CSV</button>
+        </div>
+      </div>
+      <div class="border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-[980px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 whitespace-nowrap">Lease</th>
+                <th class="text-left p-2 whitespace-nowrap">Lessor</th>
+                <th class="text-center p-2 whitespace-nowrap">Period</th>
+                <th class="text-right p-2 whitespace-nowrap">Due</th>
+                <th class="text-right p-2 whitespace-nowrap">Interest</th>
+                <th class="text-right p-2 whitespace-nowrap">Depreciation</th>
+                <th class="text-right p-2 whitespace-nowrap">Total IFRS</th>
+                <th class="text-center p-2 whitespace-nowrap">Payment</th>
+                <th class="text-center p-2 whitespace-nowrap">IFRS 16</th>
+                <th class="text-right p-2 whitespace-nowrap">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length ? rows.map((x) => `
+                <tr class="border-t ${(x.isPaid && x.isPosted) ? "bg-slate-100 text-slate-400" : ""}">
+                  <td class="p-2"><div class="font-medium cursor-pointer hover:underline" data-lc-lease="${esc(x.leaseId)}">${esc(x.r.lease_name || `Lease ${x.leaseId}`)}</div><div class="text-[10px] text-slate-500">ID: ${esc(x.leaseId)}</div></td>
+                  <td class="p-2">${esc(x.r.lessor_name || "")}</td>
+                  <td class="p-2 text-center">${esc(x.periodNo)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(x.due)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(x.interest)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(x.depreciation)}</td>
+                  <td class="p-2 text-right tabular-nums font-semibold">${money(x.interest + x.depreciation)}</td>
+                  <td class="p-2 text-center">${x.isPaid ? chipHtml("paid", "green") : chipHtml("due", "red")}</td>
+                  <td class="p-2 text-center">${x.isPosted ? chipHtml("posted", "green") : chipHtml("pending", "amber")}</td>
+                  <td class="p-2 text-right whitespace-nowrap">
+                    <button data-lc-pay-row="${esc(x.leaseId)}" data-lc-schedule="${esc(x.r.schedule_id ?? "")}" data-lc-due="${esc(x.due)}" data-lc-date="${esc(iso(x.r.period_start) || today())}"
+                      class="px-2 py-1 rounded border text-xs ${x.isPaid || !postOk ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"}"
+                      ${x.isPaid || !postOk ? "disabled" : ""} title="${postOk ? "Opens the payment modal prefilled from the due row" : "Requires can_post_journals"}">Pay</button>
+                    <button data-lc-post-row="${esc(x.leaseId)}" data-lc-period="${esc(x.periodNo)}"
+                      class="px-2 py-1 rounded text-xs ${x.isPosted || !postOk ? "bg-slate-300 text-white cursor-not-allowed" : "bg-[#00284F] text-white"}"
+                      ${x.isPosted || !postOk ? "disabled" : ""} title="Load IFRS 16 month-end journal into Manual Journal">Post IFRS 16</button>
+                  </td>
+                </tr>`).join("") : `<tr><td colspan="10" class="p-3 text-xs text-slate-500">${LC.loading.monthly ? "Loading month-end rows…" : `Nothing due${LC.asOf ? ` for ${esc(fmtDateSafe(LC.asOf))}` : ""}.`}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="text-[11px] text-slate-400 mt-2">Pay opens the payment modal prefilled from the due row (schedule + amount + period date). <b>Post IFRS 16</b> loads the IFRS 16 month-end journal (Dr Depreciation · Dr Interest · Cr Accum. ROU · Cr Lease liability) into the <b>Manual Journal</b> form, ref <code>LEASE-&lt;id&gt;-P&lt;no&gt;</code> — same hand-off as the Monthly Posting screen.</div>`;
+
+    panel.querySelector("#lcMeAsOf")?.addEventListener("change", async (e) => {
+      LC.asOf = (e.target.value || "").trim();
+      await loadMonthly();
+    });
+    panel.querySelector("#lcMeSearch")?.addEventListener("input", debounce((e) => {
+      LC.qME = e.target.value || "";
+      paintMonthEnd();
+    }, 200));
+    panel.querySelector("#lcMeExport")?.addEventListener("click", () => {
+      const c = cid();
+      if (!c) return;
+      const qs = new URLSearchParams();
+      if (LC.asOf) qs.set("as_of", LC.asOf);
+      if (LC.qME) qs.set("q", LC.qME);
+      qs.set("format", "csv");
+      try { downloadUrl(`${REP().leaseMonthlyDueExport(c)}?${qs.toString()}`); } catch (_) {}
+    });
+  }
+
+  /* ── Modifications / Terminations ───────────────────────────── */
+  function paintMods() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "mods") return;
+    const rows = LC.mods;
+    panel.innerHTML = `
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="text-[13px] font-semibold">Modifications${LC.loading.detail ? " · loading…" : ""}</div>
+        <button class="px-2 py-1.5 rounded border text-xs bg-white" data-lc-open-register="${esc(LC.leaseId)}" data-lc-register-tab="mods">Open in register modal</button>
+      </div>
+      <div class="border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-[720px] w-full text-sm">
+            <thead class="bg-slate-50 border-b"><tr>
+              <th class="text-left p-2 whitespace-nowrap">Date</th><th class="text-left p-2 whitespace-nowrap">Change</th>
+              <th class="text-center p-2 whitespace-nowrap">Status</th><th class="text-right p-2 whitespace-nowrap">Liability adj.</th>
+              <th class="text-left p-2 whitespace-nowrap">Notes</th>
+            </tr></thead>
+            <tbody>
+              ${rows.length ? rows.map((m) => `
+                <tr class="border-t">
+                  <td class="p-2 whitespace-nowrap">${esc(fmtDateSafe(m.modification_date || m.effective_date || m.date))}</td>
+                  <td class="p-2">${esc(m.change_type || m.change || m.description || "")}</td>
+                  <td class="p-2 text-center">${chipHtml(m.status || "—", String(m.status || "").toLowerCase() === "posted" ? "green" : "amber")}</td>
+                  <td class="p-2 text-right tabular-nums">${money(m.liability_adjustment ?? m.adjustment ?? 0)}</td>
+                  <td class="p-2 text-slate-600">${esc(m.notes || "")}</td>
+                </tr>`).join("") : `<tr><td colspan="5" class="p-3 text-xs text-slate-500">${LC.loading.detail ? "Loading…" : "No modifications."}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function paintTerms() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "terms") return;
+    const rows = LC.terms;
+    panel.innerHTML = `
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="text-[13px] font-semibold">Terminations${LC.loading.detail ? " · loading…" : ""}</div>
+        <button class="px-2 py-1.5 rounded border text-xs bg-white" data-lc-open-register="${esc(LC.leaseId)}" data-lc-register-tab="terms">Open in register modal</button>
+      </div>
+      <div class="border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-[720px] w-full text-sm">
+            <thead class="bg-slate-50 border-b"><tr>
+              <th class="text-left p-2 whitespace-nowrap">Date</th><th class="text-left p-2 whitespace-nowrap">Type</th>
+              <th class="text-center p-2 whitespace-nowrap">Status</th><th class="text-right p-2 whitespace-nowrap">Settlement</th>
+              <th class="text-left p-2 whitespace-nowrap">Notes</th>
+            </tr></thead>
+            <tbody>
+              ${rows.length ? rows.map((t) => `
+                <tr class="border-t">
+                  <td class="p-2 whitespace-nowrap">${esc(fmtDateSafe(t.termination_date || t.date || t.effective_date))}</td>
+                  <td class="p-2">${esc(t.termination_type || t.type || t.description || "")}</td>
+                  <td class="p-2 text-center">${chipHtml(t.status || "—", String(t.status || "").toLowerCase() === "posted" ? "green" : "amber")}</td>
+                  <td class="p-2 text-right tabular-nums">${money(t.settlement_amount ?? t.amount ?? 0)}</td>
+                  <td class="p-2 text-slate-600">${esc(t.notes || "")}</td>
+                </tr>`).join("") : `<tr><td colspan="5" class="p-3 text-xs text-slate-500">${LC.loading.detail ? "Loading…" : "No terminations."}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  /* ── events ──────────────────────────────────────────────────── */
+  function bindShell(mount) {
+    /* delegated clicks — onclick property assignment is idempotent */
+    mount.onclick = async (e) => {
+      const t = e.target.closest?.("[data-lc-lease],[data-lc-kpi],[data-lc-tab],[data-lc-status],[data-lc-pay-row],[data-lc-post-row],[data-lc-open-register]");
+      if (!t || !mount.contains(t)) return;
+
+      if (t.hasAttribute("data-lc-lease") && !t.hasAttribute("data-lc-pay-row")) {
+        return void selectLease(t.getAttribute("data-lc-lease"));
+      }
+      if (t.hasAttribute("data-lc-kpi")) return void setTab(t.getAttribute("data-lc-kpi"));
+      if (t.hasAttribute("data-lc-tab")) return void setTab(t.getAttribute("data-lc-tab"));
+      if (t.hasAttribute("data-lc-status")) { LC.status = t.getAttribute("data-lc-status"); return void paintRegister(); }
+
+      if (t.hasAttribute("data-lc-pay-row")) {
+        if (t.disabled) return;
+        return void payModal({
+          leaseId: t.getAttribute("data-lc-pay-row"),
+          scheduleId: t.getAttribute("data-lc-schedule") || null,
+          amount: t.getAttribute("data-lc-due") || "",
+          date: t.getAttribute("data-lc-date") || "",
+        });
+      }
+
+      if (t.hasAttribute("data-lc-post-row")) {
+        if (t.disabled) return;
+        postToManualJournal(t.getAttribute("data-lc-post-row"), t.getAttribute("data-lc-period"), $("lcWsMsg"));
+        return;
+      }
+
+      if (t.hasAttribute("data-lc-open-register")) {
+        const id = Number(t.getAttribute("data-lc-open-register") || 0);
+        const tab = t.getAttribute("data-lc-register-tab") || "overview";
+        if (id) window.openLeaseRegisterModal?.(id, { tab });
+        return;
+      }
+    };
+
+    $("lcSearch")?.addEventListener("input", debounce((e) => { LC.q = e.target.value || ""; paintRegister(); }, 200));
+    $("lcAddLease")?.addEventListener("click", () => {
+      window.openLeaseWizard?.({
+        source: "lease-center",
+        mode: "inception",
+        leaseRole: "lessee",
+        accountCode: "",
+        accountName: "",
+      });
+    });
+    $("lcRegExport")?.addEventListener("click", () => {
+      const c = cid();
+      if (!c) return;
+      try { downloadUrl(REP().leaseRegisterExport(c)); } catch (_) {}
+    });
+    $("lcRefresh")?.addEventListener("click", refreshAll);
+    $("lcOpenRegister")?.addEventListener("click", () => {
+      if (LC.leaseId) window.openLeaseRegisterModal?.(LC.leaseId, { tab: "overview" });
+    });
+    $("lcRecordPayment")?.addEventListener("click", () => {
+      const row = currentDueRow(LC.leaseId);
+      payModal({
+        leaseId: LC.leaseId,
+        scheduleId: row?.r.schedule_id || null,
+        amount: row && !row.isPaid ? row.due : "",
+        date: iso(row?.r.period_start) || today(),
+      });
+    });
+  }
+
+  /* refresh register when the Lease Wizard drawer reports a change */
+  window.addEventListener("message", (event) => {
+    const d = event.data || {};
+    if (d.type !== "lease_wizard_close" && d.type !== "lease_wizard_created") return;
+    const screen = document.getElementById("screen-leases");
+    if (screen?.classList.contains("active") && $("leasesMount")) {
+      loadLeases();
+    }
+  });
+
+  /* ── boot (called by renderLeaseScreen → tab "center") ───────── */
+  window.renderLeaseCenterView = async function renderLeaseCenterView(mount) {
+    if (!mount) return;
+    mount.innerHTML = shellHTML();
+    bindShell(mount);
+    paintKpis(); paintRegister(); paintWorkspace();
+
+    const prev = Number(window.LEASE_UI?.state?.leaseId || window.__ACTIVE_LEASE_ID || 0);
+    await Promise.all([loadLeases(), loadMonthly()]);
+
+    const ids = LC.leases.map(leaseIdOf).filter(Boolean);
+    const id = prev && ids.includes(prev) ? prev : ids[0] || null;
+    if (id) await selectLease(id);
+  };
+
+  console.log("[LeaseCenter] module ready — route lease-center, view renderLeaseCenterView");
 })();
