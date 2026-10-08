@@ -294,6 +294,183 @@ def home():
 def health():
     return "OK", 200
 
+# =========================================================
+# Address autocomplete (free Photon proxy with caching)
+# ----------------------------------------------------------------
+# Default provider = Photon (https://photon.komoot.io) — free, no key,
+# based on OpenStreetMap data. Has good coverage in South Africa.
+#
+# When you have paying customers and want higher accuracy, set env vars:
+#   ADDRESS_PROVIDER=mapbox   (or "nominatim")
+#   MAPBOX_TOKEN=pk.xxxxx
+# The frontend never changes.
+# =========================================================
+import threading as _addr_threading
+import urllib.request as _addr_urlreq
+import urllib.parse as _addr_urlparse
+
+try:
+    from cachetools import TTLCache as _AddrTTLCache
+    _ADDR_CACHE = _AddrTTLCache(maxsize=2000, ttl=3600)
+except Exception:
+    _ADDR_CACHE = {}
+
+_ADDR_CACHE_LOCK = _addr_threading.Lock()
+_ADDR_PROVIDER = (os.getenv("ADDRESS_PROVIDER") or "photon").strip().lower()
+_MAPBOX_TOKEN  = os.getenv("MAPBOX_TOKEN", "").strip()
+_ADDR_CONTACT  = os.getenv("ADDR_CONTACT_EMAIL", "support@finspheresolutions.com")
+
+_ADDR_PROVIDERS = {
+    "photon": {
+        "url": "https://photon.komoot.io/api/",
+        "build_params": lambda q, country: dict(q=q, limit=8, **({"country": country} if country else {})),
+        "build_headers": lambda: {"User-Agent": "FinSage-address/1.0 (%s)" % _ADDR_CONTACT},
+    },
+    "mapbox": {
+        "url": "https://api.mapbox.com/geocoding/v5/mapbox.places/{q}.json",
+        "build_params": lambda q, country: dict(
+            access_token=_MAPBOX_TOKEN, limit=8, autocomplete="true",
+            **({"country": country.lower()} if country else {})
+        ),
+        "build_headers": lambda: {},
+    },
+    "nominatim": {
+        "url": "https://nominatim.openstreetmap.org/search",
+        "build_params": lambda q, country: dict(
+            q=q, format="json", addressdetails=1, limit=8,
+            **({"countrycodes": country.lower()} if country else {})
+        ),
+        "build_headers": lambda: {"User-Agent": "FinSage-address/1.0 (%s)" % _ADDR_CONTACT},
+    },
+}
+
+
+def _normalize_address_response(provider, raw):
+    """Convert any provider's raw response into a unified {features:[...]} payload."""
+    features = []
+    try:
+        if provider == "photon":
+            for f in (raw or {}).get("features", []) or []:
+                p = f.get("properties") or {}
+                g = f.get("geometry") or {}
+                coords = g.get("coordinates") or [None, None]
+                features.append({
+                    "properties": {
+                        "name":        p.get("name") or "",
+                        "street":      p.get("street") or "",
+                        "housenumber": p.get("housenumber") or "",
+                        "postcode":    p.get("postcode") or "",
+                        "city":        p.get("city") or p.get("town") or "",
+                        "locality":    p.get("locality") or p.get("district") or "",
+                        "state":       p.get("state") or "",
+                        "country":     p.get("country") or "",
+                        "country_code": p.get("country_code") or "",
+                        "osm_id":      p.get("osm_id") or "",
+                        "osm_type":    p.get("osm_type") or "",
+                    },
+                    "geometry": {"coordinates": coords},
+                    "formatted": ", ".join(
+                        x for x in [
+                            p.get("name"),
+                            (p.get("housenumber") or "") and (str(p.get("housenumber")) + " " + (p.get("street") or "")).strip() or "",
+                            p.get("postcode"),
+                            p.get("city"),
+                            p.get("state"),
+                            p.get("country"),
+                        ] if x
+                    ),
+                })
+        elif provider == "mapbox":
+            for f in (raw or {}).get("features", []) or []:
+                ctx = {}
+                for c in (f.get("context") or []):
+                    cid = (c.get("id") or "")
+                    for k in ("country", "region", "place", "locality", "postcode", "district"):
+                        if cid.startswith(k + "."):
+                            ctx[k] = c.get("text", "")
+                features.append({
+                    "properties": {
+                        "name":        f.get("text") or "",
+                        "street":      f.get("text") or "",
+                        "housenumber": (f.get("address") or "").split(" ")[0] if f.get("address") else "",
+                        "postcode":    ctx.get("postcode", ""),
+                        "city":        ctx.get("place") or ctx.get("locality") or "",
+                        "locality":    ctx.get("locality") or ctx.get("district") or "",
+                        "state":       ctx.get("region") or "",
+                        "country":     ctx.get("country") or "",
+                        "country_code": (ctx.get("country") or "").upper(),
+                        "osm_id":      "",
+                        "osm_type":    "",
+                    },
+                    "geometry": {"coordinates": f.get("center") or [None, None]},
+                    "formatted": f.get("place_name") or "",
+                })
+        elif provider == "nominatim":
+            for f in raw or []:
+                ad = f.get("address") or {}
+                features.append({
+                    "properties": {
+                        "name":        ad.get("office") or ad.get("building") or "",
+                        "street":      ad.get("road") or "",
+                        "housenumber": ad.get("house_number") or "",
+                        "postcode":    ad.get("postcode") or "",
+                        "city":        ad.get("city") or ad.get("town") or ad.get("village") or "",
+                        "locality":    ad.get("suburb") or ad.get("neighbourhood") or "",
+                        "state":       ad.get("state") or "",
+                        "country":     ad.get("country") or "",
+                        "country_code": (ad.get("country_code") or "").upper(),
+                        "osm_id":      f.get("osm_id") or "",
+                        "osm_type":    f.get("osm_type") or "",
+                    },
+                    "geometry": {
+                        "coordinates": [
+                            float(f.get("lon") or 0),
+                            float(f.get("lat") or 0),
+                        ]
+                    },
+                    "formatted": f.get("display_name") or "",
+                })
+    except Exception as e:
+        print(f"[address] normalize error: {e}")
+    return {"features": features}
+
+
+@app.route("/api/address/search")
+def api_address_search():
+    q = (request.args.get("q") or "").strip()
+    country = (request.args.get("country") or "").strip()
+
+    if len(q) < 3:
+        return jsonify({"features": []})
+
+    cache_key = "%s|%s|%s" % (_ADDR_PROVIDER, q, country)
+    with _ADDR_CACHE_LOCK:
+        cached = _ADDR_CACHE.get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+    cfg = _ADDR_PROVIDERS.get(_ADDR_PROVIDER) or _ADDR_PROVIDERS["photon"]
+    try:
+        url = cfg["url"].format(q=_addr_urlparse.quote(q, safe=""))
+        params = cfg["build_params"](q, country)
+        if params:
+            url = url + "?" + _addr_urlparse.urlencode(params)
+        req_obj = _addr_urlreq.Request(url, headers=cfg["build_headers"]())
+        with _addr_urlreq.urlopen(req_obj, timeout=5) as resp:
+            import json as _addr_json
+            raw = _addr_json.loads(resp.read().decode("utf-8", errors="replace"))
+        data = _normalize_address_response(_ADDR_PROVIDER, raw)
+        with _ADDR_CACHE_LOCK:
+            _ADDR_CACHE[cache_key] = data
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({
+            "features": [],
+            "error": str(e),
+            "provider": _ADDR_PROVIDER,
+        }), 502
+
+
 print("[BOOT] Flask app created")
 
 app.config["DB_SERVICE"] = db_service

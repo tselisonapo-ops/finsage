@@ -1089,78 +1089,68 @@ function initIndustryDropdowns() {
       });
   }
   // =========================================================
-  // Google Places Autocomplete for Registered Address
+  // Address Autocomplete for Registered Address
+  // ----------------------------------------------------------------
+  // Uses free Photon backend (no Google API key required).
+  // Calls our own backend: GET /api/address/search?q=...&country=...
+  // Backend proxies to Photon (OSM data) by default.
+  //
+  // Existing structured hidden fields are populated:
+  //   regAddressLine1, regAddressLine2 (optional), regLocality,
+  //   regCity, regRegion, regPostalCode,
+  //   regPlaceId, regFormatted, regLat, regLng
   // =========================================================
   function initRegAddressAutocomplete() {
     const input = document.getElementById("addressSearch");
-    if (!input || !window.google || !google.maps || !google.maps.places) return;
-
-    const autocomplete = new google.maps.places.Autocomplete(input, {
-      types: ["geocode"]
-      // ✅ global: no componentRestrictions
-    });
+    if (!input) return;
+    if (!window.AddressAutocomplete) {
+      console.warn("[address] address-autocomplete.js not loaded — skipping.");
+      return;
+    }
 
     const byId = (id) => document.getElementById(id);
-
     function setVal(id, v) {
       const el = byId(id);
       if (el) el.value = v || "";
+      if (el) el.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
-    function getComponent(components, type) {
-      const c = components.find(x => (x.types || []).includes(type));
-      return c ? c.long_name : "";
+    // Determine country hint from the selected country field (if any)
+    function getCountryHint() {
+      const sel = byId("country") || byId("companyCountry");
+      if (!sel) return null;
+      const v = (sel.value || "").trim();
+      if (!v) return null;
+      // If the option stores display name, try to extract ISO from data-code
+      const opt = sel.querySelector(`option[value="${CSS.escape(v)}"]`);
+      if (opt && opt.dataset && opt.dataset.code) {
+        return opt.dataset.code.toUpperCase();
+      }
+      // If value already looks like an ISO code (2-3 chars uppercase), use it
+      if (/^[A-Z]{2,3}$/.test(v.toUpperCase())) return v.toUpperCase();
+      return null;
     }
 
-    autocomplete.addListener("place_changed", function () {
-      const place = autocomplete.getPlace();
-      if (!place || !place.address_components) return;
+    new AddressAutocomplete(input, {
+      country: null, // global; we'll also pass country dynamically below
+      minLength: 3,
+      debounceMs: 300,
+      onSelect: (addr) => {
+        // Country hint passed dynamically per request would require API change;
+        // simplest: server already restricts; let it return global results.
+        setVal("regAddressLine1", addr.line1);
+        setVal("regAddressLine2", addr.line2 || "");
+        setVal("regLocality",     addr.locality || "");
+        setVal("regCity",         addr.city || "");
+        setVal("regRegion",       addr.state || "");
+        setVal("regPostalCode",   addr.postcode || "");
 
-      const comps = place.address_components;
-
-      const streetNo = getComponent(comps, "street_number");
-      const route    = getComponent(comps, "route");
-      const line1    = [streetNo, route].filter(Boolean).join(" ");
-
-      // locality handling differs by country:
-      const locality =
-        getComponent(comps, "sublocality") ||
-        getComponent(comps, "sublocality_level_1") ||
-        getComponent(comps, "neighborhood");
-
-      const city =
-        getComponent(comps, "locality") ||
-        getComponent(comps, "postal_town") ||                 // UK
-        getComponent(comps, "administrative_area_level_2");   // fallback
-
-      const region =
-        getComponent(comps, "administrative_area_level_1") || // state/province
-        getComponent(comps, "administrative_area_level_2");
-
-      const postal = getComponent(comps, "postal_code");
-
-      setVal("regAddressLine1", line1);
-      // regAddressLine2 left for user (unit/suite often not reliable)
-      setVal("regLocality", locality);
-      setVal("regCity", city);
-      setVal("regRegion", region);
-      setVal("regPostalCode", postal);
-
-      // Optional metadata
-      setVal("regPlaceId", place.place_id || "");
-      setVal("regFormatted", place.formatted_address || "");
-
-      const loc = place.geometry && place.geometry.location;
-      setVal("regLat", loc ? String(loc.lat()) : "");
-      setVal("regLng", loc ? String(loc.lng()) : "");
-
-      // Persist to sessionStorage via your existing change listeners
-      // (they will fire only if user changes; so trigger manual change events)
-      ["regAddressLine1","regLocality","regCity","regRegion","regPostalCode"]
-        .forEach(id => {
-          const el = byId(id);
-          if (el) el.dispatchEvent(new Event("change", { bubbles: true }));
-        });
+        // Metadata (was regPlaceId / regFormatted / regLat / regLng)
+        setVal("regPlaceId",   addr.osmId ? (addr.osmType + "/" + addr.osmId) : "");
+        setVal("regFormatted", addr.formatted || "");
+        setVal("regLat",       addr.lat != null ? String(addr.lat) : "");
+        setVal("regLng",       addr.lon != null ? String(addr.lon) : "");
+      },
     });
   }
 
@@ -2002,7 +1992,7 @@ document.addEventListener("DOMContentLoaded", function () {
     loadStep2Data();
   });
 
-  // ✅ Google Places Autocomplete (now fills structured address fields)
+  // ✅ Address autocomplete (free Photon backend, no Google API key)
   initRegAddressAutocomplete();
 
   // ✅ Postal same-as-registered behaviour

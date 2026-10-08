@@ -9,6 +9,9 @@
 
   <!-- ✅ load your custom css -->
   <link rel="stylesheet" href="./style.css">
+
+  <!-- ✅ Address autocomplete (free Photon backend, no API key) -->
+  <link rel="stylesheet" href="/static/css/address-autocomplete.css?v=20261008a">
 </head>
 
 <body>
@@ -528,7 +531,10 @@
 </div>
 
 <!-- Google Maps JS (Places library) -->
-<script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places"></script>
+<!-- ❌ Removed — replaced by free Photon-based backend at /api/address/search -->
+
+<!-- ✅ Address autocomplete class (free, no Google API key required) -->
+<script src="/static/js/address-autocomplete.js?v=20261008a"></script>
 
 <!-- Single JS file that handles everything -->
 <!-- ✅ Cache-busted: bump ?v= on every deploy so users never run stale JS again -->

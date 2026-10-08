@@ -105360,6 +105360,84 @@ async function renderContractPreview(c = {}) {
     }
   }
 
+  /**
+   * LANDING HERO — aggregate portfolio KPIs across all loaded contracts.
+   * Independent of which contract is selected; refreshes whenever
+   * renderContractList() runs (i.e. whenever state.contracts changes).
+   */
+  function renderHeroAggregate() {
+    const list = Array.isArray(state.contracts) ? state.contracts : [];
+
+    const txn = list.reduce((s, c) => s + num(c.transaction_price || 0), 0);
+    const rec = list.reduce((s, c) => s + num(c.recognized_revenue_to_date || 0), 0);
+    const bil = list.reduce((s, c) => s + num(c.billed_to_date || 0), 0);
+
+    const activeCount = list.filter(
+      (c) => String(c.status || "").toLowerCase() === "active"
+    ).length;
+
+    const setText = (id, v) => {
+      const el = $(id);
+      if (el) el.textContent = v;
+    };
+
+    setText("revHeroCount", String(list.length));
+    setText("revHeroActiveCount", `${activeCount} active`);
+    setText("revHeroTxn", money(txn));
+    setText("revHeroRec", money(rec));
+    setText("revHeroBilled", money(bil));
+
+    // Recognition % of total transaction price
+    const recPct = txn > 0 ? (rec / txn) * 100 : 0;
+    setText("revHeroRecPct", `${recPct.toFixed(1)}% of txn`);
+
+    // Contract position (over-billed / under-billed / balanced)
+    const netPos = bil - rec;
+    let posLabel = "balanced";
+    let posColor = "rgba(255,255,255,.85)";
+    if (netPos > 0) {
+      posLabel = `▼ over-billed ${money(netPos)}`;
+      posColor = "#fca5a5"; // light red
+    } else if (netPos < 0) {
+      posLabel = `▲ under-billed ${money(Math.abs(netPos))}`;
+      posColor = "#86efac"; // light green
+    }
+    const posEl = $("revHeroPosition");
+    if (posEl) {
+      posEl.textContent = posLabel;
+      posEl.style.color = posColor;
+    }
+
+    // Greeting by time of day
+    const hour = new Date().getHours();
+    const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+    setText("revHeroGreeting", `${greet}. Here's your revenue portfolio.`);
+
+    // Narrative summary
+    const summaryEl = $("revHeroSummary");
+    if (summaryEl) {
+      const posText =
+        netPos > 0 ? `over-billed by ${money(netPos)} (contract liability)`
+        : netPos < 0 ? `under-billed by ${money(Math.abs(netPos))} (contract asset)`
+        : `billing and recognition are balanced`;
+      summaryEl.textContent =
+        list.length === 0
+          ? "No contracts yet. Click \u201cNew Contract\u201d to set up your first IFRS 15 revenue contract."
+          : `${list.length} contract(s) loaded \u00b7 recognized ${money(rec)} of ${money(txn)} \u00b7 ${posText}. Pick one below to drill in.`;
+    }
+
+    // Period pill
+    const periodEnd = $("revPeriodEnd")?.value || "";
+    const periodStart = $("revPeriodStart")?.value || "";
+    let periodText = "All periods";
+    if (periodEnd) {
+      periodText = periodStart
+        ? `Period ${periodStart} \u2192 ${periodEnd}`
+        : `Period ending ${periodEnd}`;
+    }
+    setText("revHeroPeriodPill", periodText);
+  }
+
   function renderContractList() {
     const el = $("revContractList");
     if (!el) return;
@@ -105468,6 +105546,9 @@ async function renderContractPreview(c = {}) {
         await loadCashOverview(row.id);
       });
     });
+
+    // LANDING HERO — refresh aggregate counters whenever the list re-renders
+    try { renderHeroAggregate(); } catch (e) { console.warn("[Revenue] renderHeroAggregate failed", e); }
   }
 
   function getSelectedBillingPolicy() {
@@ -107717,6 +107798,44 @@ async function renderContractPreview(c = {}) {
 
     $("revRunReverseBtn")?.addEventListener("click", async () => {
       try { await reverseRun(); } catch (e) { setRunMsg(e?.message || "Reverse failed", "error"); }
+    });
+
+    // -------- LANDING HERO button bindings (reuse existing handlers) --------
+    // + New Contract → triggers the existing grid "New Contract" button
+    $("revHeroNewContract")?.addEventListener("click", () => {
+      $("revGridNewContractBtn")?.click();
+    });
+
+    // Refresh → triggers the existing sidebar "Reload" button
+    $("revHeroReload")?.addEventListener("click", () => {
+      $("revBtnReload")?.click();
+    });
+
+    // IFRS 15 Disclosure → switches to the disclosure screen
+    $("revHeroDisclose")?.addEventListener("click", () => {
+      const discloseTrigger =
+        document.querySelector('[data-screen="revenue-disclosure"]') ||
+        document.querySelector('[data-target-screen="revenue-disclosure"]') ||
+        document.querySelector('a[href="#revenue-disclosure"]') ||
+        document.querySelector('#navItemRevenueDisclosure');
+
+      if (discloseTrigger) {
+        discloseTrigger.click();
+      } else {
+        const cid = state.cid || (typeof activeCid === "function" ? activeCid() : null);
+        if (cid) {
+          window.open(`${ENDPOINTS.revenue.disclosure(cid)}&as_html=1`, "_blank");
+        } else {
+          setMsg("Could not resolve company for disclosure report.", "error");
+        }
+      }
+    });
+
+    // Run Recognition → jump to the Runs tab and focus the preview button
+    $("revHeroRunRecognition")?.addEventListener("click", () => {
+      setActiveTab("runs");
+      $("revRunPreviewBtn")?.focus();
+      setMsg("Pick a period and click Preview to compute recognition.");
     });
 
     toggleObligationFields();
@@ -156692,3 +156811,149 @@ if (document.readyState === "loading") {
 })(); // ✅ ONLY THIS ONE closing for the main IIFE// ✅ ONLY THIS ONE closing for the main IIFE
 
 
+/* ================================================================
+ * Address Autocomplete wiring for Customer + Vendor forms
+ * ----------------------------------------------------------------
+ * Appended as a separate IIFE so it does not interfere with the
+ * main dashboard app. Uses window.AddressAutocomplete (loaded from
+ * /static/js/address-autocomplete.js) which talks to your own backend
+ * at /api/address/search (Flask route added in api_server.py).
+ *
+ * Backend uses free Photon (OSM) by default — no API key, no cost.
+ * When you have paying customers, set env vars on the backend:
+ *   ADDRESS_PROVIDER=mapbox
+ *   MAPBOX_TOKEN=pk.xxx
+ * The frontend never changes.
+ *
+ * Wired inputs:
+ *   #custBillSearch  → fills #custBillAddr, #custBillCountry
+ *   #custShipSearch  → fills #custShipAddr
+ *   #vendRemitSearch → fills #vendRemitAddr
+ *
+ * Re-runs safely if the modal re-renders inputs.
+ * ================================================================ */
+(function () {
+  "use strict";
+
+  function _id(id) {
+    return document.getElementById(id);
+  }
+
+  function _setVal(id, value) {
+    var el = _id(id);
+    if (!el) return;
+    el.value = value || "";
+    try { el.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) {}
+  }
+
+  // Build a one-line formatted billing address for the textarea
+  function formatForTextarea(addr) {
+    var bits = [];
+    if (addr.line1) bits.push(addr.line1);
+    if (addr.line2) bits.push(addr.line2);
+    if (addr.locality) bits.push(addr.locality);
+    if (addr.postcode) bits.push(addr.postcode);
+    if (addr.city) bits.push(addr.city);
+    if (addr.state && addr.state !== addr.city) bits.push(addr.state);
+    if (bits.length === 0 && addr.formatted) return addr.formatted;
+    return bits.join(", ");
+  }
+
+  // Track instances so we don't double-bind
+  var _bound = {};
+
+  function bind(inputId, opts) {
+    var input = _id(inputId);
+    if (!input) return false;
+    if (_bound[inputId]) {
+      // Update the onSelect callback (form context may have changed)
+      _bound[inputId].setOnSelect(opts.onSelect);
+      return true;
+    }
+    if (!window.AddressAutocomplete) {
+      console.warn("[address] AddressAutocomplete not loaded — cannot bind #" + inputId);
+      return false;
+    }
+    var inst = new AddressAutocomplete(input, {
+      country: opts.country || null,
+      minLength: 3,
+      debounceMs: 300,
+      onSelect: opts.onSelect,
+    });
+    _bound[inputId] = inst;
+    return true;
+  }
+
+  function wireCustomerBilling() {
+    bind("custBillSearch", {
+      onSelect: function (addr) {
+        _setVal("custBillAddr", formatForTextarea(addr));
+        // Try to set country as ISO code (2 letters)
+        var cc = addr.countryCode || (addr.country ? addr.country.slice(0, 2).toUpperCase() : "");
+        _setVal("custBillCountry", cc || addr.country || "");
+      },
+    });
+  }
+
+  function wireCustomerShipping() {
+    bind("custShipSearch", {
+      onSelect: function (addr) {
+        _setVal("custShipAddr", formatForTextarea(addr));
+      },
+    });
+  }
+
+  function wireVendorRemittance() {
+    bind("vendRemitSearch", {
+      onSelect: function (addr) {
+        _setVal("vendRemitAddr", formatForTextarea(addr));
+      },
+    });
+  }
+
+  function wireAll() {
+    wireCustomerBilling();
+    wireCustomerShipping();
+    wireVendorRemittance();
+  }
+
+  // Run on first DOMContentLoaded, then watch for re-rendered modals
+  function init() {
+    wireAll();
+
+    // Customer/Vendor modals may re-render their inputs when reopened.
+    // Re-bind on any node insertion; safe because we track instances.
+    var mo = new MutationObserver(function (mutations) {
+      var needsRebind = false;
+      for (var i = 0; i < mutations.length; i++) {
+        if (mutations[i].addedNodes && mutations[i].addedNodes.length) {
+          needsRebind = true;
+          break;
+        }
+      }
+      if (needsRebind) {
+        // small delay to let the modal fully render
+        setTimeout(wireAll, 50);
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+
+    // Also rebind on common modal-open events
+    document.addEventListener("click", function (e) {
+      var t = e.target.closest("[data-tab], [data-pane], .pill, .btn");
+      if (t) setTimeout(wireAll, 60);
+    }, true);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+
+  // Expose for debugging
+  window.__fsAddressAutocomplete = {
+    rebind: wireAll,
+    instances: _bound,
+  };
+})();

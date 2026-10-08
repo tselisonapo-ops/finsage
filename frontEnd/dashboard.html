@@ -43,6 +43,10 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
+<!-- ✅ Address autocomplete (free Photon backend, no Google API key) -->
+<link rel="stylesheet" href="/static/css/address-autocomplete.css?v=20261008a">
+<script src="/static/js/address-autocomplete.js?v=20261008a"></script>
+
 <style>
   :root{
     --fs-navy:#00284F;
@@ -13340,6 +13344,15 @@ label:has(#projectTeamUserSearch) {
                 <!-- BILLING & REMIT -->
                 <div data-pane="v-address" class="hidden grid gap-3 sm:grid-cols-2">
                   <div class="sm:col-span-2">
+                    <label class="text-xs text-slate-600">Search remittance address</label>
+                    <input
+                      id="vendRemitSearch"
+                      class="w-full border rounded px-3 py-2"
+                      placeholder="Start typing street, suburb, city..."
+                      autocomplete="off"
+                    >
+                  </div>
+                  <div class="sm:col-span-2">
                     <label class="text-xs text-slate-600">Remittance Address</label>
                     <textarea id="vendRemitAddr" class="w-full border rounded px-3 py-2" rows="4" placeholder="Street, City, Postal code"></textarea>
                   </div>
@@ -14476,6 +14489,58 @@ label:has(#projectTeamUserSearch) {
           <input type="hidden" id="revApprovalRequestId" value="">
 
           <div id="revLayout" class="h-[calc(100vh-140px)] flex flex-col gap-2">
+            <!-- LANDING HERO (aggregate portfolio view, no per-contract dependency) -->
+            <div id="revLandingHero" class="card shadow-sage mb-2 overflow-hidden"
+                 style="background:linear-gradient(120deg,var(--fs-navy) 0%,#013a6b 60%,#00687a 100%);color:#fff">
+              <div class="px-5 py-4 flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-2 flex-wrap">
+                    <span class="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                          style="background:rgba(255,255,255,.15)">Revenue Desk</span>
+                    <span id="revHeroPeriodPill" class="text-[11px] font-medium px-2 py-0.5 rounded-full"
+                          style="background:rgba(0,200,200,.25);color:#a7f3f3">—</span>
+                  </div>
+                  <h2 id="revHeroGreeting" class="text-lg font-semibold leading-tight">Welcome to Revenue Workspace</h2>
+                  <p id="revHeroSummary" class="text-sm mt-1" style="color:rgba(255,255,255,.85)">
+                    Loading portfolio summary…
+                  </p>
+                  <div class="flex flex-wrap gap-2 mt-3">
+                    <button id="revHeroNewContract" class="btn-highlight text-sm" type="button">+ New Contract</button>
+                    <button id="revHeroReload" class="btn text-sm" type="button"
+                            style="background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.25)">Refresh</button>
+                    <button id="revHeroDisclose" class="btn text-sm" type="button"
+                            style="background:transparent;color:#fff;border-color:rgba(255,255,255,.25)">IFRS 15 Disclosure</button>
+                    <button id="revHeroRunRecognition" class="btn text-sm hidden" type="button"
+                            style="background:transparent;color:#fff;border-color:rgba(255,255,255,.25)">Run Recognition</button>
+                  </div>
+                </div>
+
+                <!-- Aggregate mini-KPIs -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 shrink-0">
+                  <div class="px-3 py-2 rounded-lg" style="background:rgba(255,255,255,.1);min-width:108px">
+                    <div class="text-[10px] uppercase tracking-wider" style="color:rgba(255,255,255,.7)">Contracts</div>
+                    <div id="revHeroCount" class="text-xl font-bold tabular-nums">0</div>
+                    <div id="revHeroActiveCount" class="text-[10px]" style="color:rgba(255,255,255,.6)">0 active</div>
+                  </div>
+                  <div class="px-3 py-2 rounded-lg" style="background:rgba(255,255,255,.1);min-width:108px">
+                    <div class="text-[10px] uppercase tracking-wider" style="color:rgba(255,255,255,.7)">Total Txn Price</div>
+                    <div id="revHeroTxn" class="text-xl font-bold tabular-nums">0.00</div>
+                    <div id="revHeroTxnDelta" class="text-[10px]" style="color:rgba(255,255,255,.6)">&nbsp;</div>
+                  </div>
+                  <div class="px-3 py-2 rounded-lg" style="background:rgba(255,255,255,.1);min-width:108px">
+                    <div class="text-[10px] uppercase tracking-wider" style="color:rgba(255,255,255,.7)">Recognized</div>
+                    <div id="revHeroRec" class="text-xl font-bold tabular-nums">0.00</div>
+                    <div id="revHeroRecPct" class="text-[10px]" style="color:rgba(255,255,255,.6)">0% of txn</div>
+                  </div>
+                  <div class="px-3 py-2 rounded-lg" style="background:rgba(255,255,255,.1);min-width:108px">
+                    <div class="text-[10px] uppercase tracking-wider" style="color:rgba(255,255,255,.7)">Billed</div>
+                    <div id="revHeroBilled" class="text-xl font-bold tabular-nums">0.00</div>
+                    <div id="revHeroPosition" class="text-[10px] font-semibold" style="color:rgba(255,255,255,.85)">balanced</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- FIXED TOP ROW: workspace + KPIs -->
             <div id="revTopStrip" class="shrink-0 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[280px_repeat(4,minmax(0,1fr))] gap-4 items-start">
               
@@ -30359,5 +30424,10 @@ window.safeRedirect = function (url, mode = "href") {
   async
   defer
 ></script>
+<!-- ❌ Google Maps Places not required for address autocomplete anymore.
+     Free Photon backend at /api/address/search handles all address lookup.
+     Keep this script tag only if you still use Google Maps for the
+     company-map widget (initCompanyMapFromAddress in dashboard.js).
+     If you don't need the map widget, you can delete this script entirely. -->
 </body>
 </html>
