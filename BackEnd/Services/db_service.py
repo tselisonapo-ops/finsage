@@ -100335,6 +100335,7 @@ class DatabaseService:
             cogs_roles = [
                 "cogs_food",
                 "direct_materials_cost",
+                "inventory_cost_of_sales",
                 "cogs",
             ]
 
@@ -100344,7 +100345,7 @@ class DatabaseService:
                 "inventory",
             ]
             cogs_roles = [
-                "cost_of_sales",
+                "inventory_cost_of_sales",
                 "cogs",
             ]
 
@@ -100356,7 +100357,7 @@ class DatabaseService:
                 "inventory_spares_consumables",
             ]
             cogs_roles = [
-                "cost_of_sales",
+                "inventory_cost_of_sales",
                 "cogs",
             ]
 

@@ -2039,7 +2039,7 @@ def _coa_role_from_text(
             "goods sold",
         )
     ):
-        return "cost_of_sales"
+        return "inventory_cost_of_sales"
 
     # ----------------------------
     # IFRS 15 / contract revenue
