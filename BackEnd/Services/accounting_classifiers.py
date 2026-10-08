@@ -2042,6 +2042,32 @@ def _coa_role_from_text(
         return "cost_of_sales"
 
     # ----------------------------
+    # IFRS 15 / contract revenue
+    # ----------------------------
+    if has_any(
+        "contract income",
+        "contract revenue",
+        "service income",
+        "revenue recognized from contracts",
+        "revenue recognition - ifrs 15",
+        "revenue recognition ifrs 15",
+        "e&m contract income",
+        "residential contract income",
+        "postpaid contract revenue",
+        "revenue from contracts with customers",
+        "ifrs 15 revenue",
+        "ifrs15 revenue",
+        "customer contract revenue",
+        "service contract revenue",
+        "project revenue",
+        "construction contract revenue",
+        "consulting contract revenue",
+        "performance obligation revenue",
+        "revenue from performance obligations",
+    ):
+        return "CONTRACT_REVENUE"
+    
+    # ----------------------------
     # POS / ordinary sales revenue
     # ----------------------------
     if (
@@ -2131,32 +2157,6 @@ def _coa_role_from_text(
         "construction contract asset",
     ):
         return "CONTRACT_ASSET"
-
-    # ----------------------------
-    # IFRS 15 / contract revenue
-    # ----------------------------
-    if has_any(
-        "contract income",
-        "contract revenue",
-        "service income",
-        "revenue recognized from contracts",
-        "revenue recognition - ifrs 15",
-        "revenue recognition ifrs 15",
-        "e&m contract income",
-        "residential contract income",
-        "postpaid contract revenue",
-        "revenue from contracts with customers",
-        "ifrs 15 revenue",
-        "ifrs15 revenue",
-        "customer contract revenue",
-        "service contract revenue",
-        "project revenue",
-        "construction contract revenue",
-        "consulting contract revenue",
-        "performance obligation revenue",
-        "revenue from performance obligations",
-    ):
-        return "CONTRACT_REVENUE"
 
     # ----------------------------
     # POS / Sales contra revenue roles
