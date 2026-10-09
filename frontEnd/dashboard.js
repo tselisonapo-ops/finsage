@@ -126807,26 +126807,35 @@ function getSelectedCatalogProduct() {
 
 function mfgCatalogBatchOptions(product) {
   if (!product) return [];
+
+  // Baker's %: batch basis is kg of flour (mass input),
+  // regardless of the finished product's UOM (loaf, bun, etc.).
   if (product.formula_type === "bakers_pct") {
     return [
-      { value: "2.5", label: "2.5 kg (test batch)" },
-      { value: "5", label: "5 kg (small batch)" },
-      { value: "10", label: "10 kg (medium batch)" },
-      { value: "12.5", label: "12.5 kg (standard batch)" },
-      { value: "25", label: "25 kg (large batch)" },
-      { value: "50", label: "50 kg (production batch)" },
-      { value: "100", label: "100 kg (bulk batch)" }
+      { value: "2.5", label: "2.5 kg" },
+      { value: "5", label: "5 kg" },
+      { value: "10", label: "10 kg" },
+      { value: "12.5", label: "12.5 kg" },
+      { value: "25", label: "25 kg" },
+      { value: "50", label: "50 kg" },
+      { value: "100", label: "100 kg" }
     ];
   }
+
+  // Unit / count / volume / length-based:
+  // Use the product's own UOM so labels match the production context
+  // (e.g. "50 loaf", "100 brick", "10 door", "20 m²") instead of
+  // a hardcoded "units" word that only fits some industries.
+  const uom = String(product.product_uom || product.uom || "unit").trim();
   return [
-    { value: "1", label: "1 unit (sample)" },
-    { value: "10", label: "10 units (small run)" },
-    { value: "25", label: "25 units" },
-    { value: "50", label: "50 units (standard batch)" },
-    { value: "100", label: "100 units (production run)" },
-    { value: "250", label: "250 units" },
-    { value: "500", label: "500 units" },
-    { value: "1000", label: "1000 units (bulk run)" }
+    { value: "1", label: `1 ${uom}` },
+    { value: "10", label: `10 ${uom}` },
+    { value: "25", label: `25 ${uom}` },
+    { value: "50", label: `50 ${uom}` },
+    { value: "100", label: `100 ${uom}` },
+    { value: "250", label: `250 ${uom}` },
+    { value: "500", label: `500 ${uom}` },
+    { value: "1000", label: `1000 ${uom}` }
   ];
 }
 
@@ -126839,9 +126848,10 @@ function onMfgCatalogProductChange() {
 
   // Configure label and dropdown options for the selected product
   if (product.formula_type === "bakers_pct") {
-    qtyLabel.textContent = "Batch flour (kg)";
+    qtyLabel.textContent = "Batch size (kg of flour)";
   } else {
-    qtyLabel.textContent = `How many units? (${product.product_uom || "unit"})`;
+    const uom = product.product_uom || product.uom || "unit";
+    qtyLabel.textContent = `Batch size (${uom})`;
   }
 
   const options = mfgCatalogBatchOptions(product);
@@ -126852,21 +126862,26 @@ function onMfgCatalogProductChange() {
       .join("") +
     `<option value="__custom__">Custom…</option>`;
 
-  // Pre-select the standard option (4th in the list — typically "standard batch")
-  if (options.length >= 4) {
-    qtySelect.value = options[3].value;
-  } else if (options.length > 0) {
-    qtySelect.value = options[0].value;
-  }
-
   if (qtyCustom) {
     qtyCustom.value = "";
     qtyCustom.classList.add("hidden");
   }
 
-  // Detach any prior custom-change handlers by cloning, then attach fresh
+  // Detach any prior custom-change handlers by cloning, then attach fresh.
+  // IMPORTANT: cloneNode(true) does NOT preserve a `.value` set in JS,
+  // so we capture it before cloning and re-apply it on the fresh node.
+  const preSelectedValue =
+    options.length >= 4 ? options[3].value
+    : options.length > 0 ? options[0].value
+    : "";
+
   const freshSelect = qtySelect.cloneNode(true);
   qtySelect.parentNode.replaceChild(freshSelect, qtySelect);
+
+  // Re-apply the pre-selected value on the fresh node
+  if (preSelectedValue) {
+    freshSelect.value = preSelectedValue;
+  }
 
   freshSelect.addEventListener("change", () => {
     const v = freshSelect.value;
@@ -127094,12 +127109,15 @@ async function fillBomFormFromCatalog(cid, body) {
       item_id: line.item_id || prevMap[line.key] || null,
       quantity: line.quantity,
       unit: line.base_unit || line.unit,
-      scrap_percent: line.scrap_percent || 0
+      scrap_percent: line.scrap_percent || 0,
+      name: line.name || line.label || line.description || line.key || ""
     });
 
     const tr = tbody.lastElementChild;
     if (tr) {
       tr.dataset.catalogKey = line.key || "";
+      tr.dataset.catalogName =
+        line.name || line.label || line.description || line.key || "";
       tr.dataset.catalogBaseQty = String(
         line.base_qty ?? line.quantity ?? ""
       );
@@ -127110,11 +127128,129 @@ async function fillBomFormFromCatalog(cid, body) {
     }
   });
 
+  // Auto-match each line's catalog key/name to an inventory item
+  // so the user does not have to manually pick from the dropdown.
+  autoMatchMfgLineItems();
+
   recalcMfgBomTotals();
   mfgCatalogSetMsg(
     `Loaded ${(pv.lines || []).length} components from ` +
     `${product.product_name || "catalog"}.`
   );
+}
+
+// --------------------------------------------------------------------------
+// AUTO-MATCH MATERIALS TO INVENTORY ITEMS
+// Tries several strategies to pick the best inventory item for a
+// catalog line, so the user does not have to manually populate the
+// "Component" dropdown for every row.
+// --------------------------------------------------------------------------
+function normalizeForMatch(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function autoMatchMfgLineItems() {
+  const items = window._MFG_ITEM_CACHE?.rows || [];
+  if (!items.length) return;
+
+  let matched = 0;
+  let unmatched = 0;
+
+  document
+    .querySelectorAll("#mfgBomDefinitionLinesTbody tr")
+    .forEach(tr => {
+      const sel = tr.querySelector(".mfg-line-item");
+      if (!sel || sel.value) return; // already selected, skip
+
+      const key = normalizeForMatch(tr.dataset.catalogKey || "");
+      const name = normalizeForMatch(tr.dataset.catalogName || "");
+      if (!key && !name) return;
+
+      // Build candidate tokens: full name + full key + first word of name
+      const candidates = [
+        name,
+        key,
+        name ? name.split(" ")[0] : "",
+        key ? key.split(" ")[0] : ""
+      ].filter(Boolean);
+
+      let match = null;
+
+      // Strategy 1: exact name match
+      if (!match && name) {
+        match = items.find(it =>
+          normalizeForMatch(it.name) === name ||
+          normalizeForMatch(it.sku) === name
+        );
+      }
+
+      // Strategy 2: exact key match
+      if (!match && key) {
+        match = items.find(it =>
+          normalizeForMatch(it.name) === key ||
+          normalizeForMatch(it.sku) === key
+        );
+      }
+
+      // Strategy 3: substring containment (name contains key, or key contains name)
+      if (!match) {
+        match = items.find(it => {
+          const itName = normalizeForMatch(it.name);
+          const itSku = normalizeForMatch(it.sku);
+          return candidates.some(c =>
+            c.length >= 3 && (
+              itName === c ||
+              itSku === c ||
+              itName.includes(c) ||
+              c.includes(itName)
+            )
+          );
+        });
+      }
+
+      // Strategy 4: word-level overlap (any candidate word appears in item name)
+      if (!match) {
+        match = items.find(it => {
+          const itName = normalizeForMatch(it.name);
+          if (!itName) return false;
+          return candidates.some(c =>
+            c.length >= 3 &&
+            itName.split(" ").some(w => w === c || w.includes(c))
+          );
+        });
+      }
+
+      if (match) {
+        sel.value = String(match.id);
+
+        // Update unit from the matched inventory item
+        const unitInput = tr.querySelector(".mfg-line-unit");
+        if (unitInput && match.unit) {
+          unitInput.value = match.unit;
+        }
+
+        // Mark as auto-matched (for visual cue / debugging)
+        tr.dataset.autoMatched = "1";
+
+        // Fire change so dependent logic (cost placeholder, recalc) runs
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+        matched++;
+      } else {
+        tr.dataset.autoMatched = "0";
+        unmatched++;
+      }
+    });
+
+  if (matched || unmatched) {
+    mfgCatalogSetMsg(
+      `Auto-matched ${matched} of ${matched + unmatched} components to inventory items.` +
+      (unmatched ? ` ${unmatched} need manual selection.` : "")
+    );
+  }
 }
 
 async function previewCatalogBomCost() {
