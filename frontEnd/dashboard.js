@@ -1,4 +1,4 @@
-(function hardTraceRedirects() {
+﻿(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -126161,16 +126161,6 @@ function renderManufacturingBoms(rows) {
       </table>
     </div>
   `;
-
-  mount.querySelectorAll("[data-mfg-bom]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const bomId = Number(btn.dataset.mfgBom || 0);
-
-      if (bomId) {
-        openManufacturingBomDefinitionModal(bomId);
-      }
-    });
-  });
 }
 
 /* ==========================================================================
@@ -126236,6 +126226,19 @@ function mfgGetHourlyRateFromSetup(setup) {
 // 1. MODAL CONTAINER
 // --------------------------------------------------------------------------
 async function openManufacturingBomDefinitionModal(bomId = 0) {
+  if (window.__MFG_BOM_OPENING) {
+    console.warn("[MFG BOM] already opening, skipping duplicate", { bomId });
+    return;
+  }
+  window.__MFG_BOM_OPENING = true;
+  try {
+    await _openManufacturingBomDefinitionModalInner(bomId);
+  } finally {
+    window.__MFG_BOM_OPENING = false;
+  }
+}
+
+async function _openManufacturingBomDefinitionModalInner(bomId = 0) {
   let modal = document.getElementById("mfgBomDefinitionModal");
 
   if (!modal) {
