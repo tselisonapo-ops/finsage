@@ -126245,21 +126245,33 @@ async function _openManufacturingBomDefinitionModalInner(bomId = 0) {
     modal = document.createElement("div");
     modal.id = "mfgBomDefinitionModal";
     modal.className =
-      "fixed inset-0 z-50 hidden bg-black/40 overflow-y-auto p-4 sm:p-6 flex justify-center items-start";
+      "fixed inset-0 z-50 hidden bg-white overflow-y-auto";
 
     modal.innerHTML = `
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl my-6 flex flex-col">
+      <div class="bg-white w-full flex flex-col min-h-screen">
+        <!-- HEADER -->
+        <!-- BACK BAR -->
+        <div class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-3 sticky top-0 z-30">
+          <button type="button" id="mfgBomDefinitionBackBtn"
+                  class="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 font-medium">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to BOM list
+          </button>
+          <button type="button" id="mfgBomDefinitionCloseBtn"
+                  class="text-slate-400 hover:text-slate-700 text-2xl font-bold px-2">×</button>
+        </div>
 
         <!-- HEADER -->
-        <div class="flex items-center justify-between border-b px-6 py-4 sticky top-0 bg-white rounded-t-lg z-20">
+        <div class="flex items-center justify-between border-b px-6 py-4 bg-white">
           <div>
             <div id="mfgBomDefinitionTitle" class="text-lg font-semibold text-slate-900">New BOM</div>
             <div class="text-xs text-slate-500">
               Define the finished item, standard recipe materials, and unit production costs.
             </div>
           </div>
-          <button type="button" id="mfgBomDefinitionCloseBtn"
-                  class="text-slate-400 hover:text-slate-700 text-2xl font-bold px-2">×</button>
         </div>
 
         <div class="p-6">
@@ -126610,6 +126622,7 @@ async function _openManufacturingBomDefinitionModalInner(bomId = 0) {
     document.body.appendChild(modal);
 
     document.getElementById("mfgBomDefinitionCloseBtn")?.addEventListener("click", closeManufacturingBomDefinitionModal);
+    document.getElementById("mfgBomDefinitionBackBtn")?.addEventListener("click", closeManufacturingBomDefinitionModal);
     document.getElementById("mfgBomDefinitionCancelBtn")?.addEventListener("click", closeManufacturingBomDefinitionModal);
     document.getElementById("mfgBomDefinitionAddLineBtn")?.addEventListener("click", () => addManufacturingBomDefinitionLine());
     document.getElementById("mfgBomAddLabourBtn")?.addEventListener("click", () => addMfgBomLabourRow());
@@ -127604,6 +127617,54 @@ function addManufacturingBomDefinitionLine(line = {}) {
       line.unit ||
       selected?.dataset?.unit ||
       "unit";
+  }
+
+  // ── Restore material unit cost from saved BOM data ───────────────
+  // The cost input is readonly and was hardcoded to value=""
+  // with placeholder="Calculated on save", so on reopen the
+  // recalcMfgBomTotals saw cost == 0 and showed "— (pending save)".
+  const costInput = tr.querySelector(".mfg-line-cost");
+  const totalInput = tr.querySelector(".mfg-line-total");
+
+  if (costInput) {
+    let unitCost =
+      Number(line.unit_cost ?? line.cost ?? line.standard_cost ?? 0) || 0;
+
+    // Fallback: look up the inventory item's cost from the cache
+    if (unitCost <= 0 && line.item_id && window._MFG_ITEM_CACHE?.rows) {
+      const inv = window._MFG_ITEM_CACHE.rows.find(
+        it => Number(it.id) === Number(line.item_id)
+      );
+      if (inv) {
+        unitCost = Number(
+          inv.standard_cost ??
+          inv.planned_cost ??
+          inv.cost ??
+          inv.unit_cost ??
+          inv.average_cost ??
+          inv.last_purchase_price ??
+          inv.sales_price ??  // last resort
+          0
+        ) || 0;
+      }
+    }
+
+    if (unitCost > 0) {
+      costInput.value = unitCost.toFixed(6);
+      costInput.placeholder = "";
+
+      const backendLineCost =
+        Number(line.line_cost ?? line.total_cost ?? line.material_cost ?? 0) || 0;
+      const qty = Number(line.quantity ?? 0) || 0;
+      const scrap = Number(line.scrap_percent ?? line.scrap_pct ?? 0) || 0;
+      const computedLineCost = qty > 0 ? qty * (1 + scrap / 100) * unitCost : 0;
+      const finalLineCost = backendLineCost > 0 ? backendLineCost : computedLineCost;
+
+      if (totalInput && finalLineCost > 0) {
+        totalInput.value = finalLineCost.toFixed(2);
+        totalInput.placeholder = "";
+      }
+    }
   }
 
   // Item selection changes the consumption unit.
@@ -129168,6 +129229,8 @@ function addMfgBomUtilityRow(row = {}) {
   tbody.appendChild(tr);
   calculateUtilityCost();
 }
+
+
 // --------------------------------------------------------------------------
 // 6. TOTALS & UNIT MARGIN CALCULATION
 // --------------------------------------------------------------------------
@@ -131928,6 +131991,66 @@ function openMfgOrderCostRowEditModal(orderId, section, line) {
   });
 }
 
+// ── Auto-post planned materials when order progresses or completes ──
+// Triggered by the "Auto-post materials" checkbox in the order detail modal.
+// Posts planned_qty as actual_qty for every material line that hasn't been
+// recorded yet (delta = planned - already_posted). Skips lines that have
+// already been fully recorded.
+async function autoPostManufacturingMaterials(orderId, { reason = "progress" } = {}) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid || !orderId) return false;
+
+  try {
+    const data = await apiFetch(ENDPOINTS.manufacturing.order(cid, orderId));
+    const order = data?.order || data;
+    const materials =
+      order?.materials || order?.material_lines || order?.lines || [];
+
+    if (!materials.length) {
+      console.info("[MFG] autoPost: no material lines to post");
+      return false;
+    }
+
+    // Build the lines payload — post remaining = planned - actual
+    const lines = [];
+    for (const m of materials) {
+      const planned = Number(m.planned_qty ?? m.quantity ?? 0) || 0;
+      const alreadyPosted = Number(m.actual_qty ?? 0) || 0;
+      const remaining = planned - alreadyPosted;
+      if (remaining > 0) {
+        lines.push({
+          material_id: Number(m.material_id ?? m.id ?? m.item_id),
+          actual_qty: remaining,
+        });
+      }
+    }
+
+    if (!lines.length) {
+      console.info("[MFG] autoPost: all planned materials already posted");
+      showToast?.("All planned materials already recorded.", "info");
+      return true;
+    }
+
+    const result = await apiFetch(
+      ENDPOINTS.manufacturing.orderMaterialUsage(cid, orderId),
+      {
+        method: "POST",
+        body: JSON.stringify({ lines }),
+      }
+    );
+
+    showToast?.(
+      `Auto-posted ${lines.length} material line(s) — Cost ${fmtMoney(result?.total_cost || 0)}`,
+      "ok"
+    );
+    return true;
+  } catch (err) {
+    console.error("[MFG] autoPost failed:", err);
+    alert(`Auto-post of materials failed: ${err?.message || err}`);
+    return false;
+  }
+}
+
 async function openManufacturingOrderDetail(orderId) {
   const cid =
     getActiveCompanyId?.() ||
@@ -132150,12 +132273,26 @@ async function openManufacturingOrderDetail(orderId) {
     document.createElement("div");
 
   modal.className =
-    "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
-
+    "fixed inset-0 z-50 bg-white overflow-y-auto";
   modal.innerHTML = `
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-auto">
+    <div class="bg-white w-full min-h-screen flex flex-col">
 
-      <div class="sticky top-0 bg-white border-b px-5 py-4 flex items-center justify-between z-10">
+      <!-- BACK BAR -->
+      <div class="sticky top-0 z-30 bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center justify-between">
+        <button type="button" data-close
+                class="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 font-medium">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Production Orders
+        </button>
+        <button type="button" data-close
+                class="text-2xl text-slate-400 hover:text-slate-700 px-2">×</button>
+      </div>
+
+      <!-- HEADER -->
+      <div class="bg-white border-b px-5 py-4 flex items-center justify-between">
         <div>
           <div class="text-lg font-semibold">
             ${esc(order?.mo_no || `MO-${orderId}`)}
@@ -132164,13 +132301,6 @@ async function openManufacturingOrderDetail(orderId) {
             Production of ${esc(finishedItem)}
           </div>
         </div>
-
-        <button
-          type="button"
-          data-close
-          class="text-2xl text-slate-400 hover:text-slate-700">
-          ×
-        </button>
       </div>
 
       <div class="p-5">
@@ -132428,11 +132558,19 @@ async function openManufacturingOrderDetail(orderId) {
             ${
               canRecordUsage
                 ? `
+                  <label class="flex items-center gap-2 text-xs cursor-pointer select-none"
+                         title="When ticked, planned materials auto-post when you click Start Production or Complete Production.">
+                    <input type="checkbox"
+                           id="mfgOrderAutoPostMaterials"
+                           class="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500" />
+                    <span class="text-slate-700 font-medium">Auto-post materials on progress / completion</span>
+                  </label>
                   <button
                     type="button"
                     data-post-usage
-                    class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
-                    Record Material Usage
+                    class="px-2 py-1 text-xs rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+                    title="Open the manual material-usage entry modal">
+                    Manual entry…
                   </button>
                 `
                 : ""
@@ -133142,6 +133280,28 @@ async function openManufacturingOrderDetail(orderId) {
   modal.querySelectorAll("[data-mfg-status]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const newStatus = btn.dataset.mfgStatus;
+
+      // ── Auto-post materials BEFORE the status changes ───────────────
+      // If the "Auto-post materials" checkbox is ticked in the Materials
+      // section AND we're transitioning to in_progress or completed,
+      // auto-post the remaining planned material quantities first.
+      // If auto-post fails, abort the status change so the user can
+      // resolve the issue (e.g. insufficient inventory) before retrying.
+      const autoPostCheckbox = modal.querySelector("#mfgOrderAutoPostMaterials");
+      const shouldAutoPost = autoPostCheckbox?.checked &&
+                              (newStatus === "in_progress" || newStatus === "completed");
+
+      if (shouldAutoPost) {
+        const ok = await autoPostManufacturingMaterials(orderId, {
+          reason: newStatus === "in_progress" ? "start" : "complete"
+        });
+        if (!ok) {
+          // Auto-post failed — abort the status transition
+          return;
+        }
+      }
+
+      // ── Status change (existing logic) ─────────────────────────────
       const result = await updateManufacturingOrderStatus(orderId, newStatus);
       if (!result) return;
 
