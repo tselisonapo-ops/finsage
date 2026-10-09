@@ -126496,6 +126496,35 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
             </table>
           </div>
 
+          <!-- 5. UTILITIES (WATER & ELECTRICITY) -->
+          <div class="mt-7 flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-sm text-slate-900">5. Utilities (Water &amp; Electricity)</div>
+              <div class="text-xs text-slate-500">
+                Shared compound bills, per-batch consumption, or machine kW × hours × kWh rate.
+                Each row is auto-converted to a per-product cost using the BOM output quantity.
+              </div>
+            </div>
+            <button type="button" id="mfgBomAddUtilityBtn"
+                    class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">+ Add Utility</button>
+          </div>
+
+          <div class="overflow-x-auto border rounded mt-2">
+            <table class="w-full min-w-[1100px] text-xs">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-3 py-2 w-[180px]">Utility / Method</th>
+                  <th class="text-left px-3 py-2">Description</th>
+                  <th class="text-left px-3 py-2 w-[320px]">Calculation inputs</th>
+                  <th class="text-right px-3 py-2 w-[130px]">Batch Cost</th>
+                  <th class="text-right px-3 py-2 w-[120px]">Per Unit</th>
+                  <th class="text-center px-3 py-2 w-[60px]"></th>
+                </tr>
+              </thead>
+              <tbody id="mfgBomUtilityTbody"></tbody>
+            </table>
+          </div>
+
           <!-- STANDARD COST SUMMARY -->
           <div class="mt-7 border rounded p-4 bg-slate-50 text-xs">
             <div class="font-semibold text-sm text-slate-900 mb-1">
@@ -126525,6 +126554,10 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
               <div class="flex justify-between border-b pb-1">
                 <span class="text-slate-600">Manufacturing Overhead (batch)</span>
                 <strong id="mfgBomTotOverhead">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Utilities — Water &amp; Electricity (batch)</span>
+                <strong id="mfgBomTotUtilities">0.00</strong>
               </div>
               <div class="flex justify-between border-b pb-1 font-semibold">
                 <span>Total Batch Cost</span>
@@ -126579,6 +126612,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     document.getElementById("mfgBomAddLabourBtn")?.addEventListener("click", () => addMfgBomLabourRow());
     document.getElementById("mfgBomAddDirectBtn")?.addEventListener("click", () => addMfgBomDirectCostRow());
     document.getElementById("mfgBomAddOverheadBtn")?.addEventListener("click", () => addMfgBomOverheadRow());
+    document.getElementById("mfgBomAddUtilityBtn")?.addEventListener("click", () => addMfgBomUtilityRow());
     document.getElementById("mfgBomDefinitionSaveBtn")?.addEventListener("click", saveManufacturingBomDefinition);
 
     document.getElementById("mfgCatalogIndustry")?.addEventListener("change", onMfgCatalogIndustryChange);
@@ -126610,6 +126644,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
   document.getElementById("mfgBomLabourTbody").innerHTML = "";
   document.getElementById("mfgBomDirectTbody").innerHTML = "";
   document.getElementById("mfgBomOverheadTbody").innerHTML = "";
+  document.getElementById("mfgBomUtilityTbody").innerHTML = "";
 
   document.getElementById("mfgBomDefinitionTitle").textContent = bomId ? "Edit BOM" : "New BOM";
   modal.classList.remove("hidden");
@@ -126697,6 +126732,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       addMfgBomLabourRow();
       addMfgBomDirectCostRow();
       addMfgBomOverheadRow();
+      addMfgBomUtilityRow();
       recalcMfgBomTotals();
       return;
     }
@@ -126718,6 +126754,7 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     (bom.labour || []).forEach(r => addMfgBomLabourRow(r));
     (bom.direct_costs || []).forEach(r => addMfgBomDirectCostRow(r));
     (bom.overheads || []).forEach(r => addMfgBomOverheadRow(r));
+    (bom.utilities || []).forEach(r => addMfgBomUtilityRow(r));
 
     recalcMfgBomTotals();
   } catch (err) {
@@ -128001,16 +128038,75 @@ async function saveManufacturingBomDefinition() {
   }
 
   // ============================================================
+  // 6. UTILITIES (WATER & ELECTRICITY)
+  // ============================================================
+
+  const utilities = [];
+
+  for (
+    const tr of document.querySelectorAll(
+      "#mfgBomUtilityTbody tr"
+    )
+  ) {
+
+    const method =
+      tr.querySelector(".mfg-util-type")?.value || "water-direct";
+    const description =
+      tr.querySelector(".mfg-util-desc")?.value.trim() || null;
+    const cost =
+      mfgBomNullableNum(tr.querySelector(".mfg-util-cost"));
+
+    // Completely blank row
+    if (!description && cost === null) {
+      continue;
+    }
+
+    if (!(cost > 0)) {
+      return showManufacturingBomDefinitionMsg(
+        "Each utility row must produce a positive batch cost. Check qty/rate/monthly%/batches/hours/kW inputs.",
+        "error"
+      );
+    }
+
+    const utility = {
+      method,
+      utility_type: method.startsWith("water") ? "water" : "electricity",
+      description,
+      cost
+    };
+
+    // Method-specific fields
+    if (method === "water-direct" || method === "elec-direct") {
+      utility.quantity = mfgBomNullableNum(tr.querySelector(".mfg-util-qty"));
+      utility.rate = mfgBomNullableNum(tr.querySelector(".mfg-util-rate"));
+      utility.unit = method === "water-direct" ? "L" : "kWh";
+    } else if (method === "water-allocation") {
+      utility.monthly_amount = mfgBomNullableNum(tr.querySelector(".mfg-util-monthly"));
+      utility.allocation_pct = mfgBomNullableNum(tr.querySelector(".mfg-util-pct"));
+      utility.batches_per_month = mfgBomNullableNum(tr.querySelector(".mfg-util-batches"));
+    } else if (method === "elec-machine") {
+      utility.asset_id =
+        Number(tr.querySelector(".mfg-util-asset")?.value || 0) || null;
+      utility.effective_kw =
+        mfgBomNullableNum(tr.querySelector(".mfg-util-effective-kw-manual"));
+      utility.hours = mfgBomNullableNum(tr.querySelector(".mfg-util-hours"));
+      utility.kwh_rate = mfgBomNullableNum(tr.querySelector(".mfg-util-kwh-rate"));
+    }
+
+    utilities.push(utility);
+  }
+
+  // ============================================================
   // FINAL PAYLOAD
   //
   // Material unit_cost is intentionally NOT included.
   // Backend owns material costing.
   //
   // The payload now also sends the BOM output quantity so the
-  // backend can normalize labour / direct-cost / overhead amounts
-  // to a per-product basis before inserting BOM rows. The same
-  // per-product figures are also computed on the frontend so the
-  // user sees the contribution-per-product breakdown live.
+  // backend can normalize labour / direct-cost / overhead / utility
+  // amounts to a per-product basis before inserting BOM rows. The
+  // same per-product figures are also computed on the frontend so
+  // the user sees the contribution-per-product breakdown live.
   // ============================================================
 
   payload.output_qty = payload.batch_qty;
@@ -128029,11 +128125,15 @@ async function saveManufacturingBomDefinition() {
   payload.overheads_per_unit = overheads
     .map(o => Number(o.allocated_amount ?? (Number(o.quantity || 0) * Number(o.rate || 0))) || 0)
     .reduce((a, b) => a + b, 0) / _normQty;
+  payload.utilities_per_unit = utilities
+    .map(u => Number(u.cost) || 0)
+    .reduce((a, b) => a + b, 0) / _normQty;
 
   payload.lines = lines;
   payload.labour = labour;
   payload.direct_costs = direct_costs;
   payload.overheads = overheads;
+  payload.utilities = utilities;
 
   const btn =
     document.getElementById(
@@ -128809,6 +128909,263 @@ function addMfgBomOverheadRow(row = {}) {
   tbody.appendChild(tr);
 }
 // --------------------------------------------------------------------------
+// 5b. UTILITIES (WATER & ELECTRICITY) ROW
+//
+// Supports four calculation methods:
+//   • water-direct     : qty (L) × rate (R/L) per batch
+//   • water-allocation : monthly_amount × allocation_pct ÷ batches_per_month
+//   • elec-direct      : qty (kWh) × rate (R/kWh) per batch
+//   • elec-machine     : effective_kw × hours × kwh_rate  (kw auto-fetched
+//                        from selected asset profile, with manual override)
+// --------------------------------------------------------------------------
+const MFG_UTILITY_METHODS = {
+  "water-direct": {
+    label: "Water · Direct",
+    inputs: [
+      { cls: "mfg-util-qty",     placeholder: "Liters",   label: "L / batch" },
+      { cls: "mfg-util-rate",    placeholder: "0.00",     label: "R / liter" }
+    ]
+  },
+  "water-allocation": {
+    label: "Water · Compound Allocation",
+    inputs: [
+      { cls: "mfg-util-monthly", placeholder: "Monthly R", label: "Monthly bill" },
+      { cls: "mfg-util-pct",     placeholder: "35",        label: "Allocation %" },
+      { cls: "mfg-util-batches", placeholder: "150",        label: "Batches / month" }
+    ]
+  },
+  "elec-direct": {
+    label: "Electricity · Direct",
+    inputs: [
+      { cls: "mfg-util-qty",     placeholder: "kWh",  label: "kWh / batch" },
+      { cls: "mfg-util-rate",    placeholder: "0.00", label: "R / kWh" }
+    ]
+  },
+  "elec-machine": {
+    label: "Electricity · Machine",
+    inputs: [
+      { cls: "mfg-util-asset",    placeholder: "",     label: "Machine",     isAsset: true },
+      { cls: "mfg-util-hours",     placeholder: "0.00", label: "Run hours / batch" },
+      { cls: "mfg-util-kwh-rate",  placeholder: "0.00", label: "R / kWh" },
+      { cls: "mfg-util-effective-kw-manual", placeholder: "0", label: "Effective kW (manual override)" }
+    ]
+  }
+};
+
+function addMfgBomUtilityRow(row = {}) {
+  const tbody = document.getElementById("mfgBomUtilityTbody");
+  if (!tbody) return;
+
+  const assets = window.__MFG_BOM_REF?.assets || [];
+
+  const assetOptions =
+    `<option value="">-- Select machine --</option>` +
+    assets.map(a => {
+      const kw =
+        Number(a.effective_kw ?? a.power_kw ?? a.kw ?? a.rated_kw ?? 0) || 0;
+      return `
+        <option
+          value="${esc(a.id)}"
+          data-name="${esc(a.asset_name || "")}"
+          data-effective-kw="${kw > 0 ? kw.toFixed(2) : ""}">
+          ${esc(a.asset_code || "")} ${esc(a.asset_name || "")}
+          ${kw > 0 ? `(${kw} kW)` : "(no kW set)"}
+        </option>
+      `;
+    }).join("");
+
+  // Determine method from row data — supports both new and legacy shapes
+  const initialMethod =
+    row.method ||
+    (row.utility_type === "water" && row.monthly_amount ? "water-allocation"
+     : row.utility_type === "water" ? "water-direct"
+     : row.utility_type === "electricity" && row.asset_id ? "elec-machine"
+     : row.utility_type === "electricity" ? "elec-direct"
+     : "water-direct");
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b";
+  tr.dataset.method = initialMethod;
+
+  tr.innerHTML = `
+    <td class="px-3 py-2">
+      <select class="mfg-util-type w-full border rounded px-2 py-1 text-xs bg-white">
+        ${Object.entries(MFG_UTILITY_METHODS).map(([k, v]) =>
+          `<option value="${esc(k)}" ${k === initialMethod ? "selected" : ""}>${esc(v.label)}</option>`
+        ).join("")}
+      </select>
+    </td>
+
+    <td class="px-3 py-2">
+      <input type="text"
+             class="mfg-util-desc w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.description || "")}"
+             placeholder="e.g. Compound water — bakery share">
+    </td>
+
+    <td class="px-3 py-2">
+      <div class="mfg-util-inputs-direct flex items-center gap-1">
+        <input type="number" min="0" step="0.0001"
+               class="mfg-util-qty w-20 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.quantity ?? "")}"
+               placeholder="0">
+        <input type="number" min="0" step="0.0001"
+               class="mfg-util-rate w-20 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.rate ?? "")}"
+               placeholder="0.00">
+      </div>
+      <div class="mfg-util-inputs-allocation hidden flex items-center gap-1">
+        <input type="number" min="0" step="0.01"
+               class="mfg-util-monthly w-20 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.monthly_amount ?? "")}"
+               placeholder="2200">
+        <span class="text-[10px]">×</span>
+        <input type="number" min="0" max="100" step="0.01"
+               class="mfg-util-pct w-12 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.allocation_pct ?? "")}"
+               placeholder="35">
+        <span class="text-[10px]">%</span>
+        <span class="text-[10px]">÷</span>
+        <input type="number" min="0" step="1"
+               class="mfg-util-batches w-20 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.batches_per_month ?? "")}"
+               placeholder="150">
+      </div>
+      <div class="mfg-util-inputs-machine hidden flex items-center gap-1">
+        <select class="mfg-util-asset w-32 border rounded px-1 py-1 text-xs bg-white">
+          ${assetOptions}
+        </select>
+        <input type="number" min="0" step="0.01"
+               class="mfg-util-hours w-16 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.hours ?? "")}"
+               placeholder="4.17">
+        <input type="number" min="0" step="0.01"
+               class="mfg-util-kwh-rate w-16 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.kwh_rate ?? "")}"
+               placeholder="3.00">
+        <input type="number" min="0" step="0.01"
+               class="mfg-util-effective-kw-manual w-16 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.effective_kw ?? "")}"
+               placeholder="auto">
+        <div class="mfg-util-effective-kw text-[10px] text-slate-500 truncate"></div>
+      </div>
+    </td>
+
+    <td class="px-3 py-2">
+      <input type="number" min="0" step="0.01" readonly
+             class="mfg-util-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
+             value=""
+             placeholder="0.00">
+      <div class="mfg-util-per-unit text-[10px] text-indigo-700 mt-0.5 text-right font-medium"></div>
+    </td>
+
+    <td class="px-3 py-2 text-center">
+      <button type="button" class="text-red-600 hover:text-red-800 text-xs"
+              data-mfg-bom-row-remove>Remove</button>
+    </td>
+  `;
+
+  // Restore asset selection if provided
+  if (row.asset_id) {
+    const assetSelect = tr.querySelector(".mfg-util-asset");
+    if (assetSelect) assetSelect.value = String(row.asset_id);
+  }
+
+  // ── visibility toggle for method-specific input groups ──
+  const refreshInputVisibility = () => {
+    const method = tr.querySelector(".mfg-util-type")?.value || "water-direct";
+    tr.dataset.method = method;
+    tr.querySelector(".mfg-util-inputs-direct")?.classList.toggle("hidden", method !== "water-direct" && method !== "elec-direct");
+    tr.querySelector(".mfg-util-inputs-allocation")?.classList.toggle("hidden", method !== "water-allocation");
+    tr.querySelector(".mfg-util-inputs-machine")?.classList.toggle("hidden", method !== "elec-machine");
+  };
+  refreshInputVisibility();
+
+  // ── per-row cost calculation ──
+  const calculateUtilityCost = () => {
+    const method = tr.querySelector(".mfg-util-type")?.value || "water-direct";
+    let cost = 0;
+    let effectiveKw = 0;
+
+    if (method === "water-direct" || method === "elec-direct") {
+      const qty = Number(tr.querySelector(".mfg-util-qty")?.value || 0);
+      const rate = Number(tr.querySelector(".mfg-util-rate")?.value || 0);
+      cost = (qty > 0 && rate > 0) ? qty * rate : 0;
+    } else if (method === "water-allocation") {
+      const monthly = Number(tr.querySelector(".mfg-util-monthly")?.value || 0);
+      const pct = Number(tr.querySelector(".mfg-util-pct")?.value || 0);
+      const batches = Number(tr.querySelector(".mfg-util-batches")?.value || 0);
+      cost = (monthly > 0 && batches > 0) ? (monthly * pct / 100) / batches : 0;
+    } else if (method === "elec-machine") {
+      const opt = tr.querySelector(".mfg-util-asset")?.selectedOptions?.[0];
+      const assetKw = Number(opt?.dataset?.effectiveKw || 0) || 0;
+      const manualKw = Number(tr.querySelector(".mfg-util-effective-kw-manual")?.value || 0);
+      effectiveKw = manualKw > 0 ? manualKw : assetKw;
+      const hours = Number(tr.querySelector(".mfg-util-hours")?.value || 0);
+      const kwhRate = Number(tr.querySelector(".mfg-util-kwh-rate")?.value || 0);
+      cost = (effectiveKw > 0 && hours > 0 && kwhRate > 0) ? effectiveKw * hours * kwhRate : 0;
+
+      const kwInfo = tr.querySelector(".mfg-util-effective-kw");
+      if (kwInfo) {
+        if (manualKw > 0) {
+          kwInfo.textContent = `Using ${manualKw} kW (manual)`;
+        } else if (assetKw > 0) {
+          kwInfo.textContent = `Using ${assetKw} kW (from asset)`;
+        } else {
+          kwInfo.textContent = "Enter effective kW manually";
+        }
+      }
+    }
+
+    const costInput = tr.querySelector(".mfg-util-cost");
+    if (costInput) {
+      costInput.value = cost > 0 ? cost.toFixed(2) : "";
+    }
+
+    // Per-unit utility cost (batch cost ÷ output qty)
+    const perUnitEl = tr.querySelector(".mfg-util-per-unit");
+    if (perUnitEl) {
+      const outQty = Math.max(
+        Number(document.getElementById("mfgBomDefinitionBatchQty")?.value || 1),
+        0.0001
+      );
+      perUnitEl.textContent = cost > 0 ? fmtMoney(cost / outQty) : "";
+    }
+  };
+
+  // ── event listeners ──
+  tr.querySelector(".mfg-util-type")?.addEventListener("change", () => {
+    refreshInputVisibility();
+    calculateUtilityCost();
+    recalcMfgBomTotals();
+  });
+
+  tr.querySelectorAll(
+    ".mfg-util-qty, .mfg-util-rate, .mfg-util-monthly, .mfg-util-pct, .mfg-util-batches, .mfg-util-hours, .mfg-util-kwh-rate, .mfg-util-effective-kw-manual"
+  ).forEach(el => el?.addEventListener("input", () => {
+    calculateUtilityCost();
+    recalcMfgBomTotals();
+  }));
+
+  tr.querySelector(".mfg-util-asset")?.addEventListener("change", () => {
+    // When asset changes, clear manual override so the asset's kw takes effect
+    const manualKwInput = tr.querySelector(".mfg-util-effective-kw-manual");
+    if (manualKwInput && !manualKwInput.value) {
+      // keep manual override if user already typed one
+    }
+    calculateUtilityCost();
+    recalcMfgBomTotals();
+  });
+
+  tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    recalcMfgBomTotals();
+  });
+
+  tbody.appendChild(tr);
+  calculateUtilityCost();
+}
+// --------------------------------------------------------------------------
 // 6. TOTALS & UNIT MARGIN CALCULATION
 // --------------------------------------------------------------------------
 function handleMfgBomModalInput() {
@@ -129063,13 +129420,46 @@ function recalcMfgBomTotals() {
     });
 
   // ============================================================
+  // 5. UTILITIES (WATER & ELECTRICITY)
+  // ============================================================
+
+  let totUtilities = 0;
+
+  document
+    .querySelectorAll(
+      "#mfgBomUtilityTbody tr"
+    )
+    .forEach(tr => {
+      const cost =
+        Number(
+          tr.querySelector(
+            ".mfg-util-cost"
+          )?.value || 0
+        );
+
+      if (cost > 0) {
+        totUtilities += cost;
+      }
+
+      // Refresh per-unit utility display
+      const utilPerUnitEl =
+        tr.querySelector(".mfg-util-per-unit");
+      if (utilPerUnitEl) {
+        utilPerUnitEl.textContent =
+          cost > 0
+            ? fmtMoney(cost / outputQty)
+            : "";
+      }
+    });
+
+  // ============================================================
   // SUMMARY
   //
   // Always present per-unit cost & contribution per unit,
   // even if material costs are pending backend load.
   // When materials aren't costed yet, we still show
-  // labour + direct + overhead totals and flag that
-  // materials are pending.
+  // labour + direct + overhead + utilities totals and flag
+  // that materials are pending.
   // ============================================================
 
   const totDirectTotal =
@@ -129079,13 +129469,14 @@ function recalcMfgBomTotals() {
 
   const totFullCost =
     totDirectTotal +
-    totOverhead;
+    totOverhead +
+    totUtilities;
 
   // For per-unit: if materials aren't costed yet, use
-  // labour + direct + overhead as a partial cost so the
-  // user sees a meaningful number while they're entering data.
+  // labour + direct + overhead + utilities as a partial cost
+  // so the user sees a meaningful number while they're entering data.
   const partialCost =
-    totLabour + totDirect + totOverhead;
+    totLabour + totDirect + totOverhead + totUtilities;
 
   const costPerUnit =
     hasMaterialCost
@@ -129119,6 +129510,11 @@ function recalcMfgBomTotals() {
   const overheadEl =
     document.getElementById(
       "mfgBomTotOverhead"
+    );
+
+  const utilitiesEl =
+    document.getElementById(
+      "mfgBomTotUtilities"
     );
 
   const totalEl =
@@ -129168,6 +129564,11 @@ function recalcMfgBomTotals() {
   if (overheadEl) {
     overheadEl.textContent =
       fmtMoney(totOverhead);
+  }
+
+  if (utilitiesEl) {
+    utilitiesEl.textContent =
+      fmtMoney(totUtilities);
   }
 
   if (totalEl) {
