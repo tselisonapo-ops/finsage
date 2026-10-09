@@ -275,6 +275,80 @@ def _qty_in_unit(grams: Decimal, unit: str) -> Decimal:
     return grams * factor
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Module-level unit normalizer (Fix #7).
+#
+# Mirrors the nested _normalize_unit inside
+# _get_manufacturing_bom_standard_unit_cost. Used by
+# add_manufacturing_bom_line / replace_manufacturing_bom_lines to
+# normalize the unit BEFORE storing, so the database never holds
+# "Kg" or "KGS" or "Kilograms" — only the canonical "kg".
+# ─────────────────────────────────────────────────────────────────────
+_BOM_UNIT_ALIASES = {
+    # Mass
+    "kg": "kg", "kgs": "kg", "kilogram": "kg", "kilograms": "kg",
+    "g": "g", "gram": "g", "grams": "g",
+    "mg": "mg", "milligram": "mg", "milligrams": "mg",
+    "t": "t", "ton": "t", "tons": "t", "tonne": "t", "tonnes": "t",
+    # Volume
+    "l": "l", "lt": "l", "ltr": "l", "liter": "l", "litre": "l",
+    "liters": "l", "litres": "l",
+    "ml": "ml", "milliliter": "ml", "milliliters": "ml",
+    "millilitre": "ml", "millilitres": "ml",
+    "m3": "m3", "m\u00b3": "m3",
+    "cubic meter": "m3", "cubic metre": "m3",
+    # Length
+    "m": "m", "meter": "m", "meters": "m", "metre": "m", "metres": "m",
+    "cm": "cm", "centimeter": "cm", "centimeters": "cm",
+    "centimetre": "cm", "centimetres": "cm",
+    "mm": "mm", "millimeter": "mm", "millimeters": "mm",
+    "millimetre": "mm", "millimetres": "mm",
+    "km": "km", "kilometer": "km", "kilometers": "km",
+    "kilometre": "km", "kilometres": "km",
+    # Area
+    "m2": "m2", "m\u00b2": "m2",
+    "square meter": "m2", "square metre": "m2",
+    "cm2": "cm2", "cm\u00b2": "cm2",
+    "square centimeter": "cm2", "square centimetre": "cm2",
+    "mm2": "mm2", "mm\u00b2": "mm2",
+    "square millimeter": "mm2", "square millimetre": "mm2",
+    # Count
+    "unit": "unit", "units": "unit", "each": "unit",
+    "piece": "unit", "pieces": "unit", "pc": "unit", "pcs": "unit",
+    "dozen": "dozen", "dozens": "dozen",
+    # Packaging
+    "box": "box", "boxes": "box",
+    "carton": "carton", "cartons": "carton",
+    "bag": "bag", "bags": "bag",
+    "bottle": "bottle", "bottles": "bottle",
+    "pack": "pack", "packs": "pack",
+    "pallet": "pallet", "pallets": "pallet",
+    "roll": "roll", "rolls": "roll",
+    "sheet": "sheet", "sheets": "sheet",
+}
+
+
+def normalize_bom_unit(value):
+    """
+    Normalize a unit string to its canonical lowercase form.
+    Returns "" for None / empty input.
+
+    Examples:
+        "Kg"        -> "kg"
+        "KGS"       -> "kg"
+        "Liters"    -> "l"
+        "Grams"     -> "g"
+        "Roll"      -> "roll"
+        unknown     -> lowercased input (passthrough)
+    """
+    if value is None:
+        return ""
+    u = str(value).strip().lower()
+    if not u:
+        return ""
+    return _BOM_UNIT_ALIASES.get(u, u)
+
+
 def calculate_bakers_percentage_recipe(
     *,
     target_baked_weight_g,
@@ -53917,6 +53991,14 @@ class DatabaseService:
         ALTER TABLE {schema}.manufacturing_bom_lines
         ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(18,6) NOT NULL DEFAULT 0;
 
+        -- Fix #8: allow phantom BOM lines (item_id NULL) for materials
+        -- that are not tracked in retail inventory (e.g. water, salt,
+        -- process air). The FK still applies when item_id is NOT NULL,
+        -- so referenced inventory items remain protected by ON DELETE
+        -- RESTRICT. This ALTER is idempotent.
+        ALTER TABLE {schema}.manufacturing_bom_lines
+            ALTER COLUMN item_id DROP NOT NULL;
+
         -- Standard cost roll-up on BOM header
         ALTER TABLE {schema}.manufacturing_boms
         ADD COLUMN IF NOT EXISTS standard_material_cost  NUMERIC(18,2) NOT NULL DEFAULT 0,
@@ -86827,19 +86909,44 @@ class DatabaseService:
                 "Scrap percentage must be between 0 and 100"
             )
 
+        # Fix #7: normalize the unit BEFORE storing so the database
+        # never holds "Kg" or "KGS" — only the canonical "kg".
+        normalized_unit = normalize_bom_unit(unit) or None
+
+        # Fix #8: allow phantom BOM lines (item_id is None) for
+        # materials that are not tracked in retail inventory
+        # (e.g. water, salt). For phantom lines, use the frontend-
+        # supplied unit_cost; for normal lines, derive from inventory.
+        has_item = item_id is not None and int(item_id) > 0
+
         def _insert(c):
-            # IMPORTANT:
-            # Never trust a frontend-supplied unit_cost.
-            # The backend derives it from the inventory item's
-            # standard/planned cost and the BOM unit.
-            calculated_unit_cost = (
-                self._get_manufacturing_bom_standard_unit_cost(
-                    company_id=company_id,
-                    item_id=int(item_id),
-                    bom_unit=unit,
-                    cur=c,
+            if has_item:
+                # IMPORTANT:
+                # Never trust a frontend-supplied unit_cost for lines
+                # that have an inventory item. The backend derives it
+                # from the inventory item's standard/planned cost
+                # (sales_price) and the BOM unit.
+                calculated_unit_cost = (
+                    self._get_manufacturing_bom_standard_unit_cost(
+                        company_id=company_id,
+                        item_id=int(item_id),
+                        bom_unit=normalized_unit,
+                        cur=c,
+                    )
                 )
-            )
+            else:
+                # Phantom line (no inventory item). Use the frontend-
+                # supplied unit_cost; default to 0 if not provided.
+                # This lets water / salt / air be saved as BOM lines
+                # without requiring a matching inventory_items row.
+                try:
+                    calculated_unit_cost = Decimal(str(unit_cost or 0))
+                except Exception:
+                    calculated_unit_cost = Decimal("0")
+                if calculated_unit_cost < 0:
+                    raise ValueError(
+                        "Phantom BOM line unit_cost cannot be negative"
+                    )
 
             if line_no is None:
                 c.execute(
@@ -86890,9 +86997,9 @@ class DatabaseService:
                     company_id,
                     int(bom_id),
                     next_line_no,
-                    int(item_id),
+                    (int(item_id) if has_item else None),
                     quantity,
-                    unit,
+                    normalized_unit,
                     scrap_percent,
                     calculated_unit_cost,
                     bool(is_optional),
@@ -87417,32 +87524,48 @@ class DatabaseService:
                     line = dict(zip(line_cols, raw))
 
                 line_id = int(line["id"])
-                item_id = int(line["item_id"])
+                raw_item_id = line.get("item_id")
                 qty = Decimal(str(line.get("quantity") or 0))
                 scrap = Decimal(str(line.get("scrap_percent") or 0))
                 line_unit = line.get("unit")
+                # Normalize on read so dirty legacy data ("Kg") is
+                # treated the same as clean data ("kg").
+                line_unit = normalize_bom_unit(line_unit) or None
 
-                live_unit_cost = self._get_manufacturing_bom_standard_unit_cost(
-                    company_id=company_id,
-                    item_id=item_id,
-                    bom_unit=line_unit,
-                    cur=c,
-                )
+                # Fix #8: phantom lines (item_id NULL) have no
+                # inventory item to look up. Use the stored unit_cost
+                # snapshot as-is (it was set by the user / frontend
+                # at save time) and skip the snapshot refresh.
+                has_item = raw_item_id is not None
 
-                # Refresh the snapshot so reads of
-                # manufacturing_bom_lines.unit_cost (BOM detail GET,
-                # copy_bom_costs_to_manufacturing_order, etc.) match
-                # the authoritative inventory cost.
-                c.execute(
-                    f"""
-                    UPDATE {schema}.manufacturing_bom_lines
-                    SET unit_cost = %s,
-                        updated_at = NOW()
-                    WHERE company_id = %s
-                    AND id = %s
-                    """,
-                    (live_unit_cost, company_id, line_id),
-                )
+                if has_item:
+                    item_id = int(raw_item_id)
+                    live_unit_cost = self._get_manufacturing_bom_standard_unit_cost(
+                        company_id=company_id,
+                        item_id=item_id,
+                        bom_unit=line_unit,
+                        cur=c,
+                    )
+
+                    # Refresh the snapshot so reads of
+                    # manufacturing_bom_lines.unit_cost (BOM detail
+                    # GET, copy_bom_costs_to_manufacturing_order,
+                    # etc.) match the authoritative inventory cost.
+                    c.execute(
+                        f"""
+                        UPDATE {schema}.manufacturing_bom_lines
+                        SET unit_cost = %s,
+                            updated_at = NOW()
+                        WHERE company_id = %s
+                        AND id = %s
+                        """,
+                        (live_unit_cost, company_id, line_id),
+                    )
+                else:
+                    # Phantom line: use the stored unit_cost as-is.
+                    live_unit_cost = Decimal(
+                        str(line.get("unit_cost") or 0)
+                    )
 
                 material_cost += (
                     qty
@@ -88956,10 +89079,21 @@ class DatabaseService:
 
                 memo = line.get("memo")
 
-                if item_id <= 0:
-                    raise ValueError(
-                        "BOM component item is required"
-                    )
+                # Fix #8: allow phantom BOM lines (item_id is None or 0)
+                # for materials not tracked in retail inventory.
+                has_item = item_id is not None and int(item_id) > 0
+
+                # Fix #7: normalize the unit BEFORE storing so the
+                # database never holds "Kg" or "KGS" — only "kg".
+                normalized_unit = normalize_bom_unit(unit) or None
+
+                # Pull the frontend-supplied unit_cost (used only for
+                # phantom lines). For lines with an inventory item,
+                # the backend re-derives it below.
+                try:
+                    fe_unit_cost = Decimal(str(line.get("unit_cost") or 0))
+                except Exception:
+                    fe_unit_cost = Decimal("0")
 
                 if quantity <= 0:
                     raise ValueError(
@@ -88971,17 +89105,29 @@ class DatabaseService:
                         "Scrap percentage must be between 0 and 100"
                     )
 
-                # IMPORTANT:
-                # Ignore any unit_cost supplied by the browser.
-                # Always derive the authoritative standard cost here.
-                calculated_unit_cost = (
-                    self._get_manufacturing_bom_standard_unit_cost(
-                        company_id=company_id,
-                        item_id=item_id,
-                        bom_unit=unit,
-                        cur=c,
+                if has_item:
+                    # IMPORTANT:
+                    # Ignore any unit_cost supplied by the browser for
+                    # lines that have an inventory item. Always derive
+                    # the authoritative standard cost from
+                    # inventory_items.sales_price + unit conversion.
+                    calculated_unit_cost = (
+                        self._get_manufacturing_bom_standard_unit_cost(
+                            company_id=company_id,
+                            item_id=item_id,
+                            bom_unit=normalized_unit,
+                            cur=c,
+                        )
                     )
-                )
+                else:
+                    # Phantom line (no inventory item). Use the
+                    # frontend-supplied unit_cost. Lets water / salt /
+                    # air be saved without a matching inventory row.
+                    if fe_unit_cost < 0:
+                        raise ValueError(
+                            "Phantom BOM line unit_cost cannot be negative"
+                        )
+                    calculated_unit_cost = fe_unit_cost
 
                 c.execute(
                     f"""
@@ -89009,9 +89155,9 @@ class DatabaseService:
                         company_id,
                         int(bom_id),
                         index,
-                        item_id,
+                        (int(item_id) if has_item else None),
                         quantity,
-                        unit,
+                        normalized_unit,
                         scrap_percent,
                         calculated_unit_cost,
                         is_optional,
@@ -89121,7 +89267,7 @@ class DatabaseService:
                     l.created_at,
                     l.updated_at
                 FROM {schema}.manufacturing_bom_lines l
-                JOIN {schema}.inventory_items i
+                LEFT JOIN {schema}.inventory_items i
                     ON i.id = l.item_id
                 WHERE l.company_id = %s
                 AND l.bom_id = %s

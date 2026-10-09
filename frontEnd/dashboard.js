@@ -1,4 +1,4 @@
-(function hardTraceRedirects() {
+﻿(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -127585,11 +127585,12 @@ function addManufacturingBomDefinitionLine(line = {}) {
 
     <td class="px-3 py-2">
       <input
-        type="text"
+        type="number"
+        min="0"
+        step="0.000001"
         class="mfg-line-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-500 font-medium"
         value=""
-        placeholder="Calculated on save"
-        readonly>
+        placeholder="Calculated on save (or enter for non-stock items)">
     </td>
 
     <td class="px-3 py-2">
@@ -127619,6 +127620,35 @@ function addManufacturingBomDefinitionLine(line = {}) {
     if (itemSelect) {
       itemSelect.value =
         String(line.item_id);
+    }
+  }
+
+  // Fix #8: on initial render, toggle the unit_cost input's
+  // readonly state based on whether an item is selected. Phantom
+  // lines (no item) get an editable input so the user can enter
+  // a manual cost; lines with an item stay readonly (backend
+  // derives from inventory_items.sales_price).
+  {
+    const hasItem = !!(line.item_id);
+    const costInput0 = tr.querySelector(".mfg-line-cost");
+    if (costInput0) {
+      if (hasItem) {
+        costInput0.setAttribute("readonly", "");
+        costInput0.classList.add("bg-slate-50");
+        costInput0.classList.remove("bg-white");
+      } else {
+        costInput0.removeAttribute("readonly");
+        costInput0.classList.remove("bg-slate-50");
+        costInput0.classList.add("bg-white");
+        // For phantom lines, restore the stored unit_cost into
+        // the input so the user can see / edit it.
+        if (line.unit_cost !== undefined && line.unit_cost !== null) {
+          costInput0.value = Number(line.unit_cost).toFixed(6);
+          costInput0.placeholder = "";
+        } else {
+          costInput0.placeholder = "Enter cost (no inventory item)";
+        }
+      }
     }
   }
 
@@ -127701,6 +127731,11 @@ function addManufacturingBomDefinitionLine(line = {}) {
 
   // Item selection changes the consumption unit.
   // It does NOT calculate or populate cost.
+  // Fix #8: when no item is selected (phantom line), make the
+  // unit_cost input editable so the user can enter a manual cost
+  // (e.g. for water, salt, air). When an item IS selected, keep
+  // the input readonly — the backend will derive the cost from
+  // inventory_items.sales_price.
   itemSelect?.addEventListener("change", (e) => {
     const opt =
       e.target.selectedOptions?.[0];
@@ -127717,10 +127752,23 @@ function addManufacturingBomDefinitionLine(line = {}) {
     const totalInput =
       tr.querySelector(".mfg-line-total");
 
+    const hasItemSelected = !!(itemSelect && itemSelect.value);
+
     if (costInput) {
       costInput.value = "";
-      costInput.placeholder =
-        "Calculated on save";
+      if (hasItemSelected) {
+        costInput.placeholder =
+          "Calculated on save";
+        costInput.setAttribute("readonly", "");
+        costInput.classList.add("bg-slate-50");
+        costInput.classList.remove("bg-white");
+      } else {
+        costInput.placeholder =
+          "Enter cost (no inventory item)";
+        costInput.removeAttribute("readonly");
+        costInput.classList.remove("bg-slate-50");
+        costInput.classList.add("bg-white");
+      }
     }
 
     if (totalInput) {
@@ -127910,11 +127958,21 @@ async function saveManufacturingBomDefinition() {
       continue;
     }
 
+    // Fix #8: allow phantom BOM lines (no inventory item) for
+    // materials not tracked in retail inventory (e.g. water, salt).
+    // A phantom line MUST have a manually-entered unit_cost >= 0,
+    // otherwise the line is invalid (we don't know how to cost it).
+    const unitCostEl = row.querySelector(".mfg-line-cost");
+    const phantomUnitCost = Number(unitCostEl?.value || 0);
+
     if (!itemId) {
-      return showManufacturingBomDefinitionMsg(
-        "Each BOM component must have an item.",
-        "error"
-      );
+      if (!(phantomUnitCost > 0) && phantomUnitCost !== 0) {
+        return showManufacturingBomDefinitionMsg(
+          "Phantom BOM line (no item) must have a unit cost.",
+          "error"
+        );
+      }
+      // Phantom line is allowed — fall through and include it.
     }
 
     if (!(quantity > 0)) {
@@ -127941,11 +127999,18 @@ async function saveManufacturingBomDefinition() {
       );
     }
 
+    // Fix #8: include unit_cost in the payload so the backend can
+    // use it for phantom lines (no inventory item). For normal
+    // lines, the backend ignores this and re-derives from inventory.
+    const unitCostEl2 = row.querySelector(".mfg-line-cost");
+    const feUnitCost = Number(unitCostEl2?.value || 0);
+
     lines.push({
-      item_id: itemId,
+      item_id: itemId || null,
       quantity: quantity,
       unit: unit,
-      scrap_pct: scrapPct
+      scrap_pct: scrapPct,
+      unit_cost: feUnitCost
     });
   }
 
