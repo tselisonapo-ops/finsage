@@ -126310,6 +126310,10 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
                       class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">
                 Cost preview
               </button>
+              <button type="button" id="mfgCatalogRematchBtn"
+                      class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">
+                Re-match items
+              </button>
               <div id="mfgCatalogMsg" class="text-xs text-slate-600"></div>
             </div>
             <div id="mfgCatalogCostBox" class="hidden mt-3 border rounded bg-white px-3 py-2 text-xs"></div>
@@ -126582,6 +126586,9 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     document.getElementById("mfgCatalogProduct")?.addEventListener("change", onMfgCatalogProductChange);
     document.getElementById("mfgCatalogApplyBtn")?.addEventListener("click", applyCatalogProductToBomForm);
     document.getElementById("mfgCatalogCostPreviewBtn")?.addEventListener("click", previewCatalogBomCost);
+    document.getElementById("mfgCatalogRematchBtn")?.addEventListener("click", () => {
+      autoMatchMfgLineItems();
+    });
 
     modal.addEventListener("input", handleMfgBomModalInput);
     modal.addEventListener("change", handleMfgBomModalInput);
@@ -126613,7 +126620,11 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
     if (!cid) throw new Error("Active company could not be determined");
 
     const [inventoryData, payrollRes, assetsRes] = await Promise.all([
-      apiFetch(ENDPOINTS.inventory.items(cid, "active=1&limit=500")),
+      apiFetch(ENDPOINTS.inventory.items(cid, "active=1&limit=500"))
+        .catch(err => {
+          console.error("[MFG BOM] inventory fetch failed:", err);
+          return null;
+        }),
       apiFetch(`/api/companies/${encodeURIComponent(cid)}/payroll/employees?status=active`).catch(() => null),
       apiFetch(
         ENDPOINTS?.assets?.list
@@ -126622,9 +126633,52 @@ async function openManufacturingBomDefinitionModal(bomId = 0) {
       ).catch(() => null)
     ]);
 
-    const inventoryItems =
-      inventoryData?.items || inventoryData?.data || inventoryData?.rows || inventoryData || [];
-    window._MFG_ITEM_CACHE = { rows: Array.isArray(inventoryItems) ? inventoryItems : [] };
+    // Robust inventory extraction — try many shapes the API might return.
+    // If the API returned an error envelope `{ ok: false, error: ... }`,
+    // none of the array fields will be present and we fall through to `[]`.
+    let inventoryItems = [];
+    if (Array.isArray(inventoryData)) {
+      inventoryItems = inventoryData;
+    } else if (inventoryData && typeof inventoryData === "object") {
+      inventoryItems =
+        inventoryData.items ||
+        inventoryData.data?.items ||
+        inventoryData.data?.rows ||
+        inventoryData.data ||
+        inventoryData.rows ||
+        inventoryData.results ||
+        (Array.isArray(inventoryData.data) ? inventoryData.data : []) ||
+        [];
+    }
+
+    if (!Array.isArray(inventoryItems)) inventoryItems = [];
+
+    window._MFG_ITEM_CACHE = { rows: inventoryItems };
+
+    console.info(
+      `[MFG BOM] inventory cache populated with ${inventoryItems.length} items. ` +
+      `Sample:`,
+      inventoryItems.slice(0, 3).map(it => ({
+        id: it?.id,
+        name: it?.name,
+        sku: it?.sku,
+        unit: it?.unit
+      }))
+    );
+
+    if (inventoryItems.length === 0) {
+      console.warn(
+        "[MFG BOM] WARNING: inventory cache is empty. Auto-match of " +
+        "materials to inventory items will not work. Verify the " +
+        "inventory endpoint /api/companies/{cid}/inventory/items is " +
+        "returning data and that the user has read permissions."
+      );
+      document.getElementById("mfgBomDefinitionMsg").innerHTML = `
+        <div class="mb-3 border border-amber-300 bg-amber-50 text-amber-800 rounded px-3 py-2 text-xs">
+          Inventory returned 0 items — material auto-match will not work. Pick materials manually or check inventory permissions.
+        </div>
+      `;
+    }
 
     const payrollEmployees =
       payrollRes?.items || payrollRes?.data || payrollRes || [];
@@ -127079,6 +127133,25 @@ async function fillBomFormFromCatalog(cid, body) {
   const pv = data.preview || {};
   const product = pv.product || {};
 
+  // DEBUG: log the raw catalog preview response so the user can see
+  // exactly which fields each line exposes (key, name, item_id, etc.).
+  // Safe to leave on; only useful when troubleshooting matching.
+  console.info("[MFG BOM] catalog preview response:", {
+    product,
+    output: pv.output,
+    lines: (pv.lines || []).map(l => ({
+      key: l.key,
+      name: l.name,
+      label: l.label,
+      description: l.description,
+      item_id: l.item_id,
+      quantity: l.quantity,
+      base_unit: l.base_unit || l.unit,
+      allFields: Object.keys(l)
+    })),
+    inventoryCacheSize: window._MFG_ITEM_CACHE?.rows?.length || 0
+  });
+
   // Preserve inventory-item choices when re-applying a new batch size
   const prevMap = mfgCatalogItemMapFromForm();
 
@@ -127155,22 +127228,47 @@ function normalizeForMatch(s) {
 
 function autoMatchMfgLineItems() {
   const items = window._MFG_ITEM_CACHE?.rows || [];
-  if (!items.length) return;
+
+  if (!items.length) {
+    console.warn(
+      "[MFG BOM] autoMatchMfgLineItems: inventory cache is empty — " +
+      "no items to match against. Check the inventory fetch in " +
+      "openManufacturingBomDefinitionModal."
+    );
+    mfgCatalogSetMsg(
+      "Inventory cache is empty — cannot auto-match materials. " +
+      "Reload the modal or check inventory permissions.",
+      true
+    );
+    return;
+  }
+
+  // DEBUG: log a sample of the inventory items so we can see naming/SKU patterns
+  console.info(
+    "[MFG BOM] autoMatchMfgLineItems: inventory sample:",
+    items.slice(0, 5).map(it => ({ id: it.id, name: it.name, sku: it.sku, unit: it.unit }))
+  );
 
   let matched = 0;
   let unmatched = 0;
+  const unmatchedRows = [];
 
   document
     .querySelectorAll("#mfgBomDefinitionLinesTbody tr")
     .forEach(tr => {
       const sel = tr.querySelector(".mfg-line-item");
-      if (!sel || sel.value) return; // already selected, skip
+      if (!sel) return;
+      if (sel.value) return; // already selected, skip
 
       const key = normalizeForMatch(tr.dataset.catalogKey || "");
       const name = normalizeForMatch(tr.dataset.catalogName || "");
-      if (!key && !name) return;
+      const lineUnit = normalizeForMatch(tr.dataset.catalogBaseUnit || "");
+      if (!key && !name) {
+        console.warn("[MFG BOM] row has no catalogKey/catalogName to match against:", tr);
+        return;
+      }
 
-      // Build candidate tokens: full name + full key + first word of name
+      // Build candidate tokens: full name + full key + first word of name + key words
       const candidates = [
         name,
         key,
@@ -127178,7 +127276,10 @@ function autoMatchMfgLineItems() {
         key ? key.split(" ")[0] : ""
       ].filter(Boolean);
 
+      console.info(`[MFG BOM] matching row: key="${key}" name="${name}" unit="${lineUnit}" candidates=`, candidates);
+
       let match = null;
+      let matchStrategy = "none";
 
       // Strategy 1: exact name match
       if (!match && name) {
@@ -127186,6 +127287,7 @@ function autoMatchMfgLineItems() {
           normalizeForMatch(it.name) === name ||
           normalizeForMatch(it.sku) === name
         );
+        if (match) matchStrategy = "exact-name";
       }
 
       // Strategy 2: exact key match
@@ -127194,6 +127296,7 @@ function autoMatchMfgLineItems() {
           normalizeForMatch(it.name) === key ||
           normalizeForMatch(it.sku) === key
         );
+        if (match) matchStrategy = "exact-key";
       }
 
       // Strategy 3: substring containment (name contains key, or key contains name)
@@ -127205,11 +127308,12 @@ function autoMatchMfgLineItems() {
             c.length >= 3 && (
               itName === c ||
               itSku === c ||
-              itName.includes(c) ||
-              c.includes(itName)
+              (itName && itName.includes(c)) ||
+              (c.length >= 4 && itName && c.includes(itName))
             )
           );
         });
+        if (match) matchStrategy = "substring";
       }
 
       // Strategy 4: word-level overlap (any candidate word appears in item name)
@@ -127217,11 +127321,23 @@ function autoMatchMfgLineItems() {
         match = items.find(it => {
           const itName = normalizeForMatch(it.name);
           if (!itName) return false;
+          const itWords = itName.split(" ");
           return candidates.some(c =>
             c.length >= 3 &&
-            itName.split(" ").some(w => w === c || w.includes(c))
+            itWords.some(w => w === c || (c.length >= 4 && w.includes(c)))
           );
         });
+        if (match) matchStrategy = "word-overlap";
+      }
+
+      // Strategy 5: unit-aware fallback — pick the first item with the same unit
+      // (last resort, useful when the catalog uses generic names like
+      // "Material A" and the user has a clear inventory unit match)
+      if (!match && lineUnit) {
+        match = items.find(it =>
+          normalizeForMatch(it.unit) === lineUnit
+        );
+        if (match) matchStrategy = `unit-fallback (${lineUnit})`;
       }
 
       if (match) {
@@ -127236,12 +127352,22 @@ function autoMatchMfgLineItems() {
         // Mark as auto-matched (for visual cue / debugging)
         tr.dataset.autoMatched = "1";
 
-        // Fire change so dependent logic (cost placeholder, recalc) runs
+        // Fire change so dependent logic (cost placeholder, recalc) runs.
+        // NOTE: We do NOT call recalcMfgBomTotals here because the change
+        // handler in addManufacturingBomDefinitionLine already does.
         sel.dispatchEvent(new Event("change", { bubbles: true }));
         matched++;
+
+        console.info(
+          `[MFG BOM] ✓ matched row "${name || key}" → item #${match.id} "${match.name}" (strategy: ${matchStrategy})`
+        );
       } else {
         tr.dataset.autoMatched = "0";
         unmatched++;
+        unmatchedRows.push({ key, name, unit: lineUnit });
+        console.warn(
+          `[MFG BOM] ✗ could not match row key="${key}" name="${name}" unit="${lineUnit}" to any inventory item`
+        );
       }
     });
 
