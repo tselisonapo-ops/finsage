@@ -87376,19 +87376,79 @@ class DatabaseService:
                 else Decimal("100")
             )
 
-            # Materials — includes scrap allowance, consistent with
-            # how create_manufacturing_order scales planned quantities
-            material_cost = _scalar(
-                c,
+            # Materials — re-derived from inventory_items.sales_price
+            # on every recalculation, so the BOM stays in sync with
+            # the live material standard cost. The per-line snapshot
+            # on manufacturing_bom_lines.unit_cost is refreshed too,
+            # so consumers that read the snapshot (manufacturing order
+            # copy, BOM detail GET, etc.) see the same authoritative
+            # number.
+            #
+            # _get_manufacturing_bom_standard_unit_cost already
+            # implements: sales_price lookup, BOM-unit -> inventory-
+            # unit conversion (universal mass/volume/length/area/count
+            # families + item-specific meta["unit_conversions"]),
+            # and is_active validation. We just call it per line.
+            #
+            # Scrap allowance is still included, consistent with how
+            # create_manufacturing_order scales planned quantities.
+            c.execute(
                 f"""
-                SELECT COALESCE(SUM(
-                    quantity * (1 + scrap_percent / 100) * unit_cost
-                ), 0) AS total
+                SELECT
+                    id,
+                    item_id,
+                    quantity,
+                    unit,
+                    scrap_percent
                 FROM {schema}.manufacturing_bom_lines
-                WHERE company_id = %s AND bom_id = %s
+                WHERE company_id = %s
+                AND bom_id = %s
                 """,
                 (company_id, int(bom_id)),
             )
+            line_rows = c.fetchall()
+            line_cols = [d[0] for d in c.description]
+
+            material_cost = Decimal("0")
+            for raw in line_rows:
+                if isinstance(raw, dict):
+                    line = dict(raw)
+                else:
+                    line = dict(zip(line_cols, raw))
+
+                line_id = int(line["id"])
+                item_id = int(line["item_id"])
+                qty = Decimal(str(line.get("quantity") or 0))
+                scrap = Decimal(str(line.get("scrap_percent") or 0))
+                line_unit = line.get("unit")
+
+                live_unit_cost = self._get_manufacturing_bom_standard_unit_cost(
+                    company_id=company_id,
+                    item_id=item_id,
+                    bom_unit=line_unit,
+                    cur=c,
+                )
+
+                # Refresh the snapshot so reads of
+                # manufacturing_bom_lines.unit_cost (BOM detail GET,
+                # copy_bom_costs_to_manufacturing_order, etc.) match
+                # the authoritative inventory cost.
+                c.execute(
+                    f"""
+                    UPDATE {schema}.manufacturing_bom_lines
+                    SET unit_cost = %s,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                    AND id = %s
+                    """,
+                    (live_unit_cost, company_id, line_id),
+                )
+
+                material_cost += (
+                    qty
+                    * (Decimal("1") + scrap / Decimal("100"))
+                    * live_unit_cost
+                )
 
             labour_cost = _scalar(
                 c,
@@ -87557,6 +87617,47 @@ class DatabaseService:
             return _run(cur2)
 
     # ────────────────────────────────────────────────────────────
+    def refresh_bom_unit_costs_from_inventory(
+        self,
+        company_id: int,
+        bom_id: int | None = None,
+        *,
+        cur=None,
+    ) -> dict:
+        """
+        Re-snapshot every BOM line's unit_cost from
+        inventory_items.sales_price (via the authoritative
+        _get_manufacturing_bom_standard_unit_cost helper) and
+        re-roll the BOM header standard costs.
+
+        If bom_id is None, every active BOM in the schema is
+        refreshed.
+
+        Call this:
+          - after inventory_items.sales_price has been edited in bulk
+          - after a unit conversion has been changed on an item's
+            meta["unit_conversions"]
+          - from the UI "Re-cost BOM" button
+          - once on migration to ensure all snapshots are live
+
+        This is the fix for the original symptom: "calculator should
+        use inventory_item table for material cost, correct column is
+        selling price". Before this method existed, the BOM's
+        standard_material_cost was a frozen snapshot from the moment
+        each line was last inserted/updated.
+        """
+        if bom_id is not None:
+            return self.recalculate_manufacturing_bom_standard_cost(
+                company_id=company_id,
+                bom_id=int(bom_id),
+                cur=cur,
+            )
+
+        return self.recalculate_all_manufacturing_bom_standard_costs(
+            company_id=company_id,
+            cur=cur,
+        )
+
     # PRODUCTION CATALOG
     # "What do you want to produce?" -- industry -> category ->
     # product. Products carry either a baker's-percentage formula
@@ -89126,6 +89227,17 @@ class DatabaseService:
                     b.batch_qty,
                     b.batch_unit,
                     b.yield_percent,
+                    b.selling_price,
+                    b.standard_material_cost,
+                    b.standard_labour_cost,
+                    b.standard_direct_cost,
+                    b.standard_overhead_cost,
+                    b.standard_total_cost,
+                    b.standard_unit_cost,
+                    ROUND(
+                        b.selling_price - b.standard_unit_cost,
+                        6
+                    ) AS margin_per_unit,
                     b.status,
                     b.effective_from,
                     b.effective_to,
@@ -89311,6 +89423,11 @@ class DatabaseService:
                     cur=c,
                 )
 
+            # Refresh BOM line unit_cost snapshots from
+            # inventory_items.sales_price, then re-roll standard
+            # costs. The recalc method already does both (it
+            # calls _get_manufacturing_bom_standard_unit_cost per
+            # line and updates the snapshot), so we just invoke it.
             self.recalculate_manufacturing_bom_standard_cost(
                 company_id=company_id,
                 bom_id=int(bom_id),

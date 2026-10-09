@@ -1,4 +1,4 @@
-﻿(function hardTraceRedirects() {
+(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -125842,10 +125842,17 @@ async function submitWriteDownStock() {
 //           getActiveCompanyId, showToast, currentIndustry
 // =====================================================
 
-window._MFG_ITEM_CACHE = window._MFG_ITEM_CACHE || { loaded: false, items: [] };
+window._MFG_ITEM_CACHE = window._MFG_ITEM_CACHE || { loaded: false, rows: [] };
 
+// Unified cache shape: { loaded: bool, rows: [...] }
+// Each row carries sales_price so the BOM definition modal can
+// show live unit cost from inventory_items.sales_price BEFORE
+// the BOM is saved. The backend's _get_manufacturing_bom_standard_unit_cost
+// treats inventory_items.sales_price as the authoritative standard
+// material cost per inventory unit, so the frontend display stays
+// in sync with the backend on save.
 async function ensureManufacturingItemCache() {
-  if (window._MFG_ITEM_CACHE.loaded) return window._MFG_ITEM_CACHE.items;
+  if (window._MFG_ITEM_CACHE.loaded) return window._MFG_ITEM_CACHE.rows;
 
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   if (!cid) return [];
@@ -125860,18 +125867,18 @@ async function ensureManufacturingItemCache() {
     ENDPOINTS.inventory.items(cid, params.toString())
   );
 
-  window._MFG_ITEM_CACHE = {
-    loaded: true,
-    items: (data?.rows || []).map(r => ({
-      id: Number(r.id),
-      sku: r.sku || "",
-      name: r.name || "",
-      unit: r.unit || r.stock_unit || "",
-      track_stock: !!r.track_stock
-    }))
-  };
+  const rows = (data?.rows || data?.items || data || []).map(r => ({
+    id: Number(r.id),
+    sku: r.sku || "",
+    name: r.name || "",
+    unit: r.unit || r.stock_unit || "",
+    track_stock: !!r.track_stock,
+    sales_price: Number(r.sales_price ?? 0)
+  }));
 
-  return window._MFG_ITEM_CACHE.items;
+  window._MFG_ITEM_CACHE = { loaded: true, rows };
+
+  return window._MFG_ITEM_CACHE.rows;
 }
 
 function getManufacturingMount() {
@@ -126704,7 +126711,20 @@ async function _openManufacturingBomDefinitionModalInner(bomId = 0) {
 
     if (!Array.isArray(inventoryItems)) inventoryItems = [];
 
-    window._MFG_ITEM_CACHE = { rows: inventoryItems };
+    // Unified cache shape: { loaded: bool, rows: [...] } with
+    // sales_price preserved so the modal can show live material
+    // cost from inventory_items.sales_price BEFORE save.
+    window._MFG_ITEM_CACHE = {
+      loaded: true,
+      rows: inventoryItems.map(r => ({
+        id: Number(r.id),
+        sku: r.sku || "",
+        name: r.name || "",
+        unit: r.unit || r.stock_unit || "",
+        track_stock: !!r.track_stock,
+        sales_price: Number(r.sales_price ?? 0)
+      }))
+    };
 
     console.info(
       `[MFG BOM] inventory cache populated with ${inventoryItems.length} items. ` +
@@ -127623,6 +127643,15 @@ function addManufacturingBomDefinitionLine(line = {}) {
   // The cost input is readonly and was hardcoded to value=""
   // with placeholder="Calculated on save", so on reopen the
   // recalcMfgBomTotals saw cost == 0 and showed "— (pending save)".
+  //
+  // IMPORTANT:
+  // The backend's _get_manufacturing_bom_standard_unit_cost treats
+  // inventory_items.sales_price as the authoritative standard
+  // material cost per inventory unit. So the frontend fallback
+  // chain MUST also start from sales_price when the BOM line has
+  // no snapshot yet. The legacy standard_cost / planned_cost /
+  // last_purchase_price fields are kept as deep fallbacks only for
+  // backwards compatibility with older inventory APIs.
   const costInput = tr.querySelector(".mfg-line-cost");
   const totalInput = tr.querySelector(".mfg-line-total");
 
@@ -127630,22 +127659,25 @@ function addManufacturingBomDefinitionLine(line = {}) {
     let unitCost =
       Number(line.unit_cost ?? line.cost ?? line.standard_cost ?? 0) || 0;
 
-    // Fallback: look up the inventory item's cost from the cache
-    if (unitCost <= 0 && line.item_id && window._MFG_ITEM_CACHE?.rows) {
+    // Live inventory cost fallback (preferred order: snapshot
+    // first, then inventory.sales_price, then legacy fields).
+    if (line.item_id && window._MFG_ITEM_CACHE?.rows) {
       const inv = window._MFG_ITEM_CACHE.rows.find(
         it => Number(it.id) === Number(line.item_id)
       );
       if (inv) {
-        unitCost = Number(
-          inv.standard_cost ??
-          inv.planned_cost ??
-          inv.cost ??
-          inv.unit_cost ??
-          inv.average_cost ??
-          inv.last_purchase_price ??
-          inv.sales_price ??  // last resort
-          0
-        ) || 0;
+        if (unitCost <= 0) {
+          unitCost = Number(
+            inv.sales_price ??          // authoritative source
+            inv.standard_cost ??
+            inv.planned_cost ??
+            inv.cost ??
+            inv.unit_cost ??
+            inv.average_cost ??
+            inv.last_purchase_price ??
+            0
+          ) || 0;
+        }
       }
     }
 
