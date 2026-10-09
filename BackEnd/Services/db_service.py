@@ -89473,10 +89473,13 @@ class DatabaseService:
         if selling_price < 0:
             raise ValueError("Selling price cannot be negative")
 
+
         def _update(c):
-            # Keep the stored yield when the caller omits it, so
-            # existing update calls never silently reset it to 100.
-            if yield_percent is None:
+            # Resolve yield without modifying the outer function parameter.
+            # If omitted, preserve the currently stored yield.
+            resolved_yield_percent = yield_percent
+
+            if resolved_yield_percent is None:
                 c.execute(
                     f"""
                     SELECT yield_percent
@@ -89486,20 +89489,34 @@ class DatabaseService:
                     (company_id, int(bom_id)),
                 )
                 yp_row = c.fetchone()
+
                 if yp_row:
-                    yield_percent = Decimal(str(
+                    stored_yield = (
                         yp_row["yield_percent"]
                         if isinstance(yp_row, dict)
                         else yp_row[0]
-                    ) or 100)
+                    )
+
+                    resolved_yield_percent = Decimal(
+                        str(
+                            100 if stored_yield is None else stored_yield
+                        )
+                    )
                 else:
-                    yield_percent = Decimal("100")
+                    resolved_yield_percent = Decimal("100")
 
-            yield_percent = Decimal(str(yield_percent or 100))
+            else:
+                resolved_yield_percent = Decimal(
+                    str(resolved_yield_percent)
+                )
 
-            if yield_percent <= 0 or yield_percent > 100:
+            if (
+                resolved_yield_percent <= 0
+                or resolved_yield_percent > 100
+            ):
                 raise ValueError(
-                    "BOM yield percent must be greater than 0 and at most 100"
+                    "BOM yield percent must be greater than 0 "
+                    "and at most 100"
                 )
 
             c.execute(
@@ -89530,7 +89547,7 @@ class DatabaseService:
                     name,
                     batch_qty,
                     batch_unit,
-                    yield_percent,
+                    resolved_yield_percent,
                     description,
                     int(version_no or 1),
                     effective_from,
@@ -89569,11 +89586,8 @@ class DatabaseService:
                     cur=c,
                 )
 
-            # Refresh BOM line unit_cost snapshots from
-            # inventory_items.sales_price, then re-roll standard
-            # costs. The recalc method already does both (it
-            # calls _get_manufacturing_bom_standard_unit_cost per
-            # line and updates the snapshot), so we just invoke it.
+            # Refresh BOM line unit-cost snapshots and recalculate
+            # the standard cost using the existing recalculation logic.
             self.recalculate_manufacturing_bom_standard_cost(
                 company_id=company_id,
                 bom_id=int(bom_id),
