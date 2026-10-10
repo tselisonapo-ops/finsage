@@ -130918,6 +130918,220 @@ function renderManufacturingOrders(rows) {
 // Production Order Modal
 // =====================================================
 
+let _mfgOrderSelectedBom = null;
+let _mfgOrderBomRequest = 0;
+
+function _mfgReviewNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function _mfgReviewMoney(value) {
+  return _mfgReviewNumber(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function _mfgReviewQty(value) {
+  return _mfgReviewNumber(value).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4
+  });
+}
+
+function _mfgReviewText(value) {
+  return esc(String(value ?? ""));
+}
+
+function _mfgReviewCard(label, value, detail = "") {
+  return `
+    <div class="rounded-lg bg-gray-50 border border-gray-200 p-3">
+      <div class="text-xs text-gray-500">${_mfgReviewText(label)}</div>
+      <div class="text-lg font-semibold text-gray-900 mt-1">${_mfgReviewText(value)}</div>
+      ${detail ? `<div class="text-xs text-gray-500 mt-1">${_mfgReviewText(detail)}</div>` : ""}
+    </div>
+  `;
+}
+
+function _mfgReviewCostRows(rows, type) {
+  if (!Array.isArray(rows) || !rows.length) {
+    return '<p class="text-gray-400">No entries recorded.</p>';
+  }
+
+  return `
+    <div class="space-y-2">
+      ${rows.map(row => {
+        let label = "";
+        let amount = 0;
+        let detail = "";
+
+        if (type === "labour") {
+          label = row.worker_name || row.role || row.worker_reference || "Labour";
+          amount = row.labour_cost ?? (
+            _mfgReviewNumber(row.hours) * _mfgReviewNumber(row.rate)
+          );
+          detail = `${_mfgReviewQty(row.hours)} hours × ${_mfgReviewMoney(row.rate)}`;
+        } else if (type === "direct") {
+          label = row.description || row.cost_type || "Direct cost";
+          amount = row.amount;
+          detail = row.memo || "";
+        } else {
+          label = row.allocation_name || row.basis || "Overhead";
+          amount = row.allocated_amount ?? (
+            _mfgReviewNumber(row.quantity) * _mfgReviewNumber(row.rate)
+          );
+          detail = row.memo || "";
+        }
+
+        return `
+          <div class="flex justify-between gap-3 border-b border-gray-100 pb-2">
+            <div class="min-w-0">
+              <div class="font-medium text-gray-800">${_mfgReviewText(label)}</div>
+              ${detail ? `<div class="text-xs text-gray-500">${_mfgReviewText(detail)}</div>` : ""}
+            </div>
+            <div class="whitespace-nowrap font-medium">${_mfgReviewMoney(amount)}</div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function _mfgRenderBomReview() {
+  const panel = document.getElementById("mfgOrderBomReview");
+  if (!panel) return;
+
+  const bom = _mfgOrderSelectedBom;
+  if (!bom) {
+    panel.classList.add("hidden");
+    return;
+  }
+
+  panel.classList.remove("hidden");
+
+  const quantityInput = document.getElementById("mfgOrderQty");
+  const plannedQty = Math.max(0, _mfgReviewNumber(quantityInput?.value));
+  const batchQty = _mfgReviewNumber(bom.batch_qty);
+  const yieldPercent = bom.yield_percent == null
+    ? 100
+    : _mfgReviewNumber(bom.yield_percent);
+
+  const effectiveBatchQty = batchQty * yieldPercent / 100;
+  const factor = effectiveBatchQty > 0 ? plannedQty / effectiveBatchQty : 0;
+
+  const summary = bom.cost_summary || {};
+  const total = _mfgReviewNumber(summary.total ?? bom.standard_total_cost);
+  const unitCost = _mfgReviewNumber(summary.unit_cost ?? bom.standard_unit_cost);
+  const sellingPrice = _mfgReviewNumber(summary.selling_price ?? bom.selling_price);
+  const margin = _mfgReviewNumber(
+    summary.margin_per_unit ?? (sellingPrice - unitCost)
+  );
+
+  document.getElementById("mfgReviewTitle").textContent =
+    `${bom.bom_code || "BOM"} — ${bom.finished_item_name || bom.name || "Finished product"}`;
+
+  document.getElementById("mfgReviewSubtitle").textContent =
+    `${bom.name || ""}${bom.version_no != null ? ` · Version ${bom.version_no}` : ""}`;
+
+  document.getElementById("mfgReviewYield").textContent =
+    `Batch: ${_mfgReviewQty(batchQty)} ${bom.batch_unit || ""} · Yield: ${_mfgReviewQty(yieldPercent)}%`;
+
+  document.getElementById("mfgReviewCostSummary").innerHTML = [
+    _mfgReviewCard("Standard batch cost", _mfgReviewMoney(total)),
+    _mfgReviewCard("Standard unit cost", _mfgReviewMoney(unitCost)),
+    _mfgReviewCard("Selling price / unit", _mfgReviewMoney(sellingPrice)),
+    _mfgReviewCard("Standard margin / unit", _mfgReviewMoney(margin))
+  ].join("");
+
+  const materials = Array.isArray(bom.lines) ? bom.lines : [];
+  document.getElementById("mfgReviewMaterials").innerHTML = materials.length
+    ? materials.map(line => {
+        const bomLineQty = _mfgReviewNumber(line.quantity);
+        const scrap = _mfgReviewNumber(line.scrap_percent);
+        const estimatedQty = bomLineQty * factor * (1 + scrap / 100);
+        const unitCostValue = _mfgReviewNumber(line.unit_cost);
+        const estimatedCost = estimatedQty * unitCostValue;
+
+        return `
+          <tr>
+            <td class="p-2 border">
+              <div class="font-medium">${_mfgReviewText(line.item_name || line.sku || `Item ${line.item_id ?? ""}`)}</div>
+              <div class="text-xs text-gray-500">${_mfgReviewText(line.sku || "")}${line.is_optional ? " · Optional" : ""}</div>
+            </td>
+            <td class="p-2 border">${_mfgReviewQty(bomLineQty)}</td>
+            <td class="p-2 border">${_mfgReviewText(line.unit || "")}</td>
+            <td class="p-2 border text-right">${_mfgReviewMoney(unitCostValue)}</td>
+            <td class="p-2 border text-right">${_mfgReviewQty(estimatedQty)}</td>
+            <td class="p-2 border text-right">${_mfgReviewMoney(estimatedCost)}</td>
+          </tr>
+        `;
+      }).join("")
+    : '<tr><td colspan="6" class="p-3 text-gray-500">No material lines recorded for this BOM.</td></tr>';
+
+  document.getElementById("mfgReviewLabour").innerHTML =
+    _mfgReviewCostRows(bom.labour, "labour");
+
+  document.getElementById("mfgReviewDirectCosts").innerHTML =
+    _mfgReviewCostRows(bom.direct_costs, "direct");
+
+  document.getElementById("mfgReviewOverheads").innerHTML =
+    _mfgReviewCostRows(bom.overheads, "overhead");
+
+  document.getElementById("mfgReviewNote").textContent =
+    `Quantity estimate is based on ${_mfgReviewQty(plannedQty)} planned ${bom.batch_unit || "units"} and ${_mfgReviewQty(yieldPercent)}% BOM yield. Material estimates include each line's scrap percentage. Labour and other costs are shown from the BOM standard-cost records; actual production costs may differ.`;
+}
+
+async function _mfgLoadSelectedBomReview() {
+  const select = document.getElementById("mfgOrderBom");
+  const panel = document.getElementById("mfgOrderBomReview");
+  const message = document.getElementById("mfgOrderMsg");
+  if (!select || !panel) return;
+
+  const bomId = Number(select.value || 0);
+  const requestId = ++_mfgOrderBomRequest;
+  _mfgOrderSelectedBom = null;
+
+  if (!bomId) {
+    panel.classList.add("hidden");
+    return;
+  }
+
+  panel.classList.remove("hidden");
+  document.getElementById("mfgReviewTitle").textContent = "Loading BOM details…";
+  document.getElementById("mfgReviewSubtitle").textContent = "";
+  document.getElementById("mfgReviewCostSummary").innerHTML = "";
+  document.getElementById("mfgReviewMaterials").innerHTML =
+    '<tr><td colspan="6" class="p-3 text-gray-500">Loading materials…</td></tr>';
+  document.getElementById("mfgReviewLabour").textContent = "Loading…";
+  document.getElementById("mfgReviewDirectCosts").textContent = "Loading…";
+  document.getElementById("mfgReviewOverheads").textContent = "Loading…";
+
+  try {
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    const response = await apiFetch(ENDPOINTS.manufacturing.bom(cid, bomId));
+    if (requestId !== _mfgOrderBomRequest) return;
+
+    const bom = response?.bom;
+    if (!response?.ok || !bom) {
+      throw new Error(response?.error || "Could not load BOM details.");
+    }
+
+    _mfgOrderSelectedBom = bom;
+    _mfgRenderBomReview();
+  } catch (error) {
+    if (requestId !== _mfgOrderBomRequest) return;
+    panel.classList.remove("hidden");
+    document.getElementById("mfgReviewTitle").textContent = "Unable to load BOM";
+    document.getElementById("mfgReviewMaterials").innerHTML =
+      `<tr><td colspan="6" class="p-3 text-red-600">${_mfgReviewText(error?.message || "Could not load BOM details.")}</td></tr>`;
+    if (message) {
+      message.textContent = error?.message || "Could not load BOM details.";
+      message.classList.remove("hidden");
+    }
+  }
+}
+
 async function openManufacturingOrderModal() {
   const cid =
     getActiveCompanyId?.() ||
@@ -130938,7 +131152,7 @@ async function openManufacturingOrderModal() {
     "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
 
   modal.innerHTML = `
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-auto">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[94vh] overflow-auto">
 
       <div class="flex items-center justify-between border-b px-4 py-3">
 
@@ -130974,6 +131188,56 @@ async function openManufacturingOrderModal() {
 
           </select>
         </label>
+
+        <div id="mfgOrderBomReview" class="hidden mt-4 border border-gray-200 rounded-lg p-4 space-y-4">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 id="mfgReviewTitle" class="text-lg font-semibold text-gray-900">BOM details</h3>
+              <p id="mfgReviewSubtitle" class="text-sm text-gray-500 mt-1"></p>
+            </div>
+            <span id="mfgReviewYield" class="text-sm font-medium text-gray-700"></span>
+          </div>
+
+          <div id="mfgReviewCostSummary" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+
+          <div>
+            <h4 class="font-semibold text-gray-800 mb-2">Material requirements</h4>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm border-collapse">
+                <thead>
+                  <tr class="bg-gray-50 text-left">
+                    <th class="p-2 border">Material</th>
+                    <th class="p-2 border">BOM quantity</th>
+                    <th class="p-2 border">Unit</th>
+                    <th class="p-2 border text-right">Unit cost</th>
+                    <th class="p-2 border text-right">Estimated quantity</th>
+                    <th class="p-2 border text-right">Estimated cost</th>
+                  </tr>
+                </thead>
+                <tbody id="mfgReviewMaterials">
+                  <tr><td colspan="6" class="p-3 text-gray-500">Select a BOM to review its materials.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div>
+              <h4 class="font-semibold text-gray-800 mb-2">Labour</h4>
+              <div id="mfgReviewLabour" class="text-sm text-gray-600"></div>
+            </div>
+            <div>
+              <h4 class="font-semibold text-gray-800 mb-2">Other direct costs</h4>
+              <div id="mfgReviewDirectCosts" class="text-sm text-gray-600"></div>
+            </div>
+            <div>
+              <h4 class="font-semibold text-gray-800 mb-2">Manufacturing overhead</h4>
+              <div id="mfgReviewOverheads" class="text-sm text-gray-600"></div>
+            </div>
+          </div>
+
+          <p id="mfgReviewNote" class="text-xs text-gray-500"></p>
+        </div>
 
         <label class="text-xs block">
           <div class="text-slate-600 mb-1">
@@ -131223,6 +131487,12 @@ async function openManufacturingOrderModal() {
       `;
     }
   }
+
+  const bomSelect = document.getElementById("mfgOrderBom");
+  const qtyInput = document.getElementById("mfgOrderQty");
+
+  bomSelect?.addEventListener("change", _mfgLoadSelectedBomReview);
+  qtyInput?.addEventListener("input", _mfgRenderBomReview);
 }
 
 async function saveManufacturingOrder() {
