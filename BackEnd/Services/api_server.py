@@ -12259,7 +12259,51 @@ def create_inventory_item(cid: int):
         cols["name"] = name
         cols["barcode"] = barcode or None
         cols["track_stock"] = track_stock
-        cols["meta"] = meta  # ✅ store industry extensions
+
+        # Preserve industry metadata and capture package-cost fields.
+        meta = dict(meta) if isinstance(meta, dict) else {}
+
+        raw_cost_pack = raw.get("cost_pack")
+        raw_pack_quantity = raw.get("pack_quantity")
+        raw_pack_unit = raw.get("pack_unit")
+
+        if raw_pack_quantity is not None or raw_pack_unit is not None:
+            if raw_pack_quantity is None or raw_pack_unit is None:
+                return jsonify({
+                    "error": "Both pack_quantity and pack_unit are required together"
+                }), 400
+
+            raw_cost_pack = {
+                "quantity": raw_pack_quantity,
+                "unit": raw_pack_unit,
+            }
+
+        if raw_cost_pack is not None:
+            if not isinstance(raw_cost_pack, dict):
+                return jsonify({
+                    "error": "cost_pack must contain quantity and unit"
+                }), 400
+
+            try:
+                pack_quantity = float(raw_cost_pack.get("quantity"))
+            except (TypeError, ValueError):
+                return jsonify({
+                    "error": "Package quantity must be a valid number"
+                }), 400
+
+            pack_unit = _norm_str(raw_cost_pack.get("unit"))
+
+            if pack_quantity <= 0 or not pack_unit:
+                return jsonify({
+                    "error": "Package quantity must be greater than zero and package unit is required"
+                }), 400
+
+            meta["cost_pack"] = {
+                "quantity": pack_quantity,
+                "unit": pack_unit,
+            }
+
+        cols["meta"] = meta
 
         schema = f"company_{company_id}"
 
@@ -12793,14 +12837,67 @@ def update_inventory_item(cid: int, item_id: int):
             if dup_bc:
                 return jsonify({"error": "Barcode already exists", "barcode": barcode}), 409
 
-    # ✅ meta merge
-    if meta:
-        existing = db_service.fetch_one(
-            f"SELECT meta FROM {schema}.inventory_items WHERE id=%s AND company_id=%s",
-            (int(item_id), int(company_id)),
-        ) or {}
-        existing_meta = existing.get("meta") if isinstance(existing, dict) else {}
-        cols["meta"] = _merge_meta(existing_meta, meta)
+
+    # Merge existing metadata and capture package-cost fields.
+    existing = db_service.fetch_one(
+        f"""
+        SELECT meta
+        FROM {schema}.inventory_items
+        WHERE id=%s AND company_id=%s
+        """,
+        (int(item_id), int(company_id)),
+    ) or {}
+
+    existing_meta = existing.get("meta") if isinstance(existing, dict) else {}
+    if not isinstance(existing_meta, dict):
+        existing_meta = {}
+
+    merged_meta = _merge_meta(existing_meta, meta) if meta else dict(existing_meta)
+
+    raw_cost_pack = raw.get("cost_pack")
+    raw_pack_quantity = raw.get("pack_quantity")
+    raw_pack_unit = raw.get("pack_unit")
+
+    # Flat fields override cost_pack when supplied.
+    if raw_pack_quantity is not None or raw_pack_unit is not None:
+        if raw_pack_quantity is None or raw_pack_unit is None:
+            return jsonify({
+                "error": "Both pack_quantity and pack_unit are required together"
+            }), 400
+
+        raw_cost_pack = {
+            "quantity": raw_pack_quantity,
+            "unit": raw_pack_unit,
+        }
+
+    if raw_cost_pack is not None:
+        if not isinstance(raw_cost_pack, dict):
+            return jsonify({
+                "error": "cost_pack must contain quantity and unit"
+            }), 400
+
+        try:
+            pack_quantity = float(raw_cost_pack.get("quantity"))
+        except (TypeError, ValueError):
+            return jsonify({
+                "error": "Package quantity must be a valid number"
+            }), 400
+
+        pack_unit = _norm_str(raw_cost_pack.get("unit"))
+
+        if pack_quantity <= 0 or not pack_unit:
+            return jsonify({
+                "error": "Package quantity must be greater than zero and package unit is required"
+            }), 400
+
+        merged_meta["cost_pack"] = {
+            "quantity": pack_quantity,
+            "unit": pack_unit,
+        }
+
+    # Send metadata to the DB update even when barcode is unchanged.
+    if meta or raw_cost_pack is not None:
+        cols["meta"] = merged_meta
 
     # ✅ BEFORE snapshot (for audit)
     before_item = db_service.get_inventory_item(company_id, item_id) or {}

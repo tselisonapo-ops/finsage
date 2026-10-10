@@ -84063,13 +84063,17 @@ class DatabaseService:
 
                 patch["barcode"] = generated_barcode
 
+
         if "barcode" in (patch or {}):
             patch["barcode"] = incoming_barcode or None
+
             if incoming_barcode:
                 dup = self.fetch_one(
                     f"""
                     SELECT id FROM {schema}.inventory_items
-                    WHERE company_id=%s AND barcode=%s AND id<>%s
+                    WHERE company_id=%s
+                    AND barcode=%s
+                    AND id<>%s
                     LIMIT 1
                     """,
                     (int(company_id), incoming_barcode, int(item_id)),
@@ -84077,14 +84081,22 @@ class DatabaseService:
                 if dup:
                     raise ValueError("Barcode already exists")
 
-            incoming_meta = (patch or {}).get("meta")
-            if isinstance(incoming_meta, dict) and incoming_meta:
-                existing_meta = existing.get("meta") if isinstance(existing, dict) else {}
-                if not isinstance(existing_meta, dict):
-                    existing_meta = {}
-                merged_meta = {**existing_meta, **incoming_meta}
-                sets.append("meta=%s")
-                params.append(Json(merged_meta))
+        # Update metadata independently of barcode changes.
+        if "meta" in (patch or {}):
+            incoming_meta = patch.get("meta")
+
+            if incoming_meta is not None and not isinstance(incoming_meta, dict):
+                raise ValueError("meta must be an object")
+
+            existing_meta = existing.get("meta") if isinstance(existing, dict) else {}
+            if not isinstance(existing_meta, dict):
+                existing_meta = {}
+
+            incoming_meta = incoming_meta or {}
+            merged_meta = {**existing_meta, **incoming_meta}
+
+            sets.append("meta=%s")
+            params.append(Json(merged_meta))
                 
         for k, v in (patch or {}).items():
             if k not in field_map:
@@ -84240,9 +84252,54 @@ class DatabaseService:
                 if dupb:
                     raise ValueError("Barcode already exists")
 
+
             meta = data.get("meta")
             if not isinstance(meta, dict):
                 meta = {}
+
+            # Preserve package-cost metadata supplied through any supported input shape.
+            meta = dict(meta)
+
+            cost_pack = data.get("cost_pack")
+            if not isinstance(cost_pack, dict):
+                cost_pack = meta.get("cost_pack")
+
+            pack_quantity = data.get("pack_quantity")
+            pack_unit = data.get("pack_unit")
+
+            # Flat fields take precedence when explicitly supplied.
+            if pack_quantity is not None or pack_unit is not None:
+                if pack_quantity is None or pack_unit is None:
+                    raise ValueError(
+                        "Both pack_quantity and pack_unit are required together"
+                    )
+                cost_pack = {
+                    "quantity": pack_quantity,
+                    "unit": pack_unit,
+                }
+
+            if cost_pack is not None:
+                if not isinstance(cost_pack, dict):
+                    raise ValueError("cost_pack must contain quantity and unit")
+
+                try:
+                    pack_qty = float(cost_pack.get("quantity"))
+                except (TypeError, ValueError):
+                    raise ValueError("Package quantity must be a valid number")
+
+                pack_uom = _norm_str(cost_pack.get("unit"))
+
+                if pack_qty <= 0:
+                    raise ValueError("Package quantity must be greater than zero")
+
+                if not pack_uom:
+                    raise ValueError("Package unit is required")
+
+                # Preserve any unrelated metadata.
+                meta["cost_pack"] = {
+                    "quantity": pack_qty,
+                    "unit": pack_uom,
+                }
 
             sql = f"""
             INSERT INTO {schema}.inventory_items
@@ -87346,6 +87403,68 @@ class DatabaseService:
                 )
 
             inventory_unit = _normalize_unit(inventory_unit)
+
+
+            # Optional package-price normalization.
+            # Example: LSL 120 for a 12.5 kg pack = LSL 9.60/kg.
+            # If cost_pack is absent, preserve the existing cost behaviour.
+            cost_pack = (
+                meta.get("cost_pack")
+                if isinstance(meta, dict)
+                else None
+            )
+
+            if cost_pack is not None:
+                if not isinstance(cost_pack, dict):
+                    raise ValueError(
+                        f"Invalid cost_pack metadata for item: {item_name}"
+                    )
+
+                try:
+                    pack_quantity = Decimal(
+                        str(cost_pack.get("quantity"))
+                    )
+                except Exception:
+                    raise ValueError(
+                        f"Invalid package quantity for item: {item_name}"
+                    )
+
+                pack_unit = _normalize_unit(cost_pack.get("unit"))
+
+                if pack_quantity <= 0:
+                    raise ValueError(
+                        f"Package quantity must be greater than zero: "
+                        f"{item_name}"
+                    )
+
+                pack_family = _family_and_factor(pack_unit)
+                inventory_family_for_pack = _family_and_factor(
+                    inventory_unit
+                )
+
+                if (
+                    not pack_family
+                    or not inventory_family_for_pack
+                    or pack_family[0] != inventory_family_for_pack[0]
+                ):
+                    raise ValueError(
+                        f"Package unit '{pack_unit}' is incompatible with "
+                        f"inventory unit '{inventory_unit}' for "
+                        f"{item_name}."
+                    )
+
+                # Convert the package quantity into inventory units.
+                pack_quantity_in_inventory_units = (
+                    pack_quantity
+                    * pack_family[1]
+                    / inventory_family_for_pack[1]
+                )
+
+                # sales_price is the price of the entire package.
+                standard_cost_per_inventory_unit = (
+                    standard_cost_per_inventory_unit
+                    / pack_quantity_in_inventory_units
+                )
 
             # Use the BOM line unit when supplied.
             # Otherwise use the inventory item's own unit.
