@@ -92628,13 +92628,11 @@ class DatabaseService:
                     "BOM yield percent must be greater than zero"
                 )
 
-            effective_batch_qty = (
-                batch_qty
-                * yield_percent
-                / Decimal("100")
-            )
 
-            factor = planned_qty / effective_batch_qty
+            # BOM batch_qty represents the finished output quantity.
+            # Yield is already reflected in that batch quantity, so do not
+            # apply the yield percentage a second time here.
+            factor = planned_qty / batch_qty
 
             for line in bom_lines:
                 if isinstance(line, dict):
@@ -95193,22 +95191,10 @@ class DatabaseService:
                     0,
                 )
 
-                actual_qty = to_float(
-                    line.get("actual_qty")
-                    or line.get("actualQty")
-                    or line.get("qty")
-                    or line.get("quantity"),
-                    0.0,
-                )
 
                 if material_id <= 0:
                     raise ValueError(
                         f"line {idx}: material_id required"
-                    )
-
-                if actual_qty <= 0:
-                    raise ValueError(
-                        f"line {idx}: actual_qty must be > 0"
                     )
 
                 # ------------------------------------------------------
@@ -95268,6 +95254,44 @@ class DatabaseService:
                 if material.get("inventory_tx_id"):
                     raise ValueError(
                         f"MATERIAL_ALREADY_POSTED|material_id={material_id}"
+                    )
+
+                # ------------------------------------------------------
+                # Calculate material issue from manufacturing output
+                # ------------------------------------------------------
+
+                planned_output = dec(mo.get("planned_qty"))
+                actual_output = dec(mo.get("actual_qty"))
+
+                if planned_output <= 0:
+                    raise ValueError(
+                        f"INVALID_PLANNED_OUTPUT|mo_id={manufacturing_order_id}"
+                    )
+
+                # If actual output has not been recorded, use planned output.
+                # Do not apply BOM yield again: planned_qty on the material
+                # line already includes the yield calculation from order creation.
+                if actual_output <= 0:
+                    actual_output = planned_output
+
+                planned_material_qty = dec(material.get("planned_qty"))
+
+                if planned_material_qty <= 0:
+                    raise ValueError(
+                        f"INVALID_PLANNED_MATERIAL_QTY|material_id={material_id}"
+                    )
+
+                actual_qty = (
+                    planned_material_qty * actual_output / planned_output
+                ).quantize(
+                    Decimal("0.0001"),
+                    rounding=ROUND_HALF_UP,
+                )
+
+                if actual_qty <= 0:
+                    raise ValueError(
+                        f"CALCULATED_MATERIAL_QTY_MUST_BE_POSITIVE|"
+                        f"material_id={material_id}"
                     )
 
                 # ------------------------------------------------------
