@@ -95423,8 +95423,9 @@ class DatabaseService:
                         f"ZERO_MATERIAL_COST|item_id={item_id}"
                     )
 
+
                 unit_cost = money(
-                    line_cost / actual_qty
+                    Decimal(str(line_cost)) / actual_qty
                 )
 
                 # ------------------------------------------------------
