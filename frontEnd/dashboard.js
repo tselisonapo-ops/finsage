@@ -127744,14 +127744,13 @@ function normalizeForMatch(s) {
     .trim();
 }
 
+
 function autoMatchMfgLineItems() {
   const items = window._MFG_ITEM_CACHE?.rows || [];
 
   if (!items.length) {
     console.warn(
-      "[MFG BOM] autoMatchMfgLineItems: inventory cache is empty — " +
-      "no items to match against. Check the inventory fetch in " +
-      "openManufacturingBomDefinitionModal."
+      "[MFG BOM] autoMatchMfgLineItems: inventory cache is empty."
     );
     mfgCatalogSetMsg(
       "Inventory cache is empty — cannot auto-match materials. " +
@@ -127761,10 +127760,26 @@ function autoMatchMfgLineItems() {
     return;
   }
 
-  // DEBUG: log a sample of the inventory items so we can see naming/SKU patterns
+  // Normalize punctuation, hyphens, spaces and letter case consistently.
+  // "premix", "pre-mix" and "pre mix" all become "premix".
+  const normalizeIngredient = value =>
+    String(value || "")
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
+
+  const normalizeUnit = value =>
+    String(value || "").trim().toLowerCase();
+
   console.info(
     "[MFG BOM] autoMatchMfgLineItems: inventory sample:",
-    items.slice(0, 5).map(it => ({ id: it.id, name: it.name, sku: it.sku, unit: it.unit }))
+    items.slice(0, 5).map(it => ({
+      id: it.id,
+      name: it.name,
+      sku: it.sku,
+      unit: it.unit
+    }))
   );
 
   let matched = 0;
@@ -127775,116 +127790,123 @@ function autoMatchMfgLineItems() {
     .querySelectorAll("#mfgBomDefinitionLinesTbody tr")
     .forEach(tr => {
       const sel = tr.querySelector(".mfg-line-item");
-      if (!sel) return;
-      if (sel.value) return; // already selected, skip
+      if (!sel || sel.value) return;
 
-      const key = normalizeForMatch(tr.dataset.catalogKey || "");
-      const name = normalizeForMatch(tr.dataset.catalogName || "");
-      const lineUnit = normalizeForMatch(tr.dataset.catalogBaseUnit || "");
+      const key = normalizeIngredient(tr.dataset.catalogKey || "");
+      const name = normalizeIngredient(tr.dataset.catalogName || "");
+      const lineUnit = normalizeUnit(tr.dataset.catalogBaseUnit || "");
+
       if (!key && !name) {
-        console.warn("[MFG BOM] row has no catalogKey/catalogName to match against:", tr);
+        console.warn(
+          "[MFG BOM] Row has no catalog key/name to match:",
+          tr
+        );
         return;
       }
 
-      // Build candidate tokens: full name + full key + first word of name + key words
-      const candidates = [
-        name,
-        key,
-        name ? name.split(" ")[0] : "",
-        key ? key.split(" ")[0] : ""
-      ].filter(Boolean);
+      const candidates = [...new Set([name, key].filter(Boolean))];
 
-      console.info(`[MFG BOM] matching row: key="${key}" name="${name}" unit="${lineUnit}" candidates=`, candidates);
+      console.info(
+        `[MFG BOM] matching row: key="${key}" name="${name}" unit="${lineUnit}"`,
+        "candidates=",
+        candidates
+      );
 
       let match = null;
       let matchStrategy = "none";
 
-      // Strategy 1: exact name match
-      if (!match && name) {
+      // Strategy 1: exact normalized name or SKU.
+      if (name) {
         match = items.find(it =>
-          normalizeForMatch(it.name) === name ||
-          normalizeForMatch(it.sku) === name
+          normalizeIngredient(it.name) === name ||
+          normalizeIngredient(it.sku) === name
         );
         if (match) matchStrategy = "exact-name";
       }
 
-      // Strategy 2: exact key match
+      // Strategy 2: exact normalized catalogue key or SKU.
       if (!match && key) {
         match = items.find(it =>
-          normalizeForMatch(it.name) === key ||
-          normalizeForMatch(it.sku) === key
+          normalizeIngredient(it.name) === key ||
+          normalizeIngredient(it.sku) === key
         );
         if (match) matchStrategy = "exact-key";
       }
 
-      // Strategy 3: substring containment (name contains key, or key contains name)
+      // Strategy 3: safe containment match, preferring longer candidates.
       if (!match) {
-        match = items.find(it => {
-          const itName = normalizeForMatch(it.name);
-          const itSku = normalizeForMatch(it.sku);
-          return candidates.some(c =>
-            c.length >= 3 && (
-              itName === c ||
-              itSku === c ||
-              (itName && itName.includes(c)) ||
-              (c.length >= 4 && itName && c.includes(itName))
-            )
-          );
-        });
-        if (match) matchStrategy = "substring";
+        const sortedCandidates = [...candidates].sort(
+          (a, b) => b.length - a.length
+        );
+
+        for (const candidate of sortedCandidates) {
+          if (candidate.length < 3) continue;
+
+          match = items.find(it => {
+            const itemName = normalizeIngredient(it.name);
+            const itemSku = normalizeIngredient(it.sku);
+
+            return itemName === candidate ||
+              itemSku === candidate ||
+              itemName.includes(candidate) ||
+              (candidate.length >= 4 && candidate.includes(itemName));
+          });
+
+          if (match) {
+            matchStrategy = "substring";
+            break;
+          }
+        }
       }
 
-      // Strategy 4: word-level overlap (any candidate word appears in item name)
+      // Strategy 4: match a complete normalized word.
+      // Avoid matching generic fragments such as "mix" to unrelated items.
       if (!match) {
         match = items.find(it => {
-          const itName = normalizeForMatch(it.name);
-          if (!itName) return false;
-          const itWords = itName.split(" ");
-          return candidates.some(c =>
-            c.length >= 3 &&
-            itWords.some(w => w === c || (c.length >= 4 && w.includes(c)))
+          const itemWords = String(it.name || "")
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter(Boolean)
+            .map(normalizeIngredient);
+
+          return candidates.some(candidate =>
+            candidate.length >= 4 &&
+            itemWords.includes(candidate)
           );
         });
+
         if (match) matchStrategy = "word-overlap";
       }
 
-      // Strategy 5: unit-aware fallback — pick the first item with the same unit
-      // (last resort, useful when the catalog uses generic names like
-      // "Material A" and the user has a clear inventory unit match)
-      if (!match && lineUnit) {
-        match = items.find(it =>
-          normalizeForMatch(it.unit) === lineUnit
-        );
-        if (match) matchStrategy = `unit-fallback (${lineUnit})`;
-      }
+      // Strategy 5: unit-only matching is deliberately disabled.
+      // Matching the first item with unit "kg" or "g" can select
+      // completely unrelated inventory and distort production costs.
 
       if (match) {
         sel.value = String(match.id);
 
-        // Update unit from the matched inventory item
         const unitInput = tr.querySelector(".mfg-line-unit");
         if (unitInput && match.unit) {
           unitInput.value = match.unit;
         }
 
-        // Mark as auto-matched (for visual cue / debugging)
         tr.dataset.autoMatched = "1";
-
-        // Fire change so dependent logic (cost placeholder, recalc) runs.
-        // NOTE: We do NOT call recalcMfgBomTotals here because the change
-        // handler in addManufacturingBomDefinitionLine already does.
         sel.dispatchEvent(new Event("change", { bubbles: true }));
         matched++;
 
         console.info(
-          `[MFG BOM] ✓ matched row "${name || key}" → item #${match.id} "${match.name}" (strategy: ${matchStrategy})`
+          `[MFG BOM] ✓ matched row "${name || key}" → ` +
+          `item #${match.id} "${match.name}" ` +
+          `(strategy: ${matchStrategy})`
         );
       } else {
         tr.dataset.autoMatched = "0";
         unmatched++;
         unmatchedRows.push({ key, name, unit: lineUnit });
+
         console.warn(
-          `[MFG BOM] ✗ could not match row key="${key}" name="${name}" unit="${lineUnit}" to any inventory item`
+          `[MFG BOM] ✗ could not match row key="${key}" ` +
+          `name="${name}" unit="${lineUnit}" to any inventory item`
         );
       }
     });
@@ -127895,7 +127917,10 @@ function autoMatchMfgLineItems() {
       (unmatched ? ` ${unmatched} need manual selection.` : "")
     );
   }
+
+  console.info("[MFG BOM] Unmatched catalogue rows:", unmatchedRows);
 }
+
 
 async function previewCatalogBomCost() {
   const cid =
