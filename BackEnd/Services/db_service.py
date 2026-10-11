@@ -349,6 +349,78 @@ def normalize_bom_unit(value):
     return _BOM_UNIT_ALIASES.get(u, u)
 
 
+from decimal import Decimal
+
+
+_BPE_UNIT_TO_BASE = {
+    # Mass: base unit = gram
+    "mg": Decimal("0.001"),
+    "g": Decimal("1"),
+    "kg": Decimal("1000"),
+    "t": Decimal("1000000"),
+
+    # Volume: base unit = millilitre
+    "ml": Decimal("1"),
+    "l": Decimal("1000"),
+    "m3": Decimal("1000000"),
+
+    # Length: base unit = millimetre
+    "mm": Decimal("1"),
+    "cm": Decimal("10"),
+    "m": Decimal("1000"),
+    "km": Decimal("1000000"),
+
+    # Area: base unit = square millimetre
+    "mm2": Decimal("1"),
+    "cm2": Decimal("100"),
+    "m2": Decimal("1000000"),
+
+    # Count: base unit = one item
+    "unit": Decimal("1"),
+    "dozen": Decimal("12"),
+}
+
+
+def _inventory_unit_conversion_factor(from_unit: str, to_unit: str) -> Decimal:
+    """
+    Return the multiplier for converting a quantity from one unit to another.
+
+    Supports compatible mass, volume, length, area and count units.
+    Packaging units require an explicit pack-content quantity in item metadata.
+    """
+    source = normalize_bom_unit(from_unit)
+    target = normalize_bom_unit(to_unit)
+
+    if not source or not target:
+        raise ValueError("Inventory unit conversion requires both units")
+
+    if source == target:
+        return Decimal("1")
+
+    source_factor = _BPE_UNIT_TO_BASE.get(source)
+    target_factor = _BPE_UNIT_TO_BASE.get(target)
+
+    if source_factor is None or target_factor is None:
+        raise ValueError(
+            f"Unsupported inventory unit conversion: {from_unit} to {to_unit}"
+        )
+
+    # Different physical dimensions must never be converted implicitly.
+    dimensions = {
+        "mg": "mass", "g": "mass", "kg": "mass", "t": "mass",
+        "ml": "volume", "l": "volume", "m3": "volume",
+        "mm": "length", "cm": "length", "m": "length", "km": "length",
+        "mm2": "area", "cm2": "area", "m2": "area",
+        "unit": "count", "dozen": "count",
+    }
+
+    if dimensions[source] != dimensions[target]:
+        raise ValueError(
+            f"Incompatible inventory units: {from_unit} to {to_unit}"
+        )
+
+    return source_factor / target_factor
+
 def calculate_bakers_percentage_recipe(
     *,
     target_baked_weight_g,
@@ -83854,23 +83926,34 @@ class DatabaseService:
             conn.commit()
             return int((row.get("id") if isinstance(row, dict) else row[0]) or 0)
 
+
     def _inventory_avg_cost_cur(self, company_id: int, item_id: int, cur) -> float:
-        schema = f"company_{company_id}"
+        schema = f"company_{int(company_id)}"
+
         cur.execute(f"""
             SELECT
-            COALESCE(SUM(qty_in * unit_cost),0) AS total_cost_in,
-            COALESCE(SUM(qty_in),0)            AS total_qty_in,
-            COALESCE(SUM(qty_out),0)           AS total_qty_out
+                COALESCE(SUM(qty_in * unit_cost), 0) AS total_cost_in,
+                COALESCE(SUM(qty_in), 0) AS total_qty_in,
+                COALESCE(SUM(qty_out), 0) AS total_qty_out
             FROM {schema}.inventory_layers
-            WHERE company_id=%s AND item_id=%s
+            WHERE company_id = %s
+            AND item_id = %s
         """, (int(company_id), int(item_id)))
-        r = cur.fetchone() or {}
-        total_cost_in = float(r.get("total_cost_in") or 0.0)
-        total_in = float(r.get("total_qty_in") or 0.0)
-        # avg cost based on purchases only (simple)
-        if total_in <= 0:
+
+        row = cur.fetchone() or {}
+        if not isinstance(row, dict):
+            columns = [d[0] for d in cur.description]
+            row = dict(zip(columns, row))
+
+        total_cost_in = float(row.get("total_cost_in") or 0)
+        total_qty_in = float(row.get("total_qty_in") or 0)
+
+        if total_qty_in <= 0:
             return 0.0
-        return total_cost_in / total_in
+
+        # Inventory layer unit_cost must already be the cost per stock unit.
+        # Do not apply pack conversion here as well, or costs could be divided twice.
+        return total_cost_in / total_qty_in
 
     def _inventory_onhand_cur(self, company_id: int, item_id: int, cur) -> float:
         schema = f"company_{company_id}"
@@ -84526,13 +84609,98 @@ class DatabaseService:
                 if item_id <= 0:
                     raise ValueError(f"line {i}: item_id required")
 
-                qty = _to_float(ln.get("qty_in") or ln.get("qty") or ln.get("quantity") or 0.0)
-                if qty <= 0:
+                # Original quantity and purchase price supplied by the receipt UI.
+                from decimal import Decimal
+
+                purchase_qty = _to_float(
+                    ln.get("qty_in") or ln.get("qty") or ln.get("quantity") or 0.0
+                )
+                purchase_unit_cost = _to_float(ln.get("unit_cost") or 0.0)
+
+                if purchase_qty <= 0:
                     raise ValueError(f"line {i}: qty must be > 0")
 
-                unit_cost = _to_float(ln.get("unit_cost") or 0.0)
-                if unit_cost < 0:
+                if purchase_unit_cost < 0:
                     raise ValueError(f"line {i}: unit_cost must be >= 0")
+
+                # Default: quantity and cost are already in stock units.
+                qty = purchase_qty
+                unit_cost = purchase_unit_cost
+
+                # Read the inventory item's stock unit and pack metadata.
+                _cur.execute(
+                    f"""
+                    SELECT id, sku, name, unit, meta
+                    FROM {schema}.inventory_items
+                    WHERE id = %s AND company_id = %s
+                    """,
+                    (int(item_id), int(company_id)),
+                )
+                item_row = _cur.fetchone()
+
+                if not item_row:
+                    raise ValueError(
+                        f"line {i}: inventory item {item_id} not found "
+                        f"for company {company_id}"
+                    )
+
+                if isinstance(item_row, dict):
+                    stock_unit_raw = item_row.get("unit") or ""
+                    meta = item_row.get("meta") or {}
+                    item_name = item_row.get("name") or str(item_id)
+                else:
+                    stock_unit_raw = item_row[3] or ""
+                    meta = item_row[4] or {}
+                    item_name = item_row[2] or str(item_id)
+
+                stock_unit = normalize_bom_unit(stock_unit_raw)
+
+                # psycopg may return JSONB as a dict or a JSON string.
+                if isinstance(meta, str):
+                    import json
+                    try:
+                        meta = json.loads(meta)
+                    except (TypeError, ValueError):
+                        meta = {}
+
+                if not isinstance(meta, dict):
+                    meta = {}
+
+                cost_pack = meta.get("cost_pack")
+
+                if isinstance(cost_pack, dict):
+                    pack_qty = _bpe_d(cost_pack.get("quantity"), "0")
+                    pack_unit_raw = cost_pack.get("unit") or ""
+                    pack_unit = normalize_bom_unit(pack_unit_raw)
+
+                    if pack_qty <= 0 or not pack_unit or not stock_unit:
+                        raise ValueError(
+                            f"line {i}: invalid cost_pack configuration "
+                            f"for {item_name}"
+                        )
+
+                    # Convert the configured pack contents to the item's
+                    # inventory stock unit, using the shared module helper.
+                    conversion_factor = _inventory_unit_conversion_factor(
+                        pack_unit,
+                        stock_unit,
+                    )
+                    pack_stock_qty = pack_qty * conversion_factor
+
+                    if pack_stock_qty <= 0:
+                        raise ValueError(
+                            f"line {i}: converted pack quantity must be > 0 "
+                            f"for {item_name}"
+                        )
+
+                    # Receipt quantity is the number of purchase packs.
+                    # Store stock quantity and cost per stock unit.
+                    qty_dec = _bpe_d(purchase_qty) * pack_stock_qty
+                    cost_dec = _bpe_d(purchase_unit_cost) / pack_stock_qty
+
+                    qty = float(qty_dec)
+                    unit_cost = float(cost_dec)
+
 
                 expiry_date = ln.get("expiry_date")
                 batch_no = (ln.get("batch_no") or "").strip() or None
