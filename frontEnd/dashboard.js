@@ -126737,10 +126737,9 @@ async function _openManufacturingBomDefinitionModalInner(bomId = 0) {
     document.getElementById("mfgCatalogApplyBtn")?.addEventListener("click", applyCatalogProductToBomForm);
     document.getElementById("mfgCatalogCostPreviewBtn")?.addEventListener("click", previewCatalogBomCost);
     document.getElementById("mfgCatalogRematchBtn")?.addEventListener("click", () => {
-      autoMatchMfgLineItems();
-      initMfgCatalogCreateForm();
+      autoMatchMfgLineItems(); 
     });
-
+    initMfgCatalogCreateForm();
     modal.addEventListener("input", handleMfgBomModalInput);
     modal.addEventListener("change", handleMfgBomModalInput);
   }
