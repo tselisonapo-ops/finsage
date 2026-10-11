@@ -91074,7 +91074,7 @@ class DatabaseService:
                             f"Finished Goods Production - "
                             f"{mo_no} - {finished_item_name}"
                         ),
-                        "source": "manufacturing_order_output",
+                        "source": "manufacturing_output",
                         "source_id": mo_id,
                         "lines": [
                             {
