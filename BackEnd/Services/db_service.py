@@ -92839,17 +92839,9 @@ class DatabaseService:
                 else Decimal("100")
             )
 
-            effective_batch_qty = (
-                batch_qty
-                * yield_percent
-                / Decimal("100")
-            )
-
-            factor = (
-                planned_qty / effective_batch_qty
-                if effective_batch_qty > 0
-                else Decimal("0")
-            )
+            # One manufacturing order represents exactly one BOM batch.
+            # Use the BOM material quantities without applying yield again.
+            factor = Decimal("1")
 
             for line in rows:
                 if isinstance(line, dict):
@@ -93001,8 +92993,18 @@ class DatabaseService:
 
                 existing_line = existing.get(bom_line_id)
 
+
                 if existing_line:
+                    # Do not modify a material row already attached
+                    # to an inventory transaction.
+                    if (
+                        existing_line.get("inventory_tx_id") is not None
+                        or existing_line.get("inventory_tx_line_id") is not None
+                    ):
+                        continue
+
                     c.execute(
+
                         f"""
                         UPDATE {schema}.manufacturing_order_materials
                         SET
@@ -95047,10 +95049,174 @@ class DatabaseService:
                     ),
                 }
 
+
+            # ==========================================================
+            # 2A) VALIDATE SUBMITTED MATERIALS AGAINST BOM
+            # ==========================================================
+            submitted_material_ids = []
+
+            for idx, line in enumerate(lines, start=1):
+                if not isinstance(line, dict):
+                    raise ValueError(
+                        f"INVALID_MATERIAL_LINE|line={idx}"
+                    )
+
+                material_id = to_int(
+                    line.get("material_id")
+                    or line.get("materialId")
+                    or line.get("manufacturing_order_material_id")
+                    or line.get("manufacturingOrderMaterialId"),
+                    0,
+                )
+
+                if material_id <= 0:
+                    raise ValueError(
+                        f"line {idx}: material_id required"
+                    )
+
+                submitted_material_ids.append(material_id)
+
+            if len(submitted_material_ids) != len(
+                set(submitted_material_ids)
+            ):
+                raise ValueError(
+                    "DUPLICATE_MANUFACTURING_MATERIAL_LINES"
+                )
+
+            # Get the complete BOM requirement list for this order.
+            bom_materials = self.fetch_all(
+                f"""
+                SELECT
+                    bl.id AS bom_line_id,
+                    bl.item_id,
+                    bl.is_optional,
+                    m.id AS material_id
+                FROM {schema}.manufacturing_orders mo
+                JOIN {schema}.manufacturing_bom_lines bl
+                    ON bl.company_id = mo.company_id
+                    AND bl.bom_id = mo.bom_id
+                LEFT JOIN {schema}.manufacturing_order_materials m
+                    ON m.company_id = mo.company_id
+                    AND m.manufacturing_order_id = mo.id
+                    AND m.bom_line_id = bl.id
+                WHERE mo.company_id = %s
+                AND mo.id = %s
+                ORDER BY bl.line_no, bl.id
+                """,
+                (
+                    int(company_id),
+                    int(manufacturing_order_id),
+                ),
+                cur=cur,
+            )
+
+            if not bom_materials:
+                raise ValueError(
+                    "MANUFACTURING_ORDER_BOM_HAS_NO_MATERIAL_LINES"
+                )
+
+            required_material_ids = set()
+            missing_material_rows = []
+            optional_material_ids = set()
+
+            for bom_line in bom_materials:
+                if not isinstance(bom_line, dict):
+                    columns = [
+                        d[0] for d in cur.description
+                    ]
+                    bom_line = dict(zip(columns, bom_line))
+
+                material_id = bom_line.get("material_id")
+                is_optional = bool(
+                    bom_line.get("is_optional")
+                )
+
+                if material_id is None:
+                    if not is_optional:
+                        missing_material_rows.append(
+                            int(bom_line["bom_line_id"])
+                        )
+                    continue
+
+                material_id = int(material_id)
+
+                if is_optional:
+                    optional_material_ids.add(material_id)
+                else:
+                    required_material_ids.add(material_id)
+
+            if missing_material_rows:
+                raise ValueError(
+                    "BOM_MATERIAL_ROWS_MISSING|bom_line_ids="
+                    + ",".join(
+                        str(x) for x in missing_material_rows
+                    )
+                )
+
+            submitted_ids = set(submitted_material_ids)
+
+            missing_from_submission = (
+                required_material_ids - submitted_ids
+            )
+
+            if missing_from_submission:
+                raise ValueError(
+                    "REQUIRED_BOM_MATERIALS_NOT_SUBMITTED|material_ids="
+                    + ",".join(
+                        str(x)
+                        for x in sorted(missing_from_submission)
+                    )
+                )
+
+            # Reject IDs that are neither required nor optional BOM
+            # materials for this order. This also rejects material IDs
+            # belonging to another manufacturing order.
+            allowed_material_ids = (
+                required_material_ids | optional_material_ids
+            )
+
+            unexpected_ids = submitted_ids - allowed_material_ids
+
+            if unexpected_ids:
+                # Allow manually added materials only if they really
+                # belong to this order and are not linked to a BOM line.
+                manual_rows = self.fetch_all(
+                    f"""
+                    SELECT id
+                    FROM {schema}.manufacturing_order_materials
+                    WHERE company_id = %s
+                    AND manufacturing_order_id = %s
+                    AND bom_line_id IS NULL
+                    AND id = ANY(%s)
+                    """,
+                    (
+                        int(company_id),
+                        int(manufacturing_order_id),
+                        list(unexpected_ids),
+                    ),
+                    cur=cur,
+                )
+
+                valid_manual_ids = {
+                    int(
+                        r["id"] if isinstance(r, dict) else r[0]
+                    )
+                    for r in manual_rows
+                }
+
+                invalid_ids = unexpected_ids - valid_manual_ids
+
+                if invalid_ids:
+                    raise ValueError(
+                        "INVALID_OR_UNEXPECTED_MATERIAL_IDS|material_ids="
+                        + ",".join(
+                            str(x) for x in sorted(invalid_ids)
+                        )
+                    )
+
             # ==========================================================
             # 3) RESOLVE MANUFACTURING WIP ACCOUNT
             # ==========================================================
-
             manufacturing_wip_code = self.resolve_manufacturing_account(
                 company_id,
                 "wip",
@@ -95201,6 +95367,7 @@ class DatabaseService:
                 # Lock the manufacturing material line
                 # ------------------------------------------------------
 
+
                 material = self.fetch_one(
                     f"""
                     SELECT
@@ -95211,14 +95378,23 @@ class DatabaseService:
                         i.purchase_cost,
                         i.valuation_method,
                         i.track_stock,
-                        i.is_active
+                        i.is_active,
+                        bl.quantity AS bom_quantity,
+                        bl.scrap_percent AS bom_scrap_percent
                     FROM {schema}.manufacturing_order_materials m
                     JOIN {schema}.inventory_items i
-                    ON i.id=m.item_id
-                    WHERE m.company_id=%s
-                    AND m.id=%s
-                    AND m.manufacturing_order_id=%s
-                    FOR UPDATE
+                        ON i.id = m.item_id
+                    JOIN {schema}.manufacturing_orders mo
+                        ON mo.company_id = m.company_id
+                        AND mo.id = m.manufacturing_order_id
+                    LEFT JOIN {schema}.manufacturing_bom_lines bl
+                        ON bl.company_id = mo.company_id
+                        AND bl.bom_id = mo.bom_id
+                        AND bl.id = m.bom_line_id
+                    WHERE m.company_id = %s
+                    AND m.id = %s
+                    AND m.manufacturing_order_id = %s
+                    FOR UPDATE OF m
                     """,
                     (
                         int(company_id),
@@ -95259,7 +95435,6 @@ class DatabaseService:
                 # ------------------------------------------------------
                 # Calculate material issue from manufacturing output
                 # ------------------------------------------------------
-
                 planned_output = dec(mo.get("planned_qty"))
                 actual_output = dec(mo.get("actual_qty"))
 
@@ -95268,21 +95443,44 @@ class DatabaseService:
                         f"INVALID_PLANNED_OUTPUT|mo_id={manufacturing_order_id}"
                     )
 
-                # If actual output has not been recorded, use planned output.
-                # Do not apply BOM yield again: planned_qty on the material
-                # line already includes the yield calculation from order creation.
                 if actual_output <= 0:
                     actual_output = planned_output
 
-                planned_material_qty = dec(material.get("planned_qty"))
+                # Use the BOM quantity directly for BOM-linked materials.
+                # This order represents one BOM batch, so do not apply
+                # the BOM yield percentage a second time.
+                bom_quantity = material.get("bom_quantity")
+
+                if bom_quantity is not None:
+                    planned_material_qty = dec(bom_quantity)
+
+                    scrap_percent = dec(
+                        material.get("bom_scrap_percent")
+                    )
+
+                    planned_material_qty *= (
+                        Decimal("1")
+                        + scrap_percent / Decimal("100")
+                    )
+                else:
+                    # Preserve manually added materials that do not
+                    # reference a BOM line.
+                    planned_material_qty = dec(
+                        material.get("planned_qty")
+                    )
 
                 if planned_material_qty <= 0:
                     raise ValueError(
                         f"INVALID_PLANNED_MATERIAL_QTY|material_id={material_id}"
                     )
 
+                # Scale only for the actual output relative to the
+                # planned output. For 183 planned and 183 actual,
+                # this factor is exactly 1.
                 actual_qty = (
-                    planned_material_qty * actual_output / planned_output
+                    planned_material_qty
+                    * actual_output
+                    / planned_output
                 ).quantize(
                     Decimal("0.0001"),
                     rounding=ROUND_HALF_UP,
