@@ -87733,15 +87733,18 @@ class DatabaseService:
                 material_cost + labour_cost + direct_cost + overhead_cost
             ).quantize(Q2)
 
+
+ 
+            # batch_qty is nominal output before the yield allowance.
+            # Unit cost must use expected GOOD output after yield loss.
             effective_batch_qty = (
-                batch_qty
-                * yield_percent
-                / Decimal("100")
+                batch_qty * yield_percent / Decimal("100")
             )
 
             unit_cost = (
                 (total_cost / effective_batch_qty).quantize(Q6)
-                if effective_batch_qty > 0 else Decimal("0")
+                if effective_batch_qty > 0
+                else Decimal("0")
             )
 
             c.execute(
@@ -88721,7 +88724,11 @@ class DatabaseService:
                     grams = (recipe["per_batch_grams"] or {}).get(key)
                     if grams is None:
                         continue
-                    unit = str(units.get(key) or "g")
+                    unit = str(
+                        units.get(key)
+                        or ing.get("unit")
+                        or "g"
+                    )
                     qty = _qty_in_unit(
                         _bpe_d(grams), unit
                     ).quantize(Decimal("0.0001"))
@@ -88737,6 +88744,10 @@ class DatabaseService:
                                 _bpe_d(ing.get("scrap_percent") or 0)
                             ),
                             "item_id": item_map.get(key),
+                            "non_stock": bool(ing.get("non_stock", False)),
+                            "configured_unit_cost": _bpe_d(
+                                ing.get("unit_cost") or 0
+                            ),
                         }
                     )
 
@@ -88800,6 +88811,12 @@ class DatabaseService:
                                 _bpe_d(ing.get("scrap_percent") or 0)
                             ),
                             "item_id": item_map.get(key),
+                            "non_stock": bool(
+                                ing.get("non_stock", False)
+                            ),
+                            "configured_unit_cost": _bpe_d(
+                                ing.get("unit_cost") or 0
+                            ),
                         }
                     )
 
@@ -88814,28 +88831,41 @@ class DatabaseService:
                     ),
                 }
 
-            # Optional costing pass through the authoritative
-            # unit-conversion core for every mapped ingredient.
+
+            # Cost mapped stock ingredients through the authoritative
+            # unit-conversion core. Explicit non-stock ingredients,
+            # such as process water, may use a configured unit cost.
             material_total = Decimal("0")
             unmapped = []
 
             for line in lines_out:
                 iid = line.get("item_id")
+                is_non_stock = bool(line.get("non_stock", False))
 
-                if not iid:
+                if not iid and not is_non_stock:
                     unmapped.append(line["key"])
                     line["unit_cost"] = None
                     line["line_total_cost"] = None
                     continue
 
-                unit_cost = (
-                    self._get_manufacturing_bom_standard_unit_cost(
-                        company_id=company_id,
-                        item_id=int(iid),
-                        bom_unit=line["unit"],
-                        cur=c,
+                if is_non_stock:
+                    unit_cost = _bpe_d(
+                        line.get("configured_unit_cost") or 0
                     )
-                )
+                    if unit_cost < 0:
+                        raise ValueError(
+                            "Non-stock ingredient unit cost cannot "
+                            f"be negative: {line['key']}"
+                        )
+                else:
+                    unit_cost = (
+                        self._get_manufacturing_bom_standard_unit_cost(
+                            company_id=company_id,
+                            item_id=int(iid),
+                            bom_unit=line["unit"],
+                            cur=c,
+                        )
+                    )
 
                 line_total = (
                     _bpe_d(line["quantity"])
@@ -89028,16 +89058,34 @@ class DatabaseService:
                         )
                     )
 
+
             # --- BOM lines from the preview -----------------------
+            # Keep non-stock ingredients as phantom lines
+            # (item_id=None), preserving their configured unit cost.
             bom_lines = []
+
             for line in preview["lines"]:
-                if not line.get("item_id"):
-                    continue
+                item_id = line.get("item_id")
+                is_non_stock = bool(line.get("non_stock", False))
+
+                if not item_id and not is_non_stock:
+                    # Defensive check; the earlier unmapped check
+                    # should already have rejected this line.
+                    raise ValueError(
+                        "Cannot save BOM: ingredient "
+                        f"'{line['key']}' has no inventory mapping"
+                    )
+
                 bom_lines.append(
                     {
-                        "item_id": int(line["item_id"]),
+                        "item_id": (
+                            int(item_id) if item_id else None
+                        ),
                         "quantity": line["quantity"],
                         "unit": line["unit"],
+                        "unit_cost": (
+                            line.get("unit_cost") or 0
+                        ),
                         "scrap_percent": (
                             line.get("scrap_percent") or 0
                         ),

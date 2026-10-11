@@ -126323,6 +126323,99 @@ async function _openManufacturingBomDefinitionModalInner(bomId = 0) {
                        placeholder="Enter custom batch size">
               </label>
             </div>
+
+            <div class="flex items-center gap-2 mt-3">
+              <button type="button" id="mfgCatalogCreateBtn"
+                      class="px-3 py-1.5 border border-indigo-300 text-indigo-700 rounded text-xs hover:bg-indigo-50 font-medium">
+                + Create Product / Formula
+              </button>
+            </div>
+            <div id="mfgCatalogCreatePanel"
+                class="hidden mt-3 border rounded-lg bg-white p-4">
+              <div class="flex items-center justify-between gap-2 mb-3">
+                <div class="font-semibold text-sm">Create Product / Formula</div>
+                <button type="button" id="mfgCatalogCreateClose"
+                        class="text-slate-500 hover:text-slate-800 text-sm">
+                  Close
+                </button>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Industry</div>
+                  <input id="mfgNewIndustry" class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. Manufacturing">
+                </label>
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Category</div>
+                  <input id="mfgNewCategory" class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. Furniture">
+                </label>
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Product name</div>
+                  <input id="mfgNewProductName" class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. Standard Panel">
+                </label>
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Output unit</div>
+                  <input id="mfgNewProductUom" class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. panel, roll, unit">
+                </label>
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Formula type</div>
+                  <select id="mfgNewFormulaType" class="w-full border rounded px-2 py-2 text-sm">
+                    <option value="absolute">Absolute quantities per output unit</option>
+                    <option value="bakers_pct">Baker's percentage</option>
+                  </select>
+                </label>
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Expected yield (%)</div>
+                  <input id="mfgNewYield" type="number" min="0.01" max="100"
+                        step="0.01" value="100"
+                        class="w-full border rounded px-2 py-2 text-sm">
+                </label>
+                <label id="mfgNewTargetWeightWrap" class="hidden text-xs md:col-span-2">
+                  <div class="mb-1 font-medium">Target baked weight per good unit (g)</div>
+                  <input id="mfgNewTargetWeight" type="number" min="0.0001" step="0.0001"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. 120">
+                </label>
+              </div>
+
+              <div class="mt-4">
+                <div class="font-medium text-xs mb-1">Ingredients</div>
+                <div class="text-xs text-slate-500 mb-2">
+                  Use a unique key for each ingredient. Absolute quantities are per output unit;
+                  percentage formulas use percentages relative to flour.
+                </div>
+                <div id="mfgNewIngredients" class="space-y-2"></div>
+                <button type="button" id="mfgNewIngredientAdd"
+                        class="mt-2 px-3 py-1.5 border rounded text-xs hover:bg-slate-50">
+                  + Add ingredient
+                </button>
+              </div>
+
+              <div class="mt-4">
+                <label class="text-xs">
+                  <div class="font-medium mb-1">Standard batch sizes</div>
+                  <input id="mfgNewBatchSizes"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. 1, 10, 25, 50">
+                  <div id="mfgNewBatchSizesHint" class="text-slate-500 mt-1">
+                    Enter quantities in output units, separated by commas.
+                  </div>
+                </label>
+              </div>
+
+              <div class="flex items-center gap-2 mt-4 flex-wrap">
+                <button type="button" id="mfgNewProductSave"
+                        class="px-4 py-2 bg-indigo-600 text-white rounded text-xs font-medium hover:bg-indigo-700">
+                  Save Product / Formula
+                </button>
+                <div id="mfgNewProductMsg" class="text-xs text-slate-600"></div>
+              </div>
+            </div>
+
             <div class="flex items-center gap-2 mt-3 flex-wrap">
               <button type="button" id="mfgCatalogApplyBtn"
                       class="px-3 py-1.5 bg-slate-800 text-white rounded text-xs hover:bg-slate-700 font-medium">
@@ -126645,6 +126738,7 @@ async function _openManufacturingBomDefinitionModalInner(bomId = 0) {
     document.getElementById("mfgCatalogCostPreviewBtn")?.addEventListener("click", previewCatalogBomCost);
     document.getElementById("mfgCatalogRematchBtn")?.addEventListener("click", () => {
       autoMatchMfgLineItems();
+      initMfgCatalogCreateForm();
     });
 
     modal.addEventListener("input", handleMfgBomModalInput);
@@ -126876,6 +126970,307 @@ async function loadProductionCatalogPicker(cid) {
   }
 }
 
+
+function initMfgCatalogCreateForm() {
+  const panel = document.getElementById("mfgCatalogCreatePanel");
+  if (!panel || panel.dataset.bound === "1") return;
+  panel.dataset.bound = "1";
+
+  const $ = (id) => document.getElementById(id);
+  const msg = $("mfgNewProductMsg");
+  const ingredients = $("mfgNewIngredients");
+  const type = $("mfgNewFormulaType");
+
+  const setMessage = (text, error = false) => {
+    if (!msg) return;
+    msg.textContent = text;
+    msg.className = "text-xs " + (error ? "text-red-600" : "text-slate-600");
+  };
+
+  const isBakers = () => type?.value === "bakers_pct";
+
+  function updateFormulaFields() {
+    const baker = isBakers();
+    $("mfgNewTargetWeightWrap")?.classList.toggle("hidden", !baker);
+
+    const hint = $("mfgNewBatchSizesHint");
+    if (hint) {
+      hint.textContent = baker
+        ? "Enter flour quantities in kg, separated by commas (e.g. 2.5, 5, 10)."
+        : "Enter quantities in output units, separated by commas (e.g. 1, 10, 25).";
+    }
+
+    ingredients?.querySelectorAll("[data-ingredient-amount-label]").forEach((el) => {
+      el.textContent = baker ? "% of flour" : "Qty per output unit";
+    });
+
+    ingredients?.querySelectorAll("[data-ingredient-amount]").forEach((el) => {
+      el.placeholder = baker ? "e.g. 100" : "e.g. 0.25";
+    });
+  }
+
+  function addIngredientRow(values = {}) {
+    if (!ingredients) return;
+
+    const row = document.createElement("div");
+    row.className = "border rounded p-3 grid grid-cols-1 md:grid-cols-6 gap-2";
+    row.dataset.ingredientRow = "1";
+
+    const field = (label, key, placeholder, value = "", type = "text") => `
+      <label class="text-xs">
+        <span class="block mb-1 text-slate-600">${label}</span>
+        <input data-field="${key}" type="${type}"
+          class="w-full min-w-0 border rounded px-2 py-2 text-sm"
+          placeholder="${placeholder}"
+          value="${esc(String(value ?? ""))}"
+          ${type === "number" ? 'min="0" step="any"' : ""}>
+      </label>`;
+
+    row.innerHTML = `
+      <div class="md:col-span-2">
+        ${field("Ingredient key", "key", "e.g. flour", values.key || "")}
+        ${field("Display name", "label", "e.g. Cake flour", values.label || "")}
+      </div>
+      <div>
+        ${field(isBakers() ? "% of flour" : "Qty per output unit",
+          "amount", isBakers() ? "e.g. 100" : "e.g. 1",
+          values.amount ?? values.pct ?? values.qty ?? "", "number")}
+        <span data-ingredient-amount-label class="hidden"></span>
+      </div>
+      <div>
+        ${field("Unit", "unit", "e.g. kg, L, unit", values.unit || "kg")}
+        ${field("Scrap (%)", "scrap", "0", values.scrap_percent ?? 0, "number")}
+      </div>
+      <div>
+        ${field("Unit cost (non-stock)", "unit_cost", "0.00",
+          values.unit_cost ?? "", "number")}
+        <label class="flex items-center gap-2 mt-3 text-xs">
+          <input type="checkbox" data-field="non_stock"
+            ${values.non_stock ? "checked" : ""}>
+          Non-stock item
+        </label>
+      </div>
+      <div class="flex items-start justify-end">
+        <button type="button" data-remove-ingredient
+          class="border rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50">
+          Remove
+        </button>
+      </div>`;
+
+    // Put the amount label above the amount input.
+    const amountInput = row.querySelector('[data-field="amount"]');
+    if (amountInput) {
+      const label = amountInput.closest("label");
+      const span = label?.querySelector("span");
+      if (span) {
+        span.dataset.ingredientAmountLabel = "1";
+        span.textContent = isBakers() ? "% of flour" : "Qty per output unit";
+      }
+      amountInput.dataset.ingredientAmount = "1";
+    }
+
+    ingredients.appendChild(row);
+    updateFormulaFields();
+  }
+
+  function readIngredients() {
+    return [...(ingredients?.querySelectorAll("[data-ingredient-row]") || [])]
+      .map((row) => {
+        const val = (key) =>
+          row.querySelector(`[data-field="${key}"]`)?.value?.trim() || "";
+
+        const item = {
+          key: val("key").toLowerCase().replace(/\s+/g, "_"),
+          label: val("label"),
+          unit: val("unit"),
+          scrap_percent: Number(val("scrap") || 0)
+        };
+
+        const amount = Number(val("amount"));
+        if (isBakers()) item.pct = amount;
+        else item.qty = amount;
+
+        const nonStock = !!row.querySelector('[data-field="non_stock"]')?.checked;
+        if (nonStock) {
+          item.non_stock = true;
+          item.unit_cost = Number(val("unit_cost") || 0);
+        }
+
+        return item;
+      })
+      .filter((item) => item.key || item.label);
+  }
+
+  function parseBatchSizes() {
+    const raw = $("mfgNewBatchSizes")?.value || "";
+    return [...new Set(raw.split(",")
+      .map((v) => Number(v.trim()))
+      .filter((v) => Number.isFinite(v) && v > 0))];
+  }
+
+  $("mfgCatalogCreateBtn")?.addEventListener("click", () => {
+    panel.classList.toggle("hidden");
+    if (!panel.classList.contains("hidden")) {
+      if (!ingredients?.children.length) addIngredientRow();
+      updateFormulaFields();
+    }
+  });
+
+  $("mfgCatalogCreateClose")?.addEventListener("click", () => {
+    panel.classList.add("hidden");
+  });
+
+  $("mfgNewIngredientAdd")?.addEventListener("click", () => {
+    addIngredientRow();
+  });
+
+  ingredients?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-remove-ingredient]");
+    if (button) button.closest("[data-ingredient-row]")?.remove();
+  });
+
+  type?.addEventListener("change", updateFormulaFields);
+
+  $("mfgNewProductSave")?.addEventListener("click", async () => {
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    if (!cid) return setMessage("Select a company first.", true);
+
+    const industry = $("mfgNewIndustry")?.value.trim();
+    const category = $("mfgNewCategory")?.value.trim();
+    const productName = $("mfgNewProductName")?.value.trim();
+    const productUom = $("mfgNewProductUom")?.value.trim();
+    const formulaType = type?.value;
+    const yieldPercent = Number($("mfgNewYield")?.value);
+    const rows = readIngredients();
+    const batches = parseBatchSizes();
+
+    if (!industry || !category || !productName || !productUom) {
+      return setMessage("Complete industry, category, product name and output unit.", true);
+    }
+    if (!Number.isFinite(yieldPercent) || yieldPercent <= 0 || yieldPercent > 100) {
+      return setMessage("Expected yield must be greater than 0 and no more than 100%.", true);
+    }
+    if (!rows.length) return setMessage("Add at least one ingredient.", true);
+
+    for (const item of rows) {
+      const amount = formulaType === "bakers_pct" ? item.pct : item.qty;
+      if (!item.key || !item.label || !item.unit ||
+          !Number.isFinite(amount) || amount <= 0) {
+        return setMessage("Each ingredient needs a key, name, unit and positive quantity/percentage.", true);
+      }
+      if (item.scrap_percent < 0) {
+        return setMessage("Scrap percentage cannot be negative.", true);
+      }
+      if (item.non_stock && item.unit_cost < 0) {
+        return setMessage("Non-stock unit cost cannot be negative.", true);
+      }
+    }
+
+    if (new Set(rows.map((r) => r.key)).size !== rows.length) {
+      return setMessage("Ingredient keys must be unique.", true);
+    }
+
+    const formulaMeta = { ingredients: rows };
+
+    if (formulaType === "bakers_pct") {
+      if (!rows.some((r) => r.key === "flour")) {
+        return setMessage("Baker's percentage formulas require an ingredient key named 'flour'.", true);
+      }
+      const targetWeight = Number($("mfgNewTargetWeight")?.value);
+      if (!Number.isFinite(targetWeight) || targetWeight <= 0) {
+        return setMessage("Enter the target baked weight per good unit in grams.", true);
+      }
+      formulaMeta.target_baked_weight_g = targetWeight;
+      formulaMeta.bake_loss_pct = 0;
+      formulaMeta.batch_tiers = batches.map((kg) => ({
+        key: `flour_${String(kg).replace(".", "_")}kg`,
+        label: `${kg} kg flour`,
+        flour_kg: kg
+      }));
+    } else {
+      formulaMeta.batch_tiers = batches.map((qty) => ({
+        key: `batch_${String(qty).replace(".", "_")}`,
+        label: `${qty} ${productUom}`,
+        batch_qty: qty
+      }));
+    }
+
+    // The API upserts by company + industry + category + product name.
+    const existing = (__MFG_CATALOG.products || []).find((p) =>
+      String(p.industry || "").trim().toLowerCase() === industry.toLowerCase() &&
+      String(p.category || "").trim().toLowerCase() === category.toLowerCase() &&
+      String(p.product_name || p.name || "").trim().toLowerCase() === productName.toLowerCase()
+    );
+
+    if (existing && !confirm(
+      "A product with this industry, category and name already exists. Saving may update its formula. Continue?"
+    )) return;
+
+    const button = $("mfgNewProductSave");
+    if (button) button.disabled = true;
+    setMessage("Saving formula…");
+
+    try {
+      const response = await apiFetch(
+        ENDPOINTS.manufacturing.productionCatalog(cid),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            industry,
+            category,
+            product_name: productName,
+            product_uom: productUom,
+            formula_type: formulaType,
+            default_yield_percent: yieldPercent,
+            formula_meta: formulaMeta
+          })
+        }
+      );
+
+      if (!response || response.ok === false) {
+        throw new Error(response?.error || response?.message || "The product could not be saved.");
+      }
+
+      __MFG_CATALOG.loaded = false;
+      await loadProductionCatalogPicker(cid);
+
+      const industrySelect = $("mfgCatalogIndustry");
+      if (industrySelect) {
+        industrySelect.value = industry;
+        onMfgCatalogIndustryChange();
+      }
+
+      const categorySelect = $("mfgCatalogCategory");
+      if (categorySelect) {
+        categorySelect.value = category;
+        onMfgCatalogCategoryChange();
+      }
+
+      const productSelect = $("mfgCatalogProduct");
+      const savedProduct = (__MFG_CATALOG.products || []).find((p) =>
+        String(p.industry || "").trim().toLowerCase() === industry.toLowerCase() &&
+        String(p.category || "").trim().toLowerCase() === category.toLowerCase() &&
+        String(p.product_name || p.name || "").trim().toLowerCase() === productName.toLowerCase()
+      );
+
+      if (productSelect && savedProduct) {
+        productSelect.value = String(savedProduct.id);
+        onMfgCatalogProductChange();
+      }
+
+      setMessage("Product formula saved. You can now preview its cost or fill the BOM.");
+    } catch (error) {
+      console.error("[manufacturing catalog] save failed", error);
+      setMessage(error?.message || "Could not save the product formula.", true);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+
+  updateFormulaFields();
+}
+
 function onMfgCatalogIndustryChange() {
   const industry =
     document.getElementById("mfgCatalogIndustry")?.value || "";
@@ -126932,39 +127327,89 @@ function getSelectedCatalogProduct() {
   );
 }
 
+
 function mfgCatalogBatchOptions(product) {
   if (!product) return [];
 
-  // Baker's %: batch basis is kg of flour (mass input),
-  // regardless of the finished product's UOM (loaf, bun, etc.).
-  if (product.formula_type === "bakers_pct") {
-    return [
-      { value: "2.5", label: "2.5 kg" },
-      { value: "5", label: "5 kg" },
-      { value: "10", label: "10 kg" },
-      { value: "12.5", label: "12.5 kg" },
-      { value: "25", label: "25 kg" },
-      { value: "50", label: "50 kg" },
-      { value: "100", label: "100 kg" }
-    ];
+  let meta = product.formula_meta || {};
+  if (typeof meta === "string") {
+    try {
+      meta = JSON.parse(meta);
+    } catch (_) {
+      meta = {};
+    }
   }
 
-  // Unit / count / volume / length-based:
-  // Use the product's own UOM so labels match the production context
-  // (e.g. "50 loaf", "100 brick", "10 door", "20 m²") instead of
-  // a hardcoded "units" word that only fits some industries.
-  const uom = String(product.product_uom || product.uom || "unit").trim();
-  return [
-    { value: "1", label: `1 ${uom}` },
-    { value: "10", label: `10 ${uom}` },
-    { value: "25", label: `25 ${uom}` },
-    { value: "50", label: `50 ${uom}` },
-    { value: "100", label: `100 ${uom}` },
-    { value: "250", label: `250 ${uom}` },
-    { value: "500", label: `500 ${uom}` },
-    { value: "1000", label: `1000 ${uom}` }
-  ];
+  const uom = String(
+    product.product_uom || product.uom || "unit"
+  ).trim();
+
+  // Prefer batch sizes saved with this specific product formula.
+  const tiers = Array.isArray(meta.batch_tiers)
+    ? meta.batch_tiers
+    : [];
+
+  const savedOptions = tiers
+    .map((tier) => {
+      if (!tier || typeof tier !== "object") return null;
+
+      if (product.formula_type === "bakers_pct") {
+        const qty = Number(
+          tier.flour_kg ??
+          tier.batch_flour_kg ??
+          tier.qty
+        );
+
+        if (!(qty > 0)) return null;
+
+        return {
+          value: String(qty),
+          label: String(
+            tier.label || `${qty} kg flour batch`
+          )
+        };
+      }
+
+      const qty = Number(
+        tier.batch_qty ??
+        tier.quantity ??
+        tier.qty ??
+        tier.value
+      );
+
+      if (!(qty > 0)) return null;
+
+      return {
+        value: String(qty),
+        label: String(tier.label || `${qty} ${uom}`)
+      };
+    })
+    .filter(Boolean);
+
+  // Saved tiers are authoritative when present.
+  if (savedOptions.length) {
+    return savedOptions.filter(
+      (option, index, all) =>
+        all.findIndex(
+          other => other.value === option.value
+        ) === index
+    );
+  }
+
+  // Backward-compatible defaults for existing catalogue products.
+  if (product.formula_type === "bakers_pct") {
+    return [2.5, 5, 10, 12.5, 25, 50, 100].map(qty => ({
+      value: String(qty),
+      label: `${qty} kg flour`
+    }));
+  }
+
+  return [1, 10, 25, 50, 100, 250, 500, 1000].map(qty => ({
+    value: String(qty),
+    label: `${qty} ${uom}`
+  }));
 }
+
 
 function onMfgCatalogProductChange() {
   const product = getSelectedCatalogProduct();
@@ -131118,6 +131563,20 @@ async function _mfgLoadSelectedBomReview() {
     }
 
     _mfgOrderSelectedBom = bom;
+
+    // Default planned output to one finished batch.
+    // Keep the field editable after this initial value is set.
+    const quantityInput = document.getElementById("mfgOrderQty");
+    const finishedBatchQty = Number(bom.batch_qty);
+
+    if (
+      quantityInput &&
+      Number.isFinite(finishedBatchQty) &&
+      finishedBatchQty > 0
+    ) {
+      quantityInput.value = String(Math.round(finishedBatchQty));
+    }
+
     _mfgRenderBomReview();
   } catch (error) {
     if (requestId !== _mfgOrderBomRequest) return;
