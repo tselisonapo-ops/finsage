@@ -95375,8 +95375,9 @@ class DatabaseService:
                             f"MISSING_COST|item_id={item_id}"
                         )
 
+
                     line_cost = money(
-                        actual_qty * unit_cost
+                        actual_qty * Decimal(str(unit_cost))
                     )
 
                     if track_stock:
