@@ -95548,7 +95548,8 @@ class DatabaseService:
                         i.track_stock,
                         i.is_active,
                         bl.quantity AS bom_quantity,
-                        bl.scrap_percent AS bom_scrap_percent
+                        bl.scrap_percent AS bom_scrap_percent,
+                        bl.unit_cost AS bom_unit_cost
                     FROM {schema}.manufacturing_order_materials m
                     JOIN {schema}.inventory_items i
                         ON i.id = m.item_id
@@ -95716,31 +95717,42 @@ class DatabaseService:
                             cur=cur,
                         )
                     )
-
                 # ------------------------------------------------------
                 # AVERAGE
                 # ------------------------------------------------------
 
                 else:
 
-                    unit_cost = money(
-                        self._inventory_avg_cost_cur(
-                            company_id,
-                            item_id,
-                            cur,
-                        )
+                    # BOM-linked materials use the BOM's standard
+                    # cost per stock unit for production costing.
+                    # Manual materials retain inventory average costing.
+                    bom_unit_cost = dec(
+                        material.get("bom_unit_cost")
                     )
 
-                    if unit_cost <= 0:
+                    if (
+                        material.get("bom_quantity") is not None
+                        and bom_unit_cost > 0
+                    ):
+                        unit_cost = float(bom_unit_cost)
+                    else:
                         unit_cost = money(
-                            material.get("purchase_cost") or 0
+                            self._inventory_avg_cost_cur(
+                                company_id,
+                                item_id,
+                                cur,
+                            )
                         )
+
+                        if unit_cost <= 0:
+                            unit_cost = money(
+                                material.get("purchase_cost") or 0
+                            )
 
                     if unit_cost <= 0:
                         raise ValueError(
                             f"MISSING_COST|item_id={item_id}"
                         )
-
 
                     line_cost = money(
                         actual_qty * Decimal(str(unit_cost))
