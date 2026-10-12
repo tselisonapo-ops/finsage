@@ -4790,6 +4790,21 @@ const ENDPOINTS = {
     order: (cid, orderId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}`,
 
+
+    stageStandards: (cid, bomId) =>
+      `/api/companies/${encodeURIComponent(cid)}/manufacturing/stage-standards${
+        bomId ? `?bom_id=${encodeURIComponent(bomId)}` : ""
+      }`,
+
+    orderStages: (cid, orderId) =>
+      `/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/stages`,
+
+    applyStageStandards: (cid, orderId) =>
+      `/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/stages/apply-standards`,
+
+    orderStageTimer: (cid, orderId, stageId) =>
+      `/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/stages/${encodeURIComponent(stageId)}/timer`,
+
     orderMaterialUsage: (cid, orderId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/material-usage`,
 
@@ -131748,16 +131763,17 @@ async function openManufacturingOrderModal() {
           </div>
         </label>
 
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 
           <label class="text-xs block">
             <div class="text-slate-600 mb-1">
               Planned Start Date
             </div>
-
             <input
               id="mfgOrderStartDate"
               type="date"
+              required
               class="w-full border rounded px-2 py-2 text-sm"
               value="${new Date().toISOString().slice(0, 10)}">
           </label>
@@ -131766,12 +131782,36 @@ async function openManufacturingOrderModal() {
             <div class="text-slate-600 mb-1">
               Expected Finish Date
             </div>
-
             <input
               id="mfgOrderFinishDate"
               type="date"
+              required
               class="w-full border rounded px-2 py-2 text-sm"
               value="${new Date().toISOString().slice(0, 10)}">
+          </label>
+
+          <label class="text-xs block">
+            <div class="text-slate-600 mb-1">
+              Expected Start Time
+            </div>
+            <input
+              id="mfgOrderStartTime"
+              type="time"
+              required
+              class="w-full border rounded px-2 py-2 text-sm"
+              value="08:00">
+          </label>
+
+          <label class="text-xs block">
+            <div class="text-slate-600 mb-1">
+              Expected Finish Time
+            </div>
+            <input
+              id="mfgOrderFinishTime"
+              type="time"
+              required
+              class="w-full border rounded px-2 py-2 text-sm"
+              value="17:00">
           </label>
 
         </div>
@@ -131978,6 +132018,7 @@ async function openManufacturingOrderModal() {
   qtyInput?.addEventListener("input", _mfgRenderBomReview);
 }
 
+
 async function saveManufacturingOrder() {
   const cid =
     getActiveCompanyId?.() ||
@@ -131989,18 +132030,25 @@ async function saveManufacturingOrder() {
   const finishDate =
     document.getElementById("mfgOrderFinishDate")?.value || "";
 
+  const startTime =
+    document.getElementById("mfgOrderStartTime")?.value || "";
+
+  const finishTime =
+    document.getElementById("mfgOrderFinishTime")?.value || "";
+
   const payload = {
     bom_id: Number(
       document.getElementById("mfgOrderBom")?.value || 0
     ),
 
-    // Retain tx_date for the existing backend/order model.
-    // It represents the planned production start date.
+    // Retain the existing backend/order field.
     tx_date: startDate,
 
+    // Planned schedule.
     planned_start_date: startDate,
-
     planned_finish_date: finishDate,
+    planned_start_time: startTime,
+    planned_finish_time: finishTime,
 
     production_tracking_method:
       document.getElementById("mfgOrderTrackingMethod")?.value ||
@@ -132026,26 +132074,40 @@ async function saveManufacturingOrder() {
     );
   }
 
-  if (!payload.planned_start_date) {
+  if (!startDate) {
     return showManufacturingOrderMsg(
       "Planned start date is required.",
       "error"
     );
   }
 
-  if (!payload.planned_finish_date) {
+  if (!finishDate) {
     return showManufacturingOrderMsg(
       "Expected finish date is required.",
       "error"
     );
   }
 
-  if (
-    payload.planned_finish_date <
-    payload.planned_start_date
-  ) {
+  if (!startTime || !finishTime) {
+    return showManufacturingOrderMsg(
+      "Expected start and finish times are required.",
+      "error"
+    );
+  }
+
+  if (finishDate < startDate) {
     return showManufacturingOrderMsg(
       "Expected finish date cannot be before the planned start date.",
+      "error"
+    );
+  }
+
+  if (
+    finishDate === startDate &&
+    finishTime <= startTime
+  ) {
+    return showManufacturingOrderMsg(
+      "Expected finish time must be later than start time.",
       "error"
     );
   }
@@ -132060,7 +132122,10 @@ async function saveManufacturingOrder() {
     );
   }
 
-  if (payload.planned_qty <= 0) {
+  if (
+    !Number.isFinite(payload.planned_qty) ||
+    payload.planned_qty <= 0
+  ) {
     return showManufacturingOrderMsg(
       "Planned quantity must be greater than zero.",
       "error"
@@ -132083,14 +132148,13 @@ async function saveManufacturingOrder() {
   }
 
   try {
-
     await apiFetch(
       ENDPOINTS.manufacturing.orders(cid),
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Accept: "application/json",
+          Accept: "application/json"
         },
         body: JSON.stringify(payload)
       }
@@ -132108,7 +132172,6 @@ async function saveManufacturingOrder() {
     await loadManufacturingOrders();
 
   } catch (err) {
-
     console.error(
       "[Manufacturing] Failed to create production order:",
       err
@@ -132121,7 +132184,6 @@ async function saveManufacturingOrder() {
     );
 
   } finally {
-
     if (btn) {
       btn.disabled = false;
       btn.textContent = "Create Batch";
@@ -133321,6 +133383,92 @@ async function openManufacturingOrderDetail(orderId) {
               `
               : ""
           }
+        </div>
+
+
+        <!-- PRODUCTION STAGES -->
+        <div class="mt-6 border rounded-lg" id="mfgProductionStages">
+          <div class="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="font-semibold">Production Stages & Timers</div>
+              <div class="text-xs text-slate-500 mt-1">
+                Track actual stage duration against configured standards.
+                These timers do not post materials or change order status.
+              </div>
+            </div>
+            <button
+              type="button"
+              data-mfg-apply-stage-standards
+              class="px-3 py-2 text-xs rounded bg-slate-800 text-white">
+              Apply Stage Standards
+            </button>
+          </div>
+
+          <div class="p-4 border-b bg-slate-50">
+            <div class="font-medium text-sm mb-3">Configure a Stage Standard</div>
+
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <label class="text-xs">
+                <span class="block text-slate-600 mb-1">Stage Name</span>
+                <input data-mfg-standard-name
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="e.g. Mixing">
+              </label>
+
+              <label class="text-xs">
+                <span class="block text-slate-600 mb-1">Stage Code</span>
+                <input data-mfg-standard-code
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="e.g. MIXING">
+              </label>
+
+              <label class="text-xs">
+                <span class="block text-slate-600 mb-1">Sequence</span>
+                <input data-mfg-standard-sequence type="number" min="1" step="1"
+                  class="w-full border rounded px-2 py-2 text-sm" value="1">
+              </label>
+
+              <label class="text-xs">
+                <span class="block text-slate-600 mb-1">Standard Minutes</span>
+                <input data-mfg-standard-minutes type="number" min="1" step="1"
+                  class="w-full border rounded px-2 py-2 text-sm" value="45">
+              </label>
+
+              <label class="text-xs">
+                <span class="block text-slate-600 mb-1">Default Equipment</span>
+                <input data-mfg-standard-equipment
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="e.g. Mixer 1">
+              </label>
+            </div>
+
+            <div class="mt-3 flex justify-end">
+              <button type="button" data-mfg-save-stage-standard
+                class="px-3 py-2 text-xs rounded border bg-white">
+                Save Stage Standard
+              </button>
+            </div>
+
+            <p class="text-xs text-slate-500 mt-2">
+              Standards saved here apply to this BOM. Configure each stage once,
+              then apply the standards to production orders using this BOM.
+            </p>
+          </div>
+
+          <div class="p-4">
+            <div class="font-medium text-sm mb-2">Configured Standards</div>
+            <div data-mfg-stage-standards class="space-y-2">
+              <div class="text-sm text-slate-500">Loading stage standards…</div>
+            </div>
+          </div>
+
+          <div class="px-4 py-3 border-t">
+            <div class="font-medium text-sm mb-2">Stages for This Production Order</div>
+            <div data-mfg-order-stages class="space-y-3">
+              <div class="text-sm text-slate-500">Loading production stages…</div>
+            </div>
+            <div data-mfg-stage-message class="mt-3 text-sm" role="status"></div>
+          </div>
         </div>
 
         <!-- PRODUCTION INFORMATION -->
@@ -134623,6 +134771,266 @@ async function openManufacturingOrderDetail(orderId) {
      INITIAL SUMMARY
   ------------------------------------------------------- */
   refreshManufacturingOrderManagementSummary?.(modal, order);
+
+
+  /* -------------------------------------------------------
+     PRODUCTION STAGE TIMERS
+  ------------------------------------------------------- */
+  const mfgStageList = modal.querySelector("[data-mfg-stage-list]");
+
+  if (mfgStageList) {
+    const stageUrl = ENDPOINTS.manufacturing.orderStages(cid, orderId);
+    const standardsUrl = ENDPOINTS.manufacturing.stageStandards(
+      cid,
+      order?.bom_id || null
+    );
+
+    const stageEscape = (value) =>
+      String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+
+    const stageDuration = (seconds) => {
+      const total = Math.max(0, Number(seconds) || 0);
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const secs = Math.floor(total % 60);
+      return hours
+        ? `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+        : `${minutes}:${String(secs).padStart(2, "0")}`;
+    };
+
+    const stageRows = (result, key) => {
+      if (Array.isArray(result)) return result;
+      if (Array.isArray(result?.[key])) return result[key];
+      if (Array.isArray(result?.items)) return result.items;
+      if (Array.isArray(result?.data)) return result.data;
+      return [];
+    };
+
+    const stageRequest = async (url, options = {}) => {
+      const response = await apiFetch(url, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {})
+        }
+      });
+
+      if (response?.ok === false) {
+        throw new Error(response.error || response.message || "Production-stage request failed.");
+      }
+
+      return response;
+    };
+
+    const loadMfgStages = async () => {
+      mfgStageList.innerHTML =
+        '<div class="text-sm text-slate-500">Loading production stages…</div>';
+
+      try {
+        const result = await stageRequest(stageUrl);
+        const stages = stageRows(result, "stages");
+
+        if (!stages.length) {
+          mfgStageList.innerHTML =
+            '<div class="text-sm text-slate-500">No production stages yet. Save stage standards, then select Apply Stage Standards.</div>';
+          return;
+        }
+
+        mfgStageList.innerHTML = stages.map((stage) => {
+          const id = stage.id ?? stage.stage_id;
+          const status = String(stage.status || "pending").toLowerCase();
+          const elapsed = Number(stage.elapsed_seconds || 0);
+          const standard = Number(stage.standard_minutes || 45);
+          const operator = stage.operator_name || "";
+          const equipment = stage.equipment_name || "";
+
+          const actions = status === "pending"
+            ? [["start", "Start"]]
+            : status === "running"
+              ? [["pause", "Pause"], ["complete", "Complete"]]
+              : status === "paused"
+                ? [["resume", "Resume"], ["complete", "Complete"]]
+                : [];
+
+          return `
+            <div class="border rounded-lg p-3 mb-3" data-mfg-stage-card="${stageEscape(id)}">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div class="font-semibold">${stageEscape(stage.stage_name || stage.name || stage.stage_code || "Production Stage")}</div>
+                  <div class="text-xs text-slate-500">
+                    Status: ${stageEscape(status)} · Standard: ${standard} min
+                  </div>
+                  <div class="text-sm mt-1">
+                    Elapsed: <strong>${stageDuration(elapsed)}</strong>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  ${actions.map(([action, label]) => `
+                    <button type="button"
+                      data-mfg-stage-action="${action}"
+                      data-stage-id="${stageEscape(id)}"
+                      class="px-3 py-1.5 rounded text-sm border">
+                      ${label}
+                    </button>
+                  `).join("")}
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                <label class="text-xs">Operator
+                  <input data-stage-operator value="${stageEscape(operator)}"
+                    class="mt-1 w-full border rounded px-2 py-1.5 text-sm"
+                    placeholder="Operator name">
+                </label>
+                <label class="text-xs">Equipment
+                  <input data-stage-equipment value="${stageEscape(equipment)}"
+                    class="mt-1 w-full border rounded px-2 py-1.5 text-sm"
+                    placeholder="Mixer, oven, etc.">
+                </label>
+                <label class="text-xs">Downtime (minutes)
+                  <input data-stage-downtime type="number" min="0" step="1" value="0"
+                    class="mt-1 w-full border rounded px-2 py-1.5 text-sm">
+                </label>
+                <label class="text-xs">Downtime reason
+                  <input data-stage-downtime-reason
+                    class="mt-1 w-full border rounded px-2 py-1.5 text-sm"
+                    placeholder="Optional">
+                </label>
+              </div>
+              <label class="block text-xs mt-2">Notes
+                <input data-stage-notes value="${stageEscape(stage.notes || "")}"
+                  class="mt-1 w-full border rounded px-2 py-1.5 text-sm"
+                  placeholder="Optional stage notes">
+              </label>
+            </div>
+          `;
+        }).join("");
+      } catch (error) {
+        console.error("[manufacturing stages] Load failed:", error);
+        mfgStageList.innerHTML = `
+          <div class="text-sm text-red-600">
+            Could not load production stages: ${stageEscape(error.message)}
+          </div>`;
+      }
+    };
+
+    modal.querySelector("[data-mfg-apply-stage-standards]")
+      ?.addEventListener("click", async () => {
+        try {
+          await stageRequest(
+            ENDPOINTS.manufacturing.applyStageStandards(cid, orderId),
+            { method: "POST", body: JSON.stringify({}) }
+          );
+          await loadMfgStages();
+        } catch (error) {
+          console.error("[manufacturing stages] Apply standards failed:", error);
+          alert(error.message || "Could not apply production-stage standards.");
+        }
+      });
+
+    modal.querySelector("[data-mfg-save-stage-standard]")
+      ?.addEventListener("click", async () => {
+        const field = (selector) =>
+          modal.querySelector(selector)?.value?.trim() || "";
+
+        const stageName = field("[data-mfg-stage-name]");
+        const stageCode = field("[data-mfg-stage-code]")
+          .toUpperCase()
+          .replace(/[^A-Z0-9_-]/g, "_");
+        const sequence = Number(field("[data-mfg-stage-sequence]") || 1);
+        const minutes = Number(field("[data-mfg-stage-minutes]") || 45);
+        const equipment = field("[data-mfg-stage-equipment]");
+
+        if (!stageName || !stageCode) {
+          alert("Enter both a stage name and stage code.");
+          return;
+        }
+
+        if (!Number.isFinite(minutes) || minutes < 1) {
+          alert("Standard minutes must be at least 1.");
+          return;
+        }
+
+        try {
+          await stageRequest(standardsUrl, {
+            method: "POST",
+            body: JSON.stringify({
+              bom_id: order?.bom_id || null,
+              stage_name: stageName,
+              stage_code: stageCode,
+              sequence_no: sequence,
+              standard_minutes: minutes,
+              equipment_name: equipment,
+              active: true
+            })
+          });
+
+          modal.querySelector("[data-mfg-stage-name]").value = "";
+          modal.querySelector("[data-mfg-stage-code]").value = "";
+          modal.querySelector("[data-mfg-stage-sequence]").value = "1";
+          modal.querySelector("[data-mfg-stage-minutes]").value = "45";
+          modal.querySelector("[data-mfg-stage-equipment]").value = "";
+
+          alert("Stage standard saved.");
+          await loadMfgStages();
+        } catch (error) {
+          console.error("[manufacturing stages] Save standard failed:", error);
+          alert(error.message || "Could not save the stage standard.");
+        }
+      });
+
+    mfgStageList.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-mfg-stage-action]");
+      if (!button) return;
+
+      const card = button.closest("[data-mfg-stage-card]");
+      const action = button.dataset.mfgStageAction;
+      const stageId = button.dataset.stageId;
+
+      const value = (selector) =>
+        card?.querySelector(selector)?.value?.trim() || "";
+
+      const downtime = Number(value("[data-stage-downtime]") || 0);
+
+      if (action === "complete" &&
+          !confirm("Mark this production stage as complete?")) {
+        return;
+      }
+
+      button.disabled = true;
+
+      try {
+        await stageRequest(
+          ENDPOINTS.manufacturing.orderStageTimer(cid, orderId, stageId),
+          {
+            method: "POST",
+            body: JSON.stringify({
+              action,
+              operator_name: value("[data-stage-operator]"),
+              equipment_name: value("[data-stage-equipment]"),
+              notes: value("[data-stage-notes]"),
+              downtime_minutes: downtime,
+              downtime_reason: value("[data-stage-downtime-reason]")
+            })
+          }
+        );
+
+        await loadMfgStages();
+      } catch (error) {
+        console.error("[manufacturing stages] Timer action failed:", error);
+        alert(error.message || "Could not update the stage timer.");
+        button.disabled = false;
+      }
+    });
+
+    loadMfgStages();
+  }
 }
 // =====================================================
 // Post Material Usage
@@ -135985,6 +136393,7 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
     rows: [],
     selectedOrder: null,
     loading: false,
+    view: "overview",
   };
 
   function getCompanyId() {
@@ -136424,9 +136833,102 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
           grid-template-columns: 1fr;
         }
       }
+
+      #screen-production-performance [hidden] {
+        display: none !important;
+      }
+
+      #screen-production-performance .pp-kpi-action {
+        display: block;
+        width: 100%;
+        text-align: left;
+        font: inherit;
+        color: inherit;
+        background: inherit;
+        cursor: pointer;
+        transition: background .15s ease, border-color .15s ease;
+      }
+
+      #screen-production-performance .pp-kpi-action:hover,
+      #screen-production-performance .pp-kpi-action:focus-visible {
+        background: rgba(127,127,127,.08);
+        border-color: rgba(127,127,127,.5);
+        outline-offset: 2px;
+      }
+
+      #screen-production-performance .pp-analytics-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      #screen-production-performance .pp-analytics-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      #screen-production-performance .pp-analytics-card {
+        border: 1px solid rgba(127,127,127,.18);
+        border-radius: 10px;
+        padding: 13px;
+        min-width: 0;
+      }
+
+      #screen-production-performance .pp-analytics-label {
+        font-size: 11px;
+        opacity: .68;
+        margin-bottom: 7px;
+      }
+
+      #screen-production-performance .pp-analytics-value {
+        font-size: 19px;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+
+      #screen-production-performance .pp-analytics-note {
+        margin-top: 5px;
+        font-size: 11px;
+        opacity: .58;
+      }
+
+      #screen-production-performance .pp-analytics-grid .pp-panel {
+        min-width: 0;
+      }
+
+      @media (max-width: 900px) {
+        #screen-production-performance .pp-analytics-grid {
+          grid-template-columns: 1fr;
+        }
+
+        #screen-production-performance .pp-analytics-summary {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
     `;
 
     document.head.appendChild(style);
+  }
+
+  function setView(view) {
+    state.view = view === "orders" ? "orders" : "overview";
+
+    const overview = document.getElementById("pp-overview-view");
+    const orders = document.getElementById("pp-orders-view");
+
+    if (overview) {
+      overview.hidden = state.view !== "overview";
+    }
+
+    if (orders) {
+      orders.hidden = state.view !== "orders";
+    }
+
+    if (state.view === "orders") {
+      document.getElementById("pp-orders-back")?.focus();
+    }
   }
 
   function renderShell() {
@@ -136482,25 +136984,47 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
         </button>
       </div>
 
-      <div class="pp-kpis" id="pp-kpis">
-        ${renderKpiPlaceholders()}
-      </div>
-
-      <div id="pp-unavailable"></div>
-
-      <div class="pp-panel">
-        <div class="pp-panel-header">
-          <div class="pp-panel-title">Production orders</div>
-          <div id="pp-count" style="font-size:11px;opacity:.6;"></div>
+      <div id="pp-overview-view">
+        <div class="pp-kpis" id="pp-kpis">
+          ${renderKpiPlaceholders()}
         </div>
 
-        <div class="pp-table-wrap" id="pp-table">
-          <div class="pp-loading">Loading production performance...</div>
+        <div id="pp-unavailable"></div>
+
+        <div id="pp-performance-analytics">
+          <div class="pp-loading">
+            Loading stage and machine performance...
+          </div>
+        </div>
+      </div>
+
+      <div id="pp-orders-view" hidden>
+        <div class="pp-panel">
+          <div class="pp-panel-header">
+            <div>
+              <div class="pp-panel-title">Production orders</div>
+              <div id="pp-count" style="font-size:11px;opacity:.6;margin-top:4px;"></div>
+            </div>
+
+            <button
+              type="button"
+              class="pp-btn"
+              id="pp-orders-back"
+              data-pp-action="overview"
+            >
+              ← Back to Performance
+            </button>
+          </div>
+
+          <div class="pp-table-wrap" id="pp-table">
+            <div class="pp-loading">Loading production orders...</div>
+          </div>
         </div>
       </div>
 
       <div id="pp-detail-container"></div>
     `;
+    setView(state.view);
   }
 
   function renderKpiPlaceholders() {
@@ -136604,11 +137128,16 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
     );
 
     el.innerHTML = `
-      <div class="pp-kpi">
+      <button
+        type="button"
+        class="pp-kpi pp-kpi-action"
+        data-pp-action="orders"
+        aria-label="View production orders"
+      >
         <div class="pp-kpi-label">Production orders</div>
         <div class="pp-kpi-value">${num(productionOrders, 0)}</div>
-        <div class="pp-kpi-note">Orders in selected period</div>
-      </div>
+        <div class="pp-kpi-note">Click to view the orders register →</div>
+      </button>
 
       <div class="pp-kpi">
         <div class="pp-kpi-label">Planned material cost</div>
@@ -136659,6 +137188,255 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
         <div class="pp-kpi-value">${num(finishedGoodsRemaining)}</div>
         <div class="pp-kpi-note">
           Produced less dispatched
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPerformanceAnalytics(rows) {
+    const el = document.getElementById("pp-performance-analytics");
+    if (!el) return;
+
+    const allRows = Array.isArray(rows) ? rows : [];
+
+    const value = (row, key) => {
+      const n = Number(row?.[key]);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const hasStageTiming = (row) =>
+      value(row, "standard_stage_minutes") > 0 ||
+      value(row, "actual_active_minutes") > 0 ||
+      value(row, "downtime_minutes") > 0 ||
+      value(row, "waiting_minutes") > 0;
+
+    const timedRows = allRows.filter(hasStageTiming);
+
+    const machineRows = timedRows.filter(
+      (row) =>
+        value(row, "machine_count") > 0 ||
+        value(row, "machine_standard_minutes") > 0 ||
+        value(row, "machine_active_minutes") > 0
+    );
+
+    const total = (list, key) =>
+      list.reduce((sum, row) => sum + value(row, key), 0);
+
+    const standard = total(timedRows, "standard_stage_minutes");
+    const actual = total(timedRows, "actual_active_minutes");
+    const downtime = total(timedRows, "downtime_minutes");
+    const waiting = total(timedRows, "waiting_minutes");
+
+    const timeVariance = timedRows.reduce(
+      (sum, row) =>
+        sum +
+        (row.time_variance_minutes != null
+          ? value(row, "time_variance_minutes")
+          : value(row, "actual_active_minutes") -
+            value(row, "standard_stage_minutes")),
+      0
+    );
+
+    const timeEfficiency =
+      standard > 0 && actual > 0
+        ? (standard / actual) * 100
+        : null;
+
+    const machineStandard = total(
+      machineRows,
+      "machine_standard_minutes"
+    );
+
+    const machineActual = total(
+      machineRows,
+      "machine_active_minutes"
+    );
+
+    const machineVariance = machineRows.reduce(
+      (sum, row) =>
+        sum +
+        (row.machine_time_variance_minutes != null
+          ? value(row, "machine_time_variance_minutes")
+          : value(row, "machine_active_minutes") -
+            value(row, "machine_standard_minutes")),
+      0
+    );
+
+    const machineEfficiency =
+      machineStandard > 0 && machineActual > 0
+        ? (machineStandard / machineActual) * 100
+        : null;
+
+    const machineCount = machineRows.reduce(
+      (sum, row) => sum + value(row, "machine_count"),
+      0
+    );
+
+    const efficiencyLabel = (v) =>
+      v == null ? "—" : percent(v);
+
+    const timingTable = timedRows.length
+      ? `
+        <div class="pp-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Production order</th>
+                <th>Stages completed</th>
+                <th>Standard min</th>
+                <th>Actual active min</th>
+                <th>Time variance min</th>
+                <th>Time efficiency</th>
+                <th>Downtime min</th>
+                <th>Waiting min</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${timedRows.map((row) => {
+                const variance =
+                  row.time_variance_minutes != null
+                    ? value(row, "time_variance_minutes")
+                    : value(row, "actual_active_minutes") -
+                      value(row, "standard_stage_minutes");
+
+                return `
+                  <tr>
+                    <td>
+                      <strong>${esc(row.mo_no || row.order_no || "—")}</strong>
+                    </td>
+                    <td>
+                      ${num(row.stages_completed, 0)} /
+                      ${num(row.stages_total, 0)}
+                    </td>
+                    <td>${num(row.standard_stage_minutes, 1)}</td>
+                    <td>${num(row.actual_active_minutes, 1)}</td>
+                    <td class="${varianceClass(variance)}">
+                      ${num(variance, 1)}
+                    </td>
+                    <td>${efficiencyLabel(row.time_efficiency_pct)}</td>
+                    <td>${num(row.downtime_minutes, 1)}</td>
+                    <td>${num(row.waiting_minutes, 1)}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : `
+        <div class="pp-empty">
+          No stage timing data yet. Start and complete production stages
+          to populate actual time, downtime and waiting-time metrics.
+        </div>
+      `;
+
+    const machineTable = machineRows.length
+      ? `
+        <div class="pp-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Production order</th>
+                <th>Machines recorded</th>
+                <th>Standard min</th>
+                <th>Actual machine min</th>
+                <th>Time variance min</th>
+                <th>Time efficiency</th>
+                <th>Machine utilisation</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${machineRows.map((row) => {
+                const variance =
+                  row.machine_time_variance_minutes != null
+                    ? value(row, "machine_time_variance_minutes")
+                    : value(row, "machine_active_minutes") -
+                      value(row, "machine_standard_minutes");
+
+                return `
+                  <tr>
+                    <td>
+                      <strong>${esc(row.mo_no || row.order_no || "—")}</strong>
+                    </td>
+                    <td>${num(row.machine_count, 0)}</td>
+                    <td>${num(row.machine_standard_minutes, 1)}</td>
+                    <td>${num(row.machine_active_minutes, 1)}</td>
+                    <td class="${varianceClass(variance)}">
+                      ${num(variance, 1)}
+                    </td>
+                    <td>${efficiencyLabel(row.machine_time_efficiency_pct)}</td>
+                    <td>
+                      ${row.machine_utilisation_pct == null
+                        ? "Not tracked"
+                        : percent(row.machine_utilisation_pct)}
+                    </td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : `
+        <div class="pp-empty">
+          No machine timing data yet. Record equipment against production
+          stages to populate machine performance.
+        </div>
+      `;
+
+    el.innerHTML = `
+      <div class="pp-analytics-summary">
+        <div class="pp-analytics-card">
+          <div class="pp-analytics-label">Standard stage time</div>
+          <div class="pp-analytics-value">${num(standard, 1)} min</div>
+          <div class="pp-analytics-note">Across orders with timing data</div>
+        </div>
+
+        <div class="pp-analytics-card">
+          <div class="pp-analytics-label">Actual active time</div>
+          <div class="pp-analytics-value">${num(actual, 1)} min</div>
+          <div class="pp-analytics-note">Recorded stage activity</div>
+        </div>
+
+        <div class="pp-analytics-card">
+          <div class="pp-analytics-label">Time efficiency</div>
+          <div class="pp-analytics-value">${efficiencyLabel(timeEfficiency)}</div>
+          <div class="pp-analytics-note">Standard time ÷ actual time</div>
+        </div>
+
+        <div class="pp-analytics-card">
+          <div class="pp-analytics-label">Recorded downtime</div>
+          <div class="pp-analytics-value">${num(downtime, 1)} min</div>
+          <div class="pp-analytics-note">Plus ${num(waiting, 1)} min waiting time</div>
+        </div>
+      </div>
+
+      <div class="pp-analytics-grid">
+        <div class="pp-panel">
+          <div class="pp-panel-header">
+            <div class="pp-panel-title">Stage &amp; time performance</div>
+          </div>
+          ${timingTable}
+        </div>
+
+        <div class="pp-panel">
+          <div class="pp-panel-header">
+            <div class="pp-panel-title">Machine performance</div>
+          </div>
+
+          <div class="pp-analytics-summary" style="padding:12px;margin:0;">
+            <div class="pp-analytics-card">
+              <div class="pp-analytics-label">Machines recorded</div>
+              <div class="pp-analytics-value">${num(machineCount, 0)}</div>
+            </div>
+
+            <div class="pp-analytics-card">
+              <div class="pp-analytics-label">Machine time efficiency</div>
+              <div class="pp-analytics-value">${efficiencyLabel(machineEfficiency)}</div>
+            </div>
+          </div>
+
+          ${machineTable}
         </div>
       </div>
     `;
@@ -136863,8 +137641,11 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
       state.rows,
       payload.summary || {}
     );
+
+    renderPerformanceAnalytics(state.rows);
     renderTable(state.rows);
     renderUnavailableNotice();
+    setView(state.view);
     } catch (error) {
       console.error(
         "[ProductionPerformance] load failed:",
@@ -137468,6 +138249,16 @@ window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
       if (!action) return;
 
       const value = action.dataset.ppAction;
+
+      if (value === "orders") {
+        setView("orders");
+        return;
+      }
+
+      if (value === "overview") {
+        setView("overview");
+        return;
+      }
 
       if (value === "refresh" || value === "apply") {
         load();

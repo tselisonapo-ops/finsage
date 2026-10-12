@@ -54247,6 +54247,111 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_manufacturing_orders_company_bom_idx
         ON {schema}.manufacturing_orders(company_id, bom_id);
 
+
+        -- ================================================================
+        -- MANUFACTURING PRODUCTION TIME TRACKING
+        -- Independent of inventory consumption and accounting postings
+        -- ================================================================
+
+        -- Configurable standard time per company, recipe and stage.
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_stage_standards (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            bom_id INT NULL
+                REFERENCES {schema}.manufacturing_boms(id)
+                ON DELETE CASCADE,
+
+            stage_code TEXT NOT NULL,
+            stage_name TEXT NOT NULL,
+            sequence_no INT NOT NULL DEFAULT 10,
+
+            standard_minutes NUMERIC(12,2) NOT NULL DEFAULT 45,
+            equipment_name TEXT NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK (standard_minutes > 0),
+            CHECK (sequence_no >= 0)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_mfg_stage_standards_lookup_idx
+        ON {schema}.manufacturing_stage_standards
+            (company_id, bom_id, is_active, sequence_no);
+
+
+        -- Actual stage records attached to an existing production order.
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_stages (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            manufacturing_order_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_orders(id)
+                ON DELETE CASCADE,
+
+            standard_id INT NULL
+                REFERENCES {schema}.manufacturing_stage_standards(id)
+                ON DELETE SET NULL,
+
+            stage_code TEXT NOT NULL,
+            stage_name TEXT NOT NULL,
+            sequence_no INT NOT NULL DEFAULT 10,
+
+            -- Snapshot of the standard when the stage is created.
+            standard_minutes NUMERIC(12,2) NOT NULL DEFAULT 45,
+
+            equipment_name TEXT NULL,
+            operator_name TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'pending',
+
+            started_at TIMESTAMPTZ NULL,
+            active_since TIMESTAMPTZ NULL,
+            paused_at TIMESTAMPTZ NULL,
+            completed_at TIMESTAMPTZ NULL,
+
+            -- Accumulated active running time, in seconds.
+            elapsed_seconds BIGINT NOT NULL DEFAULT 0,
+
+            -- Downtime is recorded separately from active running time.
+            downtime_minutes NUMERIC(12,2) NOT NULL DEFAULT 0,
+            downtime_reason TEXT NULL,
+
+            notes TEXT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK (
+                status IN (
+                    'pending',
+                    'running',
+                    'paused',
+                    'completed',
+                    'cancelled'
+                )
+            ),
+            CHECK (standard_minutes > 0),
+            CHECK (elapsed_seconds >= 0),
+            CHECK (downtime_minutes >= 0),
+            CHECK (sequence_no >= 0)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_mfg_order_stages_order_idx
+        ON {schema}.manufacturing_order_stages
+            (company_id, manufacturing_order_id, sequence_no);
+
+        CREATE INDEX IF NOT EXISTS {schema}_mfg_order_stages_status_idx
+        ON {schema}.manufacturing_order_stages
+            (company_id, status, started_at);
+
         -- 4) ACTUAL MATERIAL USAGE
         CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_materials (
             id SERIAL PRIMARY KEY,
@@ -92592,6 +92697,8 @@ class DatabaseService:
         tx_date=None,
         planned_start_date=None,
         planned_finish_date=None,
+        planned_start_time=None,
+        planned_finish_time=None,
         production_tracking_method="batch",
         unit=None,
         location=None,
@@ -92644,6 +92751,26 @@ class DatabaseService:
                 "Planned finish date cannot be before planned start date"
             )
 
+        if planned_start_time and not planned_finish_time:
+            raise ValueError(
+                "Expected finish time is required when a start time is supplied"
+            )
+
+        if planned_finish_time and not planned_start_time:
+            raise ValueError(
+                "Expected start time is required when a finish time is supplied"
+            )
+
+        if (
+            planned_start_date == planned_finish_date
+            and planned_start_time
+            and planned_finish_time
+            and str(planned_finish_time) <= str(planned_start_time)
+        ):
+            raise ValueError(
+                "Expected finish time must be later than start time"
+            )
+        
         def _create(c):
             mo_no = self.generate_manufacturing_order_number(
                 company_id=company_id,
@@ -92713,6 +92840,11 @@ class DatabaseService:
                     tx_date,
                     planned_start_date,
                     planned_finish_date,
+                    planned_start_date,
+                    planned_finish_date,
+                    planned_start_time,
+                    planned_finish_time,
+                    production_tracking_method,
                     production_tracking_method,
                     planned_qty,
                     actual_qty,
@@ -92725,9 +92857,8 @@ class DatabaseService:
                     updated_by_user_id
                 )
                 VALUES (
-                    %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s,
-                    'draft', %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 RETURNING id
                 """,
@@ -92738,6 +92869,8 @@ class DatabaseService:
                     tx_date or planned_start_date,
                     planned_start_date,
                     planned_finish_date,
+                    planned_start_time or None,
+                    planned_finish_time or None,
                     production_tracking_method,
                     planned_qty,
                     Decimal("0"),
@@ -92907,7 +93040,612 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur2):
             return _create(cur2)
-        
+
+
+    def list_manufacturing_stage_standards(
+        self,
+        company_id: int,
+        *,
+        bom_id=None,
+        active_only: bool = True,
+    ):
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        where = ["company_id = %s"]
+        params = [company_id]
+
+        if bom_id is not None:
+            where.append("(bom_id = %s OR bom_id IS NULL)")
+            params.append(int(bom_id))
+
+        if active_only:
+            where.append("is_active = TRUE")
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                id, company_id, bom_id, stage_code, stage_name,
+                sequence_no, standard_minutes, equipment_name,
+                is_active, created_at, updated_at
+            FROM {schema}.manufacturing_stage_standards
+            WHERE {" AND ".join(where)}
+            ORDER BY sequence_no, stage_name, id
+            """,
+            tuple(params),
+        ) or []
+
+    def create_manufacturing_stage_standard(
+        self,
+        company_id: int,
+        *,
+        stage_code,
+        stage_name,
+        standard_minutes=45,
+        bom_id=None,
+        sequence_no=10,
+        equipment_name=None,
+        created_by_user_id=None,
+    ):
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        stage_code = str(stage_code or "").strip().lower().replace(" ", "_")
+        stage_name = str(stage_name or "").strip()
+
+        if not stage_code or not stage_name:
+            raise ValueError("Stage code and stage name are required.")
+
+        try:
+            standard_minutes = float(standard_minutes)
+            sequence_no = int(sequence_no)
+        except (TypeError, ValueError):
+            raise ValueError("Standard minutes and sequence must be numeric.")
+
+        if standard_minutes <= 0 or sequence_no < 0:
+            raise ValueError("Standard minutes must be positive and sequence cannot be negative.")
+
+        bom_id = int(bom_id) if bom_id not in (None, "") else None
+
+        with self._conn_cursor() as cur:
+            if bom_id is not None:
+                cur.execute(
+                    f"""
+                    SELECT id
+                    FROM {schema}.manufacturing_boms
+                    WHERE company_id = %s AND id = %s
+                    """,
+                    (company_id, bom_id),
+                )
+                if not cur.fetchone():
+                    raise ValueError("BOM not found for this company.")
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.manufacturing_stage_standards (
+                    company_id, bom_id, stage_code, stage_name,
+                    sequence_no, standard_minutes, equipment_name,
+                    created_by_user_id, updated_by_user_id
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    company_id, bom_id, stage_code, stage_name,
+                    sequence_no, standard_minutes, equipment_name,
+                    created_by_user_id, created_by_user_id,
+                ),
+            )
+            row = cur.fetchone()
+
+        return int(row["id"])
+
+    def list_manufacturing_order_stages(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+    ):
+        company_id = int(company_id)
+        manufacturing_order_id = int(manufacturing_order_id)
+        schema = self.company_schema(company_id)
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                s.id,
+                s.company_id,
+                s.manufacturing_order_id,
+                s.standard_id,
+                s.stage_code,
+                s.stage_name,
+                s.sequence_no,
+                s.standard_minutes,
+                s.equipment_name,
+                s.operator_name,
+                s.status,
+                s.started_at,
+                s.active_since,
+                s.paused_at,
+                s.completed_at,
+                s.elapsed_seconds,
+                CASE
+                    WHEN s.status = 'running' AND s.active_since IS NOT NULL
+                    THEN s.elapsed_seconds
+                         + EXTRACT(EPOCH FROM (NOW() - s.active_since))::BIGINT
+                    ELSE s.elapsed_seconds
+                END AS current_elapsed_seconds,
+                s.downtime_minutes,
+                s.downtime_reason,
+                s.notes,
+                s.created_at,
+                s.updated_at
+            FROM {schema}.manufacturing_order_stages s
+            JOIN {schema}.manufacturing_orders mo
+              ON mo.id = s.manufacturing_order_id
+             AND mo.company_id = s.company_id
+            WHERE s.company_id = %s
+              AND s.manufacturing_order_id = %s
+            ORDER BY s.sequence_no, s.id
+            """,
+            (company_id, manufacturing_order_id),
+        ) or []
+
+        return rows
+
+    def create_manufacturing_order_stage(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        standard_id=None,
+        stage_code=None,
+        stage_name=None,
+        standard_minutes=None,
+        sequence_no=10,
+        equipment_name=None,
+        operator_name=None,
+        notes=None,
+        created_by_user_id=None,
+    ):
+        company_id = int(company_id)
+        manufacturing_order_id = int(manufacturing_order_id)
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, bom_id, status
+                FROM {schema}.manufacturing_orders
+                WHERE company_id = %s AND id = %s
+                FOR UPDATE
+                """,
+                (company_id, manufacturing_order_id),
+            )
+            order = cur.fetchone()
+
+            if not order:
+                raise ValueError("Manufacturing order not found.")
+
+            if str(order["status"]).lower() in ("completed", "cancelled"):
+                raise ValueError("Cannot add a stage to a completed or cancelled order.")
+
+            standard = None
+            if standard_id not in (None, ""):
+                cur.execute(
+                    f"""
+                    SELECT *
+                    FROM {schema}.manufacturing_stage_standards
+                    WHERE company_id = %s
+                      AND id = %s
+                      AND is_active = TRUE
+                    """,
+                    (company_id, int(standard_id)),
+                )
+                standard = cur.fetchone()
+                if not standard:
+                    raise ValueError("Active stage standard not found.")
+
+                if standard.get("bom_id") not in (None, order["bom_id"]):
+                    raise ValueError("Stage standard belongs to a different BOM.")
+
+            if standard:
+                stage_code = standard["stage_code"]
+                stage_name = standard["stage_name"]
+                standard_minutes = (
+                    standard_minutes
+                    if standard_minutes is not None
+                    else standard["standard_minutes"]
+                )
+                sequence_no = standard["sequence_no"]
+                equipment_name = equipment_name or standard.get("equipment_name")
+            else:
+                stage_code = str(stage_code or "").strip().lower().replace(" ", "_")
+                stage_name = str(stage_name or "").strip()
+                standard_minutes = (
+                    45 if standard_minutes in (None, "") else standard_minutes
+                )
+
+            if not stage_code or not stage_name:
+                raise ValueError("Stage code and stage name are required.")
+
+            standard_minutes = float(standard_minutes)
+            sequence_no = int(sequence_no)
+
+            if standard_minutes <= 0 or sequence_no < 0:
+                raise ValueError("Standard minutes must be positive and sequence cannot be negative.")
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.manufacturing_order_stages (
+                    company_id, manufacturing_order_id, standard_id,
+                    stage_code, stage_name, sequence_no, standard_minutes,
+                    equipment_name, operator_name, notes,
+                    created_by_user_id, updated_by_user_id
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    company_id, manufacturing_order_id,
+                    int(standard_id) if standard_id not in (None, "") else None,
+                    stage_code, stage_name, sequence_no, standard_minutes,
+                    equipment_name, operator_name, notes,
+                    created_by_user_id, created_by_user_id,
+                ),
+            )
+            row = cur.fetchone()
+
+        return int(row["id"])
+
+    def update_manufacturing_order_stage_timer(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        stage_id: int,
+        *,
+        action: str,
+        downtime_minutes=0,
+        downtime_reason=None,
+        equipment_name=None,
+        operator_name=None,
+        notes=None,
+        updated_by_user_id=None,
+    ):
+        company_id = int(company_id)
+        manufacturing_order_id = int(manufacturing_order_id)
+        stage_id = int(stage_id)
+        action = str(action or "").strip().lower()
+        schema = self.company_schema(company_id)
+
+        if action not in ("start", "pause", "resume", "complete", "cancel", "downtime"):
+            raise ValueError("Unsupported stage timer action.")
+
+        try:
+            downtime_minutes = float(downtime_minutes or 0)
+        except (TypeError, ValueError):
+            raise ValueError("Downtime minutes must be numeric.")
+
+        if downtime_minutes < 0:
+            raise ValueError("Downtime minutes cannot be negative.")
+
+        with self._conn_cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT
+                    s.*,
+                    mo.status AS order_status
+                FROM {schema}.manufacturing_order_stages s
+                JOIN {schema}.manufacturing_orders mo
+                  ON mo.id = s.manufacturing_order_id
+                 AND mo.company_id = s.company_id
+                WHERE s.company_id = %s
+                  AND s.manufacturing_order_id = %s
+                  AND s.id = %s
+                FOR UPDATE OF s
+                """,
+                (company_id, manufacturing_order_id, stage_id),
+            )
+            stage = cur.fetchone()
+
+            if not stage:
+                raise ValueError("Production stage not found.")
+
+            if str(stage["order_status"]).lower() in ("completed", "cancelled"):
+                raise ValueError("Cannot change a stage on a completed or cancelled order.")
+
+            status = str(stage["status"]).lower()
+            elapsed_seconds = int(stage.get("elapsed_seconds") or 0)
+            active_since = stage.get("active_since")
+
+            if action == "start":
+                if status != "pending":
+                    raise ValueError("Only a pending stage can be started.")
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.manufacturing_order_stages
+                    SET status = 'running',
+                        started_at = NOW(),
+                        active_since = NOW(),
+                        paused_at = NULL,
+                        updated_at = NOW(),
+                        updated_by_user_id = %s
+                    WHERE company_id = %s AND id = %s
+                    """,
+                    (updated_by_user_id, company_id, stage_id),
+                )
+
+            elif action == "resume":
+                if status != "paused":
+                    raise ValueError("Only a paused stage can be resumed.")
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.manufacturing_order_stages
+                    SET status = 'running',
+                        active_since = NOW(),
+                        paused_at = NULL,
+                        updated_at = NOW(),
+                        updated_by_user_id = %s
+                    WHERE company_id = %s AND id = %s
+                    """,
+                    (updated_by_user_id, company_id, stage_id),
+                )
+
+            elif action == "pause":
+                if status != "running" or not active_since:
+                    raise ValueError("Only a running stage can be paused.")
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.manufacturing_order_stages
+                    SET elapsed_seconds = elapsed_seconds
+                            + EXTRACT(EPOCH FROM (NOW() - active_since))::BIGINT,
+                        status = 'paused',
+                        active_since = NULL,
+                        paused_at = NOW(),
+                        updated_at = NOW(),
+                        updated_by_user_id = %s
+                    WHERE company_id = %s AND id = %s
+                    """,
+                    (updated_by_user_id, company_id, stage_id),
+                )
+
+            elif action == "complete":
+                if status not in ("running", "paused"):
+                    raise ValueError("Only a running or paused stage can be completed.")
+
+                if status == "running" and active_since:
+                    cur.execute(
+                        f"""
+                        UPDATE {schema}.manufacturing_order_stages
+                        SET elapsed_seconds = elapsed_seconds
+                                + EXTRACT(EPOCH FROM (NOW() - active_since))::BIGINT,
+                            status = 'completed',
+                            active_since = NULL,
+                            completed_at = NOW(),
+                            updated_at = NOW(),
+                            updated_by_user_id = %s
+                        WHERE company_id = %s AND id = %s
+                        """,
+                        (updated_by_user_id, company_id, stage_id),
+                    )
+                else:
+                    cur.execute(
+                        f"""
+                        UPDATE {schema}.manufacturing_order_stages
+                        SET status = 'completed',
+                            active_since = NULL,
+                            completed_at = NOW(),
+                            updated_at = NOW(),
+                            updated_by_user_id = %s
+                        WHERE company_id = %s AND id = %s
+                        """,
+                        (updated_by_user_id, company_id, stage_id),
+                    )
+
+            elif action == "cancel":
+                if status in ("completed", "cancelled"):
+                    raise ValueError("This stage is already closed.")
+                if status == "running" and active_since:
+                    cur.execute(
+                        f"""
+                        UPDATE {schema}.manufacturing_order_stages
+                        SET elapsed_seconds = elapsed_seconds
+                                + EXTRACT(EPOCH FROM (NOW() - active_since))::BIGINT,
+                            status = 'cancelled',
+                            active_since = NULL,
+                            updated_at = NOW(),
+                            updated_by_user_id = %s
+                        WHERE company_id = %s AND id = %s
+                        """,
+                        (updated_by_user_id, company_id, stage_id),
+                    )
+                else:
+                    cur.execute(
+                        f"""
+                        UPDATE {schema}.manufacturing_order_stages
+                        SET status = 'cancelled',
+                            active_since = NULL,
+                            updated_at = NOW(),
+                            updated_by_user_id = %s
+                        WHERE company_id = %s AND id = %s
+                        """,
+                        (updated_by_user_id, company_id, stage_id),
+                    )
+
+            elif action == "downtime":
+                if status not in ("running", "paused"):
+                    raise ValueError("Downtime can only be recorded for a running or paused stage.")
+                if downtime_minutes <= 0:
+                    raise ValueError("Enter downtime minutes greater than zero.")
+
+            # Shared metadata and downtime update.
+            cur.execute(
+                f"""
+                UPDATE {schema}.manufacturing_order_stages
+                SET downtime_minutes = downtime_minutes + %s,
+                    downtime_reason = COALESCE(%s, downtime_reason),
+                    equipment_name = COALESCE(%s, equipment_name),
+                    operator_name = COALESCE(%s, operator_name),
+                    notes = COALESCE(%s, notes),
+                    updated_at = NOW(),
+                    updated_by_user_id = %s
+                WHERE company_id = %s
+                  AND manufacturing_order_id = %s
+                  AND id = %s
+                RETURNING *
+                """,
+                (
+                    downtime_minutes,
+                    downtime_reason,
+                    equipment_name,
+                    operator_name,
+                    notes,
+                    updated_by_user_id,
+                    company_id,
+                    manufacturing_order_id,
+                    stage_id,
+                ),
+            )
+            result = cur.fetchone()
+
+        return result
+
+
+    def apply_manufacturing_stage_standards(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        created_by_user_id: int | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, bom_id, status
+                FROM {schema}.manufacturing_orders
+                WHERE id = %s
+                AND company_id = %s
+                FOR UPDATE
+                """,
+                (manufacturing_order_id, company_id),
+            )
+            order = cur.fetchone()
+
+            if not order:
+                raise ValueError("Manufacturing order not found.")
+
+            if order["status"] in ("completed", "cancelled"):
+                raise ValueError(
+                    "Stages cannot be initialised for a completed "
+                    "or cancelled manufacturing order."
+                )
+
+            cur.execute(
+                f"""
+                SELECT
+                    id,
+                    bom_id,
+                    stage_code,
+                    stage_name,
+                    sequence_no,
+                    standard_minutes,
+                    equipment_name
+                FROM {schema}.manufacturing_stage_standards
+                WHERE company_id = %s
+                AND is_active = TRUE
+                AND (bom_id IS NULL OR bom_id = %s)
+                ORDER BY
+                    stage_code,
+                    (bom_id IS NOT NULL) DESC,
+                    sequence_no,
+                    id
+                """,
+                (company_id, order["bom_id"]),
+            )
+            standards = cur.fetchall()
+
+            # Prefer a BOM-specific standard over a company-wide
+            # standard when both use the same stage_code.
+            selected = {}
+            for standard in standards:
+                selected.setdefault(standard["stage_code"], standard)
+
+            if not selected:
+                raise ValueError(
+                    "No active manufacturing stage standards are configured."
+                )
+
+            cur.execute(
+                f"""
+                SELECT stage_code
+                FROM {schema}.manufacturing_order_stages
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                """,
+                (company_id, manufacturing_order_id),
+            )
+            existing_codes = {
+                row["stage_code"] for row in cur.fetchall()
+            }
+
+            created = []
+            skipped = []
+
+            for standard in sorted(
+                selected.values(),
+                key=lambda row: (row["sequence_no"], row["stage_code"]),
+            ):
+                code = standard["stage_code"]
+
+                if code in existing_codes:
+                    skipped.append(code)
+                    continue
+
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_order_stages (
+                        company_id,
+                        manufacturing_order_id,
+                        standard_id,
+                        stage_code,
+                        stage_name,
+                        sequence_no,
+                        standard_minutes,
+                        equipment_name,
+                        status,
+                        created_by_user_id,
+                        updated_by_user_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                            'pending', %s, %s)
+                    RETURNING *
+                    """,
+                    (
+                        company_id,
+                        manufacturing_order_id,
+                        standard["id"],
+                        code,
+                        standard["stage_name"],
+                        standard["sequence_no"],
+                        standard["standard_minutes"],
+                        standard["equipment_name"],
+                        created_by_user_id,
+                        created_by_user_id,
+                    ),
+                )
+                created.append(cur.fetchone())
+                existing_codes.add(code)
+
+            return {
+                "ok": True,
+                "manufacturing_order_id": manufacturing_order_id,
+                "created_count": len(created),
+                "skipped_count": len(skipped),
+                "stages": created,
+                "skipped_stage_codes": skipped,
+            }
+
     def sync_draft_manufacturing_order_materials(
         self,
         company_id: int,
@@ -93307,6 +94045,8 @@ class DatabaseService:
                     mo.tx_date,
                     mo.planned_start_date,
                     mo.planned_finish_date,
+                    mo.planned_start_time,
+                    mo.planned_finish_time,
                     mo.production_tracking_method,
 
                     mo.planned_qty,
@@ -96461,9 +97201,20 @@ class DatabaseService:
                 params + [limit, offset],
             ) or []
 
+
+            time_metrics_by_order = self._get_manufacturing_order_time_metrics(
+                company_id,
+                [row.get("id") for row in rows],
+            )
+
             result = []
 
             for row in rows:
+                time_metrics = time_metrics_by_order.get(
+                    int(row["id"]),
+                    {},
+                )
+
                 planned_qty = float(row.get("planned_qty") or 0)
                 actual_qty = float(row.get("actual_qty") or 0)
 
@@ -96608,6 +97359,56 @@ class DatabaseService:
                         100.0,
                     ),
 
+
+                    # ========================================================
+                    # PRODUCTION TIME PERFORMANCE
+                    # ========================================================
+
+                    "stages_total": time_metrics.get("stage_count", 0),
+                    "stages_completed": time_metrics.get("stages_completed", 0),
+                    "stages_over_standard": time_metrics.get("stages_over_standard", 0),
+
+                    "standard_stage_minutes": time_metrics.get(
+                        "standard_stage_minutes", 0.0
+                    ),
+                    "actual_active_minutes": time_metrics.get(
+                        "actual_active_minutes", 0.0
+                    ),
+                    "time_variance_minutes": time_metrics.get(
+                        "time_variance_minutes", 0.0
+                    ),
+                    "time_efficiency_pct": time_metrics.get(
+                        "time_efficiency_pct"
+                    ),
+
+                    "downtime_minutes": time_metrics.get(
+                        "downtime_minutes", 0.0
+                    ),
+                    "waiting_minutes": time_metrics.get(
+                        "waiting_minutes", 0.0
+                    ),
+
+                    # ========================================================
+                    # MACHINE TIME PERFORMANCE
+                    # ========================================================
+
+                    "machine_count": time_metrics.get("machine_count", 0),
+                    "machine_standard_minutes": time_metrics.get(
+                        "machine_standard_minutes", 0.0
+                    ),
+                    "machine_active_minutes": time_metrics.get(
+                        "machine_active_minutes", 0.0
+                    ),
+                    "machine_time_variance_minutes": time_metrics.get(
+                        "machine_time_variance_minutes", 0.0
+                    ),
+                    "machine_time_efficiency_pct": time_metrics.get(
+                        "machine_time_efficiency_pct"
+                    ),
+
+                    # Not calculable until machine availability is recorded.
+                    "machine_utilisation_pct": None,
+
                     # ========================================================
                     # NEW PRODUCTION OUTPUT FIELDS
                     # ========================================================
@@ -96708,6 +97509,12 @@ class DatabaseService:
                 raise ValueError(
                     f"MANUFACTURING_ORDER_NOT_FOUND|id={manufacturing_order_id}"
                 )
+
+
+            time_metrics = self._get_manufacturing_order_time_metrics(
+                company_id,
+                [manufacturing_order_id],
+            ).get(manufacturing_order_id, {})
 
             planned_qty = float(order.get("planned_qty") or 0)
             actual_qty = float(order.get("actual_qty") or 0)
@@ -97208,6 +98015,7 @@ class DatabaseService:
             # ORDER DATA — EXISTING + NEW FIELDS
             # ================================================================
 
+
             order_data = {
                 "id": int(order["id"]),
                 "mo_no": order.get("mo_no"),
@@ -97215,12 +98023,8 @@ class DatabaseService:
                 "bom_id": order.get("bom_id"),
                 "bom_code": order.get("bom_code"),
                 "bom_name": order.get("bom_name"),
-                "bom_description": order.get(
-                    "bom_description"
-                ),
-                "bom_version_no": order.get(
-                    "version_no"
-                ),
+                "bom_description": order.get("bom_description"),
+                "bom_version_no": order.get("version_no"),
 
                 "finished_item_name": (
                     order.get("finished_item_name")
@@ -97233,9 +98037,7 @@ class DatabaseService:
                     else None
                 ),
 
-                "finished_item_sku": order.get(
-                    "finished_item_sku"
-                ),
+                "finished_item_sku": order.get("finished_item_sku"),
 
                 "planned_qty": planned_qty,
                 "actual_qty": actual_qty,
@@ -97263,6 +98065,41 @@ class DatabaseService:
                     max(production_completion, 0.0),
                     100.0,
                 ),
+
+                # Production timing and machine performance
+                "stages_total": time_metrics.get("stage_count", 0),
+                "stages_completed": time_metrics.get("stages_completed", 0),
+                "stages_over_standard": time_metrics.get("stages_over_standard", 0),
+
+                "standard_stage_minutes": time_metrics.get(
+                    "standard_stage_minutes", 0.0
+                ),
+                "actual_active_minutes": time_metrics.get(
+                    "actual_active_minutes", 0.0
+                ),
+                "time_variance_minutes": time_metrics.get(
+                    "time_variance_minutes", 0.0
+                ),
+                "time_efficiency_pct": time_metrics.get(
+                    "time_efficiency_pct"
+                ),
+                "downtime_minutes": time_metrics.get("downtime_minutes", 0.0),
+                "waiting_minutes": time_metrics.get("waiting_minutes", 0.0),
+
+                "machine_count": time_metrics.get("machine_count", 0),
+                "machine_standard_minutes": time_metrics.get(
+                    "machine_standard_minutes", 0.0
+                ),
+                "machine_active_minutes": time_metrics.get(
+                    "machine_active_minutes", 0.0
+                ),
+                "machine_time_variance_minutes": time_metrics.get(
+                    "machine_time_variance_minutes", 0.0
+                ),
+                "machine_time_efficiency_pct": time_metrics.get(
+                    "machine_time_efficiency_pct"
+                ),
+                "machine_utilisation_pct": None,
             }
 
             order_data.update(financial_summary)
@@ -97292,6 +98129,13 @@ class DatabaseService:
 
                 # Output detail
                 "output": output,
+
+                "stages": time_metrics.get("stages", []),
+                "time_performance": {
+                    key: value
+                    for key, value in time_metrics.items()
+                    if key != "stages"
+                },
 
                 # Finished goods layer
                 "finished_goods_layer": layer,
@@ -97500,6 +98344,249 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
+
+
+    def _get_manufacturing_order_time_metrics(
+        self,
+        company_id: int,
+        manufacturing_order_ids,
+    ) -> dict:
+        """
+        Read stage timing for multiple manufacturing orders.
+
+        Stage standards are treated as minutes per configured stage
+        for one production order/batch. Machine availability is not
+        inferred because no machine-availability schedule is stored here.
+        """
+        company_id = int(company_id)
+
+        order_ids = sorted({
+            int(order_id)
+            for order_id in (manufacturing_order_ids or [])
+            if order_id is not None
+        })
+
+        if not order_ids:
+            return {}
+
+        schema = self.company_schema(company_id)
+
+        placeholders = ", ".join(["%s"] * len(order_ids))
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                s.id,
+                s.company_id,
+                s.manufacturing_order_id,
+                s.standard_id,
+                s.stage_code,
+                s.stage_name,
+                s.sequence_no,
+                s.standard_minutes,
+                s.equipment_name,
+                s.operator_name,
+                s.status,
+                s.started_at,
+                s.active_since,
+                s.paused_at,
+                s.completed_at,
+                s.elapsed_seconds,
+                s.downtime_minutes,
+                s.downtime_reason,
+
+                (
+                    COALESCE(s.elapsed_seconds, 0)
+                    +
+                    CASE
+                        WHEN s.status = 'running'
+                            AND s.active_since IS NOT NULL
+                        THEN GREATEST(
+                            EXTRACT(
+                                EPOCH FROM (
+                                    NOW() - s.active_since
+                                )
+                            )::BIGINT,
+                            0
+                        )
+                        ELSE 0
+                    END
+                ) AS effective_elapsed_seconds
+
+            FROM {schema}.manufacturing_order_stages s
+            WHERE s.company_id = %s
+            AND s.manufacturing_order_id IN ({placeholders})
+            ORDER BY
+                s.manufacturing_order_id,
+                s.sequence_no,
+                s.id
+            """,
+            [company_id] + order_ids,
+        ) or []
+
+        result = {}
+
+        for row in rows:
+            order_id = int(row["manufacturing_order_id"])
+
+            metrics = result.setdefault(
+                order_id,
+                {
+                    "stages": [],
+                    "stage_count": 0,
+                    "stages_completed": 0,
+                    "stages_over_standard": 0,
+                    "standard_stage_minutes": 0.0,
+                    "actual_active_minutes": 0.0,
+                    "time_variance_minutes": 0.0,
+                    "downtime_minutes": 0.0,
+                    "waiting_minutes": 0.0,
+                    "machine_standard_minutes": 0.0,
+                    "machine_active_minutes": 0.0,
+                    "machine_count": 0,
+                    "_machines": set(),
+                    "_previous_completed_at": None,
+                },
+            )
+
+            standard_minutes = float(
+                row.get("standard_minutes") or 0
+            )
+
+            elapsed_seconds = int(
+                row.get("effective_elapsed_seconds") or 0
+            )
+
+            active_minutes = elapsed_seconds / 60.0
+
+            downtime_minutes = float(
+                row.get("downtime_minutes") or 0
+            )
+
+            status = str(row.get("status") or "pending").lower()
+
+            equipment_name = (
+                str(row.get("equipment_name") or "").strip()
+            )
+
+            stage = {
+                "id": int(row["id"]),
+                "standard_id": (
+                    int(row["standard_id"])
+                    if row.get("standard_id") is not None
+                    else None
+                ),
+                "stage_code": row.get("stage_code"),
+                "stage_name": row.get("stage_name"),
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "standard_minutes": standard_minutes,
+                "actual_active_minutes": active_minutes,
+                "time_variance_minutes": (
+                    active_minutes - standard_minutes
+                    if status == "completed"
+                    else None
+                ),
+                "time_efficiency_pct": (
+                    standard_minutes / active_minutes * 100
+                    if status == "completed" and active_minutes > 0
+                    else None
+                ),
+                "equipment_name": equipment_name or None,
+                "operator_name": row.get("operator_name"),
+                "status": status,
+                "started_at": row.get("started_at"),
+                "active_since": row.get("active_since"),
+                "paused_at": row.get("paused_at"),
+                "completed_at": row.get("completed_at"),
+                "elapsed_seconds": elapsed_seconds,
+                "downtime_minutes": downtime_minutes,
+                "downtime_reason": row.get("downtime_reason"),
+            }
+
+            # Waiting between stages is measured only when the previous
+            # stage has a completion timestamp and this stage has a start.
+            previous_completed_at = metrics["_previous_completed_at"]
+            current_started_at = row.get("started_at")
+
+            if previous_completed_at and current_started_at:
+                try:
+                    waiting_seconds = (
+                        current_started_at - previous_completed_at
+                    ).total_seconds()
+
+                    if waiting_seconds > 0:
+                        metrics["waiting_minutes"] += (
+                            waiting_seconds / 60.0
+                        )
+                except (TypeError, AttributeError):
+                    pass
+
+            metrics["stages"].append(stage)
+            metrics["stage_count"] += 1
+
+            if status in {"running", "paused", "completed"}:
+                metrics["standard_stage_minutes"] += standard_minutes
+                metrics["actual_active_minutes"] += active_minutes
+
+            metrics["downtime_minutes"] += downtime_minutes
+
+            if status == "completed":
+                metrics["stages_completed"] += 1
+
+                if active_minutes > standard_minutes:
+                    metrics["stages_over_standard"] += 1
+
+            # Only equipment-linked stages contribute to machine-time
+            # efficiency. This is not machine utilisation.
+            if equipment_name and status in {
+                "running",
+                "paused",
+                "completed",
+            }:
+                metrics["machine_standard_minutes"] += standard_minutes
+                metrics["machine_active_minutes"] += active_minutes
+                metrics["_machines"].add(equipment_name)
+
+            if row.get("completed_at") is not None:
+                metrics["_previous_completed_at"] = row["completed_at"]
+
+        for metrics in result.values():
+            standard_minutes = metrics["standard_stage_minutes"]
+            actual_minutes = metrics["actual_active_minutes"]
+
+            metrics["time_variance_minutes"] = (
+                actual_minutes - standard_minutes
+            )
+
+            metrics["time_efficiency_pct"] = (
+                standard_minutes / actual_minutes * 100
+                if actual_minutes > 0
+                else None
+            )
+
+            machine_standard = metrics["machine_standard_minutes"]
+            machine_actual = metrics["machine_active_minutes"]
+
+            metrics["machine_time_efficiency_pct"] = (
+                machine_standard / machine_actual * 100
+                if machine_actual > 0
+                else None
+            )
+
+            metrics["machine_time_variance_minutes"] = (
+                machine_actual - machine_standard
+            )
+
+            metrics["machine_count"] = len(metrics["_machines"])
+
+            # Availability is not recorded in these tables, so utilisation
+            # must remain unknown rather than being guessed.
+            metrics["machine_utilisation_pct"] = None
+
+            metrics.pop("_machines", None)
+            metrics.pop("_previous_completed_at", None)
+
+        return result
 
     def create_manufacturing_order_labour(
         self,

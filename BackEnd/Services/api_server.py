@@ -14506,13 +14506,22 @@ def manufacturing_orders(cid: int):
             # manufacturing order model.
             tx_date=payload.get("tx_date"),
 
-            planned_start_date=payload.get(
-                "planned_start_date"
-            ),
 
             planned_finish_date=payload.get(
                 "planned_finish_date"
             ),
+
+            planned_start_time=payload.get(
+                "planned_start_time"
+            ),
+
+            planned_finish_time=payload.get(
+                "planned_finish_time"
+            ),
+
+            production_tracking_method=payload.get(
+                "production_tracking_method"
+            ) or "batch",
 
             production_tracking_method=payload.get(
                 "production_tracking_method"
@@ -14549,6 +14558,166 @@ def manufacturing_orders(cid: int):
         )
         return jsonify({
             "error": str(e),
+        }), 500
+
+
+# ================================================================
+# MANUFACTURING — PRODUCTION STAGE STANDARDS
+# ================================================================
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/stage-standards",
+    methods=["GET", "POST"],
+)
+@require_auth
+def manufacturing_stage_standards(cid: int):
+    company_id = int(cid)
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        if request.method == "GET":
+            bom_id = request.args.get("bom_id")
+            standards = db_service.list_manufacturing_stage_standards(
+                company_id=company_id,
+                bom_id=int(bom_id) if bom_id not in (None, "") else None,
+                active_only=request.args.get("active_only", "true").lower()
+                    not in ("0", "false", "no"),
+            )
+            return jsonify({"ok": True, "standards": standards}), 200
+
+        payload = request.get_json(silent=True) or {}
+        standard_id = db_service.create_manufacturing_stage_standard(
+            company_id=company_id,
+            bom_id=payload.get("bom_id"),
+            stage_code=payload.get("stage_code"),
+            stage_name=payload.get("stage_name"),
+            sequence_no=payload.get("sequence_no", 10),
+            standard_minutes=payload.get("standard_minutes", 45),
+            equipment_name=payload.get("equipment_name"),
+            created_by_user_id=int(user.get("id") or 0) or None,
+        )
+        return jsonify({"ok": True, "id": standard_id}), 201
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception:
+        current_app.logger.exception("manufacturing_stage_standards failed")
+        return jsonify({"error": "Unable to process manufacturing stage standards."}), 500
+
+
+# ================================================================
+# MANUFACTURING — ORDER STAGES
+# ================================================================
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/stages",
+    methods=["GET", "POST"],
+)
+@require_auth
+def manufacturing_order_stages(cid: int, order_id: int):
+    company_id = int(cid)
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        if request.method == "GET":
+            stages = db_service.list_manufacturing_order_stages(
+                company_id=company_id,
+                manufacturing_order_id=int(order_id),
+            )
+            return jsonify({"ok": True, "stages": stages}), 200
+
+        payload = request.get_json(silent=True) or {}
+        stage_id = db_service.create_manufacturing_order_stage(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            standard_id=payload.get("standard_id"),
+            stage_code=payload.get("stage_code"),
+            stage_name=payload.get("stage_name"),
+            standard_minutes=payload.get("standard_minutes"),
+            sequence_no=payload.get("sequence_no", 10),
+            equipment_name=payload.get("equipment_name"),
+            operator_name=payload.get("operator_name"),
+            notes=payload.get("notes"),
+            created_by_user_id=int(user.get("id") or 0) or None,
+        )
+        return jsonify({"ok": True, "id": stage_id}), 201
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception:
+        current_app.logger.exception("manufacturing_order_stages failed")
+        return jsonify({"error": "Unable to process manufacturing order stages."}), 500
+
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/stages/<int:stage_id>/timer",
+    methods=["POST"],
+)
+@require_auth
+def update_manufacturing_order_stage_timer(cid: int, order_id: int, stage_id: int):
+    company_id = int(cid)
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        result = db_service.update_manufacturing_order_stage_timer(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            stage_id=int(stage_id),
+            action=payload.get("action"),
+            downtime_minutes=payload.get("downtime_minutes", 0),
+            downtime_reason=payload.get("downtime_reason"),
+            equipment_name=payload.get("equipment_name"),
+            operator_name=payload.get("operator_name"),
+            notes=payload.get("notes"),
+            updated_by_user_id=int(user.get("id") or 0) or None,
+        )
+        return jsonify({"ok": True, "stage": result}), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception:
+        current_app.logger.exception("update_manufacturing_order_stage_timer failed")
+        return jsonify({"error": "Unable to update the production stage timer."}), 500
+
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/"
+    "orders/<int:order_id>/stages/apply-standards",
+    methods=["POST"],
+)
+@require_auth
+def apply_manufacturing_stage_standards_api(cid, order_id):
+    denied = _company_auth_or_403(cid)
+    if denied:
+        return denied
+
+    data = request.get_json(silent=True) or {}
+
+    try:
+        result = db_service.apply_manufacturing_stage_standards(
+            cid,
+            order_id,
+            created_by_user_id=data.get("created_by_user_id"),
+        )
+        return jsonify(result), 200
+
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    except Exception:
+        app.logger.exception(
+            "Failed to initialise manufacturing order stages"
+        )
+        return jsonify({
+            "ok": False,
+            "error": "Could not initialise production stages.",
         }), 500
 
 @app.route(
