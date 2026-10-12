@@ -14523,10 +14523,6 @@ def manufacturing_orders(cid: int):
                 "production_tracking_method"
             ) or "batch",
 
-            production_tracking_method=payload.get(
-                "production_tracking_method"
-            ) or "batch",
-
             unit=payload.get("unit"),
             location=payload.get("location"),
             batch_no=payload.get("batch_no"),
