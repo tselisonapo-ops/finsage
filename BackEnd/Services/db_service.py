@@ -143039,32 +143039,56 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         """
         Roll task progress up into projects.progress_percent.
 
-        Weighting: budget_value where available, otherwise every non-summary
-        task counts equally. Summary (phase header) tasks are excluded so the
-        roll-up is not double counted.
+        Weighting: budget-weighted (EVM style) when EVERY eligible task
+        carries a budget_value, otherwise a plain average - partial
+        budget data is never mixed with unit weights. Summary (phase
+        header) tasks are excluded only when they have non-archived
+        children, so the roll-up is not double counted while childless
+        phases (e.g. obligation-linked top-level phases) still
+        contribute.
         """
         schema = self.company_schema(company_id)
 
+        # Weighting: budget-weighted (EVM style) when EVERY eligible task
+        # carries a budget_value, otherwise a plain average. Partial budget
+        # data is never mixed with unit weights - that mix is what made
+        # projects read ~0% when only 0%-progress tasks carried budgets.
+        #
+        # Summary (phase header) tasks are excluded ONLY when they have
+        # non-archived children (no double counting); childless phases
+        # still contribute, e.g. when a revenue obligation is linked to a
+        # top-level phase and drives its progress.
         row = self.fetch_one(
             f"""
             SELECT
-                COALESCE(SUM(
+                COALESCE(
                     CASE
-                        WHEN COALESCE(t.budget_value, 0) > 0
-                        THEN t.progress_percent * t.budget_value
-                        ELSE NULL
+                        WHEN COUNT(*) > 0
+                        AND COUNT(*) FILTER (
+                            WHERE COALESCE(t.budget_value, 0) > 0
+                        ) = COUNT(*)
+                        THEN SUM(
+                            COALESCE(t.progress_percent, 0) * t.budget_value
+                        ) / NULLIF(SUM(t.budget_value), 0)
+                        ELSE AVG(t.progress_percent)
                     END
-                ), 0) AS weighted_progress,
-                COALESCE(SUM(
-                    CASE WHEN COALESCE(t.budget_value, 0) > 0 THEN t.budget_value ELSE 0 END
-                ), 0) AS weighted_budget,
-                COALESCE(AVG(t.progress_percent), 0) AS simple_progress,
+                , 0) AS project_progress,
                 COUNT(*) AS task_count
             FROM {schema}.project_tasks t
             WHERE t.company_id = %s
             AND t.project_id = %s
             AND COALESCE(t.is_archived, FALSE) = FALSE
-            AND COALESCE(t.is_summary, FALSE) = FALSE
+            AND (
+                COALESCE(t.is_summary, FALSE) = FALSE
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM {schema}.project_tasks c
+                    WHERE c.company_id = t.company_id
+                    AND c.project_id = t.project_id
+                    AND c.parent_task_id = t.id
+                    AND COALESCE(c.is_archived, FALSE) = FALSE
+                )
+            )
             """,
             (int(company_id), int(project_id)),
             cur=cur,
@@ -143074,12 +143098,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         if task_count <= 0:
             project_progress = 0.0
-        elif float(row.get("weighted_budget") or 0) > 0:
-            project_progress = float(row.get("weighted_progress") or 0) / float(
-                row["weighted_budget"]
-            )
         else:
-            project_progress = float(row.get("simple_progress") or 0)
+            project_progress = float(row.get("project_progress") or 0)
 
         project_progress = max(0.0, min(project_progress, 100.0))
 
@@ -143097,6 +143117,145 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         return project_progress
+
+    def _sync_project_progress_on_read(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> float | None:
+        """
+        Self-healing read path: recompute the task roll-up and reconcile
+        projects.progress_percent when it has drifted (rows written
+        before the roll-up hooks existed, imports, direct edits, ...).
+
+        Returns the authoritative progress value (the stored one when in
+        sync, the recomputed-and-persisted one when drifted) or None
+        when the project does not exist.
+        """
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT
+                p.progress_percent AS stored_progress,
+                CASE
+                    WHEN COUNT(t.id) = 0 THEN 0
+                    ELSE ROUND(
+                        CASE
+                            WHEN COUNT(t.id) FILTER (
+                                WHERE COALESCE(t.budget_value, 0) > 0
+                            ) = COUNT(t.id)
+                            THEN SUM(
+                                COALESCE(t.progress_percent, 0) * t.budget_value
+                            ) / NULLIF(SUM(t.budget_value), 0)
+                            ELSE AVG(t.progress_percent)
+                        END, 4)
+                END AS computed_progress
+            FROM {schema}.projects p
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = p.company_id
+               AND t.project_id = p.id
+               AND COALESCE(t.is_archived, FALSE) = FALSE
+               AND (
+                   COALESCE(t.is_summary, FALSE) = FALSE
+                   OR NOT EXISTS (
+                       SELECT 1
+                       FROM {schema}.project_tasks c
+                       WHERE c.company_id = t.company_id
+                       AND c.project_id = t.project_id
+                       AND c.parent_task_id = t.id
+                       AND COALESCE(c.is_archived, FALSE) = FALSE
+                   )
+               )
+            WHERE p.company_id = %s
+            AND p.id = %s
+            GROUP BY p.id, p.progress_percent
+            """,
+            (int(company_id), int(project_id)),
+        ) or {}
+
+        if not row:
+            return None
+
+        stored = float(row.get("stored_progress") or 0)
+        computed = max(
+            0.0,
+            min(float(row.get("computed_progress") or 0), 100.0),
+        )
+
+        if abs(computed - stored) <= 0.05:
+            return stored
+
+        self.fetch_one(
+            f"""
+            UPDATE {schema}.projects
+            SET progress_percent = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            (round(computed, 4), int(company_id), int(project_id)),
+        )
+
+        return computed
+
+    def _backfill_project_progress_percent(self, company_id: int) -> int:
+        """
+        Set-based self-heal for every project in the company. No-op for
+        projects already in sync. Returns the number of projects healed.
+        """
+        schema = self.company_schema(company_id)
+
+        healed = self.fetch_all(
+            f"""
+            WITH computed AS (
+                SELECT
+                    p.id AS project_id,
+                    CASE
+                        WHEN COUNT(t.id) = 0 THEN 0
+                        ELSE ROUND(
+                            CASE
+                                WHEN COUNT(t.id) FILTER (
+                                    WHERE COALESCE(t.budget_value, 0) > 0
+                                ) = COUNT(t.id)
+                                THEN SUM(
+                                    COALESCE(t.progress_percent, 0) * t.budget_value
+                                ) / NULLIF(SUM(t.budget_value), 0)
+                                ELSE AVG(t.progress_percent)
+                            END, 4)
+                    END AS computed_progress
+                FROM {schema}.projects p
+                LEFT JOIN {schema}.project_tasks t
+                    ON t.company_id = p.company_id
+                   AND t.project_id = p.id
+                   AND COALESCE(t.is_archived, FALSE) = FALSE
+                   AND (
+                       COALESCE(t.is_summary, FALSE) = FALSE
+                       OR NOT EXISTS (
+                           SELECT 1
+                           FROM {schema}.project_tasks c
+                           WHERE c.company_id = t.company_id
+                           AND c.project_id = t.project_id
+                           AND c.parent_task_id = t.id
+                           AND COALESCE(c.is_archived, FALSE) = FALSE
+                       )
+                   )
+                WHERE p.company_id = %s
+                GROUP BY p.id
+            )
+            UPDATE {schema}.projects p
+            SET progress_percent = c.computed_progress
+            FROM computed c
+            WHERE p.id = c.project_id
+            AND p.company_id = %s
+            AND p.progress_percent IS DISTINCT FROM c.computed_progress
+            RETURNING p.id
+            """,
+            (int(company_id), int(company_id)),
+        ) or []
+
+        return len(healed)
 
     def sync_project_task_progress_to_obligation(
         self,
@@ -143563,6 +143722,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not project:
             return None
 
+        # Self-heal the stored roll-up (keeps stored_project_progress
+        # honest when the user lands directly on this tab).
+        healed_progress = self._sync_project_progress_on_read(
+            company_id,
+            int(project_id),
+        )
+
+        if healed_progress is not None:
+            project["progress_percent"] = healed_progress
+
         tasks = self.fetch_all(
             f"""
             SELECT *
@@ -143642,26 +143811,55 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
 
         # ── Stats (same weighting as the server-side roll-up).
+        # "Leaf" = not a summary task, OR a summary task without any
+        # (non-archived) children - childless phases still carry progress,
+        # e.g. when a revenue obligation is linked to a top-level phase.
+        child_task_counts: dict[int, int] = {}
+
+        for t in tasks:
+            pid = t.get("parent_task_id")
+
+            if pid:
+                child_task_counts[int(pid)] = (
+                    child_task_counts.get(int(pid), 0) + 1
+                )
+
         leaf_tasks = [
-            t for t in tasks if not (t.get("is_summary") or False)
+            t
+            for t in tasks
+            if not (t.get("is_summary") or False)
+            or child_task_counts.get(int(t["id"]), 0) == 0
         ]
 
-        weighted_progress = 0.0
-        weighted_budget = 0.0
+        # Same weighting rule as _recalc_project_progress_percent:
+        # budget-weighted ONLY when every eligible task carries a
+        # budget_value, otherwise a plain average - never a mix of ZAR
+        # weights and unit weights (the mix made partial budgets read
+        # ~0%).
+        if leaf_tasks:
+            budgeted = [
+                t for t in leaf_tasks
+                if float(t.get("budget_value") or 0) > 0
+            ]
 
-        for t in leaf_tasks:
-            bv = float(t.get("budget_value") or 0)
-            pp = float(t.get("progress_percent") or 0)
-            if bv > 0:
-                weighted_progress += pp * bv
-                weighted_budget += bv
+            if len(budgeted) == len(leaf_tasks):
+                total_budget = sum(
+                    float(t.get("budget_value") or 0) for t in leaf_tasks
+                )
 
-        if leaf_tasks and weighted_budget > 0:
-            computed_progress = weighted_progress / weighted_budget
-        elif leaf_tasks:
-            computed_progress = sum(
-                float(t.get("progress_percent") or 0) for t in leaf_tasks
-            ) / len(leaf_tasks)
+                if total_budget > 0:
+                    computed_progress = sum(
+                        float(t.get("progress_percent") or 0)
+                        * float(t.get("budget_value") or 0)
+                        for t in leaf_tasks
+                    ) / total_budget
+                else:
+                    computed_progress = 0.0
+            else:
+                computed_progress = sum(
+                    float(t.get("progress_percent") or 0)
+                    for t in leaf_tasks
+                ) / len(leaf_tasks)
         else:
             computed_progress = 0.0
 
@@ -148556,6 +148754,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         offset: int = 0,
     ) -> list[dict]:
         schema = self.company_schema(company_id)
+
+        # Self-heal stored roll-ups for this company's projects (no-op
+        # when already in sync) so the portfolio shows live progress.
+        self._backfill_project_progress_percent(company_id)
+
         where = ["p.company_id = %s"]
         params: list[Any] = [int(company_id)]
 
@@ -148736,6 +148939,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         if not project:
             return None
+
+        # Self-heal the stored roll-up so the header never shows a stale
+        # progress percentage (no-op when the stored value is in sync).
+        healed_progress = self._sync_project_progress_on_read(
+            company_id,
+            int(project_id),
+        )
+
+        if healed_progress is not None:
+            project["progress_percent"] = healed_progress
 
         tasks = self.fetch_all(
             f"""
@@ -149306,6 +149519,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 psycopg2.extras.Json(data.get("meta") or {}),
             ),
         ) or {}
+
+        # Keep the project header roll-up current when a task is created
+        # with initial progress (template seeds, re-created tasks, ...).
+        if row and progress > 0:
+            self._recalc_project_progress_percent(
+                int(company_id),
+                int(project_id),
+            )
 
         return int(row.get("id") or 0)
 
@@ -153098,7 +153319,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         # Reverse sync: task progress flows into any linked revenue
         # obligation (and the project roll-up) so the project and revenue
         # sides stay aligned.
-        if row and ("progress_percent" in data or "status" in data):
+        if row and (
+            "progress_percent" in data
+            or "status" in data
+            or "budget_value" in data
+            or "is_summary" in data
+        ):
             self.sync_project_task_progress_to_obligation(
                 company_id,
                 int(project_id),
@@ -153224,6 +153450,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             """,
             (company_id, project_id, task_id),
         )
+
+        if row:
+            # Archived tasks drop out of the roll-up - refresh header.
+            self._recalc_project_progress_percent(
+                int(company_id),
+                int(project_id),
+            )
 
         return bool(row)
 
