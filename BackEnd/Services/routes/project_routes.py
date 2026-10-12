@@ -2142,3 +2142,118 @@ def inventory_items_lite_route(cid: int):
     return jsonify({
         "items": rows,
     }), 200
+
+# ============================================================
+# PM WORKSPACE (project manager progress recording + sync)
+# ============================================================
+
+@projects_bp.route(
+    "/api/companies/<int:cid>/projects/<int:project_id>/pm-workspace",
+    methods=["GET"],
+)
+@require_auth
+def project_pm_workspace_route(cid: int, project_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        data = db_service.get_project_pm_workspace(company_id, int(project_id))
+
+        if not data:
+            return jsonify({"error": "project_not_found"}), 404
+
+        return jsonify(data), 200
+
+    except Exception:
+        current_app.logger.exception(
+            "[PM WORKSPACE] FAILED | company_id=%s | project_id=%s",
+            company_id,
+            project_id,
+        )
+        return jsonify({
+            "error": "failed_to_load_pm_workspace",
+        }), 500
+
+
+@projects_bp.route(
+    "/api/companies/<int:cid>/projects/<int:project_id>/tasks/<int:task_id>/progress",
+    methods=["POST"],
+)
+@require_auth
+def record_project_task_progress_route(cid: int, project_id: int, task_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    data = _payload()
+
+    try:
+        result = db_service.record_project_task_progress(
+            company_id,
+            int(project_id),
+            int(task_id),
+            data,
+            user_id=_current_user_id(user),
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception:
+        current_app.logger.exception(
+            "[PM TASK PROGRESS] FAILED | company_id=%s | project_id=%s | task_id=%s",
+            company_id,
+            project_id,
+            task_id,
+        )
+        return jsonify({
+            "error": "failed_to_record_task_progress",
+        }), 500
+
+
+@projects_bp.route(
+    "/api/companies/<int:cid>/projects/<int:project_id>/progress-log",
+    methods=["GET"],
+)
+@require_auth
+def project_progress_log_route(cid: int, project_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    task_id = request.args.get("task_id", type=int)
+    limit = int(request.args.get("limit") or 50)
+
+    try:
+        rows = db_service.list_project_task_progress_log(
+            company_id,
+            int(project_id),
+            task_id=task_id,
+            limit=limit,
+        )
+
+        return jsonify({
+            "items": rows,
+        }), 200
+
+    except Exception:
+        current_app.logger.exception(
+            "[PM PROGRESS LOG] FAILED | company_id=%s | project_id=%s",
+            company_id,
+            project_id,
+        )
+        return jsonify({
+            "error": "failed_to_load_progress_log",
+        }), 500

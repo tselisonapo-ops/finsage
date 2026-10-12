@@ -138634,6 +138634,29 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 )
             )
             after = dict(cur.fetchone())
+
+            # Sync obligation changes down to the linked project task (and
+            # the project roll-up) inside the same transaction. Triggers when
+            # the accountant edits progress directly or flips satisfaction.
+            before_progress = before.get("progress_percent")
+            after_progress = after.get("progress_percent")
+            satisfaction_changed = str(
+                before.get("satisfaction_status") or ""
+            ) != str(after.get("satisfaction_status") or "")
+
+            progress_changed = (
+                before_progress is not None
+                and after_progress is not None
+                and abs(float(before_progress) - float(after_progress)) > 1e-9
+            )
+
+            if progress_changed or satisfaction_changed:
+                self.sync_obligation_progress_to_project_task(
+                    company_id,
+                    int(obligation_id),
+                    cur=cur,
+                )
+
             conn.commit()
 
         return {"before": before, "after": after}
@@ -139152,6 +139175,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 )
             )
             after = dict(cur.fetchone())
+
+            # Point-in-time satisfaction flows into the linked task: 100% on
+            # satisfied, untouched on reversed (see sync function).
+            self.sync_obligation_progress_to_project_task(
+                company_id,
+                int(obligation_id),
+                cur=cur,
+            )
+
             conn.commit()
 
         return {"before": before, "after": after}
@@ -142713,7 +142745,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     ) -> list[dict]:
         schema = self.company_schema(company_id)
 
-        return self.fetch_all(
+        rows = self.fetch_all(
             f"""
             SELECT
                 ro.*,
@@ -142727,7 +142759,20 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 )::INT AS linked_project_task_id,
 
                 t.task_code AS project_task_code,
-                t.task_name AS project_task_name
+                t.task_name AS project_task_name,
+
+                COALESCE((
+                    SELECT SUM(e.revenue_delta_this_run)
+                    FROM {schema}.revenue_recognition_entries e
+                    JOIN {schema}.revenue_recognition_runs r
+                        ON r.id = e.run_id
+                    WHERE e.obligation_id = ro.id
+                    AND r.status IN ('draft', 'posted')
+                ), 0) AS recognized_to_date,
+
+                lp.period_end AS last_progress_period_end,
+                lp.progress_percent AS last_progress_percent,
+                lp.update_type AS last_progress_update_type
 
             FROM {schema}.revenue_obligations ro
 
@@ -142743,6 +142788,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     ''
             )::INT
 
+            LEFT JOIN LATERAL (
+                SELECT pu.period_end, pu.progress_percent, pu.update_type
+                FROM {schema}.revenue_progress_updates pu
+                WHERE pu.obligation_id = ro.id
+                ORDER BY pu.period_end DESC, pu.id DESC
+                LIMIT 1
+            ) lp ON TRUE
+
             WHERE ro.company_id = %s
             AND rc.project_id = %s
 
@@ -142754,7 +142807,28 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 int(company_id),
                 int(project_id),
             ),
-        )
+        ) or []
+
+        # Surface the PM shadow progress (site progress recorded from the PM
+        # workspace) without overriding the accounting driver.
+        enriched: list[dict] = []
+
+        for row in rows:
+            payload = row.get("payload_json") or {}
+
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload or "{}")
+                except Exception:
+                    payload = {}
+
+            row["pm_progress_percent"] = payload.get("pm_progress_percent")
+            row["pm_progress_note"] = payload.get("pm_progress_note")
+            row["pm_progress_updated_at"] = payload.get("pm_progress_updated_at")
+
+            enriched.append(row)
+
+        return enriched
 
     def get_project_revenue_summary(
         self,
@@ -142895,13 +142969,19 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if not task_id:
                 return None
 
-            progress = float(obligation.get("progress_percent") or 0)
+            timing = str(obligation.get("recognition_timing") or "").strip().lower()
+            satisfaction = str(obligation.get("satisfaction_status") or "").strip().lower()
 
-            if (
-                str(obligation.get("recognition_timing") or "").lower() == "point_in_time"
-                and str(obligation.get("satisfaction_status") or "").lower() == "satisfied"
-            ):
+            # Point-in-time obligations only push progress into the task once
+            # they are actually satisfied (100%). While unsatisfied/reversed we
+            # leave the task untouched so PM-recorded progress is never wiped
+            # by an accounting-side action.
+            if timing == "point_in_time":
+                if satisfaction != "satisfied":
+                    return None
                 progress = 100.0
+            else:
+                progress = float(obligation.get("progress_percent") or 0)
 
             progress = max(0.0, min(progress, 100.0))
 
@@ -142931,6 +143011,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
 
             row = _cur.fetchone()
+
+            # Keep the project header progress in sync with the task roll-up.
+            if row:
+                self._recalc_project_progress_percent(
+                    company_id,
+                    int(obligation["project_id"]),
+                    cur=_cur,
+                )
+
             return dict(row) if row else None
 
         if cur:
@@ -142940,7 +143029,686 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             row = _run(_cur)
             conn.commit()
             return row
-    
+
+    def _recalc_project_progress_percent(
+        self,
+        company_id: int,
+        project_id: int,
+        cur=None,
+    ) -> float:
+        """
+        Roll task progress up into projects.progress_percent.
+
+        Weighting: budget_value where available, otherwise every non-summary
+        task counts equally. Summary (phase header) tasks are excluded so the
+        roll-up is not double counted.
+        """
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(t.budget_value, 0) > 0
+                        THEN t.progress_percent * t.budget_value
+                        ELSE NULL
+                    END
+                ), 0) AS weighted_progress,
+                COALESCE(SUM(
+                    CASE WHEN COALESCE(t.budget_value, 0) > 0 THEN t.budget_value ELSE 0 END
+                ), 0) AS weighted_budget,
+                COALESCE(AVG(t.progress_percent), 0) AS simple_progress,
+                COUNT(*) AS task_count
+            FROM {schema}.project_tasks t
+            WHERE t.company_id = %s
+            AND t.project_id = %s
+            AND COALESCE(t.is_archived, FALSE) = FALSE
+            AND COALESCE(t.is_summary, FALSE) = FALSE
+            """,
+            (int(company_id), int(project_id)),
+            cur=cur,
+        ) or {}
+
+        task_count = int(row.get("task_count") or 0)
+
+        if task_count <= 0:
+            project_progress = 0.0
+        elif float(row.get("weighted_budget") or 0) > 0:
+            project_progress = float(row.get("weighted_progress") or 0) / float(
+                row["weighted_budget"]
+            )
+        else:
+            project_progress = float(row.get("simple_progress") or 0)
+
+        project_progress = max(0.0, min(project_progress, 100.0))
+
+        self.fetch_one(
+            f"""
+            UPDATE {schema}.projects
+            SET progress_percent = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            (round(project_progress, 4), int(company_id), int(project_id)),
+            cur=cur,
+        )
+
+        return project_progress
+
+    def sync_project_task_progress_to_obligation(
+        self,
+        company_id: int,
+        project_id: int,
+        task_id: int,
+        source: str = "pm_workspace",
+        user_id: int | None = None,
+        note: str | None = None,
+        cur=None,
+    ) -> list[dict]:
+        """
+        Reverse sync: a project task's progress flows into every revenue
+        obligation linked to it (payload_json->>'project_task_id').
+
+        - over_time obligations driven by progress_percent (manual / blank
+          method): obligation.progress_percent is updated to the task's
+          progress and an audit row is written to revenue_progress_updates so
+          the next revenue run recognises based on site progress.
+        - over_time obligations driven by an accounting input (cost_to_cost,
+          units, time_elapsed, milestone): the PM progress is stored as a
+          shadow field (payload_json.pm_progress_percent) for variance
+          visibility, without overriding the accounting driver.
+        - point_in_time obligations are never overridden here; they follow the
+          satisfaction flow (mark_revenue_obligation_satisfied).
+        """
+        schema = self.company_schema(company_id)
+
+        def _run(_cur):
+            task = self.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.project_tasks
+                WHERE company_id = %s
+                AND project_id = %s
+                AND id = %s
+                LIMIT 1
+                """,
+                (int(company_id), int(project_id), int(task_id)),
+                cur=_cur,
+            )
+
+            if not task:
+                return []
+
+            task_progress = max(
+                0.0,
+                min(float(task.get("progress_percent") or 0), 100.0),
+            )
+
+            obligations = self.fetch_all(
+                f"""
+                SELECT o.*
+                FROM {schema}.revenue_obligations o
+                JOIN {schema}.revenue_contracts c
+                    ON c.company_id = o.company_id
+                AND c.id = o.contract_id
+                WHERE o.company_id = %s
+                AND c.project_id = %s
+                AND COALESCE(NULLIF(o.payload_json->>'project_task_id', '')::INT, 0) = %s
+                """,
+                (int(company_id), int(project_id), int(task_id)),
+                cur=_cur,
+            ) or []
+
+            synced = []
+
+            for obl in obligations:
+                timing = str(obl.get("recognition_timing") or "").strip().lower()
+                if timing != "over_time":
+                    continue
+
+                method = str(obl.get("progress_method") or "manual").strip().lower()
+                payload = obl.get("payload_json") or {}
+                if isinstance(payload, str):
+                    try:
+                        payload = json.loads(payload or "{}")
+                    except Exception:
+                        payload = {}
+
+                result = {
+                    "obligation_id": int(obl["id"]),
+                    "obligation_name": obl.get("obligation_name"),
+                    "obligation_code": obl.get("obligation_code"),
+                    "progress_method": method,
+                    "task_progress": task_progress,
+                }
+
+                if method in {"manual", "", "none"}:
+                    # progress_percent IS the revenue driver here: sync it and
+                    # keep the same audit trail the accountant-side flow uses.
+                    _cur.execute(
+                        f"""
+                        UPDATE {schema}.revenue_obligations
+                        SET progress_percent = %s,
+                            updated_at = NOW()
+                        WHERE company_id = %s
+                        AND id = %s
+                        RETURNING *
+                        """,
+                        (task_progress, int(company_id), int(obl["id"])),
+                    )
+                    updated = _cur.fetchone()
+
+                    sync_note = (
+                        f"[{source}] task '{task.get('task_name') or task_id}' "
+                        f"progress {task_progress:.2f}%"
+                    )
+                    if note:
+                        sync_note += f" - {note}"
+
+                    _cur.execute(
+                        f"""
+                        INSERT INTO {schema}.revenue_progress_updates (
+                            company_id, contract_id, obligation_id, period_end, update_type,
+                            expected_total_cost, actual_cost_to_date, progress_percent,
+                            units_done, units_total, milestone_code, certified_by_user_id,
+                            notes, payload_json
+                        )
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                        ON CONFLICT (obligation_id, period_end, update_type)
+                        DO UPDATE SET
+                            progress_percent = EXCLUDED.progress_percent,
+                            certified_by_user_id = EXCLUDED.certified_by_user_id,
+                            notes = EXCLUDED.notes,
+                            payload_json = EXCLUDED.payload_json
+                        RETURNING id
+                        """,
+                        (
+                            int(company_id),
+                            int(obl["contract_id"]),
+                            int(obl["id"]),
+                            date.today(),
+                            "manual",
+                            float(obl.get("expected_total_cost") or 0) or None,
+                            (
+                                float(obl.get("actual_cost_to_date"))
+                                if obl.get("actual_cost_to_date") is not None
+                                else None
+                            ),
+                            task_progress,
+                            None,
+                            None,
+                            None,
+                            int(user_id) if user_id else None,
+                            sync_note,
+                            _json_dumps(
+                                {
+                                    "manual": {"progress_percent": task_progress},
+                                    "source": source,
+                                    "project_task_id": int(task_id),
+                                }
+                            ),
+                        ),
+                    )
+
+                    result["synced"] = True
+                    result["obligation_progress"] = task_progress
+                else:
+                    # Accounting-driven methods: store PM progress as a shadow
+                    # value for variance reporting, never override the driver.
+                    payload["pm_progress_percent"] = task_progress
+                    payload["pm_progress_note"] = note
+                    payload["pm_progress_updated_at"] = datetime.now(
+                        timezone.utc
+                    ).isoformat()
+                    payload["pm_progress_source"] = source
+
+                    _cur.execute(
+                        f"""
+                        UPDATE {schema}.revenue_obligations
+                        SET payload_json = %s::jsonb,
+                            updated_at = NOW()
+                        WHERE company_id = %s
+                        AND id = %s
+                        """,
+                        (_json_dumps(payload), int(company_id), int(obl["id"])),
+                    )
+
+                    result["synced"] = False
+                    result["shadow_only"] = True
+                    result["obligation_progress"] = float(
+                        obl.get("progress_percent") or 0
+                    )
+
+                synced.append(result)
+
+            # Project header progress follows the task roll-up as well.
+            self._recalc_project_progress_percent(
+                company_id,
+                int(project_id),
+                cur=_cur,
+            )
+
+            return synced
+
+        if cur:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, _cur):
+            rows = _run(_cur)
+            conn.commit()
+            return rows
+
+    def _ensure_project_task_progress_log(self, company_id: int, cur=None):
+        """Idempotent DDL for the PM progress log table."""
+        schema = self.company_schema(company_id)
+
+        ddl = f"""
+        CREATE TABLE IF NOT EXISTS {schema}.project_task_progress_log (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {int(company_id)},
+            project_id INT NOT NULL,
+            task_id INT NOT NULL,
+            progress_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            status TEXT,
+            note TEXT,
+            source TEXT NOT NULL DEFAULT 'pm_workspace',
+            update_date DATE,
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """
+
+        idx = f"""
+        CREATE INDEX IF NOT EXISTS {schema}_ptpl_project_idx
+        ON {schema}.project_task_progress_log
+        (company_id, project_id, created_at DESC);
+        """
+
+        if cur:
+            cur.execute(ddl)
+            cur.execute(idx)
+            return
+
+        with self._conn_cursor() as (conn, _cur):
+            _cur.execute(ddl)
+            _cur.execute(idx)
+            conn.commit()
+
+    def record_project_task_progress(
+        self,
+        company_id: int,
+        project_id: int,
+        task_id: int,
+        data: dict,
+        user_id: int | None = None,
+    ) -> dict:
+        """
+        PM Workspace: record progress against a project task.
+
+        Updates the task, writes an audit entry to
+        project_task_progress_log, reverse-syncs the progress into any linked
+        revenue obligation and refreshes the project roll-up. Everything runs
+        in one transaction.
+        """
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            task = self.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.project_tasks
+                WHERE company_id = %s
+                AND project_id = %s
+                AND id = %s
+                AND COALESCE(is_archived, FALSE) = FALSE
+                LIMIT 1
+                """,
+                (int(company_id), int(project_id), int(task_id)),
+                cur=cur,
+            )
+
+            if not task:
+                raise ValueError("Project task not found")
+
+            raw_progress = data.get(
+                "progress_percent",
+                data.get("progressPercent", task.get("progress_percent")),
+            )
+
+            if raw_progress in (None, ""):
+                raw_progress = float(task.get("progress_percent") or 0)
+
+            try:
+                progress = float(raw_progress)
+            except (TypeError, ValueError):
+                raise ValueError("progress_percent must be a number")
+
+            if progress < 0 or progress > 100:
+                raise ValueError("progress_percent must be between 0 and 100")
+
+            status = str(data.get("status") or "").strip().lower() or None
+
+            if status and status not in {"open", "in_progress", "blocked", "completed"}:
+                raise ValueError(
+                    "status must be one of open, in_progress, blocked, completed"
+                )
+
+            if not status:
+                if progress >= 100:
+                    status = "completed"
+                elif progress > 0:
+                    status = "in_progress"
+                else:
+                    status = str(task.get("status") or "open")
+
+            update_date = self._as_date(data.get("update_date")) or date.today()
+            note = str(data.get("note") or data.get("notes") or "").strip() or None
+
+            self._ensure_project_task_progress_log(company_id, cur=cur)
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.project_tasks
+                SET progress_percent = %s,
+                    status = %s,
+                    completed_at = CASE
+                        WHEN %s = 'completed' THEN COALESCE(completed_at, NOW())
+                        ELSE NULL
+                    END,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND project_id = %s
+                AND id = %s
+                RETURNING *
+                """,
+                (
+                    progress,
+                    status,
+                    status,
+                    int(company_id),
+                    int(project_id),
+                    int(task_id),
+                ),
+            )
+
+            updated_task = dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.project_task_progress_log (
+                    company_id, project_id, task_id, progress_percent, status,
+                    note, source, update_date, created_by
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING id
+                """,
+                (
+                    int(company_id),
+                    int(project_id),
+                    int(task_id),
+                    progress,
+                    status,
+                    note,
+                    str(data.get("source") or "pm_workspace").strip()
+                    or "pm_workspace",
+                    update_date,
+                    int(user_id) if user_id else None,
+                ),
+            )
+
+            log_id = cur.fetchone()["id"]
+
+            # Reverse sync into linked revenue obligations + project roll-up.
+            obligation_sync = self.sync_project_task_progress_to_obligation(
+                company_id,
+                int(project_id),
+                int(task_id),
+                source="pm_workspace",
+                user_id=user_id,
+                note=note,
+                cur=cur,
+            )
+
+            project = self.fetch_one(
+                f"""
+                SELECT progress_percent
+                FROM {schema}.projects
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (int(company_id), int(project_id)),
+                cur=cur,
+            )
+
+            conn.commit()
+
+        return {
+            "progress_log_id": log_id,
+            "task": updated_task,
+            "obligation_sync": obligation_sync,
+            "project_progress": float(project.get("progress_percent") or 0)
+            if project
+            else None,
+        }
+
+    def list_project_task_progress_log(
+        self,
+        company_id: int,
+        project_id: int,
+        task_id: int | None = None,
+        limit: int = 50,
+        cur=None,
+    ) -> list[dict]:
+        """Recent PM progress entries for a project (optionally per task)."""
+        schema = self.company_schema(company_id)
+
+        self._ensure_project_task_progress_log(company_id, cur=cur)
+
+        params: list = [int(company_id), int(project_id)]
+        task_filter = ""
+
+        if task_id:
+            task_filter = "AND l.task_id = %s"
+            params.append(int(task_id))
+
+        params.append(int(limit))
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                l.*,
+                t.task_name,
+                t.task_code,
+                t.wbs_code
+            FROM {schema}.project_task_progress_log l
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = l.company_id
+            AND t.project_id = l.project_id
+            AND t.id = l.task_id
+            WHERE l.company_id = %s
+            AND l.project_id = %s
+            {task_filter}
+            ORDER BY l.created_at DESC
+            LIMIT %s
+            """,
+            tuple(params),
+            cur=cur,
+        ) or []
+
+    def get_project_pm_workspace(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> dict | None:
+        """
+        Aggregated payload for the PM Workspace tab: task progress with the
+        linked revenue obligations, sync status, recent progress log and the
+        revenue summary.
+        """
+        schema = self.company_schema(company_id)
+
+        project = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.projects
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (int(company_id), int(project_id)),
+        )
+
+        if not project:
+            return None
+
+        tasks = self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.project_tasks
+            WHERE company_id = %s
+            AND project_id = %s
+            AND COALESCE(is_archived, FALSE) = FALSE
+            ORDER BY sequence_no ASC, id ASC
+            """,
+            (int(company_id), int(project_id)),
+        ) or []
+
+        if project.get("revenue_enabled") is False:
+            obligations = []
+        else:
+            obligations = self.list_project_revenue_obligations(
+                company_id,
+                int(project_id),
+            ) or []
+
+        progress_log = self.list_project_task_progress_log(
+            company_id,
+            int(project_id),
+            limit=30,
+        )
+
+        # ── Group obligations by linked task and derive sync status.
+        obligations_by_task: dict[int, list[dict]] = {}
+
+        for obl in obligations:
+            link_id = obl.get("linked_project_task_id")
+            if not link_id:
+                continue
+            obligations_by_task.setdefault(int(link_id), []).append(obl)
+
+        enriched_tasks = []
+        variance_count = 0
+        linked_task_count = 0
+
+        for task in tasks:
+            tid = int(task["id"])
+            linked = obligations_by_task.get(tid, [])
+            task_progress = float(task.get("progress_percent") or 0)
+
+            sync_status = "unlinked"
+
+            if linked:
+                linked_task_count += 1
+                sync_status = "in_sync"
+
+                for obl in linked:
+                    timing = str(
+                        obl.get("recognition_timing") or ""
+                    ).strip().lower()
+
+                    if timing == "point_in_time":
+                        satisfied = str(
+                            obl.get("satisfaction_status") or ""
+                        ).strip().lower() == "satisfied"
+                        if satisfied and task_progress < 99.99:
+                            sync_status = "variance"
+                        continue
+
+                    obl_progress = float(obl.get("progress_percent") or 0)
+                    if abs(obl_progress - task_progress) > 0.01:
+                        sync_status = "variance"
+
+            if sync_status == "variance":
+                variance_count += 1
+
+            enriched_tasks.append(
+                {
+                    **task,
+                    "linked_obligations": linked,
+                    "sync_status": sync_status,
+                }
+            )
+
+        # ── Stats (same weighting as the server-side roll-up).
+        leaf_tasks = [
+            t for t in tasks if not (t.get("is_summary") or False)
+        ]
+
+        weighted_progress = 0.0
+        weighted_budget = 0.0
+
+        for t in leaf_tasks:
+            bv = float(t.get("budget_value") or 0)
+            pp = float(t.get("progress_percent") or 0)
+            if bv > 0:
+                weighted_progress += pp * bv
+                weighted_budget += bv
+
+        if leaf_tasks and weighted_budget > 0:
+            computed_progress = weighted_progress / weighted_budget
+        elif leaf_tasks:
+            computed_progress = sum(
+                float(t.get("progress_percent") or 0) for t in leaf_tasks
+            ) / len(leaf_tasks)
+        else:
+            computed_progress = 0.0
+
+        computed_progress = max(0.0, min(computed_progress, 100.0))
+
+        revenue_summary = (
+            self.get_project_revenue_summary(company_id, int(project_id))
+            if project.get("revenue_enabled") is not False
+            else {}
+        )
+
+        return {
+            "project": project,
+            "stats": {
+                "task_count": len(tasks),
+                "leaf_task_count": len(leaf_tasks),
+                "completed_tasks": sum(
+                    1
+                    for t in tasks
+                    if str(t.get("status") or "").lower() == "completed"
+                ),
+                "in_progress_tasks": sum(
+                    1
+                    for t in tasks
+                    if str(t.get("status") or "").lower() == "in_progress"
+                ),
+                "blocked_tasks": sum(
+                    1
+                    for t in tasks
+                    if str(t.get("status") or "").lower() == "blocked"
+                ),
+                "computed_project_progress": round(computed_progress, 2),
+                "stored_project_progress": float(
+                    project.get("progress_percent") or 0
+                ),
+                "linked_obligation_count": linked_task_count,
+                "variance_count": variance_count,
+                "recognized_revenue": float(
+                    (revenue_summary or {}).get("recognized_revenue") or 0
+                ),
+            },
+            "tasks": enriched_tasks,
+            "obligations": obligations,
+            "progress_log": progress_log,
+            "revenue_summary": revenue_summary,
+        }
+
     def _as_date(self, value):
         from datetime import date, datetime
 
@@ -152326,6 +153094,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             """,
             tuple(params),
         )
+
+        # Reverse sync: task progress flows into any linked revenue
+        # obligation (and the project roll-up) so the project and revenue
+        # sides stay aligned.
+        if row and ("progress_percent" in data or "status" in data):
+            self.sync_project_task_progress_to_obligation(
+                company_id,
+                int(project_id),
+                int(task_id),
+                source="task_edit",
+            )
 
         return bool(row)
     

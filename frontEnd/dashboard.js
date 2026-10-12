@@ -1,4 +1,4 @@
-﻿(function hardTraceRedirects() {
+(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -5062,6 +5062,15 @@ const ENDPOINTS = {
 
     tasksUpdate: (cid, projectId, taskId) =>
       `/api/companies/${cid}/projects/${projectId}/tasks/${taskId}`,
+
+    pmWorkspace: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/pm-workspace`,
+
+    taskProgress: (cid, projectId, taskId) =>
+      `/api/companies/${cid}/projects/${projectId}/tasks/${taskId}/progress`,
+
+    progressLog: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/progress-log`,
 
     costCodesList: (cid, q = "") =>
       `/api/companies/${cid}/projects/cost-codes${q ? `?${q}` : ""}`,
@@ -150451,6 +150460,8 @@ function renderProjectRevenueObligationsMini(
     `;
   }
 
+  const pctLabel = v => `${Number(v || 0).toFixed(0)}%`;
+
   return `
     <div class="overflow-auto">
       <table class="w-full text-xs">
@@ -150473,56 +150484,730 @@ function renderProjectRevenueObligationsMini(
             </th>
 
             <th class="text-right px-2 py-1">
-              Revenue
+              Allocated
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Recognised
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Last Update
             </th>
           </tr>
         </thead>
 
         <tbody>
-          ${items.map(x => `
-            <tr class="border-b">
+          ${items.map(x => {
+            const timing = String(x.recognition_timing || "").toLowerCase();
+            const satisfied =
+              String(x.satisfaction_status || "").toLowerCase() === "satisfied";
 
-              <td class="px-2 py-1">
-                ${esc(
-                  x.obligation_name ||
-                  x.obligation_code ||
-                  ""
-                )}
-              </td>
+            const recognised = Number(
+              x.recognized_to_date !== null &&
+              x.recognized_to_date !== undefined
+                ? x.recognized_to_date
+                : (x.revenue_to_date || 0)
+            );
 
-              <td class="px-2 py-1">
-                ${esc(
-                  x.project_task_name ||
-                  "—"
-                )}
-              </td>
+            const allocated = Number(
+              x.allocated_transaction_price || 0
+            );
 
-              <td class="px-2 py-1">
-                ${esc(
-                  x.progress_method ||
-                  x.recognition_timing ||
-                  ""
-                )}
-              </td>
+            const methodLabel =
+              timing === "point_in_time"
+                ? `point_in_time${satisfied ? " • satisfied" : ""}`
+                : (x.progress_method || x.recognition_timing || "");
 
-              <td class="px-2 py-1 text-right">
-                ${Number(
-                  x.progress_percent || 0
-                ).toFixed(0)}%
-              </td>
+            const lastUpdate = x.last_progress_period_end
+              ? `${String(x.last_progress_period_end).slice(0, 10)} · ${pctLabel(
+                  x.last_progress_percent
+                )} (${esc(x.last_progress_update_type || "")})`
+              : "—";
 
-              <td class="px-2 py-1 text-right">
-                ${fmtMoney(
-                  x.revenue_to_date || 0
-                )}
-              </td>
+            const pmProgress =
+              x.pm_progress_percent === null ||
+              x.pm_progress_percent === undefined
+                ? null
+                : Number(x.pm_progress_percent);
 
-            </tr>
-          `).join("")}
+            const pmVariance =
+              pmProgress !== null &&
+              Math.abs(pmProgress - Number(x.progress_percent || 0)) > 0.01;
+
+            return `
+              <tr class="border-b">
+
+                <td class="px-2 py-1">
+                  ${esc(
+                    x.obligation_name ||
+                    x.obligation_code ||
+                    ""
+                  )}
+
+                  ${timing === "point_in_time" ? `
+                    <span class="ml-1 text-[10px] px-1 rounded border ${
+                      satisfied
+                        ? "text-emerald-700 border-emerald-200"
+                        : "text-slate-400 border-slate-200"
+                    }">
+                      ${satisfied ? "satisfied" : "unsatisfied"}
+                    </span>
+                  ` : ""}
+                </td>
+
+                <td class="px-2 py-1">
+                  ${esc(
+                    x.project_task_name ||
+                    "—"
+                  )}
+                </td>
+
+                <td class="px-2 py-1">
+                  ${esc(methodLabel)}
+                </td>
+
+                <td class="px-2 py-1 text-right">
+                  ${pctLabel(x.progress_percent)}
+
+                  ${pmVariance ? `
+                    <div class="text-[10px] text-amber-600">
+                      site ${pmProgress.toFixed(0)}%
+                    </div>
+                  ` : ""}
+                </td>
+
+                <td class="px-2 py-1 text-right">
+                  ${fmtMoney(allocated)}
+                </td>
+
+                <td class="px-2 py-1 text-right font-semibold">
+                  ${fmtMoney(recognised)}
+                </td>
+
+                <td class="px-2 py-1 text-slate-500">
+                  ${lastUpdate}
+                </td>
+
+              </tr>
+            `;
+          }).join("")}
         </tbody>
       </table>
     </div>
   `;
+}
+
+// ============================================================
+// PM WORKSPACE (project manager progress + revenue sync)
+// ============================================================
+
+let pmWorkspaceState = {
+  projectId: null,
+  data: null,
+};
+
+async function loadProjectPmWorkspace(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return;
+
+  const mount = document.getElementById(
+    `projectPmMount-${projectId}`
+  );
+
+  if (!mount) return;
+
+  mount.innerHTML = `
+    <div class="text-xs text-slate-500">
+      Loading workspace...
+    </div>
+  `;
+
+  try {
+    const out = await apiFetch(
+      ENDPOINTS.projects.pmWorkspace(cid, projectId)
+    );
+
+    const data = out?.data || out || {};
+    pmWorkspaceState = {
+      projectId: Number(projectId),
+      data,
+    };
+
+    mount.innerHTML = renderPmWorkspace(data);
+    bindPmWorkspace(mount, Number(projectId), data);
+
+  } catch (err) {
+    mount.innerHTML = renderApiError(err);
+  }
+}
+
+function pmProgressBar(pct) {
+  const v = Math.max(0, Math.min(100, Number(pct) || 0));
+
+  return `
+    <div class="flex items-center gap-2 min-w-[120px]">
+      <div class="flex-1 h-2 bg-slate-100 rounded overflow-hidden">
+        <div
+          class="h-2 rounded"
+          style="width:${v.toFixed(1)}%;background:var(--fs-navy,#1e3a5f)">
+        </div>
+      </div>
+
+      <span class="text-[10px] text-slate-500 w-9 text-right">
+        ${v.toFixed(0)}%
+      </span>
+    </div>
+  `;
+}
+
+function pmSyncBadge(status) {
+  const map = {
+    in_sync: [
+      "In sync",
+      "bg-emerald-50 text-emerald-700 border-emerald-200",
+    ],
+    variance: [
+      "Variance",
+      "bg-amber-50 text-amber-700 border-amber-200",
+    ],
+    unlinked: [
+      "Not linked",
+      "bg-slate-50 text-slate-500 border-slate-200",
+    ],
+  };
+
+  const [label, cls] = map[status] || map.unlinked;
+
+  return `
+    <span class="inline-block px-2 py-0.5 rounded border text-[10px] ${cls}">
+      ${label}
+    </span>
+  `;
+}
+
+function renderPmWorkspace(data) {
+  const stats = data?.stats || {};
+  const tasks = data?.tasks || [];
+  const obligations = data?.obligations || [];
+  const log = data?.progress_log || [];
+
+  const projectProgress =
+    stats.computed_project_progress ??
+    stats.stored_project_progress ??
+    0;
+
+  const varianceCount = Number(stats.variance_count || 0);
+
+  const cards = `
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Project Progress</div>
+        <div class="font-semibold">
+          ${Number(projectProgress || 0).toFixed(0)}%
+        </div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Tasks Done</div>
+        <div class="font-semibold">
+          ${Number(stats.completed_tasks || 0)}
+          /
+          ${Number(stats.task_count || 0)}
+        </div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">In Progress</div>
+        <div class="font-semibold">
+          ${Number(stats.in_progress_tasks || 0)}
+        </div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Blocked</div>
+        <div class="font-semibold">
+          ${Number(stats.blocked_tasks || 0)}
+        </div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Task-Obligation Sync</div>
+        <div class="font-semibold">
+          ${varianceCount > 0
+            ? `<span class="text-amber-600">${varianceCount} variance</span>`
+            : "In sync"}
+        </div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Recognised Revenue</div>
+        <div class="font-semibold">
+          ${fmtMoney(stats.recognized_revenue || 0)}
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  const taskRows = tasks.map(t => {
+    const linked = t.linked_obligations || [];
+    const firstObl = linked[0] || null;
+
+    const oblLabel = firstObl
+      ? `${esc(
+          firstObl.obligation_name ||
+          firstObl.obligation_code ||
+          "Obligation"
+        )}
+        <div class="text-[10px] text-slate-500">
+          ${esc(
+            firstObl.recognition_timing === "point_in_time"
+              ? "point_in_time"
+              : (firstObl.progress_method || "over_time")
+          )}
+          · accounting ${Number(
+            firstObl.progress_percent || 0
+          ).toFixed(0)}%
+        </div>`
+      : `<span class="text-slate-400">—</span>`;
+
+    return `
+      <tr class="border-b hover:bg-slate-50">
+
+        <td class="px-2 py-1">
+          ${esc(t.wbs_code || t.task_code || "")}
+        </td>
+
+        <td class="px-2 py-1">
+          <div class="font-medium">
+            ${esc(t.task_name || "")}
+          </div>
+
+          <div class="text-[10px] text-slate-500 capitalize">
+            ${esc(t.task_type || "task")}
+            ${t.is_summary ? " · phase roll-up" : ""}
+          </div>
+        </td>
+
+        <td class="px-2 py-1 capitalize">
+          ${esc(t.status || "")}
+        </td>
+
+        <td class="px-2 py-1">
+          ${pmProgressBar(t.progress_percent)}
+        </td>
+
+        <td class="px-2 py-1">
+          ${oblLabel}
+        </td>
+
+        <td class="px-2 py-1">
+          ${pmSyncBadge(t.sync_status)}
+        </td>
+
+        <td class="px-2 py-1 text-right">
+          <button
+            class="px-2 py-1 text-[11px] border rounded"
+            data-pm-update="${esc(String(t.id))}">
+            Update Progress
+          </button>
+        </td>
+
+      </tr>
+    `;
+  }).join("");
+
+  const tasksTable = `
+    <div class="border rounded p-2">
+      <div class="flex items-center justify-between mb-2">
+        <div class="font-semibold">
+          Task Progress
+        </div>
+
+        <div class="text-slate-500 text-[11px]">
+          Updating a task syncs its linked revenue obligations
+        </div>
+      </div>
+
+      ${tasks.length ? `
+        <div class="overflow-auto">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left px-2 py-1">WBS</th>
+                <th class="text-left px-2 py-1">Task</th>
+                <th class="text-left px-2 py-1">Status</th>
+                <th class="text-left px-2 py-1">Progress</th>
+                <th class="text-left px-2 py-1">Linked Obligation</th>
+                <th class="text-left px-2 py-1">Sync</th>
+                <th class="text-right px-2 py-1"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${taskRows}
+            </tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="text-slate-500">
+          No project plan yet. Add tasks under the Planning tab first.
+        </div>
+      `}
+    </div>
+  `;
+
+  const oblRows = obligations.map(o => {
+    const timing = String(o.recognition_timing || "").toLowerCase();
+    const satisfied =
+      String(o.satisfaction_status || "").toLowerCase() === "satisfied";
+
+    const recognised = Number(
+      o.recognized_to_date !== null &&
+      o.recognized_to_date !== undefined
+        ? o.recognized_to_date
+        : (o.revenue_to_date || 0)
+    );
+
+    const lastUpdate = o.last_progress_period_end
+      ? `${String(o.last_progress_period_end).slice(0, 10)} · ${Number(
+          o.last_progress_percent || 0
+        ).toFixed(0)}%`
+      : "—";
+
+    const siteProgress =
+      o.pm_progress_percent === null ||
+      o.pm_progress_percent === undefined
+        ? "—"
+        : `${Number(o.pm_progress_percent).toFixed(0)}%`;
+
+    return `
+      <tr class="border-b">
+        <td class="px-2 py-1">
+          ${esc(o.obligation_name || o.obligation_code || "")}
+          ${timing === "point_in_time"
+            ? `<span class="text-[10px] ${satisfied ? "text-emerald-700" : "text-slate-400"}">
+                ${satisfied ? "satisfied" : "unsatisfied"}
+              </span>`
+            : ""}
+        </td>
+
+        <td class="px-2 py-1">
+          ${esc(o.project_task_name || "—")}
+        </td>
+
+        <td class="px-2 py-1">
+          ${esc(
+            timing === "point_in_time"
+              ? "point_in_time"
+              : (o.progress_method || "over_time")
+          )}
+        </td>
+
+        <td class="px-2 py-1 text-right">
+          ${Number(o.progress_percent || 0).toFixed(0)}%
+        </td>
+
+        <td class="px-2 py-1 text-right">
+          ${siteProgress}
+        </td>
+
+        <td class="px-2 py-1 text-right font-semibold">
+          ${fmtMoney(recognised)}
+        </td>
+
+        <td class="px-2 py-1 text-slate-500">
+          ${lastUpdate}
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  const obligationsTable = `
+    <div class="border rounded p-2">
+      <div class="font-semibold mb-2">
+        Revenue Obligations Sync Overview
+      </div>
+
+      ${obligations.length ? `
+        <div class="overflow-auto">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left px-2 py-1">Obligation</th>
+                <th class="text-left px-2 py-1">Task</th>
+                <th class="text-left px-2 py-1">Method</th>
+                <th class="text-right px-2 py-1">Accounting %</th>
+                <th class="text-right px-2 py-1">Site %</th>
+                <th class="text-right px-2 py-1">Recognised</th>
+                <th class="text-left px-2 py-1">Last Update</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${oblRows}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="text-[10px] text-slate-500 mt-1">
+          Site % is PM-recorded progress. For cost/unit/time-driven methods it
+          is logged for comparison only — the accountant's method drives revenue.
+        </div>
+      ` : `
+        <div class="text-slate-500">
+          No revenue obligations linked to this project yet.
+        </div>
+      `}
+    </div>
+  `;
+
+  const logFeed = `
+    <div class="border rounded p-2">
+      <div class="font-semibold mb-2">
+        Recent Progress Log
+      </div>
+
+      ${log.length ? `
+        <div class="space-y-1 max-h-64 overflow-auto">
+          ${log.map(e => `
+            <div class="flex items-start gap-2 text-xs border-b pb-1">
+              <div class="text-slate-400 w-20 shrink-0">
+                ${String(e.update_date || e.created_at || "").slice(0, 10)}
+              </div>
+
+              <div class="flex-1">
+                <span class="font-medium">
+                  ${esc(e.task_name || e.task_code || `Task #${e.task_id}`)}
+                </span>
+                <span class="text-slate-500">
+                  → ${Number(e.progress_percent || 0).toFixed(0)}%
+                  (${esc(e.status || "")})
+                </span>
+
+                ${e.note ? `
+                  <div class="text-slate-500">
+                    ${esc(e.note)}
+                  </div>
+                ` : ""}
+              </div>
+
+              <div class="text-[10px] text-slate-400 shrink-0">
+                ${esc(e.source || "pm_workspace")}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      ` : `
+        <div class="text-slate-500">
+          No progress recorded yet. Use "Update Progress" on a task.
+        </div>
+      `}
+    </div>
+  `;
+
+  return `
+    ${cards}
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      ${tasksTable}
+      ${logFeed}
+    </div>
+
+    <div class="mt-3">
+      ${obligationsTable}
+    </div>
+  `;
+}
+
+function bindPmWorkspace(mount, projectId, data) {
+  mount.querySelectorAll("[data-pm-update]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const taskId = Number(btn.dataset.pmUpdate);
+      const task = (data?.tasks || []).find(
+        x => Number(x.id) === taskId
+      );
+
+      if (task) {
+        openPmProgressModal(projectId, task);
+      }
+    });
+  });
+}
+
+function bindPmProgressModalOnce() {
+  const m = document.getElementById("pmProgressModal");
+
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document
+    .getElementById("pmProgressOverlay")
+    ?.addEventListener("click", closePmProgressModal);
+
+  document
+    .getElementById("pmProgressCloseBtn")
+    ?.addEventListener("click", closePmProgressModal);
+
+  document
+    .getElementById("pmProgressCancelBtn")
+    ?.addEventListener("click", closePmProgressModal);
+
+  document
+    .getElementById("pmProgressSaveBtn")
+    ?.addEventListener("click", submitPmProgress);
+}
+
+function openPmProgressModal(projectId, task) {
+  bindPmProgressModalOnce();
+
+  const linked = task.linked_obligations || [];
+  const obl = linked[0] || null;
+
+  document.getElementById("pmProgressProjectId").value =
+    String(projectId);
+
+  document.getElementById("pmProgressTaskId").value =
+    String(task.id);
+
+  document.getElementById("pmProgressTaskLabel").textContent =
+    task.task_name ||
+    task.task_code ||
+    `Task #${task.id}`;
+
+  const meta = [];
+
+  meta.push(
+    `Current: ${Number(task.progress_percent || 0).toFixed(0)}% · ${
+      task.status || "open"
+    }`
+  );
+
+  if (obl) {
+    meta.push(
+      `Linked obligation: ${
+        obl.obligation_name || obl.obligation_code || "Obligation"
+      } (${
+        obl.recognition_timing === "point_in_time"
+          ? "point_in_time"
+          : obl.progress_method || "over_time"
+      } at ${Number(obl.progress_percent || 0).toFixed(0)}%)`
+    );
+
+    if (
+      String(obl.recognition_timing || "").toLowerCase() === "over_time" &&
+      !["manual", "", "none"].includes(
+        String(obl.progress_method || "manual").toLowerCase()
+      )
+    ) {
+      meta.push(
+        "This obligation is accounting-driven — your progress is logged as site progress for the accountant."
+      );
+    }
+  } else {
+    meta.push("No revenue obligation linked to this task.");
+  }
+
+  document.getElementById("pmProgressTaskMeta").textContent =
+    meta.join(" — ");
+
+  document.getElementById("pmProgressPercent").value = Number(
+    task.progress_percent || 0
+  );
+
+  document.getElementById("pmProgressStatus").value = "";
+
+  document.getElementById("pmProgressDate").value =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("pmProgressNote").value = "";
+
+  setElText("pmProgressMsg", "");
+  setElText("pmProgressSyncInfo", "");
+
+  document
+    .getElementById("pmProgressModal")
+    ?.classList.remove("hidden");
+}
+
+function closePmProgressModal() {
+  document
+    .getElementById("pmProgressModal")
+    ?.classList.add("hidden");
+}
+
+async function submitPmProgress() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("pmProgressProjectId")?.value || 0
+  );
+
+  const taskId = Number(
+    document.getElementById("pmProgressTaskId")?.value || 0
+  );
+
+  if (!cid || !projectId || !taskId) return;
+
+  const payload = {
+    progress_percent: Number(
+      document.getElementById("pmProgressPercent")?.value || 0
+    ),
+
+    status:
+      document.getElementById("pmProgressStatus")?.value || null,
+
+    update_date:
+      document.getElementById("pmProgressDate")?.value || null,
+
+    note:
+      document.getElementById("pmProgressNote")?.value?.trim() || null,
+  };
+
+  const btn = document.getElementById("pmProgressSaveBtn");
+
+  if (btn) btn.disabled = true;
+  setElText("pmProgressMsg", "Saving progress...");
+
+  try {
+    const out = await apiFetch(
+      ENDPOINTS.projects.taskProgress(cid, projectId, taskId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const sync = out?.obligation_sync || [];
+    const syncedCount = sync.filter(s => s.synced).length;
+    const shadowCount = sync.filter(s => s.shadow_only).length;
+
+    let msg = "Task progress saved.";
+
+    if (syncedCount) {
+      msg += ` ${syncedCount} revenue obligation(s) updated.`;
+    }
+
+    if (shadowCount) {
+      msg += ` ${shadowCount} accounting-driven obligation(s) logged as site progress.`;
+    }
+
+    setElText("pmProgressMsg", msg);
+
+    setTimeout(() => {
+      closePmProgressModal();
+      loadProjectDetail(projectId);
+      loadProjectPmWorkspace(projectId);
+    }, 700);
+
+  } catch (err) {
+    setElText(
+      "pmProgressMsg",
+      err?.message || "Failed to save task progress"
+    );
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function loadProjectPerformance(projectId) {
@@ -150786,6 +151471,12 @@ function renderProjectDetail(p) {
           class="project-detail-tab active"
           data-project-tab="planning">
           Planning
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="pm">
+          PM Workspace
         </button>
 
         <button
@@ -151142,6 +151833,37 @@ function renderProjectDetail(p) {
             ${renderProjectDependenciesMini(
               dependencies
             )}
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================================================
+          PM WORKSPACE
+      ================================================== -->
+      <div data-project-panel="pm">
+        <div class="border rounded p-2">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">
+                PM Workspace
+              </div>
+
+              <div class="text-slate-500">
+                Record site progress per task — two-way sync with revenue obligations
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-pm-refresh="${esc(String(p.id))}">
+              Refresh
+            </button>
+          </div>
+
+          <div id="projectPmMount-${esc(String(p.id))}">
+            <div class="text-slate-500">
+              Loading workspace...
+            </div>
           </div>
         </div>
       </div>
@@ -151748,10 +152470,17 @@ function renderProjectDetail(p) {
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
       showProjectTab(tab.dataset.projectTab);
+
+      if (tab.dataset.projectTab === "pm") {
+        loadProjectPmWorkspace(p.id);
+      }
     });
   });
 
   showProjectTab("planning");
+
+  // Preload the PM workspace data so the tab is instant on first open.
+  loadProjectPmWorkspace(p.id);
 
   if (p.accounting_mode === "capital") {
     loadProjectCapitalPosition(p.id)
@@ -151837,6 +152566,14 @@ function renderProjectDetail(p) {
       if (task) {
         openProjectAssignModal?.(p.id, task);
       }
+    });
+  });
+
+  mount.querySelectorAll("[data-pm-refresh]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      loadProjectPmWorkspace(
+        Number(btn.dataset.pmRefresh) || p.id
+      );
     });
   });
 
