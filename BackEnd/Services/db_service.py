@@ -60759,6 +60759,13 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_revenue_billing_events_contract_date_idx
         ON {schema}.revenue_billing_events(contract_id, event_date DESC);
 
+        -- Hard idempotency: one 'invoice' billing event per invoice per contract.
+        -- Same index as deployed to legacy schemas via DO $$ block.
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_rbe_invoice_once
+        ON {schema}.revenue_billing_events (contract_id, source_invoice_id)
+        WHERE event_type = 'invoice'
+        AND source_invoice_id IS NOT NULL;
+        
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_billing_events_invoice_unique_idx
         ON {schema}.revenue_billing_events (
             contract_id,
@@ -114516,26 +114523,25 @@ class DatabaseService:
                 # ---------------------------------------------------------
                 existing_billing_event = None
 
-                if obligation_id is not None:
-                    _cur.execute(
-                        f"""
-                        SELECT *
-                        FROM {schema}.revenue_billing_events
-                        WHERE contract_id = %s
-                          AND obligation_id = %s
-                          AND event_type = 'invoice'
-                          AND payload_json->>'invoice_number' = %s
-                        ORDER BY id
-                        LIMIT 1
-                        """,
-                        (
-                            int(revenue_contract_id),
-                            int(obligation_id),
-                            inv_no,
-                        ),
-                    )
+                # IFRS 15 BILLING EVENT IDEMPOTENCY GUARD
+                # Runs for ALL revenue-contract invoices, keyed on
+                # source_invoice_id (obligation_id = %s never matches NULL,
+                # which silently disabled this guard for contract-level
+                # invoices).
+                _cur.execute(
+                    f"""
+                    SELECT *
+                    FROM {schema}.revenue_billing_events
+                    WHERE contract_id = %s
+                      AND event_type = 'invoice'
+                      AND source_invoice_id = %s
+                    ORDER BY id
+                    LIMIT 1
+                    """,
+                    (int(revenue_contract_id), int(invoice_id)),
+                )
 
-                    existing_billing_event = _cur.fetchone()
+                existing_billing_event = _cur.fetchone()
 
                 if existing_billing_event:
                     # -----------------------------------------------------
@@ -139686,11 +139692,63 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         user_id: int | None = None,
         cur=None,
     ) -> dict:
+        import contextlib
         import json
 
         schema = self.company_schema(company_id)
 
-        with self._conn_cursor() as (conn, cur):
+        # ==========================================================
+        # SELF-DEFENSE DEDUPE — one invoice = one 'invoice' event,
+        # regardless of which code path got here first. The partial
+        # unique index is the hard stop; this gives a clean no-op.
+        # ==========================================================
+        _etype = (data.get("event_type") or "invoice").strip().lower()
+        _src_inv = data.get("source_invoice_id")
+
+        if _etype == "invoice" and _src_inv:
+            existing_event = self.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.revenue_billing_events
+                WHERE contract_id = %s
+                  AND source_invoice_id = %s
+                  AND event_type = 'invoice'
+                ORDER BY id
+                LIMIT 1
+                """,
+                (int(contract_id), int(_src_inv)),
+            )
+
+            if existing_event:
+                existing_payload = existing_event.get("payload_json") or {}
+                if isinstance(existing_payload, str):
+                    try:
+                        existing_payload = json.loads(existing_payload)
+                    except Exception:
+                        existing_payload = {}
+
+                current_app.logger.warning(
+                    "[record_revenue_billing_event] duplicate billing event blocked | "
+                    "company_id=%s contract_id=%s invoice_id=%s existing_event_id=%s",
+                    int(company_id), int(contract_id), int(_src_inv), existing_event.get("id"),
+                )
+
+                return {
+                    "event": dict(existing_event),
+                    "contract": self.get_revenue_contract(company_id, int(contract_id)),
+                    "billing_position": existing_payload.get("ifrs15_billing_position") or {},
+                    "duplicate": True,
+                }
+
+        # Transaction ownership: caller's cursor -> caller's transaction
+        # (fixes atomicity with post_invoice_to_gl); else own connection.
+        owned_conn = cur is None
+        if owned_conn:
+            ctx = self._conn_cursor()
+        else:
+            ctx = contextlib.nullcontext((None, cur))
+
+        with ctx as (conn, cur):
             contract = self.get_revenue_contract(company_id, contract_id, cur=cur)
             if not contract:
                 raise ValueError("Revenue contract not found")
@@ -139904,7 +139962,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
             updated_contract = dict(cur.fetchone())
 
-            conn.commit()
+            if conn is not None:
+                conn.commit()
 
         return {
             "event": row,

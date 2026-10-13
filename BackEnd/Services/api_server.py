@@ -8803,28 +8803,54 @@ def create_invoice(cid: int):
 
                     billing_obligation_id = None
 
-                db_service.record_revenue_billing_event(
-                    company_id=company_id,
-                    contract_id=int(revenue_contract_id),
-                    data={
-                        "event_date": header.get("invoice_date"),
-                        "event_type": "invoice",
-                        "source_invoice_id": int(invoice_id),
-                        "obligation_id": billing_obligation_id,
-                        "amount": billing_amount,
-                        "currency": inv.get("currency") or header.get("currency") or "USD",
-                        "notes": f"From AR invoice {inv.get('number') or invoice_id}",
-                        "payload_json": {
-                            "customer_id": int(cust_id),
-                            "source": "ar_invoice_post",
-                            "invoice_number": inv.get("number"),
-                            "auto_allocate": True,
-                            "settlement_pattern": settlement_pattern,
-                            "journal_id": int(journal_id),
-                        },
-                    },
-                    user_id=int(user.get("id") or 0),
+                # ======================================================
+                # IFRS 15 BILLING DEDUPE GUARD
+                # post_invoice_to_gl() already records the billing event
+                # for revenue-contract invoices. One invoice = exactly
+                # one 'invoice' billing event. Ever.
+                # ======================================================
+                _existing_billing = db_service.fetch_one(
+                    f"""
+                    SELECT id
+                    FROM company_{company_id}.revenue_billing_events
+                    WHERE contract_id = %s
+                      AND source_invoice_id = %s
+                      AND event_type = 'invoice'
+                    ORDER BY id
+                    LIMIT 1
+                    """,
+                    (int(revenue_contract_id), int(invoice_id)),
                 )
+
+                if _existing_billing:
+                    current_app.logger.warning(
+                        "create_invoice: billing event already recorded, "
+                        "skipping duplicate | invoice_id=%s contract_id=%s existing_event_id=%s",
+                        int(invoice_id), int(revenue_contract_id), _existing_billing.get("id"),
+                    )
+                else:
+                    db_service.record_revenue_billing_event(
+                        company_id=company_id,
+                        contract_id=int(revenue_contract_id),
+                        data={
+                            "event_date": header.get("invoice_date"),
+                            "event_type": "invoice",
+                            "source_invoice_id": int(invoice_id),
+                            "obligation_id": billing_obligation_id,
+                            "amount": billing_amount,
+                            "currency": inv.get("currency") or header.get("currency") or "USD",
+                            "notes": f"From AR invoice {inv.get('number') or invoice_id}",
+                            "payload_json": {
+                                "customer_id": int(cust_id),
+                                "source": "ar_invoice_post",
+                                "invoice_number": inv.get("number"),
+                                "auto_allocate": True,
+                                "settlement_pattern": settlement_pattern,
+                                "journal_id": int(journal_id),
+                            },
+                        },
+                        user_id=int(user.get("id") or 0),
+                    )
 
                 if settlement_pattern == "cash_before_service":
                     try:
