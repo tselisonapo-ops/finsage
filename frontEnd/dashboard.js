@@ -153249,6 +153249,40 @@ async function populateProjectTaskParentDropdown(
   `;
 }
 
+
+
+function bindProjectTaskParentDropdownRefresh() {
+  const sel = document.getElementById("projectTaskParentId");
+  if (!sel || sel.dataset.refreshBound === "1") return;
+
+  sel.dataset.refreshBound = "1";
+
+  sel.addEventListener("focus", async () => {
+    const projectId =
+      document.getElementById("projectTaskProjectId")?.value;
+
+    const excludeTaskId =
+      document.getElementById("projectTaskId")?.value || "";
+
+    if (!projectId) return;
+
+    const selectedId = sel.value;
+
+    try {
+      await populateProjectTaskParentDropdown(
+        projectId,
+        selectedId,
+        excludeTaskId
+      );
+    } catch (err) {
+      console.error(
+        "[Project Tasks] Failed to refresh parent dropdown:",
+        err
+      );
+    }
+  });
+}
+
 async function openProjectTaskModal(projectId, task = null) {
   bindProjectTaskModalOnce();
   ACTIVE_PROJECT_ID = Number(projectId);
@@ -153306,9 +153340,15 @@ async function openProjectTaskModal(projectId, task = null) {
   document.getElementById("projectTaskNotes").value =
     task?.notes || "";
 
+
   await populateProjectTaskParentDropdown(
     projectId,
     task?.parent_task_id || "",
+    task?.id || ""
+  );
+
+  bindProjectTaskParentDropdownRefresh(
+    projectId,
     task?.id || ""
   );
 
