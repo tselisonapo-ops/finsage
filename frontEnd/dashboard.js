@@ -1,4 +1,4 @@
-(function hardTraceRedirects() {
+﻿(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -157416,28 +157416,6 @@ function bindProjectTaskModalOnce() {
   document.getElementById("projectTaskCloseBtn")?.addEventListener("click", closeProjectTaskModal);
   document.getElementById("projectTaskCancelBtn")?.addEventListener("click", closeProjectTaskModal);
   document.getElementById("projectTaskSaveBtn")?.addEventListener("click", submitProjectTask);
-}
-
-function openProjectTaskModal(projectId, task = null) {
-  bindProjectTaskModalOnce();
-  ACTIVE_PROJECT_ID = Number(projectId);
-
-  document.getElementById("projectTaskProjectId").value = String(projectId);
-  document.getElementById("projectTaskId").value = task?.id || "";
-
-  document.getElementById("projectTaskCode").value = task?.task_code || "";
-  document.getElementById("projectTaskName").value = task?.task_name || "";
-  document.getElementById("projectTaskStatus").value = task?.status || "open";
-  document.getElementById("projectTaskBudgetValue").value = task?.budget_value || "";
-  document.getElementById("projectTaskStartDate").value = task?.start_date || "";
-  document.getElementById("projectTaskExpectedEndDate").value = task?.expected_end_date || "";
-  document.getElementById("projectTaskNotes").value = task?.notes || "";
-
-  document.getElementById("projectTaskSaveBtn").textContent = task?.id ? "Update Task" : "Save Task";
-  document.getElementById("projectTaskArchiveBtn")?.classList.toggle("hidden", !task?.id);
-
-  setElText("projectTaskMsg", "");
-  document.getElementById("projectTaskModal")?.classList.remove("hidden");
 }
 
 function closeProjectTaskModal() {
