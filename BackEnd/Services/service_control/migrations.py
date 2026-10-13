@@ -49,7 +49,6 @@ def ensure_control_schema(db_service) -> None:
 
     migrations = [
         ("001_initial_control_schema", _migration_001_initial_control_schema),
-        ("002_control_notifications", _migration_002_control_notifications),
     ]
 
     for version, migration_fn in migrations:
@@ -68,68 +67,6 @@ def ensure_control_schema(db_service) -> None:
             """,
             (version,),
         )
-
-
-# ============================================================
-# 002 — CONTROL NOTIFICATIONS
-# ============================================================
-
-def _migration_002_control_notifications(db_service) -> None:
-    """
-    Add the Control in-app notifications table that was introduced
-    after the original 001 migration had already been applied.
-    """
-
-    db_service.execute_sql(
-        """
-        CREATE TABLE IF NOT EXISTS control.notifications (
-            id                  BIGSERIAL PRIMARY KEY,
-
-            notification_type  VARCHAR(100) NOT NULL,
-            title              TEXT NOT NULL,
-            message            TEXT NOT NULL,
-
-            severity            VARCHAR(30) NOT NULL DEFAULT 'info',
-
-            control_user_id    INTEGER NULL,
-
-            ticket_id          INTEGER NULL
-                REFERENCES control.tickets(id)
-                ON DELETE SET NULL,
-
-            system_event_id    INTEGER NULL
-                REFERENCES control.system_events(id)
-                ON DELETE SET NULL,
-
-            company_id         INTEGER NULL,
-
-            metadata           JSONB NOT NULL DEFAULT '{}'::JSONB,
-
-            is_read            BOOLEAN NOT NULL DEFAULT FALSE,
-            read_at            TIMESTAMPTZ NULL,
-
-            created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_control_notifications_user
-            ON control.notifications(control_user_id);
-
-        CREATE INDEX IF NOT EXISTS idx_control_notifications_unread
-            ON control.notifications(control_user_id, is_read);
-
-        CREATE INDEX IF NOT EXISTS idx_control_notifications_created
-            ON control.notifications(created_at DESC);
-
-        CREATE INDEX IF NOT EXISTS idx_control_notifications_type
-            ON control.notifications(notification_type);
-
-        CREATE INDEX IF NOT EXISTS idx_control_notifications_ticket
-            ON control.notifications(ticket_id);
-
-        CREATE INDEX IF NOT EXISTS idx_control_notifications_system_event
-            ON control.notifications(system_event_id);
-        """
-    )
 
 
 # ============================================================
