@@ -119107,35 +119107,58 @@ function customerDisplayName(c) {
   return tin || "(No name)";
 }
 
+
 async function openCustomerInvoicesPane(customerId, customerObj) {
   const pane = document.getElementById("arCustomerInvoicesPane");
   const list = document.getElementById("custInvoiceList");
   if (!pane || !list) return;
 
+  // Hide the customer quotes pane.
   document.getElementById("arCustomerQuotesPane")?.classList.add("hidden");
+
+  // Remember the selected customer.
   window._selectedInvoiceCustomer = customerObj || null;
 
+  // Reset invoice search for this customer.
   const searchEl = document.getElementById("custInvSearch");
   if (searchEl) {
     searchEl.value = "";
-    const nm = String(customerObj?.name || "").trim();
-    searchEl.placeholder = nm ? `Search invoices for ${nm}` : "Search invoice #";
+
+    const customerName = String(customerObj?.name || "").trim();
+    searchEl.placeholder = customerName
+      ? `Search invoices for ${customerName}`
+      : "Search invoice #";
   }
 
+  // Show the invoice pane.
   pane.classList.remove("hidden");
   pane.style.display = "";
 
-  // ✅ IMPORTANT: exclude drafts/pending from customer pane
+  // Load all non-draft invoices, including reversed and void invoices.
+  // The renderer handles payment filters and status badges.
   await renderCustomerInvoicesList(customerId, {
-    status: ["approved", "posted", "paid", "partial", "unpaid"] // adjust to your real lifecycle
+    status: [
+      "approved",
+      "posted",
+      "paid",
+      "partial",
+      "unpaid",
+      "reversed",
+      "void",
+      "voided",
+      "cancelled",
+      "canceled",
+      "written_off"
+    ]
   });
 }
+
 window.openCustomerInvoicesPane = openCustomerInvoicesPane;
 
 async function renderCustomerInvoicesList(customerId, opts = {}) {
   const list = document.getElementById("custInvoiceList");
   const filterSel = document.getElementById("custInvFilter");
-  const searchEl  = document.getElementById("custInvSearch");
+  const searchEl = document.getElementById("custInvSearch");
   if (!list) return;
 
   const scope = (filterSel?.value || "all").toLowerCase();
@@ -119144,39 +119167,98 @@ async function renderCustomerInvoicesList(customerId, opts = {}) {
   list.innerHTML = `<div class="text-xs text-slate-400">Loading…</div>`;
 
   try {
-    // ✅ pass status filter through
-    let invoices = await fetchInvoicesForCustomer(customerId, { scope, status: opts.status || null });
+    let invoices = await fetchInvoicesForCustomer(customerId, {
+      scope,
+      status: opts.status || null
+    });
 
-    // normalize + compute amounts
+    const nonPayableStatuses = [
+      "void",
+      "voided",
+      "reversed",
+      "cancelled",
+      "canceled",
+      "written_off"
+    ];
+
+    // Normalize invoice statuses and payment amounts.
     invoices = (invoices || []).map(inv => {
-      const total = toNum(inv.total_amount ?? inv.total ?? inv.gross_amount, 0);
-      const paid  = toNum(inv.paid_amount ?? inv.paid ?? inv.paidAmount, 0);
+      const total = toNum(
+        inv.total_amount ?? inv.total ?? inv.gross_amount,
+        0
+      );
 
-      // prefer backend outstanding_amount if present
+      const paid = toNum(
+        inv.paid_amount ?? inv.paid ?? inv.paidAmount,
+        0
+      );
+
       const outstanding = toNum(
         inv.outstanding_amount ?? inv.outstanding ?? (total - paid),
         0
       );
 
-      // prefer backend payment_status, else fallback
-      const payStatus = String(inv.payment_status || "").toLowerCase().trim()
-        || (outstanding <= 0.00001 ? "paid" : (paid > 0.00001 ? "partial" : "unpaid"));
+      const docStatus = String(inv.status || "")
+        .toLowerCase()
+        .trim();
 
-      return { ...inv, _total: total, _paid: paid, _outstanding: outstanding, _payStatus: payStatus };
+      const backendPayStatus = String(inv.payment_status || "")
+        .toLowerCase()
+        .trim();
+
+      // Void/reversed invoices must never appear as unpaid or paid.
+      const payStatus = nonPayableStatuses.includes(docStatus)
+        ? docStatus
+        : (
+            backendPayStatus ||
+            (
+              outstanding <= 0.00001
+                ? "paid"
+                : paid > 0.00001
+                  ? "partial"
+                  : "unpaid"
+            )
+          );
+
+      return {
+        ...inv,
+        _total: total,
+        _paid: paid,
+        _outstanding: outstanding,
+        _docStatus: docStatus,
+        _payStatus: payStatus
+      };
     });
 
-    // ✅ scope filter (UI)
+    // Apply the selected payment filter.
     if (scope === "open") {
-      invoices = invoices.filter(inv => inv._outstanding > 0.00001 && inv._payStatus !== "paid");
+      invoices = invoices.filter(inv =>
+        !nonPayableStatuses.includes(inv._docStatus) &&
+        inv._outstanding > 0.00001 &&
+        inv._payStatus !== "paid"
+      );
     } else if (scope === "paid") {
-      invoices = invoices.filter(inv => inv._payStatus === "paid" || inv._outstanding <= 0.00001);
+      invoices = invoices.filter(inv =>
+        !nonPayableStatuses.includes(inv._docStatus) &&
+        (
+          inv._payStatus === "paid" ||
+          inv._outstanding <= 0.00001
+        )
+      );
     } else if (scope === "partial") {
-      invoices = invoices.filter(inv => inv._payStatus === "partial");
+      invoices = invoices.filter(inv =>
+        !nonPayableStatuses.includes(inv._docStatus) &&
+        inv._payStatus === "partial"
+      );
     } else if (scope === "unpaid") {
-      invoices = invoices.filter(inv => inv._payStatus === "unpaid");
-    } // scope === "all" => no filter
+      invoices = invoices.filter(inv =>
+        !nonPayableStatuses.includes(inv._docStatus) &&
+        inv._payStatus === "unpaid"
+      );
+    }
+    // "all" displays every invoice, including void and reversed invoices.
 
-    // search
+    // Search by invoice number or ID.
     if (q) {
       invoices = invoices.filter(inv =>
         String(inv.number || inv.id || "").toLowerCase().includes(q)
@@ -119188,16 +119270,20 @@ async function renderCustomerInvoicesList(customerId, opts = {}) {
       return;
     }
 
-    // newest first
-    invoices.sort((a, b) => String(b.invoice_date || "").localeCompare(String(a.invoice_date || "")));
+    // Newest first.
+    invoices.sort((a, b) =>
+      String(b.invoice_date || "").localeCompare(
+        String(a.invoice_date || "")
+      )
+    );
 
     list.innerHTML = invoices.map(inv => {
       const num = inv.number || `INV-${inv.id}`;
-      const dt  = inv.invoice_date || inv.date || "";
+      const dt = inv.invoice_date || inv.date || "";
       const due = inv.due_date || "";
 
-      // show payment status badge (not doc status)
-      const badge = inv._payStatus; // paid/partial/unpaid
+      // Show reversed/void status; otherwise show payment status.
+      const badge = inv._payStatus;
 
       return `
         <button type="button"
@@ -119214,7 +119300,7 @@ async function renderCustomerInvoicesList(customerId, opts = {}) {
 
           <div class="text-xs text-slate-500">
             ${esc(dt)}
-            ${due ? ` • Due ${esc(due)}` : ``}
+            ${due ? ` • Due ${esc(due)}` : ""}
           </div>
 
           <div class="text-xs text-slate-600">
@@ -119228,7 +119314,11 @@ async function renderCustomerInvoicesList(customerId, opts = {}) {
 
     list.querySelectorAll("[data-inv-open]").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const invId = parseInt(btn.getAttribute("data-inv-open"), 10);
+        const invId = parseInt(
+          btn.getAttribute("data-inv-open"),
+          10
+        );
+
         if (!invId) return;
         await openInvoiceViewer(invId);
       });
@@ -119236,7 +119326,11 @@ async function renderCustomerInvoicesList(customerId, opts = {}) {
 
   } catch (e) {
     console.error(e);
-    list.innerHTML = `<div class="text-xs text-red-500">Failed to load customer invoices.</div>`;
+    list.innerHTML = `
+      <div class="text-xs text-red-500">
+        Failed to load customer invoices.
+      </div>
+    `;
   }
 }
 

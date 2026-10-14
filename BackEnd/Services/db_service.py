@@ -68558,7 +68558,15 @@ class DatabaseService:
             SELECT COUNT(*) AS open_invoices
             FROM {schema}.invoices
             WHERE customer_id = %s
-            AND COALESCE(status,'') NOT IN ('paid','void','cancelled')
+            AND LOWER(TRIM(COALESCE(status, ''))) NOT IN (
+                'paid',
+                'void',
+                'voided',
+                'reversed',
+                'cancelled',
+                'canceled',
+                'written_off'
+            )
             """,
             (customer_id,)
         ) or {}
@@ -114844,11 +114852,20 @@ class DatabaseService:
                 if not code:
                     raise ValueError(f"Resolved posting code blank for '{raw_code}'")
 
+
                 posting_lines.append({
                     "account_code": code,
                     "description": jl.get("description") or desc,
                     "debit": amt if dc == "D" else 0.0,
                     "credit": amt if dc == "C" else 0.0,
+
+                    # Preserve customer attribution on the AR control account.
+                    "customer_id": (
+                        int(cust_id)
+                        if code == AR_ACCOUNT
+                        and cust_id not in (None, "", 0, "0")
+                        else None
+                    ),
                 })
 
             journal_entry.update({
@@ -115179,9 +115196,25 @@ class DatabaseService:
             GREATEST(i.total_amount - COALESCE(SUM(ra.amount), 0), 0)::numeric(18,2) AS outstanding_amount,
 
             CASE
-                WHEN LOWER(COALESCE(i.status,'')) IN ('void','written_off') THEN LOWER(i.status)
-                WHEN GREATEST(i.total_amount - COALESCE(SUM(ra.amount), 0), 0) <= 0 THEN 'paid'
-                WHEN COALESCE(SUM(ra.amount), 0) > 0 THEN 'partial'
+                WHEN LOWER(TRIM(COALESCE(i.status, ''))) IN (
+                    'void',
+                    'voided',
+                    'reversed',
+                    'cancelled',
+                    'canceled',
+                    'written_off'
+                )
+                THEN LOWER(TRIM(i.status))
+
+                WHEN GREATEST(
+                    i.total_amount - COALESCE(SUM(ra.amount), 0),
+                    0
+                ) <= 0
+                THEN 'paid'
+
+                WHEN COALESCE(SUM(ra.amount), 0) > 0
+                THEN 'partial'
+
                 ELSE 'unpaid'
             END AS payment_status
 
@@ -154325,8 +154358,35 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 f"PROJECT_DEBIT_ACCOUNT_NOT_FOUND|tried={project_debit_raw or 'empty'}"
             )
 
-        project_debit_account = str(debit_row.get("code") or project_debit_raw or "").strip()
-        project_debit_name = str(debit_row.get("name") or project_debit_account).strip()
+
+        # Normalize account rows: account helpers may return (name, code),
+        # while dictionary-based lookups return {"code": ..., "name": ...}.
+        if isinstance(debit_row, dict):
+            debit_code = debit_row.get("code")
+            debit_name = debit_row.get("name")
+        elif isinstance(debit_row, (tuple, list)):
+            if len(debit_row) >= 3:
+                # Typical SELECT id, code, name, ...
+                debit_code = debit_row[1]
+                debit_name = debit_row[2]
+            elif len(debit_row) >= 2:
+                # Account helper format: (name, code)
+                debit_name = debit_row[0]
+                debit_code = debit_row[1]
+            else:
+                debit_code = None
+                debit_name = None
+        else:
+            debit_code = None
+            debit_name = None
+
+        project_debit_account = str(
+            debit_code or project_debit_raw or ""
+        ).strip()
+
+        project_debit_name = str(
+            debit_name or project_debit_account
+        ).strip()
 
         # 3) Process lines and calculate costs
         journal_lines = []
