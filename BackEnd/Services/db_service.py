@@ -153847,8 +153847,33 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if not debit_row:
                 raise ValueError(f"{missing_error}|tried={project_debit_raw or 'empty'}")
 
-            project_debit_account = str(debit_row.get("code") or project_debit_raw or "").strip()
-            project_debit_name = str(debit_row.get("name") or project_debit_account).strip()
+            # Account lookups may return dictionaries or tuples.
+            # The posting helper's two-value tuple format is (name, code).
+            if isinstance(debit_row, dict):
+                debit_code = debit_row.get("code")
+                debit_name = debit_row.get("name")
+            elif isinstance(debit_row, (tuple, list)):
+                if len(debit_row) >= 3:
+                    # SQL-style tuple: (id, code, name, ...)
+                    debit_code = debit_row[1]
+                    debit_name = debit_row[2]
+                elif len(debit_row) >= 2:
+                    # Posting-helper tuple: (name, code)
+                    debit_name = debit_row[0]
+                    debit_code = debit_row[1]
+                else:
+                    debit_code = None
+                    debit_name = None
+            else:
+                debit_code = None
+                debit_name = None
+
+            project_debit_account = str(
+                debit_code or project_debit_raw or ""
+            ).strip()
+            project_debit_name = str(
+                debit_name or project_debit_account
+            ).strip()
 
             cur.execute(
                 f"""
