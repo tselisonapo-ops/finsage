@@ -120895,8 +120895,8 @@ class DatabaseService:
              AND j.company_id = ll.company_id
              AND j.source = 'lessor_lease_commencement'
             LEFT JOIN {schema}.journal_lines jl
-              ON jl.journal_id = j.id
-             AND jl.account_code = ll.underlying_asset_account_code
+            ON jl.journal_id = j.id
+            AND jl.account_code = a.asset_account_code\
             WHERE ll.lease_classification = 'finance'
               AND ll.commencement_journal_id IS NOT NULL
         ),
