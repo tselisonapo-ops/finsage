@@ -1,5 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
+<!-- ══ PRODUCTION BUILD (2026-10-16): FinSage UX upgrade layer ONLY.
+     No demo data / mock / auth seeding. Pairs with your production dashboard.js
+     and backend. UX upgrades: Command Center v2, Planning & Performance,
+     Master Records, Reports + statement templates, VAT, Tax Recon, Group
+     Reporting, Fixed Assets / Deferred Tax / Financial Instruments,
+     Company & Setup, Manufacturing skins. ══ -->
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -8,7 +14,7 @@
 
 
 <!-- DEMO: mock layer replaces the signin redirect (seeds token + API mock) -->
-<script src="mock-api.js?v=20261016c"></script>
+<!-- PRODUCTION BUILD: demo mock data layer removed — dashboard.js fetches your real backend -->
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
@@ -12136,7 +12142,7 @@ label:has(#projectTeamUserSearch) {
   letter-spacing: -.01em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
-  line-clamp: 2;              /* ← added: standard property */
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   min-height: 2.6em;
@@ -37950,15 +37956,8 @@ label:has(#projectTeamUserSearch) {
     })();
 </script>
 <script>
-    /* DEMO (Task 10): PAYE tax-filing engine — provides window.previewPayeData,
-       window.exportPayeFiling and window.__taxFiling. dashboard.js's Statutory
-       Returns workspace calls these globals from its inline onclick hooks. */
-    (function () {
-        const s = document.createElement("script");
-        s.src = "./tax-filing-dashboard-integration.js?v=20261014a";
-        s.async = false;
-        document.head.appendChild(s);
-    })();
+/* PRODUCTION BUILD: demo PAYE tax-filing engine file removed.
+   The inline validatePayeFiling bridge below is kept — dashboard.js onclick hooks reference it. */
 
     /* DEMO bridge — the workspace Validate button calls window.validatePayeFiling?.().
        Resolve authority + period from the on-screen workspace exactly like the
@@ -38697,7 +38696,7 @@ label:has(#projectTeamUserSearch) {
     animation: none !important;
   }
 }
-</style>   /* ← THIS LINE WAS MISSING — added */
+</style>
 <style id="cat3b-css">
 /* ══════════════════════════════════════════════════════════════
    cat3b — MANUFACTURING MODAL & ORDER-DETAIL SKIN (Task 17)
