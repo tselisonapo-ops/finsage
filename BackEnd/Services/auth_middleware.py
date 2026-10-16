@@ -29,7 +29,19 @@ def require_auth(_f=None, *, require_company: bool = True):
             if request.method == "OPTIONS":
                 return _corsify(make_response("", 204))
 
+
             auth_header = request.headers.get("Authorization", "")
+            current_app.logger.warning(
+                "AUTH HEADER CHECK %s",
+                {
+                    "path": request.path,
+                    "method": request.method,
+                    "authorization_present": bool(auth_header),
+                    "bearer_prefix_present": auth_header.startswith("Bearer "),
+                    "authorization_length": len(auth_header),
+                },
+            )
+
             if not auth_header.startswith("Bearer "):
                 return _corsify(make_response(
                     jsonify({"error": "Missing or invalid Authorization header"}), 401
