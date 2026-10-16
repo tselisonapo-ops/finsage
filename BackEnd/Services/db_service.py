@@ -70733,6 +70733,152 @@ class DatabaseService:
                 ))
 
             # ==================================================
+            # PROJECT MATERIAL ISSUE — INVENTORY ROLLBACK
+            # ==================================================
+            elif source == "project_material_issue" and source_id:
+                project_tx_id = int(source_id)
+
+                # 1. Lock and find the original project issue transaction
+                cur.execute(f"""
+                    SELECT id, status
+                    FROM {schema}.inventory_tx
+                    WHERE company_id = %s
+                      AND id = %s
+                      AND tx_type = 'issue_to_project'
+                      AND posted_journal_id = %s
+                    FOR UPDATE
+                """, (
+                    int(company_id),
+                    project_tx_id,
+                    int(journal_id),
+                ))
+
+                tx_row = cur.fetchone()
+
+                if not tx_row:
+                    raise ValueError(
+                        f"PROJECT_MATERIAL_ISSUE_NOT_FOUND|"
+                        f"tx_id={project_tx_id}|journal_id={journal_id}"
+                    )
+
+                tx = tx_row if isinstance(tx_row, dict) else {
+                    "id": tx_row[0],
+                    "status": tx_row[1],
+                }
+
+                # 2. Restore FIFO quantities
+                cur.execute(f"""
+                    SELECT id, layer_id, qty
+                    FROM {schema}.inventory_fifo_allocations
+                    WHERE company_id = %s
+                      AND source = 'project_material_issue'
+                      AND source_id = %s
+                      AND posted_journal_id IS NOT NULL
+                    FOR UPDATE
+                """, (
+                    int(company_id),
+                    project_tx_id,
+                ))
+
+                fifo_rows = cur.fetchall() or []
+
+                for fr in fifo_rows:
+                    alloc = fr if isinstance(fr, dict) else {
+                        "id": fr[0],
+                        "layer_id": fr[1],
+                        "qty": fr[2],
+                    }
+
+                    qty = float(alloc.get("qty") or 0)
+
+                    if qty <= 0:
+                        continue
+
+                    cur.execute(f"""
+                        UPDATE {schema}.inventory_layers
+                        SET qty_out = GREATEST(qty_out - %s, 0)
+                        WHERE company_id = %s
+                          AND id = %s
+                    """, (
+                        qty,
+                        int(company_id),
+                        int(alloc["layer_id"]),
+                    ))
+
+                    cur.execute(f"""
+                        UPDATE {schema}.inventory_fifo_allocations
+                        SET posted_journal_id = NULL
+                        WHERE company_id = %s
+                          AND id = %s
+                    """, (
+                        int(company_id),
+                        int(alloc["id"]),
+                    ))
+
+                # 3. Restore average-cost inventory quantities
+                # These are the outbound layers created by
+                # issue_inventory_to_project().
+                cur.execute(f"""
+                    SELECT id, qty_out
+                    FROM {schema}.inventory_layers
+                    WHERE company_id = %s
+                      AND source = 'project_material_issue'
+                      AND source_id = %s
+                      AND qty_in = 0
+                      AND posted_journal_id IS NOT NULL
+                    FOR UPDATE
+                """, (
+                    int(company_id),
+                    project_tx_id,
+                ))
+
+                avg_layer_rows = cur.fetchall() or []
+
+                for lr in avg_layer_rows:
+                    layer = lr if isinstance(lr, dict) else {
+                        "id": lr[0],
+                        "qty_out": lr[1],
+                    }
+
+                    qty = float(layer.get("qty_out") or 0)
+
+                    if qty <= 0:
+                        continue
+
+                    cur.execute(f"""
+                        UPDATE {schema}.inventory_layers
+                        SET qty_out = GREATEST(qty_out - %s, 0),
+                            posted_journal_id = NULL
+                        WHERE company_id = %s
+                          AND id = %s
+                    """, (
+                        qty,
+                        int(company_id),
+                        int(layer["id"]),
+                    ))
+
+                # 4. Mark the original inventory transaction reversed
+                cur.execute(f"""
+                    UPDATE {schema}.inventory_tx
+                    SET status = 'reversed',
+                        posted_journal_id = NULL,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                      AND id = %s
+                      AND posted_journal_id = %s
+                """, (
+                    int(company_id),
+                    project_tx_id,
+                    int(journal_id),
+                ))
+
+                if cur.rowcount != 1:
+                    raise ValueError(
+                        f"PROJECT_MATERIAL_ISSUE_REVERSAL_UPDATE_FAILED|"
+                        f"tx_id={project_tx_id}"
+                    )
+
+            # ==================================================
             # MANUFACTURING - ASSET DEPRECIATION / OVERHEAD ROLLBACK
             # ==================================================
             elif source == "asset_depreciation":
