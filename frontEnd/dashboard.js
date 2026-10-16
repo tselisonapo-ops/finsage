@@ -385,6 +385,15 @@ window.addEventListener("unhandledrejection", (e) => {
         headers.set("X-FS-Target-Company-Id", String(postingCtx.targetCompanyId));
       }
 
+      if (finalUrl.includes("/revenue/contracts")) {
+        console.log("[REVENUE AUTH CHECK]", {
+          url: finalUrl,
+          authHeaderPresent: headers.has("Authorization"),
+          authHeaderIsBearer: /^Bearer\s+\S+$/i.test(
+            headers.get("Authorization") || ""
+          )
+        });
+      }
       console.log("API FETCH HEADERS", finalUrl, Object.fromEntries(headers.entries()));
     } catch (e) {
       console.warn("Failed to attach posting context headers", e);
