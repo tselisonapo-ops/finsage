@@ -394,7 +394,6 @@ window.addEventListener("unhandledrejection", (e) => {
           )
         });
       }
-      console.log("API FETCH HEADERS", finalUrl, Object.fromEntries(headers.entries()));
     } catch (e) {
       console.warn("Failed to attach posting context headers", e);
     }
@@ -442,7 +441,6 @@ window.addEventListener("unhandledrejection", (e) => {
     // Avoid infinite loops
     const approveAttempted = options._fsApproveAttempt === true;
 
-    
     if (finalUrl.includes("/revenue/contracts")) {
       console.log("[REVENUE FETCH CHECK]", {
         url: finalUrl,
@@ -450,6 +448,8 @@ window.addEventListener("unhandledrejection", (e) => {
         authorizationPresent: headers.has("Authorization"),
         authorizationLength: (headers.get("Authorization") || "").length
       });
+
+      console.trace("[REVENUE FETCH CALLER]");
     }
 
     const res = await fetch(finalUrl, { ...options, headers });
@@ -106233,6 +106233,12 @@ async function renderContractPreview(c = {}) {
     setMsg("Loading contracts...");
     try {
       // temporary: contracts list endpoint is create-only, so use existing company route if you add list later
+      console.trace("[Revenue] loadContracts called");
+      console.log("[Revenue] contracts request", {
+        cid,
+        url: `${ENDPOINTS.revenue.contracts(cid)}?limit=100`,
+        apiFetchType: typeof apiFetch
+      });
       const data = await apiFetch(`${ENDPOINTS.revenue.contracts(cid)}?limit=100`);
       state.contracts = data?.items || data?.data?.items || data?.data || [];
       renderContractList();
