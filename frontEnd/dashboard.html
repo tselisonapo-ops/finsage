@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<!-- ══ PRODUCTION BUILD v2 (2026-10-16): FinSage UX upgrade layer ONLY.
+<!-- ══ PRODUCTION BUILD v3 (2026-10-16): FinSage UX upgrade layer ONLY.
      No demo data / mock / auth seeding. Pairs with your production dashboard.js
      and backend. UX upgrades: Command Center v2, Planning & Performance,
      Master Records, Reports + statement templates, VAT, Tax Recon, Group
@@ -9,7 +9,11 @@
      v2 adds a Session Lock Helper chip (additive only): while the tab is
      locally locked (sessionStorage fs_session_locked), it shows the lock
      reason and offers 'Clear lock & reload' as an escape hatch when the
-     Unlock form keeps failing (e.g. backend /api/auth/reauth missing). ══ -->
+     Unlock form keeps failing (e.g. backend /api/auth/reauth missing).
+     v3 restores ALL original production wiring (auth guard, address
+     autocomplete, FS_APP_BASE loader chain with config/hostMount/tax-filing
+     integration/corporate-structure/consolidation/ias41/data-migration,
+     Google Maps tag) — upgrade layer untouched. ══ -->
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -17,10 +21,45 @@
   <link rel="icon" type="image/png" href="./assets/favicon.png">
 
 
-<!-- DEMO: mock layer replaces the signin redirect (seeds token + API mock) -->
-<!-- PRODUCTION BUILD: demo mock data layer removed — dashboard.js fetches your real backend -->
+<!-- ✅ ORIGINAL production auth guard restored (v3): redirect to signin if no token -->
+<!-- ✅ Redirect to signin if no token -->
+<script>
+(function(){
+  const token=
+    localStorage.getItem("fs_user_token")||
+    sessionStorage.getItem("fs_user_token");
+
+  const path=window.location.pathname;
+
+  const isLiveApp=
+    path==="/app"||
+    path.startsWith("/app/");
+
+  const base=isLiveApp?"/app":"";
+
+  const publicPages=[
+    `${base}/signin.html`,
+    `${base}/registration.html`,
+    `${base}/forgot-password.html`,
+    `${base}/reset-password.html`
+  ];
+
+  const isPublicPage=
+    publicPages.includes(path);
+
+  if(!token&&!isPublicPage){
+    window.location.replace(
+      `${base}/signin.html?reason=signed_out`
+    );
+  }
+})();
+</script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<!-- ✅ Address autocomplete (free Photon backend, no Google API key) -->
+<link rel="stylesheet" href="/static/css/address-autocomplete.css?v=20261008a">
+<script src="/static/js/address-autocomplete.js?v=20261008a"></script>
 
 <style>
   :root{
@@ -37949,154 +37988,61 @@ label:has(#projectTeamUserSearch) {
 </div>
 <div id="fs-react-drawer-root"></div>
 
+<!-- ✅ ORIGINAL production bootstrap restored (v3): FS_APP_BASE + full loader chain (config, hostMount, dashboard.js, tax-filing integration, corporate-structure, consolidation, ias41, data-migration) -->
 <script>
-    /* DEMO: load the REAL dashboard.js from this folder.
-       config.js / hostMount / optional modules are provided by mock-api.js. */
-    (function () {
-        const s = document.createElement("script");
-        s.src = "./dashboard.js?v=20261014a";
-        s.async = false;
-        document.head.appendChild(s);
-    })();
+    window.FS_APP_BASE =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1"
+            ? ""
+            : "/app";
 </script>
+
 <script>
-/* PRODUCTION BUILD: demo PAYE tax-filing engine file removed.
-   The inline validatePayeFiling bridge below is kept — dashboard.js onclick hooks reference it. */
+    const FS_APP_BASE = window.FS_APP_BASE || "";
 
-    /* DEMO bridge — the workspace Validate button calls window.validatePayeFiling?.().
-       Resolve authority + period from the on-screen workspace exactly like the
-       engine does, hit the same endpoints the engine uses, and paint the same
-       validation summary panel (#taxFilingValidationResults). Demo layer only —
-       dashboard.js untouched. */
-    window.validatePayeFiling = async function (ev) {
-        if (ev && typeof ev.preventDefault === "function") ev.preventDefault();
-
-        const btn = ev && ev.currentTarget;
-        const results = document.getElementById("taxFilingValidationResults");
-        const hint = document.getElementById("taxFilingTopHint");
-        const area = document.getElementById("taxFilingPreview");
-
-        const company =
-            window.getActiveCompanyId?.() ||
-            window.CURRENT_COMPANY_ID ||
-            window.CURRENT_COMPANY?.id;
-
-        const section = document.getElementById("payeTaxFilingSection");
-        const headEl = section && section.querySelector(".payroll-card-head h3");
-        let authority = "SARS";
-        if (headEl) {
-            const first = (headEl.textContent || "").trim().split(/\s+/)[0].toUpperCase();
-            if (/^(SARS|RSL|BURS)$/.test(first)) authority = first;
+    function loadScript(src, options = {}) {
+        const script = document.createElement("script");
+        script.src = `${FS_APP_BASE}${src}`;
+        if (options.module) {
+            script.type = "module";
+        } else {
+            // Critical for dynamically-inserted classic scripts:
+            // preserve insertion/execution order.
+            script.async = false;
         }
-        if (window.__taxFiling && typeof window.__taxFiling.getSelectedAuthority === "function") {
-            authority = window.__taxFiling.getSelectedAuthority() || authority;
-        }
+        document.head.appendChild(script);
+        return script;
+    }
 
-        let year = document.getElementById("taxFilingYear")?.value || "";
-        let month = document.getElementById("taxFilingMonth")?.value || "";
-        if (/^\d{4}-\d{2}$/.test(month)) { year = month.slice(0, 4); month = month.slice(5, 7); }
+    function loadStylesheet(href) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = `${FS_APP_BASE}${href}`;
+        document.head.appendChild(link);
+    }
 
-        const show = (html) => {
-            if (!results) return;
-            results.style.display = "block";
-            results.innerHTML = html;
-        };
-        const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({
-            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-        }[c]));
+    loadScript("/config.js");
 
-        const monthNum = String(month || "").padStart(2, "0");
-        if (!year || !month || !/^\d{4}$/.test(String(year)) || !/^(0[1-9]|1[0-2])$/.test(monthNum)) {
-            show('<div style="color:#b45309;background:#fffbeb;border:1px dashed #fcd34d;border-radius:8px;padding:10px 14px;">📅 Select a tax year and filing month first, then preview before validating.</div>');
-            return;
-        }
-        if (!company) { show('<div style="color:#b91c1c;">No active company selected.</div>'); return; }
+    loadStylesheet("/dist/assets/hostMount.css?v=20260811b");
 
-        const old = btn ? btn.textContent : "";
-        if (btn) { btn.disabled = true; btn.textContent = "⏳ Validating…"; }
-        if (hint) hint.textContent = "Checking the selected period before export…";
+    loadScript("/dist/assets/hostMount.js?v=20260811b", { module: true });
 
-        try {
-            const filingMonth = `${year}-${monthNum}`;
+    loadScript("/dashboard.js?v=20261013b");
 
-            /* resolve the payroll period the same way the export engine does */
-            const prevUrl = window.ENDPOINTS.taxFiling.preview(company, authority, filingMonth);
-            const prevResp = await window.apiFetch(prevUrl, { method: "GET" });
-            const prevPayload = prevResp?.data || prevResp;
-            const periodStart = String(prevPayload?.period?.start || "").slice(0, 10);
-            const periodEnd = String(prevPayload?.period?.end || "").slice(0, 10);
+    /* ==================================================================
+     * 🎯 PAYE TAX FILING MODULE - Add AFTER dashboard.js
+     * ================================================================== */
+    loadScript("/tax-filing-dashboard-integration.js?v=20260818a");
 
-            if (!periodStart || !periodEnd) {
-                throw new Error(`No payroll period found for filing month ${filingMonth}.`);
-            }
-
-            const res = await window.apiFetch(
-                window.ENDPOINTS.taxFiling.validate(company),
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        authority_code: authority,
-                        period_start: periodStart,
-                        period_end: periodEnd,
-                        include_benefits: true
-                    })
-                }
-            );
-
-            const data = res?.data || res;
-            if (!res?.ok || !data) throw new Error(res?.error || "Validation failed");
-
-            const summary = data.summary || {
-                total_records: 0, valid_records: 0,
-                error_count: (data.errors || []).length,
-                warning_count: (data.warnings || []).length
-            };
-            const errs = data.errors || [];
-            const warns = data.warnings || [];
-            const tone = data.is_valid ? "success" : (summary.error_count > 0 ? "error" : "warning");
-            if (results) results.className = `tax-filing-validation ${tone}`;
-
-            show(
-                '<div class="validation-summary">' +
-                    "<strong>" + (data.is_valid ? "✅ All Checks Passed" : (summary.error_count > 0 ? "❌ Issues Found" : "⚠️ Warnings Present")) + "</strong>" +
-                    "<p>" + summary.total_records + " records checked • " + summary.valid_records + " valid" +
-                    (summary.error_count > 0 ? " • <span style=\"color:#dc2626\">" + summary.error_count + " errors</span>" : "") +
-                    (summary.warning_count > 0 ? " • <span style=\"color:#d97706\">" + summary.warning_count + " warning" + (summary.warning_count > 1 ? "s" : "") + "</span>" : "") +
-                    "</p>" +
-                "</div>" +
-                (errs.length
-                    ? '<details open style="margin-top:12px;"><summary style="cursor:pointer;font-weight:700;color:#dc2626;">Errors (' + errs.length + ')</summary><ul style="margin:8px 0 0 20px;padding:0;">' +
-                        errs.slice(0, 10).map((e) => '<li style="margin-bottom:4px;">' + esc(e.message) + "</li>").join("") +
-                        (errs.length > 10 ? "<li>…and " + (errs.length - 10) + " more</li>" : "") + "</ul></details>"
-                    : "") +
-                (warns.length
-                    ? '<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:700;color:#d97706;">Warnings (' + warns.length + ')</summary><ul style="margin:8px 0 0 20px;padding:0;">' +
-                        warns.slice(0, 5).map((w) => '<li style="margin-bottom:4px;">' + esc(w.message) + "</li>").join("") +
-                        "</ul></details>"
-                    : "")
-            );
-
-            if (typeof window.showPayrollStatus === "function") {
-                window.showPayrollStatus(
-                    "Validation complete: " + summary.total_records + " records checked — " + authority + " " + filingMonth,
-                    "success"
-                );
-            }
-        } catch (err) {
-            console.error("[PAYE Validate] failed:", err);
-            show('<div style="color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;"><b>Validation failed:</b> ' + esc(err?.message || err) + "</div>");
-            if (typeof window.showPayrollStatus === "function") {
-                window.showPayrollStatus(err?.message || "Validation failed.", "error");
-            }
-        } finally {
-            if (btn) { btn.disabled = false; btn.textContent = old; }
-            if (area && area.style.display !== "none" && area.innerHTML) {
-                /* keep the preview visible under the results panel */
-            }
-        }
-    };
+    loadScript("/js/corporate-structure.js?v=20260807a");
+    
+    loadScript("/js/consolidation.js?v=20260807a");
+    
+    loadScript("/ias41.js");
+    
+    loadScript("/js/data-migration.js");
 </script>
+<!-- v3: demo inline PAYE validate bridge removed — the REAL engine is restored via /tax-filing-dashboard-integration.js?v=20260818a in the loader chain; it strips the inline onclick and binds the Validate button itself -->
 
 
 
@@ -39181,12 +39127,12 @@ label:has(#projectTeamUserSearch) {
 
 <script id="cat3-script">
 /* ══════════════════════════════════════════════════════════════
-   cat3 — CATALOG STUDIO DEMO BRIDGE (Task 16)
+   cat3 — CATALOG STUDIO UX BRIDGE (Task 16)
    · Status-pill toner (MutationObserver, childList only — no loops)
    · Active tab tracking for the segmented quick tabs
    · Manufacturing sub-tab active tracking
    · window.openPurchaseOrder bridge (pre-existing inline onclick in
-     dashboard.js calls an undefined function — demo-layer bridge
+     dashboard.js calls an undefined function — UX-layer bridge
      renders a read-only PO viewer; no app behaviour changed)
    ══════════════════════════════════════════════════════════════ */
 (function () {
@@ -41575,14 +41521,14 @@ window.safeRedirect = function (url, mode = "href") {
 
 <script id="cat4-script">
 /* ══════════════════════════════════════════════════════════════
-   cat4 — CASH & BANKING DEMO BRIDGE (Task 18)
+   cat4 — CASH & BANKING UX BRIDGE (Task 18)
    · Cashbook KPI strip (values derived from the rendered table)
    · Statement cards: status chip toner + per-account count
    · Recon chrome: auto-open latest recon, summary chips, recent
      recon chips, status-pill toner, styled empty state
    · window.getSelectedBankLedgerCode bridge (referenced by the
      recon make-journal flow in dashboard.js but never defined
-     there — demo layer provides the intended behaviour)
+     there — UX layer provides the intended behaviour)
    No dashboard.js behaviour changed — presentation + bridges only.
    ══════════════════════════════════════════════════════════════ */
 (function () {
@@ -46901,6 +46847,17 @@ th.num { text-align: right; }
   }
 })();
 </script>
+<script
+  src="https://maps.googleapis.com/maps/api/js?key=YOUR_REAL_KEY_HERE&libraries=places&callback=onMapsLoaded"
+  async
+  defer
+></script>
+<!-- ❌ Google Maps Places not required for address autocomplete anymore.
+     Free Photon backend at /api/address/search handles all address lookup.
+     Keep this script tag only if you still use Google Maps for the
+     company-map widget (initCompanyMapFromAddress in dashboard.js).
+     If you don't need the map widget, you can delete this script entirely. -->
+
 <script id="fs-rescue-chip">
 /* ══ FinSage Session Lock Helper v2 (production UX layer, ADDITIVE) ══
    dashboard.js owns the session-lock flow: apiFetch() sets
