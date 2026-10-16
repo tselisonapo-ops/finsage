@@ -1,11 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
-<!-- ══ PRODUCTION BUILD (2026-10-16): FinSage UX upgrade layer ONLY.
+<!-- ══ PRODUCTION BUILD v2 (2026-10-16): FinSage UX upgrade layer ONLY.
      No demo data / mock / auth seeding. Pairs with your production dashboard.js
      and backend. UX upgrades: Command Center v2, Planning & Performance,
      Master Records, Reports + statement templates, VAT, Tax Recon, Group
      Reporting, Fixed Assets / Deferred Tax / Financial Instruments,
-     Company & Setup, Manufacturing skins. ══ -->
+     Company & Setup, Manufacturing skins.
+     v2 adds a Session Lock Helper chip (additive only): while the tab is
+     locally locked (sessionStorage fs_session_locked), it shows the lock
+     reason and offers 'Clear lock & reload' as an escape hatch when the
+     Unlock form keeps failing (e.g. backend /api/auth/reauth missing). ══ -->
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -46895,6 +46899,101 @@ th.num { text-align: right; }
   } else {
     boot();
   }
+})();
+</script>
+<script id="fs-rescue-chip">
+/* ══ FinSage Session Lock Helper v2 (production UX layer, ADDITIVE) ══
+   dashboard.js owns the session-lock flow: apiFetch() sets
+   sessionStorage["fs_session_locked"] on 423 / HTML-redirect, shows
+   #sessionLockModal, and unlock POSTs to /api/auth/reauth. This helper only
+   ADDS an escape hatch while the tab is locked: a small chip (bottom-right)
+   with the lock reason and "Clear lock & reload". It never intercepts,
+   modifies or blocks any request, and hides itself as soon as the lock flag
+   is gone (including after a successful dashboard.js unlock). */
+(function () {
+  "use strict";
+  var TICK = 1500;
+  var mounted = null;
+
+  function flagGet(k) {
+    try { return sessionStorage.getItem(k); } catch (e) { return null; }
+  }
+  function locked() { return flagGet("fs_session_locked") === "1"; }
+  function reason() { return flagGet("fs_session_lock_reason") || "unknown"; }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function build() {
+    var el = document.createElement("div");
+    el.id = "fsRescueChip";
+    el.setAttribute("role", "complementary");
+    el.setAttribute("aria-label", "Session lock helper");
+    el.style.cssText =
+      "position:fixed;right:14px;bottom:14px;z-index:2147483647;width:272px;" +
+      "background:#fff;border:1px solid rgba(148,163,184,.4);border-radius:14px;" +
+      "box-shadow:0 18px 48px rgba(0,40,79,.28);overflow:hidden;" +
+      "font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;";
+    el.innerHTML =
+      '<div style="height:3px;background:linear-gradient(90deg,#00C8C8,#00284F)"></div>' +
+      '<div style="padding:12px 14px">' +
+        '<div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#00a8a8">FinSage · Session lock helper</div>' +
+        '<div style="margin-top:6px;font-size:12.5px;font-weight:700;color:#00284F">This tab is locally locked</div>' +
+        '<div style="margin-top:4px;font-size:11.5px;color:#64748b;line-height:1.5">' +
+          'Reason: <b style="color:#334155">' + esc(reason()) + '</b><br>' +
+          'Reloading keeps the lock (it lives in this tab\'s sessionStorage). ' +
+          'If Unlock keeps failing, the backend may be missing ' +
+          '<b style="color:#334155">POST /api/auth/reauth</b>, or /api/me is still returning 423.' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:10px">' +
+          '<button type="button" data-act="clear" style="flex:1;padding:8px 10px;border-radius:999px;' +
+            'border:1px solid #00284F;background:linear-gradient(135deg,#0b3a63,#00284F);' +
+            'color:#fff;font-size:12px;font-weight:700;cursor:pointer">Clear lock &amp; reload</button>' +
+          '<button type="button" data-act="focus" style="padding:8px 10px;border-radius:999px;' +
+            'border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;font-weight:600;' +
+            'cursor:pointer">Unlock</button>' +
+        '</div>' +
+      '</div>';
+
+    el.querySelector('[data-act="clear"]').addEventListener("click", function () {
+      try {
+        sessionStorage.removeItem("fs_session_locked");
+        sessionStorage.removeItem("fs_session_lock_reason");
+      } catch (e) {}
+      location.reload(); // same JWT (localStorage) survives → clean retry
+    });
+    el.querySelector('[data-act="focus"]').addEventListener("click", function () {
+      var m = document.getElementById("sessionLockModal");
+      var i = document.getElementById("sessionUnlockPassword");
+      try {
+        if (m) { m.classList.remove("hidden"); m.classList.add("flex"); m.style.display = "flex"; }
+      } catch (e) {}
+      if (i) { try { i.focus(); } catch (e) {} }
+    });
+    return el;
+  }
+
+  function sync() {
+    var want = false;
+    try { want = locked(); } catch (e) {}
+    if (want && !mounted && document.body) {
+      mounted = build();
+      document.body.appendChild(mounted); // appended last → paints above the lock modal
+    } else if (!want && mounted) {
+      mounted.remove();
+      mounted = null;
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", sync, { once: true });
+  } else {
+    sync();
+  }
+  setInterval(sync, TICK);
+  window.addEventListener("storage", sync);
 })();
 </script>
 </body>
