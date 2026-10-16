@@ -442,6 +442,16 @@ window.addEventListener("unhandledrejection", (e) => {
     // Avoid infinite loops
     const approveAttempted = options._fsApproveAttempt === true;
 
+    
+    if (finalUrl.includes("/revenue/contracts")) {
+      console.log("[REVENUE FETCH CHECK]", {
+        url: finalUrl,
+        method: options.method || "GET",
+        authorizationPresent: headers.has("Authorization"),
+        authorizationLength: (headers.get("Authorization") || "").length
+      });
+    }
+
     const res = await fetch(finalUrl, { ...options, headers });
 
     const contentType = res.headers.get("Content-Type") || "";
