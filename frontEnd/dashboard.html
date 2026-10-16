@@ -38027,7 +38027,7 @@ label:has(#projectTeamUserSearch) {
 
     loadScript("/dist/assets/hostMount.js?v=20260811b", { module: true });
 
-    loadScript("/dashboard.js?v=20261016d");
+    loadScript("/dashboard.js?v=20261016e");
 
     /* ==================================================================
      * 🎯 PAYE TAX FILING MODULE - Add AFTER dashboard.js
@@ -40407,10 +40407,14 @@ window.safeRedirect = function (url, mode = "href") {
       fetchTimer = null;
       var rows = [];
       try {
-        var r = await fetch(API_BASE + "/api/companies/" + cid() + "/revenue/contracts?limit=100");
-        var j = await r.json();
+
+        var j = await apiFetch(
+          ENDPOINTS.revenue.contracts(cid()) + "?limit=100",
+          { method: "GET" }
+        );
         rows = (j && (j.items || (j.data && j.data.items) || j.data)) || [];
         if (!Array.isArray(rows)) rows = [];
+
       } catch (e) { rows = []; }
       revData = rows;
       renderCards();
