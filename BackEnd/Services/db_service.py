@@ -54088,6 +54088,63 @@ class DatabaseService:
 
 
         -- ================================================================
+        -- BOM STANDARD UTILITY COSTS: WATER AND ELECTRICITY
+        -- ================================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_bom_utilities (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            bom_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_boms(id)
+                ON DELETE CASCADE,
+
+            -- Examples: water-direct, water-allocation,
+            --            elec-direct, elec-machine
+            method TEXT NOT NULL DEFAULT 'water-direct',
+
+            -- water or electricity
+            utility_type TEXT NOT NULL DEFAULT 'water',
+
+            description TEXT NULL,
+
+            -- Store calculated batch cost without losing sub-cent amounts.
+            cost NUMERIC(18,6) NOT NULL DEFAULT 0,
+
+            -- Direct consumption, such as litres or kWh.
+            quantity NUMERIC(18,6) NULL,
+            rate NUMERIC(18,8) NULL,
+            unit TEXT NULL,
+
+            -- Shared monthly utility bill allocation.
+            monthly_amount NUMERIC(18,6) NULL,
+            allocation_pct NUMERIC(9,4) NULL,
+            batches_per_month NUMERIC(18,6) NULL,
+
+            -- Electricity machine inputs.
+            asset_id INT NULL,
+            effective_kw NUMERIC(18,6) NULL,
+            hours NUMERIC(18,6) NULL,
+            kwh_rate NUMERIC(18,8) NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK (cost >= 0),
+            CHECK (utility_type IN ('water', 'electricity'))
+        );
+
+        ALTER TABLE {schema}.manufacturing_boms
+        ADD COLUMN IF NOT EXISTS standard_utility_cost
+        NUMERIC(18,2) NOT NULL DEFAULT 0;
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_manufacturing_bom_utilities_company_bom_idx
+        ON {schema}.manufacturing_bom_utilities(company_id, bom_id);
+
+        -- ================================================================
         -- BOM STANDARD COST TEMPLATES
         -- (mirror manufacturing_order_labour / _direct_costs / _overhead)
         -- ================================================================
@@ -87088,6 +87145,7 @@ class DatabaseService:
         labour: list[dict] | None = None,
         direct_costs: list[dict] | None = None,
         overheads: list[dict] | None = None,
+        utilities: list[dict] | None = None,
         created_by_user_id=None,
         cur=None,
     ) -> int:
@@ -87203,6 +87261,16 @@ class DatabaseService:
                     labour=labour,
                     direct_costs=direct_costs,
                     overheads=overheads,
+                    user_id=created_by_user_id,
+                    cur=c,
+                )
+
+
+            if utilities is not None:
+                self.replace_manufacturing_bom_utilities(
+                    company_id=company_id,
+                    bom_id=bom_id,
+                    utilities=utilities,
                     user_id=created_by_user_id,
                     cur=c,
                 )
@@ -89877,6 +89945,114 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _fetch(cur2)
 
+
+    def replace_manufacturing_bom_utilities(
+        self,
+        company_id: int,
+        bom_id: int,
+        utilities: list[dict],
+        *,
+        user_id=None,
+        cur=None,
+    ) -> None:
+        schema = self.company_schema(company_id)
+
+        allowed_methods = {
+            "water-direct",
+            "water-allocation",
+            "elec-direct",
+            "elec-machine",
+        }
+
+        def _replace(c):
+            c.execute(
+                f"""
+                SELECT id
+                FROM {schema}.manufacturing_boms
+                WHERE company_id = %s AND id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
+            if not c.fetchone():
+                raise ValueError("BOM not found")
+
+            c.execute(
+                f"""
+                DELETE FROM {schema}.manufacturing_bom_utilities
+                WHERE company_id = %s AND bom_id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
+
+            for row in utilities or []:
+                row = row or {}
+
+                method = str(row.get("method") or "water-direct").strip()
+                if method not in allowed_methods:
+                    raise ValueError(f"Unsupported utility method: {method}")
+
+                utility_type = (
+                    "electricity" if method.startswith("elec-") else "water"
+                )
+
+                # Preserve an explicitly supplied valid utility type.
+                supplied_type = str(row.get("utility_type") or "").strip().lower()
+                if supplied_type in {"water", "electricity"}:
+                    utility_type = supplied_type
+
+                def value(key):
+                    v = row.get(key)
+                    return None if v in ("", None) else v
+
+                cost = value("cost") or 0
+                if Decimal(str(cost)) < 0:
+                    raise ValueError("Utility cost cannot be negative")
+
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_bom_utilities (
+                        company_id, bom_id, method, utility_type, description,
+                        cost, quantity, rate, unit,
+                        monthly_amount, allocation_pct, batches_per_month,
+                        asset_id, effective_kw, hours, kwh_rate,
+                        created_by_user_id, updated_by_user_id
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s
+                    )
+                    """,
+                    (
+                        company_id,
+                        int(bom_id),
+                        method,
+                        utility_type,
+                        value("description"),
+                        cost,
+                        value("quantity"),
+                        value("rate"),
+                        value("unit"),
+                        value("monthly_amount"),
+                        value("allocation_pct"),
+                        value("batches_per_month"),
+                        value("asset_id"),
+                        value("effective_kw"),
+                        value("hours"),
+                        value("kwh_rate"),
+                        user_id,
+                        user_id,
+                    ),
+                )
+
+        if cur is not None:
+            _replace(cur)
+        else:
+            with self._conn_cursor() as (conn, cur2):
+                _replace(cur2)
+
     def update_manufacturing_bom(
         self,
         company_id: int,
@@ -89897,6 +90073,7 @@ class DatabaseService:
         lines: list[dict] | None = None,
         labour: list[dict] | None = None,
         direct_costs: list[dict] | None = None,
+        utilities: list[dict] | None = None,
         overheads: list[dict] | None = None,
         updated_by_user_id=None,
         cur=None,
@@ -90022,6 +90199,17 @@ class DatabaseService:
                     company_id=company_id,
                     bom_id=int(bom_id),
                     lines=lines,
+                    user_id=updated_by_user_id,
+                    cur=c,
+                )
+
+            # Replace utility rows only when utilities were supplied.
+            # Passing cur=c keeps the changes in this BOM update transaction.
+            if utilities is not None:
+                self.replace_manufacturing_bom_utilities(
+                    company_id=company_id,
+                    bom_id=int(bom_id),
+                    utilities=utilities,
                     user_id=updated_by_user_id,
                     cur=c,
                 )

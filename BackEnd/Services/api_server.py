@@ -14174,6 +14174,7 @@ def manufacturing_boms(cid: int):
             labour=payload.get("labour"),
             direct_costs=payload.get("direct_costs"),
             overheads=payload.get("overheads"),
+            utilities=payload.get("utilities"),
             created_by_user_id=int(user.get("id") or 0) or None,
         )
 
