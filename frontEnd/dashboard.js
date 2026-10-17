@@ -58277,7 +58277,7 @@ async function saveEditModal() {
     );
   }
   window.companyCurrency = companyCurrency;
-  
+
   function bfNormalizeToken(value) {
     return String(value || "")
       .trim()
@@ -160931,7 +160931,7 @@ if (document.readyState === "loading") {
     const cards = [
       ["Active leases", k.total, "register", "leases in the register"],
       ["Monthly due", money(k.dueTotal), "monthend", `${k.dueCount} of ${k.meCount} unpaid`],
-      ["Paid this period", k.meCount ? `${k.paidCount}/${k.meCount}` : "—", "monthend", "cash received"],
+      ["Paid this period", k.meCount ? `${k.paidCount}/${k.meCount}` : "—", "monthend", "cash paid"],
       ["Unposted IFRS 16", k.unpostedCount, "monthend", k.unpostedCount ? `${money(k.unpostedPnl)} P&L` : "all posted"],
       ["Lease liability", money(k.liab), "schedule", "opening balance"],
       ["ROU assets", money(k.rou), "schedule", "opening balance"],
@@ -161023,10 +161023,27 @@ if (document.readyState === "loading") {
     paintTabs(); paintPanel();
   }
 
+
   function fmtDateSafe(v) {
-    if (!v) return "—";
-    try { return new Date(v).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }); }
-    catch (_) { return String(v); }
+      if (v === null || v === undefined || String(v).trim() === "") {
+          return "—";
+      }
+
+      try {
+          const d = new Date(v);
+
+          if (Number.isNaN(d.getTime())) {
+              return "—";
+          }
+
+          const day = String(d.getUTCDate()).padStart(2, "0");
+          const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+          const year = d.getUTCFullYear();
+
+          return `${day}/${month}/${year}`;
+      } catch (_) {
+          return "—";
+      }
   }
 
   function paintTabs() {
