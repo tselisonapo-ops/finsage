@@ -160706,16 +160706,17 @@ if (document.readyState === "loading") {
     journal: Number(p.journal_id ?? p.journal ?? 0),
   });
 
+
   const schedFields = (s) => ({
-    no: s.period_no ?? s.period ?? "",
-    start: iso(s.period_start || s.start_date),
-    end: iso(s.period_end || s.end_date),
-    payment: Number(s.payment ?? s.payment_amount ?? 0),
-    interest: Number(s.interest ?? s.interest_amount ?? 0),
-    principal: Number(s.principal ?? s.principal_amount ?? 0),
-    depreciation: Number(s.depreciation ?? 0),
-    closingLiab: Number(s.closing_liability ?? s.closing_balance ?? 0),
-    scheduleId: s.schedule_id ?? s.id ?? null,
+      no: s.period_no ?? s.period ?? "",
+      start: s.period_start ?? s.start_date ?? null,
+      end: s.period_end ?? s.end_date ?? null,
+      payment: Number(s.payment ?? s.payment_amount ?? 0),
+      interest: Number(s.interest ?? s.interest_amount ?? 0),
+      principal: Number(s.principal ?? s.principal_amount ?? 0),
+      depreciation: Number(s.depreciation ?? 0),
+      closingLiab: Number(s.closing_liability ?? s.closing_balance ?? 0),
+      scheduleId: s.schedule_id ?? s.id ?? null,
   });
 
   /* ── API ─────────────────────────────────────────────────────── */
@@ -161024,26 +161025,23 @@ if (document.readyState === "loading") {
   }
 
 
+
   function fmtDateSafe(v) {
       if (v === null || v === undefined || String(v).trim() === "") {
           return "—";
       }
 
-      try {
-          const d = new Date(v);
+      const d = new Date(v);
 
-          if (Number.isNaN(d.getTime())) {
-              return "—";
-          }
-
-          const day = String(d.getUTCDate()).padStart(2, "0");
-          const month = String(d.getUTCMonth() + 1).padStart(2, "0");
-          const year = d.getUTCFullYear();
-
-          return `${day}/${month}/${year}`;
-      } catch (_) {
+      if (Number.isNaN(d.getTime())) {
           return "—";
       }
+
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const year = d.getUTCFullYear();
+
+      return `${day}/${month}/${year}`;
   }
 
   function paintTabs() {
