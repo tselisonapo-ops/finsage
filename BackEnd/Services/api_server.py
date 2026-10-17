@@ -254,6 +254,7 @@ from BackEnd.Services.control.control_audit import (
     control_audit_bp
 )
 from BackEnd.Services.control.control_automation import control_automation_bp
+from BackEnd.Services.receipt_scan_routes import receipt_scan_bp
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
 # ────────────────────────────────────────────────────────────────
@@ -717,7 +718,7 @@ app.register_blueprint(control_system_health_bp)
 app.register_blueprint(control_notifications_bp)
 app.register_blueprint(control_audit_bp)
 app.register_blueprint(control_automation_bp)
-
+app.register_blueprint(receipt_scan_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 
