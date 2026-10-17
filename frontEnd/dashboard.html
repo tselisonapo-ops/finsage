@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<!-- ══ PRODUCTION BUILD v3 (2026-10-16): FinSage UX upgrade layer ONLY.
+<!-- ══ PRODUCTION BUILD v4 (2026-10-17): FinSage UX upgrade layer ONLY.
      No demo data / mock / auth seeding. Pairs with your production dashboard.js
      and backend. UX upgrades: Command Center v2, Planning & Performance,
      Master Records, Reports + statement templates, VAT, Tax Recon, Group
@@ -13,7 +13,22 @@
      v3 restores ALL original production wiring (auth guard, address
      autocomplete, FS_APP_BASE loader chain with config/hostMount/tax-filing
      integration/corporate-structure/consolidation/ias41/data-migration,
-     Google Maps tag) — upgrade layer untouched. ══ -->
+     Google Maps tag) — upgrade layer untouched.
+     v4 fixes Project Desk detail tabs: grid-era width:100% on
+     .project-detail-tab inside the flex pill row pushed tabs 2..7
+     off-screen (only 'Planning' visible). Now width:auto — all 7
+     tabs render as pills in one row.
+     v5 fixes the Lessee Lease Center: (a) the frozen engine's boot IIFE
+     painted the legacy 'Monthly Due / Amortisation — Click Load' tables into
+     #leasesMount, and they stayed visible during the
+     ensureCompanyDataLoaded() network wait before renderLeaseCenterView()
+     replaced them ('shows the wrong screen first') — ls1-boot now suppresses
+     any legacy paint while #screen-leases is hidden and shows a skeleton;
+     (b) lease screens get the navy/teal skin (intro header, KPI tiles,
+     register, workspace tabs, tables); (c) #leasePayModal,
+     #leaseRegisterModal and #leaseWizardDrawer now fit phone screens
+     (stacked body scrolls instead of clipping, register-modal header wraps).
+     Engine dashboard.js?v=20261017b untouched. ══ -->
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -15937,8 +15952,9 @@ label:has(#projectTeamUserSearch) {
 }
 #screen-projects .project-detail-tabs::-webkit-scrollbar { display: none; }
 #screen-projects .project-detail-tab {
-  width: auto; /* v4 FIX: cancel grid-era width:100% — it made every tab
-                  ~full-bar wide, pushing the other six tabs off-screen */
+  width: auto; /* v4 FIX: cancel grid-era width:100% — width:100% inside the
+                   flex pill row made every tab ~full-bar wide, pushing the
+                   other six tabs off-screen (only 'Planning' visible) */
   flex: 0 0 auto;
   scroll-snap-align: start;
   border: 1px solid transparent !important;
@@ -17851,17 +17867,21 @@ label:has(#projectTeamUserSearch) {
           </div>
         </section>
 
-        <!-- IFRS 16 - Leases -->
+        <!-- IFRS 16 - Leases (v5: standard intro header; engine renders views into #leasesMount) -->
         <section id="screen-leases" class="screen hidden">
-          <div class="card p-4">
-            <div class="flex items-center justify-between">
-              <h3 class="font-bold">IFRS 16</h3>
+          <div class="ls1-shell">
+            <div class="cc-eyebrow">Workflows · IFRS 16</div>
+            <div class="flex flex-wrap items-end justify-between gap-3">
+              <div class="min-w-0">
+                <h3 class="cc-h1">Lease Center (Lessee)</h3>
+                <p class="cc-sub">Register, payments and month-end IFRS 16 postings — one workspace for lessee accounting.</p>
+              </div>
 
               <!-- 🔁 Dynamic tabs mount -->
-              <div id="leaseHeaderTabs" class="flex gap-2"></div>
+              <div id="leaseHeaderTabs" class="flex flex-wrap gap-2"></div>
             </div>
 
-            <div id="leasesMount" class="mt-3"></div>
+            <div id="leasesMount" class="mt-4"></div>
           </div>
         </section>
 
@@ -38054,7 +38074,7 @@ label:has(#projectTeamUserSearch) {
 
     loadScript("/dist/assets/hostMount.js?v=20260811b", { module: true });
 
-    loadScript("/dashboard.js?v=20261017c");
+    loadScript("/dashboard.js?v=20261017b");
 
     /* ==================================================================
      * 🎯 PAYE TAX FILING MODULE - Add AFTER dashboard.js
@@ -47033,6 +47053,180 @@ th.num { text-align: right; }
   }
   setInterval(sync, TICK);
   window.addEventListener("storage", sync);
+})();
+</script>
+
+<style id="ls1-css">
+/* ═══ FinSage v5 · Lease screens (Lessee Lease Center) — navy/teal skin ═══ */
+
+/* section shell */
+#screen-leases{ background:#f4f7fb; }
+#screen-leases .ls1-shell{ padding:6px 2px 22px; }
+#screen-leases .cc-eyebrow{ margin-bottom:4px; }
+
+/* legacy header tabs (Registered Leases / Payments / Monthly Due …) */
+#screen-leases #leaseHeaderTabs .btn{
+  border-radius:999px; padding:7px 16px; font-size:11.5px; font-weight:700;
+  letter-spacing:.02em; border:1px solid #dbe5ec; background:#fff; color:#5b6b81;
+  box-shadow:0 1px 2px rgba(2,12,27,.04);
+}
+#screen-leases #leaseHeaderTabs .btn:hover{ background:#eef6f8; color:var(--fs-navy); }
+#screen-leases #leaseHeaderTabs .btn.bg-slate-900{
+  background:linear-gradient(118deg,#00284f,#015371) !important;
+  color:#fff !important; border-color:rgba(0,200,200,.45) !important;
+  box-shadow:0 6px 16px rgba(0,33,64,.28);
+}
+
+/* KPI tiles */
+#screen-leases #lcKpis > button{
+  position:relative; overflow:hidden; background:#fff;
+  border:1px solid #e2e8f0 !important; border-radius:12px;
+  box-shadow:0 1px 2px rgba(2,12,27,.04);
+  transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+#screen-leases #lcKpis > button::before{
+  content:""; position:absolute; top:0; left:0; right:0; height:3px;
+  background:linear-gradient(90deg,#00bcbc,#00d2d2);
+}
+#screen-leases #lcKpis > button:hover{
+  transform:translateY(-1px); border-color:#c9dbe4 !important;
+  box-shadow:0 8px 20px rgba(2,12,27,.08);
+}
+#screen-leases #lcKpis > button > div:first-child{
+  font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#64748b;
+}
+#screen-leases #lcKpis > button > div:nth-child(2){
+  font-size:20px; font-variant-numeric:tabular-nums; color:var(--fs-navy);
+}
+
+/* register sidebar + workspace main */
+#screen-leases aside.border{
+  background:#fff !important; border-color:#e2e8f0 !important;
+  border-radius:14px !important; box-shadow:0 4px 14px rgba(2,12,27,.05);
+}
+#screen-leases main.border{
+  border-color:#e2e8f0 !important; border-radius:14px !important;
+  box-shadow:0 4px 14px rgba(2,12,27,.05);
+}
+#screen-leases #lcSearch{ border-radius:8px; }
+#screen-leases #lcLeaseList > button{ transition:border-color .12s ease, background .12s ease; }
+#screen-leases #lcLeaseList > button:hover{ border-color:#00bcbc !important; }
+#screen-leases #lcStatusChips button{ font-weight:600; transition:all .12s ease; }
+
+/* workspace tabs */
+#screen-leases #lcTabs button{ transition:background .12s ease, color .12s ease; }
+#screen-leases #lcTabs button:not(.bg-\[\#00284F\]):hover{ background:#eef6f8; color:var(--fs-navy); }
+
+/* buttons */
+#screen-leases #lcRefresh, #screen-leases #lcAddLease,
+#screen-leases #lcOpenRegister, #screen-leases #lcRegExport{ border-radius:10px; }
+#screen-leases #lcRecordPayment{
+  background:linear-gradient(120deg,#00bcbc,#00d2d2) !important;
+  color:#04222e !important; font-weight:700;
+  border:1px solid rgba(0,200,200,.4) !important; border-radius:10px !important;
+  box-shadow:0 6px 16px rgba(0,200,200,.28);
+}
+#screen-leases button.bg-slate-900{
+  background:linear-gradient(118deg,#00284f,#015371) !important;
+  color:#fff !important; border-radius:10px !important;
+}
+
+/* generic inputs + tables inside lease views */
+#screen-leases input, #screen-leases select, #screen-leases textarea{ border-radius:8px; }
+#screen-leases input:focus, #screen-leases select:focus, #screen-leases textarea:focus{
+  outline:none; border-color:#00bcbc; box-shadow:0 0 0 3px rgba(0,188,188,.16);
+}
+#screen-leases table{ font-variant-numeric:tabular-nums; }
+#screen-leases thead th{
+  font-size:10px; font-weight:700; letter-spacing:.08em;
+  text-transform:uppercase; color:#64748b;
+}
+#screen-leases tbody tr:hover td{ background:#f6fafc; }
+#screen-leases .overflow-x-auto{ -webkit-overflow-scrolling:touch; scrollbar-width:thin; }
+
+/* skeleton shown instead of the legacy boot paint */
+.fs-lc-boot{
+  display:flex; align-items:center; gap:10px; padding:26px;
+  border:1px solid #e2e8f0; border-radius:14px; background:#fff;
+  color:#5b6b81; font-size:12.5px; font-weight:600;
+}
+.fs-lc-boot i{
+  display:inline-block; width:16px; height:16px; border-radius:50%;
+  border:2.5px solid #d3e3ec; border-top-color:#00bcbc;
+  animation:fs1spin .8s linear infinite;
+}
+@keyframes fs1spin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce){ .fs-lc-boot i{ animation-duration:2.4s; } }
+
+/* ═══ v5 · phone compatibility for lease modals ═══ */
+#leasePayModal > .relative,
+#leaseRegisterModal > div,
+#leaseWizardDrawer{ max-width:100vw; max-height:100dvh; }
+
+/* payment modal: below xl the form + preview stack — the fixed-height body
+   must scroll instead of clipping (was overflow-hidden) */
+@media (max-width: 1279px){
+  #leasePayModal > div > .grid.grid-cols-1{
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+  }
+}
+
+/* register modal: header row wraps on phones instead of overflowing */
+@media (max-width: 767px){
+  #leaseRegisterModal > div > div:first-child{ flex-wrap:wrap; row-gap:8px; }
+  #leaseRegisterModal > div > div:first-child > .ml-auto{
+    width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  }
+  #leaseRegisterModal .overflow-x-auto{ -webkit-overflow-scrolling:touch; scrollbar-width:thin; }
+  #leasePayModal .overflow-x-auto{ -webkit-overflow-scrolling:touch; scrollbar-width:thin; }
+}
+
+/* modal tables follow the same language */
+#leasePayModal thead th, #leaseRegisterModal thead th{
+  font-size:10px; font-weight:700; letter-spacing:.08em;
+  text-transform:uppercase; color:#64748b;
+}
+#leasePayModal input:focus, #leasePayModal select:focus, #leasePayModal textarea:focus,
+#leaseRegisterModal input:focus, #leaseRegisterModal select:focus{
+  outline:none; border-color:#00bcbc; box-shadow:0 0 0 3px rgba(0,188,188,.16);
+}
+</style>
+
+<script id="ls1-boot">
+/* FinSage v5 · Lease screens boot bridge (upgrade layer — engine untouched).
+   The frozen engine paints the legacy "Monthly Due (IFRS 16)" tables into
+   #leasesMount at boot (IIFE showTab("monthly")). When the user opens
+   Workflows → IFRS 16 → Lease Center (Lessee), switchScreen() unhides the
+   section BEFORE await ensureCompanyDataLoaded() resolves, so those legacy
+   "Click Load" tables are visible during the network wait — the user sees
+   the wrong screen before the correct one. While #screen-leases is hidden,
+   suppress any legacy paint and show a skeleton instead. Real views
+   (center / register / payments / monthly) always re-render on navigation,
+   so nothing legitimate is lost. */
+(function () {
+  var screenEl = document.getElementById("screen-leases");
+  var mount = document.getElementById("leasesMount");
+  if (!screenEl || !mount) return;
+
+  var LEGACY = "#leaseMonthlyMsg,#btnLmLoad,#lmAsOf,#lmQ,#lpFilterLeaseId,#leasePaymentsMsg";
+  var SKELETON =
+    '<div class="fs-lc-boot" role="status" aria-live="polite">' +
+    '<i></i><span>Preparing Lease Center\u2026</span></div>';
+
+  function legacyPainted() {
+    return !!mount.querySelector(LEGACY);
+  }
+  function screenHidden() {
+    return screenEl.classList.contains("hidden");
+  }
+  function sweep() {
+    if (screenHidden() && legacyPainted()) {
+      mount.innerHTML = SKELETON;
+    }
+  }
+
+  sweep();
+  new MutationObserver(sweep).observe(mount, { childList: true });
 })();
 </script>
 </body>
