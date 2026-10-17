@@ -46338,7 +46338,20 @@ th.num { text-align: right; }
   window.csToast = toast;
 
   function getCompany() {
-    return fetch("/api/companies/42").then(function (r) { return r.json(); }).catch(function () { return null; });
+    var companyId = typeof window.getActiveCompanyId === "function"
+      ? window.getActiveCompanyId()
+      : null;
+
+    if (!companyId || typeof window.apiFetch !== "function") {
+      return Promise.resolve(null);
+    }
+
+    return window.apiFetch(
+      "/api/companies/" + encodeURIComponent(companyId),
+      { method: "GET" }
+    ).catch(function () {
+      return null;
+    });
   }
 
   /* ── 1) hero + switcher ── */
@@ -46548,33 +46561,122 @@ th.num { text-align: right; }
     if (!form || form.dataset.csBound === "1") return;
     form.dataset.csBound = "1";
 
-    fetch("/api/companies/42/corporate-structure/profile").then(function (r) { return r.json(); }).then(function (p) {
-      if (!p) return;
-      var set = function (n, v) { var el = form.querySelector('[name="' + n + '"]'); if (el && v != null) el.value = v; };
-      set("profile_name", p.profile_name); set("group_name", p.group_name);
-      set("reporting_currency", p.reporting_currency);
-      set("financial_year_end_month", p.financial_year_end_month);
-      set("financial_year_end_day", p.financial_year_end_day);
-      set("default_consolidation_method", p.default_consolidation_method);
-      ["enable_intercompany", "enable_fx_translation", "enable_nci", "enable_equity_method", "enable_segment_reporting"].forEach(function (n) {
-        var el = form.querySelector('[name="' + n + '"]');
-        if (el) el.checked = !!p[n];
-      });
-      var st = $("groupProfileStatus");
-      if (st) st.textContent = "Configured · " + (p.group_name || p.profile_name || "Group");
-    }).catch(function () {});
+    function getProfileUrl() {
+      var companyId = typeof window.getActiveCompanyId === "function"
+        ? window.getActiveCompanyId()
+        : null;
+
+      if (!companyId) {
+        throw new Error("No active company is selected");
+      }
+
+      return "/api/companies/" +
+        encodeURIComponent(companyId) +
+        "/corporate-structure/profile";
+    }
+
+    if (typeof window.apiFetch === "function") {
+      var profileUrl;
+
+      try {
+        profileUrl = getProfileUrl();
+      } catch (e) {
+        var status = $("groupProfileStatus");
+        if (status) status.textContent = e.message;
+        return;
+      }
+
+      window.apiFetch(profileUrl, { method: "GET" })
+        .then(function (p) {
+          if (!p) return;
+
+          var set = function (n, v) {
+            var el = form.querySelector('[name="' + n + '"]');
+            if (el && v != null) el.value = v;
+          };
+
+          set("profile_name", p.profile_name);
+          set("group_name", p.group_name);
+          set("reporting_currency", p.reporting_currency);
+          set("financial_year_end_month", p.financial_year_end_month);
+          set("financial_year_end_day", p.financial_year_end_day);
+          set("default_consolidation_method", p.default_consolidation_method);
+
+          [
+            "enable_intercompany",
+            "enable_fx_translation",
+            "enable_nci",
+            "enable_equity_method",
+            "enable_segment_reporting"
+          ].forEach(function (n) {
+            var el = form.querySelector('[name="' + n + '"]');
+            if (el) el.checked = !!p[n];
+          });
+
+          var st = $("groupProfileStatus");
+          if (st) {
+            st.textContent =
+              "Configured · " + (p.group_name || p.profile_name || "Group");
+          }
+        })
+        .catch(function (e) {
+          console.error("[Group Profile] Load failed:", e);
+        });
+    } else {
+      console.error("[Group Profile] window.apiFetch is unavailable.");
+    }
 
     form.addEventListener("submit", function (e) {
       e.preventDefault();
+
       var st = $("groupProfileStatus");
       if (st) st.textContent = "Saving...";
-      fetch("/api/companies/42/corporate-structure/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
-        .then(function (r) { return r.json(); })
+
+      var payload = {};
+
+      Array.prototype.forEach.call(
+        form.querySelectorAll("[name]"),
+        function (el) {
+          if (el.type === "checkbox") {
+            payload[el.name] = el.checked;
+          } else {
+            payload[el.name] = el.value;
+          }
+        }
+      );
+
+      var profileUrl;
+
+      try {
+        profileUrl = getProfileUrl();
+      } catch (err) {
+        if (st) st.textContent = err.message;
+        return;
+      }
+
+      if (typeof window.apiFetch !== "function") {
+        if (st) st.textContent = "Authenticated API helper unavailable";
+        return;
+      }
+
+      window.apiFetch(profileUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
         .then(function () {
-          if (st) st.textContent = "Configured · " + (form.querySelector('[name="group_name"]') || {}).value || "Group";
+          var groupName =
+            (form.querySelector('[name="group_name"]') || {}).value ||
+            "Group";
+
+          if (st) st.textContent = "Configured · " + groupName;
           toast("Group reporting profile saved");
         })
-        .catch(function () { if (st) st.textContent = "Save failed"; toast("Group profile save failed", "err"); });
+        .catch(function (err) {
+          console.error("[Group Profile] Save failed:", err);
+          if (st) st.textContent = "Save failed";
+          toast("Group profile save failed", "err");
+        });
     });
   }
 
