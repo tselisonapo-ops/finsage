@@ -75326,35 +75326,57 @@ class DatabaseService:
         """
         return self.fetch_one(sql, params, cur=cur)
     
-    def list_leases(self, company_id: int, *, limit: int = 200, offset: int = 0, q: str = "", cur=None):
+
+    def list_leases(
+        self,
+        company_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+        q: str = "",
+        cur=None,
+    ):
         schema = f"company_{int(company_id)}"
-        params = {"limit": int(limit), "offset": int(offset)}
-        where = ""
+        params = {
+            "limit": int(limit),
+            "offset": int(offset),
+        }
+
+        # Never return reversed leases to the frontend.
+        conditions = [
+            "LOWER(COALESCE(l.status, '')) <> 'reversed'"
+        ]
 
         if q:
-            where = "WHERE (l.lease_name ILIKE %(q)s OR COALESCE(le.name,'') ILIKE %(q)s)"
+            conditions.append(
+                "(l.lease_name ILIKE %(q)s "
+                "OR COALESCE(le.name, '') ILIKE %(q)s)"
+            )
             params["q"] = f"%{q}%"
 
+        where = "WHERE " + " AND ".join(conditions)
+
         sql = f"""
-        SELECT
-        l.id,
-        l.lease_name,
-        l.lessor_id,
-        le.name AS lessor_name,
-        l.start_date,
-        l.end_date,
-        l.payment_amount,
-        l.payment_frequency,
-        l.payment_timing,
-        l.annual_rate,
-        l.vat_rate,
-        l.opening_lease_liability,
-        l.opening_rou_asset
-        FROM {schema}.leases l
-        LEFT JOIN {schema}.lessors le ON le.id = l.lessor_id
-        {where}
-        ORDER BY l.id DESC
-        LIMIT %(limit)s OFFSET %(offset)s
+            SELECT
+                l.id,
+                l.lease_name,
+                l.lessor_id,
+                le.name AS lessor_name,
+                l.start_date,
+                l.end_date,
+                l.payment_amount,
+                l.payment_frequency,
+                l.payment_timing,
+                l.annual_rate,
+                l.vat_rate,
+                l.opening_lease_liability,
+                l.opening_rou_asset
+            FROM {schema}.leases l
+            LEFT JOIN {schema}.lessors le
+                ON le.id = l.lessor_id
+            {where}
+            ORDER BY l.id DESC
+            LIMIT %(limit)s OFFSET %(offset)s
         """
 
         if cur is not None:
@@ -75363,22 +75385,28 @@ class DatabaseService:
         else:
             rows = self.fetch_all(sql, params) or []
 
-        # ✅ IMPORTANT: for count query, don't pass limit/offset unless SQL uses them
         count_params = {}
         if q:
             count_params["q"] = params["q"]
 
         count_sql = f"""
-        SELECT count(*) AS n
-        FROM {schema}.leases l
-        LEFT JOIN {schema}.lessors le ON le.id = l.lessor_id
-        {where}
+            SELECT COUNT(*) AS n
+            FROM {schema}.leases l
+            LEFT JOIN {schema}.lessors le
+                ON le.id = l.lessor_id
+            {where}
         """
 
-        total_row = self.fetch_one(count_sql, (count_params if q else None), cur=cur) or {}
+        total_row = self.fetch_one(
+            count_sql,
+            count_params if q else None,
+            cur=cur,
+        ) or {}
+
         total = int(total_row.get("n") or 0)
 
         return rows, total
+
 
     def get_lease(self, company_id: int, lease_id: int, cur=None):
         """
