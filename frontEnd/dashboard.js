@@ -161205,7 +161205,7 @@ if (document.readyState === "loading") {
           </table>
         </div>
       </div>
-      <div class="text-[11px] text-slate-400 mt-2">Record payment opens your existing <code>#leasePayModal</code> via <code>openLeasePaymentModal</code> — preview and posting run through <code>POST /leases/:id/payments/preview|post</code> exactly as before.</div>`;
+      `;
 
     const ex = panel.querySelector("#lcPayExport");
     ex?.addEventListener("click", () => {
