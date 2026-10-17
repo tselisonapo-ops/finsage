@@ -58276,7 +58276,8 @@ async function saveEditModal() {
       "USD"
     );
   }
-
+  window.companyCurrency = companyCurrency;
+  
   function bfNormalizeToken(value) {
     return String(value || "")
       .trim()

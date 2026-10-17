@@ -24240,12 +24240,17 @@ label:has(#projectTeamUserSearch) {
 (function(){
   function $(id){ return document.getElementById(id); }
 
+
+
   function money(n) {
-    n = Number(n) || 0;
-    var s = n.toFixed(2);
-    var parts = s.split(".");
-    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return companyCurrency() + " " + parts.join(".");
+      n = Number(n) || 0;
+
+      var neg = n < 0;
+      n = Math.abs(n);
+
+      var s = n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+      return (neg ? "-" : "") + window.companyCurrency() + " " + s;
   }
 
   function todayIso(){
@@ -40316,13 +40321,15 @@ window.safeRedirect = function (url, mode = "href") {
       ? window.getActiveCompanyId()
       : null;
   }
-
   function money(n) {
-    n = Number(n) || 0;
-    var neg = n < 0;
-    n = Math.abs(n);
-    var s = n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return (neg ? "-" : "") + companyCurrency() + " " + s;
+      n = Number(n) || 0;
+
+      var neg = n < 0;
+      n = Math.abs(n);
+
+      var s = n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+      return (neg ? "-" : "") + window.companyCurrency() + " " + s;
   }
 
   function shortMoney(n) { return money(n).replace("ZAR ", ""); }
@@ -40705,17 +40712,23 @@ window.safeRedirect = function (url, mode = "href") {
   }
 
   function loadSwitchData() {
-    apiFetch(`${ENDPOINTS.revenue.contracts(cid())}?limit=100`)
-      .then(function (j) {
-        var rows = (j && (j.items || (j.data && j.data.items) || j.data)) || [];
-        if (Array.isArray(rows)) {
-          contractsCache = rows;
-          renderSwitchList();
-        }
-      })
-      .catch(function () {
-        /* keep register-based fallback below */
-      });
+      if (typeof window.apiFetch !== "function") {
+          console.error("[Revenue Switch] window.apiFetch is unavailable");
+          return;
+      }
+
+      window.apiFetch(`${ENDPOINTS.revenue.contracts(cid())}?limit=100`)
+        .then(function (j) {
+          var rows = (j && (j.items || (j.data && j.data.items) || j.data)) || [];
+
+          if (Array.isArray(rows)) {
+            contractsCache = rows;
+            renderSwitchList();
+          }
+        })
+        .catch(function (err) {
+          console.warn("[Revenue Switch] Failed to load contracts:", err);
+        });
   }
 
   /* fallback: mirror the register rows if the fetch came back empty */
@@ -41605,16 +41618,19 @@ window.safeRedirect = function (url, mode = "href") {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
-  function cid() {
-    return typeof window.getActiveCompanyId === "function"
-      ? window.getActiveCompanyId()
-      : null;
-  }
-
   function money(n) {
-    var v = Number(n || 0);
-    var s = v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return companyCurrency() + " " + s;
+      n = Number(n) || 0;
+
+      var neg = n < 0;
+      n = Math.abs(n);
+
+      var s = n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+      var currency = typeof window.companyCurrency === "function"
+          ? window.companyCurrency()
+          : "LSL";
+
+      return (neg ? "-" : "") + currency + " " + s;
   }
 
   function num(txt) {
