@@ -19356,8 +19356,11 @@ label:has(#projectTeamUserSearch) {
 
   function $(id) { return document.getElementById(id); }
   var API_BASE = (window.APP_CONFIG && window.APP_CONFIG.API_BASE) || "";
+
   function cid() {
-    try { return localStorage.getItem("company_id") || "42"; } catch (e) { return "42"; }
+    return typeof window.getActiveCompanyId === "function"
+      ? window.getActiveCompanyId()
+      : null;
   }
 
   /* ── formatting helpers (mirror the app's number/date style) ── */
@@ -19399,17 +19402,22 @@ label:has(#projectTeamUserSearch) {
 
   /* ── schedule cache (same endpoint the app's Open button calls) ── */
   var schedCache = {};
+
   function loadSchedule(id, key) {
     var hit = schedCache[id];
     if (hit && hit.key === key) return Promise.resolve(hit.lines);
-    return fetch(API_BASE + "/api/companies/" + cid() + "/accrual-deferrals/items/" + encodeURIComponent(id))
-      .then(function (r) { return r.json(); })
+
+    return apiFetch(
+      ENDPOINTS.accrualDeferrals.items(cid, id)
+    )
       .then(function (d) {
         var lines = (d && d.schedule) || [];
         schedCache[id] = { key: key, lines: lines };
         return lines;
       })
-      .catch(function () { return []; });
+      .catch(function () {
+        return [];
+      });
   }
 
   /* ── the period rule (per user spec): outstanding amount for the current
@@ -24208,17 +24216,16 @@ label:has(#projectTeamUserSearch) {
    3) Toggle-button open state (is-open) follows the floating panes.
    4) #billStatus gets data-st so CSS can tone status pills by text.          */
 (function(){
-  var CID = (function(){
-    try { return localStorage.getItem("company_id") || "42"; } catch(e){ return "42"; }
-  })();
   function $(id){ return document.getElementById(id); }
-  function money(n){
+
+  function money(n) {
     n = Number(n) || 0;
     var s = n.toFixed(2);
     var parts = s.split(".");
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return "ZAR " + parts.join(".");
+    return companyCurrency() + " " + parts.join(".");
   }
+
   function todayIso(){
     var d = new Date();
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString().slice(0,10);
@@ -24243,17 +24250,31 @@ label:has(#projectTeamUserSearch) {
     var host = $("ap2Kpis");
     if (!host || !window.fetch) return;
     kpiBusy = true;
+
+    var companyId = typeof window.getActiveCompanyId === "function"
+      ? window.getActiveCompanyId()
+      : null;
+
+    if (!companyId) {
+      kpiBusy = false;
+      console.warn("[AP KPIs] No active company selected.");
+      return;
+    }
+
     var bills = [], vendors = [];
 
-    var apiBase = window.API_BASE || "";
-    var billsUrl = apiBase + "/api/companies/" + CID + "/bills?limit=500";
-    var vendorsUrl = apiBase + "/api/companies/" + CID + "/vendors";
-
-    window.apiFetch(billsUrl, { method: "GET" })
+    window.apiFetch(
+      window.ENDPOINTS.bills(companyId) + "?limit=500",
+      { method: "GET" }
+    )
       .then(function(j){
         bills = (j && (j.data || j.rows || j.bills)) || [];
         if (!Array.isArray(bills)) bills = [];
-        return window.apiFetch(vendorsUrl, { method: "GET" });
+
+        return window.apiFetch(
+          window.ENDPOINTS.vendors(companyId),
+          { method: "GET" }
+        );
       })
       .then(function(j){
         vendors = (j && (j.data || j.rows || j.vendors)) || [];
@@ -38031,7 +38052,7 @@ label:has(#projectTeamUserSearch) {
 
     loadScript("/dist/assets/hostMount.js?v=20260811b", { module: true });
 
-    loadScript("/dashboard.js?v=20261017a");
+    loadScript("/dashboard.js?v=20261017b");
 
     /* ==================================================================
      * 🎯 PAYE TAX FILING MODULE - Add AFTER dashboard.js
@@ -39306,7 +39327,9 @@ label:has(#projectTeamUserSearch) {
     m.querySelector("#cat3PoClose").addEventListener("click", function () { m.style.display = "none"; });
 
     try {
-      var cid = (window.CURRENT_COMPANY_ID || (window.CURRENT_COMPANY && window.CURRENT_COMPANY.id) || "42");
+      var cid = typeof window.getActiveCompanyId === "function"
+        ? window.getActiveCompanyId()
+        : null;
       var res = await fetch("/api/companies/" + encodeURIComponent(cid) + "/purchase-orders/" + encodeURIComponent(poId));
       var data = await res.json();
       var po = data && data.po ? data.po : data;
@@ -40267,15 +40290,19 @@ window.safeRedirect = function (url, mode = "href") {
   var fetchTimer = null;
 
   function cid() {
-    try { return localStorage.getItem("company_id") || "42"; } catch (e) { return "42"; }
+    return typeof window.getActiveCompanyId === "function"
+      ? window.getActiveCompanyId()
+      : null;
   }
+
   function money(n) {
     n = Number(n) || 0;
     var neg = n < 0;
     n = Math.abs(n);
     var s = n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return (neg ? "-ZAR " : "ZAR ") + s;
+    return (neg ? "-" : "") + companyCurrency() + " " + s;
   }
+
   function shortMoney(n) { return money(n).replace("ZAR ", ""); }
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (m) {
@@ -40615,7 +40642,9 @@ window.safeRedirect = function (url, mode = "href") {
   /* ── contract switcher list ── */
   var API_BASE = (window.APP_CONFIG && window.APP_CONFIG.API_BASE) || "";
   function cid() {
-    try { return localStorage.getItem("company_id") || "42"; } catch (e) { return "42"; }
+    return typeof window.getActiveCompanyId === "function"
+      ? window.getActiveCompanyId()
+      : null;
   }
   function stateOf(s) {
     s = String(s || "draft").toLowerCase();
@@ -40652,15 +40681,21 @@ window.safeRedirect = function (url, mode = "href") {
       else it.removeAttribute("data-active");
     });
   }
+
   function loadSwitchData() {
-    fetch(API_BASE + "/api/companies/" + cid() + "/revenue/contracts?limit=100")
-      .then(function (r) { return r.json(); })
+    apiFetch(`${ENDPOINTS.revenue.contracts(cid())}?limit=100`)
       .then(function (j) {
         var rows = (j && (j.items || (j.data && j.data.items) || j.data)) || [];
-        if (Array.isArray(rows)) { contractsCache = rows; renderSwitchList(); }
+        if (Array.isArray(rows)) {
+          contractsCache = rows;
+          renderSwitchList();
+        }
       })
-      .catch(function () { /* keep register-based fallback below */ });
+      .catch(function () {
+        /* keep register-based fallback below */
+      });
   }
+
   /* fallback: mirror the register rows if the fetch came back empty */
   function syncFromRegister() {
     if (contractsCache.length) return;
@@ -41549,20 +41584,33 @@ window.safeRedirect = function (url, mode = "href") {
     });
   }
   function cid() {
-    return window.CURRENT_COMPANY_ID || (window.CURRENT_COMPANY && window.CURRENT_COMPANY.id) || "42";
+    return typeof window.getActiveCompanyId === "function"
+      ? window.getActiveCompanyId()
+      : null;
   }
+
   function money(n) {
     var v = Number(n || 0);
     var s = v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return "ZAR " + s;
+    return companyCurrency() + " " + s;
   }
+
   function num(txt) {
     var v = parseFloat(String(txt || "").replace(/[^\d.\-]/g, ""));
     return isNaN(v) ? 0 : v;
   }
 
+
   function api(u) {
-    var url = "/api/companies/" + encodeURIComponent(cid()) + u;
+    var companyId = cid();
+
+    if (!companyId) {
+      return Promise.reject(
+        new Error("No active company is selected")
+      );
+    }
+
+    var url = "/api/companies/" + encodeURIComponent(companyId) + u;
 
     if (typeof window.apiFetch === "function") {
       return window.apiFetch(url, { method: "GET" });
@@ -44733,7 +44781,22 @@ th.num { text-align: right; }
   function fmt(n) { var v = Number(n) || 0; return v.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function fmt0(n) { return (Number(n) || 0).toLocaleString("en-ZA"); }
   function ep(name) { try { var c = window.FinSage && window.FinSage.getActiveCompanyId ? window.FinSage.getActiveCompanyId() : (window.companyId || 42); return window.ENDPOINTS.consolidation[name](c, [].slice.call(arguments, 1)); } catch (e) { return null; } }
-  function base() { return (window.API_BASE || "") + "/api/companies/" + (window.FinSage && window.FinSage.getActiveCompanyId ? window.FinSage.getActiveCompanyId() : (window.companyId || 42)) + "/consolidation"; }
+ 
+  function base() {
+    var cid = window.FinSage && typeof window.FinSage.getActiveCompanyId === "function"
+      ? window.FinSage.getActiveCompanyId()
+      : (typeof window.getActiveCompanyId === "function"
+          ? window.getActiveCompanyId()
+          : window.CURRENT_COMPANY_ID);
+
+    if (!cid) {
+      throw new Error("No active company selected.");
+    }
+
+    return (window.API_BASE || "") + "/api/companies/" +
+      encodeURIComponent(cid) + "/consolidation";
+  }
+
   function get(path) { return window.apiFetch(base() + path, { method: "GET" }); }
   function send(path, method, body) { return window.apiFetch(base() + path, { method: method || "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }); }
   function toast(msg, tone) {
