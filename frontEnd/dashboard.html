@@ -24244,12 +24244,16 @@ label:has(#projectTeamUserSearch) {
     if (!host || !window.fetch) return;
     kpiBusy = true;
     var bills = [], vendors = [];
-    fetch("/api/companies/" + CID + "/bills?limit=500")
-      .then(function(r){ return r.json(); })
+
+    var apiBase = window.API_BASE || "";
+    var billsUrl = apiBase + "/api/companies/" + CID + "/bills?limit=500";
+    var vendorsUrl = apiBase + "/api/companies/" + CID + "/vendors";
+
+    window.apiFetch(billsUrl, { method: "GET" })
       .then(function(j){
         bills = (j && (j.data || j.rows || j.bills)) || [];
         if (!Array.isArray(bills)) bills = [];
-        return fetch("/api/companies/" + CID + "/vendors").then(function(r){ return r.json(); });
+        return window.apiFetch(vendorsUrl, { method: "GET" });
       })
       .then(function(j){
         vendors = (j && (j.data || j.rows || j.vendors)) || [];
@@ -41556,8 +41560,17 @@ window.safeRedirect = function (url, mode = "href") {
     var v = parseFloat(String(txt || "").replace(/[^\d.\-]/g, ""));
     return isNaN(v) ? 0 : v;
   }
+
   function api(u) {
-    return fetch("/api/companies/" + encodeURIComponent(cid()) + u).then(function (r) { return r.json(); });
+    var url = "/api/companies/" + encodeURIComponent(cid()) + u;
+
+    if (typeof window.apiFetch === "function") {
+      return window.apiFetch(url, { method: "GET" });
+    }
+
+    return Promise.reject(
+      new Error("Authenticated API helper window.apiFetch is unavailable")
+    );
   }
 
   /* ── 1. cashbook KPI strip ── */
