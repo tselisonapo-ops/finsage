@@ -160697,15 +160697,14 @@ if (document.readyState === "loading") {
   }
 
   const payFields = (p) => ({
-    date: iso(p.payment_date || p.date || p.tx_date),
-    ref: p.reference || p.ref || "",
-    desc: p.description || p.narr || p.memo || "",
-    gross: Number(p.amount_gross ?? p.amount ?? p.total ?? 0),
-    interest: Number(p.interest_amount ?? p.interest ?? 0),
-    principal: Number(p.principal_amount ?? p.principal ?? 0),
-    journal: Number(p.journal_id ?? p.journal ?? 0),
+      date: p.payment_date ?? p.date ?? p.tx_date ?? null,
+      ref: p.reference || p.ref || "",
+      desc: p.description || p.narr || p.memo || "",
+      gross: Number(p.amount_gross ?? p.amount ?? p.total ?? 0),
+      interest: Number(p.interest_amount ?? p.interest ?? 0),
+      principal: Number(p.principal_amount ?? p.principal ?? 0),
+      journal: Number(p.journal_id ?? p.journal ?? 0),
   });
-
 
   const schedFields = (s) => ({
       no: s.period_no ?? s.period ?? "",
