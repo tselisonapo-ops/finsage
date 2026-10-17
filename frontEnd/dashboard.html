@@ -15937,6 +15937,8 @@ label:has(#projectTeamUserSearch) {
 }
 #screen-projects .project-detail-tabs::-webkit-scrollbar { display: none; }
 #screen-projects .project-detail-tab {
+  width: auto; /* v4 FIX: cancel grid-era width:100% — it made every tab
+                  ~full-bar wide, pushing the other six tabs off-screen */
   flex: 0 0 auto;
   scroll-snap-align: start;
   border: 1px solid transparent !important;
@@ -38052,7 +38054,7 @@ label:has(#projectTeamUserSearch) {
 
     loadScript("/dist/assets/hostMount.js?v=20260811b", { module: true });
 
-    loadScript("/dashboard.js?v=20261017b");
+    loadScript("/dashboard.js?v=20261017c");
 
     /* ==================================================================
      * 🎯 PAYE TAX FILING MODULE - Add AFTER dashboard.js
