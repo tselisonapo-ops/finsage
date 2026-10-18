@@ -3029,7 +3029,7 @@ def api_auth_signup(cur=None, conn=None):
             yield from _emit_step(generate, "sending_email")
 
             confirm_link = (
-                f"{FRONTEND_BASE}/confirm.html?token={confirm_token}"
+                f"{FRONTEND_BASE}/app/confirm.html?token={confirm_token}"
             )
 
             email_sent = True
@@ -3250,7 +3250,7 @@ def api_auth_resend_confirm():
         (new_token, new_exp, user["id"])
     )
 
-    link = f"{FRONTEND_BASE}/confirm.html?token={new_token}"
+    link = f"{FRONTEND_BASE}/app/confirm.html?token={new_token}"
     subject = "Your FinSage confirmation link (expires in 48 hours)"
     html = f"""
     <p>Hi {user.get("first_name") or ""},</p>
