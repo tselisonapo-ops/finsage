@@ -221286,7 +221286,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "on",
         }
 
-
     def _ias41_find_company_account(
         self,
         company_id: int,
@@ -221310,7 +221309,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 category,
                 subcategory,
                 posting,
-                is_active,
                 role
             FROM {schema}.coa
             WHERE company_id = %s
@@ -221325,7 +221323,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         return self._ias41_serialise(row)
-
 
     def _ias41_validate_account_code(
         self,
