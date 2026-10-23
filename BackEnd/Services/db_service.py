@@ -47990,6 +47990,10 @@ class DatabaseService:
         ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS accounting_standard TEXT NOT NULL DEFAULT 'ias16';
 
+        -- Migration: Add tax asset classification to assets
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS tax_asset_class TEXT NULL;
+
         DO $chk_accounting_standard$
         BEGIN
             IF NOT EXISTS (
