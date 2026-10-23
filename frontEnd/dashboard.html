@@ -28,7 +28,25 @@
      register, workspace tabs, tables); (c) #leasePayModal,
      #leaseRegisterModal and #leaseWizardDrawer now fit phone screens
      (stacked body scrolls instead of clipping, register-modal header wraps).
-     Engine dashboard.js?v=20261017b untouched. ══ -->
+     v7 re-applies the v6 Deferred Tax fixes on top of your latest
+     dashboard.html, preserving every edit your team made verbatim
+     (receipt-journal.js include, dashboard.js?v=20261017f engine
+     reference, companyCurrency()/money() negative handling,
+     authenticated corporate-structure & revenue-switch fetches).
+     dt1-boot adds: (a) a reporting-period date picker in the Deferred
+     Tax header (top-right) feeding window.FS_REPORT_STATE.dateTo so
+     new runs open pre-filled and persist per company; (b) a guided
+     'Deferred Tax Setup Required' modal replacing the silent
+     'Deferred tax is not enabled…' unhandled promise rejection, with a
+     button that opens the engine's own settings modal; (c) a save
+     bridge so Deferred Tax Settings PUT-persists (the engine's submit
+     delegation misses #dtSettingsForm — the form page-reloaded instead).
+     fs7-boot also bridges a regression in the latest revision: the Tax
+     Recon / cashbook script's local function cid() helper was deleted
+     while api() still calls it ('cid is not defined' at boot, Tax Recon
+     list never loaded) — fs7-boot restores its exact original
+     semantics as a window global without editing your code.
+     Engine dashboard.js?v=20261017f untouched. ══ -->
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -47346,6 +47364,391 @@ th.num { text-align: right; }
 
   sweep();
   new MutationObserver(sweep).observe(mount, { childList: true });
+})();
+</script>
+
+<script id="fs7-boot">
+/* FinSage v7 · compatibility bridge (upgrade layer — no user code edited).
+   The latest dashboard.html revision removed the Tax Recon / cashbook
+   script's local function cid() helper (its neighbourhood was rewritten to
+   add negative-value money()), but api() in the same script still calls
+   cid() — boot threw 'cid is not defined' (ReferenceError) and the Tax
+   Recon list never loaded. This bridge restores the helper's exact
+   original semantics as a window global, so the untouched callers resolve
+   it through the scope chain. */
+(function () {
+  "use strict";
+  if (typeof window.cid === "function") return;
+  window.cid = function () {
+    try {
+      return typeof window.getActiveCompanyId === "function"
+        ? window.getActiveCompanyId()
+        : null;
+    } catch (e) {
+      return null;
+    }
+  };
+})();
+</script>
+
+<style id="dt1-css">
+/* ═══ FinSage v6 · Deferred Tax — reporting period picker + setup modal ═══ */
+
+/* header chip (sits inside .dt-actions, top-right of the navy header) */
+.dt1-period-chip{
+  display:inline-flex; align-items:center; gap:8px;
+  background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.22);
+  color:#e0f2fe; border-radius:999px; padding:6px 12px;
+  position:relative; z-index:1;
+}
+.dt1-period-chip svg{ color:#5eead4; flex:none; }
+.dt1-period-chip .dt1-period-label{
+  font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+  color:rgba(224,242,254,.85); cursor:pointer; white-space:nowrap;
+}
+.dt1-period-chip input[type="date"]{
+  background:transparent; border:none; color:#fff; color-scheme:dark;
+  font-family:inherit; font-size:12.5px; font-weight:600; line-height:1;
+  letter-spacing:.01em; outline:none; padding:0; width:120px; cursor:pointer;
+}
+.dt1-period-chip input[type="date"]::-webkit-calendar-picker-indicator{
+  filter:invert(.92) sepia(.08) saturate(3) hue-rotate(120deg);
+  opacity:.9; cursor:pointer;
+}
+.dt1-period-chip:focus-within{
+  border-color:rgba(94,234,212,.55);
+  box-shadow:0 0 0 3px rgba(0,188,188,.18);
+}
+
+/* phones: the picker stays usable, wraps onto its own row */
+@media (max-width:767px){
+  .dt1-period-chip{ order:-1; width:100%; justify-content:flex-start; }
+}
+
+/* ── guided setup modal (replaces the silent unhandled rejection) ── */
+#dt1SetupModal{
+  position:fixed; inset:0; z-index:2147483000;
+  display:flex; align-items:center; justify-content:center; padding:16px;
+}
+.dt1-setup-backdrop{
+  position:absolute; inset:0;
+  background:rgba(2,12,27,.62); backdrop-filter:blur(2px);
+}
+.dt1-setup-panel{
+  position:relative; width:min(460px,100%);
+  max-height:min(86dvh,560px); overflow-y:auto; -webkit-overflow-scrolling:touch;
+  background:#fff; border-radius:16px;
+  box-shadow:0 24px 64px rgba(2,12,27,.35);
+  padding:20px 20px 18px;
+}
+.dt1-setup-head{ display:flex; align-items:flex-start; gap:12px; }
+.dt1-setup-icon{
+  flex:none; width:38px; height:38px; border-radius:11px;
+  display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(135deg,#00284f,#015371); color:#5eead4;
+}
+.dt1-setup-head h3{
+  margin:0; font-size:15.5px; font-weight:800;
+  color:var(--fs-navy,#00284F); letter-spacing:-.01em;
+}
+.dt1-setup-head p{ margin:3px 0 0; font-size:12px; color:#64748b; }
+.dt1-setup-x{
+  margin-left:auto; flex:none; border:none; background:transparent;
+  font-size:20px; line-height:1; color:#94a3b8; cursor:pointer;
+  padding:2px 6px; border-radius:8px;
+}
+.dt1-setup-x:hover{ background:#f1f5f9; color:#334155; }
+.dt1-setup-msg{
+  margin:14px 0 0; padding:10px 12px; border-radius:10px;
+  font-size:12.5px; line-height:1.5; overflow-wrap:anywhere;
+  background:#fff7ed; border:1px solid #fed7aa; color:#9a3412;
+}
+.dt1-setup-steps{ margin:12px 0 0; padding-left:20px; color:#334155; font-size:12.5px; line-height:1.9; }
+.dt1-setup-actions{
+  display:flex; gap:8px; justify-content:flex-end;
+  margin-top:16px; flex-wrap:wrap;
+}
+.dt1-setup-actions .btn{
+  border-radius:10px; font-weight:600; padding:9px 14px; font-size:12.5px;
+  cursor:pointer;
+}
+.dt1-setup-actions .btn-primary{
+  background:linear-gradient(135deg,#00bcbc,#009494) !important;
+  border:none !important; color:#fff !important;
+  box-shadow:0 8px 18px -8px rgba(0,168,168,.55);
+}
+.dt1-setup-actions .btn-secondary{
+  background:#fff !important;
+  border:1px solid rgba(15,23,42,.14) !important; color:#334155 !important;
+}
+@media (prefers-reduced-motion: reduce){ #dt1SetupModal{ backdrop-filter:none; } }
+</style>
+
+<script id="dt1-boot">
+/* FinSage v6 · Deferred Tax boot bridge (upgrade layer — engine untouched).
+   A) The engine's showCreateRunModal() reads the run's reporting date from
+      window.FS_REPORT_STATE?.dateTo FIRST, then #reportDateTo /
+      #reportsDateTo — none of which exist in this build, so new runs opened
+      with an EMPTY Reporting date and the screen had no period picker.
+      Fix: a reporting-period date picker in the screen header (top-right),
+      persisted per company, feeding window.FS_REPORT_STATE.dateTo — the
+      engine's own first-choice hook — plus a body observer that fills the
+      modal's reporting_date if it would still open empty.
+   B) With deferred tax not configured, showCreateRunModal() THROWS
+      ("Deferred tax is not enabled. Open Tax Rules & Settings first." /
+      missing authority / missing rate) and the click handlers
+      (#dtEmptyNewRunBtn, #dtNewRunBtn) do not catch — an unhandled promise
+      rejection with zero visible feedback. Fix: an unhandledrejection
+      handler matches exactly those three setup messages, suppresses the raw
+      rejection and opens a guided modal whose primary button opens the
+      engine's OWN settings modal through its existing #dtSettingsBtn
+      document-level click delegation. */
+(function () {
+  "use strict";
+
+  var screenEl = document.getElementById("screen-deferred-tax");
+  if (!screenEl) return;
+
+  /* ── shared helpers ── */
+  function cid() {
+    try {
+      return (
+        (typeof window.getActiveCompanyId === "function" &&
+          window.getActiveCompanyId()) ||
+        window.CURRENT_COMPANY_ID ||
+        (window.CURRENT_COMPANY && window.CURRENT_COMPANY.id) ||
+        "default"
+      );
+    } catch (e) {
+      return "default";
+    }
+  }
+
+  function isoToday() {
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
+
+  var CAL =
+    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" ' +
+    'stroke-linejoin="round" aria-hidden="true">' +
+    '<rect x="3" y="5" width="18" height="16" rx="2.5"></rect>' +
+    '<path d="M8 3v4M16 3v4M3 10h18"></path></svg>';
+
+  /* ── A. reporting period picker ─────────────────────────────── */
+
+  function storeKey() { return "fs_dt1_period_" + cid(); }
+
+  function storedValue() {
+    try { return localStorage.getItem(storeKey()) || ""; }
+    catch (e) { return ""; }
+  }
+
+  function pushState(v) {
+    if (!v) return;
+    window.FS_REPORT_STATE = window.FS_REPORT_STATE || {};
+    window.FS_REPORT_STATE.dateTo = v;
+  }
+
+  function injectPicker() {
+    var actions = screenEl.querySelector(".dt-header .dt-actions");
+    if (!actions || document.getElementById("dt1PeriodChip")) return;
+
+    var chip = document.createElement("div");
+    chip.className = "dt1-period-chip";
+    chip.id = "dt1PeriodChip";
+    chip.title = "Reporting period — pre-fills new deferred-tax runs";
+    chip.innerHTML =
+      CAL +
+      '<label class="dt1-period-label" for="dt1Period">Reporting period</label>' +
+      '<input type="date" id="dt1Period" aria-label="Reporting period date">';
+    actions.insertBefore(chip, actions.firstChild);
+
+    var input = chip.querySelector("#dt1Period");
+    input.addEventListener("change", function () {
+      input.dataset.dt1Touched = "1";
+      var v = input.value || isoToday();
+      input.value = v;
+      try { localStorage.setItem(storeKey(), v); } catch (e) { /* private mode */ }
+      pushState(v);
+    });
+
+    syncPicker();
+  }
+
+  /* keep picker + FS_REPORT_STATE in sync when the screen (re)appears or
+     the engine re-renders the run list (navigation, company switch, refresh) */
+  function syncPicker() {
+    var input = document.getElementById("dt1Period");
+    if (!input) return;
+    if (input.dataset.dt1Touched === "1") { pushState(input.value); return; }
+    var base = storedValue() || isoToday();
+    if (input.value !== base) input.value = base;
+    pushState(input.value);
+  }
+
+  injectPicker();
+  new MutationObserver(syncPicker).observe(screenEl, {
+    attributes: true, attributeFilter: ["class"]
+  });
+
+  var runList = document.getElementById("dtRunList");
+  if (runList) {
+    new MutationObserver(syncPicker).observe(runList, { childList: true });
+  }
+
+  /* belt & braces: if the Create Run modal would still open with an empty
+     Reporting date, fill it from the picker (engine reads FS_REPORT_STATE
+     first — this only fires if that hook was cleared by something else) */
+  new MutationObserver(function (muts) {
+    for (var i = 0; i < muts.length; i++) {
+      var nodes = muts[i].addedNodes;
+      for (var j = 0; j < nodes.length; j++) {
+        var n = nodes[j];
+        if (n.nodeType !== 1) continue;
+        var form = n.id === "dtCreateRunForm"
+          ? n
+          : (n.querySelector ? n.querySelector("#dtCreateRunForm") : null);
+        if (!form) continue;
+        var d = form.querySelector('input[name="reporting_date"]');
+        if (d && !d.value) {
+          var input = document.getElementById("dt1Period");
+          var v = (input && input.value) || storedValue() || isoToday();
+          d.value = v;
+          pushState(v);
+        }
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+
+  /* ── B. guided setup modal for the silent throw ─────────────── */
+
+  var SETUP_RE = /Deferred tax is not enabled|No tax authority is configured|No corporate income tax rate/i;
+
+  function closeSetupModal() {
+    var m = document.getElementById("dt1SetupModal");
+    if (m) m.remove();
+  }
+
+  function triggerEngineSettings() {
+    /* the engine opens its own settings modal through document-level click
+       delegation on #dtSettingsBtn — synthesize exactly that click */
+    var b = document.createElement("button");
+    b.type = "button";
+    b.id = "dtSettingsBtn";
+    b.style.display = "none";
+    document.body.appendChild(b);
+    b.click();
+    setTimeout(function () {
+      if (b.parentNode) b.parentNode.removeChild(b);
+    }, 0);
+  }
+
+  function openSetupModal(message) {
+    closeSetupModal();
+
+    var wrap = document.createElement("div");
+    wrap.id = "dt1SetupModal";
+    wrap.setAttribute("role", "dialog");
+    wrap.setAttribute("aria-modal", "true");
+    wrap.innerHTML =
+      '<div class="dt1-setup-backdrop" data-dt1-close></div>' +
+      '<div class="dt1-setup-panel" role="document">' +
+        '<div class="dt1-setup-head">' +
+          '<span class="dt1-setup-icon">' + CAL + "</span>" +
+          "<div>" +
+            "<h3>Deferred Tax Setup Required</h3>" +
+            "<p>Finish the one-time tax configuration before creating a run.</p>" +
+          "</div>" +
+          '<button type="button" class="dt1-setup-x" data-dt1-close aria-label="Close">&times;</button>' +
+        "</div>" +
+        '<div class="dt1-setup-msg"></div>' +
+        '<ol class="dt1-setup-steps">' +
+          "<li><strong>Enable deferred tax</strong> for this company.</li>" +
+          "<li><strong>Select the tax authority</strong> that applies.</li>" +
+          "<li><strong>Set the corporate income tax rate</strong> to use.</li>" +
+        "</ol>" +
+        '<div class="dt1-setup-actions">' +
+          '<button type="button" class="btn btn-secondary" data-dt1-close>Close</button>' +
+          '<button type="button" class="btn btn-primary" id="dt1OpenSettings">Configure Deferred Tax Settings</button>' +
+        "</div>" +
+      "</div>";
+
+    wrap.querySelector(".dt1-setup-msg").textContent = message;
+    document.body.appendChild(wrap);
+
+    wrap.addEventListener("click", function (e) {
+      if (!e.target.closest) return;
+      if (e.target.closest("[data-dt1-close]")) { closeSetupModal(); return; }
+      if (e.target.closest("#dt1OpenSettings")) {
+        closeSetupModal();
+        triggerEngineSettings();
+      }
+    });
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeSetupModal();
+  });
+
+  window.addEventListener("unhandledrejection", function (e) {
+    var msg = "";
+    try {
+      msg = (e.reason && (e.reason.message || String(e.reason))) || "";
+    } catch (err) { msg = ""; }
+    if (!SETUP_RE.test(msg)) return;
+    if (typeof e.preventDefault === "function") e.preventDefault();
+    openSetupModal(msg);
+  });
+
+  /* ── C. settings-save bridge ────────────────────────────── */
+  document.addEventListener("submit", function (e) {
+    if (!e.target || e.target.id !== "dtSettingsForm") return;
+
+    e.preventDefault();
+    if (typeof e.stopPropagation === "function") e.stopPropagation();
+
+    var endpoint = window.ENDPOINTS && window.ENDPOINTS.deferredTax
+      ? window.ENDPOINTS.deferredTax.settings(cid())
+      : null;
+
+    if (!endpoint || typeof window.apiFetch !== "function") {
+      alert("The deferred-tax settings endpoint is not available.");
+      return;
+    }
+
+    var data = new FormData(e.target);
+    var payload = {
+      tax_authority_id: Number(data.get("tax_authority_id")),
+      income_tax_rate: Number(data.get("income_tax_rate")),
+      deferred_tax_enabled: data.get("deferred_tax_enabled") === "on",
+      deferred_tax_settings: {
+        default_recovery_method: data.get("default_recovery_method"),
+        reconciliation_tolerance:
+          Number(data.get("reconciliation_tolerance") || 0.05),
+        auto_scan_assets: data.get("auto_scan_assets") === "on",
+        auto_scan_accrual_deferrals:
+          data.get("auto_scan_accrual_deferrals") === "on",
+        require_dta_recoverability_review:
+          data.get("require_dta_recoverability_review") === "on"
+      }
+    };
+
+    window.apiFetch(endpoint, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }).then(function () {
+      /* close through the engine's own [data-dt-close] delegation */
+      var form = document.getElementById("dtSettingsForm");
+      var closeBtn = form && form.querySelector("[data-dt-close]");
+      if (closeBtn) { closeBtn.click(); return; }
+    }).catch(function (err) {
+      alert((err && err.message) || "Saving deferred-tax settings failed.");
+    });
+  }, true);
 })();
 </script>
 </body>
