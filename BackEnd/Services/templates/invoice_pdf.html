@@ -463,13 +463,14 @@
 {% set addr_raw = b.address or c_addr or "" %}
 
 {# logo url (supports dict keys + absolute conversion) #}
-{% set logo = (
-  company.get('logo_url')
-  or company.get('branding_logo_url')
-  or b.logo_url
-  or invoice.branding_logo_url
-  or ''
-) %}
+  {% set logo = (
+    company.get('logo_data_uri')
+    or company.get('logo_url')
+    or company.get('branding_logo_url')
+    or b.logo_url
+    or invoice.branding_logo_url
+    or ''
+  ) %}
 {% if logo and logo.startswith('/') %}
   {% set logo = request.host_url.rstrip('/') ~ logo %}
 {% endif %}

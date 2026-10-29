@@ -1,4 +1,4 @@
-﻿(function hardTraceRedirects() {
+(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -184,6 +184,83 @@ function getSigninUrl(reason=""){
   }
 })();
 
+
+// ====== COMPANY BRANDING (additive, v8) ======
+// Replaces hardcoded demo company text ("Mokoko Trading (Pty) Ltd") with the
+// signed-in user's real company name everywhere it is DISPLAYED:
+//   - any element carrying [data-fs-company] (Catalog Studio eyebrow,
+//     Group Reporting parent chip, Company & Setup hero line, ...)
+//   - the --fs-company-name CSS variable consumed by the Payroll / Projects
+//     hero eyebrow pills (::before content: "Payroll · " var(...))
+// Self-contained resolver — mirrors getActiveCompanyName() fallback order but
+// works even before/without it. Called automatically whenever company data
+// arrives or changes (applyCompanyGlobals / applyLoggedInUI /
+// updateHeaderCompanyBadge / loadCompanyProfile).
+(function fsCompanyBranding() {
+  function fsResolveCompanyName() {
+    // 1) In-memory company objects (authoritative once company data loads)
+    const c =
+      window.CURRENT_COMPANY ||
+      window.COMPANY_PROFILE ||
+      window.activeCompany ||
+      window.ACTIVE_COMPANY ||
+      null;
+    const fromObj = c?.company_name || c?.name || c?.legal_name || "";
+
+    // 2) Header badge (kept in sync by applyLoggedInUI / updateHeaderCompanyBadge)
+    const badgeText = document.getElementById("companyBadge")?.textContent?.trim();
+    const fromBadge =
+      badgeText && badgeText !== "Your company" ? badgeText : "";
+
+    // 3) Persisted values (written by resolveCompanyProfile / signin)
+    const fromLS =
+      localStorage.getItem("active_company_name") ||
+      localStorage.getItem("companyName") ||
+      localStorage.getItem("company_name") ||
+      "";
+
+    // 4) Cached user payload
+    let fromUser = "";
+    try {
+      const u = JSON.parse(localStorage.getItem("fs_user") || "{}");
+      fromUser = u.company_name || (u.company && u.company.name) || "";
+    } catch (_) {}
+
+    return String(fromObj || fromBadge || fromLS || fromUser || "").trim();
+  }
+
+  window.FS_APPLY_COMPANY_BRANDING = function (explicitName) {
+    const name = String(explicitName || fsResolveCompanyName() || "").trim();
+    if (!name) return "";
+
+    // CSS var for ::before eyebrow pills ("Payroll · <company>", "Projects · <company>")
+    try {
+      document.documentElement.style.setProperty(
+        "--fs-company-name",
+        JSON.stringify(name)
+      );
+    } catch (_) {}
+
+    // Text slots
+    document.querySelectorAll("[data-fs-company]").forEach((el) => {
+      if (el.textContent !== name) el.textContent = name;
+    });
+
+    return name;
+  };
+
+  window.FS_RESOLVE_COMPANY_NAME = fsResolveCompanyName;
+
+  // First paint from cached values (head inline script already set the CSS var;
+  // this covers the [data-fs-company] text slots as soon as the DOM exists).
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      window.FS_APPLY_COMPANY_BRANDING();
+    });
+  } else {
+    window.FS_APPLY_COMPANY_BRANDING();
+  }
+})();
 
 (function bindSessionLockModalEarly() {
   document.addEventListener("click", (e) => {
@@ -579,6 +656,9 @@ async function resolveCompanyProfile(currentUser) {
 
     if (companyName) {
       localStorage.setItem("active_company_name", companyName);
+
+      // ✅ v8: keep displayed company branding in sync (additive)
+      window.FS_APPLY_COMPANY_BRANDING?.(companyName);
     }
 
     // ✅ persist ONE key consistently
@@ -8146,6 +8226,9 @@ window.applyLoggedOutUI = applyLoggedOutUI;
       companyBadge.classList.remove("hidden");
     }
 
+    // ✅ v8: keep displayed company branding in sync (additive)
+    window.FS_APPLY_COMPANY_BRANDING?.(storedCompany);
+
     const rawRole =
       (user && (user.role || user.system_role || user.user_role)) ||
       window.FS_USER_ROLE ||
@@ -14315,6 +14398,9 @@ function updateHeaderCompanyBadge() {
 
   badge.textContent = name;
   badge.classList.remove("hidden");
+
+  // ✅ v8: keep displayed company branding in sync (additive)
+  window.FS_APPLY_COMPANY_BRANDING?.(name);
 }
 
 function ensureFixedAssetsDrawerRoot() {
@@ -15401,6 +15487,9 @@ async function loadCompanyProfile(companyId) {
     // ✅ also expose for non-window code (if you still use these globals)
     if (typeof CURRENT_COMPANY !== "undefined") CURRENT_COMPANY = window.CURRENT_COMPANY;
     if (typeof CURRENT_COMPANY_ID !== "undefined" && data?.id) CURRENT_COMPANY_ID = Number(data.id);
+
+    // ✅ v8: keep displayed company branding in sync (additive)
+    window.FS_APPLY_COMPANY_BRANDING?.();
 
     // ✅ sync backend policy.mode → localStorage mode (ONCE)
     try {

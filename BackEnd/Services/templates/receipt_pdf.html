@@ -361,10 +361,7 @@
 {% set c_addr  = company.get('physical_address') or company.get('postal_address') %}
 {% set addr_raw = b.address or c_addr or "" %}
 
-{% set logo = (company.get('logo_url') or b.logo_url or '') %}
-{% if logo and logo.startswith('/') %}
-  {% set logo = request.host_url.rstrip('/') ~ logo %}
-{% endif %}
+{% set logo = (company.get('logo_data_uri') or company.get('logo_url') or b.logo_url or '') %}
 
 {% set company_name = b.company_name or receipt.company_name or c_name or "Company Name" %}
 

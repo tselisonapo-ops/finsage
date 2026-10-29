@@ -7,6 +7,16 @@ from BackEnd.Services.db_service import db_service
 
 from BackEnd.Services.invoice_pdf_service import generate_receipt_pdf as render_receipt_pdf
 
+from datetime import date, datetime
+from decimal import Decimal
+from flask import render_template
+
+from BackEnd.Services.db_service import db_service
+
+from BackEnd.Services.utils.logo_utils import attach_company_logo_ctx  # NEW (1/3)
+
+from BackEnd.Services.invoice_pdf_service import generate_receipt_pdf as render_receipt_pdf
+
 def build_receipt_pdf(company_id: int, receipt_id: int) -> bytes:
     receipt = db_service.get_receipt_by_id(company_id, receipt_id)
     if not receipt:
@@ -66,6 +76,7 @@ def build_receipt_pdf(company_id: int, receipt_id: int) -> bytes:
     }
 
     company_ctx = {
+        "id": company_id,  # NEW (2/3) — lets the resolver locate static/uploads/company_<id>/
         "name": receipt.get("company_name"),
         "company_email": receipt.get("company_email"),
         "company_phone": receipt.get("company_phone"),
@@ -73,8 +84,11 @@ def build_receipt_pdf(company_id: int, receipt_id: int) -> bytes:
         "postal_address": receipt.get("postal_address"),
         "address": receipt.get("physical_address") or receipt.get("postal_address"),
         "logo_url": receipt.get("logo_url"),
-        "logo_path": receipt.get("logo_path"),
+        "logo_path": receipt.get("logo_path"),   # always None today; attach() overwrites it
     }
+
+    # NEW (3/3) — resolve the logo: real file path + data URI + branding fallback
+    company_ctx = attach_company_logo_ctx(company_ctx, company_id)
 
     return render_receipt_pdf(receipt_ctx, company_ctx)
 

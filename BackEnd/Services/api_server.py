@@ -1513,6 +1513,92 @@ def _render_manufacturing_dispatch_document_html(document):
 </html>
 """
 
+def resolve_company_logo_path(company_id: int, logo_url) -> str | None:
+    """logo_url → LOCAL FILE PATH, whichever scheme produced it.
+
+    Self-contained for pasting into api_server.py (all imports local).
+    """
+    import os
+    from pathlib import Path
+    from flask import current_app
+
+    logo_exts = (".png", ".jpg", ".jpeg", ".webp")
+
+    root = Path(current_app.root_path)
+    url = ((logo_url or "").strip()).split("?")[0]  # strip cache-buster query
+    if not url:
+        return None
+
+    candidates: list[Path] = []
+
+    if url.startswith("/api/companies/") and url.endswith("/logo/file"):
+        per_company = root / "static" / "uploads" / f"company_{int(company_id)}"
+        candidates += [per_company / f"logo{ext}" for ext in logo_exts]
+    else:
+        name = os.path.basename(url.rstrip("/"))
+        candidates += [
+            root / "uploads" / "company_logos" / name,
+            root / "static" / "uploads" / "company_logos" / name,
+            root / "static" / "uploads" / f"company_{int(company_id)}" / name,
+        ]
+
+    for p in candidates:
+        try:
+            if p.is_file():
+                return str(p)
+        except OSError:
+            continue
+    return None
+
+def logo_data_uri(logo_path: str | None) -> str | None:
+    """Logo file → base64 data URI (cannot 404, cannot be mixed-content-blocked)."""
+    import base64
+    import mimetypes
+
+    if not logo_path:
+        return None
+    try:
+        mime = mimetypes.guess_type(logo_path)[0] or "image/png"
+        with open(logo_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        return f"data:{mime};base64,{b64}"
+    except OSError:
+        return None
+
+
+def attach_company_logo_ctx(company: dict, company_id: int,
+                            branding: dict | None = None) -> dict:
+    """Enrich a company context dict with resolvable logo fields.
+
+    Sets:
+        company["logo_path"]     real file on disk (ReportLab uses this)
+        company["logo_data_uri"] base64 data URI (templates prefer this)
+        company["logo_url"]      absolute URL fallback (email HTML etc.)
+
+    `branding` optional — fetched via db_service when omitted.
+    """
+    from BackEnd.Services.db_service import db_service  # local, avoids cycles
+
+    company = company or {}
+    if branding is None:
+        branding = db_service.get_company_branding(int(company_id)) or {}
+
+    logo_url = (
+        (company.get("logo_url") or "").strip()
+        or (branding.get("logo_url") or "").strip()
+    )
+
+    company["logo_path"] = resolve_company_logo_path(company_id, logo_url)
+    company["logo_data_uri"] = logo_data_uri(company["logo_path"])
+
+    if logo_url.startswith("/"):
+        # absolute fallback (email HTML); view templates do NOT need this —
+        # they should use the data URI or a relative src (see FIX 3)
+        from flask import request
+        company["logo_url"] = request.host_url.rstrip("/") + logo_url
+
+    return company
+
 # -----------------------------
 # helpers
 # -----------------------------
@@ -10888,15 +10974,9 @@ def invoice_pdf(company_id: int, invoice_id: int):
         (company_id,),
     ) or {}
 
-    logo_url = (company.get("logo_url") or "").strip()
-    if logo_url and logo_url.startswith("/uploads/company_logos/"):
-        filename = os.path.basename(logo_url)
-        company["logo_path"] = os.path.join(
-            current_app.root_path,
-            "uploads",
-            "company_logos",
-            filename,
-        )
+    company = attach_company_logo_ctx(
+        company, company_id,
+        branding=db_service.get_company_branding(company_id) or {})
 
     print("EMAIL PDF logo_url:", company.get("logo_url"), flush=True)
     print("EMAIL PDF logo_path:", company.get("logo_path"), flush=True)
@@ -11108,6 +11188,9 @@ def email_quote(company_id: int, quote_id: int):
     # ==============================
     # ✅ Generate PDF attachment
     # ==============================
+    company = attach_company_logo_ctx(
+        company, company_id,
+        branding=db_service.get_company_branding(company_id) or {})
     quote["branding"] = db_service.get_company_branding(company_id) or {}
     pdf_bytes = generate_quote_pdf(quote, company)
 

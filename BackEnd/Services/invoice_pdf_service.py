@@ -94,8 +94,27 @@ def _para(text, style, fallback="-"):
     return Paragraph(txt.replace("\n", "<br/>") if txt else fallback, style)
 
 def _load_logo(company: dict, max_w=32 * mm, max_h=32 * mm):
+    """Resolve the company logo to a ReportLab Image.
+
+    Scheme coverage:
+      * explicit local-path keys (unchanged behaviour, checked first):
+        logo_path, logo_file, logo_local_path, logo, company_logo,
+        attachment_path, logo_attachment_path
+      * logo_url "/api/companies/<id>/logo/file"  (current uploader)
+        → static/uploads/company_<id>/logo.<ext>
+      * logo_url "/uploads/company_logos/<file>"  (legacy flow)
+      * bare filename → tried in every historical folder
+
+    Self-contained: only needs `os`, `Path`, `current_app` and reportlab's
+    Image, imported inside the function — paste it over the old _load_logo
+    as-is.
+    """
     import os
+    from pathlib import Path
     from flask import current_app
+    from reportlab.platypus import Image  # already at top of invoice_pdf_service.py
+
+    logo_exts = (".png", ".jpg", ".jpeg", ".webp")
 
     logo = (
         _safe(company.get("logo_path"))
@@ -113,8 +132,41 @@ def _load_logo(company: dict, max_w=32 * mm, max_h=32 * mm):
     )
 
     if not logo and logo_url:
-        rel_url = logo_url.lstrip("/")
-        logo = os.path.join(current_app.root_path, rel_url)
+        url = logo_url.split("?")[0].strip()
+
+        if url.startswith("/api/companies/") and url.endswith("/logo/file"):
+            # /api/companies/<id>/logo/file → static/uploads/company_<id>/
+            try:
+                company_id = int(url.split("/")[3])
+            except (ValueError, IndexError):
+                company_id = int(_safe(company.get("id")) or 0)
+            per_company = (
+                Path(current_app.root_path)
+                / "static"
+                / "uploads"
+                / f"company_{company_id}"
+            )
+            for ext in logo_exts:
+                candidate = per_company / f"logo{ext}"
+                if candidate.is_file():
+                    logo = str(candidate)
+                    break
+        elif url.startswith("/uploads/company_logos/"):
+            # legacy: <root>/uploads/company_logos/<file>
+            logo = os.path.join(current_app.root_path, url.lstrip("/"))
+        else:
+            # bare filename — try every historical location
+            name = os.path.basename(url.rstrip("/"))
+            cid = _safe(company.get("id")) or 0
+            for rel in (
+                os.path.join("uploads", "company_logos", name),
+                os.path.join("static", "uploads", "company_logos", name),
+                os.path.join("static", "uploads", f"company_{cid}", name),
+            ):
+                candidate = os.path.join(current_app.root_path, rel)
+                if os.path.exists(candidate):
+                    logo = candidate
+                    break
 
     print("LOGO DEBUG url:", logo_url)
     print("LOGO DEBUG path:", logo)

@@ -46,6 +46,18 @@
      while api() still calls it ('cid is not defined' at boot, Tax Recon
      list never loaded) — fs7-boot restores its exact original
      semantics as a window global without editing your code.
+     v8 removes the hardcoded demo company ("Mokoko Trading (Pty) Ltd")
+     from every DISPLAY surface and shows the signed-in user's real
+     company instead: [data-fs-company] slots (Catalog Studio eyebrow,
+     Group Reporting parent chip, Company & Setup hero line) plus the
+     --fs-company-name CSS variable feeding the Payroll / Projects
+     eyebrow pills (set pre-paint by a head inline script, kept in sync
+     by window.FS_APPLY_COMPANY_BRANDING in dashboard.js — additive,
+     hooked into applyCompanyGlobals / applyLoggedInUI /
+     updateHeaderCompanyBadge / loadCompanyProfile). Input placeholders
+     ("e.g. …") and demo customer sample rows (Acme, Sunrise Clinic)
+     intentionally unchanged; Group chip now neutral "Your group" until
+     group-structure data is wired.
      Engine dashboard.js?v=20261017f untouched. ══ -->
 <head>
   <meta charset="UTF-8"/>
@@ -85,6 +97,26 @@
       `${base}/signin.html?reason=signed_out`
     );
   }
+})();
+</script>
+
+<!-- ✅ v8 Company branding: paint the signed-in company's real name into the
+     CSS-driven eyebrow pills (Payroll / Projects) via --fs-company-name
+     BEFORE first paint. The [data-fs-company] text slots are kept in sync by
+     dashboard.js (window.FS_APPLY_COMPANY_BRANDING). -->
+<script>
+(function(){
+  try{
+    var n =
+      localStorage.getItem("active_company_name") ||
+      localStorage.getItem("companyName") ||
+      "";
+
+    if(n){
+      var s = JSON.stringify(String(n).trim()).replace(/</g, "\\u003c");
+      document.documentElement.style.setProperty("--fs-company-name", s);
+    }
+  }catch(e){}
 })();
 </script>
 <script src="https://cdn.tailwindcss.com"></script>
@@ -14442,7 +14474,7 @@ label:has(#projectTeamUserSearch) {
   letter-spacing: -0.01em;
 }
 #screen-payroll .payroll-hero h2::before {
-  content: "Payroll · Mokoko Trading (Pty) Ltd";
+  content: "Payroll · " var(--fs-company-name, "Your company");
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -15502,7 +15534,7 @@ label:has(#projectTeamUserSearch) {
   margin: 0 0 2px;
 }
 #screen-projects #projectScreenTitle::before {
-  content: "Projects · Mokoko Trading (Pty) Ltd";
+  content: "Projects · " var(--fs-company-name, "Your company");
   display: block;
   width: fit-content;
   margin-bottom: 10px;
@@ -25159,7 +25191,7 @@ label:has(#projectTeamUserSearch) {
             <!-- cat3 hero (REV3 language: navy band, teal glows, eyebrow pill) -->
             <div class="cat3-hero">
               <div class="cat3-hero-main">
-                <div class="cat3-eyebrow">Catalog Studio · Mokoko Trading (Pty) Ltd</div>
+                <div class="cat3-eyebrow">Catalog Studio · <span data-fs-company>Your company</span></div>
                 <h3 class="font-bold text-base">Catalog Studio</h3>
                 <p class="cat3-hero-sub">Products, stock rules, and valuation tools (inventory-enabled companies)</p>
               </div>
@@ -29893,8 +29925,8 @@ label:has(#projectTeamUserSearch) {
     <h2 class="cc-h1">Group Reporting</h2>
     <p class="cc-sub">One governed pipeline: consolidation runs, group account mapping, pre-consolidation TB, adjustments, intercompany reconciliation, eliminations, acquisition &amp; NCI, equity method, FX translation and the consolidated statements.</p>
     <div class="grp1-hero-meta">
-      <span class="grp1-hero-chip">Group <b>Mokoko Holdings Group</b></span>
-      <span class="grp1-hero-chip">Parent <b>Mokoko Trading (Pty) Ltd</b></span>
+      <span class="grp1-hero-chip">Group <b data-fs-company-group>Your group</b></span>
+      <span class="grp1-hero-chip">Parent <b data-fs-company>Your company</b></span>
       <span class="grp1-hero-chip">Framework <b>IFRS</b></span>
       <span class="grp1-hero-chip">Reporting currency <b>ZAR</b></span>
       <span class="grp1-hero-chip">Period <b>FY2026 &middot; Sep-2026 YTD</b></span>
@@ -38555,7 +38587,7 @@ label:has(#projectTeamUserSearch) {
 
     loadScript("/dist/assets/hostMount.js?v=20260811b", { module: true });
 
-    loadScript("/dashboard.js?v=20261017f");
+    loadScript("/dashboard.js?v=20261029a");
 
     loadScript("/receipt-journal.js?v=20261018a");
     /* ==================================================================
@@ -46876,16 +46908,19 @@ th.num { text-align: right; }
     hero.innerHTML =
       '<div>' +
         '<h1>Company &amp; Setup</h1>' +
-        '<p>Profile, tax settings, corporate structure and reporting periods for Mokoko Trading (Pty) Ltd.</p>' +
+        '<p>Profile, tax settings, corporate structure and reporting periods for <span data-fs-company>your company</span>.</p>' +
       '</div>' +
       '<div class="cs-hero-side">' +
-        '<span class="cs-badge">System code <b id="csSystemBadge">MTL</b></span>' +
+        '<span class="cs-badge">System code <b id="csSystemBadge">—</b></span>' +
         '<span class="cs-datechip" title="Today">' +
           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M3 10h18"/></svg>' +
           '<span>' + (fmtToday() || "\u2014") + '</span>' +
         '</span>' +
       '</div>';
     card.insertBefore(hero, card.firstChild.nextSibling ? card.querySelector(".company-view") : null);
+
+    // ✅ v8: fill company name slot immediately if branding already resolved
+    if (window.FS_APPLY_COMPANY_BRANDING) window.FS_APPLY_COMPANY_BRANDING();
 
     var nav = document.createElement("div");
     nav.className = "cs-switch";
