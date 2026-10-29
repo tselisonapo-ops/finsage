@@ -102960,8 +102960,8 @@ function renderPayrollPayeRunClearing(
       "";
 
     $("revObligationName").value = displayName;
-    $("revRecognitionTiming").value = o.recognition_timing || "point_in_time";
-    $("revProgressMethod").value = o.progress_method || "";
+    setRecognitionTimingValue(o.recognition_timing || "point_in_time");
+    setProgressMethodValue(o.progress_method || "");
 
     if ($("revPitTrigger")) {
       $("revPitTrigger").value = o.recognition_trigger || pj.recognition_trigger || "";
@@ -103867,6 +103867,55 @@ async function renderContractPreview(c = {}) {
     }
   }
 
+  /**
+   * Safe programmatic setter for the Progress Method dropdown.
+   *
+   * Setting el.value = "manual" directly does NOT fire a "change" event,
+   * so toggleObligationFields() never runs and the dependent field blocks
+   * (Expected Total Cost, Progress %, etc.) stay hidden. This helper sets
+   * the value AND runs the toggle so the UI stays in sync regardless of
+   * whether the value came from a user click or a programmatic hydration
+   * (edit-mode load, setup defaults, milestone linking, etc.).
+   */
+  function setProgressMethodValue(value) {
+    const el = $("revProgressMethod");
+    if (!el) {
+      console.warn("[Revenue] setProgressMethodValue: #revProgressMethod not in DOM");
+      return;
+    }
+    const next = String(value ?? "");
+    if (el.value === next) {
+      // Even when the value did not change, the dependent blocks may be out
+      // of sync (e.g. they were left hidden from a previous point-in-time
+      // state). Run the toggle so visibility always matches the value.
+      toggleObligationFields();
+      return;
+    }
+    el.value = next;
+    toggleObligationFields();
+  }
+
+  /**
+   * Safe programmatic setter for the Recognition Timing dropdown.
+   * Same rationale as setProgressMethodValue: keeps the dependent blocks
+   * (revOverTimeBlock vs revPointInTimeBlock, plus their inner field groups)
+   * in sync with the dropdown value.
+   */
+  function setRecognitionTimingValue(value) {
+    const el = $("revRecognitionTiming");
+    if (!el) {
+      console.warn("[Revenue] setRecognitionTimingValue: #revRecognitionTiming not in DOM");
+      return;
+    }
+    const next = String(value ?? "point_in_time");
+    if (el.value === next) {
+      toggleObligationFields();
+      return;
+    }
+    el.value = next;
+    toggleObligationFields();
+  }
+
   function toggleFinancingFields() {
     const checked = !!$("revHasFinancing")?.checked;
     const box = $("revFinancingFields");
@@ -104122,12 +104171,12 @@ async function renderContractPreview(c = {}) {
       $("revChkSubstance").checked = !!setup?.contract_rules?.commercial_substance_required;
     }
 
-    if ($("revRecognitionTiming") && setup?.obligation_rules?.default_recognition_timing) {
-      $("revRecognitionTiming").value = setup.obligation_rules.default_recognition_timing;
+    if (setup?.obligation_rules?.default_recognition_timing) {
+      setRecognitionTimingValue(setup.obligation_rules.default_recognition_timing);
     }
 
-    if ($("revProgressMethod") && setup?.obligation_rules?.default_progress_method) {
-      $("revProgressMethod").value = setup.obligation_rules.default_progress_method;
+    if (setup?.obligation_rules?.default_progress_method) {
+      setProgressMethodValue(setup.obligation_rules.default_progress_method);
     }
   }
 
@@ -108011,7 +108060,13 @@ async function renderContractPreview(c = {}) {
       applySelectedMilestoneToObligationFields();
     });
 
-    $("revRecognitionTiming")?.addEventListener("change", toggleObligationFields);
+    // Defensive binding — see comment above the #revProgressMethod binding.
+    const _rtEl = $("revRecognitionTiming");
+    if (_rtEl) {
+      _rtEl.addEventListener("change", toggleObligationFields);
+    } else {
+      console.warn("[Revenue] bindRevenueScreenEvents: #revRecognitionTiming not found — change listener not attached, over-time / point-in-time toggle will not work until element is rendered.");
+    }
 
     $("revMarkSatisfiedBtn")?.addEventListener("click", async () => {
       try {
@@ -108180,7 +108235,15 @@ async function renderContractPreview(c = {}) {
       }
     });
 
-    $("revProgressMethod")?.addEventListener("change", toggleObligationFields);
+    // Defensive binding: if the element is missing when bindRevenueScreenEvents
+    // runs, the optional-chaining ?. silently no-ops and the toggle never fires
+    // on user clicks. Log a warning so this regression is visible in DevTools.
+    const _pmEl = $("revProgressMethod");
+    if (_pmEl) {
+      _pmEl.addEventListener("change", toggleObligationFields);
+    } else {
+      console.warn("[Revenue] bindRevenueScreenEvents: #revProgressMethod not found — change listener not attached, manual toggle will not work until element is rendered.");
+    }
     $("revProgressType")?.addEventListener("change", toggleRevenueProgressDriverFields);
 
     $("revSaveProgress")?.addEventListener("click", async () => {
