@@ -482,7 +482,7 @@
       Access your workspace securely using your FinSage account.
     </p>
 
-    <form id="signinForm">
+    <form id="signinForm" novalidate>
       <div id="credentialsStep">
         <label for="signinEmail">Email address</label>
         <input
@@ -566,7 +566,6 @@
           type="password"
           id="forceNewPassword"
           autocomplete="new-password"
-          required
           placeholder="Enter new password (min 8 chars)"
         />
 
@@ -575,7 +574,6 @@
           type="password"
           id="forceConfirmPassword"
           autocomplete="new-password"
-          required
           placeholder="Re-enter new password"
         />
 
