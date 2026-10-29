@@ -176671,6 +176671,42 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         from BackEnd.Services.utils.payslip_template import render_payslip_pdf
         from BackEnd.Services.emailer import send_company_mail
 
+
+        # Ensure the payslip email log exists for this company.
+        # This also repairs older company schemas that predate
+        # the payslip email logging feature.
+        schema = self.company_schema(int(company_id))
+
+        self.execute_ddl(
+            f"""
+            CREATE TABLE IF NOT EXISTS
+                {schema}.payroll_payslip_email_log (
+                    id BIGSERIAL PRIMARY KEY,
+                    company_id BIGINT NOT NULL,
+                    payroll_run_id BIGINT NOT NULL,
+                    employee_id BIGINT NOT NULL,
+                    email TEXT NOT NULL,
+                    status VARCHAR(20) NOT NULL,
+                    sent_at TIMESTAMPTZ NULL,
+                    error TEXT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+            """
+        )
+
+        # Required by the ON CONFLICT clauses below.
+        self.execute_ddl(
+            f"""
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                uq_payroll_payslip_email_log_run_employee
+            ON {schema}.payroll_payslip_email_log (
+                company_id,
+                payroll_run_id,
+                employee_id
+            );
+            """
+        )
+
         employees = self.payroll_payslip_employees(
             company_id=company_id,
             payroll_run_id=payroll_run_id,
