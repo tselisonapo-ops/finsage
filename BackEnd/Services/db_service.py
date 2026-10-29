@@ -69023,6 +69023,7 @@ class DatabaseService:
             #    Inspect posting COA metadata using the authoritative
             #    role classifier.
             # ------------------------------------------------------------
+
             coa_rows = self.fetch_all(
                 f"""
                 SELECT
@@ -69052,6 +69053,7 @@ class DatabaseService:
                 FROM {schema}.coa
                 WHERE company_id = %s
                 AND COALESCE(posting, TRUE) = TRUE
+                AND NULLIF(TRIM(COALESCE(role, '')), '') IS NULL
                 ORDER BY id
                 """,
                 (company_id,),

@@ -1695,7 +1695,7 @@ def _coa_role_from_text(
         if has_any(
             "paye",
             "pay as you earn",
-            "withholding tax payable",
+            "paye withholding tax payable",
             "employee tax payable",
             "payroll tax payable",
         ):
