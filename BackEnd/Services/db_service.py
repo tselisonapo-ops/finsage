@@ -187787,9 +187787,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         payment_rule = settings.get("payment_day_rule")
 
-        payment_offset = int(
-            settings.get("payment_month_offset") or 0
+        payment_offset_value = settings.get(
+            "payment_month_offset"
         )
+
+        if payment_offset_value is None:
+            payment_offset = 0
+        else:
+            payment_offset = int(payment_offset_value)
+
+        if payment_offset < 0 or payment_offset > 12:
+            raise ValueError(
+                "payment_month_offset must be between 0 and 12"
+            )
+
+        # Payment date is calculated relative to the payroll period-end month.
+        # For a period ending on 26 September:
+        #   offset 0 = 1 September
+        #   offset 1 = 1 October
 
         adjustment = (
             settings.get("payment_adjustment") or "none"
@@ -188010,6 +188025,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 payment_month,
                 payment_rule,
             )
+
+            # If payment falls before the payroll period closes,
+            # move it to the same configured day in the next month.
+            # This also protects schedules whose saved offset is 0.
+            if payment_date < period_end:
+                payment_month = self._payroll_add_months(
+                    payment_month,
+                    1,
+                )
+
+                payment_date = self._payroll_payment_date(
+                    payment_month,
+                    payment_rule,
+                )
+
 
             # --------------------------------------------------
             # Weekend adjustment
