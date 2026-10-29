@@ -6,6 +6,7 @@
 import os
 from pathlib import Path
 import hashlib
+import uuid
 from dotenv import load_dotenv
 from werkzeug.exceptions import HTTPException
 import psycopg2.extras
@@ -141,7 +142,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from BackEnd.Services.db_service import db_service
 
 from BackEnd.Services.auth_middleware import _corsify, require_auth, require_pos_auth
-from BackEnd.Services.auth_service import make_jwt, make_pos_jwt
+from BackEnd.Services.auth_service import make_jwt, make_pos_jwt, verify_email_otp, issue_email_otp, OTP_LIFETIME_MINUTES, OTP_RESEND_SECONDS
 
 from BackEnd.Services.coa_service import (
     build_coa,
@@ -253,8 +254,17 @@ from BackEnd.Services.control.control_notifications import (
 from BackEnd.Services.control.control_audit import (
     control_audit_bp
 )
+from BackEnd.Services.control.control_subscriptions import subscriptions_bp
+
 from BackEnd.Services.control.control_automation import control_automation_bp
 from BackEnd.Services.receipt_scan_routes import receipt_scan_bp
+from BackEnd.Services.entitlements_endpoint import entitlements_bp
+from BackEnd.Services.practice_endpoint import practice_bp
+from BackEnd.Services.subscription_jobs import subscription_jobs_bp, register_subscription_jobs
+from BackEnd.Services.entitlement_gate import register_entitlement_gate
+from BackEnd.Services.audit_ridealong import register_audit_ridealong
+from BackEnd.Services.subscription.practice_service import register_practice
+from BackEnd.Services.billing_service import BillingService
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
 # ────────────────────────────────────────────────────────────────
@@ -435,6 +445,14 @@ def _normalize_address_response(provider, raw):
         print(f"[address] normalize error: {e}")
     return {"features": features}
 
+TIN_VAT_EXEMPT_ORG_TYPES = {
+    "club_association",
+    # "npo", "ngo", "government_entity",  # extend later if needed
+}
+
+def _is_tin_vat_exempt(organization_type, tin_vat_exempt_flag=False):
+    org_lower = str(organization_type or "").strip().lower()
+    return (org_lower in TIN_VAT_EXEMPT_ORG_TYPES) or bool(tin_vat_exempt_flag)
 
 @app.route("/api/address/search")
 def api_address_search():
@@ -524,7 +542,7 @@ print(f"[BOOT] Signup debug log: {signup_log_path}")
 
 bank_service = BankService(db_service)
 control_service = ControlService(db_service)
-
+control_service.ensure_schema()  # Create/apply Control schema migrations at startup
 control_exception_handler = ControlExceptionHandler(control_service)
 app.logger.addHandler(control_exception_handler)
 
@@ -719,6 +737,39 @@ app.register_blueprint(control_notifications_bp)
 app.register_blueprint(control_audit_bp)
 app.register_blueprint(control_automation_bp)
 app.register_blueprint(receipt_scan_bp)
+app.register_blueprint(entitlements_bp)
+app.register_blueprint(practice_bp)
+app.register_blueprint(subscriptions_bp)
+register_practice(app, db_service)              # delegation uplift + client metering
+register_entitlement_gate(app, db_service)      # stash app.extensions["entitlements"]
+register_audit_ridealong(app, db_service)
+
+# ────────────────────────────────────────────────────────────────
+# Billing service (Phase 4) — trials, commits, upgrades, dunning.
+# Needs the entitlement service (cache-bust on plan changes) and the
+# app's own SMTP sender for nudges. Mailer contract: (to, subject, html).
+# ────────────────────────────────────────────────────────────────
+def _billing_mailer(to, subject, html):
+    try:
+        send_mail(to_email=to, subject=subject, html_body=html)
+    except Exception:
+        logger.exception("[BILLING] nudge mail failed to=%s", to)
+
+billing_service = BillingService(
+    db_service,
+    entitlement_service=app.extensions.get("entitlements"),
+    mailer=_billing_mailer,
+)
+app.extensions["billing"] = billing_service
+
+# Daily jobs endpoint — same entitlement service + mailer so nudges and
+# lifecycle transitions reuse them. Token comes from SUBSCRIPTION_JOBS_TOKEN
+# (endpoint refuses every call when it is unset — fail-closed).
+register_subscription_jobs(
+    app, db_service,
+    entitlement_service=app.extensions.get("entitlements"),
+    mailer=_billing_mailer,
+)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 
@@ -2588,8 +2639,24 @@ def api_auth_signup(cur=None, conn=None):
                 )
                 company_reg_no = (company_reg_no or "").strip() or None
 
+                tin_vat_exempt_flag = bool(company_payload.get("tinVatExempt"))
+                tin_vat_exempt = _is_tin_vat_exempt(organization_type, tin_vat_exempt_flag)
+
+                if tin_vat_exempt:
+                    current_app.logger.info(
+                        "Signup TIN/VAT exemption applied org_type=%s flag=%s",
+                        organization_type, tin_vat_exempt_flag,
+                    )
+
                 tin = company_payload.get("tin")
                 vat = company_payload.get("vat")
+
+                if tin_vat_exempt:
+                    tin = None
+                    vat = None
+                else:
+                    tin = (str(tin).strip() if tin is not None else None) or None
+                    vat = (str(vat).strip() if vat is not None else None) or None
 
                 company_email = (
                     company_payload.get("companyEmail") or email
@@ -2975,6 +3042,32 @@ def api_auth_signup(cur=None, conn=None):
                     )
 
             # -----------------------------------------------------
+            # Subscription trial (Phase 4) — fail-soft: billing problems
+            # never block account creation. Defaults to the 30-day
+            # Premium trial (TRIAL_EXPERIENCE_PLAN). Practice firms get
+            # their 90-day practice_growth trial later via
+            # billing.provision_trial(firm_cid, plan_code="practice_growth").
+            # Idempotent — safe to re-run for the same company.
+            # -----------------------------------------------------
+            if created_company_id:
+                try:
+                    billing_service.provision_trial(
+                        created_company_id,
+                        actor_user_id=owner_id,
+                        source="signup",
+                    )
+                    current_app.logger.info(
+                        "[BILLING] 30-day trial provisioned company=%s",
+                        created_company_id,
+                    )
+                except Exception:
+                    current_app.logger.exception(
+                        "[BILLING] trial provisioning FAILED company=%s "
+                        "(company runs grandfathered until fixed)",
+                        created_company_id,
+                    )
+
+            # -----------------------------------------------------
             # Owner invitation email
             # -----------------------------------------------------
             if invite_payload:
@@ -3332,25 +3425,13 @@ def api_auth_signin():
                 "error": "Please confirm your email before signing in."
             }), 403
 
+        if user.get("is_active") is False:
+            return jsonify({
+                "error": "Your account is inactive. Please contact an administrator."
+            }), 403
+
         user_id = int(user["id"])
         current_app.logger.info("[AUTH] 1 - user loaded: %s", user_id)
-
-        # Do not let activity tracking prevent signin.
-        try:
-            db_service.execute_sql(
-                """
-                UPDATE public.users
-                SET last_login_at = NOW(),
-                    last_activity_at = NOW()
-                WHERE id = %s;
-                """,
-                (user_id,),
-            )
-        except Exception:
-            current_app.logger.exception(
-                "[AUTH] Could not update login activity for user %s",
-                user_id,
-            )
 
         base_role = str(
             user.get("user_role") or "viewer"
@@ -3623,67 +3704,35 @@ def api_auth_signin():
             set(allowed_company_ids)
         )
 
-        token = make_jwt(
-            user_id=user_id,
-            email=user["email"],
-            role=user_role,
-            user_type=user_type,
-            company_id=company_id,
-            access_scope=access_scope,
-            allowed_company_ids=allowed_company_ids,
-        )
 
-        company_name = None
-        industry = None
-        sub_industry = None
+        # Send OTP after all existing access checks pass.
+        try:
+            challenge_id = issue_email_otp(
+                db_service,
+                user_id=user_id,
+                email=user["email"],
+                purpose="signin",
+                product="ops" if is_ops_signin else "finsage",
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 429
+        except Exception:
+            current_app.logger.exception(
+                "[AUTH] Could not issue sign-in OTP for user %s",
+                user_id,
+            )
+            return jsonify({
+                "error": "Could not send a verification code. Please try again."
+            }), 500
 
-        if company_id is not None:
-            try:
-                company = db_service.fetch_one(
-                    """
-                    SELECT id, name, industry, sub_industry
-                    FROM public.companies
-                    WHERE id = %s
-                    LIMIT 1;
-                    """,
-                    (company_id,),
-                )
-
-                if company:
-                    company_name = company.get("name")
-                    industry = company.get("industry")
-                    sub_industry = company.get("sub_industry")
-
-            except Exception:
-                current_app.logger.exception(
-                    "[AUTH] Could not load company %s for user %s",
-                    company_id,
-                    user_id,
-                )
-
-        # This return must be outside `if company_id`.
         return jsonify({
-            "message":"signin OK",
-            "token":token,
-            "product":"FinSage Nexus" if is_ops_signin else "finsage",
-            "user":{
-                "id": user_id,
-                "email": user["email"],
-                "role": user_role,
-                "user_type": user_type,
-                "access_scope": access_scope,
-                "is_confirmed": bool(
-                    user.get("is_confirmed")
-                ),
-                "company_id": company_id,
-                "primary_company_id":company_id,
-                "company_name": company_name,
-                "industry": industry,
-                "sub_industry": sub_industry,
-                "allowed_company_ids": allowed_company_ids,
-                "dashboards": dashboards,
-                "default_dashboard": default_dashboard,
-            },
+            "ok": True,
+            "otp_required": True,
+            "challenge_id": challenge_id,
+            "expires_in": OTP_LIFETIME_MINUTES * 60,
+            "resend_after": OTP_RESEND_SECONDS,
+            "message": "A verification code has been sent to your email.",
+            "product": "FinSage Nexus" if is_ops_signin else "finsage",
         }), 200
 
     except Exception as exc:
@@ -3697,7 +3746,495 @@ def api_auth_signin():
             "detail": str(exc),
         }), 500
 
-    
+
+@app.route("/api/auth/signin/verify-otp", methods=["POST", "OPTIONS"])
+@cross_origin(
+    origins=[
+        "https://finspheresolutions.com",
+        "https://www.finspheresolutions.com",
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+    ],
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["POST", "OPTIONS"],
+    supports_credentials=True,
+)
+def api_auth_signin_verify_otp():
+    if request.method == "OPTIONS":
+        return "", 204
+
+    try:
+        data = request.get_json(silent=True) or {}
+        challenge_id = str(data.get("challenge_id") or "").strip()
+        code = str(data.get("code") or "").strip()
+
+        if not challenge_id or not code:
+            return jsonify({
+                "error": "Verification code is required."
+            }), 400
+
+        # Reject malformed UUIDs before querying PostgreSQL.
+        try:
+            challenge_id = str(uuid.UUID(challenge_id))
+        except (ValueError, TypeError, AttributeError):
+            return jsonify({
+                "error": "Invalid or expired verification challenge."
+            }), 400
+
+        # The challenge, not the browser, determines the user and product.
+        challenge = db_service.fetch_one(
+            """
+            SELECT user_id, purpose, product
+            FROM public.auth_otp_challenges
+            WHERE id = %s::uuid
+            LIMIT 1
+            """,
+            (challenge_id,),
+        )
+
+        if (
+            not challenge
+            or challenge.get("purpose") != "signin"
+        ):
+            return jsonify({
+                "error": "Invalid or expired verification code."
+            }), 400
+
+        user_id = int(challenge["user_id"])
+        product = str(challenge.get("product") or "finsage").strip().lower()
+
+        if product not in {"finsage", "ops"}:
+            return jsonify({
+                "error": "Invalid sign-in challenge."
+            }), 400
+
+        is_ops_signin = product == "ops"
+
+        verified = verify_email_otp(
+            db_service,
+            challenge_id=challenge_id,
+            user_id=user_id,
+            purpose="signin",
+            code=code,
+        )
+
+        if not verified:
+            return jsonify({
+                "error": "Invalid or expired verification code."
+            }), 400
+
+
+        # Revalidate the account after OTP verification.
+        user_row = db_service.fetch_one(
+            """
+            SELECT email
+            FROM public.users
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+
+        if not user_row or not user_row.get("email"):
+            return jsonify({
+                "error": "This account cannot sign in."
+            }), 403
+
+        user = db_service.get_user_by_email(user_row["email"])
+
+        if (
+            not user
+            or int(user.get("id") or 0) != user_id
+            or not user.get("is_confirmed")
+            or user.get("is_active") is False
+        ):
+            return jsonify({
+                "error": "This account cannot sign in."
+            }), 403
+
+        base_role = str(user.get("user_role") or "viewer").strip()
+        user_type = str(user.get("user_type") or "Enterprise").strip()
+
+        primary_mem = None
+
+        if is_ops_signin:
+            primary_mem = db_service.fetch_one(
+                """
+                SELECT
+                    cu.company_id,
+                    cu.role,
+                    cu.access_scope,
+                    cu.membership_kind,
+                    cu.is_primary,
+                    cu.product_access,
+                    cu.ops_is_active
+                FROM public.company_users cu
+                WHERE cu.user_id = %s
+                  AND cu.is_active = TRUE
+                  AND cu.is_primary = TRUE
+                  AND COALESCE(cu.access_scope, 'core') = 'core'
+                ORDER BY
+                    CASE WHEN cu.membership_kind = 'primary'
+                         THEN 0 ELSE 1 END,
+                    cu.company_id
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+
+            if not primary_mem:
+                primary_mem = db_service.fetch_one(
+                    """
+                    SELECT
+                        cu.company_id,
+                        cu.role,
+                        cu.access_scope,
+                        cu.membership_kind,
+                        cu.is_primary,
+                        cu.product_access,
+                        cu.ops_is_active
+                    FROM public.company_users cu
+                    JOIN public.companies c
+                      ON c.id = cu.company_id
+                    WHERE cu.user_id = %s
+                      AND cu.is_active = TRUE
+                      AND COALESCE(cu.access_scope, 'core') = 'core'
+                      AND (
+                          c.owner_user_id = cu.user_id
+                          OR cu.membership_kind = 'primary'
+                      )
+                    ORDER BY
+                        CASE WHEN c.owner_user_id = cu.user_id
+                             THEN 0 ELSE 1 END,
+                        CASE WHEN cu.membership_kind = 'primary'
+                             THEN 0 ELSE 1 END,
+                        cu.company_id
+                    LIMIT 1
+                    """,
+                    (user_id,),
+                )
+
+        else:
+            memberships = db_service.fetch_all(
+                """
+                SELECT
+                    company_id,
+                    role,
+                    access_scope,
+                    is_primary,
+                    membership_kind
+                FROM public.company_users
+                WHERE user_id = %s
+                  AND is_active = TRUE
+                ORDER BY company_id
+                """,
+                (user_id,),
+            ) or []
+
+            if not memberships:
+                return jsonify({
+                    "error": "No active company membership is available.",
+                    "code": "NO_ACTIVE_COMPANY",
+                }), 403
+
+            primary_memberships = [
+                row for row in memberships if bool(row.get("is_primary"))
+            ]
+
+            if len(memberships) > 1 and len(primary_memberships) != 1:
+                return jsonify({
+                    "error": (
+                        "Your account's primary company configuration "
+                        "must be corrected before signing in."
+                    ),
+                    "code": "PRIMARY_COMPANY_REQUIRED",
+                }), 403
+
+            primary_mem = (
+                primary_memberships[0]
+                if primary_memberships
+                else memberships[0]
+            )
+
+        if is_ops_signin:
+            allowed_rows = db_service.fetch_all(
+                """
+                SELECT DISTINCT company_id
+                FROM public.company_users
+                WHERE user_id = %s
+                  AND is_active = TRUE
+                  AND COALESCE(access_scope, 'core') = 'core'
+                ORDER BY company_id
+                """,
+                (user_id,),
+            ) or []
+        else:
+            allowed_rows = db_service.fetch_all(
+                """
+                SELECT company_id
+                FROM public.company_users
+                WHERE user_id = %s
+                  AND is_active = TRUE
+                ORDER BY company_id
+                """,
+                (user_id,),
+            ) or []
+
+        allowed_company_ids = sorted({
+            int(row["company_id"])
+            for row in allowed_rows
+            if row.get("company_id") is not None
+        })
+
+        company_id = (
+            int(primary_mem["company_id"])
+            if primary_mem and primary_mem.get("company_id") is not None
+            else None
+        )
+
+        if is_ops_signin:
+            if not company_id:
+                return jsonify({
+                    "error": "No primary company is available for FinSage Nexus.",
+                    "code": "OPS_NO_PRIMARY_COMPANY",
+                }), 403
+
+            if not db_service.user_has_ops_access(company_id, user_id):
+                return jsonify({
+                    "error": "Your account does not have FinSage Nexus access.",
+                    "code": "OPS_ACCESS_DENIED",
+                }), 403
+
+        if primary_mem:
+            user_role = normalize_role(primary_mem.get("role") or base_role)
+            access_scope = str(
+                primary_mem.get("access_scope") or "core"
+            ).strip().lower()
+        else:
+            user_role = normalize_role(base_role)
+            access_scope = "core"
+
+        if is_ops_signin:
+            access_scope = "core"
+
+        dashboards = get_dashboard_access(user_role, access_scope)
+        default_dashboard = resolve_default_dashboard(
+            user_type=user_type,
+            role=user_role,
+            access_scope=access_scope,
+        )
+
+        owned_rows = db_service.fetch_all(
+            """
+            SELECT id AS company_id
+            FROM public.companies
+            WHERE owner_user_id = %s
+            ORDER BY id
+            """,
+            (user_id,),
+        ) or []
+
+        allowed_company_ids = sorted(
+            set(allowed_company_ids)
+            | {
+                int(row["company_id"])
+                for row in owned_rows
+                if row.get("company_id") is not None
+            }
+            | ({company_id} if company_id is not None else set())
+        )
+
+        company_name = None
+        industry = None
+        sub_industry = None
+
+        if company_id is not None:
+            company = db_service.fetch_one(
+                """
+                SELECT name, industry, sub_industry
+                FROM public.companies
+                WHERE id = %s
+                LIMIT 1
+                """,
+                (company_id,),
+            )
+
+            if company:
+                company_name = company.get("name")
+                industry = company.get("industry")
+                sub_industry = company.get("sub_industry")
+
+        # Register this browser only after OTP and access checks succeed.
+        # Device tracking or alert-email failures must not block sign-in.
+        try:
+            device_id_raw = str(data.get("device_id") or "").strip()
+            device_id = None
+
+            if device_id_raw:
+                try:
+                    device_id = str(uuid.UUID(device_id_raw))
+                except (ValueError, TypeError, AttributeError):
+                    device_id = None
+
+            if device_id:
+                client_ip = request.remote_addr
+                user_agent = (
+                    request.headers.get("User-Agent", "")[:1000]
+                )
+
+                new_device = db_service.fetch_one(
+                    """
+                    INSERT INTO public.auth_trusted_devices (
+                        user_id,
+                        product,
+                        device_id,
+                        last_ip,
+                        user_agent
+                    )
+                    VALUES (%s, %s, %s::uuid, %s::inet, %s)
+                    ON CONFLICT (user_id, product, device_id)
+                    DO NOTHING
+                    RETURNING id
+                    """,
+                    (
+                        user_id,
+                        product,
+                        device_id,
+                        client_ip,
+                        user_agent,
+                    ),
+                )
+
+                if new_device:
+                    # First successful sign-in from this browser.
+                    try:
+                        from html import escape
+
+                        safe_product = (
+                            "FinSage Nexus"
+                            if is_ops_signin
+                            else "FinSage"
+                        )
+                        safe_ip = escape(client_ip or "Unavailable")
+                        safe_agent = escape(
+                            user_agent or "Unavailable"
+                        )
+
+                        send_mail(
+                            to_email=user["email"],
+                            subject=(
+                                f"New device sign-in to {safe_product}"
+                            ),
+                            text_body=(
+                                f"A new browser/device signed in to "
+                                f"{safe_product} using your account.\n\n"
+                                f"IP address: {client_ip or 'Unavailable'}\n"
+                                f"Browser/device: "
+                                f"{user_agent or 'Unavailable'}\n\n"
+                                "If this wasn't you, change your "
+                                "password and contact support."
+                            ),
+                            html_body=(
+                                "<p>A new browser/device signed in to "
+                                f"{safe_product} using your account.</p>"
+                                f"<p><strong>IP address:</strong> "
+                                f"{safe_ip}<br>"
+                                f"<strong>Browser/device:</strong> "
+                                f"{safe_agent}</p>"
+                                "<p>If this wasn't you, change your "
+                                "password and contact support.</p>"
+                            ),
+                        )
+                    except Exception:
+                        current_app.logger.exception(
+                            "[AUTH] New-device alert email failed "
+                            "for user %s",
+                            user_id,
+                        )
+                else:
+                    # Recognised device: refresh its last-seen details.
+                    db_service.execute_sql(
+                        """
+                        UPDATE public.auth_trusted_devices
+                        SET last_seen_at = NOW(),
+                            last_ip = %s::inet,
+                            user_agent = %s
+                        WHERE user_id = %s
+                          AND product = %s
+                          AND device_id = %s::uuid
+                        """,
+                        (
+                            client_ip,
+                            user_agent,
+                            user_id,
+                            product,
+                            device_id,
+                        ),
+                    )
+
+        except Exception:
+            current_app.logger.exception(
+                "[AUTH] Device tracking failed for user %s",
+                user_id,
+            )
+
+        token = make_jwt(
+            user_id=user_id,
+            email=user["email"],
+            role=user_role,
+            user_type=user_type,
+            company_id=company_id,
+            access_scope=access_scope,
+            allowed_company_ids=allowed_company_ids,
+        )
+
+        # Update login activity only after OTP verification succeeds.
+        try:
+            db_service.execute_sql(
+                """
+                UPDATE public.users
+                SET last_login_at = NOW(),
+                    last_activity_at = NOW()
+                WHERE id = %s
+                """,
+                (user_id,),
+            )
+        except Exception:
+            current_app.logger.exception(
+                "[AUTH] Could not update login activity for user %s",
+                user_id,
+            )
+
+        return jsonify({
+            "message": "signin OK",
+            "token": token,
+            "product": "FinSage Nexus" if is_ops_signin else "finsage",
+            "user": {
+                "id": user_id,
+                "email": user["email"],
+                "role": user_role,
+                "user_type": user_type,
+                "access_scope": access_scope,
+                "is_confirmed": bool(user.get("is_confirmed")),
+                "company_id": company_id,
+                "primary_company_id": company_id,
+                "company_name": company_name,
+                "industry": industry,
+                "sub_industry": sub_industry,
+                "allowed_company_ids": allowed_company_ids,
+                "dashboards": dashboards,
+                "default_dashboard": default_dashboard,
+            },
+        }), 200
+
+    except Exception:
+        current_app.logger.exception(
+            "[AUTH] Sign-in OTP verification failed"
+        )
+        return jsonify({
+            "error": "Could not verify the sign-in code."
+        }), 500
+
 @app.route("/api/auth/me", methods=["GET", "OPTIONS"])
 @require_auth
 def api_auth_me():
@@ -3852,7 +4389,11 @@ def api_auth_me():
             "force_password_change": bool(user.get("force_password_change")),
         }
 
-        app.logger.warning("AUTH_ME delegated out=%s", out)
+        app.logger.warning(
+            "AUTH_ME delegated access result: user_id=%s outcome=%s",
+            user_id,
+            "denied" if not out else "returned",
+        )
         return jsonify(out), 200
 
     # -----------------------------
@@ -4066,29 +4607,210 @@ def pos_auth_me(company_id):
         "company": pos_user.get("company"),
     }), 200
 
+
 @app.route("/api/auth/reauth", methods=["POST", "OPTIONS"])
 @require_auth
 def api_auth_reauth():
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
 
-    data = request.get_json(silent=True) or {}
-    password = data.get("password") or ""
+    try:
+        data = request.get_json(silent=True) or {}
+        password = str(data.get("password") or "")
 
-    if not password:
-        return jsonify({"ok": False, "error": "Password required"}), 400
+        if not password:
+            return jsonify({
+                "ok": False,
+                "error": "Password required",
+            }), 400
 
-    current_user = getattr(g, "current_user", None) or {}
-    email = current_user.get("email") or (getattr(request, "jwt_payload", {}) or {}).get("email")
+        current_user = getattr(g, "current_user", None) or {}
+        jwt_payload = getattr(request, "jwt_payload", {}) or {}
 
-    if not email:
-        return jsonify({"ok": False, "error": "AUTH|missing_email"}), 401
+        email = (
+            current_user.get("email")
+            or jwt_payload.get("email")
+        )
 
-    user = db_service.get_user_by_email(email)
-    if not user or not check_password_hash(user["password_hash"], password):
-        return jsonify({"ok": False, "error": "Password incorrect"}), 403
+        if not email:
+            return jsonify({
+                "ok": False,
+                "error": "AUTH|missing_email",
+            }), 401
 
-    return jsonify({"ok": True, "message": "Session unlocked"}), 200
+        user = db_service.get_user_by_email(email)
+
+        if (
+            not user
+            or not user.get("password_hash")
+            or not check_password_hash(user["password_hash"], password)
+        ):
+            return jsonify({
+                "ok": False,
+                "error": "Password incorrect",
+            }), 403
+
+        if (
+            not user.get("is_confirmed")
+            or user.get("is_active") is False
+        ):
+            return jsonify({
+                "ok": False,
+                "error": "This account cannot unlock the session.",
+            }), 403
+
+        user_id = int(user["id"])
+        user_email = str(user["email"]).strip()
+
+        try:
+            challenge_id = issue_email_otp(
+                db_service,
+                user_id=user_id,
+                email=user_email,
+                purpose="session_unlock",
+                product="finsage",
+            )
+        except ValueError as exc:
+            return jsonify({
+                "ok": False,
+                "error": str(exc),
+            }), 429
+
+        return jsonify({
+            "ok": True,
+            "otp_required": True,
+            "challenge_id": challenge_id,
+            "expires_in": OTP_LIFETIME_MINUTES * 60,
+            "resend_after": OTP_RESEND_SECONDS,
+            "message": "A verification code has been sent to your email.",
+        }), 200
+
+    except Exception:
+        current_app.logger.exception(
+            "[AUTH] Could not initiate session re-verification"
+        )
+        return jsonify({
+            "ok": False,
+            "error": "Could not send a verification code. Please try again.",
+        }), 500
+
+
+@app.route("/api/auth/reauth/verify-otp", methods=["POST", "OPTIONS"])
+@require_auth
+def api_auth_reauth_verify_otp():
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        data = request.get_json(silent=True) or {}
+        challenge_id = str(data.get("challenge_id") or "").strip()
+        code = str(data.get("code") or "").strip()
+
+        if not challenge_id or not code:
+            return jsonify({
+                "ok": False,
+                "error": "Verification code is required.",
+            }), 400
+
+        if len(code) != 6 or not code.isdigit():
+            return jsonify({
+                "ok": False,
+                "error": "Enter the six-digit verification code.",
+            }), 400
+
+        try:
+            challenge_id = str(uuid.UUID(challenge_id))
+        except (ValueError, TypeError, AttributeError):
+            return jsonify({
+                "ok": False,
+                "error": "Invalid or expired verification challenge.",
+            }), 400
+
+        current_user = getattr(g, "current_user", None) or {}
+        jwt_payload = getattr(request, "jwt_payload", {}) or {}
+
+        email = current_user.get("email") or jwt_payload.get("email")
+        if not email:
+            return jsonify({
+                "ok": False,
+                "error": "AUTH|missing_email",
+            }), 401
+
+        user = db_service.get_user_by_email(email)
+        if (
+            not user
+            or not user.get("id")
+            or not user.get("is_confirmed")
+            or user.get("is_active") is False
+        ):
+            return jsonify({
+                "ok": False,
+                "error": "This account cannot unlock the session.",
+            }), 403
+
+        user_id = int(user["id"])
+
+        challenge = db_service.fetch_one(
+            """
+            SELECT user_id, purpose
+            FROM public.auth_otp_challenges
+            WHERE id = %s::uuid
+            LIMIT 1
+            """,
+            (challenge_id,),
+        )
+
+        if (
+            not challenge
+            or challenge.get("purpose") != "session_unlock"
+            or int(challenge.get("user_id") or 0) != user_id
+        ):
+            return jsonify({
+                "ok": False,
+                "error": "Invalid or expired verification code.",
+            }), 400
+
+        verified = verify_email_otp(
+            db_service,
+            challenge_id=challenge_id,
+            user_id=user_id,
+            purpose="session_unlock",
+            code=code,
+        )
+
+        if not verified:
+            return jsonify({
+                "ok": False,
+                "error": "Invalid or expired verification code.",
+            }), 400
+
+        try:
+            db_service.execute_sql(
+                """
+                UPDATE public.users
+                SET last_activity_at = NOW()
+                WHERE id = %s
+                """,
+                (user_id,),
+            )
+        except Exception:
+            current_app.logger.exception(
+                "[AUTH] Could not update activity after session unlock"
+            )
+
+        return jsonify({
+            "ok": True,
+            "message": "Session unlocked",
+        }), 200
+
+    except Exception:
+        current_app.logger.exception(
+            "[AUTH] Session-unlock OTP verification failed"
+        )
+        return jsonify({
+            "ok": False,
+            "error": "Could not verify the session-unlock code.",
+        }), 500
 
 @app.route("/api/companies/<int:company_id>/invoices/<int:invoice_id>/pdf_token", methods=["POST"])
 @require_auth
@@ -16183,6 +16905,21 @@ if __name__ == "__main__":
             try:
                 db_service.init_master_schema()
                 db_service.initialize_public_schema()
+
+                # 1b) subscription plan catalog (Phase 0 + Phase 5).
+                # Idempotent, re-seeds on every boot, and pricing-safe
+                # (ON CONFLICT never touches currency/amounts). Fail-hard:
+                # a missing catalog would silently mis-gate every company
+                # via grandfathering.
+                from BackEnd.Services.plans_seed import ensure_plans_seeded
+                from BackEnd.Services.practice_seed import (
+                    ensure_practice_seeded,
+                )
+                ensure_plans_seeded(db_service, log=print)
+                ensure_practice_seeded(db_service, log=print)
+                print("[BOOT] Subscription plan catalog seeded (4 business "
+                      "+ 3 practice plans)")
+
                 print("[BOOT] Master/public schema bootstrap done")
             except Exception as e:
                 print("[BOOT][FATAL] Master/public schema bootstrap failed:", e)

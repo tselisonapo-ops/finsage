@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   Bell,
   AlertTriangle,
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 
 import { api } from '../api/client'
+import { playAlertDebounced } from '../lib/sound'   // NEW
 
 function iconForSeverity(severity) {
   if (severity === 'critical') {
@@ -37,19 +38,28 @@ export default function NotificationBell() {
   const [notifications, setNotifications] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
 
+  // NEW — track the previously-seen unread count so we can play a
+  // sound when new notifications arrive.
+  const prevUnreadRef = useRef(null)
+
   async function loadNotifications() {
     try {
-      const data = await api.get(
-        '/notifications?limit=10'
-      )
+      const data = await api.get('/notifications?limit=10')
 
-      setNotifications(
-        data.notifications || []
-      )
+      setNotifications(data.notifications || [])
+      setUnreadCount(data.unread_count || 0)
 
-      setUnreadCount(
-        data.unread_count || 0
-      )
+      // NEW — beep when the unread count INCREASES (i.e. new
+      // notification arrived since the last poll).
+      const newUnread = data.unread_count || 0
+
+      if (
+        prevUnreadRef.current !== null &&
+        newUnread > prevUnreadRef.current
+      ) {
+        playAlertDebounced()
+      }
+      prevUnreadRef.current = newUnread
     } catch {
       // Notification failures must not break Control UI.
     }
@@ -57,14 +67,10 @@ export default function NotificationBell() {
 
   async function markRead(id) {
     try {
-      const data = await api.post(
-        `/notifications/${id}/read`,
-        {}
-      )
+      const data = await api.post(`/notifications/${id}/read`, {})
 
-      setUnreadCount(
-        data.unread_count || 0
-      )
+      setUnreadCount(data.unread_count || 0)
+      prevUnreadRef.current = data.unread_count || 0
 
       setNotifications((current) =>
         current.map((item) =>
@@ -84,19 +90,14 @@ export default function NotificationBell() {
 
   async function markAllRead() {
     try {
-      await api.post(
-        '/notifications/read-all',
-        {}
-      )
+      await api.post('/notifications/read-all', {})
 
       setNotifications((current) =>
-        current.map((item) => ({
-          ...item,
-          is_read: true,
-        }))
+        current.map((item) => ({ ...item, is_read: true }))
       )
 
       setUnreadCount(0)
+      prevUnreadRef.current = 0
     } catch {
       // Ignore notification UI errors.
     }
@@ -105,10 +106,7 @@ export default function NotificationBell() {
   useEffect(() => {
     loadNotifications()
 
-    const timer = setInterval(
-      loadNotifications,
-      30000
-    )
+    const timer = setInterval(loadNotifications, 30000)
 
     return () => clearInterval(timer)
   }, [])
@@ -118,9 +116,7 @@ export default function NotificationBell() {
       {/* Notification Button */}
       <button
         type="button"
-        onClick={() =>
-          setOpen((value) => !value)
-        }
+        onClick={() => setOpen((value) => !value)}
         className="
           relative
           p-2
@@ -155,9 +151,7 @@ export default function NotificationBell() {
             border-2
             border-surface-900
           ">
-            {unreadCount > 99
-              ? '99+'
-              : unreadCount}
+            {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
@@ -187,18 +181,11 @@ export default function NotificationBell() {
             gap-4
           ">
             <div>
-              <div className="
-                font-semibold
-                text-surface-100
-              ">
+              <div className="font-semibold text-surface-100">
                 Notifications
               </div>
 
-              <div className="
-                text-xs
-                text-surface-400
-                mt-1
-              ">
+              <div className="text-xs text-surface-400 mt-1">
                 {unreadCount} unread
               </div>
             </div>
@@ -207,14 +194,7 @@ export default function NotificationBell() {
               <button
                 type="button"
                 onClick={markAllRead}
-                className="
-                  text-xs
-                  text-accent
-                  hover:text-accent-hover
-                  font-medium
-                  transition-colors
-                  whitespace-nowrap
-                "
+                className="text-xs text-accent hover:text-accent-hover font-medium transition-colors whitespace-nowrap"
               >
                 Mark all read
               </button>
@@ -222,138 +202,73 @@ export default function NotificationBell() {
           </div>
 
           {/* Notification List */}
-          <div className="
-            max-h-[420px]
-            overflow-y-auto
-          ">
+          <div className="max-h-[420px] overflow-y-auto">
             {!notifications.length && (
-              <div className="
-                p-8
-                text-center
-              ">
-                <div className="
-                  w-10 h-10
-                  rounded-lg
-                  bg-surface-700
-                  flex
-                  items-center
-                  justify-center
-                  mx-auto
-                  mb-3
-                ">
-                  <Bell
-                    size={18}
-                    className="text-surface-400"
-                  />
+              <div className="p-8 text-center">
+                <div className="w-10 h-10 rounded-lg bg-surface-700 flex items-center justify-center mx-auto mb-3">
+                  <Bell size={18} className="text-surface-400" />
                 </div>
 
-                <div className="
-                  text-sm
-                  text-surface-300
-                ">
+                <div className="text-sm text-surface-300">
                   No notifications.
                 </div>
               </div>
             )}
 
-            {notifications.map(
-              (notification) => (
-                <button
-                  key={notification.id}
-                  type="button"
-                  onClick={() =>
-                    !notification.is_read &&
-                    markRead(notification.id)
+            {notifications.map((notification) => (
+              <button
+                key={notification.id}
+                type="button"
+                onClick={() =>
+                  !notification.is_read && markRead(notification.id)
+                }
+                className={`
+                  w-full
+                  text-left
+                  px-4 py-4
+                  border-b
+                  border-surface-600
+                  last:border-b-0
+                  hover:bg-surface-700/70
+                  transition-colors
+                  ${
+                    notification.is_read
+                      ? 'bg-surface-800'
+                      : 'bg-accent-muted/40'
                   }
-                  className={`
-                    w-full
-                    text-left
-                    px-4 py-4
-                    border-b
-                    border-surface-600
-                    last:border-b-0
-                    hover:bg-surface-700/70
-                    transition-colors
-                    ${
-                      notification.is_read
-                        ? 'bg-surface-800'
-                        : 'bg-accent-muted/40'
-                    }
-                  `}
-                >
-                  <div className="flex gap-3">
-                    {/* Severity Icon */}
-                    <div
-                      className={`
-                        mt-0.5
-                        shrink-0
-                        ${severityClass(
-                          notification.severity
-                        )}
-                      `}
-                    >
-                      {iconForSeverity(
-                        notification.severity
+                `}
+              >
+                <div className="flex gap-3">
+                  {/* Severity Icon */}
+                  <div className={`mt-0.5 shrink-0 ${severityClass(notification.severity)}`}>
+                    {iconForSeverity(notification.severity)}
+                  </div>
+
+                  {/* Content */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-medium text-surface-100 text-sm leading-snug">
+                        {notification.title}
+                      </div>
+
+                      {!notification.is_read && (
+                        <span className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
                       )}
                     </div>
 
-                    {/* Content */}
-                    <div className="
-                      min-w-0
-                      flex-1
-                    ">
-                      <div className="
-                        flex
-                        items-start
-                        justify-between
-                        gap-2
-                      ">
-                        <div className="
-                          font-medium
-                          text-surface-100
-                          text-sm
-                          leading-snug
-                        ">
-                          {notification.title}
-                        </div>
+                    <div className="text-xs text-surface-300 mt-1 leading-relaxed">
+                      {notification.message}
+                    </div>
 
-                        {!notification.is_read && (
-                          <span className="
-                            w-2
-                            h-2
-                            rounded-full
-                            bg-accent
-                            mt-1.5
-                            shrink-0
-                          " />
-                        )}
-                      </div>
-
-                      <div className="
-                        text-xs
-                        text-surface-300
-                        mt-1
-                        leading-relaxed
-                      ">
-                        {notification.message}
-                      </div>
-
-                      <div className="
-                        text-[11px]
-                        text-surface-400
-                        mt-2
-                      ">
-                        {notification.created_at
-                          ? new Date(
-                              notification.created_at
-                            ).toLocaleString()
-                          : ''}
-                      </div>
+                    <div className="text-[11px] text-surface-400 mt-2">
+                      {notification.created_at
+                        ? new Date(notification.created_at).toLocaleString()
+                        : ''}
                     </div>
                   </div>
-                </button>
-              )
-            )}
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       )}

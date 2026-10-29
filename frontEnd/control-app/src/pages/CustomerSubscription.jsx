@@ -10,7 +10,8 @@ import {
 
 import { api } from '../api/client'
 import { formatDateTime } from '../utils/formatters'
-
+// 1. imports (after the formatters import)
+import SubscriptionActions from '../components/SubscriptionActions'
 function valueOrDash(value) {
   return value === null || value === undefined || value === ''
     ? '—'
@@ -144,6 +145,8 @@ export default function CustomerSubscription() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [version, setVersion] = useState(0)
+  const reload = () => setVersion((v) => v + 1)
 
   useEffect(() => {
     let mounted = true
@@ -185,7 +188,7 @@ export default function CustomerSubscription() {
     return () => {
       mounted = false
     }
-  }, [companyId])
+  }, [companyId, version]) 
 
   if (loading) {
     return (
@@ -576,6 +579,12 @@ export default function CustomerSubscription() {
               }
             />
           </Card>
+          <SubscriptionActions
+            companyId={companyId}
+            subscription={subscription}
+            billing={billing}
+            onChanged={reload}
+          />
         </>
       )}
 

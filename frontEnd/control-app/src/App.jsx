@@ -3,17 +3,19 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
-import SystemErrorDetail from './pages/SystemErrorDetail';
+import SystemErrorDetail from './pages/SystemErrorDetail'
+import SystemAlerts from './pages/SystemAlerts'
+import Subscriptions from './pages/Subscriptions'         // ← ADDED (was missing)
 import TicketList from './pages/TicketList'
 import TicketDetail from './pages/TicketDetail'
 import NewTicket from './pages/NewTicket'
 import CustomerList from './pages/CustomerList'
 import Customer360 from './pages/Customer360'
-import CustomerSubscription from './pages/CustomerSubscription';
+import CustomerSubscription from './pages/CustomerSubscription'
 import Settings from './pages/Settings'
-import SystemHealth from "./pages/SystemHealth";
+import SystemHealth from './pages/SystemHealth'
 import AuditTrail from './pages/AuditTrail'
-import NotificationSettings from "./pages/NotificationSettings";
+import NotificationSettings from './pages/NotificationSettings'
 import Automation from './pages/Automation'
 
 function ProtectedRoute({ children }) {
@@ -36,20 +38,28 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
+
+            {/* Persistent System Alerts screen */}
+            <Route path="/alerts" element={<SystemAlerts />} />
+
+            {/* Subscriptions fleet cockpit — was on disk but not routed */}
+            <Route path="/subscriptions" element={<Subscriptions />} />
+
             <Route path="/system/errors/:eventId" element={<SystemErrorDetail />} />
             <Route path="tickets" element={<TicketList />} />
             <Route path="tickets/new" element={<NewTicket />} />
             <Route path="tickets/:id" element={<TicketDetail />} />
             <Route path="customers" element={<CustomerList />} />
-            <Route path="customers/:id" element={<Customer360 />} />
-            <Route path="/customers/:companyId/subscription" element={<CustomerSubscription />}/>
+            <Route path="customers/:companyId" element={<Customer360 />} />
+            <Route path="/customers/:companyId/subscription" element={<CustomerSubscription />} />
             <Route path="settings" element={<Settings />} />
-            <Route path="/system/health" element={<SystemHealth />}/>
-            <Route path="/audit" element={<AuditTrail />}/>
-            <Route path="/notifications" element={<NotificationSettings />}/>
-            <Route path="/automation" element={<Automation />}/>
+            <Route path="/system/health" element={<SystemHealth />} />
+            <Route path="/audit" element={<AuditTrail />} />
+            <Route path="/notifications" element={<NotificationSettings />} />
+            <Route path="/automation" element={<Automation />} />
           </Route>
         </Routes>
       </AuthProvider>

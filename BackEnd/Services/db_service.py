@@ -2312,6 +2312,15 @@ class DatabaseService:
             dsn=dsn,
         )
 
+    def get_conn(self):
+        """
+        Return a dedicated psycopg2 connection for legacy callers
+        that manage their own commit, rollback, and close lifecycle.
+        """
+        from BackEnd.Services.db_compat import get_conn
+
+        return get_conn(self)
+
     @contextmanager
     def transaction(self):
         conn = self.pool.getconn()
@@ -2933,6 +2942,55 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS users_password_reset_token_idx
             ON public.users (password_reset_token);
+
+        -- =========================
+        -- AUTHENTICATION OTP CHALLENGES
+        -- =========================
+        CREATE TABLE IF NOT EXISTS public.auth_otp_challenges (
+            id UUID PRIMARY KEY,
+            user_id INT NOT NULL
+                REFERENCES public.users(id) ON DELETE CASCADE,
+
+            purpose TEXT NOT NULL
+                CHECK (purpose IN ('signin', 'session_unlock')),
+
+            otp_hash TEXT NOT NULL,
+
+            attempts INT NOT NULL DEFAULT 0
+                CHECK (attempts >= 0),
+
+            expires_at TIMESTAMPTZ NOT NULL,
+            last_sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            consumed_at TIMESTAMPTZ NULL
+        );
+
+        ALTER TABLE public.auth_otp_challenges
+        ADD COLUMN IF NOT EXISTS product TEXT NOT NULL DEFAULT 'finsage';
+
+        CREATE INDEX IF NOT EXISTS auth_otp_user_purpose_idx
+            ON public.auth_otp_challenges
+                (user_id, purpose, created_at DESC);
+
+        CREATE INDEX IF NOT EXISTS auth_otp_expiry_idx
+            ON public.auth_otp_challenges (expires_at);
+
+        CREATE TABLE IF NOT EXISTS public.auth_trusted_devices (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INT NOT NULL
+                REFERENCES public.users(id) ON DELETE CASCADE,
+            device_id TEXT NOT NULL,
+            product TEXT NOT NULL DEFAULT 'finsage'
+                CHECK (product IN ('finsage', 'ops')),
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_ip INET,
+            user_agent TEXT,
+            UNIQUE (user_id, device_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS auth_trusted_devices_user_idx
+            ON public.auth_trusted_devices (user_id, last_seen_at DESC);
 
         -- =========================
         -- COMPANIES TABLE (BASE)  ✅ MUST COME BEFORE company_users/company_invites
@@ -9051,6 +9109,7 @@ class DatabaseService:
                 user_role,
                 user_type,
                 is_confirmed,
+                is_active,
                 company_id,
                 first_name,
                 last_name,

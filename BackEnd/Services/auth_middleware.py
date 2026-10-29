@@ -81,6 +81,19 @@ def require_auth(_f=None, *, require_company: bool = True):
                 "allowed_company_ids": payload.get("allowed_company_ids"),
             })
 
+            # Verify that the account still exists and is active.
+            account = db_service.get_user_by_id(user_id)
+
+            if not account:
+                return _corsify(make_response(
+                    jsonify({"error": "Invalid or inactive account"}), 401
+                ))
+
+            if account.get("is_active") is False:
+                return _corsify(make_response(
+                    jsonify({"error": "Account is inactive"}), 403
+                ))
+
             g.user_id = user_id
             request.jwt_payload = payload
 
@@ -91,10 +104,12 @@ def require_auth(_f=None, *, require_company: bool = True):
                     SET last_activity_at = NOW()
                     WHERE id = %s
                     """,
-                    (int(user_id),),
+                    (user_id,),
                 )
             except Exception:
-                current_app.logger.exception("Failed to update last_activity_at")
+                current_app.logger.exception(
+                    "Failed to update last_activity_at"
+                )
 
             cid = kwargs.get("company_id") or kwargs.get("cid")
             if cid is None:

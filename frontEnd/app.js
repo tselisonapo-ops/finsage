@@ -15,6 +15,96 @@
   // Cached meta for reuse (country → currency & phone)
   let COUNTRY_META = [];
 
+  /* =========================================================
+   * ✅ NEW: Organisation types that are EXEMPT from TIN/VAT
+   * -------------------------------------------------------
+   * Associations (club_association) are typically non-tax
+   * entities or fall under SARS non-profit / recreational
+   * exemptions. We relax TIN + VAT requirements for them.
+   *
+   * Extend this set if more exempt org types are needed
+   * (e.g., "npo", "ngo", "government_entity").
+   * =======================================================*/
+  const TIN_VAT_EXEMPT_ORG_TYPES = new Set([
+    "club_association",
+    // "npo",
+    // "ngo",
+    // "government_entity",
+  ]);
+
+  function isTinVatExempt(orgType) {
+    return TIN_VAT_EXEMPT_ORG_TYPES.has(
+      String(orgType || "").trim().toLowerCase()
+    );
+  }
+
+  /**
+   * ✅ NEW: Toggle TIN / VAT field requirements + UI hints
+   * based on the currently selected organisation type.
+   *
+   * Called whenever `organizationType` changes and on form init.
+   */
+  function applyTinVatExemption() {
+    const orgSelect = document.getElementById("organizationType");
+    if (!orgSelect) return;
+
+    const orgType = (orgSelect.value || "").trim().toLowerCase();
+    const exempt  = isTinVatExempt(orgType);
+
+    const tinInput   = document.getElementById("taxNumber");
+    const vatInput   = document.getElementById("vatNumber");
+    const tinHint    = document.getElementById("taxNumberHint");
+    const vatHint    = document.getElementById("vatNumberHint");
+    const tinBadge   = document.getElementById("tinExemptBadge");
+    const vatBadge   = document.getElementById("vatExemptBadge");
+
+    // --- TIN ---
+    if (tinInput) {
+      if (exempt) {
+        tinInput.removeAttribute("required");
+        tinInput.value = "";
+        tinInput.placeholder = "Exempt for Associations (leave blank)";
+        if (tinHint) {
+          tinHint.textContent =
+            "Associations / Clubs are exempt from TIN. Leave blank if not applicable.";
+          tinHint.classList.add("text-amber-700");
+        }
+      } else {
+        tinInput.setAttribute("required", "required");
+        tinInput.placeholder = "";
+        if (tinHint) {
+          tinHint.textContent =
+            "Enter the official Tax Identification Number.";
+          tinHint.classList.remove("text-amber-700");
+        }
+      }
+    }
+
+    // --- VAT (already optional, but we visually mark exemption) ---
+    if (vatInput) {
+      if (exempt) {
+        vatInput.removeAttribute("required");
+        vatInput.value = "";
+        vatInput.placeholder = "Exempt for Associations (leave blank)";
+        if (vatHint) {
+          vatHint.textContent =
+            "Associations / Clubs are generally exempt from VAT. Leave blank.";
+          vatHint.classList.add("text-amber-700");
+        }
+      } else {
+        vatInput.placeholder = "Leave blank if not VAT registered";
+        if (vatHint) {
+          vatHint.textContent = "Leave blank if not VAT registered.";
+          vatHint.classList.remove("text-amber-700");
+        }
+      }
+    }
+
+    // --- Exemption badges ---
+    if (tinBadge) tinBadge.classList.toggle("hidden", !exempt);
+    if (vatBadge) vatBadge.classList.toggle("hidden", !exempt);
+  }
+
 function updateCountryFieldHints(countryCode) {
   const code = String(countryCode || "").toUpperCase();
   const selected = COUNTRY_META.find(c => String(c.code || "").toUpperCase() === code);
@@ -29,8 +119,17 @@ function updateCountryFieldHints(countryCode) {
 
   if (!selected) {
     if (regHint) regHint.textContent = "Select country to see required format.";
-    if (tinHint) tinHint.textContent = "Select country to see required format.";
-    if (vatHint) vatHint.textContent = "Leave blank if not VAT registered.";
+    // ✅ Don't blindly overwrite TIN hint — respect exemption state
+    if (tinHint && !isTinVatExempt(
+        (document.getElementById("organizationType")?.value || "").toLowerCase()
+    )) {
+      tinHint.textContent = "Select country to see required format.";
+    }
+    if (vatHint && !isTinVatExempt(
+        (document.getElementById("organizationType")?.value || "").toLowerCase()
+    )) {
+      vatHint.textContent = "Leave blank if not VAT registered.";
+    }
     return;
   }
 
@@ -40,21 +139,25 @@ function updateCountryFieldHints(countryCode) {
       : "Enter the official company registration number.";
   }
 
-  if (tinHint) {
+  // ✅ Only update TIN / VAT hints if NOT currently exempt
+  const orgType = (document.getElementById("organizationType")?.value || "").toLowerCase();
+  const exempt = isTinVatExempt(orgType);
+
+  if (tinHint && !exempt) {
     tinHint.textContent = selected.tin_example
       ? `Expected format: ${selected.tin_example}`
       : "Enter the official Tax Identification Number.";
   }
 
-  if (vatHint) {
+  if (vatHint && !exempt) {
     vatHint.textContent = selected.vat_example
       ? `Expected format: ${selected.vat_example}`
       : "Leave blank if not VAT registered.";
   }
 
   if (regInput && selected.regno_example) regInput.placeholder = selected.regno_example;
-  if (tinInput && selected.tin_example) tinInput.placeholder = selected.tin_example;
-  if (vatInput && selected.vat_example) vatInput.placeholder = selected.vat_example;
+  if (tinInput && selected.tin_example && !exempt) tinInput.placeholder = selected.tin_example;
+  if (vatInput && selected.vat_example && !exempt) vatInput.placeholder = selected.vat_example;
 }
 /* =========================================================
  * Static Industry Catalog  (front-end only)
@@ -430,6 +533,9 @@ function updateCountryFieldHints(countryCode) {
     // Preserve selection if it is still valid in the new list
     const stillValid = Array.from(orgSel.options).some(o => o.value === current && !o.disabled);
     if (stillValid) orgSel.value = current;
+
+    // ✅ After rebuilding org options, re-evaluate TIN/VAT exemption
+    applyTinVatExemption();
   }
 
   function adaptLabelsByAccountType() {
@@ -482,6 +588,8 @@ function updateCountryFieldHints(countryCode) {
       if (nextIndicator) nextIndicator.classList.add("active");
 
       adaptLabelsByAccountType();
+      // ✅ Ensure exemption is applied when entering Step 2
+      applyTinVatExemption();
     }
   }
 
@@ -1093,7 +1201,7 @@ function initIndustryDropdowns() {
   // ----------------------------------------------------------------
   // Uses free Photon backend (no Google API key required).
   // Calls our own backend: GET /api/address/search?q=...&country=...
-  // Backend proxies to Photon (OSM data) by default.
+  // Backend proxy to Photon (OSM data) by default.
   //
   // Existing structured hidden fields are populated:
   //   regAddressLine1, regAddressLine2 (optional), regLocality,
@@ -1161,6 +1269,10 @@ function initIndustryDropdowns() {
       const fin = document.getElementById("finYearStart");
       let finOK = true;
 
+      // ✅ Ensure TIN/VAT exemption is applied BEFORE validation
+      // (in case the user changed org type without blurring the field).
+      applyTinVatExemption();
+
       const requiredInputs = document.querySelectorAll("#step-2 [required]");
       let ok = true;
 
@@ -1222,6 +1334,9 @@ function initIndustryDropdowns() {
         el.dispatchEvent(evt);
       }
     });
+
+    // ✅ After restoring orgType, re-apply TIN/VAT exemption
+    applyTinVatExemption();
   }
 
   function bindStep2Persistence() {
@@ -1240,6 +1355,10 @@ function initIndustryDropdowns() {
 // =======================
 function handleRegistration(event) {
   if (event && event.preventDefault) event.preventDefault();
+
+  // ✅ Apply exemption state right before validating/submitting.
+  applyTinVatExemption();
+
   if (!validateStep2()) return;
 
   const step1 = JSON.parse(sessionStorage.getItem("fs_reg_step1_data") || "{}");
@@ -1312,18 +1431,30 @@ function handleRegistration(event) {
         country:    countryCode || null
       };
 
+  // ✅ Organisation type & exemption flag — passed to backend so it can
+  //    skip server-side TIN validation for exempt org types.
+  const organizationType = val("organizationType") || null;
+  const tinVatExempt      = isTinVatExempt(organizationType);
+
   // --- Company payload ---
   const company = {
     companyName:      val("companyName"),
-    organizationType: val("organizationType") || null,
+    organizationType: organizationType,
     clientCode:       val("clientCode") || null,
     industry:       val("industry") || null,
     subIndustry:    val("subIndustry") || null,
 
     country:        countryCode || null,
     companyRegNo:   val("regNumber") || null,
-    tin:            val("taxNumber") || null,
-    vat:            val("vatNumber") || null,
+
+    // ✅ For exempt org types, force TIN/VAT to null so the backend
+    //    cannot accidentally store stale values.
+    tin:            tinVatExempt ? null : (val("taxNumber") || null),
+    vat:            tinVatExempt ? null : (val("vatNumber") || null),
+
+    // ✅ Tell the backend explicitly that this org is exempt.
+    tinVatExempt:   tinVatExempt,
+
     companyEmail:   val("companyEmail") || null,
 
     currency:       currencyCode || null,
@@ -1953,6 +2084,12 @@ document.addEventListener("DOMContentLoaded", function () {
     accountType.addEventListener("change", adaptLabelsByAccountType);
   }
 
+  // ✅ NEW: Bind organisation-type change → apply TIN/VAT exemption.
+  const orgTypeEl = document.getElementById("organizationType");
+  if (orgTypeEl) {
+    orgTypeEl.addEventListener("change", applyTinVatExemption);
+  }
+
   // Auto-fill finYearStart from companyRegDate
   const regDateInput = document.getElementById("companyRegDate");
   const finYearInput = document.getElementById("finYearStart");
@@ -1986,6 +2123,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Init static industries first
   initIndustryDropdowns();
+
+  // ✅ Apply TIN/VAT exemption on initial load (covers restored org type)
+  applyTinVatExemption();
 
   // Countries from backend, then rehydrate step 2
   fetchCountryMeta().then(function () {

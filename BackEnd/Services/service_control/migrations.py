@@ -111,7 +111,7 @@ def _migration_001_initial_control_schema(db_service) -> None:
       - Control audit logging
     """
 
-    sql = """
+    ddl = """
     -- ========================================================
     -- SCHEMA
     -- ========================================================
@@ -605,6 +605,54 @@ def _migration_001_initial_control_schema(db_service) -> None:
         UNIQUE(company_id, product)
     );
 
+    CREATE TABLE IF NOT EXISTS control.system_events (
+        id                  BIGSERIAL PRIMARY KEY,
+
+        event_code          VARCHAR(200) NOT NULL,
+
+        severity            control.priority_level
+                            NOT NULL DEFAULT 'p3_medium',
+
+        status              VARCHAR(50)
+                            NOT NULL DEFAULT 'open',
+
+        source              VARCHAR(150),
+        product             VARCHAR(100)
+                            NOT NULL DEFAULT 'finsage',
+
+        module_code         VARCHAR(150),
+        page_code           VARCHAR(150),
+        action_code         VARCHAR(150),
+
+        company_id          INTEGER,
+        company_name        VARCHAR(300),
+
+        user_id             INTEGER,
+        user_email          VARCHAR(320),
+
+        error_ref           VARCHAR(250),
+        transaction_ref     VARCHAR(250),
+
+        message             TEXT,
+        exception_type      VARCHAR(300),
+        stack_trace         TEXT,
+
+        context             JSONB,
+
+        occurrence_count    INTEGER NOT NULL DEFAULT 1,
+
+        first_seen_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_seen_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        resolved_at         TIMESTAMPTZ,
+
+        ticket_id           INTEGER
+            REFERENCES control.tickets(id)
+            ON DELETE SET NULL,
+
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
 
     -- ========================================================
     -- NOTIFICATION LOG
@@ -704,61 +752,6 @@ def _migration_001_initial_control_schema(db_service) -> None:
 
     CREATE INDEX IF NOT EXISTS idx_control_notification_preferences_user
         ON control.notification_preferences(control_user_id);
-
-    -- ========================================================
-    -- SYSTEM EVENTS
-    --
-    -- Receives application/system failures and important events.
-    -- ========================================================
-
-    CREATE TABLE IF NOT EXISTS control.system_events (
-        id                  BIGSERIAL PRIMARY KEY,
-
-        event_code          VARCHAR(200) NOT NULL,
-
-        severity            control.priority_level
-                            NOT NULL DEFAULT 'p3_medium',
-
-        status              VARCHAR(50)
-                            NOT NULL DEFAULT 'open',
-
-        source              VARCHAR(150),
-        product             VARCHAR(100)
-                            NOT NULL DEFAULT 'finsage',
-
-        module_code         VARCHAR(150),
-        page_code           VARCHAR(150),
-        action_code         VARCHAR(150),
-
-        company_id          INTEGER,
-        company_name        VARCHAR(300),
-
-        user_id             INTEGER,
-        user_email          VARCHAR(320),
-
-        error_ref           VARCHAR(250),
-        transaction_ref     VARCHAR(250),
-
-        message             TEXT,
-        exception_type      VARCHAR(300),
-        stack_trace         TEXT,
-
-        context             JSONB,
-
-        occurrence_count    INTEGER NOT NULL DEFAULT 1,
-
-        first_seen_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        last_seen_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-        resolved_at         TIMESTAMPTZ,
-
-        ticket_id           INTEGER
-            REFERENCES control.tickets(id)
-            ON DELETE SET NULL,
-
-        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
 
     -- ========================================================
     -- EVENT OCCURRENCES
@@ -1449,4 +1442,9 @@ def _migration_001_initial_control_schema(db_service) -> None:
         ON control.ticket_escalations(created_at DESC);
     """
 
-    db_service.execute_sql(sql)
+    db_service.execute_ddl(
+        ddl,
+        migration_key="control:001_initial_control_schema",
+        migration_version=1,
+        lock_key="control:initial_schema",
+    )

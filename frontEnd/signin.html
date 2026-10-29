@@ -7,117 +7,552 @@
   <!-- optional: kill favicon 404 -->
   <link rel="icon" href="data:,">
   <style>
-    body {
-      font-family: system-ui, Arial, sans-serif;
-      background: #f5f7fa;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
+    :root {
+      --fs-green: #075b49;
+      --fs-green-dark: #064638;
+      --fs-teal: #12b8a6;
+      --fs-ink: #172b27;
+      --fs-muted: #687a75;
+      --fs-border: #dce6e2;
+      --fs-surface: #ffffff;
+      --fs-background: #f3f7f5;
     }
-    .container {
-      background: #fff;
-      padding: 2rem;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-      width: 320px;
-      text-align: center;
-    }
-    h2 {
-      margin-top: 0;
-      margin-bottom: 1rem;
-      color: #333;
-    }
-    label {
-      display: block;
-      margin-bottom: 0.5rem;
-      color: #555;
-      text-align: left;
-    }
-    input {
-      width: 100%;
-      padding: 0.5rem;
-      margin-bottom: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 0.95rem;
-    }
-    button {
-      width: 100%;
-      padding: 0.75rem;
-      background: #004d40;
-      color: #fff;
-      border: none;
-      border-radius: 999px;
-      font-size: 1rem;
-      cursor: pointer;
-      font-weight: 500;
-    }
-    button:hover {
-      background: #00695c;
-    }
-    .status {
-      margin-top: 0.75rem;
-      font-size: 0.85rem;
-      color: #555;
-    }
-    .link {
-      margin-top: 0.75rem;
-      font-size: 0.85rem;
-    }
-    .link a {
-      color: #00c8c8;
-      text-decoration: none;
-    }
-    .link a:hover {
-      text-decoration: underline;
-    }
-    .home-btn {
-      display: block;
-      width: 100%;
-      margin-top: 12px;
-      padding: 0.75rem;
-      border: 1px solid #004d40;
-      border-radius: 999px;
-      background: #fff;
-      color: #004d40;
-      text-decoration: none;
-      font-weight: 600;
-      transition: 0.2s;
+
+    * {
       box-sizing: border-box;
     }
 
-    .home-btn:hover {
-      background: #004d40;
+    [hidden] {
+      display: none !important;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", Arial, sans-serif;
+      color: var(--fs-ink);
+      background:
+        radial-gradient(ellipse at 12% 10%, rgba(18, 184, 166, 0.10), transparent 36%),
+        var(--fs-background);
+    }
+
+    .auth-shell {
+      width: min(1080px, 100%);
+      min-height: 620px;
+      display: grid;
+      grid-template-columns: 1fr 0.9fr;
+      overflow: hidden;
+      background: var(--fs-surface);
+      border: 1px solid rgba(220, 230, 226, 0.9);
+      border-radius: 26px;
+      box-shadow: 0 24px 70px rgba(20, 51, 42, 0.11);
+    }
+
+    .brand-panel {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+      padding: 48px;
       color: #fff;
+      background:
+        radial-gradient(circle at 85% 15%, rgba(33, 211, 184, 0.22), transparent 30%),
+        linear-gradient(145deg, #073f34 0%, #075b49 58%, #087968 100%);
+    }
+
+    .brand-panel::after {
+      content: "";
+      position: absolute;
+      width: 340px;
+      height: 340px;
+      right: -150px;
+      bottom: -150px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 50%;
+      box-shadow:
+        0 0 0 35px rgba(255, 255, 255, 0.035),
+        0 0 0 75px rgba(255, 255, 255, 0.025);
+      pointer-events: none;
+    }
+
+    .brand-content,
+    .brand-footer {
+      position: relative;
+      z-index: 1;
+    }
+
+    .brand-logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 66px;
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: -0.7px;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 13px;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+      font-size: 1.2rem;
+    }
+
+    .brand-eyebrow {
+      margin: 0 0 16px;
+      color: #8de8d9;
+      font-size: 0.76rem;
+      font-weight: 750;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .brand-panel h1 {
+      max-width: 440px;
+      margin: 0 0 20px;
+      font-size: clamp(2.25rem, 4vw, 3.3rem);
+      line-height: 1.12;
+      letter-spacing: -1.8px;
+    }
+
+    .brand-description {
+      max-width: 410px;
+      margin: 0;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 1rem;
+      line-height: 1.8;
+    }
+
+    .feature-list {
+      display: grid;
+      gap: 17px;
+      margin-top: 36px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: rgba(255, 255, 255, 0.94);
+      font-size: 0.92rem;
+    }
+
+    .feature-icon {
+      display: grid;
+      place-items: center;
+      flex: 0 0 30px;
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
+      color: #9af0df;
+      background: rgba(255, 255, 255, 0.11);
+    }
+
+    .brand-footer {
+      margin-top: 52px;
+      color: rgba(255, 255, 255, 0.63);
+      font-size: 0.78rem;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 460px;
+      align-self: center;
+      justify-self: center;
+      padding: 52px 46px;
+      text-align: left;
+    }
+
+    .form-eyebrow {
+      margin: 0 0 10px;
+      color: var(--fs-green);
+      font-size: 0.75rem;
+      font-weight: 750;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .container h2 {
+      margin: 0 0 10px;
+      color: var(--fs-ink);
+      font-size: 2rem;
+      font-weight: 750;
+      letter-spacing: -1px;
+    }
+
+    .form-intro,
+    #otpStep > p:first-child {
+      margin: 0 0 28px;
+      color: var(--fs-muted);
+      font-size: 0.92rem;
+      line-height: 1.65;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #334740;
+      font-size: 0.85rem;
+      font-weight: 650;
+      text-align: left;
+    }
+
+    input:not(.otp-canonical) {
+      display: block;
+      width: 100%;
+      min-width: 0;
+      min-height: 50px;
+      margin: 0 0 20px;
+      padding: 0 15px;
+      border: 1px solid var(--fs-border);
+      border-radius: 12px;
+      outline: none;
+      color: var(--fs-ink);
+      background: #fbfdfc;
+      font: inherit;
+      font-size: 0.94rem;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    }
+
+    input:not(.otp-canonical)::placeholder {
+      color: #9aa9a4;
+    }
+
+    input:not(.otp-canonical):focus {
+      border-color: var(--fs-teal);
+      background: #fff;
+      box-shadow: 0 0 0 4px rgba(18, 184, 166, 0.12);
+    }
+
+    button {
+      display: block;
+      width: 100%;
+      min-height: 50px;
+      padding: 13px 18px;
+      border: 0;
+      border-radius: 999px;
+      color: #fff;
+      background: var(--fs-green);
+      font: inherit;
+      font-size: 0.94rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--fs-green-dark);
+      box-shadow: 0 7px 18px rgba(7, 91, 73, 0.16);
+      transform: translateY(-1px);
+    }
+
+    button:focus-visible,
+    a:focus-visible {
+      outline: 3px solid rgba(18, 184, 166, 0.55);
+      outline-offset: 3px;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
+    #backToCredentialsButton {
+      margin-top: 10px;
+      border: 1px solid var(--fs-border);
+      color: #475b54;
+      background: #f4f7f5;
+    }
+
+    #backToCredentialsButton:hover {
+      color: var(--fs-ink);
+      background: #e9f0ec;
+    }
+
+    .status {
+      margin: 12px 0 0;
+      color: var(--fs-muted);
+      font-size: 0.82rem;
+      line-height: 1.6;
+    }
+
+    .link {
+      margin: 17px 0 0;
+      font-size: 0.86rem;
+      text-align: center;
+    }
+
+    .link a {
+      color: var(--fs-green);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .link a:hover {
+      color: #07917b;
+      text-decoration: underline;
+    }
+
+    .otp-boxes {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 9px;
+      margin: 10px 0 18px;
+    }
+
+    input.otp-digit {
+      width: 100%;
+      min-width: 0;
+      height: 56px;
+      min-height: 56px;
+      margin: 0;
+      padding: 0;
+      border: 1px solid var(--fs-border);
+      border-radius: 12px;
+      outline: none;
+      color: var(--fs-green);
+      background: #f8fbf9;
+      font-size: 1.35rem;
+      font-weight: 750;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    input.otp-digit:focus {
+      border-color: var(--fs-teal);
+      background: #fff;
+      box-shadow: 0 0 0 4px rgba(18, 184, 166, 0.12);
+    }
+
+    .otp-canonical {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        min-height: 100vh;
+        padding: 18px;
+        align-items: flex-start;
+      }
+
+      .auth-shell {
+        width: min(480px, 100%);
+        min-height: 0;
+        grid-template-columns: 1fr;
+        border-radius: 22px;
+      }
+
+      .brand-panel {
+        min-height: 0;
+        padding: 25px 28px 28px;
+      }
+
+      .brand-logo {
+        margin-bottom: 24px;
+        font-size: 1.25rem;
+      }
+
+      .brand-mark {
+        width: 36px;
+        height: 36px;
+      }
+
+      .brand-panel h1 {
+        max-width: 420px;
+        margin-bottom: 10px;
+        font-size: clamp(1.7rem, 7vw, 2.25rem);
+        letter-spacing: -1px;
+      }
+
+      .brand-description {
+        font-size: 0.88rem;
+        line-height: 1.6;
+      }
+
+      .feature-list,
+      .brand-footer {
+        display: none;
+      }
+
+      .container {
+        max-width: none;
+        padding: 32px 28px;
+      }
+
+      .container h2 {
+        font-size: 1.8rem;
+      }
+    }
+
+    @media (max-width: 380px) {
+      body {
+        padding: 10px;
+      }
+
+      .brand-panel {
+        padding: 22px;
+      }
+
+      .container {
+        padding: 28px 20px;
+      }
+
+      .otp-boxes {
+        gap: 6px;
+      }
+
+      input.otp-digit {
+        height: 48px;
+        min-height: 48px;
+        border-radius: 9px;
+        font-size: 1.15rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        transition-duration: 0.01ms !important;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="container">
+  <main class="auth-shell">
+    <aside class="brand-panel">
+      <div class="brand-content">
+        <div class="brand-logo">
+          <span class="brand-mark">F</span>
+          <span>FinSage</span>
+        </div>
+
+        <p class="brand-eyebrow">Clarity for your business</p>
+        <h1>Understand your numbers. Move forward with confidence.</h1>
+        <p class="brand-description">
+          Keep your financial records organised, manage inventory and sales,
+          and gain a clearer view of how your business is performing.
+        </p>
+
+        <div class="feature-list">
+          <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            <span>Financial management and reporting</span>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            <span>Inventory and point-of-sale tools</span>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            <span>Secure sign-in with email verification</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="brand-footer">
+        Smarter financial management with FinSage.
+      </div>
+    </aside>
+
+    <div class="container">
+    <p class="form-eyebrow">Welcome back</p>
     <h2>Sign in</h2>
+    <p class="form-intro">
+      Access your workspace securely using your FinSage account.
+    </p>
+
     <form id="signinForm">
-      <label for="signinEmail">Email address</label>
-      <input
-        type="email"
-        id="signinEmail"
-        autocomplete="email"
-        required
-        placeholder="you@example.com"
-      />
+      <div id="credentialsStep">
+        <label for="signinEmail">Email address</label>
+        <input
+          type="email"
+          id="signinEmail"
+          autocomplete="email"
+          required
+          placeholder="you@example.com"
+        />
 
-      <label for="signinPassword">Password</label>
-      <input
-        type="password"
-        id="signinPassword"
-        autocomplete="current-password"
-        required
-        placeholder="••••••••"
-      />
+        <label for="signinPassword">Password</label>
+        <input
+          type="password"
+          id="signinPassword"
+          autocomplete="current-password"
+          required
+          placeholder="••••••••"
+        />
 
-      <button type="submit">Sign in</button>
-      <p class="status" id="status"></p>
+        <button type="submit" id="signinButton">Sign in</button>
+      </div>
+
+      <div id="otpStep" hidden>
+        <p>A six-digit verification code has been sent to your email.</p>
+
+        <label id="otpLabel">Verification code</label>
+
+        <div class="otp-boxes" role="group" aria-labelledby="otpLabel">
+          <input class="otp-digit" type="text" inputmode="numeric"
+            autocomplete="one-time-code" maxlength="1" aria-label="Digit 1 of 6" />
+          <input class="otp-digit" type="text" inputmode="numeric"
+            maxlength="1" aria-label="Digit 2 of 6" />
+          <input class="otp-digit" type="text" inputmode="numeric"
+            maxlength="1" aria-label="Digit 3 of 6" />
+          <input class="otp-digit" type="text" inputmode="numeric"
+            maxlength="1" aria-label="Digit 4 of 6" />
+          <input class="otp-digit" type="text" inputmode="numeric"
+            maxlength="1" aria-label="Digit 5 of 6" />
+          <input class="otp-digit" type="text" inputmode="numeric"
+            maxlength="1" aria-label="Digit 6 of 6" />
+        </div>
+
+        <input
+          type="text"
+          id="signinOtp"
+          class="otp-canonical"
+          tabindex="-1"
+          aria-hidden="true"
+          autocomplete="off"
+          maxlength="6"
+          aria-describedby="otpHelp"
+        />
+
+        <p id="otpHelp" class="status" aria-live="polite">
+          Your code expires in 03:00.
+        </p>
+
+        <button type="button" id="verifyOtpButton">
+          Verify and sign in
+        </button>
+        <button
+          type="button"
+          id="backToCredentialsButton"
+          style="margin-top: 10px; background: #64748b;"
+        >
+          Back
+        </button>
+      </div>
+
+      <p class="status" id="status" role="status" aria-live="polite"></p>
     </form>
 
     <p class="link">
@@ -127,6 +562,8 @@
       <a href="https://finspheresolutions.com">← Home</a>
     </p>
   </div>
+ 
+  </main>
 
   <script src="config.js"></script>
   <script type="module">
@@ -237,160 +674,489 @@
     return "dashboard.html";
   }
 
-  document.getElementById("signinForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
 
-    const email = document.getElementById("signinEmail").value.trim().toLowerCase();
-    const password = document.getElementById("signinPassword").value;
-    const statusEl = document.getElementById("status");
+  const signinForm = document.getElementById("signinForm");
+  const credentialsStep = document.getElementById("credentialsStep");
+  const otpStep = document.getElementById("otpStep");
+  const emailInput = document.getElementById("signinEmail");
+  const passwordInput = document.getElementById("signinPassword");
+  const otpInput = document.getElementById("signinOtp");
+  const signinButton = document.getElementById("signinButton");
+  const verifyOtpButton = document.getElementById("verifyOtpButton");
+  const backButton = document.getElementById("backToCredentialsButton");
+  const statusEl = document.getElementById("status");
 
-    if (!email || !password) {
-      statusEl.textContent = "Please enter your email and password.";
-      statusEl.style.color = "#b91c1c";
+  let otpChallengeId = null;
+  let otpCountdownInterval = null;
+  let otpExpiresAt = 0;
+
+  const otpHelp = document.getElementById("otpHelp");
+
+  const otpDigits = Array.from(
+    document.querySelectorAll(".otp-digit")
+  );
+
+  function syncOtpDigits() {
+    otpInput.value = otpDigits.map(input => input.value).join("");
+    updateOtpVerifyButton();
+  }
+
+  function clearOtpDigits() {
+    otpDigits.forEach(input => {
+      input.value = "";
+    });
+
+    otpInput.value = "";
+    updateOtpVerifyButton();
+  }
+
+  otpDigits.forEach((input, index) => {
+    input.addEventListener("input", () => {
+      const digits = input.value.replace(/\D/g, "");
+
+      // Support pasting a complete six-digit code into any box.
+      if (digits.length > 1) {
+        const start = index === 0 ? 0 : index;
+        const available = otpDigits.length - start;
+        const pasted = digits.slice(0, available).split("");
+
+        pasted.forEach((digit, offset) => {
+          otpDigits[start + offset].value = digit;
+        });
+
+        const nextIndex = Math.min(
+          start + pasted.length,
+          otpDigits.length - 1
+        );
+
+        otpDigits[nextIndex].focus();
+      } else {
+        input.value = digits.slice(-1);
+
+        if (input.value && index < otpDigits.length - 1) {
+          otpDigits[index + 1].focus();
+        }
+      }
+
+      syncOtpDigits();
+    });
+
+    input.addEventListener("keydown", event => {
+      if (event.key === "Backspace") {
+        if (!input.value && index > 0) {
+          otpDigits[index - 1].focus();
+          otpDigits[index - 1].value = "";
+          syncOtpDigits();
+          event.preventDefault();
+        } else if (input.value) {
+          input.value = "";
+          syncOtpDigits();
+          event.preventDefault();
+        }
+      }
+
+      if (event.key === "ArrowLeft" && index > 0) {
+        otpDigits[index - 1].focus();
+        event.preventDefault();
+      }
+
+      if (
+        event.key === "ArrowRight" &&
+        index < otpDigits.length - 1
+      ) {
+        otpDigits[index + 1].focus();
+        event.preventDefault();
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+
+        if (!verifyOtpButton.disabled) {
+          verifyOtpButton.click();
+        }
+      }
+    });
+
+    input.addEventListener("paste", event => {
+      const pasted = (event.clipboardData?.getData("text") || "")
+        .replace(/\D/g, "")
+        .slice(0, 6);
+
+      if (!pasted) return;
+
+      event.preventDefault();
+
+      pasted.split("").forEach((digit, offset) => {
+        if (otpDigits[offset]) {
+          otpDigits[offset].value = digit;
+        }
+      });
+
+      otpDigits[Math.min(pasted.length, 6) - 1].focus();
+      syncOtpDigits();
+    });
+  });
+
+  // Keep verification disabled until the code is complete and unexpired.
+  verifyOtpButton.disabled = true;
+  verifyOtpButton.style.opacity = "0.6";
+
+  function updateOtpVerifyButton() {
+    const complete = /^\d{6}$/.test(otpInput.value.trim());
+    const unexpired = otpExpiresAt > Date.now();
+    const busy = verifyOtpButton.textContent === "Verifying…";
+
+    verifyOtpButton.disabled = !complete || !unexpired || busy;
+    verifyOtpButton.style.opacity =
+      verifyOtpButton.disabled ? "0.6" : "1";
+  }
+
+  function stopOtpCountdown() {
+    if (otpCountdownInterval !== null) {
+      clearInterval(otpCountdownInterval);
+      otpCountdownInterval = null;
+    }
+  }
+
+  function startOtpCountdown(seconds = 180) {
+    stopOtpCountdown();
+
+    otpExpiresAt = Date.now() + seconds * 1000;
+
+    function tick() {
+      const remaining = Math.max(
+        0,
+        Math.ceil((otpExpiresAt - Date.now()) / 1000)
+      );
+
+      const minutes = Math.floor(remaining / 60);
+      const secs = remaining % 60;
+
+      otpHelp.textContent =
+        remaining > 0
+          ? `Your code expires in ${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}.`
+          : "This code has expired. Return to sign in to request a new one.";
+
+      if (remaining <= 0) {
+        stopOtpCountdown();
+      }
+
+      updateOtpVerifyButton();
+    }
+
+    tick();
+    otpCountdownInterval = setInterval(tick, 1000);
+  }
+
+  function getOrCreateSigninDeviceId() {
+    const storageKey = "fs_signin_device_id_v1";
+
+    let deviceId = localStorage.getItem(storageKey);
+
+    if (deviceId && /^[0-9a-f-]{36}$/i.test(deviceId)) {
+      return deviceId;
+    }
+
+    if (typeof crypto.randomUUID === "function") {
+      deviceId = crypto.randomUUID();
+    } else {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      deviceId = Array.from(bytes, b =>
+        b.toString(16).padStart(2, "0")
+      ).join("");
+    }
+
+    localStorage.setItem(storageKey, deviceId);
+    return deviceId;
+  }
+
+  function setStatus(message, isError = true) {
+    statusEl.textContent = message;
+    statusEl.style.color = isError ? "#b91c1c" : "#16a34a";
+  }
+
+  function setBusy(button, busy, busyText, normalText) {
+    button.disabled = busy;
+    button.textContent = busy ? busyText : normalText;
+    button.style.opacity = busy ? "0.7" : "1";
+  }
+
+  async function readJsonResponse(res) {
+    const contentType = res.headers.get("content-type") || "";
+
+    if (!contentType.includes("application/json")) {
+      const body = await res.text();
+      console.error("Non-JSON authentication response:", {
+        status: res.status,
+        body
+      });
+      throw new Error(`Server error (${res.status}). Please try again.`);
+    }
+
+    return await res.json();
+  }
+
+  function finishSignIn(data, fallbackEmail) {
+    if (!data?.token || !data?.user) {
+      throw new Error("The server did not return a valid sign-in session.");
+    }
+
+    const user = data.user;
+
+    // Clear stale delegated workspace state on normal sign-in.
+    const isDelegatedSignin =
+      user?.is_delegated_company_access === true ||
+      String(user?.access_scope || "").toLowerCase() === "delegated_workspace";
+
+    if (!isDelegatedSignin) {
+      localStorage.removeItem("fs_posting_context");
+      sessionStorage.removeItem("fs_posting_context");
+
+      localStorage.removeItem("source_company_id");
+      localStorage.removeItem("target_company_id");
+      localStorage.removeItem("engagement_id");
+      localStorage.removeItem("is_delegated_company_access");
+
+      sessionStorage.removeItem("source_company_id");
+      sessionStorage.removeItem("target_company_id");
+      sessionStorage.removeItem("engagement_id");
+      sessionStorage.removeItem("is_delegated_company_access");
+
+      window.__FS_DELEGATED_POSTING__ = false;
+      window.__FS_POSTING_CONTEXT__ = null;
+      window.__PR_POSTING_CONTEXT__ = null;
+    }
+
+    // Store tokens only after the OTP endpoint has verified the code.
+    localStorage.setItem("fs_user_token", data.token);
+    sessionStorage.setItem("fs_user_token", data.token);
+    localStorage.setItem("authToken", data.token);
+    sessionStorage.setItem("authToken", data.token);
+
+    localStorage.setItem("userEmail", user.email || fallbackEmail);
+
+    const rawRole =
+      user.role || user.system_role || user.user_role || "viewer";
+
+    localStorage.setItem("userRole", normalizeRole(rawRole));
+
+    if (user.id != null) {
+      localStorage.setItem("userId", String(user.id));
+    }
+    if (user.user_type) {
+      localStorage.setItem("userType", user.user_type);
+    }
+    if (user.access_scope) {
+      localStorage.setItem("access_scope", user.access_scope);
+    }
+    if (user.company_id != null) {
+      localStorage.setItem("company_id", String(user.company_id));
+    }
+    if (user.company_name) {
+      localStorage.setItem("companyName", user.company_name);
+    }
+    if (user.industry) {
+      localStorage.setItem("fs_industry", user.industry);
+    }
+    if (user.sub_industry) {
+      localStorage.setItem("fs_subindustry", user.sub_industry);
+    }
+    if (Array.isArray(user.allowed_company_ids)) {
+      localStorage.setItem(
+        "allowed_company_ids",
+        JSON.stringify(user.allowed_company_ids)
+      );
+    }
+
+    const mergedUser = {
+      ...user,
+      dashboards: user.dashboards || {},
+      permissions: user.permissions || {}
+    };
+
+    localStorage.setItem("fs_user", JSON.stringify(mergedUser));
+
+    if (user.dashboards) {
+      localStorage.setItem(
+        "can_access_practitioner_dashboard",
+        String(!!user.dashboards.practitioner)
+      );
+      localStorage.setItem(
+        "can_access_enterprise_dashboard",
+        String(!!user.dashboards.enterprise)
+      );
+    }
+
+    setStatus("Verified successfully. Redirecting…", false);
+
+    const intendedUrl = localStorage.getItem("fs:intended_url");
+
+    if (intendedUrl) {
+      localStorage.removeItem("fs:intended_url");
+      setTimeout(() => window.location.assign(intendedUrl), 300);
       return;
     }
+
+    const intended = consumeIntendedScreen();
+    const targetBase = pickDashboardTarget(user);
+    const target = intended
+      ? `${targetBase}#screen=${encodeURIComponent(intended)}`
+      : targetBase;
+
+    setTimeout(() => window.location.assign(target), 300);
+  }
+
+  signinForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const email = emailInput.value.trim().toLowerCase();
+    const password = passwordInput.value;
+
+    if (!email || !password) {
+      setStatus("Please enter your email and password.");
+      return;
+    }
+
+    // Preserve product selection when the page is opened with ?product=ops
+    // or ?app=ops. Standard FinSage remains the default.
+    const params = new URLSearchParams(window.location.search);
+    const product = params.get("product") || params.get("app") || "finsage";
+
+    setBusy(signinButton, true, "Sending code…", "Sign in");
+    setStatus("");
 
     try {
       const res = await fetch(`${API_BASE}/api/auth/signin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, product })
       });
 
-      const contentType = res.headers.get("content-type") || "";
-      let data;
-
-      if (contentType.includes("application/json")) {
-        data = await res.json();
-      } else {
-        const text = await res.text();
-
-        console.error("Non-JSON signin response:", {
-          status: res.status,
-          statusText: res.statusText,
-          contentType,
-          body: text
-        });
-
-        statusEl.textContent = `Server error (${res.status}).`;
-        statusEl.style.color = "#b91c1c";
-        return;
-      }
+      const data = await readJsonResponse(res);
 
       if (!res.ok) {
-        console.error("Signin API error:", res.status, data);
-
-        statusEl.textContent =
-          data.detail ||
-          data.error ||
-          "Sign in failed.";
-
-        statusEl.style.color = "#b91c1c";
-        return;
-      }
-
-      const user = data.user || {};
-
-      // clear stale delegated workspace state on normal sign-in
-      const isDelegatedSignin =
-        user?.is_delegated_company_access === true ||
-        String(user?.access_scope || "").toLowerCase() === "delegated_workspace";
-
-      if (!isDelegatedSignin) {
-        localStorage.removeItem("fs_posting_context");
-        sessionStorage.removeItem("fs_posting_context");
-
-        localStorage.removeItem("source_company_id");
-        localStorage.removeItem("target_company_id");
-        localStorage.removeItem("engagement_id");
-        localStorage.removeItem("is_delegated_company_access");
-
-        sessionStorage.removeItem("source_company_id");
-        sessionStorage.removeItem("target_company_id");
-        sessionStorage.removeItem("engagement_id");
-        sessionStorage.removeItem("is_delegated_company_access");
-
-        window.__FS_DELEGATED_POSTING__ = false;
-        window.__FS_POSTING_CONTEXT__ = null;
-        window.__PR_POSTING_CONTEXT__ = null;
-      }
-
-      if (data.token) {
-        localStorage.setItem("fs_user_token", data.token);
-        sessionStorage.setItem("fs_user_token", data.token);
-        localStorage.setItem("authToken", data.token);
-        sessionStorage.setItem("authToken", data.token);
-      }
-
-      localStorage.setItem("userEmail", user.email || email);
-
-      const rawRole = user.role || user.system_role || user.user_role || "viewer";
-      localStorage.setItem("userRole", normalizeRole(rawRole));
-
-      if (user.id != null) localStorage.setItem("userId", String(user.id));
-      if (user.user_type) localStorage.setItem("userType", user.user_type);
-      if (user.access_scope) localStorage.setItem("access_scope", user.access_scope);
-      if (user.company_id != null) localStorage.setItem("company_id", String(user.company_id));
-      if (user.company_name) localStorage.setItem("companyName", user.company_name);
-      if (user.industry) localStorage.setItem("fs_industry", user.industry);
-      if (user.sub_industry) localStorage.setItem("fs_subindustry", user.sub_industry);
-      if (Array.isArray(user.allowed_company_ids)) {
-        localStorage.setItem("allowed_company_ids", JSON.stringify(user.allowed_company_ids));
-      }
-
-      const mergedUser = {
-        ...user,
-        dashboards: user.dashboards || {},
-        permissions: user.permissions || {}
-      };
-
-      localStorage.setItem("fs_user", JSON.stringify(mergedUser));
-
-      statusEl.textContent = "Signed in successfully. Redirecting…";
-      statusEl.style.color = "#16a34a";
-
-      if (user?.dashboards) {
-        localStorage.setItem(
-          "can_access_practitioner_dashboard",
-          String(!!user.dashboards.practitioner)
-        );
-        localStorage.setItem(
-          "can_access_enterprise_dashboard",
-          String(!!user.dashboards.enterprise)
+        throw new Error(
+          data.detail || data.error || "Sign in failed."
         );
       }
 
-      const intendedUrl = localStorage.getItem("fs:intended_url");
+      if (data.otp_required && data.challenge_id) {
+        otpChallengeId = data.challenge_id;
 
-      if (intendedUrl) {
-        localStorage.removeItem("fs:intended_url");
+        credentialsStep.hidden = true;
+        otpStep.hidden = false;
+        passwordInput.value = "";
+        clearOtpDigits();
+        otpInput.required = false;
+        startOtpCountdown(180);
+        updateOtpVerifyButton();
 
-        setTimeout(() => {
-          window.location.assign(intendedUrl);
-        }, 300);
-
+        setStatus(
+          data.message || "Check your email for the verification code.",
+          false
+        );
+        otpDigits[0].focus();
         return;
       }
 
-      const intended = consumeIntendedScreen();
-      const targetBase = pickDashboardTarget(user);
-      const target = intended
-        ? `${targetBase}#screen=${encodeURIComponent(intended)}`
-        : targetBase;
-
-      setTimeout(() => {
-        window.location.assign(target);
-      }, 300);
+      // Do not accept the old password-only sign-in response.
+      throw new Error(
+        "The server did not request email verification. Sign-in was stopped."
+      );
 
     } catch (err) {
-      console.error("Sign in error:", err);
-      statusEl.textContent = "Network error.";
-      statusEl.style.color = "#b91c1c";
+      console.error("Sign-in error:", err);
+      setStatus(err.message || "Unable to sign in.");
+    } finally {
+      setBusy(signinButton, false, "Sending code…", "Sign in");
     }
   });
+
+  verifyOtpButton.addEventListener("click", async () => {
+    const code = otpInput.value.trim();
+
+    if (!otpChallengeId) {
+      setStatus("Your verification session has expired. Please sign in again.");
+      return;
+    }
+
+    if (!/^\d{6}$/.test(code)) {
+      setStatus("Enter the six-digit verification code.");
+      otpDigits.find(input => !input.value)?.focus()
+        || otpDigits[0].focus();
+      return;
+    }
+
+    setBusy(
+      verifyOtpButton,
+      true,
+      "Verifying…",
+      "Verify and sign in"
+    );
+    updateOtpVerifyButton();
+    setStatus("");
+
+    try {
+
+    const deviceId = getOrCreateSigninDeviceId();
+
+    const res = await fetch(`${API_BASE}/api/auth/signin/verify-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        challenge_id: otpChallengeId,
+        code,
+        device_id: deviceId
+      })
+    });
+
+      const data = await readJsonResponse(res);
+
+      if (!res.ok) {
+        throw new Error(
+          data.detail || data.error || "Verification failed."
+        );
+      }
+
+      finishSignIn(data, emailInput.value.trim().toLowerCase());
+
+    } catch (err) {
+      console.error("OTP verification error:", err);
+      setStatus(err.message || "Could not verify the code.");
+    } finally {
+      setBusy(
+        verifyOtpButton,
+        false,
+        "Verifying…",
+        "Verify and sign in"
+      );
+
+      updateOtpVerifyButton();
+    }
+  });
+
+  otpInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      verifyOtpButton.click();
+    }
+  });
+
+  backButton.addEventListener("click", () => {
+    otpStep.hidden = true;
+    credentialsStep.hidden = false;
+    otpInput.required = false;
+    clearOtpDigits();
+    otpChallengeId = null;
+    stopOtpCountdown();
+    otpExpiresAt = 0;
+    updateOtpVerifyButton();
+    setStatus("Enter your details to request a new verification code.");
+    passwordInput.focus();
+  });
 </script>
-</body>
-</html>
+
 <script>
 window.__STOP_REDIRECTS__ = true;
 
@@ -538,3 +1304,5 @@ window.safeRedirect = function (url, mode = "href") {
     }
   };
 </script>
+</body>
+</html>

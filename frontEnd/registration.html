@@ -273,17 +273,40 @@
                 <input type="text" id="regNumber" name="regNumber" required
                     class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
                 </div>
+
+                <!-- ✅ CHANGED: TIN no longer hard-required.
+                     app.js toggles the `required` attribute based on
+                     organizationType (exempt for club_association). -->
                 <div class="input-group">
-                <label for="taxNumber">Tax Identification Number (TIN)</label>
-                <input type="text" id="taxNumber" name="taxNumber" required
-                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                <label for="taxNumber">
+                    Tax Identification Number (TIN)
+                    <span id="tinExemptBadge"
+                          class="hidden ml-2 px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-800 border border-amber-300 align-middle">
+                        Exempt for Associations
+                    </span>
+                </label>
+                <input type="text" id="taxNumber" name="taxNumber"
+                       data-default-required="true"
+                       class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                <small id="taxNumberHint" class="text-xs text-gray-500">
+                    Enter the official Tax Identification Number.
+                </small>
                 </div>
             </div>
 
             <div class="input-group">
-                <label for="vatNumber">VAT/Sales Tax Number (Optional)</label>
+                <label for="vatNumber">
+                    VAT/Sales Tax Number
+                    <span id="vatExemptBadge"
+                          class="hidden ml-2 px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-800 border border-amber-300 align-middle">
+                        Exempt for Associations
+                    </span>
+                </label>
                 <input type="text" id="vatNumber" name="vatNumber" placeholder="Leave blank if not VAT registered"
                 class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                <small id="vatNumberHint" class="text-xs text-gray-500">
+                    Leave blank if not VAT registered.
+                </small>
             </div>
 
             <!-- 🔍 Google Places address search (optional helper) -->
@@ -504,7 +527,7 @@
                     target="_blank"
                     class="text-[var(--color-secondary)] underline hover:text-[var(--color-primary)]">
                     Privacy Policy
-                </a>.
+                </a>. 
 
                 I understand that FinSage processes company and financial information in accordance with its governance and data protection policies.
                 </span>
@@ -539,6 +562,6 @@
 <!-- Single JS file that handles everything -->
 <!-- ✅ Cache-busted: bump ?v= on every deploy so users never run stale JS again -->
 <script src="/app/config.js?v=20260827a"></script>
-<script src="/app/app.js?v=20260827a"></script>
+<script src="/app/app.js?v=20260827b"></script>
 </body>
 </html>

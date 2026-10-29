@@ -20,6 +20,14 @@ export const TICKET_STATUSES = [
   { value: 'closed', label: 'Closed', color: 'bg-gray-500' },
 ]
 
+// ── System Alert Statuses ──
+// Mirrors control.system_events.status (open | resolved).
+// Re-uses the same shape as TICKET_STATUSES so StatusBadge works.
+export const ALERT_STATUSES = [
+  { value: 'open',     label: 'Open',     color: 'bg-red-500'     },
+  { value: 'resolved', label: 'Resolved', color: 'bg-green-500'  },
+]
+
 // ── Priorities ──
 export const PRIORITIES = [
   { value: 'p1_critical', label: 'P1 Critical', color: 'text-p1', bg: 'bg-p1/15', dot: 'bg-p1' },
@@ -29,10 +37,14 @@ export const PRIORITIES = [
 ]
 
 export const getStatusLabel = (status) =>
-  TICKET_STATUSES.find(s => s.value === status)?.label || status
+  TICKET_STATUSES.find(s => s.value === status)?.label
+  || ALERT_STATUSES.find(s => s.value === status)?.label
+  || status
 
 export const getStatusColor = (status) =>
-  TICKET_STATUSES.find(s => s.value === status)?.color || 'bg-gray-500'
+  TICKET_STATUSES.find(s => s.value === status)?.color
+  || ALERT_STATUSES.find(s => s.value === status)?.color
+  || 'bg-gray-500'
 
 export const getPriority = (priority) =>
   PRIORITIES.find(p => p.value === priority) || PRIORITIES[2]

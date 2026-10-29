@@ -4,9 +4,11 @@ from typing import Optional, Tuple, Dict, Any
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import hmac
+import secrets
+
 from .db_service import db_service
 from typing import Any, Dict, Optional
-from datetime import datetime, timedelta, timezone
 from BackEnd.Services.emailer import send_mail
 from BackEnd.Services.industry_profiles import normalize_industry_pair
 from BackEnd.Services.coa_service import initialize_coa  # ✅ now exists in coa_service.py
@@ -77,7 +79,7 @@ def make_jwt(
         "is_native_company_member": bool(is_native_company_member),
 
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(days=JWT_EXP_DAYS)).timestamp()),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=8),
     }
 
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -126,6 +128,256 @@ def make_control_jwt(
 
 def decode_jwt(token: str) -> Dict[str, Any]:
     return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+
+OTP_LIFETIME_MINUTES = 3
+OTP_MAX_ATTEMPTS = 5
+OTP_RESEND_SECONDS = 60
+
+
+def _otp_hash(challenge_id: str, code: str) -> str:
+    """Hash an OTP using its challenge ID and the server secret."""
+    secret = os.getenv("JWT_SECRET_KEY", "")
+    if not secret or secret == "fallback-secret-change-me":
+        raise RuntimeError("A secure JWT_SECRET_KEY must be configured.")
+
+    message = f"{challenge_id}:{code}".encode("utf-8")
+    return hmac.new(
+        secret.encode("utf-8"),
+        message,
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _new_otp_code() -> str:
+    """Generate a cryptographically secure six-digit OTP."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+def issue_email_otp(
+    db_service,
+    user_id: int,
+    email: str,
+    purpose: str,
+    product: str = "finsage",
+) -> str:
+    """Create and email a single-use OTP challenge."""
+    if purpose not in {"signin", "session_unlock"}:
+        raise ValueError("Invalid OTP purpose.")
+
+    user_id = int(user_id)
+    challenge_id = str(uuid.uuid4())
+    code = _new_otp_code()
+    code_hash = _otp_hash(challenge_id, code)
+
+    # Lock the user row to serialize challenge creation and resend requests.
+    with db_service._conn_cursor() as (conn, cur):
+        try:
+            user = db_service.fetch_one(
+                "SELECT id FROM public.users WHERE id = %s FOR UPDATE",
+                (user_id,),
+                cur=cur,
+            )
+            if not user:
+                raise ValueError("User account not found.")
+
+            previous = db_service.fetch_one(
+                """
+                SELECT last_sent_at
+                FROM public.auth_otp_challenges
+                WHERE user_id = %s AND purpose = %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (user_id, purpose),
+                cur=cur,
+            )
+
+            if previous and previous.get("last_sent_at"):
+                cooldown = db_service.fetch_one(
+                    """
+                    SELECT
+                        NOW() < (%s::timestamptz
+                                 + (%s * INTERVAL '1 second')) AS throttled
+                    """,
+                    (
+                        previous["last_sent_at"],
+                        OTP_RESEND_SECONDS,
+                    ),
+                    cur=cur,
+                )
+                if cooldown and cooldown.get("throttled"):
+                    raise ValueError(
+                        "Please wait before requesting another verification code."
+                    )
+
+            # Invalidate any earlier unconsumed code for this purpose.
+            db_service.execute_sql(
+                """
+                UPDATE public.auth_otp_challenges
+                SET consumed_at = NOW()
+                WHERE user_id = %s
+                  AND purpose = %s
+                  AND consumed_at IS NULL
+                """,
+                (user_id, purpose),
+                cur=cur,
+                conn=conn,
+                commit=False,
+            )
+
+            db_service.execute_sql(
+                """
+                INSERT INTO public.auth_otp_challenges
+                    (id, user_id, purpose, product, otp_hash, attempts,
+                    expires_at, last_sent_at, created_at)
+                VALUES
+                    (%s::uuid, %s, %s, %s, %s, 0,
+                    NOW() + (%s * INTERVAL '1 minute'),
+                    NOW(), NOW())
+                """,
+                (
+                    challenge_id,
+                    user_id,
+                    purpose,
+                    product,
+                    code_hash,
+                    OTP_LIFETIME_MINUTES,
+                ),
+                cur=cur,
+                conn=conn,
+                commit=False,
+            )
+
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    try:
+        send_mail(
+            to_email=email,
+            subject="Your FinSage verification code",
+            text_body=(
+                f"Your FinSage verification code is {code}. "
+                f"It expires in {OTP_LIFETIME_MINUTES} minutes. "
+                "If you did not request this code, you can ignore this email."
+            ),
+            html_body=(
+                "<p>Your FinSage verification code is:</p>"
+                f"<p style='font-size:24px;font-weight:bold;"
+                f"letter-spacing:4px'>{code}</p>"
+                f"<p>This code expires in {OTP_LIFETIME_MINUTES} minutes.</p>"
+                "<p>If you did not request this code, you can ignore this email.</p>"
+            ),
+        )
+    except Exception:
+        # Do not leave a valid challenge behind if delivery fails.
+        try:
+            db_service.execute_sql(
+                """
+                UPDATE public.auth_otp_challenges
+                SET consumed_at = NOW()
+                WHERE id = %s::uuid AND consumed_at IS NULL
+                """,
+                (challenge_id,),
+            )
+        except Exception:
+            pass
+        raise
+
+    return challenge_id
+
+
+def verify_email_otp(
+    db_service,
+    *,
+    challenge_id: str,
+    user_id: int,
+    purpose: str,
+    code: str,
+) -> bool:
+    """Verify and consume a challenge atomically."""
+    if purpose not in {"signin", "session_unlock"}:
+        return False
+
+    code = str(code or "").strip()
+    if len(code) != 6 or not code.isdigit():
+        code = ""
+
+    with db_service._conn_cursor() as (conn, cur):
+        try:
+            challenge = db_service.fetch_one(
+                """
+                SELECT
+                    id::text AS id,
+                    otp_hash,
+                    attempts,
+                    consumed_at,
+                    (expires_at > NOW()) AS not_expired
+                FROM public.auth_otp_challenges
+                WHERE id = %s::uuid
+                  AND user_id = %s
+                  AND purpose = %s
+                FOR UPDATE
+                """,
+                (challenge_id, int(user_id), purpose),
+                cur=cur,
+            )
+
+            if (
+                not challenge
+                or challenge.get("consumed_at") is not None
+                or not challenge.get("not_expired")
+                or int(challenge.get("attempts") or 0) >= OTP_MAX_ATTEMPTS
+            ):
+                conn.commit()
+                return False
+
+            expected_hash = str(challenge.get("otp_hash") or "")
+            supplied_hash = _otp_hash(challenge_id, code) if code else ""
+
+            if not hmac.compare_digest(expected_hash, supplied_hash):
+                new_attempts = int(challenge.get("attempts") or 0) + 1
+                db_service.execute_sql(
+                    """
+                    UPDATE public.auth_otp_challenges
+                    SET attempts = %s,
+                        consumed_at = CASE
+                            WHEN %s >= %s THEN NOW()
+                            ELSE consumed_at
+                        END
+                    WHERE id = %s::uuid
+                    """,
+                    (
+                        new_attempts,
+                        new_attempts,
+                        OTP_MAX_ATTEMPTS,
+                        challenge_id,
+                    ),
+                    cur=cur,
+                    conn=conn,
+                    commit=False,
+                )
+                conn.commit()
+                return False
+
+            db_service.execute_sql(
+                """
+                UPDATE public.auth_otp_challenges
+                SET consumed_at = NOW()
+                WHERE id = %s::uuid AND consumed_at IS NULL
+                """,
+                (challenge_id,),
+                cur=cur,
+                conn=conn,
+                commit=False,
+            )
+            conn.commit()
+            return True
+
+        except Exception:
+            conn.rollback()
+            raise
 
 def actor_from_payload(payload):
     return int(payload.get("user_id") or payload.get("sub") or 0)

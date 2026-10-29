@@ -38000,38 +38000,496 @@ label:has(#projectTeamUserSearch) {
 
 <div id="modalsMount"></div>
 
-<div id="sessionLockModal" 
-     class="fixed inset-0 hidden items-center justify-center bg-black/50"
-     style="z-index: 2147483647;">
-  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-    <h2 class="text-xl font-bold text-slate-900">Session locked</h2>
-    <p class="text-sm text-slate-600 mt-2">
-      You were inactive for a while. Enter your FinSage password to continue.
-    </p>
 
-    <form id="sessionUnlockForm" class="mt-5 space-y-3" autocomplete="off" onsubmit="return false;">
-      <input
-        id="sessionUnlockPassword"
-        name="session_unlock_password"
-        type="password"
-        autocomplete="new-password"
-        class="input"
-        placeholder="Enter your password"
-      />
+<div id="sessionLockModal"
+     class="session-lock-overlay hidden items-center justify-center"
+     style="z-index:2147483647;">
 
-      <!-- ✅ CHANGED: Added min-h-[18px] for stable message area, removed fixed red color -->
-      <p id="sessionUnlockMsg" class="text-xs min-h-[18px]"></p>
+  <style>
+    #sessionLockModal {
+      position: fixed;
+      inset: 0;
+      padding: 20px;
+      background: rgba(8, 15, 35, .70);
+      backdrop-filter: blur(9px);
+      -webkit-backdrop-filter: blur(9px);
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      overflow-y: auto;
+    }
 
-      <div class="flex justify-end gap-2 pt-2">
-        <button type="button" id="sessionLockSignOutBtn" class="btn">
-          Sign out
-        </button>
-        <!-- ✅ CHANGED: Added ID for JS control -->
-        <button type="submit" id="sessionUnlockBtn" class="btn btn-highlight">
-          Unlock
-        </button>
+    #sessionLockModal .lock-card {
+      width: 100%;
+      max-width: 430px;
+      margin: auto;
+      overflow: hidden;
+      background: #fff;
+      border: 1px solid rgba(255,255,255,.7);
+      border-radius: 24px;
+      box-shadow: 0 30px 90px rgba(0,0,0,.30);
+      animation: sessionLockEnter .28s ease-out;
+    }
+
+    #sessionLockModal .lock-header {
+      position: relative;
+      padding: 28px 28px 25px;
+      color: #fff;
+      background: linear-gradient(135deg, #101b3c, #243f76);
+      overflow: hidden;
+    }
+
+    #sessionLockModal .lock-header::after {
+      content: "";
+      position: absolute;
+      width: 190px;
+      height: 190px;
+      right: -85px;
+      top: -110px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.13);
+      box-shadow: 0 0 0 22px rgba(255,255,255,.035),
+                  0 0 0 44px rgba(255,255,255,.025);
+      pointer-events: none;
+    }
+
+    #sessionLockModal .lock-brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      position: relative;
+      z-index: 1;
+      margin-bottom: 25px;
+      color: #dbeafe;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    #sessionLockModal .lock-icon {
+      display: grid;
+      place-items: center;
+      width: 58px;
+      height: 58px;
+      margin-bottom: 18px;
+      color: #fff;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.22);
+      border-radius: 18px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+    }
+
+    #sessionLockModal .lock-icon svg {
+      width: 29px;
+      height: 29px;
+    }
+
+    #sessionLockModal .lock-title {
+      margin: 0;
+      color: #fff;
+      font-size: 25px;
+      line-height: 1.25;
+      font-weight: 800;
+      letter-spacing: -.7px;
+    }
+
+    #sessionLockModal .lock-subtitle {
+      margin: 9px 0 0;
+      max-width: 310px;
+      color: #d0dbf1;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    #sessionLockModal .lock-body {
+      padding: 27px 28px 29px;
+    }
+
+    #sessionLockModal .lock-step-label {
+      display: block;
+      margin-bottom: 9px;
+      color: #26334b;
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: .35px;
+    }
+
+    #sessionLockModal .lock-input {
+      display: block;
+      box-sizing: border-box;
+      width: 100%;
+      height: 49px;
+      padding: 0 15px;
+      border: 1px solid #dbe2ed;
+      border-radius: 12px;
+      outline: none;
+      background: #f9fbfe;
+      color: #17233c;
+      font-size: 14px;
+      transition: border-color .2s, box-shadow .2s, background .2s;
+    }
+
+    #sessionLockModal .lock-input:focus {
+      background: #fff;
+      border-color: #5279d8;
+      box-shadow: 0 0 0 4px rgba(82,121,216,.12);
+    }
+
+    #sessionLockModal .lock-input::placeholder {
+      color: #9aa6b8;
+    }
+
+    #sessionLockModal .otp-description {
+      margin: 0 0 21px;
+      color: #657187;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    #sessionLockModal .otp-boxes {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0 0 17px;
+    }
+
+    #sessionLockModal .otp-digit {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      height: 55px;
+      padding: 0;
+      border: 1px solid #d9e1ed;
+      border-radius: 12px;
+      background: #f7f9fd;
+      color: #182b50;
+      font-size: 23px;
+      font-weight: 800;
+      text-align: center;
+      outline: none;
+      caret-color: #315ac1;
+      transition: .18s ease;
+    }
+
+    #sessionLockModal .otp-digit:focus {
+      border-color: #426bd0;
+      background: #fff;
+      box-shadow: 0 0 0 4px rgba(66,107,208,.12);
+      transform: translateY(-1px);
+    }
+
+    #sessionLockModal .otp-digit.filled {
+      border-color: #a9bce9;
+      background: #f0f4ff;
+    }
+
+    #sessionLockModal .otp-digit:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    #sessionLockModal .otp-timer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0 0 20px;
+      padding: 12px 13px;
+      border: 1px solid #e7ebf3;
+      border-radius: 12px;
+      background: #f8faff;
+    }
+
+    #sessionLockModal .otp-timer-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #657187;
+      font-size: 12px;
+    }
+
+    #sessionLockModal .otp-timer-label svg {
+      width: 17px;
+      height: 17px;
+      flex-shrink: 0;
+    }
+
+    #sessionLockModal .otp-countdown {
+      color: #254ca8;
+      font-size: 15px;
+      font-weight: 850;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: .7px;
+    }
+
+    #sessionLockModal .otp-countdown.expired {
+      color: #dc2626;
+    }
+
+    #sessionLockModal .lock-message {
+      min-height: 18px;
+      margin: 0 0 14px;
+      color: #dc2626;
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+
+    #sessionLockModal .lock-message:empty {
+      margin-bottom: 10px;
+    }
+
+    #sessionLockModal .lock-message.info {
+      color: #526580;
+    }
+
+    #sessionLockModal .lock-message.success {
+      color: #15803d;
+      font-weight: 650;
+    }
+
+    #sessionLockModal .lock-primary-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      width: 100%;
+      min-height: 49px;
+      padding: 13px 18px;
+      border: 0;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #244baf, #3568d5);
+      box-shadow: 0 7px 17px rgba(43,85,185,.20);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 750;
+      cursor: pointer;
+      transition: transform .18s, box-shadow .18s, opacity .18s;
+    }
+
+    #sessionLockModal .lock-primary-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 23px rgba(43,85,185,.28);
+    }
+
+    #sessionLockModal .lock-primary-btn:disabled {
+      opacity: .65;
+      cursor: wait;
+      box-shadow: none;
+    }
+
+    #sessionLockModal .lock-primary-btn svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    #sessionLockModal .lock-back-btn {
+      width: 100%;
+      min-height: 43px;
+      margin-top: 9px;
+      border: 1px solid #e0e6ef;
+      border-radius: 11px;
+      background: #fff;
+      color: #45536b;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .18s;
+    }
+
+    #sessionLockModal .lock-back-btn:hover:not(:disabled) {
+      background: #f4f7fb;
+    }
+
+    #sessionLockModal .lock-back-btn:disabled {
+      opacity: .55;
+      cursor: wait;
+    }
+
+    #sessionLockModal .lock-footer {
+      margin: 19px 0 0;
+      color: #96a0b0;
+      font-size: 11px;
+      text-align: center;
+    }
+
+    #sessionLockModal [hidden] {
+      display: none !important;
+    }
+
+    @keyframes sessionLockEnter {
+      from { opacity: 0; transform: translateY(12px) scale(.985); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @media (max-width: 480px) {
+      #sessionLockModal {
+        padding: 14px;
+      }
+
+      #sessionLockModal .lock-header {
+        padding: 23px 22px;
+      }
+
+      #sessionLockModal .lock-body {
+        padding: 23px 21px 25px;
+      }
+
+      #sessionLockModal .lock-title {
+        font-size: 23px;
+      }
+
+      #sessionLockModal .otp-boxes {
+        gap: 6px;
+      }
+
+      #sessionLockModal .otp-digit {
+        height: 49px;
+        border-radius: 9px;
+        font-size: 21px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #sessionLockModal *,
+      #sessionLockModal *::before,
+      #sessionLockModal *::after {
+        animation-duration: .01ms !important;
+        transition-duration: .01ms !important;
+      }
+    }
+  </style>
+
+  <div class="lock-card">
+    <div class="lock-header">
+      <div class="lock-brand">
+        <svg width="19" height="19" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2 20 6v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4Z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </svg>
+        FinSage Security
       </div>
-    </form>
+
+      <div class="lock-icon">
+        <svg viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="10" width="16" height="11" rx="2.5"/>
+          <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+          <path d="M12 14v3"/>
+        </svg>
+      </div>
+
+      <h2 class="lock-title">Session locked</h2>
+      <p class="lock-subtitle">
+        Your session was locked due to inactivity.
+        Verify your identity to securely continue where you left off.
+      </p>
+    </div>
+
+    <div class="lock-body">
+      <form id="sessionUnlockForm" novalidate>
+
+        <div id="sessionUnlockPasswordStep">
+          <label class="lock-step-label"
+                 for="sessionUnlockPassword">
+            Confirm your password
+          </label>
+
+          <input
+            class="lock-input"
+            type="password"
+            id="sessionUnlockPassword"
+            name="password"
+            autocomplete="current-password"
+            required
+            placeholder="Enter your FinSage password"
+          />
+        </div>
+
+        <div id="sessionUnlockOtpStep" hidden>
+          <p class="otp-description">
+            We've sent a six-digit verification code to your
+            registered email address. Enter the code below to unlock
+            your session.
+          </p>
+
+          <label class="lock-step-label">
+            Email verification code
+          </label>
+
+          <div class="otp-boxes" id="sessionUnlockOtpBoxes"
+               role="group" aria-label="Six-digit verification code">
+            <input class="otp-digit" id="sessionUnlockOtp"
+                   type="text" inputmode="numeric" maxlength="1"
+                   autocomplete="one-time-code" aria-label="Digit 1" />
+            <input class="otp-digit" type="text" inputmode="numeric"
+                   maxlength="1" aria-label="Digit 2" />
+            <input class="otp-digit" type="text" inputmode="numeric"
+                   maxlength="1" aria-label="Digit 3" />
+            <input class="otp-digit" type="text" inputmode="numeric"
+                   maxlength="1" aria-label="Digit 4" />
+            <input class="otp-digit" type="text" inputmode="numeric"
+                   maxlength="1" aria-label="Digit 5" />
+            <input class="otp-digit" type="text" inputmode="numeric"
+                   maxlength="1" aria-label="Digit 6" />
+          </div>
+
+          <div class="otp-timer">
+            <span class="otp-timer-label">
+              <svg viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="1.8"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M12 7v5l3 2"/>
+              </svg>
+              <span id="sessionUnlockTimerLabel">
+                Code expires in
+              </span>
+            </span>
+
+            <span id="sessionUnlockCountdown"
+                  class="otp-countdown"
+                  role="timer"
+                  aria-label="Time remaining">
+              03:00
+            </span>
+          </div>
+        </div>
+
+        <p id="sessionUnlockMsg"
+           class="lock-message"
+           role="status"
+           aria-live="polite"></p>
+
+        <button type="submit" id="sessionUnlockBtn"
+                class="lock-primary-btn">
+          <svg viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="10" width="16" height="11" rx="2"/>
+            <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+          </svg>
+          Verify password
+        </button>
+
+        <button type="button" id="sessionUnlockBackBtn"
+                class="lock-back-btn" hidden>
+          Back to password
+        </button>
+
+        <p class="lock-footer">
+          <svg style="display:inline-block;width:12px;height:12px;
+                      vertical-align:-2px;margin-right:3px"
+               viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="1.8">
+            <path d="M12 2 20 6v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4Z"/>
+          </svg>
+          Your account security is protected by FinSage.
+        </p>
+
+      </form>
+    </div>
   </div>
 </div>
 

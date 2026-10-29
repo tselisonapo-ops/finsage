@@ -24,7 +24,12 @@ from datetime import datetime, timezone
 from BackEnd.Services.control.notifications import NotificationService
 from BackEnd.Services.control.audit import AuditService
 from BackEnd.Services.control.automation import AutomationService
-class ControlService:
+# 1. import (top of file, with the other BackEnd.Services.control.* imports)
+from BackEnd.Services.service_control.subscriptions import (
+    SubscriptionControlMixin,
+)
+# then your one-liner (name does NOT change):
+class ControlService(SubscriptionControlMixin):   # was: class ControlService:
     """Service layer for FinSage Control operations."""
 
     def __init__(self, db_service):
@@ -445,6 +450,340 @@ class ControlService:
             (event_id,),
         )
 
+    def open_system_error(
+        self,
+        event_id: int,
+        agent_id: int,
+        *,
+        request: Optional[Any] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Record that an agent OPENED a system alert.
+
+        Side effects (in this order, all best-effort so a failure in one
+        does not block the others):
+
+        1. Write `system_error.opened` to control.audit_log
+            (with the agent's IP / user-agent if `request` is supplied).
+        2. If the event has no linked ticket yet, auto-create one
+            using the existing `create_ticket_from_system_error()`.
+            This satisfies the requirement:
+                "opening an alert should auto create a ticket"
+        3. Kick the `ticket_automation` automation job ONCE so the
+            SLA monitor / escalation suite picks up the new ticket
+            immediately rather than waiting for the next scheduler
+            tick. This satisfies:
+                "opening system alert error should ... update automation"
+        4. Return the event enriched with a `linked_ticket` summary
+            so the frontend can render the ticket-progress panel in
+            a single response.
+
+        Returns None only if the event does not exist.
+        """
+        event = self.get_system_error(int(event_id))
+
+        if not event:
+            return None
+
+        # --- 1. audit log --------------------------------------------------
+        try:
+            self.audit(
+                action="system_error.opened",
+                entity_type="system_event",
+                entity_id=int(event_id),
+                description=(
+                    f"Control user opened system alert "
+                    f"#{event_id} ({event.get('event_code') or 'unknown'})."
+                ),
+                metadata={
+                    "event_id": int(event_id),
+                    "event_code": event.get("event_code"),
+                    "severity": event.get("severity"),
+                    "occurrence_count": event.get("occurrence_count"),
+                    "had_ticket": bool(event.get("ticket_id")),
+                },
+                request=request,
+                control_user_id=agent_id,
+            )
+        except Exception:
+            # Audit failures must never block an alert open.
+            pass
+
+        # --- 2. auto-create ticket if missing ------------------------------
+        ticket = None
+
+        if event.get("ticket_id"):
+            ticket = self.get_ticket(event["ticket_id"])
+        else:
+            try:
+                ticket = self.create_ticket_from_system_error(
+                    int(event_id),
+                    agent_id=agent_id,
+                )
+            except Exception:
+                # create_ticket_from_system_error raises ValueError if
+                # the event vanished between the get above and the
+                # create call. Treat as "no ticket".
+                ticket = None
+
+        # Re-fetch the event so the response reflects the new ticket_id
+        event = self.get_system_error(int(event_id)) or event
+
+        # --- 3. kick automation --------------------------------------------
+        # Run ONLY the `ticket_automation` job (which is itself
+        # idempotent — see AutomationService._create_system_error_ticket:
+        # it skips events that already have a ticket_id). This means the
+        # kick is safe to fire on every open even though the current
+        # event already has its ticket from step 2.
+        try:
+            self.automation_service.run(job_code="ticket_automation")
+        except Exception:
+            pass
+
+        # --- 4. enrich with linked-ticket summary --------------------------
+        if ticket:
+            event["linked_ticket"] = self.get_linked_ticket_summary(
+                ticket["id"]
+            )
+        else:
+            event["linked_ticket"] = None
+
+        return event
+
+    # ============================================================
+    # 2. get_linked_ticket_summary — compact ticket snapshot
+    # ============================================================
+    def get_linked_ticket_summary(
+        self,
+        ticket_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compact ticket snapshot for the SystemErrorDetail panel.
+
+        Returns:
+            {
+            id, ticket_number, subject, status, priority,
+            assigned_agent_id, agent_name,
+            created_at, first_response_at, resolved_at, closed_at,
+            last_customer_message, last_internal_note,
+            last_history_entry
+            }
+
+        Designed so the alert-detail page can show the ticket's
+        progress WITHOUT having to load the full ticket detail page.
+        """
+        ticket = self.get_ticket(int(ticket_id))
+
+        if not ticket:
+            return None
+
+        last_customer_message = self.db.fetch_one(
+            """
+            SELECT id, sender_name, body, created_at
+            FROM control.ticket_messages
+            WHERE ticket_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (ticket_id,),
+        )
+
+        last_internal_note = self.db.fetch_one(
+            """
+            SELECT
+                n.id,
+                n.body,
+                n.created_at,
+                cu.display_name AS agent_name
+            FROM control.ticket_notes n
+            LEFT JOIN control.control_users cu ON cu.id = n.agent_id
+            WHERE n.ticket_id = %s
+            ORDER BY n.created_at DESC
+            LIMIT 1
+            """,
+            (ticket_id,),
+        )
+
+        last_history_entry = self.db.fetch_one(
+            """
+            SELECT
+                h.id,
+                h.field,
+                h.old_value,
+                h.new_value,
+                h.created_at,
+                cu.display_name AS changed_by_name
+            FROM control.ticket_history h
+            LEFT JOIN control.control_users cu ON cu.id = h.changed_by
+            WHERE h.ticket_id = %s
+            ORDER BY h.created_at DESC
+            LIMIT 1
+            """,
+            (ticket_id,),
+        )
+
+        return {
+            "id": ticket["id"],
+            "ticket_number": ticket.get("ticket_number"),
+            "subject": ticket.get("subject"),
+            "status": ticket.get("status"),
+            "priority": ticket.get("priority"),
+            "assigned_agent_id": ticket.get("assigned_agent_id"),
+            "agent_name": ticket.get("agent_name"),
+            "created_at": ticket.get("created_at"),
+            "first_response_at": ticket.get("first_response_at"),
+            "resolved_at": ticket.get("resolved_at"),
+            "closed_at": ticket.get("closed_at"),
+            "last_customer_message": last_customer_message,
+            "last_internal_note": last_internal_note,
+            "last_history_entry": last_history_entry,
+        }
+
+
+    # ============================================================
+    # 3. get_system_alerts — paginated list for the new screen
+    # ============================================================
+    def get_system_alerts(
+        self,
+        *,
+        status: Optional[str] = None,
+        severity: Optional[str] = None,
+        has_ticket: Optional[bool] = None,
+        search: str = "",
+        page: int = 1,
+        per_page: int = 20,
+    ) -> Dict[str, Any]:
+        """
+        Paginated, filterable list of ALL system events (open + resolved).
+
+        `has_ticket=True`  -> only events that already have a ticket
+        `has_ticket=False` -> only events that have NO ticket yet
+        `has_ticket=None`  -> either
+        """
+        per_page = max(1, min(int(per_page or 20), 100))
+        page = max(1, int(page or 1))
+        offset = (page - 1) * per_page
+
+        where = []
+        params: list = []
+
+        if status:
+            where.append("se.status = %s")
+            params.append(status)
+
+        if severity:
+            where.append("se.severity = %s")
+            params.append(severity)
+
+        if has_ticket is True:
+            where.append("se.ticket_id IS NOT NULL")
+        elif has_ticket is False:
+            where.append("se.ticket_id IS NULL")
+
+        if search:
+            where.append(
+                """(
+                    se.event_code ILIKE %s
+                    OR se.message ILIKE %s
+                    OR se.exception_type ILIKE %s
+                    OR COALESCE(se.company_name, '') ILIKE %s
+                )"""
+            )
+            s = f"%{search}%"
+            params.extend([s, s, s, s])
+
+        where_clause = (
+            "WHERE " + " AND ".join(where) if where else ""
+        )
+
+        total = self.db.fetch_one(
+            f"""
+            SELECT COUNT(*) AS cnt
+            FROM control.system_events se
+            {where_clause}
+            """,
+            tuple(params),
+        )["cnt"]
+
+        rows = self.db.fetch_all(
+            f"""
+            SELECT
+                se.id,
+                se.event_code,
+                se.severity,
+                se.status,
+                se.source,
+                se.product,
+                se.module_code,
+                se.page_code,
+                se.action_code,
+                se.company_id,
+                se.company_name,
+                se.user_id,
+                se.user_email,
+                se.error_ref,
+                se.message,
+                se.exception_type,
+                se.occurrence_count,
+                se.first_seen_at,
+                se.last_seen_at,
+                se.resolved_at,
+                se.ticket_id,
+                t.ticket_number,
+                t.status AS ticket_status,
+                t.priority AS ticket_priority,
+                t.subject AS ticket_subject
+            FROM control.system_events se
+            LEFT JOIN control.tickets t
+                ON t.id = se.ticket_id
+                AND t.is_deleted = FALSE
+            {where_clause}
+            ORDER BY
+                CASE se.status
+                    WHEN 'open' THEN 0
+                    ELSE 1
+                END,
+                CASE se.severity
+                    WHEN 'p1_critical' THEN 1
+                    WHEN 'p2_high'     THEN 2
+                    WHEN 'p3_medium'   THEN 3
+                    WHEN 'p4_low'      THEN 4
+                    ELSE 5
+                END,
+                se.last_seen_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params + [per_page, offset]),
+        )
+
+        # Summary stats for the header strip.
+        summary = self.db.fetch_one(
+            """
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE status = 'open') AS open_count,
+                COUNT(*) FILTER (WHERE status = 'open' AND severity = 'p1_critical') AS critical_count,
+                COUNT(*) FILTER (WHERE status = 'open' AND severity = 'p2_high') AS high_count,
+                COUNT(*) FILTER (WHERE ticket_id IS NULL AND status = 'open') AS without_ticket,
+                COALESCE(SUM(occurrence_count) FILTER (WHERE status = 'open'), 0) AS total_occurrences
+            FROM control.system_events
+            """
+        )
+
+        return {
+            "alerts": rows,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "summary": {
+                "total": int(summary["total"] or 0),
+                "open_count": int(summary["open_count"] or 0),
+                "critical_count": int(summary["critical_count"] or 0),
+                "high_count": int(summary["high_count"] or 0),
+                "without_ticket": int(summary["without_ticket"] or 0),
+                "total_occurrences": int(summary["total_occurrences"] or 0),
+            },
+        }
 
     def get_system_error_occurrences(
         self,
@@ -1651,9 +1990,9 @@ class ControlService:
                 u.first_name,
                 u.last_name,
                 u.is_active,
-                cu.user_role,
+                u.user_role AS user_role,
                 cu.is_active AS company_user_active,
-                cu.last_login_at
+                u.last_login_at AS last_login_at
 
             FROM public.company_users cu
 
@@ -2390,22 +2729,22 @@ class ControlService:
         self,
         company_id: int,
         support_ticket_id: int,
-        agent_id: int
+        agent_id: int,
     ) -> Optional[Dict[str, Any]]:
-        """Create a Control ticket from a customer-side support ticket."""
+        """Idempotent version of create_ticket_from_customer_ticket."""
 
         schema = f"company_{int(company_id)}"
 
         exists = self.db.fetch_one(
             """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM information_schema.tables
-                    WHERE table_schema = %s
-                    AND table_name = 'support_tickets'
-                ) AS exists
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = %s
+                AND table_name = 'support_tickets'
+            ) AS exists
             """,
-            (schema,)
+            (schema,),
         )
 
         if not exists or not exists["exists"]:
@@ -2413,37 +2752,58 @@ class ControlService:
 
         source = self.db.fetch_one(
             f"""
-                SELECT
-                    id,
-                    company_id,
-                    user_id,
-                    email,
-                    subject,
-                    description,
-                    status,
-                    priority,
-                    assigned_to,
-                    notes,
-                    created_by,
-                    created_at,
-                    updated_at
-                FROM {schema}.support_tickets
-                WHERE id = %s
-                AND company_id = %s
+            SELECT
+                id,
+                company_id,
+                user_id,
+                email,
+                subject,
+                description,
+                status,
+                priority,
+                assigned_to,
+                notes,
+                created_by,
+                created_at,
+                updated_at
+            FROM {schema}.support_tickets
+            WHERE id = %s
+            AND company_id = %s
             """,
-            (support_ticket_id, company_id)
+            (support_ticket_id, company_id),
         )
 
         if not source:
             return None
 
+        # ---- LOCK CHECK ------------------------------------------------
+        # If a Control ticket already exists for this customer ticket,
+        # return it. This is the "customer ticket locking" guarantee.
+        existing = self.db.fetch_one(
+            """
+            SELECT id
+            FROM control.tickets
+            WHERE is_deleted = FALSE
+            AND support_context->>'source' = 'customer_support_ticket'
+            AND support_context->>'source_schema' = %s
+            AND support_context->>'source_ticket_id' = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (schema, str(source["id"])),
+        )
+
+        if existing:
+            return self.get_ticket(existing["id"])
+
+        # ---- create new Control ticket ----------------------------------
         company = self.db.fetch_one(
             """
-                SELECT id, name
-                FROM public.companies
-                WHERE id = %s
+            SELECT id, name
+            FROM public.companies
+            WHERE id = %s
             """,
-            (company_id,)
+            (company_id,),
         )
 
         priority_map = {
@@ -2463,21 +2823,40 @@ class ControlService:
             "user_email": source["email"],
             "user_name": None,
             "product": "finsage",
-            "priority": priority_map.get(
-                source["priority"],
-                "p3_medium"
-            ),
+            "priority": priority_map.get(source["priority"], "p3_medium"),
             "support_context": {
                 "source": "customer_support_ticket",
                 "source_schema": schema,
                 "source_ticket_id": source["id"],
+                "claimed_by_agent_id": agent_id,
+                "claimed_at": datetime.now(timezone.utc).isoformat(),
             },
         }
 
-        return self.create_ticket(
-            ticket_data,
-            agent_id=agent_id
-        )
+        ticket = self.create_ticket(ticket_data, agent_id=agent_id)
+
+        if ticket:
+            # Audit the claim so the locking is visible in the trail.
+            try:
+                self.audit(
+                    action="customer_ticket.claimed",
+                    entity_type="ticket",
+                    entity_id=ticket["id"],
+                    description=(
+                        f"Agent claimed customer support ticket "
+                        f"#{source['id']} in {schema}."
+                    ),
+                    metadata={
+                        "company_id": company_id,
+                        "source_ticket_id": source["id"],
+                        "source_schema": schema,
+                    },
+                    control_user_id=agent_id,
+                )
+            except Exception:
+                pass
+
+        return ticket
 
     def create_ticket_from_system_error(self, event_id, agent_id):
         event_id = int(event_id)

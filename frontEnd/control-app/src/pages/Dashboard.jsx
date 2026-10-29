@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import StatusBadge from '../components/StatusBadge'
 import { timeAgo } from '../lib/constants'
+
+// NEW — sound on new system error
+import { playAlertDebounced } from '../lib/sound'
+
 import {
-  Ticket, AlertTriangle, Clock, TrendingUp, Activity, ArrowUpRight
+  Ticket, AlertTriangle, Clock, TrendingUp, Activity, ArrowUpRight, ExternalLink
 } from 'lucide-react'
 
 export default function Dashboard() {
@@ -16,6 +20,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [errorsLoading, setErrorsLoading] = useState(true)
 
+  // NEW — track the previously-seen open-error count so we can
+  // beep when new errors arrive.
+  const prevErrorsCountRef = useRef(null)
+
   useEffect(() => {
     api.get('/dashboard')
       .then(setStats)
@@ -24,14 +32,29 @@ export default function Dashboard() {
 
     const loadSystemErrors = () => {
       api.get('/system/errors?limit=20')
-        .then(data => setSystemErrors(data?.errors || []))
+        .then(data => {
+          const errors = data?.errors || []
+          setSystemErrors(errors)
+
+          // NEW — beep when the open-error count INCREASES.
+          const count = errors.length
+
+          if (
+            prevErrorsCountRef.current !== null &&
+            count > prevErrorsCountRef.current
+          ) {
+            playAlertDebounced()
+          }
+          prevErrorsCountRef.current = count
+        })
         .catch(console.error)
         .finally(() => setErrorsLoading(false))
     }
 
     loadSystemErrors()
 
-    const interval = setInterval(loadSystemErrors, 3000)
+    // Poll every 5s (was 3s — slightly calmer to reduce sound spam).
+    const interval = setInterval(loadSystemErrors, 5000)
 
     return () => clearInterval(interval)
   }, [])
@@ -134,6 +157,16 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* NEW — "View all" link to the new persistent Alerts screen */}
+            <button
+              type="button"
+              onClick={() => navigate('/alerts')}
+              className="text-xs text-accent hover:text-accent-hover flex items-center gap-1"
+            >
+              View all
+              <ExternalLink size={11} />
+            </button>
+
             <span
               className={`w-2 h-2 rounded-full ${
                 systemErrors.length > 0

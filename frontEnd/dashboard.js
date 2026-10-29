@@ -184,65 +184,27 @@ function getSigninUrl(reason=""){
   }
 })();
 
+
 (function bindSessionLockModalEarly() {
-  document.addEventListener("click",e=>{
-    const signOut=e.target.closest("#sessionLockSignOutBtn");
-    if(!signOut)return;
+  document.addEventListener("click", (e) => {
+    const signOut = e.target.closest("#sessionLockSignOutBtn");
+    if (!signOut) return;
 
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
 
-    if(typeof performFullLogout==="function"){
+    if (typeof performFullLogout === "function") {
       performFullLogout();
       return;
     }
 
     window.clearToken?.();
     sessionStorage.clear();
-
-    window.location.replace(
-      getSigninUrl("signed_out")
-    );
-  },true);
-
-  document.addEventListener("submit", async (e) => {
-    const form = e.target.closest("#sessionUnlockForm");
-    if (!form) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    const input = document.getElementById("sessionUnlockPassword");
-    const msg = document.getElementById("sessionUnlockMsg");
-    const password = input?.value || "";
-
-    if (msg) msg.textContent = "";
-
-    if (!password) {
-      if (msg) msg.textContent = "Enter your password.";
-      return;
-    }
-
-    try {
-      await window.apiFetch(window.ENDPOINTS.auth.reauth, {
-        method: "POST",
-        body: JSON.stringify({ password }),
-        _allowWhenLocked: true,
-      });
-
-      input.value = "";
-      sessionStorage.removeItem("fs_session_locked");
-      sessionStorage.removeItem("fs_session_lock_reason");
-
-      document.getElementById("sessionLockModal")?.classList.add("hidden");
-      document.getElementById("sessionLockModal")?.classList.remove("flex");
-
-      window.resetIdleTimer?.();
-    } catch (err) {
-      if (msg) msg.textContent = err.message || "Unlock failed.";
-    }
+    window.location.replace(getSigninUrl("signed_out"));
   }, true);
 })();
+
 
 console.log("✅ dashboard.js booting");
 
@@ -8292,6 +8254,8 @@ window.hideSessionLockModal = hideSessionLockModal;
 window.lockSession = lockSession;
 window.unlockSession = unlockSession;
 
+
+
 function bindSessionUnlockForm() {
   const form = document.getElementById("sessionUnlockForm");
   if (!form || form.dataset.bound === "1") return;
@@ -8299,81 +8263,444 @@ function bindSessionUnlockForm() {
   form.dataset.bound = "1";
 
   const msg = document.getElementById("sessionUnlockMsg");
-  const input = document.getElementById("sessionUnlockPassword");
-  const signOutBtn = document.getElementById("sessionLockSignOutBtn");
+  const passwordInput = document.getElementById("sessionUnlockPassword");
+  const passwordStep = document.getElementById("sessionUnlockPasswordStep");
+  const otpStep = document.getElementById("sessionUnlockOtpStep");
+  const otpBoxes = Array.from(
+    document.querySelectorAll("#sessionUnlockOtpBoxes .otp-digit")
+  );
+  const backBtn = document.getElementById("sessionUnlockBackBtn");
+  const unlockBtn = document.getElementById("sessionUnlockBtn");
+  const countdown = document.getElementById("sessionUnlockCountdown");
+  const timerLabel = document.getElementById("sessionUnlockTimerLabel");
 
-  signOutBtn?.addEventListener("click", (e) => {
-    e.preventDefault();
-    performFullLogout();
+  let challengeId = "";
+  let otpRequired = false;
+  let otpExpired = false;
+  let busy = false;
+  let countdownInterval = null;
+  let expiresAt = 0;
+
+  function setMessage(text, type = "error") {
+    if (!msg) return;
+
+    msg.textContent = text || "";
+    msg.className = "lock-message" +
+      (text && type !== "error" ? " " + type : "");
+  }
+
+  function stopCountdown() {
+    if (countdownInterval !== null) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
+  }
+
+  function clearOtpBoxes() {
+    otpBoxes.forEach((box) => {
+      box.value = "";
+      box.classList.remove("filled");
+    });
+  }
+
+  function getOtpCode() {
+    return otpBoxes.map((box) => box.value).join("");
+  }
+
+  function updateCountdown() {
+    if (!countdown) return;
+
+    const remainingMs = Math.max(0, expiresAt - Date.now());
+    const remainingSeconds = Math.ceil(remainingMs / 1000);
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+
+    countdown.textContent =
+      String(minutes).padStart(2, "0") + ":" +
+      String(seconds).padStart(2, "0");
+
+    if (remainingSeconds <= 30) {
+      countdown.classList.add("expired");
+    } else {
+      countdown.classList.remove("expired");
+    }
+
+    if (remainingMs <= 0) {
+      stopCountdown();
+
+      otpExpired = true;
+      challengeId = "";
+
+      countdown.textContent = "00:00";
+      countdown.classList.add("expired");
+
+      if (timerLabel) timerLabel.textContent = "Code expired";
+
+      otpBoxes.forEach((box) => {
+        box.disabled = true;
+      });
+
+      setMessage(
+        "Your verification code has expired. Go back and verify your password to request a new code."
+      );
+    }
+  }
+
+  function startCountdown() {
+    stopCountdown();
+
+    otpExpired = false;
+    expiresAt = Date.now() + 3 * 60 * 1000;
+
+    if (timerLabel) timerLabel.textContent = "Code expires in";
+
+    if (countdown) {
+      countdown.classList.remove("expired");
+    }
+
+    updateCountdown();
+
+    countdownInterval = setInterval(updateCountdown, 250);
+  }
+
+  function showPasswordStep() {
+    stopCountdown();
+
+    otpRequired = false;
+    otpExpired = false;
+    challengeId = "";
+
+    if (passwordStep) passwordStep.hidden = false;
+    if (otpStep) otpStep.hidden = true;
+    if (backBtn) backBtn.hidden = true;
+
+    if (passwordInput) {
+      passwordInput.value = "";
+      passwordInput.required = true;
+      passwordInput.disabled = false;
+    }
+
+    clearOtpBoxes();
+
+    otpBoxes.forEach((box) => {
+      box.disabled = false;
+    });
+
+    if (countdown) {
+      countdown.textContent = "03:00";
+      countdown.classList.remove("expired");
+    }
+
+    if (timerLabel) timerLabel.textContent = "Code expires in";
+
+    if (unlockBtn) {
+      unlockBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="10" width="16" height="11" rx="2"/>
+          <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+        </svg>
+        Verify password
+      `;
+    }
+
+    setMessage("");
+
+    if (!busy) passwordInput?.focus();
+  }
+
+  function showOtpStep() {
+    otpRequired = true;
+
+    if (passwordStep) passwordStep.hidden = true;
+    if (otpStep) otpStep.hidden = false;
+    if (backBtn) backBtn.hidden = false;
+
+    if (passwordInput) {
+      passwordInput.required = false;
+      passwordInput.value = "";
+    }
+
+    clearOtpBoxes();
+
+    otpBoxes.forEach((box) => {
+      box.disabled = false;
+    });
+
+    if (unlockBtn) {
+      unlockBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="m5 12 4 4L19 6"/>
+        </svg>
+        Verify code
+      `;
+    }
+
+    setMessage(
+      "Enter the six-digit code sent to your registered email.",
+      "info"
+    );
+
+    otpBoxes[0]?.focus();
+  }
+
+  function distributeDigits(value, startIndex) {
+    const digits = String(value).replace(/\D/g, "");
+
+    if (!digits) return;
+
+    let index = startIndex;
+
+    for (const digit of digits) {
+      if (index >= otpBoxes.length) break;
+
+      otpBoxes[index].value = digit;
+      otpBoxes[index].classList.add("filled");
+      index++;
+    }
+
+    const nextIndex = Math.min(index, otpBoxes.length - 1);
+    otpBoxes[nextIndex]?.focus();
+
+    if (getOtpCode().length === 6) {
+      otpBoxes[5]?.blur();
+    }
+  }
+
+  otpBoxes.forEach((box, index) => {
+    box.addEventListener("input", () => {
+      const value = box.value.replace(/\D/g, "");
+
+      box.value = "";
+      box.classList.remove("filled");
+
+      if (value) {
+        distributeDigits(value, index);
+      }
+
+      setMessage("");
+    });
+
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Backspace") {
+        if (box.value) {
+          box.value = "";
+          box.classList.remove("filled");
+        } else if (index > 0) {
+          otpBoxes[index - 1].value = "";
+          otpBoxes[index - 1].classList.remove("filled");
+          otpBoxes[index - 1].focus();
+        }
+
+        e.preventDefault();
+      } else if (e.key === "ArrowLeft" && index > 0) {
+        otpBoxes[index - 1].focus();
+        e.preventDefault();
+      } else if (e.key === "ArrowRight" && index < 5) {
+        otpBoxes[index + 1].focus();
+        e.preventDefault();
+      }
+    });
+
+    box.addEventListener("paste", (e) => {
+      e.preventDefault();
+
+      const pasted = e.clipboardData?.getData("text") || "";
+      distributeDigits(pasted, index);
+      setMessage("");
+    });
+  });
+
+  backBtn?.addEventListener("click", () => {
+    if (busy) return;
+    showPasswordStep();
   });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const password = input?.value || "";
-    // ✅ NEW: Get button reference for state control
-    const unlockBtn = document.getElementById("sessionUnlockBtn");
-    
-    // ✅ CHANGED: Reset message with proper styling
-    if (msg) {
-      msg.textContent = "";
-      msg.className = "text-xs min-h-[18px]";
-    }
+    if (busy) return;
 
-    if (!password) {
-      // ✅ CHANGED: Styled error message
-      if (msg) {
-        msg.textContent = "Enter your password.";
-        msg.className = "text-xs min-h-[18px] text-red-600";
-      }
+    const password = passwordInput?.value || "";
+    const code = getOtpCode();
+
+    if (!otpRequired && !password) {
+      setMessage("Enter your password.");
+      passwordInput?.focus();
       return;
     }
 
-    // ✅ NEW: Show "unlocking" feedback
-    if (msg) {
-      msg.textContent = "Verifying credentials...";
-      msg.className = "text-xs min-h-[18px] text-slate-500";
+    if (otpRequired && otpExpired) {
+      setMessage(
+        "Your code has expired. Go back and verify your password again."
+      );
+      return;
     }
-    // ✅ NEW: Disable button and change text
+
+    if (otpRequired && !/^\d{6}$/.test(code)) {
+      setMessage("Enter all six digits of your verification code.");
+
+      otpBoxes.find((box) => !box.value)?.focus();
+      return;
+    }
+
+    if (otpRequired && !challengeId) {
+      setMessage(
+        "Your verification challenge has expired. Verify your password again."
+      );
+      return;
+    }
+
+    busy = true;
+
     if (unlockBtn) {
       unlockBtn.disabled = true;
-      unlockBtn.textContent = "Unlocking...";
+      unlockBtn.textContent = otpRequired
+        ? "Verifying code..."
+        : "Verifying password...";
     }
 
+    if (backBtn) backBtn.disabled = true;
+
+    otpBoxes.forEach((box) => {
+      box.disabled = true;
+    });
+
+    if (passwordInput) passwordInput.disabled = true;
+
+    setMessage(
+      otpRequired
+        ? "Verifying your email code..."
+        : "Verifying your password...",
+      "info"
+    );
+
     try {
-      const res = await apiFetch(ENDPOINTS.auth.reauth, {
-        method: "POST",
-        body: JSON.stringify({ password }),
-        _allowWhenLocked: true,
+      if (!otpRequired) {
+        const res = await window.apiFetch(
+          window.ENDPOINTS.auth.reauth,
+          {
+            method: "POST",
+            body: JSON.stringify({ password }),
+            _allowWhenLocked: true,
+          }
+        );
+
+        if (!res?.otp_required || !res?.challenge_id) {
+          throw new Error(
+            "Email verification could not be started. Please check the session verification backend."
+          );
+        }
+
+        challengeId = res.challenge_id;
+
+        // Start the three-minute countdown only after the
+        // backend confirms that the OTP challenge was created.
+        showOtpStep();
+        startCountdown();
+
+        return;
+      }
+
+      // Recheck the expiry immediately before making the request.
+      if (Date.now() >= expiresAt) {
+        updateCountdown();
+
+        throw new Error(
+          "Your verification code has expired. Verify your password again."
+        );
+      }
+
+      const res = await window.apiFetch(
+        "/api/auth/reauth/verify-otp",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            challenge_id: challengeId,
+            code,
+          }),
+          _allowWhenLocked: true,
+        }
+      );
+
+      if (!res?.ok) {
+        throw new Error(
+          res?.message || "Email verification failed. Please try again."
+        );
+      }
+
+      stopCountdown();
+      challengeId = "";
+
+      setMessage(
+        res.message || "Session unlocked successfully.",
+        "success"
+      );
+
+      clearOtpBoxes();
+
+      // Only the successful backend OTP response permits unlocking.
+      unlockSession();
+
+    } catch (err) {
+      setMessage(
+        err?.message || "Verification failed. Please try again."
+      );
+
+      if (otpRequired && !otpExpired) {
+        clearOtpBoxes();
+        otpBoxes[0]?.focus();
+      } else if (!otpRequired) {
+        passwordInput?.focus();
+      }
+
+    } finally {
+      busy = false;
+
+      if (unlockBtn) unlockBtn.disabled = false;
+      if (backBtn) backBtn.disabled = false;
+
+      if (passwordInput) {
+        passwordInput.disabled = otpRequired;
+      }
+
+      otpBoxes.forEach((box) => {
+        box.disabled = otpExpired;
       });
 
-      // Show success message from backend (or fallback)
-      if (msg) {
-        msg.textContent = res?.message || "Session restored successfully.";
-        msg.className = "text-xs min-h-[18px] text-green-600 font-medium";
-      }
-      
-      input.value = "";
-      
-      // Brief delay so user sees the success message
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      unlockSession();
-    } catch (err) {
-      if (msg) {
-        msg.textContent = err.message || "Unlock failed. Please try again.";
-        msg.className = "text-xs min-h-[18px] text-red-600";
-      }
       if (unlockBtn) {
-        unlockBtn.disabled = false;
-        unlockBtn.textContent = "Unlock";
+        unlockBtn.innerHTML = otpRequired
+          ? `
+            <svg viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="m5 12 4 4L19 6"/>
+            </svg>
+            Verify code
+          `
+          : `
+            <svg viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="10" width="16" height="11" rx="2"/>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+            </svg>
+            Verify password
+          `;
       }
     }
   });
-}
-window.bindSessionUnlockForm = bindSessionUnlockForm;
 
-bindSessionUnlockForm?.();
+  showPasswordStep();
+}
+
+window.bindSessionUnlockForm = bindSessionUnlockForm;
+bindSessionUnlockForm();
+
+
 // ===============================
 // Account dropdown navigation
 // ===============================
