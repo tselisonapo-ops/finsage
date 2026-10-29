@@ -187768,15 +187768,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             UPDATE {schema}.payroll_pay_calendars
             SET status = 'closed'
             WHERE company_id = %s
-            AND status = 'open'
-            AND period_end >= %s
-            AND period_start <= %s
-            AND NOT EXISTS (
-                SELECT 1
-                FROM {schema}.payroll_runs pr
-                WHERE pr.calendar_id =
+              AND status = 'open'
+              AND period_end >= %s
+              AND period_start <= %s
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM {schema}.payroll_runs pr
+                  WHERE pr.pay_calendar_id =
                         payroll_pay_calendars.id
-            );
+              );
             """,
             (
                 company_id,
