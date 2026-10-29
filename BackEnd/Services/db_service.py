@@ -186442,12 +186442,129 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 value,
             ))
 
+
+    def payroll_seed_burs_2027(self):
+        regime = self.fetch_one("""
+            SELECT id
+            FROM public.payroll_tax_regimes
+            WHERE authority_code = 'BURS'
+            AND country_code = 'BW'
+            LIMIT 1;
+        """)
+
+        if not regime:
+            raise ValueError("BURS tax regime is missing")
+
+        tax_year = self.fetch_one("""
+            INSERT INTO public.payroll_tax_years (
+                regime_id,
+                tax_year_label,
+                effective_from,
+                effective_to,
+                calculation_basis,
+                source_reference,
+                source_verified_at,
+                is_active
+            )
+            VALUES (
+                %s,
+                '2026/2027',
+                DATE '2026-07-01',
+                DATE '2027-06-30',
+                'annualised',
+                'Botswana Income Tax Act 2026; effective 1 July 2026',
+                NOW(),
+                TRUE
+            )
+            ON CONFLICT (
+                regime_id,
+                effective_from,
+                effective_to
+            )
+            DO UPDATE SET
+                tax_year_label = EXCLUDED.tax_year_label,
+                calculation_basis = EXCLUDED.calculation_basis,
+                source_reference = EXCLUDED.source_reference,
+                source_verified_at = NOW(),
+                is_active = TRUE
+            RETURNING id;
+        """, (regime["id"],))
+
+        year_id = int(tax_year["id"])
+
+        # Replace only this tax year's resident and non-resident bands.
+        self.execute_sql("""
+            DELETE FROM public.payroll_tax_brackets
+            WHERE tax_year_id = %s
+            AND residency_status IN ('resident', 'non_resident');
+        """, (year_id,))
+
+        brackets = [
+            # Resident: order, lower, upper, base, rate, excess
+            ("resident", 1, 0,       48000,   0,     0.00,     0),
+            ("resident", 2, 48000.01, 84000,  0,     0.05, 48000),
+            ("resident", 3, 84000.01, 120000, 1800,  0.125, 84000),
+            ("resident", 4, 120000.01, 156000, 6300, 0.1875, 120000),
+            ("resident", 5, 156000.01, 400000, 13050, 0.25, 156000),
+            ("resident", 6, 400000.01, None, 74050, 0.275, 400000),
+
+            # Non-resident annual bands
+            ("non_resident", 1, 0,       84000,   0,     0.05,    0),
+            ("non_resident", 2, 84000.01, 120000, 4200,  0.125, 84000),
+            ("non_resident", 3, 120000.01, 156000, 8700, 0.1875, 120000),
+            ("non_resident", 4, 156000.01, 400000, 15450, 0.25, 156000),
+            ("non_resident", 5, 400000.01, None, 76450, 0.275, 400000),
+        ]
+
+        for residency, order, lower, upper, base, rate, excess in brackets:
+            self.execute_sql("""
+                INSERT INTO public.payroll_tax_brackets (
+                    tax_year_id,
+                    residency_status,
+                    sort_order,
+                    lower_bound,
+                    upper_bound,
+                    base_tax,
+                    marginal_rate,
+                    excess_over
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+            """, (
+                year_id,
+                residency,
+                order,
+                lower,
+                upper,
+                base,
+                rate,
+                excess,
+            ))
+
+        parameters = {
+            "tax_periods_monthly": 12,
+            "tax_periods_fortnightly": 26,
+            "tax_periods_weekly": 52,
+        }
+
+        for key, value in parameters.items():
+            self.execute_sql("""
+                INSERT INTO public.payroll_tax_parameters (
+                    tax_year_id,
+                    parameter_key,
+                    numeric_value
+                )
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tax_year_id, parameter_key)
+                DO UPDATE SET
+                    numeric_value = EXCLUDED.numeric_value;
+            """, (year_id, key, value))
+
     def payroll_seed_rsl_2027(self):
         regime = self.fetch_one("""
             SELECT id
             FROM public.payroll_tax_regimes
-            WHERE authority_code='RSL'
-            AND country_code='LS'
+            WHERE authority_code = 'RSL'
+            AND country_code = 'LS'
             LIMIT 1;
         """)
 
@@ -186467,11 +186584,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
             VALUES (
                 %s,
-                '2026/27',
+                '2026/2027',
                 DATE '2026-04-01',
                 DATE '2027-03-31',
                 'monthly_table',
-                'RSL 2026/27 employment income guide',
+                'RSL 2026/2027 Income Tax Structure',
                 NOW(),
                 TRUE
             )
@@ -186481,33 +186598,30 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 effective_to
             )
             DO UPDATE SET
-                source_reference=EXCLUDED.source_reference,
-                source_verified_at=NOW(),
-                is_active=TRUE
+                tax_year_label = EXCLUDED.tax_year_label,
+                calculation_basis = EXCLUDED.calculation_basis,
+                source_reference = EXCLUDED.source_reference,
+                source_verified_at = NOW(),
+                is_active = TRUE
             RETURNING id;
         """, (regime["id"],))
 
         year_id = int(tax_year["id"])
 
+        # Replace only resident brackets; preserve any non-resident brackets.
         self.execute_sql("""
             DELETE FROM public.payroll_tax_brackets
-            WHERE tax_year_id=%s;
+            WHERE tax_year_id = %s
+            AND residency_status = 'resident';
         """, (year_id,))
 
-        # Monthly brackets.
         brackets = [
-            (1, 0,    6480, 0,    0.20, 0),
-            (2, 6480, None, 1296, 0.30, 6480),
+            # order, lower,    upper,    base,    rate,    excess
+            (1,      0.00,     6480.00,  0.00,    0.20,    0.00),
+            (2,      6480.01,  None,     1296.00, 0.30,    6480.00),
         ]
 
-        for (
-            order,
-            lower,
-            upper,
-            base,
-            rate,
-            excess,
-        ) in brackets:
+        for order, lower, upper, base, rate, excess in brackets:
             self.execute_sql("""
                 INSERT INTO public.payroll_tax_brackets (
                     tax_year_id,
@@ -186519,7 +186633,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     excess_over,
                     sort_order
                 )
-                VALUES (%s,'resident',%s,%s,%s,%s,%s,%s);
+                VALUES (%s, 'resident', %s, %s, %s, %s, %s, %s);
             """, (
                 year_id,
                 lower,
@@ -186531,8 +186645,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ))
 
         parameters = {
-            "monthly_tax_credit": 1020,
+            "monthly_threshold": 6480,
             "monthly_no_tax_threshold": 5100,
+            "monthly_tax_credit": 1020,
             "tax_periods_monthly": 12,
         }
 
@@ -186543,14 +186658,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     parameter_key,
                     numeric_value
                 )
-                VALUES (%s,%s,%s)
+                VALUES (%s, %s, %s)
                 ON CONFLICT (tax_year_id, parameter_key)
-                DO UPDATE SET numeric_value=EXCLUDED.numeric_value;
-            """, (
-                year_id,
-                key,
-                value,
-            ))
+                DO UPDATE SET
+                    numeric_value = EXCLUDED.numeric_value;
+            """, (year_id, key, value))
 
     def payroll_company_tax_context(
         self,
