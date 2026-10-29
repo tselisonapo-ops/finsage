@@ -8073,50 +8073,37 @@ function renderPasswordAge(user) {
 
   if (!user || !badge || !msg) return;
 
-  const pwdDate =
-    user.password_updated_at ||
-    user.created_at;
-
-  if (!pwdDate) return;
-
-  const days = Math.floor(
-    (Date.now() - new Date(pwdDate).getTime()) / 86400000
-  );
+  // Use password_age_days from API if available, otherwise compute
+  let days = user.password_age_days;
+  if (days === undefined || days === null) {
+    const pwdDate = user.password_updated_at || user.created_at;
+    if (!pwdDate) return;
+    days = Math.floor((Date.now() - new Date(pwdDate).getTime()) / 86400000);
+  }
 
   badge.textContent = `${days} days`;
 
   if (days >= 90 || user.force_password_change) {
-    badge.className =
-      "rounded-full px-2 py-[2px] bg-red-50 text-red-700 text-[11px]";
-
-    msg.textContent =
-      "Your password should be updated immediately.";
-  } else if (days >= 75) {
-    badge.className =
-      "rounded-full px-2 py-[2px] bg-amber-50 text-amber-700 text-[11px]";
-
-    msg.textContent =
-      `Password expires soon. ${90 - days} day(s) remaining.`;
+    badge.className = "rounded-full px-2 py-[2px] bg-red-50 text-red-700 text-[11px]";
+    msg.textContent = "Your password has expired. Please update it immediately.";
+  } else if (days >= 80) {
+    badge.className = "rounded-full px-2 py-[2px] bg-amber-50 text-amber-700 text-[11px]";
+    msg.textContent = `Password expires soon. ${90 - days} day(s) remaining.`;
   } else {
-    badge.className =
-      "rounded-full px-2 py-[2px] bg-emerald-50 text-emerald-700 text-[11px]";
-
-    msg.textContent =
-      `Password is healthy. ${90 - days} day(s) remaining.`;
+    badge.className = "rounded-full px-2 py-[2px] bg-emerald-50 text-emerald-700 text-[11px]";
+    msg.textContent = `Password is healthy. ${90 - days} day(s) remaining.`;
   }
 
   if (lastLogin) {
-    lastLogin.textContent =
-      user.last_login_at
-        ? new Date(user.last_login_at).toLocaleString()
-        : "—";
+    lastLogin.textContent = user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "—";
+  }
+  if (lastActivity) {
+    lastActivity.textContent = user.last_activity_at ? new Date(user.last_activity_at).toLocaleString() : "—";
   }
 
-  if (lastActivity) {
-    lastActivity.textContent =
-      user.last_activity_at
-        ? new Date(user.last_activity_at).toLocaleString()
-        : "—";
+  // Also show the expiry banner
+  if (typeof showPasswordExpiryBanner === "function") {
+    showPasswordExpiryBanner(user);
   }
 }
 
@@ -8911,7 +8898,213 @@ function shouldNotifyPasswordChange(user) {
   if (!lastDateRaw) return false;
 
   const days = Math.floor((Date.now() - new Date(lastDateRaw).getTime()) / 86400000);
-  return days >= 90 || user?.force_password_change === true;
+  return days >= 80 || user?.force_password_change === true;
+}
+
+// ============================================================
+// PASSWORD EXPIRY NOTIFICATION + ACCOUNT SETTINGS WIRING
+// ============================================================
+
+function getPasswordAgeDays(user) {
+  const lastDateRaw = user?.password_updated_at || user?.created_at;
+  if (!lastDateRaw) return 9999;
+  return Math.floor((Date.now() - new Date(lastDateRaw).getTime()) / 86400000);
+}
+
+function showPasswordExpiryBanner(user) {
+  const banner = document.getElementById("passwordExpiryBanner");
+  const msg = document.getElementById("passwordExpiryMsg");
+  if (!banner || !msg) return;
+
+  const days = getPasswordAgeDays(user);
+  const remaining = 90 - days;
+
+  if (days >= 80 && days < 90) {
+    banner.classList.remove("hidden");
+    msg.textContent = `Your password will expire in ${remaining} day(s). Please update it soon to avoid being locked out.`;
+  } else if (days >= 90 || user?.force_password_change) {
+    banner.classList.remove("hidden");
+    msg.textContent = "Your password has expired. You must update it before you can continue using FinSage.";
+  } else {
+    banner.classList.add("hidden");
+  }
+}
+
+function bindAccountChangePasswordForm() {
+  const form = document.getElementById("accountChangePasswordForm");
+  if (!form || form.dataset.bound === "1") return;
+  form.dataset.bound = "1";
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const oldPw = document.getElementById("accOldPassword")?.value || "";
+    const newPw = document.getElementById("accNewPassword")?.value || "";
+    const confirmPw = document.getElementById("accConfirmPassword")?.value || "";
+    const msg = document.getElementById("accChangePwMsg");
+
+    if (msg) { msg.textContent = ""; msg.className = "ml-2 text-xs"; }
+
+    if (!oldPw || !newPw) {
+      if (msg) { msg.textContent = "Current and new passwords are required."; msg.className = "ml-2 text-xs text-red-600"; }
+      return;
+    }
+    if (newPw.length < 8) {
+      if (msg) { msg.textContent = "New password must be at least 8 characters."; msg.className = "ml-2 text-xs text-red-600"; }
+      return;
+    }
+    if (newPw !== confirmPw) {
+      if (msg) { msg.textContent = "Passwords do not match."; msg.className = "ml-2 text-xs text-red-600"; }
+      return;
+    }
+
+    try {
+      const res = await apiFetch(ENDPOINTS.auth.changePassword, {
+        method: "POST",
+        body: JSON.stringify({ oldPassword: oldPw, newPassword: newPw }),
+      });
+
+      if (msg) {
+        msg.textContent = res?.message || "Password updated successfully.";
+        msg.className = "ml-2 text-xs text-emerald-600";
+      }
+      form.reset();
+
+      // Refresh user data
+      if (typeof loadCurrentUser === "function") {
+        const user = await loadCurrentUser();
+        renderPasswordAge(user);
+        showPasswordExpiryBanner(user);
+      }
+    } catch (err) {
+      if (msg) {
+        msg.textContent = err.message || "Password update failed.";
+        msg.className = "ml-2 text-xs text-red-600";
+      }
+    }
+  });
+}
+
+let _emailChangeChallengeId = null;
+
+function bindAccountChangeEmailForm() {
+  const sendBtn = document.getElementById("accSendEmailOtpBtn");
+  const verifyBtn = document.getElementById("accVerifyEmailOtpBtn");
+  const otpSection = document.getElementById("accEmailOtpSection");
+  const otpInput = document.getElementById("accEmailOtp");
+  const msg = document.getElementById("accEmailOtpMsg");
+
+  if (sendBtn && sendBtn.dataset.bound !== "1") {
+    sendBtn.dataset.bound = "1";
+    sendBtn.addEventListener("click", async () => {
+      const newEmail = document.getElementById("accNewEmail")?.value?.trim()?.toLowerCase() || "";
+      if (!newEmail) {
+        if (msg) { msg.textContent = "Enter a new email address first."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+        if (msg) { msg.textContent = "Please enter a valid email address."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Sending...";
+
+      try {
+        const res = await apiFetch("/api/auth/change-email/request-otp", { method: "POST" });
+        _emailChangeChallengeId = res?.challenge_id;
+        if (otpSection) otpSection.classList.remove("hidden");
+        if (msg) {
+          msg.textContent = res?.message || "Verification code sent to your current email.";
+          msg.className = "text-xs text-slate-500";
+        }
+        if (otpInput) otpInput.focus();
+      } catch (err) {
+        if (msg) {
+          msg.textContent = err.message || "Could not send verification code.";
+          msg.className = "text-xs text-red-600";
+        }
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = "Send verification code";
+      }
+    });
+  }
+
+  if (verifyBtn && verifyBtn.dataset.bound !== "1") {
+    verifyBtn.dataset.bound = "1";
+    verifyBtn.addEventListener("click", async () => {
+      const newEmail = document.getElementById("accNewEmail")?.value?.trim()?.toLowerCase() || "";
+      const code = otpInput?.value?.trim() || "";
+
+      if (!code || !/^\d{6}$/.test(code)) {
+        if (msg) { msg.textContent = "Enter the 6-digit code."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+      if (!_emailChangeChallengeId) {
+        if (msg) { msg.textContent = "Session expired. Please request a new code."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+
+      verifyBtn.disabled = true;
+      verifyBtn.textContent = "Verifying...";
+
+      try {
+        const res = await apiFetch("/api/auth/change-email/verify", {
+          method: "POST",
+          body: JSON.stringify({
+            challenge_id: _emailChangeChallengeId,
+            code: code,
+            newEmail: newEmail,
+          }),
+        });
+
+        if (msg) {
+          msg.textContent = res?.message || "Email updated successfully.";
+          msg.className = "text-xs text-emerald-600";
+        }
+
+        // Update displayed email
+        const emailEl = document.getElementById("accEmail");
+        if (emailEl) emailEl.textContent = newEmail;
+
+        // Update stored user
+        try {
+          const storedUser = JSON.parse(localStorage.getItem("fs_user") || "{}");
+          storedUser.email = newEmail;
+          localStorage.setItem("fs_user", JSON.stringify(storedUser));
+          localStorage.setItem("userEmail", newEmail);
+        } catch (_) {}
+
+        // Reset form
+        if (otpSection) otpSection.classList.add("hidden");
+        document.getElementById("accNewEmail").value = "";
+        if (otpInput) otpInput.value = "";
+        _emailChangeChallengeId = null;
+
+        // Refresh user
+        if (typeof loadCurrentUser === "function") {
+          await loadCurrentUser();
+        }
+      } catch (err) {
+        if (msg) {
+          msg.textContent = err.message || "Verification failed.";
+          msg.className = "text-xs text-red-600";
+        }
+      } finally {
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = "Verify & update";
+      }
+    });
+  }
+}
+
+function initAccountSettingsForms() {
+  bindAccountChangePasswordForm();
+  bindAccountChangeEmailForm();
+
+  const user = window.currentUser || {};
+  showPasswordExpiryBanner(user);
 }
   // ==========================================================
   // 12) STORAGE KEYS + AUTH REQUIRED SCREENS
@@ -13450,6 +13643,9 @@ async function switchScreen(
         try {
           if (!window.currentUser) await window.loadCurrentUser?.();
           window.hydrateAccountSettings?.();
+          if (typeof initAccountSettingsForms === "function") {
+            initAccountSettingsForms();
+          }
         } catch (e) {
           console.warn("Account settings hydrate failed:", e);
         }

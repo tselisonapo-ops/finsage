@@ -552,6 +552,58 @@
         </button>
       </div>
 
+      <!-- FORCE CHANGE PASSWORD STEP (shown when password expired) -->
+      <div id="forceChangeStep" hidden>
+        <p style="color: #b45309; font-weight: 600; margin-bottom: 12px;">
+          Your password has expired. Please set a new password to continue.
+        </p>
+        <p style="font-size: 0.85rem; color: var(--fs-muted); margin-bottom: 20px;">
+          A verification code has been sent to your email. Enter it below along with your new password.
+        </p>
+
+        <label for="forceNewPassword">New password</label>
+        <input
+          type="password"
+          id="forceNewPassword"
+          autocomplete="new-password"
+          required
+          placeholder="Enter new password (min 8 chars)"
+        />
+
+        <label for="forceConfirmPassword">Confirm new password</label>
+        <input
+          type="password"
+          id="forceConfirmPassword"
+          autocomplete="new-password"
+          required
+          placeholder="Re-enter new password"
+        />
+
+        <label for="forceNewEmail">Email address (change optional)</label>
+        <input
+          type="email"
+          id="forceNewEmail"
+          autocomplete="email"
+          placeholder="Your email address"
+        />
+
+        <label id="forceOtpLabel">Verification code</label>
+        <div class="otp-boxes" role="group" aria-labelledby="forceOtpLabel">
+          <input class="otp-digit force-otp-digit" type="text" inputmode="numeric" maxlength="1" aria-label="Digit 1 of 6" />
+          <input class="otp-digit force-otp-digit" type="text" inputmode="numeric" maxlength="1" aria-label="Digit 2 of 6" />
+          <input class="otp-digit force-otp-digit" type="text" inputmode="numeric" maxlength="1" aria-label="Digit 3 of 6" />
+          <input class="otp-digit force-otp-digit" type="text" inputmode="numeric" maxlength="1" aria-label="Digit 4 of 6" />
+          <input class="otp-digit force-otp-digit" type="text" inputmode="numeric" maxlength="1" aria-label="Digit 5 of 6" />
+          <input class="otp-digit force-otp-digit" type="text" inputmode="numeric" maxlength="1" aria-label="Digit 6 of 6" />
+        </div>
+
+        <input type="text" id="forceOtp" class="otp-canonical" tabindex="-1" aria-hidden="true" autocomplete="off" maxlength="6" />
+
+        <p id="forceOtpHelp" class="status" aria-live="polite">Your code expires in 03:00.</p>
+
+        <button type="button" id="forceChangeButton">Update password and sign in</button>
+      </div>
+
       <p class="status" id="status" role="status" aria-live="polite"></p>
     </form>
 
@@ -1041,11 +1093,34 @@
         );
       }
 
+      if (data.password_expired && data.challenge_id) {
+        // Password expired - show force-change-password form
+        forcePasswordExpired = true;
+        forceChallengeId = data.challenge_id;
+        forceNewEmail.value = data.user_email || emailInput.value.trim().toLowerCase();
+
+        credentialsStep.hidden = true;
+        otpStep.hidden = true;
+        forceChangeStep.hidden = false;
+        passwordInput.value = "";
+        clearOtpDigits();
+        clearForceOtpDigits();
+        startForceCountdown(data.expires_in || 180);
+
+        setStatus(
+          data.message || "Your password has expired. Check your email for a verification code.",
+          false
+        );
+        forceNewPassword.focus();
+        return;
+      }
+
       if (data.otp_required && data.challenge_id) {
         otpChallengeId = data.challenge_id;
 
         credentialsStep.hidden = true;
         otpStep.hidden = false;
+        forceChangeStep.hidden = true;
         passwordInput.value = "";
         clearOtpDigits();
         otpInput.required = false;
@@ -1143,14 +1218,188 @@
     }
   });
 
+  // ============================================================
+  // FORCE CHANGE PASSWORD FLOW
+  // ============================================================
+  const forceChangeStep = document.getElementById("forceChangeStep");
+  const forceNewPassword = document.getElementById("forceNewPassword");
+  const forceConfirmPassword = document.getElementById("forceConfirmPassword");
+  const forceNewEmail = document.getElementById("forceNewEmail");
+  const forceOtpInput = document.getElementById("forceOtp");
+  const forceChangeButton = document.getElementById("forceChangeButton");
+  const forceOtpHelp = document.getElementById("forceOtpHelp");
+  const forceOtpDigits = Array.from(document.querySelectorAll(".force-otp-digit"));
+
+  let forcePasswordExpired = false;
+  let forceChallengeId = null;
+  let forceCountdownInterval = null;
+  let forceExpiresAt = 0;
+
+  function syncForceOtpDigits() {
+    forceOtpInput.value = forceOtpDigits.map(input => input.value).join("");
+  }
+
+  function clearForceOtpDigits() {
+    forceOtpDigits.forEach(input => { input.value = ""; });
+    forceOtpInput.value = "";
+  }
+
+  forceOtpDigits.forEach((input, index) => {
+    input.addEventListener("input", () => {
+      const digits = input.value.replace(/\D/g, "");
+      if (digits.length > 1) {
+        const start = index;
+        const available = forceOtpDigits.length - start;
+        const pasted = digits.slice(0, available).split("");
+        pasted.forEach((digit, offset) => {
+          forceOtpDigits[start + offset].value = digit;
+        });
+        forceOtpDigits[Math.min(start + pasted.length, 5)].focus();
+      } else {
+        input.value = digits.slice(-1);
+        if (input.value && index < 5) forceOtpDigits[index + 1].focus();
+      }
+      syncForceOtpDigits();
+    });
+
+    input.addEventListener("keydown", event => {
+      if (event.key === "Backspace") {
+        if (!input.value && index > 0) {
+          forceOtpDigits[index - 1].focus();
+          forceOtpDigits[index - 1].value = "";
+          syncForceOtpDigits();
+          event.preventDefault();
+        } else if (input.value) {
+          input.value = "";
+          syncForceOtpDigits();
+          event.preventDefault();
+        }
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        forceChangeButton.click();
+      }
+    });
+
+    input.addEventListener("paste", event => {
+      const pasted = (event.clipboardData?.getData("text") || "").replace(/\D/g, "").slice(0, 6);
+      if (!pasted) return;
+      event.preventDefault();
+      pasted.split("").forEach((digit, offset) => {
+        if (forceOtpDigits[offset]) forceOtpDigits[offset].value = digit;
+      });
+      forceOtpDigits[Math.min(pasted.length, 6) - 1].focus();
+      syncForceOtpDigits();
+    });
+  });
+
+  function startForceCountdown(seconds = 180) {
+    if (forceCountdownInterval) clearInterval(forceCountdownInterval);
+    forceExpiresAt = Date.now() + seconds * 1000;
+
+    function tick() {
+      const remaining = Math.max(0, Math.ceil((forceExpiresAt - Date.now()) / 1000));
+      const minutes = Math.floor(remaining / 60);
+      const secs = remaining % 60;
+      forceOtpHelp.textContent = remaining > 0
+        ? `Your code expires in ${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}.`
+        : "This code has expired. Go back and sign in again to request a new one.";
+      if (remaining <= 0 && forceCountdownInterval) {
+        clearInterval(forceCountdownInterval);
+        forceCountdownInterval = null;
+      }
+    }
+    tick();
+    forceCountdownInterval = setInterval(tick, 1000);
+  }
+
+  // Modify the signin submit handler to detect password_expired
+  const originalSubmitHandler = signinForm.onsubmit;
+  signinForm.addEventListener("submit", async (e) => {
+    // Let the original handler run, but intercept the response
+  }, true);
+
+  // Override the verify OTP button to check for password_expired
+  const originalVerifyClick = verifyOtpButton.onclick;
+  verifyOtpButton.addEventListener("click", async (e) => {
+    // If we're already in force-change mode, don't do anything
+    if (forcePasswordExpired) return;
+  }, true);
+
+  forceChangeButton.addEventListener("click", async () => {
+    const newPassword = forceNewPassword.value;
+    const confirmPassword = forceConfirmPassword.value;
+    const newEmail = forceNewEmail.value.trim().toLowerCase();
+    const otpCode = forceOtpInput.value.trim();
+
+    if (!newPassword || newPassword.length < 8) {
+      setStatus("New password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setStatus("Passwords do not match.");
+      return;
+    }
+    if (!/^\d{6}$/.test(otpCode)) {
+      setStatus("Enter the 6-digit verification code.");
+      return;
+    }
+    if (!forceChallengeId) {
+      setStatus("Your verification session has expired. Please sign in again.");
+      return;
+    }
+
+    setBusy(forceChangeButton, true, "Updating...", "Update password and sign in");
+    setStatus("");
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/signin/force-change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challenge_id: forceChallengeId,
+          code: otpCode,
+          newPassword: newPassword,
+          newEmail: newEmail || undefined,
+        }),
+      });
+
+      const data = await readJsonResponse(res);
+
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || "Failed to update password.");
+      }
+
+      if (forceCountdownInterval) {
+        clearInterval(forceCountdownInterval);
+        forceCountdownInterval = null;
+      }
+
+      finishSignIn(data, emailInput.value.trim().toLowerCase());
+    } catch (err) {
+      console.error("Force change password error:", err);
+      setStatus(err.message || "Could not update password.");
+    } finally {
+      setBusy(forceChangeButton, false, "Updating...", "Update password and sign in");
+    }
+  });
+
   backButton.addEventListener("click", () => {
     otpStep.hidden = true;
+    forceChangeStep.hidden = true;
     credentialsStep.hidden = false;
     otpInput.required = false;
     clearOtpDigits();
+    clearForceOtpDigits();
     otpChallengeId = null;
+    forceChallengeId = null;
+    forcePasswordExpired = false;
     stopOtpCountdown();
     otpExpiresAt = 0;
+    if (forceCountdownInterval) {
+      clearInterval(forceCountdownInterval);
+      forceCountdownInterval = null;
+    }
     updateOtpVerifyButton();
     setStatus("Enter your details to request a new verification code.");
     passwordInput.focus();

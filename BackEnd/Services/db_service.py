@@ -9117,7 +9117,11 @@ class DatabaseService:
                 last_name,
                 confirmation_token,
                 trial_start_date,
-                trial_end_date
+                trial_end_date,
+                password_updated_at,
+                force_password_change,
+                last_login_at,
+                last_activity_at
             FROM public.users
             WHERE LOWER(email) = LOWER(%s)
             LIMIT 1;
@@ -9178,6 +9182,19 @@ class DatabaseService:
                     force_password_change = FALSE
                 WHERE LOWER(email) = LOWER(%s)
             """, (new_hash, email))
+
+    def update_user_email(self, user_id: int, new_email: str) -> bool:
+        """
+        Update a user's email address. Returns True on success.
+        """
+        result = self.fetch_one("""
+            UPDATE public.users
+            SET email = %s,
+                updated_at = NOW()
+            WHERE id = %s
+            RETURNING id;
+        """, (new_email.strip().lower(), int(user_id)))
+        return bool(result)
 
     def clear_reset_token(self, email: str) -> None:
         with self._conn_cursor() as (_c, cur):

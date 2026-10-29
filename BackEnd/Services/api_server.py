@@ -3794,6 +3794,28 @@ def api_auth_signin():
         )
 
 
+        # =========================================================
+        # PASSWORD EXPIRY CHECK (90-day rule)
+        # =========================================================
+        PASSWORD_EXPIRY_DAYS = 90
+        _pu_raw = user.get("password_updated_at") or user.get("created_at")
+        _force_change = bool(user.get("force_password_change"))
+
+        _password_age_days = 0
+        if _pu_raw:
+            try:
+                if isinstance(_pu_raw, str):
+                    _pu = datetime.fromisoformat(_pu_raw.replace("Z", "+00:00"))
+                else:
+                    _pu = _pu_raw
+                if _pu.tzinfo is None:
+                    _pu = _pu.replace(tzinfo=timezone.utc)
+                _password_age_days = (datetime.now(timezone.utc) - _pu).days
+            except Exception:
+                _password_age_days = 0
+
+        _password_expired = _force_change or _password_age_days >= PASSWORD_EXPIRY_DAYS
+
         # Send OTP after all existing access checks pass.
         try:
             challenge_id = issue_email_otp(
@@ -3813,6 +3835,20 @@ def api_auth_signin():
             return jsonify({
                 "error": "Could not send a verification code. Please try again."
             }), 500
+
+        if _password_expired:
+            return jsonify({
+                "ok": True,
+                "password_expired": True,
+                "otp_required": True,
+                "challenge_id": challenge_id,
+                "expires_in": OTP_LIFETIME_MINUTES * 60,
+                "resend_after": OTP_RESEND_SECONDS,
+                "message": "Your password has expired. A verification code has been sent to your email to authorize the change.",
+                "user_email": user["email"],
+                "user_id": user_id,
+                "product": "FinSage Nexus" if is_ops_signin else "finsage",
+            }), 200
 
         return jsonify({
             "ok": True,
@@ -4324,6 +4360,21 @@ def api_auth_signin_verify_otp():
             "error": "Could not verify the sign-in code."
         }), 500
 
+def _calc_password_age(user):
+    """Calculate password age in days from password_updated_at."""
+    try:
+        pu = user.get("password_updated_at") or user.get("created_at")
+        if not pu:
+            return 9999
+        if isinstance(pu, str):
+            pu = datetime.fromisoformat(pu.replace("Z", "+00:00"))
+        if pu.tzinfo is None:
+            pu = pu.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - pu).days
+    except Exception:
+        return 9999
+
+
 @app.route("/api/auth/me", methods=["GET", "OPTIONS"])
 @require_auth
 def api_auth_me():
@@ -4476,6 +4527,9 @@ def api_auth_me():
             "last_login_at": user.get("last_login_at"),
             "last_activity_at": user.get("last_activity_at"),
             "force_password_change": bool(user.get("force_password_change")),
+            "password_age_days": _calc_password_age(user),
+            "password_expiring_soon": 80 <= _calc_password_age(user) < 90,
+            "password_expired": bool(user.get("force_password_change")) or _calc_password_age(user) >= 90,
         }
 
         app.logger.warning(
@@ -5009,6 +5063,294 @@ def change_password():
     new_hash = generate_password_hash(new)
     db_service.update_password(user["email"], new_hash)
     return jsonify({"message": "Password updated"}), 200
+
+
+# ============================================================
+# FORCE CHANGE PASSWORD (during signin when password expired)
+# ============================================================
+@app.route("/api/auth/signin/force-change-password", methods=["POST", "OPTIONS"])
+@cross_origin(
+    origins=[
+        "https://finspheresolutions.com",
+        "https://www.finspheresolutions.com",
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+    ],
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["POST", "OPTIONS"],
+    supports_credentials=True,
+)
+def api_force_change_password():
+    """Verify OTP + update password (and optionally email) when password expired during signin."""
+    if request.method == "OPTIONS":
+        return "", 204
+
+    try:
+        data = request.get_json(silent=True) or {}
+        challenge_id = str(data.get("challenge_id") or "").strip()
+        otp_code = str(data.get("code") or data.get("otp_code") or "").strip()
+        new_password = str(data.get("newPassword") or data.get("new_password") or "")
+        new_email = str(data.get("newEmail") or data.get("new_email") or "").strip().lower()
+
+        if not challenge_id or not otp_code:
+            return jsonify({"error": "Verification code is required."}), 400
+        if not new_password or len(new_password) < 8:
+            return jsonify({"error": "New password must be at least 8 characters."}), 400
+
+        try:
+            challenge_id = str(uuid.UUID(challenge_id))
+        except (ValueError, TypeError, AttributeError):
+            return jsonify({"error": "Invalid or expired verification challenge."}), 400
+
+        challenge = db_service.fetch_one(
+            "SELECT user_id, purpose, product FROM public.auth_otp_challenges WHERE id = %s::uuid LIMIT 1",
+            (challenge_id,),
+        )
+        if not challenge or challenge.get("purpose") != "signin":
+            return jsonify({"error": "Invalid or expired verification code."}), 400
+
+        user_id = int(challenge["user_id"])
+        product = str(challenge.get("product") or "finsage").strip().lower()
+        is_ops_signin = product == "ops"
+
+        verified = verify_email_otp(
+            db_service, challenge_id=challenge_id, user_id=user_id,
+            purpose="signin", code=otp_code,
+        )
+        if not verified:
+            return jsonify({"error": "Invalid or expired verification code."}), 400
+
+        user = db_service.get_user_by_id(user_id)
+        if not user or not user.get("is_confirmed") or user.get("is_active") is False:
+            return jsonify({"error": "This account cannot sign in."}), 403
+
+        new_hash = generate_password_hash(new_password)
+        db_service.update_password(user["email"], new_hash)
+
+        if new_email and new_email != user["email"].lower():
+            existing = db_service.get_user_by_email(new_email)
+            if existing and int(existing["id"]) != user_id:
+                return jsonify({"error": "That email address is already in use."}), 409
+            db_service.update_user_email(user_id, new_email)
+            user["email"] = new_email
+
+        user = db_service.get_user_by_id(user_id)
+        if not user:
+            return jsonify({"error": "Account error after update."}), 500
+
+        base_role = str(user.get("user_role") or "viewer").strip()
+        user_type = str(user.get("user_type") or "Enterprise").strip()
+
+        if is_ops_signin:
+            primary_mem = db_service.fetch_one(
+                """SELECT cu.company_id, cu.role, cu.access_scope, cu.membership_kind,
+                          cu.is_primary, cu.product_access, cu.ops_is_active
+                   FROM public.company_users cu
+                   WHERE cu.user_id = %s AND cu.is_active = TRUE AND cu.is_primary = TRUE
+                     AND COALESCE(cu.access_scope, 'core') = 'core'
+                   ORDER BY CASE WHEN cu.membership_kind = 'primary' THEN 0 ELSE 1 END, cu.company_id
+                   LIMIT 1""", (user_id,))
+            if not primary_mem:
+                primary_mem = db_service.fetch_one(
+                    """SELECT cu.company_id, cu.role, cu.access_scope, cu.membership_kind,
+                              cu.is_primary, cu.product_access, cu.ops_is_active
+                       FROM public.company_users cu
+                       JOIN public.companies c ON c.id = cu.company_id
+                       WHERE cu.user_id = %s AND cu.is_active = TRUE
+                         AND COALESCE(cu.access_scope, 'core') = 'core'
+                         AND (c.owner_user_id = cu.user_id OR cu.membership_kind = 'primary')
+                       ORDER BY CASE WHEN c.owner_user_id = cu.user_id THEN 0 ELSE 1 END,
+                                CASE WHEN cu.membership_kind = 'primary' THEN 0 ELSE 1 END, cu.company_id
+                       LIMIT 1""", (user_id,))
+        else:
+            memberships = db_service.fetch_all(
+                "SELECT company_id, role, access_scope, is_primary, membership_kind "
+                "FROM public.company_users WHERE user_id = %s AND is_active = TRUE ORDER BY company_id",
+                (user_id,)) or []
+            if not memberships:
+                return jsonify({"error": "No active company membership."}), 403
+            primary_memberships = [r for r in memberships if bool(r.get("is_primary"))]
+            if len(memberships) > 1 and len(primary_memberships) != 1:
+                return jsonify({"error": "Primary company configuration error."}), 403
+            primary_mem = primary_memberships[0] if primary_memberships else memberships[0]
+
+        if is_ops_signin:
+            allowed_rows = db_service.fetch_all(
+                "SELECT DISTINCT company_id FROM public.company_users "
+                "WHERE user_id = %s AND is_active = TRUE AND COALESCE(access_scope, 'core') = 'core' ORDER BY company_id",
+                (user_id,)) or []
+        else:
+            allowed_rows = db_service.fetch_all(
+                "SELECT company_id FROM public.company_users WHERE user_id = %s AND is_active = TRUE ORDER BY company_id",
+                (user_id,)) or []
+
+        allowed_company_ids = sorted({int(r["company_id"]) for r in allowed_rows if r.get("company_id") is not None})
+        company_id = int(primary_mem["company_id"]) if primary_mem and primary_mem.get("company_id") else None
+
+        if is_ops_signin:
+            if not company_id:
+                return jsonify({"error": "No primary company for FinSage Nexus."}), 403
+            if not db_service.user_has_ops_access(company_id, user_id):
+                return jsonify({"error": "No FinSage Nexus access."}), 403
+
+        user_role = normalize_role(primary_mem.get("role") or base_role) if primary_mem else normalize_role(base_role)
+        access_scope = str(primary_mem.get("access_scope") or "core").strip().lower() if primary_mem else "core"
+        if is_ops_signin:
+            access_scope = "core"
+
+        dashboards = get_dashboard_access(user_role, access_scope)
+        default_dashboard = resolve_default_dashboard(user_type=user_type, role=user_role, access_scope=access_scope)
+
+        owned_rows = db_service.fetch_all(
+            "SELECT id AS company_id FROM public.companies WHERE owner_user_id = %s ORDER BY id", (user_id,)) or []
+        allowed_company_ids = sorted(
+            set(allowed_company_ids) |
+            {int(r["company_id"]) for r in owned_rows if r.get("company_id")} |
+            ({company_id} if company_id else set())
+        )
+
+        company_name = industry = sub_industry = None
+        if company_id:
+            company = db_service.fetch_one(
+                "SELECT name, industry, sub_industry FROM public.companies WHERE id = %s LIMIT 1", (company_id,))
+            if company:
+                company_name = company.get("name")
+                industry = company.get("industry")
+                sub_industry = company.get("sub_industry")
+
+        try:
+            db_service.execute_sql(
+                "UPDATE public.users SET last_login_at = NOW(), last_activity_at = NOW() WHERE id = %s", (user_id,))
+        except Exception:
+            pass
+
+        token = make_jwt(
+            user_id=user_id, email=user["email"], role=user_role, user_type=user_type,
+            company_id=company_id, access_scope=access_scope, allowed_company_ids=allowed_company_ids,
+        )
+
+        return jsonify({
+            "message": "Password updated successfully.",
+            "token": token,
+            "product": "FinSage Nexus" if is_ops_signin else "finsage",
+            "user": {
+                "id": user_id, "email": user["email"], "role": user_role,
+                "user_type": user_type, "access_scope": access_scope,
+                "is_confirmed": bool(user.get("is_confirmed")),
+                "company_id": company_id, "primary_company_id": company_id,
+                "company_name": company_name, "industry": industry,
+                "sub_industry": sub_industry, "allowed_company_ids": allowed_company_ids,
+                "dashboards": dashboards, "default_dashboard": default_dashboard,
+            },
+        }), 200
+
+    except Exception:
+        current_app.logger.exception("[AUTH] Force change password failed")
+        return jsonify({"error": "Could not complete password change."}), 500
+
+
+# ============================================================
+# CHANGE EMAIL: Request OTP (sends to CURRENT email)
+# ============================================================
+@app.route("/api/auth/change-email/request-otp", methods=["POST", "OPTIONS"])
+@require_auth
+def api_change_email_request_otp():
+    """Send OTP to the user's CURRENT email to verify identity before email change."""
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        current_user = getattr(g, "current_user", None) or {}
+        user_id = int(current_user.get("id") or 0)
+        user_email = current_user.get("email") or ""
+
+        if not user_id or not user_email:
+            return jsonify({"error": "Not authenticated."}), 401
+
+        try:
+            challenge_id = issue_email_otp(
+                db_service, user_id=user_id, email=user_email,
+                purpose="session_unlock", product="finsage",
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 429
+        except Exception:
+            current_app.logger.exception("[AUTH] Could not issue change-email OTP for user %s", user_id)
+            return jsonify({"error": "Could not send a verification code."}), 500
+
+        return jsonify({
+            "ok": True, "otp_required": True, "challenge_id": challenge_id,
+            "expires_in": OTP_LIFETIME_MINUTES * 60, "resend_after": OTP_RESEND_SECONDS,
+            "message": f"A verification code has been sent to {user_email}.",
+        }), 200
+
+    except Exception:
+        current_app.logger.exception("[AUTH] Change email OTP request failed")
+        return jsonify({"error": "Could not send verification code."}), 500
+
+
+# ============================================================
+# CHANGE EMAIL: Verify OTP and update email
+# ============================================================
+@app.route("/api/auth/change-email/verify", methods=["POST", "OPTIONS"])
+@require_auth
+def api_change_email_verify():
+    """Verify the OTP sent to current email, then update to new email."""
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        data = request.get_json(silent=True) or {}
+        challenge_id = str(data.get("challenge_id") or "").strip()
+        otp_code = str(data.get("code") or data.get("otp_code") or "").strip()
+        new_email = str(data.get("newEmail") or data.get("new_email") or "").strip().lower()
+
+        if not challenge_id or not otp_code:
+            return jsonify({"error": "Verification code is required."}), 400
+        if not new_email:
+            return jsonify({"error": "New email address is required."}), 400
+        if not EMAIL_RE.match(new_email):
+            return jsonify({"error": "Please enter a valid email address."}), 400
+
+        current_user = getattr(g, "current_user", None) or {}
+        user_id = int(current_user.get("id") or 0)
+        user_email = current_user.get("email") or ""
+
+        if not user_id:
+            return jsonify({"error": "Not authenticated."}), 401
+        if new_email == user_email.lower():
+            return jsonify({"error": "New email is the same as your current email."}), 400
+
+        existing = db_service.get_user_by_email(new_email)
+        if existing and int(existing["id"]) != user_id:
+            return jsonify({"error": "That email address is already in use."}), 409
+
+        try:
+            challenge_id = str(uuid.UUID(challenge_id))
+        except (ValueError, TypeError, AttributeError):
+            return jsonify({"error": "Invalid or expired verification challenge."}), 400
+
+        verified = verify_email_otp(
+            db_service, challenge_id=challenge_id, user_id=user_id,
+            purpose="session_unlock", code=otp_code,
+        )
+        if not verified:
+            return jsonify({"error": "Invalid or expired verification code."}), 400
+
+        success = db_service.update_user_email(user_id, new_email)
+        if not success:
+            return jsonify({"error": "Failed to update email address."}), 500
+
+        current_app.logger.info("[AUTH] Email changed for user %s: %s -> %s", user_id, user_email, new_email)
+
+        return jsonify({
+            "ok": True, "message": "Email address updated successfully.", "new_email": new_email,
+        }), 200
+
+    except Exception:
+        current_app.logger.exception("[AUTH] Change email verify failed")
+        return jsonify({"error": "Could not verify and update email."}), 500
+
 
 # ────────────────────────────────────────────────────────────────
 # INVITE API (for accept-invite.html)

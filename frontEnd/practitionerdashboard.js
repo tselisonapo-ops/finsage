@@ -11476,6 +11476,223 @@ async function bindDeliverablesScreen(me) {
   });
 }
 
+// ============================================================
+// SIGN OUT + SETTINGS FOR PRACTITIONER DASHBOARD
+// ============================================================
+
+function prSignOut() {
+  if (typeof window.clearToken === "function") {
+    window.clearToken();
+  }
+  sessionStorage.clear();
+  const keysToRemove = [
+    "fs_user_token", "authToken", "userEmail", "userRole",
+    "company_id", "CURRENT_COMPANY_ID", "companyName",
+    "fs_industry", "fs_subindustry", "fs_user",
+    "fs_session_locked", "fs_session_lock_reason",
+    "can_access_practitioner_dashboard",
+    "can_access_enterprise_dashboard",
+  ];
+  keysToRemove.forEach((k) => localStorage.removeItem(k));
+  window.FS_USER_ROLE = null;
+  window.location.replace("signin.html?reason=signed_out");
+}
+
+function prGetPasswordAgeDays(user) {
+  const lastDateRaw = user?.password_updated_at || user?.created_at;
+  if (!lastDateRaw) return 9999;
+  return Math.floor((Date.now() - new Date(lastDateRaw).getTime()) / 86400000);
+}
+
+function prRenderPasswordAge(user) {
+  const badge = document.getElementById("prPasswordAgeBadge");
+  const msg = document.getElementById("prPasswordAgeMsg");
+  if (!user || !badge || !msg) return;
+
+  const days = prGetPasswordAgeDays(user);
+  badge.textContent = `${days} days`;
+
+  if (days >= 90 || user.force_password_change) {
+    badge.className = "rounded-full px-2 py-[2px] bg-red-50 text-red-700 text-[11px]";
+    msg.textContent = "Your password has expired. Please update it immediately.";
+  } else if (days >= 80) {
+    badge.className = "rounded-full px-2 py-[2px] bg-amber-50 text-amber-700 text-[11px]";
+    msg.textContent = `Password expires soon. ${90 - days} day(s) remaining.`;
+  } else {
+    badge.className = "rounded-full px-2 py-[2px] bg-emerald-50 text-emerald-700 text-[11px]";
+    msg.textContent = `Password is healthy. ${90 - days} day(s) remaining.`;
+  }
+}
+
+function prHydrateSettingsScreen(me) {
+  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ").trim() || me?.email || "User";
+  const setEmail = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || "--"; };
+
+  setEmail("prAccName", fullName);
+  setEmail("prAccEmail", me?.email);
+  setEmail("prAccRole", humanizeRole(me?.role));
+  setEmail("prAccFirm", me?.company_name || localStorage.getItem("companyName") || "--");
+
+  // Also update sidebar user info
+  setEmail("prUserName", fullName);
+  setEmail("prUserEmail", me?.email);
+  const initialEl = document.getElementById("prUserInitial");
+  if (initialEl) initialEl.textContent = (me?.first_name?.[0] || me?.email?.[0] || "U").toUpperCase();
+
+  prRenderPasswordAge(me);
+  prBindChangePasswordForm();
+  prBindChangeEmailForm();
+}
+
+function prBindChangePasswordForm() {
+  const form = document.getElementById("prChangePasswordForm");
+  if (!form || form.dataset.bound === "1") return;
+  form.dataset.bound = "1";
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const oldPw = document.getElementById("prOldPassword")?.value || "";
+    const newPw = document.getElementById("prNewPassword")?.value || "";
+    const confirmPw = document.getElementById("prConfirmPassword")?.value || "";
+    const msg = document.getElementById("prChangePwMsg");
+
+    if (msg) { msg.textContent = ""; msg.className = "ml-2 text-xs"; }
+    if (!oldPw || !newPw) {
+      if (msg) { msg.textContent = "Current and new passwords are required."; msg.className = "ml-2 text-xs text-red-600"; }
+      return;
+    }
+    if (newPw.length < 8) {
+      if (msg) { msg.textContent = "New password must be at least 8 characters."; msg.className = "ml-2 text-xs text-red-600"; }
+      return;
+    }
+    if (newPw !== confirmPw) {
+      if (msg) { msg.textContent = "Passwords do not match."; msg.className = "ml-2 text-xs text-red-600"; }
+      return;
+    }
+
+    try {
+      const API_BASE = window.APP_CONFIG?.API_BASE || "";
+      const token = window.getToken?.() || localStorage.getItem("fs_user_token") || "";
+      const res = await fetch(`${API_BASE}/api/auth/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ oldPassword: oldPw, newPassword: newPw }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || "Failed");
+
+      if (msg) { msg.textContent = data.message || "Password updated."; msg.className = "ml-2 text-xs text-emerald-600"; }
+      form.reset();
+      // Refresh user
+      const me = await loadMe();
+      prRenderPasswordAge(me);
+    } catch (err) {
+      if (msg) { msg.textContent = err.message || "Failed."; msg.className = "ml-2 text-xs text-red-600"; }
+    }
+  });
+}
+
+let _prEmailChallengeId = null;
+
+function prBindChangeEmailForm() {
+  const sendBtn = document.getElementById("prSendEmailOtpBtn");
+  const verifyBtn = document.getElementById("prVerifyEmailOtpBtn");
+  const otpSection = document.getElementById("prEmailOtpSection");
+  const otpInput = document.getElementById("prEmailOtp");
+  const msg = document.getElementById("prEmailOtpMsg");
+
+  if (sendBtn && sendBtn.dataset.bound !== "1") {
+    sendBtn.dataset.bound = "1";
+    sendBtn.addEventListener("click", async () => {
+      const newEmail = document.getElementById("prNewEmail")?.value?.trim()?.toLowerCase() || "";
+      if (!newEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+        if (msg) { msg.textContent = "Enter a valid email address."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+
+      sendBtn.disabled = true; sendBtn.textContent = "Sending...";
+      try {
+        const API_BASE = window.APP_CONFIG?.API_BASE || "";
+        const token = window.getToken?.() || localStorage.getItem("fs_user_token") || "";
+        const res = await fetch(`${API_BASE}/api/auth/change-email/request-otp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed");
+
+        _prEmailChallengeId = data.challenge_id;
+        if (otpSection) otpSection.classList.remove("hidden");
+        if (msg) { msg.textContent = data.message || "Code sent."; msg.className = "text-xs text-slate-500"; }
+        if (otpInput) otpInput.focus();
+      } catch (err) {
+        if (msg) { msg.textContent = err.message || "Failed."; msg.className = "text-xs text-red-600"; }
+      } finally {
+        sendBtn.disabled = false; sendBtn.textContent = "Send verification code";
+      }
+    });
+  }
+
+  if (verifyBtn && verifyBtn.dataset.bound !== "1") {
+    verifyBtn.dataset.bound = "1";
+    verifyBtn.addEventListener("click", async () => {
+      const newEmail = document.getElementById("prNewEmail")?.value?.trim()?.toLowerCase() || "";
+      const code = otpInput?.value?.trim() || "";
+      if (!code || !/^\d{6}$/.test(code)) {
+        if (msg) { msg.textContent = "Enter 6-digit code."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+      if (!_prEmailChallengeId) {
+        if (msg) { msg.textContent = "Session expired."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+
+      verifyBtn.disabled = true; verifyBtn.textContent = "Verifying...";
+      try {
+        const API_BASE = window.APP_CONFIG?.API_BASE || "";
+        const token = window.getToken?.() || localStorage.getItem("fs_user_token") || "";
+        const res = await fetch(`${API_BASE}/api/auth/change-email/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ challenge_id: _prEmailChallengeId, code, newEmail }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed");
+
+        if (msg) { msg.textContent = data.message || "Email updated."; msg.className = "text-xs text-emerald-600"; }
+        const emailEl = document.getElementById("prAccEmail");
+        if (emailEl) emailEl.textContent = newEmail;
+        const sidebarEmail = document.getElementById("prUserEmail");
+        if (sidebarEmail) sidebarEmail.textContent = newEmail;
+        if (otpSection) otpSection.classList.add("hidden");
+        document.getElementById("prNewEmail").value = "";
+        if (otpInput) otpInput.value = "";
+        _prEmailChallengeId = null;
+      } catch (err) {
+        if (msg) { msg.textContent = err.message || "Failed."; msg.className = "text-xs text-red-600"; }
+      } finally {
+        verifyBtn.disabled = false; verifyBtn.textContent = "Verify & update";
+      }
+    });
+  }
+}
+
+// Bind signout and settings buttons globally
+document.addEventListener("DOMContentLoaded", () => {
+  const signOutBtn = document.getElementById("prSignOutBtn");
+  if (signOutBtn) signOutBtn.addEventListener("click", prSignOut);
+
+  const signOutBtn2 = document.getElementById("prSignOutBtn2");
+  if (signOutBtn2) signOutBtn2.addEventListener("click", prSignOut);
+
+  const settingsBtn = document.getElementById("prSettingsBtn");
+  if (settingsBtn) settingsBtn.addEventListener("click", async () => {
+    const me = window.__PR_ME__ || await loadMe();
+    prHydrateSettingsScreen(me);
+    await switchPractitionerScreen(PR_NAV.settings, me);
+  });
+});
+
 async function renderDeliverablesScreen(me) {
   syncDeliverablesFiltersUi();
   await bindDeliverablesScreen(me);
