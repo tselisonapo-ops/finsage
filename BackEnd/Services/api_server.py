@@ -2893,6 +2893,9 @@ def api_auth_signup(cur=None, conn=None):
                     postal_address=postal_address,
                     company_phone=company_phone,
                     logo_url=logo_url,
+                    show_on_marketing=bool(
+                        company_payload.get("show_on_marketing", False)
+                    ),
                     registered_address_json=(
                         reg_obj if isinstance(reg_obj, dict) else None
                     ),

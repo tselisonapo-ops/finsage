@@ -11784,6 +11784,7 @@ class DatabaseService:
         created_via: Optional[str] = None,
         source_customer_company_id: Optional[int] = None,
         provisioning_context: Optional[str] = None,
+        show_on_marketing: bool = False,
         *,
         cur=None,
         conn=None,
@@ -12024,7 +12025,8 @@ class DatabaseService:
 
                     created_via,
                     source_customer_company_id,
-                    provisioning_context
+                    provisioning_context,
+                    show_on_marketing
                 )
                 VALUES
                 (
@@ -12071,6 +12073,7 @@ class DatabaseService:
 
                     %s,
 
+                    %s,
                     %s,
                     %s,
                     %s
@@ -12123,6 +12126,7 @@ class DatabaseService:
                     created_via,
                     source_customer_company_id,
                     provisioning_context,
+                    bool(show_on_marketing),
                 ),
             )
 
