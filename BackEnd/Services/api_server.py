@@ -6489,7 +6489,43 @@ def list_user_companies():
 
     return jsonify({"companies": rows}), 200
 
+@app.route("/api/public/showcase-companies", methods=["GET"])
+def public_showcase_companies():
+    """Return only companies explicitly approved for public marketing display."""
+    try:
+        rows = db_service.fetch_all(
+            """
+            SELECT id, name, logo_url
+            FROM public.companies
+            WHERE is_active IS TRUE
+              AND show_on_marketing IS TRUE
+              AND NULLIF(BTRIM(name), '') IS NOT NULL
+            ORDER BY name ASC
+            LIMIT 24
+            """,
+            (),
+        )
 
+        companies = []
+        for row in rows or []:
+            companies.append({
+                "id": row["id"],
+                "name": str(row.get("name") or "").strip(),
+                "logo_url": row.get("logo_url"),
+            })
+
+        return jsonify({
+            "ok": True,
+            "companies": companies,
+        }), 200
+
+    except Exception:
+        logger.exception("Public marketing showcase query failed")
+        return jsonify({
+            "ok": False,
+            "companies": [],
+        }), 500
+    
 @app.route("/api/companies/<int:company_id>", methods=["GET"])
 @require_auth
 def api_get_company(company_id: int):

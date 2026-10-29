@@ -3180,6 +3180,8 @@ class DatabaseService:
             )
         );
 
+        ALTER TABLE public.companies
+        ADD COLUMN IF NOT EXISTS show_on_marketing BOOLEAN NOT NULL DEFAULT FALSE;
 
         CREATE UNIQUE INDEX IF NOT EXISTS uq_companies_system_company_code
             ON public.companies(system_company_code);
