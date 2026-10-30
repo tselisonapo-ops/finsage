@@ -75785,44 +75785,21 @@ class DatabaseService:
             )
             VAT_INPUT = resolve(accts.get("vat_input"), "VAT input")
 
-            # 1) Always enforce chronological allocation:
-            #    payments must go to the earliest unpaid active period.
+            # 1) Always select the earliest unpaid cash-payment period.
+            # Ignore schedule_id supplied by the frontend.
+            # Monthly IFRS 16 recognition status does not determine
+            # whether the contractual cash instalment has been paid.
 
             next_sched = self.get_next_unpaid_lease_period(
-                company_id, int(lease_id), cur=cur
+                company_id,
+                int(lease_id),
+                cur=cur,
             )
 
             if not next_sched:
                 raise ValueError("No unpaid schedule period found")
 
-            next_sched_id = int(next_sched["id"])
-            next_period_no = int(next_sched.get("period_no") or 0)
-
-            # An explicitly requested later period must not bypass
-            # an earlier unpaid period.
-            if schedule_id is not None and int(schedule_id) != next_sched_id:
-                requested_sched = self.fetch_one(
-                    f"""
-                    SELECT id, period_no
-                    FROM {schema}.lease_schedule
-                    WHERE id = %s
-                      AND company_id = %s
-                      AND lease_id = %s
-                      AND is_active = TRUE
-                    """,
-                    (int(schedule_id), int(company_id), int(lease_id)),
-                    cur=cur,
-                )
-
-                if not requested_sched:
-                    raise ValueError("Invalid or inactive schedule_id")
-
-                raise ValueError(
-                    f"EARLIER_UNPAID_PERIOD|"
-                    f"Period {next_period_no} must be settled first."
-                )
-
-            # Lock the earliest unpaid schedule before allocating payment.
+            # Lock the selected unpaid schedule before allocating payment.
             sched = self.fetch_one(
                 f"""
                 SELECT *
@@ -75833,12 +75810,18 @@ class DatabaseService:
                   AND is_active = TRUE
                 FOR UPDATE
                 """,
-                (next_sched_id, int(company_id), int(lease_id)),
+                (
+                    int(next_sched["id"]),
+                    int(company_id),
+                    int(lease_id),
+                ),
                 cur=cur,
             )
 
             if not sched:
-                raise ValueError("Selected schedule period is no longer active")
+                raise ValueError(
+                    "Selected unpaid schedule period is no longer active"
+                )
 
             sched_id = int(sched["id"])
             period_no = int(sched.get("period_no") or 0)
@@ -76332,38 +76315,17 @@ class DatabaseService:
         )
         VAT_INPUT = resolve(accts.get("vat_input"), "VAT input")
 
+        # 1) Always select the earliest unpaid cash-payment schedule.
+        # Ignore schedule_id supplied by the frontend.
+        # Monthly recognition status does not determine cash settlement.
 
-        # 1) Enforce chronological payment allocation.
-        # Always identify the earliest unpaid active schedule first.
-        next_sched = self.get_next_unpaid_lease_period(
-            company_id, int(lease_id)
+        sched = self.get_next_unpaid_lease_period(
+            company_id,
+            int(lease_id),
         )
 
-        if not next_sched:
+        if not sched:
             raise ValueError("No unpaid schedule period found")
-
-        next_sched_id = int(next_sched["id"])
-        next_period_no = int(next_sched.get("period_no") or 0)
-
-        # Do not allow an explicitly requested later period to bypass
-        # an earlier unpaid period.
-        if schedule_id is not None and int(schedule_id) != next_sched_id:
-            requested_sched = self.get_lease_schedule_by_id(
-                company_id,
-                lease_id=int(lease_id),
-                schedule_id=int(schedule_id),
-                active_only=True,
-            )
-
-            if not requested_sched:
-                raise ValueError("Invalid schedule_id")
-
-            raise ValueError(
-                f"EARLIER_UNPAID_PERIOD|"
-                f"Period {next_period_no} must be settled first."
-            )
-
-        sched = next_sched
 
         sched_id = int(sched["id"])
         period_no = int(sched.get("period_no") or 0)
