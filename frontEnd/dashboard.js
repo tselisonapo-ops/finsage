@@ -1,4 +1,4 @@
-(function hardTraceRedirects() {
+﻿(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -24462,6 +24462,7 @@ function loadJournalIntoLines(det, { mode = "replace" } = {}) {
 
   console.log("[JRNL] Loaded journal into lines:", det.id, window.JRNL_LINES);
 }
+window.loadJournalIntoLines = loadJournalIntoLines;
 
 // ============================
 // Journal: search by ref (loads into lines table)
@@ -24492,8 +24493,8 @@ async function runJournalSearchByRef() {
   const det = await apiFetch(ENDPOINTS.journal.detail(cid, hit.id), { method: "GET" });
 
   // 3) Load into the circled table area (JRNL_LINES + renderJournalTable)
-  if (typeof loadJournalIntoLines === "function") {
-    loadJournalIntoLines(det, { mode: "append" });
+  if (typeof window.loadJournalIntoLines === "function") {
+      window.loadJournalIntoLines(det, { mode: "append" });
   } else {
     // fallback if you don't have loadJournalIntoLines:
     window.JRNL_LINES = Array.isArray(det?.lines) ? det.lines.map((ln, i) => ({
