@@ -12019,85 +12019,177 @@ def api_journal(company_id: int):
                     "journal_id": existing.get("id"),
                 }), 409
 
-        journal_id = db_service.post_journal_with_overdraft(company_id, entry)
 
+        # ============================================================
+        # POST JOURNAL AND IFRS 16 LINKAGE IN ONE TRANSACTION
+        # ============================================================
+        journal_id = None
 
-        # Link IFRS 16 monthly journals to their lease schedules.
-        # Supports both explicit source metadata and legacy/manual
-        # journal entries identified by their LEASE-{lease_id}-P{period_no} reference.
-        try:
-            src = (entry.get("source") or "").strip()
-            source_id = entry.get("source_id")
-            sched = None
+        with db_service._conn_cursor() as (conn, cur):
+            try:
+                src = str(entry.get("source") or "").strip()
+                source_id = entry.get("source_id")
+                sched = None
 
-            if src == "lease_monthly" and source_id:
-                sched = db_service.fetch_one(
-                    f"""
-                    SELECT id, lease_id, period_no, posted_journal_id
-                    FROM company_{int(company_id)}.lease_schedule
-                    WHERE company_id = %s
-                    AND id = %s
-                    LIMIT 1
-                    """,
-                    (int(company_id), int(source_id)),
-                )
-
-            # Fallback for journals submitted without lease source metadata.
-            if not sched:
-                ref = str(entry.get("ref") or "").strip()
-                parts = ref.split("-")
-
-                if (
-                    len(parts) == 3
-                    and parts[0].upper() == "LEASE"
-                    and parts[2].upper().startswith("P")
-                ):
+                # ----------------------------------------------------
+                # 1. Resolve explicit IFRS 16 schedule association
+                # ----------------------------------------------------
+                if src == "lease_monthly":
                     try:
-                        lease_id = int(parts[1])
-                        period_no = int(parts[2][1:])
-
-                        sched = db_service.fetch_one(
-                            f"""
-                            SELECT id, lease_id, period_no, posted_journal_id
-                            FROM company_{int(company_id)}.lease_schedule
-                            WHERE company_id = %s
-                            AND lease_id = %s
-                            AND period_no = %s
-                            LIMIT 1
-                            """,
-                            (int(company_id), lease_id, period_no),
-                        )
+                        schedule_id = int(source_id)
                     except (TypeError, ValueError):
-                        sched = None
+                        raise ValueError(
+                            "LEASE_SCHEDULE_ID_INVALID|"
+                            "A valid schedule ID is required."
+                        )
 
-            if sched:
-                existing_journal_id = int(
-                    sched.get("posted_journal_id") or 0
+                    if schedule_id <= 0:
+                        raise ValueError(
+                            "LEASE_SCHEDULE_ID_INVALID|"
+                            "A valid schedule ID is required."
+                        )
+
+                    cur.execute(
+                        f"""
+                        SELECT
+                            id,
+                            lease_id,
+                            period_no,
+                            posted_journal_id
+                        FROM company_{int(company_id)}.lease_schedule
+                        WHERE company_id = %s
+                          AND id = %s
+                        FOR UPDATE
+                        """,
+                        (int(company_id), schedule_id),
+                    )
+
+                    sched = cur.fetchone()
+
+                    if not sched:
+                        raise ValueError(
+                            "LEASE_SCHEDULE_NOT_FOUND|"
+                            f"schedule_id={schedule_id}"
+                        )
+
+                # ----------------------------------------------------
+                # 2. Legacy reference fallback
+                # ----------------------------------------------------
+                if not sched and src != "lease_monthly":
+                    journal_ref = str(
+                        entry.get("ref") or ""
+                    ).strip()
+
+                    parts = journal_ref.split("-")
+
+                    if (
+                        len(parts) == 3
+                        and parts[0].upper() == "LEASE"
+                        and parts[2].upper().startswith("P")
+                    ):
+                        try:
+                            lease_id = int(parts[1])
+                            period_no = int(parts[2][1:])
+
+                            cur.execute(
+                                f"""
+                                SELECT
+                                    id,
+                                    lease_id,
+                                    period_no,
+                                    posted_journal_id
+                                FROM company_{int(company_id)}.lease_schedule
+                                WHERE company_id = %s
+                                  AND lease_id = %s
+                                  AND period_no = %s
+                                FOR UPDATE
+                                """,
+                                (
+                                    int(company_id),
+                                    lease_id,
+                                    period_no,
+                                ),
+                            )
+
+                            sched = cur.fetchone()
+
+                            if not sched:
+                                raise ValueError(
+                                    "LEASE_SCHEDULE_NOT_FOUND|"
+                                    f"lease_id={lease_id}|period_no={period_no}"
+                                )
+
+                            # Set metadata BEFORE posting so that journal lines
+                            # and ledger entries receive the correct source metadata.
+                            schedule_id = (
+                                sched["id"]
+                                if isinstance(sched, dict)
+                                else sched[0]
+                            )
+
+                            entry["source"] = "lease_monthly"
+                            entry["source_id"] = int(schedule_id)
+                        
+                        except (TypeError, ValueError):
+                            raise ValueError(
+                                "LEASE_REFERENCE_INVALID|"
+                                f"ref={journal_ref}"
+                            )
+
+                # ----------------------------------------------------
+                # 3. Validate existing schedule linkage
+                # ----------------------------------------------------
+                if sched:
+                    if isinstance(sched, dict):
+                        schedule_id = int(sched["id"])
+                        lease_id = int(sched["lease_id"])
+                        existing_journal_id = int(
+                            sched.get("posted_journal_id") or 0
+                        )
+                    else:
+                        schedule_id = int(sched[0])
+                        lease_id = int(sched[1])
+                        existing_journal_id = int(sched[3] or 0)
+
+                    if existing_journal_id:
+                        raise ValueError(
+                            "LEASE_SCHEDULE_ALREADY_LINKED|"
+                            f"schedule_id={schedule_id}|"
+                            f"existing_journal_id={existing_journal_id}"
+                        )
+
+                # ----------------------------------------------------
+                # 4. Post using the SAME transaction
+                # ----------------------------------------------------
+                journal_id = db_service.post_journal_with_overdraft(
+                    company_id,
+                    entry,
+                    cur=cur,
+                    conn=conn,
                 )
 
-                # Never replace a different journal already linked
-                # to this schedule period.
-                if existing_journal_id not in (0, int(journal_id)):
-                    current_app.logger.error(
-                        "IFRS16 schedule already linked to another journal: "
-                        "company=%s schedule=%s existing_journal=%s new_journal=%s",
-                        company_id,
-                        sched["id"],
-                        existing_journal_id,
-                        journal_id,
-                    )
-                else:
+                # ----------------------------------------------------
+                # 5. Link schedule before committing
+                # ----------------------------------------------------
+                if sched:
                     db_service.mark_lease_schedule_month_posted(
                         int(company_id),
-                        schedule_id=int(sched["id"]),
-                        lease_id=int(sched["lease_id"]),
+                        schedule_id=schedule_id,
+                        lease_id=lease_id,
                         journal_id=int(journal_id),
+                        cur=cur,
+                        conn=conn,
                     )
 
-        except Exception:
-            current_app.logger.exception(
-                "Failed to link GL journal to IFRS16 lease schedule"
-            )
+                # ----------------------------------------------------
+                # 6. Commit journal, ledger and schedule linkage
+                # together
+                # ----------------------------------------------------
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
 
         # ✅ company base currency (no circular import risk if you already can call this here)
         try:
