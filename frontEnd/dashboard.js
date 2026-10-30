@@ -23344,15 +23344,6 @@ async function postJournalBatch() {
     return;
   }
 
-  // Validate IFRS 16 schedule association
-  if (
-    payload.source === "lease_monthly" &&
-    (!Number.isInteger(Number(payload.source_id)) ||
-    Number(payload.source_id) <= 0)
-  ) {
-    alert("IFRS 16 posting is missing a valid lease schedule ID.");
-    return;
-  }
   // ------------------------------------------------------------
   // Payload
   // ------------------------------------------------------------
@@ -23382,6 +23373,19 @@ async function postJournalBatch() {
     lines: journalLines,
   };
 
+  // ------------------------------------------------------------
+  // Validate IFRS 16 schedule association
+  // ------------------------------------------------------------
+  if (
+    payload.source === "lease_monthly" &&
+    (
+      !Number.isInteger(Number(payload.source_id)) ||
+      Number(payload.source_id) <= 0
+    )
+  ) {
+    alert("IFRS 16 posting is missing a valid lease schedule ID.");
+    return;
+  }
   // ------------------------------------------------------------
   // START POSTING
   // ------------------------------------------------------------
