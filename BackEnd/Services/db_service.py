@@ -75222,16 +75222,36 @@ class DatabaseService:
             LIMIT 1;
         """, (int(lease_id),), cur=cur)
 
+
     def get_next_unpaid_lease_period(self, company_id: int, lease_id: int, cur=None) -> dict | None:
         schema = f"company_{int(company_id)}"
-        return self.fetch_one(f"""
-            SELECT *
-            FROM {schema}.lease_schedule
-            WHERE lease_id=%s
-            AND COALESCE(posted_journal_id, 0) = 0
-            ORDER BY period_no ASC
-            LIMIT 1;
-        """, (int(lease_id),), cur=cur)
+
+        sql = f"""
+            SELECT s.*,
+                GREATEST(ROUND(COALESCE(s.payment, 0) - COALESCE(SUM(p.amount_gross) FILTER (
+                    WHERE p.status = 'posted'
+                        AND p.reverses_payment_id IS NULL
+                        AND p.reversed_by_payment_id IS NULL
+                ), 0), 2), 0) AS outstanding_payment
+            FROM {schema}.lease_schedule s
+            LEFT JOIN {schema}.lease_payments p
+                ON p.schedule_id = s.id
+                AND p.lease_id = s.lease_id
+                AND p.company_id = s.company_id
+            WHERE s.company_id = %s
+            AND s.lease_id = %s
+            AND s.is_active = TRUE
+            GROUP BY s.id
+            HAVING ROUND(COALESCE(s.payment, 0) - COALESCE(SUM(p.amount_gross) FILTER (
+                WHERE p.status = 'posted'
+                AND p.reverses_payment_id IS NULL
+                AND p.reversed_by_payment_id IS NULL
+            ), 0), 2) > 0.01
+            ORDER BY s.period_no, s.id
+            LIMIT 1
+        """
+
+        return self.fetch_one(sql, (int(company_id), int(lease_id)), cur=cur)
 
     def insert_lease_payment(
         self,
@@ -75765,38 +75785,46 @@ class DatabaseService:
             )
             VAT_INPUT = resolve(accts.get("vat_input"), "VAT input")
 
-            # 1) Lock the schedule period
+
+            # 1) Select and lock the earliest outstanding schedule period
             if schedule_id:
                 sched = self.fetch_one(
                     f"""
                     SELECT *
                     FROM {schema}.lease_schedule
-                    WHERE id=%s
-                    AND lease_id=%s
-                    LIMIT 1
+                    WHERE id = %s
+                      AND company_id = %s
+                      AND lease_id = %s
+                      AND is_active = TRUE
                     FOR UPDATE
                     """,
-                    (int(schedule_id), int(lease_id)),
+                    (int(schedule_id), int(company_id), int(lease_id)),
                     cur=cur,
                 )
                 if not sched:
-                    raise ValueError("Invalid schedule_id")
+                    raise ValueError("Invalid or inactive schedule_id")
             else:
+                next_sched = self.get_next_unpaid_lease_period(
+                    company_id, int(lease_id), cur=cur
+                )
+                if not next_sched:
+                    raise ValueError("No unpaid schedule period found")
+
                 sched = self.fetch_one(
                     f"""
                     SELECT *
                     FROM {schema}.lease_schedule
-                    WHERE lease_id=%s
-                    AND %s BETWEEN period_start AND period_end
-                    ORDER BY period_no ASC
-                    LIMIT 1
+                    WHERE id = %s
+                      AND company_id = %s
+                      AND lease_id = %s
+                      AND is_active = TRUE
                     FOR UPDATE
                     """,
-                    (int(lease_id), payment_date),
+                    (int(next_sched["id"]), int(company_id), int(lease_id)),
                     cur=cur,
                 )
                 if not sched:
-                    raise ValueError("No schedule period found for payment_date")
+                    raise ValueError("Selected schedule period is no longer active")
 
             sched_id = int(sched["id"])
             period_no = int(sched.get("period_no") or 0)
@@ -75816,20 +75844,23 @@ class DatabaseService:
             if gross_expected <= money("0"):
                 raise ValueError("Schedule payment amount is zero")
 
-            # 3) Already paid for this schedule period
+            # 3) Calculate amounts already paid against this schedule
             paid_row = self.fetch_one(
                 f"""
                 SELECT
-                    COALESCE(SUM(amount_gross),0)     AS paid_gross,
-                    COALESCE(SUM(interest_amount),0)  AS paid_interest,
-                    COALESCE(SUM(principal_amount),0) AS paid_principal,
-                    COALESCE(SUM(vat_amount),0)       AS paid_vat
+                    COALESCE(SUM(amount_gross), 0) AS paid_gross,
+                    COALESCE(SUM(interest_amount), 0) AS paid_interest,
+                    COALESCE(SUM(principal_amount), 0) AS paid_principal,
+                    COALESCE(SUM(vat_amount), 0) AS paid_vat
                 FROM {schema}.lease_payments
-                WHERE lease_id=%s
-                AND schedule_id=%s
-                AND status='posted'
+                WHERE company_id = %s
+                  AND lease_id = %s
+                  AND schedule_id = %s
+                  AND status = 'posted'
+                  AND reverses_payment_id IS NULL
+                  AND reversed_by_payment_id IS NULL
                 """,
-                (int(lease_id), sched_id),
+                (int(company_id), int(lease_id), sched_id),
                 cur=cur,
             ) or {}
 
@@ -75899,11 +75930,21 @@ class DatabaseService:
                     f"Allocation mismatch: net({alloc_net}) + vat({alloc_vat}) != amount({amt_in})"
                 )
 
+            # 4) Determine contractual payment timing and due date
             timing = (
                 sched.get("payment_timing")
                 or lease.get("payment_timing")
                 or ""
             ).strip().lower()
+
+            if timing == "advance":
+                scheduled_due_date = sched.get("period_start")
+            elif timing == "arrears":
+                scheduled_due_date = sched.get("period_end")
+            else:
+                raise ValueError(
+                    f"Invalid lease payment timing: {timing or 'not configured'}"
+                )
 
             # 5) Insert lease payment as draft
             pay_id = self.insert_lease_payment(
@@ -76050,6 +76091,8 @@ class DatabaseService:
                 "interest": str(alloc_interest),
                 "principal": str(alloc_principal),
                 "vat": str(alloc_vat),
+                "scheduled_due_date": str(scheduled_due_date),
+                "payment_date": payment_date.isoformat(),
                 "fully_paid": bool(fully_paid),
                 "bank_code": bank_code,
                 "liability_current_code": LIAB_CUR,
@@ -76215,14 +76258,19 @@ class DatabaseService:
         user_id: int | None,
         schedule_id: int | None = None,
     ) -> dict:
-        from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_HALF_UP
 
-        def money(x) -> Decimal:
-            return Decimal(str(x or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        def money(x):
+            return Decimal(str(x or "0")).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
 
-        def acct_name(code: str):
+        TOL = money("0.02")
+        schema = f"company_{int(company_id)}"
+
+        def acct_name(code):
             r = self.get_account_row_for_posting(company_id, code)
-            return r[0] if r else code   # fallback to code if not found
+            return r[0] if r else code
 
         lease = self.get_lease_by_id(company_id, lease_id)
         if not lease:
@@ -76230,7 +76278,7 @@ class DatabaseService:
 
         lessor_id = int(lease.get("lessor_id") or 0)
         if not lessor_id:
-            raise ValueError("Lease missing lessor_id (cannot post payment without a lessor)")
+            raise ValueError("Lease missing lessor_id")
 
         lessor = self.get_lessor(company_id, lessor_id) if hasattr(self, "get_lessor") else None
 
@@ -76246,26 +76294,33 @@ class DatabaseService:
         if not bank_code:
             raise ValueError("Selected bank account has no ledger_account_code")
 
-        # resolve lease accounts from company_account_settings
         accts = self.get_lease_posting_accounts(company_id)
 
-        def resolve(raw: str | None, label: str) -> str:
+        def resolve(raw, label):
             raw = (raw or "").strip()
             if not raw:
                 raise ValueError(f"Missing {label} account in company settings")
+
             row = self.get_account_row_for_posting(company_id, raw)
             if not row:
                 raise ValueError(f"{label} '{raw}' not found in COA")
+
             posting = (row[1] or "").strip()
             if not posting:
                 raise ValueError(f"{label} resolved blank for '{raw}'")
+
             return posting
 
-        LIAB_CUR  = resolve(accts.get("liability_current"), "Lease liability current")
-        LIAB_NCUR = resolve(accts.get("liability_noncurrent") or accts.get("liability_current"), "Lease liability non-current")
+        LIAB_CUR = resolve(accts.get("liability_current"), "Lease liability current")
+        LIAB_NCUR = resolve(
+            accts.get("liability_noncurrent") or accts.get("liability_current"),
+            "Lease liability non-current",
+        )
         VAT_INPUT = resolve(accts.get("vat_input"), "VAT input")
 
-        # pick schedule period
+        # 1) Select the requested or earliest outstanding active schedule
+        sched = None
+
         if schedule_id:
             sched = self.get_lease_schedule_by_id(
                 company_id,
@@ -76275,57 +76330,146 @@ class DatabaseService:
             )
             if not sched:
                 raise ValueError("Invalid schedule_id")
-            
-        if not sched:
-            sched = self.get_next_unpaid_lease_period(company_id, int(lease_id))
+        else:
+            sched = self.get_next_unpaid_lease_period(
+                company_id, int(lease_id)
+            )
             if not sched:
-                raise ValueError("No unpaid schedule period found to allocate this payment")
+                raise ValueError("No unpaid schedule period found")
 
-        interest = money(sched.get("interest"))
-        principal = money(sched.get("principal"))
-        gross_expected = money(sched.get("payment"))
-        vat_portion = money(sched.get("vat_portion") or 0)
-
-        alloc = min(amt, gross_expected) if gross_expected > money("0") else amt
-        ratio = (alloc / gross_expected) if gross_expected > money("0") else money("0")
-
-        alloc_interest = money(interest * ratio)
-        alloc_principal = money(principal * ratio)
-        alloc_vat = money(vat_portion * ratio)
-
+        sched_id = int(sched["id"])
         period_no = int(sched.get("period_no") or 0)
+
+        # 2) Read the expected schedule components
+        interest_expected = money(sched.get("interest"))
+        principal_expected = money(sched.get("principal"))
+        vat_expected = money(sched.get("vat_portion"))
+
+        gross_expected = money(sched.get("payment"))
+
+        if gross_expected <= money("0"):
+            gross_expected = (
+                interest_expected + principal_expected + vat_expected
+            )
+
+        if gross_expected <= money("0"):
+            raise ValueError("Schedule payment amount is zero")
+
+        # 3) Calculate previously posted payments for this schedule
+        paid_row = self.fetch_one(
+            f"""
+            SELECT
+                COALESCE(SUM(amount_gross), 0) AS paid_gross,
+                COALESCE(SUM(interest_amount), 0) AS paid_interest,
+                COALESCE(SUM(principal_amount), 0) AS paid_principal,
+                COALESCE(SUM(vat_amount), 0) AS paid_vat
+            FROM {schema}.lease_payments
+            WHERE company_id = %s
+            AND lease_id = %s
+            AND schedule_id = %s
+            AND status = 'posted'
+            AND reverses_payment_id IS NULL
+            AND reversed_by_payment_id IS NULL
+            """,
+            (int(company_id), int(lease_id), sched_id),
+        ) or {}
+
+        paid_gross = money(paid_row.get("paid_gross"))
+        paid_interest = money(paid_row.get("paid_interest"))
+        paid_principal = money(paid_row.get("paid_principal"))
+        paid_vat = money(paid_row.get("paid_vat"))
+
+        remaining_gross = money(gross_expected - paid_gross)
+
+        if remaining_gross <= TOL:
+            raise ValueError("PERIOD_FULLY_PAID")
+
+        if amt > remaining_gross + TOL:
+            raise ValueError(
+                f"PAYMENT_EXCEEDS_REMAINING|"
+                f"remaining={remaining_gross}|attempted={amt}"
+            )
+
+        # 4) Allocate exactly as post_lease_payment does
+        rem_vat = max(vat_expected - paid_vat, money("0"))
+        rem_interest = max(interest_expected - paid_interest, money("0"))
+        rem_principal = max(principal_expected - paid_principal, money("0"))
+
+        alloc = amt
+
+        alloc_vat = min(alloc, rem_vat)
+        alloc -= alloc_vat
+
+        alloc_interest = min(alloc, rem_interest)
+        alloc -= alloc_interest
+
+        alloc_principal = min(alloc, rem_principal)
+        alloc -= alloc_principal
+
+        if alloc.copy_abs() <= TOL:
+            alloc_principal += alloc
+            alloc = money("0")
+
+        if alloc.copy_abs() > TOL:
+            raise ValueError(
+                f"Allocation error: unallocated amount {alloc} "
+                f"for schedule {sched_id}"
+            )
+
+        alloc_net = alloc_interest + alloc_principal
+
+        if (alloc_net + alloc_vat - amt).copy_abs() > money("0.05"):
+            raise ValueError(
+                f"Allocation mismatch: net({alloc_net}) + "
+                f"vat({alloc_vat}) != amount({amt})"
+            )
+
+        # 5) Determine contractual due date
+        timing = (
+            sched.get("payment_timing")
+            or lease.get("payment_timing")
+            or ""
+        ).strip().lower()
+
+        if timing == "advance":
+            scheduled_due_date = sched.get("period_start")
+        elif timing == "arrears":
+            scheduled_due_date = sched.get("period_end")
+        else:
+            raise ValueError(
+                f"Invalid lease payment timing: {timing or 'not configured'}"
+            )
+
+        period_start = sched.get("period_start")
+        period_end = sched.get("period_end")
+
         ref_txt = (reference or "").strip()
         desc_txt = (description or "").strip()
 
-        # Use payment_date/reference/description in memos + returned object
-        base_memo = desc_txt or f"Lease payment – {lease.get('lease_name') or f'Lease {lease_id}'} – P{period_no}"
+        base_memo = (
+            desc_txt
+            or f"Lease payment – {lease.get('lease_name') or f'Lease {lease_id}'} – P{period_no}"
+        )
         if ref_txt:
             base_memo = f"{base_memo} ({ref_txt})"
 
-        timing = (sched.get("payment_timing") or lease.get("payment_timing") or "").lower()
-
-        if timing == "advance":
-            # cash payment doesn't "pay" interest in your schedule definition
-            alloc_interest = money("0")
-            # allocate ALL net portion to principal
-            alloc_principal = money(alloc - alloc_vat)
-        else:
-            # arrears logic
-            alloc_interest = money(interest * ratio)
-
-            # IMPORTANT:
-            # principal becomes balancing figure
-            # to prevent 0.01 rounding drift
-            alloc_principal = money(alloc - alloc_interest - alloc_vat)
-
-        lines = []
-        lines.append({
+        # 6) Build preview journal lines
+        lines = [{
             "account_code": bank_code,
             "account_name": acct_name(bank_code),
             "debit": 0.0,
-            "credit": float(alloc),
+            "credit": float(amt),
             "memo": f"{base_memo} [cash]",
-        })
+        }]
+
+        if alloc_net > money("0"):
+            lines.append({
+                "account_code": LIAB_CUR,
+                "account_name": acct_name(LIAB_CUR),
+                "debit": float(alloc_net),
+                "credit": 0.0,
+                "memo": f"{base_memo} [lease liability settlement]",
+            })
 
         if alloc_vat > money("0"):
             lines.append({
@@ -76336,30 +76480,21 @@ class DatabaseService:
                 "memo": f"{base_memo} [VAT input]",
             })
 
-        alloc_liability = money(alloc_interest + alloc_principal)
-
-        if alloc_liability > money("0"):
-            lines.append({
-                "account_code": LIAB_CUR,
-                "account_name": acct_name(LIAB_CUR),
-                "debit": float(alloc_liability),
-                "credit": 0.0,
-                "memo": f"{base_memo} [lease liability settlement]",
-            })
-
-        # Ensure all signature params are "used" (also useful for UI/audit)
+        # 7) Return preview
         return {
             "company_id": int(company_id),
             "lease_id": int(lease_id),
             "lease_name": lease.get("lease_name"),
 
-            "lessor_id": int(lessor_id),
-            "lessor_name": (lessor.get("name") if isinstance(lessor, dict) else None),
+            "lessor_id": lessor_id,
+            "lessor_name": lessor.get("name") if isinstance(lessor, dict) else None,
 
-            "schedule_id": int(sched["id"]),
+            "schedule_id": sched_id,
             "period_no": period_no,
-            "period_start": str(sched.get("period_start")),
-            "period_end": str(sched.get("period_end")),
+            "period_start": str(period_start),
+            "period_end": str(period_end),
+            "payment_timing": timing,
+            "scheduled_due_date": str(scheduled_due_date),
 
             "payment_date": payment_date.isoformat(),
             "reference": reference,
@@ -76368,7 +76503,9 @@ class DatabaseService:
 
             "amount_input": str(amt),
             "amount_expected": str(gross_expected),
-            "amount_allocated": str(alloc),
+            "amount_paid_before": str(paid_gross),
+            "amount_remaining_before": str(remaining_gross),
+            "amount_allocated": str(amt),
 
             "split": {
                 "interest": str(alloc_interest),
@@ -76392,9 +76529,11 @@ class DatabaseService:
 
             "preview_journal_lines": [
                 ln for ln in lines
-                if (ln.get("debit") or 0) != 0 or (ln.get("credit") or 0) != 0
+                if (ln.get("debit") or 0) != 0
+                or (ln.get("credit") or 0) != 0
             ],
         }
+
 
     def create_lease_modification_draft(
         self,
@@ -77876,7 +78015,7 @@ class DatabaseService:
 
         closing_liability_from_recon = (
             opening_liability
-            + interest_posted
+            + liab_additions_period
             - principal_posted
             + liab_adj_posted
             - liab_derec_posted
@@ -77978,6 +78117,7 @@ class DatabaseService:
 
         rou_closing_nbv = round(
             rou_opening_total
+            + rou_additions_period
             + rou_adj_to_date
             - depreciation_to_date
             - rou_nbv_terminated,
