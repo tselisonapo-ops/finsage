@@ -71036,12 +71036,20 @@ class DatabaseService:
                 # 2. Mark the asset depreciation row as reversed
                 cur.execute(f"""
                     UPDATE {schema}.asset_depreciation
-                    SET status = 'reversed',
-                        updated_at = NOW()
+                    SET status = 'reversed'
                     WHERE company_id = %s
-                      AND {dep_col} = %s
-                """, (int(company_id), int(journal_id)))
+                    AND {dep_col} = %s
+                    AND status = 'posted'
+                """, (
+                    int(company_id),
+                    int(journal_id),
+                ))
 
+                if cur.rowcount == 0:
+                    raise ValueError(
+                        f"ASSET_DEPRECIATION_REVERSAL_UPDATE_FAILED|"
+                        f"journal_id={journal_id}"
+                    )
             # ==================================================
             # MANUFACTURING - LABOUR & DIRECT COSTS ROLLBACK
             # ==================================================
