@@ -12021,25 +12021,72 @@ def api_journal(company_id: int):
 
         journal_id = db_service.post_journal_with_overdraft(company_id, entry)
 
-        # ✅ Link manual journal back to lease_schedule when journal is IFRS16 monthly amortisation
+
+        # Link IFRS 16 monthly journals to their lease schedules.
+        # Supports both explicit source metadata and legacy/manual
+        # journal entries identified by their LEASE-{lease_id}-P{period_no} reference.
         try:
             src = (entry.get("source") or "").strip()
             source_id = entry.get("source_id")
+            sched = None
 
             if src == "lease_monthly" and source_id:
-                # source_id should be lease_schedule.id
                 sched = db_service.fetch_one(
                     f"""
-                    SELECT id, lease_id, period_no
-                    FROM company_{company_id}.lease_schedule
-                    WHERE company_id=%s
-                    AND id=%s
+                    SELECT id, lease_id, period_no, posted_journal_id
+                    FROM company_{int(company_id)}.lease_schedule
+                    WHERE company_id = %s
+                    AND id = %s
                     LIMIT 1
                     """,
                     (int(company_id), int(source_id)),
                 )
 
-                if sched:
+            # Fallback for journals submitted without lease source metadata.
+            if not sched:
+                ref = str(entry.get("ref") or "").strip()
+                parts = ref.split("-")
+
+                if (
+                    len(parts) == 3
+                    and parts[0].upper() == "LEASE"
+                    and parts[2].upper().startswith("P")
+                ):
+                    try:
+                        lease_id = int(parts[1])
+                        period_no = int(parts[2][1:])
+
+                        sched = db_service.fetch_one(
+                            f"""
+                            SELECT id, lease_id, period_no, posted_journal_id
+                            FROM company_{int(company_id)}.lease_schedule
+                            WHERE company_id = %s
+                            AND lease_id = %s
+                            AND period_no = %s
+                            LIMIT 1
+                            """,
+                            (int(company_id), lease_id, period_no),
+                        )
+                    except (TypeError, ValueError):
+                        sched = None
+
+            if sched:
+                existing_journal_id = int(
+                    sched.get("posted_journal_id") or 0
+                )
+
+                # Never replace a different journal already linked
+                # to this schedule period.
+                if existing_journal_id not in (0, int(journal_id)):
+                    current_app.logger.error(
+                        "IFRS16 schedule already linked to another journal: "
+                        "company=%s schedule=%s existing_journal=%s new_journal=%s",
+                        company_id,
+                        sched["id"],
+                        existing_journal_id,
+                        journal_id,
+                    )
+                else:
                     db_service.mark_lease_schedule_month_posted(
                         int(company_id),
                         schedule_id=int(sched["id"]),
@@ -12048,8 +12095,10 @@ def api_journal(company_id: int):
                     )
 
         except Exception:
-            current_app.logger.exception("Failed to link manual IFRS16 journal to lease schedule")
-            
+            current_app.logger.exception(
+                "Failed to link GL journal to IFRS16 lease schedule"
+            )
+
         # ✅ company base currency (no circular import risk if you already can call this here)
         try:
             ctx = get_company_context(db_service, company_id) or {}

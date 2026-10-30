@@ -77343,6 +77343,7 @@ class DatabaseService:
             n = int(cur2.rowcount or 0)
             conn.commit()
             return n
+
     def mark_lease_schedule_month_posted(
         self,
         company_id: int,
@@ -77353,17 +77354,79 @@ class DatabaseService:
         cur=None,
         conn=None,
     ) -> None:
-        schema = f"company_{int(company_id)}"
+        schema = self.company_schema(company_id)
 
-        result = self.execute_sql(
+        if cur is None:
+            raise ValueError(
+                "LEASE_POSTING_TRANSACTION_REQUIRED|"
+                "Schedule linkage must use the posting transaction cursor"
+            )
+
+        # 1. Verify that the journal exists and belongs to this company.
+        cur.execute(
             f"""
-            UPDATE {schema}.lease_schedule
-            SET posted_journal_id = %s,
-                posted_at = NOW()
+            SELECT id
+            FROM {schema}.journal
+            WHERE company_id = %s
+            AND id = %s
+            FOR UPDATE
+            """,
+            (int(company_id), int(journal_id)),
+        )
+
+        journal = cur.fetchone()
+
+        if not journal:
+            raise ValueError(
+                f"LEASE_JOURNAL_NOT_FOUND|journal_id={journal_id}"
+            )
+
+        # 2. Lock and inspect the schedule.
+        cur.execute(
+            f"""
+            SELECT posted_journal_id
+            FROM {schema}.lease_schedule
             WHERE company_id = %s
             AND id = %s
             AND lease_id = %s
-            AND COALESCE(posted_journal_id, 0) = 0;
+            FOR UPDATE
+            """,
+            (
+                int(company_id),
+                int(schedule_id),
+                int(lease_id),
+            ),
+        )
+
+        schedule = cur.fetchone()
+
+        if not schedule:
+            raise ValueError(
+                f"LEASE_SCHEDULE_NOT_FOUND|schedule_id={schedule_id}"
+            )
+
+        existing_journal_id = (
+            schedule.get("posted_journal_id")
+            if isinstance(schedule, dict)
+            else schedule[0]
+        )
+
+        if existing_journal_id not in (None, 0, int(journal_id)):
+            raise ValueError(
+                "LEASE_SCHEDULE_ALREADY_LINKED|"
+                f"schedule_id={schedule_id}|"
+                f"existing_journal_id={existing_journal_id}"
+            )
+
+        # 3. Link the schedule.
+        cur.execute(
+            f"""
+            UPDATE {schema}.lease_schedule
+            SET posted_journal_id = %s,
+                posted_at = COALESCE(posted_at, NOW())
+            WHERE company_id = %s
+            AND id = %s
+            AND lease_id = %s
             """,
             (
                 int(journal_id),
@@ -77371,39 +77434,61 @@ class DatabaseService:
                 int(schedule_id),
                 int(lease_id),
             ),
-            cur=cur,
-            conn=conn,
-            commit=False,
         )
 
-        self.execute_sql(
+        if cur.rowcount != 1:
+            raise ValueError(
+                "LEASE_SCHEDULE_LINK_FAILED|"
+                f"schedule_id={schedule_id}|"
+                f"affected_rows={cur.rowcount}"
+            )
+
+        # 4. Populate journal idempotency metadata.
+        cur.execute(
             f"""
             UPDATE {schema}.journal
             SET source = 'lease_monthly',
                 source_id = %s
             WHERE company_id = %s
-            AND id = %s;
+            AND id = %s
             """,
-            (int(schedule_id), int(company_id), int(journal_id)),
-            cur=cur,
-            conn=conn,
-            commit=False,
+            (
+                int(schedule_id),
+                int(company_id),
+                int(journal_id),
+            ),
         )
 
-        self.execute_sql(
+        if cur.rowcount != 1:
+            raise ValueError(
+                "LEASE_JOURNAL_METADATA_UPDATE_FAILED|"
+                f"journal_id={journal_id}|"
+                f"affected_rows={cur.rowcount}"
+            )
+
+        # 5. Populate journal-line source metadata.
+        cur.execute(
             f"""
             UPDATE {schema}.journal_lines
             SET source = 'leases',
                 source_id = %s
             WHERE company_id = %s
             AND journal_id = %s
-            AND (source IS NULL OR source = '' OR source_id IS NULL);
+            AND (
+                source IS NULL
+                OR source = ''
+                OR source_id IS NULL
+            )
             """,
-            (int(lease_id), int(company_id), int(journal_id)),
-            cur=cur,
-            conn=conn,
-            commit=False,
+            (
+                int(lease_id),
+                int(company_id),
+                int(journal_id),
+            ),
         )
+
+        # Do not commit here.
+        # The calling posting function owns the transaction.
 
     def get_ifrs16_disclosure_strict(
         self,
@@ -77525,6 +77610,7 @@ class DatabaseService:
         # ------------------------------------------------------------
         # D) Terminations (STRICTLY posted in period)
         # ------------------------------------------------------------
+
         term_totals = self.fetch_one(
             f"""
             SELECT
@@ -77538,6 +77624,7 @@ class DatabaseService:
             AND COALESCE(t.status,'')='posted'
             AND COALESCE(t.posted_journal_id,0) > 0
             AND t.termination_date >= %s AND t.termination_date <= %s
+            {lease_status_sql}
             """,
             (int(company_id), from_date, to_date),
             cur=cur,
@@ -77701,11 +77788,12 @@ class DatabaseService:
             JOIN {schema}.leases l ON l.id = s.lease_id
             WHERE s.company_id=%s
             AND s.is_active=TRUE
+            AND s.period_end >= %s
             AND s.period_end <= %s
             AND COALESCE(s.posted_journal_id,0) > 0
-            AND COALESCE(l.status,'active') IN ('active','terminated')
+            {lease_status_sql}
             """,
-            (int(company_id), as_of),
+            (int(company_id), from_date, as_of),
             cur=cur,
         ) or {}
 
@@ -77731,16 +77819,20 @@ class DatabaseService:
 
         terms_asof_row = self.fetch_one(
             f"""
-            SELECT COALESCE(SUM(t.liability_carrying_amount),0) AS liab_derec
+            SELECT
+                COALESCE(SUM(t.liability_carrying_amount),0) AS liab_derec
             FROM {schema}.lease_terminations t
+            JOIN {schema}.leases l ON l.id = t.lease_id
             WHERE t.company_id=%s
             AND COALESCE(t.status,'')='posted'
             AND COALESCE(t.posted_journal_id,0) > 0
             AND t.termination_date <= %s
+            {lease_status_sql}
             """,
             (int(company_id), as_of),
             cur=cur,
         ) or {}
+
         liab_derec_posted = float(terms_asof_row.get("liab_derec") or 0.0)
 
         closing_liability_from_recon = (
@@ -77829,16 +77921,20 @@ class DatabaseService:
 
         term_rou_to_date_row = self.fetch_one(
             f"""
-            SELECT COALESCE(SUM(t.rou_nbv),0) AS rou_nbv_terminated
+            SELECT
+                COALESCE(SUM(t.rou_nbv),0) AS rou_nbv_terminated
             FROM {schema}.lease_terminations t
+            JOIN {schema}.leases l ON l.id = t.lease_id
             WHERE t.company_id=%s
             AND COALESCE(t.status,'')='posted'
             AND COALESCE(t.posted_journal_id,0) > 0
             AND t.termination_date <= %s
+            {lease_status_sql}
             """,
             (int(company_id), as_of),
             cur=cur,
         ) or {}
+
         rou_nbv_terminated = float(term_rou_to_date_row.get("rou_nbv_terminated") or 0.0)
 
         rou_closing_nbv = round(
