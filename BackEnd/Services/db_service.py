@@ -69731,7 +69731,14 @@ class DatabaseService:
                 raise
 
 
-    def post_journal_with_overdraft(self, company_id: int, entry: Dict[str, Any]) -> int:
+    def post_journal_with_overdraft(
+        self,
+        company_id: int,
+        entry: Dict[str, Any],
+        *,
+        cur=None,
+        conn=None,
+    ) -> int:
         """
         Posts the user journal first using the normal posting pipeline.
         Then checks whether bank account 1000 went negative and, if so,
@@ -69756,54 +69763,78 @@ class DatabaseService:
         if not isinstance(lines, list) or not lines:
             raise ValueError("Journal must include at least one line")
 
-        with self._conn_cursor() as (conn, cur):
-            try:
-                # 1) Post the main journal through the REAL posting pipeline
-                journal_id = self.post_journal(company_id, entry, cur=cur, conn=conn)
+        def _run_transaction(conn, cur):
+            # 1) Post the main journal through the normal pipeline.
+            journal_id = self.post_journal(
+                company_id,
+                entry,
+                cur=cur,
+                conn=conn,
+            )
 
-                # 2) Avoid recursion if somehow the incoming entry is already an auto-OD journal
-                if ref and ref.startswith("AUTO-OD-"):
-                    conn.commit()
-                    return int(journal_id)
-
-                # 3) Check bank balance after posting
-                bank_balance = self.get_account_balance_from_tb(company_id, bank_code, cur=cur)
-                if bank_balance is None:
-                    bank_balance = 0.0
-
-                # 4) If bank is credit/negative, reclass to overdraft
-                if float(bank_balance) < 0:
-                    amt = abs(float(bank_balance))
-
-                    od_entry = {
-                        "date": tx_date.isoformat(),
-                        "ref": f"AUTO-OD-{journal_id}",
-                        "description": "Auto: Bank credit balance reclassified to overdraft",
-                        "source": "system",
-                        "source_id": int(journal_id),
-                        "lines": [
-                            {
-                                "account_code": bank_code,
-                                "debit": amt,
-                                "credit": 0.0,
-                                "memo": "Auto overdraft reclass",
-                            },
-                            {
-                                "account_code": od_code,
-                                "debit": 0.0,
-                                "credit": amt,
-                                "memo": "Auto overdraft reclass",
-                            },
-                        ],
-                    }
-
-                    self.post_journal(company_id, od_entry, cur=cur, conn=conn)
-
-                conn.commit()
+            # 2) Avoid recursion for automatic overdraft journals.
+            if ref and ref.startswith("AUTO-OD-"):
                 return int(journal_id)
 
+            # 3) Check bank balance after posting.
+            bank_balance = self.get_account_balance_from_tb(
+                company_id,
+                bank_code,
+                cur=cur,
+            )
+
+            if bank_balance is None:
+                bank_balance = 0.0
+
+            # 4) Reclassify a negative bank balance.
+            if float(bank_balance) < 0:
+                amt = abs(float(bank_balance))
+
+                od_entry = {
+                    "date": tx_date.isoformat(),
+                    "ref": f"AUTO-OD-{journal_id}",
+                    "description": (
+                        "Auto: Bank credit balance reclassified to overdraft"
+                    ),
+                    "source": "system",
+                    "source_id": int(journal_id),
+                    "lines": [
+                        {
+                            "account_code": bank_code,
+                            "debit": amt,
+                            "credit": 0.0,
+                            "memo": "Auto overdraft reclass",
+                        },
+                        {
+                            "account_code": od_code,
+                            "debit": 0.0,
+                            "credit": amt,
+                            "memo": "Auto overdraft reclass",
+                        },
+                    ],
+                }
+
+                self.post_journal(
+                    company_id,
+                    od_entry,
+                    cur=cur,
+                    conn=conn,
+                )
+
+            return int(journal_id)
+
+        # Reuse an existing transaction when supplied.
+        if cur is not None:
+            return _run_transaction(conn, cur)
+
+        # Otherwise preserve the original standalone behaviour.
+        with self._conn_cursor() as (conn2, cur2):
+            try:
+                journal_id = _run_transaction(conn2, cur2)
+                conn2.commit()
+                return int(journal_id)
             except Exception:
-                conn.rollback()
+                conn2.rollback()
                 raise
 
     def list_recent_journals(self, company_id: int, limit: int = 50, date_from=None, date_to=None, q: str = ""):

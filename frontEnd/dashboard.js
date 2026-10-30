@@ -23344,6 +23344,15 @@ async function postJournalBatch() {
     return;
   }
 
+  // Validate IFRS 16 schedule association
+  if (
+    payload.source === "lease_monthly" &&
+    (!Number.isInteger(Number(payload.source_id)) ||
+    Number(payload.source_id) <= 0)
+  ) {
+    alert("IFRS 16 posting is missing a valid lease schedule ID.");
+    return;
+  }
   // ------------------------------------------------------------
   // Payload
   // ------------------------------------------------------------
@@ -23455,10 +23464,13 @@ async function postJournalBatch() {
     // ----------------------------------------------------------
     JRNL_LINES.length = 0;
 
+    // Clear IFRS 16 source metadata after successful posting
+    window.__JRNL_SOURCE = "";
+    window.__JRNL_SOURCE_ID = null;
+
     renderJournalTable();
     recalcJournalSummary();
     clearJournalForm();
-
     // ----------------------------------------------------------
     // Restore button
     // ----------------------------------------------------------
@@ -39024,6 +39036,8 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
               date: String(r.period_end || "").slice(0, 10),
               ref: `LEASE-${leaseId}-P${periodNo}`,
               description: `IFRS 16 monthly posting – ${(r.lease_name || `Lease ${leaseId}`)} – P${periodNo}`,
+              source: "lease_monthly",
+              source_id: Number(r.schedule_id || r.id || 0),
               lines: lines.map(ln => ({
                 account_code: ln.account_code,
                 debit: Number(ln.debit) || 0,
@@ -40974,6 +40988,8 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
             date: String(r.period_end || "").slice(0, 10),
             ref: `LEASE-${leaseId}-P${periodNo}`,
             description: `IFRS 16 monthly posting – ${r.lease_name || `Lease ${leaseId}`} – P${periodNo}`,
+            source: "lease_monthly",
+            source_id: Number(r.schedule_id || r.id || 0),
             lines: r.preview_journal_lines.map(ln => ({
               account_code: ln.account_code,
               debit: Number(ln.debit) || 0,
@@ -161498,6 +161514,8 @@ if (document.readyState === "loading") {
       date: iso(row.r.period_end),
       ref: `LEASE-${row.leaseId}-P${row.periodNo}`,
       description: `IFRS 16 monthly posting – ${row.r.lease_name || `Lease ${row.leaseId}`} – P${row.periodNo}`,
+      source: "lease_monthly",
+      source_id: Number(row.r.schedule_id || row.r.id || 0),
       lines: lines.map((ln) => ({
         account_code: ln.account_code,
         debit: Number(ln.debit) || 0,
