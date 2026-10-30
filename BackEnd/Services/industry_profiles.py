@@ -301,7 +301,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
-        "pos_mode": "club",
+        "pos_mode": "retail",
         "uses_manufacturing": False,
     },
 
