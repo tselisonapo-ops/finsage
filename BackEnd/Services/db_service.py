@@ -68269,39 +68269,112 @@ class DatabaseService:
 
         self.post_journal(company_id, entry)
 
+ 
     def next_doc_number_cur(self, company_id: int, cur, key: str) -> str:
-        schema = f"company_{company_id}"
+        schema = f"company_{int(company_id)}"
 
-        cur.execute("SELECT name FROM public.companies WHERE id=%s;", (company_id,))
+        cur.execute(
+            "SELECT name FROM public.companies WHERE id=%s;",
+            (company_id,),
+        )
         row = cur.fetchone()
-        cname = (row["name"] if isinstance(row, dict) else row[0]) or f"COMPANY{company_id}"
+
+        cname = (
+            row["name"] if isinstance(row, dict) else row[0]
+        ) or f"COMPANY{company_id}"
+
         prefix = self._company_prefix(str(cname).strip())
 
         cur.execute(
             f"""
-            INSERT INTO {schema}.invoice_counters (company_id, key, last_no)
+            INSERT INTO {schema}.invoice_counters
+                (company_id, key, last_no)
             VALUES (%s, %s, 0)
             ON CONFLICT (company_id, key) DO NOTHING;
             """,
             (company_id, key),
         )
 
-        cur.execute(
-            f"""
-            UPDATE {schema}.invoice_counters
-            SET last_no = last_no + 1, updated_at = NOW()
-            WHERE company_id=%s AND key=%s
-            RETURNING last_no;
-            """,
-            (company_id, key),
-        )
+        if key == "invoice":
+            # Reconcile the counter against the highest existing
+            # invoice number before allocating the next number.
+            series_prefix = f"INV-{prefix}-"
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.invoice_counters AS c
+                SET
+                    last_no = GREATEST(
+                        c.last_no,
+                        COALESCE(
+                            (
+                                SELECT MAX(
+                                    substring(
+                                        i.number FROM length(%s) + 1
+                                    )::BIGINT
+                                )
+                                FROM {schema}.invoices AS i
+                                WHERE i.company_id = %s
+                                AND left(
+                                    i.number,
+                                    length(%s)
+                                ) = %s
+                                AND substring(
+                                    i.number FROM length(%s) + 1
+                                ) ~ '^[0-9]+$'
+                            ),
+                            0
+                        )
+                    ) + 1,
+                    updated_at = NOW()
+                WHERE c.company_id = %s
+                AND c.key = %s
+                RETURNING c.last_no;
+                """,
+                (
+                    series_prefix,
+                    company_id,
+                    series_prefix,
+                    series_prefix,
+                    series_prefix,
+                    company_id,
+                    key,
+                ),
+            )
+
+        else:
+            # Preserve existing quote and bill counter behaviour.
+            cur.execute(
+                f"""
+                UPDATE {schema}.invoice_counters
+                SET
+                    last_no = last_no + 1,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND key = %s
+                RETURNING last_no;
+                """,
+                (company_id, key),
+            )
+
         ctr = cur.fetchone()
-        n = int(ctr["last_no"] if isinstance(ctr, dict) else ctr[0])
+
+        if not ctr:
+            raise RuntimeError(
+                f"Could not allocate document number for "
+                f"company {company_id}, key {key}"
+            )
+
+        n = int(
+            ctr["last_no"] if isinstance(ctr, dict) else ctr[0]
+        )
 
         if key == "quote":
             return f"QTE-{prefix}-{n:05d}"
+
         if key == "bill":
             return f"BIL-{prefix}-{n:05d}"
+
         return f"INV-{prefix}-{n:05d}"
 
     def next_bill_number_cur(self, company_id: int, cur) -> str:

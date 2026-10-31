@@ -161789,7 +161789,7 @@ if (document.readyState === "loading") {
           <div><div class="text-[11px] text-slate-500">Status</div><div class="flex gap-1 mt-0.5">${chipHtml(row.isPaid ? "paid" : "due", row.isPaid ? "green" : "red")} ${chipHtml(row.isPosted ? "posted" : "pending", row.isPosted ? "green" : "amber")}</div></div>
         </div>
         <div class="px-3 pb-3 flex gap-2 flex-wrap">
-          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row.r.schedule_id ?? "")}" data-lc-due="${esc(row.due)}" data-lc-date="${esc(iso(row.r.period_start) || today())}"
+          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row.r.schedule_id ?? "")}" data-lc-due="${esc(row.due)}" data-lc-date="${esc(defaultLeasePaymentDate(row, l))}"
             class="px-3 py-1.5 rounded text-xs text-white" style="background:#00C8C8"
             ${row.isPaid || !postOk ? "disabled" : ""} title="${postOk ? "Opens the lease payment modal (prefilled)" : "Requires can_post_journals"}">💳 Pay this period</button>
           <button data-lc-post-row="${esc(id)}" data-lc-period="${esc(row.periodNo)}"
@@ -161816,6 +161816,36 @@ if (document.readyState === "loading") {
         </div>
       </div>
       ${snapshot}`;
+  }
+
+  function defaultLeasePaymentDate(row, lease) {
+    const timing = String(
+      row?.r?.payment_timing ||
+      lease?.payment_timing ||
+      "arrears"
+    ).trim().toLowerCase();
+
+    const rawDate = timing === "advance"
+      ? row?.r?.period_start
+      : row?.r?.period_end;
+
+    if (!rawDate) return today();
+
+    const value = String(rawDate).trim();
+
+    // Already an ISO date or ISO datetime: preserve the calendar date.
+    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+
+    // Handle DD/MM/YYYY explicitly.
+    const localMatch = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (localMatch) {
+      return `${localMatch[3]}-${localMatch[2]}-${localMatch[1]}`;
+    }
+
+    // Avoid silently passing an unrecognised date to the modal.
+    console.warn("Unrecognised lease payment date:", rawDate);
+    return today();
   }
 
   /* ── Schedule ────────────────────────────────────────────────── */
@@ -161870,7 +161900,7 @@ if (document.readyState === "loading") {
         <div class="text-[13px] font-semibold">Payment history${LC.loading.detail ? " · loading…" : ""}</div>
         <div class="flex gap-2">
           <button id="lcPayExport" class="px-2 py-1.5 rounded border text-xs bg-white">⬇ Export payments CSV</button>
-          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row?.r.schedule_id ?? "")}" data-lc-due="${esc(row && !row.isPaid ? row.due : "")}" data-lc-date="${esc(iso(row?.r.period_start) || today())}"
+          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row?.r.schedule_id ?? "")}" data-lc-due="${esc(row && !row.isPaid ? row.due : "")}" data-lc-date="${esc(defaultLeasePaymentDate(row, LC.lease))}"
             class="px-3 py-1.5 rounded text-xs text-white" style="background:#00C8C8" ${canPost() ? "" : "disabled"} title="${canPost() ? "Opens the lease payment modal" : "Requires can_post_journals"}">💳 Record payment</button>
         </div>
       </div>
@@ -161961,7 +161991,7 @@ if (document.readyState === "loading") {
                   <td class="p-2 text-center">${x.isPaid ? chipHtml("paid", "green") : chipHtml("due", "red")}</td>
                   <td class="p-2 text-center">${x.isPosted ? chipHtml("posted", "green") : chipHtml("pending", "amber")}</td>
                   <td class="p-2 text-right whitespace-nowrap">
-                    <button data-lc-pay-row="${esc(x.leaseId)}" data-lc-schedule="${esc(x.r.schedule_id ?? "")}" data-lc-due="${esc(x.due)}" data-lc-date="${esc(iso(x.r.period_start) || today())}"
+                    <button data-lc-pay-row="${esc(x.leaseId)}" data-lc-schedule="${esc(x.r.schedule_id ?? "")}" data-lc-due="${esc(x.due)}" data-lc-date="${esc(defaultLeasePaymentDate(x, LC.leases.find((l) => leaseIdOf(l) === Number(x.leaseId))))}"
                       class="px-2 py-1 rounded border text-xs ${x.isPaid || !postOk ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"}"
                       ${x.isPaid || !postOk ? "disabled" : ""} title="${postOk ? "Opens the payment modal prefilled from the due row" : "Requires can_post_journals"}">Pay</button>
                     <button data-lc-post-row="${esc(x.leaseId)}" data-lc-period="${esc(x.periodNo)}"
@@ -162118,11 +162148,12 @@ if (document.readyState === "loading") {
     });
     $("lcRecordPayment")?.addEventListener("click", () => {
       const row = currentDueRow(LC.leaseId);
+
       payModal({
         leaseId: LC.leaseId,
         scheduleId: row?.r.schedule_id || null,
         amount: row && !row.isPaid ? row.due : "",
-        date: iso(row?.r.period_start) || today(),
+        date: defaultLeasePaymentDate(row, LC.lease),
       });
     });
   }
