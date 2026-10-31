@@ -77821,7 +77821,6 @@ class DatabaseService:
                   )
                   AND COALESCE(j.is_reversal,FALSE) = FALSE
                   AND j.reversed_by_journal_id IS NULL
-                {lease_status_sql}
                 GROUP BY jl.source_id
             ),
             posted_direct_costs AS (
@@ -77851,7 +77850,6 @@ class DatabaseService:
                   AND COALESCE(jl.debit,0) > 0
                   AND COALESCE(j.is_reversal,FALSE) = FALSE
                   AND j.reversed_by_journal_id IS NULL
-                  {lease_status_sql}
                 GROUP BY l.id, j.date
             )
             SELECT
@@ -78081,7 +78079,6 @@ class DatabaseService:
                   )
                   AND COALESCE(j.is_reversal,FALSE) = FALSE
                   AND j.reversed_by_journal_id IS NULL
-                  {lease_status_sql}
                 GROUP BY jl.source_id
             ),
             posted_direct_costs AS (
@@ -78111,7 +78108,6 @@ class DatabaseService:
                   AND COALESCE(jl.debit,0) > 0
                   AND COALESCE(j.is_reversal,FALSE) = FALSE
                   AND j.reversed_by_journal_id IS NULL
-                  {lease_status_sql}
                 GROUP BY l.id, j.date
             )
             SELECT
@@ -78325,7 +78321,6 @@ class DatabaseService:
                   )
                   AND COALESCE(j.is_reversal,FALSE) = FALSE
                   AND j.reversed_by_journal_id IS NULL
-                  {lease_status_sql}
                 GROUP BY jl.source_id
             ),
             posted_direct_costs AS (
@@ -78355,7 +78350,6 @@ class DatabaseService:
                   AND COALESCE(jl.debit,0) > 0
                   AND COALESCE(j.is_reversal,FALSE) = FALSE
                   AND j.reversed_by_journal_id IS NULL
-                  {lease_status_sql}
                 GROUP BY l.id, j.date
             ),
             dep_period AS (
