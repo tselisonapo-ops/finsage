@@ -77813,27 +77813,72 @@ class DatabaseService:
                 JOIN {schema}.journal j
                     ON j.id = jl.journal_id
                 WHERE jl.company_id = %s
-                AND jl.account_code = 'BS_NCA_1610'
-                AND jl.source IN ('leases', 'lease_inception')
-                AND (
+                  AND jl.account_code = 'BS_NCA_1610'
+                  AND jl.source IN ('leases', 'lease_inception')
+                  AND (
                         j.description ILIKE 'Initial recognition of lease%%'
-                    OR j.description ILIKE 'IFRS 16 transition%%'
-                )
+                     OR j.description ILIKE 'IFRS 16 transition%%'
+                  )
+                  AND COALESCE(j.is_reversal,FALSE) = FALSE
+                  AND j.reversed_by_journal_id IS NULL
+                {lease_status_sql}
                 GROUP BY jl.source_id
+            ),
+            posted_direct_costs AS (
+                SELECT
+                    l.id AS lease_id,
+                    j.date AS posting_date,
+                    SUM(COALESCE(jl.debit,0)) AS rou_direct_cost
+                FROM {schema}.journal j
+                JOIN {schema}.journal_lines jl
+                    ON jl.journal_id = j.id
+                   AND jl.company_id = j.company_id
+                JOIN {schema}.leases l
+                    ON (
+                        (
+                            j.source = 'lease_direct_cost_paid'
+                            AND j.source_id = l.id
+                        )
+                        OR
+                        (
+                            j.source = 'bill'
+                            AND LOWER(BTRIM(j.description)) =
+                                LOWER('Initial direct cost - ' || BTRIM(l.lease_name))
+                        )
+                    )
+                WHERE j.company_id = %s
+                  AND jl.account_code = 'BS_NCA_1610'
+                  AND COALESCE(jl.debit,0) > 0
+                  AND COALESCE(j.is_reversal,FALSE) = FALSE
+                  AND j.reversed_by_journal_id IS NULL
+                  {lease_status_sql}
+                GROUP BY l.id, j.date
             )
             SELECT
-                COALESCE(SUM(COALESCE(pc.rou_posted,0)),0) AS rou_additions,
+                (
+                    COALESCE(SUM(COALESCE(pc.rou_posted,0)),0)
+                    +
+                    COALESCE((
+                        SELECT SUM(pdc.rou_direct_cost)
+                        FROM posted_direct_costs pdc
+                        WHERE pdc.posting_date >= %s
+                          AND pdc.posting_date <= %s
+                    ),0)
+                ) AS rou_additions,
                 COALESCE(SUM(l.opening_lease_liability),0) AS liab_additions
             FROM {schema}.leases l
             LEFT JOIN posted_commencements pc
                 ON pc.lease_id = l.id
-            WHERE l.company_id=%s
-            AND l.start_date >= %s
-            AND l.start_date <= %s
-            {lease_status_sql}
+            WHERE l.company_id = %s
+              AND l.start_date >= %s
+              AND l.start_date <= %s
+              {lease_status_sql}
             """,
             (
                 int(company_id),
+                int(company_id),
+                from_date,
+                to_date,
                 int(company_id),
                 from_date,
                 to_date,
@@ -78028,25 +78073,68 @@ class DatabaseService:
                 JOIN {schema}.journal j
                     ON j.id = jl.journal_id
                 WHERE jl.company_id = %s
-                AND jl.account_code = 'BS_NCA_1610'
-                AND jl.source IN ('leases', 'lease_inception')
-                AND (
+                  AND jl.account_code = 'BS_NCA_1610'
+                  AND jl.source IN ('leases', 'lease_inception')
+                  AND (
                         j.description ILIKE 'Initial recognition of lease%%'
-                    OR j.description ILIKE 'IFRS 16 transition%%'
-                )
+                     OR j.description ILIKE 'IFRS 16 transition%%'
+                  )
+                  AND COALESCE(j.is_reversal,FALSE) = FALSE
+                  AND j.reversed_by_journal_id IS NULL
+                  {lease_status_sql}
                 GROUP BY jl.source_id
+            ),
+            posted_direct_costs AS (
+                SELECT
+                    l.id AS lease_id,
+                    j.date AS posting_date,
+                    SUM(COALESCE(jl.debit,0)) AS rou_direct_cost
+                FROM {schema}.journal j
+                JOIN {schema}.journal_lines jl
+                    ON jl.journal_id = j.id
+                   AND jl.company_id = j.company_id
+                JOIN {schema}.leases l
+                    ON (
+                        (
+                            j.source = 'lease_direct_cost_paid'
+                            AND j.source_id = l.id
+                        )
+                        OR
+                        (
+                            j.source = 'bill'
+                            AND LOWER(BTRIM(j.description)) =
+                                LOWER('Initial direct cost - ' || BTRIM(l.lease_name))
+                        )
+                    )
+                WHERE j.company_id = %s
+                  AND jl.account_code = 'BS_NCA_1610'
+                  AND COALESCE(jl.debit,0) > 0
+                  AND COALESCE(j.is_reversal,FALSE) = FALSE
+                  AND j.reversed_by_journal_id IS NULL
+                  {lease_status_sql}
+                GROUP BY l.id, j.date
             )
             SELECT
-                COALESCE(SUM(COALESCE(pc.rou_posted,0)),0) AS rou_opening
+                (
+                    COALESCE(SUM(COALESCE(pc.rou_posted,0)),0)
+                    +
+                    COALESCE((
+                        SELECT SUM(pdc.rou_direct_cost)
+                        FROM posted_direct_costs pdc
+                        WHERE pdc.posting_date < %s
+                    ),0)
+                ) AS rou_opening
             FROM {schema}.leases l
             LEFT JOIN posted_commencements pc
                 ON pc.lease_id = l.id
-            WHERE l.company_id=%s
-            AND l.start_date < %s
-            {lease_status_sql}
+            WHERE l.company_id = %s
+              AND l.start_date < %s
+              {lease_status_sql}
             """,
             (
                 int(company_id),
+                int(company_id),
+                from_date,
                 int(company_id),
                 from_date,
             ),
@@ -78229,13 +78317,46 @@ class DatabaseService:
                 JOIN {schema}.journal j
                     ON j.id = jl.journal_id
                 WHERE jl.company_id = %s
-                AND jl.account_code = 'BS_NCA_1610'
-                AND jl.source IN ('leases', 'lease_inception')
-                AND (
+                  AND jl.account_code = 'BS_NCA_1610'
+                  AND jl.source IN ('leases', 'lease_inception')
+                  AND (
                         j.description ILIKE 'Initial recognition of lease%%'
-                    OR j.description ILIKE 'IFRS 16 transition%%'
-                )
+                     OR j.description ILIKE 'IFRS 16 transition%%'
+                  )
+                  AND COALESCE(j.is_reversal,FALSE) = FALSE
+                  AND j.reversed_by_journal_id IS NULL
+                  {lease_status_sql}
                 GROUP BY jl.source_id
+            ),
+            posted_direct_costs AS (
+                SELECT
+                    l.id AS lease_id,
+                    j.date AS posting_date,
+                    SUM(COALESCE(jl.debit,0)) AS rou_direct_cost
+                FROM {schema}.journal j
+                JOIN {schema}.journal_lines jl
+                    ON jl.journal_id = j.id
+                   AND jl.company_id = j.company_id
+                JOIN {schema}.leases l
+                    ON (
+                        (
+                            j.source = 'lease_direct_cost_paid'
+                            AND j.source_id = l.id
+                        )
+                        OR
+                        (
+                            j.source = 'bill'
+                            AND LOWER(BTRIM(j.description)) =
+                                LOWER('Initial direct cost - ' || BTRIM(l.lease_name))
+                        )
+                    )
+                WHERE j.company_id = %s
+                  AND jl.account_code = 'BS_NCA_1610'
+                  AND COALESCE(jl.debit,0) > 0
+                  AND COALESCE(j.is_reversal,FALSE) = FALSE
+                  AND j.reversed_by_journal_id IS NULL
+                  {lease_status_sql}
+                GROUP BY l.id, j.date
             ),
             dep_period AS (
                 SELECT
@@ -78243,11 +78364,11 @@ class DatabaseService:
                     SUM(COALESCE(s.depreciation,0)) AS dep_period
                 FROM {schema}.lease_schedule s
                 JOIN {schema}.leases l ON l.id = s.lease_id
-                WHERE s.company_id=%s
-                AND s.is_active=TRUE
-                AND COALESCE(s.posted_journal_id,0) > 0
-                AND s.period_end BETWEEN %s AND %s
-                {lease_status_sql}
+                WHERE s.company_id = %s
+                  AND s.is_active = TRUE
+                  AND COALESCE(s.posted_journal_id,0) > 0
+                  AND s.period_end BETWEEN %s AND %s
+                  {lease_status_sql}
                 GROUP BY s.lease_id
             ),
             mods_period AS (
@@ -78256,11 +78377,11 @@ class DatabaseService:
                     SUM(COALESCE(m.rou_adjustment,0)) AS mods_period
                 FROM {schema}.lease_modifications m
                 JOIN {schema}.leases l ON l.id = m.lease_id
-                WHERE m.company_id=%s
-                AND COALESCE(m.status,'')='posted'
-                AND COALESCE(m.posted_journal_id,0) > 0
-                AND m.modification_date BETWEEN %s AND %s
-                {lease_status_sql}
+                WHERE m.company_id = %s
+                  AND COALESCE(m.status,'') = 'posted'
+                  AND COALESCE(m.posted_journal_id,0) > 0
+                  AND m.modification_date BETWEEN %s AND %s
+                  {lease_status_sql}
                 GROUP BY m.lease_id
             ),
             disposals_period AS (
@@ -78269,29 +78390,52 @@ class DatabaseService:
                     SUM(COALESCE(t.rou_nbv,0)) AS disposed_period
                 FROM {schema}.lease_terminations t
                 JOIN {schema}.leases l ON l.id = t.lease_id
-                WHERE t.company_id=%s
-                AND COALESCE(t.status,'')='posted'
-                AND COALESCE(t.posted_journal_id,0) > 0
-                AND t.termination_date BETWEEN %s AND %s
-                {lease_status_sql}
+                WHERE t.company_id = %s
+                  AND COALESCE(t.status,'') = 'posted'
+                  AND COALESCE(t.posted_journal_id,0) > 0
+                  AND t.termination_date BETWEEN %s AND %s
+                  {lease_status_sql}
                 GROUP BY t.lease_id
+            ),
+            direct_costs_by_lease AS (
+                SELECT
+                    lease_id,
+                    COALESCE(
+                        SUM(rou_direct_cost) FILTER (
+                            WHERE posting_date < %s
+                        ), 0
+                    ) AS opening_direct_cost,
+                    COALESCE(
+                        SUM(rou_direct_cost) FILTER (
+                            WHERE posting_date >= %s
+                              AND posting_date <= %s
+                        ), 0
+                    ) AS additions_direct_cost
+                FROM posted_direct_costs
+                GROUP BY lease_id
             )
             SELECT
                 l.id AS lease_id,
                 l.lease_name,
                 l.start_date,
 
-                CASE
-                    WHEN l.start_date < %s
-                    THEN COALESCE(pc.rou_posted,0)
-                    ELSE 0
-                END AS opening,
+                (
+                    CASE
+                        WHEN l.start_date < %s
+                        THEN COALESCE(pc.rou_posted,0)
+                        ELSE 0
+                    END
+                    + COALESCE(dc.opening_direct_cost,0)
+                ) AS opening,
 
-                CASE
-                    WHEN l.start_date >= %s AND l.start_date <= %s
-                    THEN COALESCE(pc.rou_posted,0)
-                    ELSE 0
-                END AS additions,
+                (
+                    CASE
+                        WHEN l.start_date >= %s AND l.start_date <= %s
+                        THEN COALESCE(pc.rou_posted,0)
+                        ELSE 0
+                    END
+                    + COALESCE(dc.additions_direct_cost,0)
+                ) AS additions,
 
                 COALESCE(mp.mods_period,0) AS remeasurements,
                 COALESCE(dp.dep_period,0) AS depreciation,
@@ -78302,19 +78446,23 @@ class DatabaseService:
             LEFT JOIN mods_period mp ON mp.lease_id = l.id
             LEFT JOIN disposals_period tp ON tp.lease_id = l.id
             LEFT JOIN posted_commencements pc ON pc.lease_id = l.id
-            WHERE l.company_id=%s
-            AND l.start_date <= %s
-            {lease_status_sql}
+            LEFT JOIN direct_costs_by_lease dc ON dc.lease_id = l.id
+            WHERE l.company_id = %s
+              AND l.start_date <= %s
+              {lease_status_sql}
             ORDER BY l.start_date NULLS LAST, l.id
             """,
             (
-                int(company_id),                  # posted_commencements
-                int(company_id), from_date, to_date,   # dep_period
-                int(company_id), from_date, to_date,   # mods_period
-                int(company_id), from_date, to_date,   # disposals_period
-                from_date,                              # opening
-                from_date, to_date,                     # additions
-                int(company_id),                        # final WHERE
+                int(company_id),              # posted_commencements
+                int(company_id),              # posted_direct_costs
+                int(company_id), from_date, to_date,  # dep_period
+                int(company_id), from_date, to_date,  # mods_period
+                int(company_id), from_date, to_date,  # disposals_period
+                from_date,                    # opening direct costs
+                from_date, to_date,           # period direct costs
+                from_date,                    # opening commencement
+                from_date, to_date,           # period commencements
+                int(company_id),              # final WHERE
                 to_date,
             ),
             cur=cur,
