@@ -77859,8 +77859,12 @@ class DatabaseService:
                     COALESCE((
                         SELECT SUM(pdc.rou_direct_cost)
                         FROM posted_direct_costs pdc
-                        WHERE pdc.posting_date >= %s
-                          AND pdc.posting_date <= %s
+                        JOIN {schema}.leases l
+                            ON l.id = pdc.lease_id
+                        WHERE l.company_id = %s
+                        AND pdc.posting_date >= %s
+                        AND pdc.posting_date <= %s
+                        {lease_status_sql}
                     ),0)
                 ) AS rou_additions,
                 COALESCE(SUM(l.opening_lease_liability),0) AS liab_additions
@@ -77872,15 +77876,16 @@ class DatabaseService:
               AND l.start_date <= %s
               {lease_status_sql}
             """,
-            (
-                int(company_id),
-                int(company_id),
-                from_date,
-                to_date,
-                int(company_id),
-                from_date,
-                to_date,
-            ),
+                (
+                    int(company_id),
+                    int(company_id),
+                    int(company_id),
+                    from_date,
+                    to_date,
+                    int(company_id),
+                    from_date,
+                    to_date,
+                ),
             cur=cur,
         ) or {}
 
@@ -78117,7 +78122,12 @@ class DatabaseService:
                     COALESCE((
                         SELECT SUM(pdc.rou_direct_cost)
                         FROM posted_direct_costs pdc
-                        WHERE pdc.posting_date < %s
+                        JOIN {schema}.leases l
+                            ON l.id = pdc.lease_id
+                        WHERE l.company_id = %s
+                        AND pdc.posting_date < %s
+                        AND l.start_date < %s
+                        {lease_status_sql}
                     ),0)
                 ) AS rou_opening
             FROM {schema}.leases l
@@ -78127,13 +78137,15 @@ class DatabaseService:
               AND l.start_date < %s
               {lease_status_sql}
             """,
-            (
-                int(company_id),
-                int(company_id),
-                from_date,
-                int(company_id),
-                from_date,
-            ),
+                (
+                    int(company_id),
+                    int(company_id),
+                    int(company_id),
+                    from_date,
+                    from_date,
+                    int(company_id),
+                    from_date,
+                ),
             cur=cur,
         ) or {}
         rou_opening_total = float(rou_opening_row.get("rou_opening") or 0.0)
