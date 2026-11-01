@@ -49,7 +49,7 @@ function App() {
     ].includes(window.location.hostname);
 
     const productionOrigin =
-      "https://finspheresolutions.com";
+      window.location.origin;
 
     const allowedOrigins = isLocal
       ? [

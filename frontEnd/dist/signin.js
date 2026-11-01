@@ -55,7 +55,11 @@ async function handleSignin(event) {
     localStorage.setItem("fs_subindustry", user.sub_industry);
   }
 
-  window.location.href = "dashboard.html";
+  const appBase = window.location.pathname.startsWith("/app/")
+    ? "/app/"
+    : "./";
+
+  window.location.href = `${appBase}dashboard.html`;
 
   } catch (err) {
     console.error("Signin error:", err);

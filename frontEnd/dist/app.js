@@ -15,6 +15,96 @@
   // Cached meta for reuse (country → currency & phone)
   let COUNTRY_META = [];
 
+  /* =========================================================
+   * ✅ NEW: Organisation types that are EXEMPT from TIN/VAT
+   * -------------------------------------------------------
+   * Associations (club_association) are typically non-tax
+   * entities or fall under SARS non-profit / recreational
+   * exemptions. We relax TIN + VAT requirements for them.
+   *
+   * Extend this set if more exempt org types are needed
+   * (e.g., "npo", "ngo", "government_entity").
+   * =======================================================*/
+  const TIN_VAT_EXEMPT_ORG_TYPES = new Set([
+    "club_association",
+    // "npo",
+    // "ngo",
+    // "government_entity",
+  ]);
+
+  function isTinVatExempt(orgType) {
+    return TIN_VAT_EXEMPT_ORG_TYPES.has(
+      String(orgType || "").trim().toLowerCase()
+    );
+  }
+
+  /**
+   * ✅ NEW: Toggle TIN / VAT field requirements + UI hints
+   * based on the currently selected organisation type.
+   *
+   * Called whenever `organizationType` changes and on form init.
+   */
+  function applyTinVatExemption() {
+    const orgSelect = document.getElementById("organizationType");
+    if (!orgSelect) return;
+
+    const orgType = (orgSelect.value || "").trim().toLowerCase();
+    const exempt  = isTinVatExempt(orgType);
+
+    const tinInput   = document.getElementById("taxNumber");
+    const vatInput   = document.getElementById("vatNumber");
+    const tinHint    = document.getElementById("taxNumberHint");
+    const vatHint    = document.getElementById("vatNumberHint");
+    const tinBadge   = document.getElementById("tinExemptBadge");
+    const vatBadge   = document.getElementById("vatExemptBadge");
+
+    // --- TIN ---
+    if (tinInput) {
+      if (exempt) {
+        tinInput.removeAttribute("required");
+        tinInput.value = "";
+        tinInput.placeholder = "Exempt for Associations (leave blank)";
+        if (tinHint) {
+          tinHint.textContent =
+            "Associations / Clubs are exempt from TIN. Leave blank if not applicable.";
+          tinHint.classList.add("text-amber-700");
+        }
+      } else {
+        tinInput.setAttribute("required", "required");
+        tinInput.placeholder = "";
+        if (tinHint) {
+          tinHint.textContent =
+            "Enter the official Tax Identification Number.";
+          tinHint.classList.remove("text-amber-700");
+        }
+      }
+    }
+
+    // --- VAT (already optional, but we visually mark exemption) ---
+    if (vatInput) {
+      if (exempt) {
+        vatInput.removeAttribute("required");
+        vatInput.value = "";
+        vatInput.placeholder = "Exempt for Associations (leave blank)";
+        if (vatHint) {
+          vatHint.textContent =
+            "Associations / Clubs are generally exempt from VAT. Leave blank.";
+          vatHint.classList.add("text-amber-700");
+        }
+      } else {
+        vatInput.placeholder = "Leave blank if not VAT registered";
+        if (vatHint) {
+          vatHint.textContent = "Leave blank if not VAT registered.";
+          vatHint.classList.remove("text-amber-700");
+        }
+      }
+    }
+
+    // --- Exemption badges ---
+    if (tinBadge) tinBadge.classList.toggle("hidden", !exempt);
+    if (vatBadge) vatBadge.classList.toggle("hidden", !exempt);
+  }
+
 function updateCountryFieldHints(countryCode) {
   const code = String(countryCode || "").toUpperCase();
   const selected = COUNTRY_META.find(c => String(c.code || "").toUpperCase() === code);
@@ -29,8 +119,17 @@ function updateCountryFieldHints(countryCode) {
 
   if (!selected) {
     if (regHint) regHint.textContent = "Select country to see required format.";
-    if (tinHint) tinHint.textContent = "Select country to see required format.";
-    if (vatHint) vatHint.textContent = "Leave blank if not VAT registered.";
+    // ✅ Don't blindly overwrite TIN hint — respect exemption state
+    if (tinHint && !isTinVatExempt(
+        (document.getElementById("organizationType")?.value || "").toLowerCase()
+    )) {
+      tinHint.textContent = "Select country to see required format.";
+    }
+    if (vatHint && !isTinVatExempt(
+        (document.getElementById("organizationType")?.value || "").toLowerCase()
+    )) {
+      vatHint.textContent = "Leave blank if not VAT registered.";
+    }
     return;
   }
 
@@ -40,21 +139,25 @@ function updateCountryFieldHints(countryCode) {
       : "Enter the official company registration number.";
   }
 
-  if (tinHint) {
+  // ✅ Only update TIN / VAT hints if NOT currently exempt
+  const orgType = (document.getElementById("organizationType")?.value || "").toLowerCase();
+  const exempt = isTinVatExempt(orgType);
+
+  if (tinHint && !exempt) {
     tinHint.textContent = selected.tin_example
       ? `Expected format: ${selected.tin_example}`
       : "Enter the official Tax Identification Number.";
   }
 
-  if (vatHint) {
+  if (vatHint && !exempt) {
     vatHint.textContent = selected.vat_example
       ? `Expected format: ${selected.vat_example}`
       : "Leave blank if not VAT registered.";
   }
 
   if (regInput && selected.regno_example) regInput.placeholder = selected.regno_example;
-  if (tinInput && selected.tin_example) tinInput.placeholder = selected.tin_example;
-  if (vatInput && selected.vat_example) vatInput.placeholder = selected.vat_example;
+  if (tinInput && selected.tin_example && !exempt) tinInput.placeholder = selected.tin_example;
+  if (vatInput && selected.vat_example && !exempt) vatInput.placeholder = selected.vat_example;
 }
 /* =========================================================
  * Static Industry Catalog  (front-end only)
@@ -430,6 +533,9 @@ function updateCountryFieldHints(countryCode) {
     // Preserve selection if it is still valid in the new list
     const stillValid = Array.from(orgSel.options).some(o => o.value === current && !o.disabled);
     if (stillValid) orgSel.value = current;
+
+    // ✅ After rebuilding org options, re-evaluate TIN/VAT exemption
+    applyTinVatExemption();
   }
 
   function adaptLabelsByAccountType() {
@@ -482,6 +588,8 @@ function updateCountryFieldHints(countryCode) {
       if (nextIndicator) nextIndicator.classList.add("active");
 
       adaptLabelsByAccountType();
+      // ✅ Ensure exemption is applied when entering Step 2
+      applyTinVatExemption();
     }
   }
 
@@ -1089,78 +1197,68 @@ function initIndustryDropdowns() {
       });
   }
   // =========================================================
-  // Google Places Autocomplete for Registered Address
+  // Address Autocomplete for Registered Address
+  // ----------------------------------------------------------------
+  // Uses free Photon backend (no Google API key required).
+  // Calls our own backend: GET /api/address/search?q=...&country=...
+  // Backend proxy to Photon (OSM data) by default.
+  //
+  // Existing structured hidden fields are populated:
+  //   regAddressLine1, regAddressLine2 (optional), regLocality,
+  //   regCity, regRegion, regPostalCode,
+  //   regPlaceId, regFormatted, regLat, regLng
   // =========================================================
   function initRegAddressAutocomplete() {
     const input = document.getElementById("addressSearch");
-    if (!input || !window.google || !google.maps || !google.maps.places) return;
-
-    const autocomplete = new google.maps.places.Autocomplete(input, {
-      types: ["geocode"]
-      // ✅ global: no componentRestrictions
-    });
+    if (!input) return;
+    if (!window.AddressAutocomplete) {
+      console.warn("[address] address-autocomplete.js not loaded — skipping.");
+      return;
+    }
 
     const byId = (id) => document.getElementById(id);
-
     function setVal(id, v) {
       const el = byId(id);
       if (el) el.value = v || "";
+      if (el) el.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
-    function getComponent(components, type) {
-      const c = components.find(x => (x.types || []).includes(type));
-      return c ? c.long_name : "";
+    // Determine country hint from the selected country field (if any)
+    function getCountryHint() {
+      const sel = byId("country") || byId("companyCountry");
+      if (!sel) return null;
+      const v = (sel.value || "").trim();
+      if (!v) return null;
+      // If the option stores display name, try to extract ISO from data-code
+      const opt = sel.querySelector(`option[value="${CSS.escape(v)}"]`);
+      if (opt && opt.dataset && opt.dataset.code) {
+        return opt.dataset.code.toUpperCase();
+      }
+      // If value already looks like an ISO code (2-3 chars uppercase), use it
+      if (/^[A-Z]{2,3}$/.test(v.toUpperCase())) return v.toUpperCase();
+      return null;
     }
 
-    autocomplete.addListener("place_changed", function () {
-      const place = autocomplete.getPlace();
-      if (!place || !place.address_components) return;
+    new AddressAutocomplete(input, {
+      country: null, // global; we'll also pass country dynamically below
+      minLength: 3,
+      debounceMs: 300,
+      onSelect: (addr) => {
+        // Country hint passed dynamically per request would require API change;
+        // simplest: server already restricts; let it return global results.
+        setVal("regAddressLine1", addr.line1);
+        setVal("regAddressLine2", addr.line2 || "");
+        setVal("regLocality",     addr.locality || "");
+        setVal("regCity",         addr.city || "");
+        setVal("regRegion",       addr.state || "");
+        setVal("regPostalCode",   addr.postcode || "");
 
-      const comps = place.address_components;
-
-      const streetNo = getComponent(comps, "street_number");
-      const route    = getComponent(comps, "route");
-      const line1    = [streetNo, route].filter(Boolean).join(" ");
-
-      // locality handling differs by country:
-      const locality =
-        getComponent(comps, "sublocality") ||
-        getComponent(comps, "sublocality_level_1") ||
-        getComponent(comps, "neighborhood");
-
-      const city =
-        getComponent(comps, "locality") ||
-        getComponent(comps, "postal_town") ||                 // UK
-        getComponent(comps, "administrative_area_level_2");   // fallback
-
-      const region =
-        getComponent(comps, "administrative_area_level_1") || // state/province
-        getComponent(comps, "administrative_area_level_2");
-
-      const postal = getComponent(comps, "postal_code");
-
-      setVal("regAddressLine1", line1);
-      // regAddressLine2 left for user (unit/suite often not reliable)
-      setVal("regLocality", locality);
-      setVal("regCity", city);
-      setVal("regRegion", region);
-      setVal("regPostalCode", postal);
-
-      // Optional metadata
-      setVal("regPlaceId", place.place_id || "");
-      setVal("regFormatted", place.formatted_address || "");
-
-      const loc = place.geometry && place.geometry.location;
-      setVal("regLat", loc ? String(loc.lat()) : "");
-      setVal("regLng", loc ? String(loc.lng()) : "");
-
-      // Persist to sessionStorage via your existing change listeners
-      // (they will fire only if user changes; so trigger manual change events)
-      ["regAddressLine1","regLocality","regCity","regRegion","regPostalCode"]
-        .forEach(id => {
-          const el = byId(id);
-          if (el) el.dispatchEvent(new Event("change", { bubbles: true }));
-        });
+        // Metadata (was regPlaceId / regFormatted / regLat / regLng)
+        setVal("regPlaceId",   addr.osmId ? (addr.osmType + "/" + addr.osmId) : "");
+        setVal("regFormatted", addr.formatted || "");
+        setVal("regLat",       addr.lat != null ? String(addr.lat) : "");
+        setVal("regLng",       addr.lon != null ? String(addr.lon) : "");
+      },
     });
   }
 
@@ -1170,6 +1268,10 @@ function initIndustryDropdowns() {
   function validateStep2() {
       const fin = document.getElementById("finYearStart");
       let finOK = true;
+
+      // ✅ Ensure TIN/VAT exemption is applied BEFORE validation
+      // (in case the user changed org type without blurring the field).
+      applyTinVatExemption();
 
       const requiredInputs = document.querySelectorAll("#step-2 [required]");
       let ok = true;
@@ -1232,6 +1334,9 @@ function initIndustryDropdowns() {
         el.dispatchEvent(evt);
       }
     });
+
+    // ✅ After restoring orgType, re-apply TIN/VAT exemption
+    applyTinVatExemption();
   }
 
   function bindStep2Persistence() {
@@ -1250,6 +1355,10 @@ function initIndustryDropdowns() {
 // =======================
 function handleRegistration(event) {
   if (event && event.preventDefault) event.preventDefault();
+
+  // ✅ Apply exemption state right before validating/submitting.
+  applyTinVatExemption();
+
   if (!validateStep2()) return;
 
   const step1 = JSON.parse(sessionStorage.getItem("fs_reg_step1_data") || "{}");
@@ -1322,18 +1431,30 @@ function handleRegistration(event) {
         country:    countryCode || null
       };
 
+  // ✅ Organisation type & exemption flag — passed to backend so it can
+  //    skip server-side TIN validation for exempt org types.
+  const organizationType = val("organizationType") || null;
+  const tinVatExempt      = isTinVatExempt(organizationType);
+
   // --- Company payload ---
   const company = {
     companyName:      val("companyName"),
-    organizationType: val("organizationType") || null,
+    organizationType: organizationType,
     clientCode:       val("clientCode") || null,
     industry:       val("industry") || null,
     subIndustry:    val("subIndustry") || null,
 
     country:        countryCode || null,
     companyRegNo:   val("regNumber") || null,
-    tin:            val("taxNumber") || null,
-    vat:            val("vatNumber") || null,
+
+    // ✅ For exempt org types, force TIN/VAT to null so the backend
+    //    cannot accidentally store stale values.
+    tin:            tinVatExempt ? null : (val("taxNumber") || null),
+    vat:            tinVatExempt ? null : (val("vatNumber") || null),
+
+    // ✅ Tell the backend explicitly that this org is exempt.
+    tinVatExempt:   tinVatExempt,
+
     companyEmail:   val("companyEmail") || null,
 
     currency:       currencyCode || null,
@@ -1414,10 +1535,15 @@ function handleRegistration(event) {
   var progressOverlay = showSignupProgress();
   var completedSteps = {};
 
+  // Allow the user to cancel the registration request.
+  var signupAbortController = new AbortController();
+  window._signupAbortController = signupAbortController;
+
   fetch(AUTH_SIGNUP_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: signupAbortController.signal
   })
   .then(function (response) {
     // Read the SSE stream
@@ -1489,9 +1615,26 @@ function handleRegistration(event) {
     }
   })
   .catch(function (err) {
+    // User deliberately cancelled the registration.
+    if (err && err.name === "AbortError") {
+      console.log("Registration cancelled by user.");
+      return;
+    }
+
     hideSignupProgress();
-    alert("Error: " + (err && err.message ? err.message : "Unexpected error"));
+
+    alert(
+      "Error: " +
+      (err && err.message ? err.message : "Unexpected error")
+    );
+
     console.error(err);
+  })
+  .finally(function () {
+    // Clear the controller when the request finishes.
+    if (window._signupAbortController === signupAbortController) {
+      window._signupAbortController = null;
+    }
   });
 }
 
@@ -1516,18 +1659,24 @@ const SPINNER_ICON = "\u23F3";  // ⏳
  */
 function showSignupProgress() {
   let container = document.getElementById(PROGRESS_CONTAINER_ID);
+
   if (!container) {
     container = document.createElement("div");
     container.id = PROGRESS_CONTAINER_ID;
-    // Insert at top of form or body
+
     const form = document.getElementById("registrationForm")
                  || document.querySelector("form")
                  || document.body;
+
     form.prepend(container);
   }
+
   container.style.cssText = `
     position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     background: rgba(0,0,0,0.5);
     display: flex;
     align-items: center;
@@ -1537,6 +1686,7 @@ function showSignupProgress() {
 
   container.innerHTML = `
     <div style="
+      position: relative;
       background: white;
       border-radius: 16px;
       padding: 32px 36px 24px;
@@ -1545,45 +1695,155 @@ function showSignupProgress() {
       box-shadow: 0 20px 60px rgba(0,0,0,0.3);
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     ">
+
+      <button
+        type="button"
+        id="${PROGRESS_CONTAINER_ID}_close"
+        aria-label="Cancel registration"
+        title="Cancel registration"
+        style="
+          position: absolute;
+          top: 10px;
+          right: 12px;
+          width: 34px;
+          height: 34px;
+          border: 0;
+          background: transparent;
+          color: #6b7280;
+          font-size: 26px;
+          line-height: 30px;
+          cursor: pointer;
+          border-radius: 8px;
+        "
+      >&times;</button>
+
       <div style="text-align:center; margin-bottom:20px;">
+
         <div style="
-          width:48px; height:48px;
-          border: 4px solid #e5e7eb;
-          border-top-color: #0d9488;
-          border-radius: 50%;
-          animation: fs-spin 0.8s linear infinite;
-          margin: 0 auto 12px;
+          width:48px;
+          height:48px;
+          border:4px solid #e5e7eb;
+          border-top-color:#0d9488;
+          border-radius:50%;
+          animation:fs-spin 0.8s linear infinite;
+          margin:0 auto 12px;
         "></div>
+
         <style>
-          @keyframes fs-spin { to { transform: rotate(360deg); } }
+          @keyframes fs-spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
         </style>
-        <h3 style="margin:0; font-size:1.15rem; color:#111827;">
+
+        <h3 style="
+          margin:0;
+          font-size:1.15rem;
+          color:#111827;
+        ">
           Creating your account
         </h3>
-        <p style="margin:6px 0 0; font-size:0.85rem; color:#6b7280;">
+
+        <p style="
+          margin:6px 0 0;
+          font-size:0.85rem;
+          color:#6b7280;
+        ">
           This may take a few seconds, please don't close this page.
         </p>
       </div>
-      <ul id="${PROGRESS_CONTAINER_ID}_steps"
-          style="
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            font-size: 0.875rem;
-            color: #374151;
-          ">
-      </ul>
-      <div id="${PROGRESS_CONTAINER_ID}_error"
-           style="display:none; margin-top:16px; padding:10px 14px;
-                  background:#fee2e2; border:1px solid #fecaca;
-                  border-radius:8px; color:#b91c1c; font-size:0.85rem;">
-      </div>
+
+      <ul
+        id="${PROGRESS_CONTAINER_ID}_steps"
+        style="
+          list-style:none;
+          padding:0;
+          margin:0;
+          font-size:0.875rem;
+          color:#374151;
+        "
+      ></ul>
+
+      <div
+        id="${PROGRESS_CONTAINER_ID}_error"
+        style="
+          display:none;
+          margin-top:16px;
+          padding:10px 14px;
+          background:#fee2e2;
+          border:1px solid #fecaca;
+          border-radius:8px;
+          color:#b91c1c;
+          font-size:0.85rem;
+        "
+      ></div>
     </div>
   `;
 
+  const closeBtn = document.getElementById(
+    `${PROGRESS_CONTAINER_ID}_close`
+  );
+
+  if (closeBtn) {
+    closeBtn.addEventListener("mouseenter", function () {
+      this.style.background = "#f3f4f6";
+      this.style.color = "#111827";
+    });
+
+    closeBtn.addEventListener("mouseleave", function () {
+      this.style.background = "transparent";
+      this.style.color = "#6b7280";
+    });
+
+    closeBtn.addEventListener("click", function () {
+
+      // Abort the active signup request if an AbortController exists.
+      try {
+        if (window._signupAbortController) {
+          window._signupAbortController.abort();
+          window._signupAbortController = null;
+        }
+      } catch (e) {
+        console.warn("Unable to abort signup request:", e);
+      }
+
+      // Stop the loading overlay.
+      container.style.display = "none";
+
+      // Re-enable the registration form.
+      const form = document.getElementById("registrationForm");
+
+      if (form) {
+        form.querySelectorAll(
+          "button, input, select, textarea"
+        ).forEach(function (el) {
+          el.disabled = false;
+        });
+
+        form.classList.remove(
+          "is-loading",
+          "loading",
+          "submitting"
+        );
+
+        form.removeAttribute("aria-busy");
+      }
+
+      // Re-enable submit buttons.
+      document.querySelectorAll(
+        '#registrationForm button[type="submit"], ' +
+        'button[type="submit"][data-signup-submit]'
+      ).forEach(function (btn) {
+        btn.disabled = false;
+        btn.classList.remove("loading", "is-loading");
+        btn.removeAttribute("aria-busy");
+      });
+    });
+  }
+
   return container;
 }
-
 /**
  * Add / update a step row in the progress list.
  */
@@ -1824,6 +2084,12 @@ document.addEventListener("DOMContentLoaded", function () {
     accountType.addEventListener("change", adaptLabelsByAccountType);
   }
 
+  // ✅ NEW: Bind organisation-type change → apply TIN/VAT exemption.
+  const orgTypeEl = document.getElementById("organizationType");
+  if (orgTypeEl) {
+    orgTypeEl.addEventListener("change", applyTinVatExemption);
+  }
+
   // Auto-fill finYearStart from companyRegDate
   const regDateInput = document.getElementById("companyRegDate");
   const finYearInput = document.getElementById("finYearStart");
@@ -1858,12 +2124,15 @@ document.addEventListener("DOMContentLoaded", function () {
   // Init static industries first
   initIndustryDropdowns();
 
+  // ✅ Apply TIN/VAT exemption on initial load (covers restored org type)
+  applyTinVatExemption();
+
   // Countries from backend, then rehydrate step 2
   fetchCountryMeta().then(function () {
     loadStep2Data();
   });
 
-  // ✅ Google Places Autocomplete (now fills structured address fields)
+  // ✅ Address autocomplete (free Photon backend, no Google API key)
   initRegAddressAutocomplete();
 
   // ✅ Postal same-as-registered behaviour

@@ -1,397 +1,615 @@
-/* style.css - Complete Styling for Registration & COA Display */
+/* =========================================================
+   FinSage — Registration Page Stylesheet
+   -------------------------------------------------------
+   Pairs with register.html + app.js
+   Design language:
+     • Fintech-minimal: deep teal primary, mint accent, neutral surface
+     • Card-based layout on a soft gradient backdrop
+     • Generous whitespace, subtle shadows, smooth transitions
+   ========================================================= */
 
-/* --- 1. Global Variables & Base Styles --- */
+/* ---------------------------------------------------------
+   1. Design Tokens
+   --------------------------------------------------------- */
 :root {
-    /* Brand Colors */
-    --color-primary: #004d40; /* Deep Teal/Green - Primary Action */
-    --color-secondary: #009688; /* Accent Teal */
-    --color-text: #212121; /* Dark Grey for text */
-    --color-light-text: #757575; /* Medium Grey for labels/hints */
-    --color-bg: #f4f4f9; /* Light background */
-    --color-card-bg: #ffffff; /* White card background */
-    --color-border: #e0e0e0; /* Light grey border */
-    --color-success: #4caf50; /* Green */
-    --color-error: #e53935; /* Red for validation errors */
+  /* Brand palette */
+  --color-primary:        #004d40;   /* deep teal */
+  --color-primary-dark:   #003c32;
+  --color-primary-soft:   #e6f2ef;
+  --color-secondary:      #0d9488;   /* teal */
+  --color-secondary-dark: #007d6f;
+  --color-accent:         #00c8c8;   /* mint */
+  --color-accent-soft:    #ccfbf1;
+
+  /* Neutrals */
+  --color-bg:             #f5f7fa;
+  --color-surface:        #ffffff;
+  --color-surface-alt:    #f9fafb;
+  --color-border:         #d1d5db;
+  --color-border-soft:    #e5e7eb;
+  --color-text:           #111827;
+  --color-text-muted:     #4b5563;
+  --color-light-text:     #6b7280;
+  --color-error:          #dc2626;
+  --color-error-soft:     #fee2e2;
+  --color-success:        #059669;
+  --color-success-soft:   #ecfdf5;
+  --color-warning:        #b45309;
+  --color-warning-soft:   #fef3c7;
+
+  /* Typography */
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system,
+               "Helvetica Neue", Arial, sans-serif;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 9999px;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06),
+               0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 10px -2px rgba(15, 23, 42, 0.08),
+               0 2px 4px -1px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 32px -6px rgba(15, 23, 42, 0.15),
+               0 4px 12px -2px rgba(15, 23, 42, 0.06);
+  --shadow-focus: 0 0 0 3px rgba(13, 148, 136, 0.18);
+
+  /* Motion */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
+
+  /* Layout */
+  --form-max-width: 880px;
+  --field-gap: 1.1rem;
 }
+
+/* ---------------------------------------------------------
+   2. Reset / Base
+   --------------------------------------------------------- */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
 
 body {
-    font-family: 'Inter', sans-serif;
-    margin: 0;
-    padding: 0;
-    background-color: var(--color-bg);
-    color: var(--color-text);
-    line-height: 1.6;
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--color-text);
+  background:
+    radial-gradient(1200px 600px at 100% -10%,
+      rgba(0, 200, 200, 0.08), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%,
+      rgba(13, 148, 136, 0.10), transparent 60%),
+    var(--color-bg);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* --- 2. Registration Form Container & Layout --- */
+a { color: var(--color-secondary); text-decoration: none; }
+a:hover { color: var(--color-secondary-dark); text-decoration: underline; }
 
+/* ---------------------------------------------------------
+   3. Layout — registration container + card
+   --------------------------------------------------------- */
 .registration-container {
-    max-width: 600px;
-    margin: 50px auto;
-    padding: 30px;
-    background-color: var(--color-card-bg);
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: var(--form-max-width);
+  margin: 0 auto;
+  padding: 32px 20px 64px;
 }
 
-.registration-container h2 {
-    text-align: center;
-    color: var(--color-primary);
-    margin-bottom: 25px;
-    padding-bottom: 10px;
-    border-bottom: 3px solid var(--color-secondary);
+#registrationForm {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-xl);
+  padding: 36px 40px 40px;
+  box-shadow: var(--shadow-lg);
 }
 
-/* --- 3. Form Steps and Fields --- */
+#registrationForm > h2 {
+  margin: 0 0 24px;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-primary);
+  position: relative;
+  padding-bottom: 16px;
+}
 
+#registrationForm > h2::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 56px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg,
+    var(--color-secondary), var(--color-accent));
+}
+
+/* ---------------------------------------------------------
+   4. Progress bar (step indicators)
+   --------------------------------------------------------- */
+.progress-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 28px;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-bar > span {
+  position: relative;
+  flex: 1;
+  padding: 10px 14px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-light-text);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  transition: all var(--dur) var(--ease);
+}
+
+.progress-bar > span + span {
+  margin-left: 12px;
+}
+
+/* Connector line between steps */
+.progress-bar > span + span::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 12px;
+  height: 2px;
+  background: var(--color-border-soft);
+  transform: translateY(-50%);
+  transition: background var(--dur) var(--ease);
+}
+
+.progress-bar > span.active {
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border-color: var(--color-secondary);
+  box-shadow: var(--shadow-focus);
+}
+
+.progress-bar > span.completed {
+  color: #fff;
+  background: var(--color-secondary);
+  border-color: var(--color-secondary);
+}
+
+.progress-bar > span.completed + span::before,
+.progress-bar > span.active + span::before {
+  background: var(--color-secondary);
+}
+
+/* ---------------------------------------------------------
+   5. Fieldsets & legends
+   --------------------------------------------------------- */
 fieldset {
-    border: none;
-    padding: 0;
-    margin: 0 0 20px 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
 }
 
-.hidden-step {
-    display: none;
-    opacity: 0;
-    transition: opacity 0.5s ease;
+fieldset legend {
+  display: block;
+  margin: 0 0 20px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  letter-spacing: -0.005em;
 }
 
-.active-step {
-    display: block;
-    opacity: 1;
-    transition: opacity 0.5s ease;
+fieldset legend::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 10px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  vertical-align: middle;
+  transform: translateY(-2px);
 }
 
-legend {
-    font-size: 1.3em;
-    font-weight: 600;
-    color: var(--color-primary);
-    margin-bottom: 20px;
-    padding: 0;
+.hidden-step { display: none !important; }
+.active-step { display: block; animation: fadeStep var(--dur-slow) var(--ease); }
+
+@keyframes fadeStep {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ---------------------------------------------------------
+   6. Input groups, labels, form controls
+   --------------------------------------------------------- */
 .input-group {
-    margin-bottom: 20px;
+  margin-bottom: var(--field-gap);
 }
 
 .input-group label {
-    display: block;
-    margin-bottom: 8px;
-    font-weight: 500;
-    color: var(--color-light-text);
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+  letter-spacing: 0.005em;
 }
 
-.input-group input[required]:valid,
-.input-group select[required]:valid,
-.input-group textarea[required]:valid {
-    /* Subtle green border after successful initial entry */
-    border: 1px solid var(--color-border);
+.input-group label .text-xs,
+.input-group small {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--color-light-text);
+  line-height: 1.45;
+}
+
+.input-group small.text-amber-700 { color: var(--color-warning) !important; }
+
+/* Inputs / selects / textareas — unified look */
+.input-group input[type="text"],
+.input-group input[type="email"],
+.input-group input[type="tel"],
+.input-group input[type="url"],
+.input-group input[type="password"],
+.input-group input[type="date"],
+.input-group select,
+.input-group textarea {
+  width: 100%;
+  padding: 11px 14px;
+  font-size: 0.925rem;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease),
+              background var(--dur) var(--ease);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.input-group input::placeholder,
+.input-group textarea::placeholder {
+  color: #9ca3af;
+}
+
+.input-group input:hover,
+.input-group select:hover,
+.input-group textarea:hover {
+  border-color: #9ca6b4;
 }
 
 .input-group input:focus,
 .input-group select:focus,
 .input-group textarea:focus {
-    border-color: var(--color-secondary) !important;
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(0, 150, 136, 0.2);
+  outline: none;
+  border-color: var(--color-secondary);
+  box-shadow: var(--shadow-focus);
+  background: #fff;
 }
 
-input[type="text"],
-input[type="email"],
-input[type="password"],
-input[type="tel"],
-select,
-textarea {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    box-sizing: border-box;
-    font-size: 1em;
+.input-group input[disabled],
+.input-group select[disabled],
+.input-group textarea[disabled] {
+  background: var(--color-surface-alt);
+  color: var(--color-light-text);
+  cursor: not-allowed;
 }
 
-textarea {
-    resize: vertical;
-    min-height: 80px;
+/* Select arrow */
+.input-group select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  padding-right: 40px;
 }
 
-/* --- 4. Tooltip and Helper Icon Styling (NEW) --- */
-.tooltip-container label {
-    display: flex;
-    align-items: center;
+/* Date input icon tint */
+.input-group input[type="date"] {
+  min-height: 44px;
 }
+.input-group input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.45);
+  cursor: pointer;
+}
+
+/* Checkbox + label alignment */
+.input-group label.flex,
+.input-group label input[type="checkbox"] {
+  cursor: pointer;
+}
+.input-group label input[type="checkbox"] {
+  accent-color: var(--color-secondary);
+}
+
+/* ---------------------------------------------------------
+   7. Tooltips (info icon)
+   --------------------------------------------------------- */
+.tooltip-container { position: relative; }
 
 .info-icon {
-    font-size: 0.9em;
-    color: var(--color-secondary);
-    margin-left: 5px;
-    cursor: help;
-    position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-style: normal;
+  color: var(--color-light-text);
+  background: var(--color-border-soft);
+  border-radius: 50%;
+  cursor: help;
+  vertical-align: middle;
+  transition: all var(--dur) var(--ease);
+}
+.info-icon:hover {
+  background: var(--color-secondary);
+  color: #fff;
 }
 
-.info-icon::before {
-    content: attr(title);
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: var(--color-text);
-    color: white;
-    padding: 8px;
-    border-radius: 5px;
-    white-space: nowrap;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.3s, visibility 0.3s;
-    z-index: 20;
-    font-weight: 400;
+/* ---------------------------------------------------------
+   8. Exemption badges (TIN / VAT)
+   --------------------------------------------------------- */
+#tinExemptBadge,
+#vatExemptBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  border: 1px solid #fcd34d;
+  border-radius: var(--radius-pill);
+  vertical-align: middle;
 }
 
-.info-icon:hover::before {
-    opacity: 1;
-    visibility: visible;
+/* ---------------------------------------------------------
+   9. COA confirmation message
+   --------------------------------------------------------- */
+#coa-message {
+  padding: 12px 14px !important;
+  margin-top: -4px !important;
+  margin-bottom: 20px !important;
+  font-size: 0.85rem !important;
+  font-weight: 500 !important;
+  color: var(--color-success) !important;
+  background: var(--color-success-soft) !important;
+  border: 1px solid #a7f3d0 !important;
+  border-radius: var(--radius-md) !important;
+  display: none;
 }
 
-
-/* --- 5. Button Styles --- */
-
-.button-group {
-    display: flex;
-    justify-content: space-between;
-    gap: 15px;
-    margin-top: 30px;
+hr {
+  margin: 20px 0;
+  border: 0;
+  border-top: 1px solid var(--color-border-soft);
 }
 
-.button-group button {
-    flex: 1;
+/* ---------------------------------------------------------
+   10. Error messages
+   --------------------------------------------------------- */
+#emailError,
+#passwordError,
+#confirmError,
+#formMessage {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-error);
+  background: var(--color-error-soft);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
 }
 
-button {
-    padding: 12px 25px;
-    font-size: 1.1em;
-    font-weight: 600;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background-color 0.3s, transform 0.1s, box-shadow 0.3s;
+#formMessage:not(.hidden) {
+  display: block;
 }
 
-button[type="button"] { /* Next/Back button */
-    background-color: var(--color-secondary);
-    color: white;
+/* Inline invalid highlight (set by JS) */
+input[style*="border: 2px solid"],
+select[style*="border: 2px solid"],
+textarea[style*="border: 2px solid"] {
+  animation: shake 0.32s var(--ease);
 }
 
-button[type="submit"] { /* Complete Registration */
-    background-color: var(--color-primary);
-    color: white;
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-3px); }
+  75%      { transform: translateX(3px); }
 }
 
-button:hover {
-    filter: brightness(1.1);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+/* ---------------------------------------------------------
+   11. Buttons
+   --------------------------------------------------------- */
+.button-group { margin-top: 28px; }
+
+#registrationForm button,
+.registration-container > div button,
+.registration-container > div a {
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  transition: all var(--dur) var(--ease);
 }
 
-button:active {
-    transform: scale(0.99);
+/* Primary action button (Next / Complete Registration) */
+#registrationForm button[type="submit"],
+#registrationForm button.bg-\[var\(--color-secondary\)\],
+#registrationForm button.bg-\[var\(--color-primary\)\] {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
 }
 
-/* --- 6. Progress Bar (NEW) --- */
-
-.progress-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 30px;
-    position: relative;
-    padding: 0 20px;
+#registrationForm button[type="submit"]::after,
+#registrationForm button.bg-\[var\(--color-secondary\)\]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.18) 50%,
+    transparent 70%);
+  transform: translateX(-100%);
+  transition: transform 0.6s var(--ease);
 }
 
-.progress-bar::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 20px;
-    right: 20px;
-    height: 3px;
-    background-color: var(--color-border);
-    transform: translateY(-50%);
-    z-index: 1;
+#registrationForm button[type="submit"]:hover::after,
+#registrationForm button.bg-\[var\(--color-secondary\)\]:hover::after {
+  transform: translateX(100%);
 }
 
-.progress-bar span {
-    position: relative;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    font-size: 0.9em;
-    color: var(--color-light-text);
-    transition: color 0.3s;
-    text-align: center;
-    max-width: 45%;
+/* Back / secondary button */
+#registrationForm button.bg-gray-400 {
+  background: #e5e7eb !important;
+  color: var(--color-text) !important;
+  box-shadow: var(--shadow-xs);
+}
+#registrationForm button.bg-gray-400:hover {
+  background: #d1d5db !important;
 }
 
-.progress-bar span::before {
-    content: attr(data-step);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background-color: var(--color-border);
-    color: var(--color-light-text);
-    font-weight: bold;
-    margin-bottom: 8px;
-    border: 3px solid var(--color-card-bg); /* White border to lift it over the line */
-    box-shadow: 0 0 0 1px var(--color-border);
-    transition: background-color 0.3s, color 0.3s, box-shadow 0.3s;
+/* Top-right ghost buttons (Home / Sign in) */
+.registration-container > div a,
+.registration-container > div #signinBtn {
+  font-size: 0.85rem;
+  transition: all var(--dur) var(--ease);
+}
+.registration-container > div a:hover,
+.registration-container > div #signinBtn:hover {
+  border-color: var(--color-secondary) !important;
+  color: var(--color-secondary) !important;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-xs);
 }
 
-.progress-bar .active {
-    color: var(--color-primary);
-    font-weight: 600;
+/* ---------------------------------------------------------
+   12. Phone country selector
+   --------------------------------------------------------- */
+#phoneCountryBtn {
+  background: var(--color-surface-alt);
+  font-weight: 600;
+  transition: all var(--dur) var(--ease);
+}
+#phoneCountryBtn:hover {
+  background: #f3f4f6;
+}
+#phoneCountryDropdown {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--color-border-soft);
+}
+#phoneCountryList button:hover {
+  background: var(--color-primary-soft) !important;
 }
 
-.progress-bar .active::before {
-    background-color: var(--color-primary);
-    color: white;
-    box-shadow: 0 0 0 3px rgba(0, 77, 64, 0.3);
+/* ---------------------------------------------------------
+   13. Team invite block
+   --------------------------------------------------------- */
+#teamInviteBlock {
+  margin-top: 8px;
+  padding: 18px;
+  background: var(--color-surface-alt);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  animation: fadeStep var(--dur-slow) var(--ease);
 }
 
-.progress-bar .completed {
-    color: var(--color-secondary);
+#teamInviteBlock.hidden { display: none; }
+
+#teamInviteBlock .input-group:last-child { margin-bottom: 0; }
+
+/* ---------------------------------------------------------
+   14. Legal acceptance block
+   --------------------------------------------------------- */
+.input-group.mt-6 label {
+  font-weight: 400;
+  color: var(--color-text-muted);
+  line-height: 1.6;
 }
 
-.progress-bar .completed::before {
-    content: '✓'; /* Checkmark for completed steps */
-    background-color: var(--color-secondary);
-    color: white;
-    box-shadow: 0 0 0 3px rgba(0, 150, 136, 0.3);
+/* ---------------------------------------------------------
+   15. Utilities
+   --------------------------------------------------------- */
+.hidden { display: none !important; }
+
+/* ---------------------------------------------------------
+   16. Responsive
+   --------------------------------------------------------- */
+@media (max-width: 640px) {
+  .registration-container { padding: 16px 12px 48px; }
+
+  #registrationForm {
+    padding: 24px 20px 28px;
+    border-radius: var(--radius-lg);
+  }
+
+  #registrationForm > h2 { font-size: 1.35rem; }
+
+  .progress-bar > span {
+    padding: 8px 6px;
+    font-size: 0.72rem;
+    line-height: 1.2;
+  }
+  .progress-bar > span + span { margin-left: 8px; }
+  .progress-bar > span + span::before {
+    left: -8px;
+    width: 8px;
+  }
+
+  fieldset legend { font-size: 0.98rem; }
+
+  .button-group button { width: 100%; }
 }
 
-
-/* --- 7. COA Display Specific Styles --- */
-
-.coa-container { 
-    max-width: 1200px; 
-    margin: 40px auto; 
-    background-color: var(--color-card-bg); 
-    padding: 20px; 
-    border-radius: 8px; 
-    box-shadow: 0 0 10px rgba(0,0,0,0.1); 
-    overflow-x: auto; 
+/* ---------------------------------------------------------
+   17. Reduced motion
+   --------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
-.coa-container h2 { 
-    border-bottom: 2px solid var(--color-border); 
-    padding-bottom: 10px; 
-    text-align: left; 
-    color: var(--color-primary);
+/* ---------------------------------------------------------
+   18. Print
+   --------------------------------------------------------- */
+@media print {
+  body { background: #fff; }
+  #registrationForm {
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+  .hidden-step, #signupProgress { display: none !important; }
 }
-
-#controls {
-    display: flex;
-    gap: 15px;
-    margin-bottom: 20px;
-    align-items: center;
-}
-
-#search-input {
-    flex-grow: 1; 
-    max-width: 400px;
-    padding: 10px; 
-    border-radius: 8px;
-}
-
-table { 
-    width: 100%; 
-    border-collapse: collapse; 
-    margin-top: 20px; 
-}
-th, td { 
-    padding: 12px 15px; 
-    text-align: left; 
-    border-bottom: 1px solid var(--color-border); 
-}
-th { 
-    background-color: var(--color-primary); 
-    color: white; 
-    cursor: pointer; 
-    position: sticky; 
-    top: 0; 
-    z-index: 10;
-}
-tr:hover { 
-    background-color: #f1f1f1; 
-}
-.loading { 
-    text-align: center; 
-    padding: 50px; 
-}
-
-@media (max-width: 650px) {
-    .registration-container {
-        margin: 20px;
-        padding: 20px;
-    }
-    .progress-bar span {
-        font-size: 0.8em;
-    }
-    .button-group {
-        flex-direction: column;
-    }
-    .coa-container {
-        margin: 20px;
-    }
-}
-
-/* Header divider */
-.registration-container h2{
-  text-align:center;
-  color:#0f5132;
-  border-bottom:4px solid #0f8b6a;
-  border-bottom-left-radius:0;
-  border-bottom-right-radius:0;
-}
-
-/* Stepper (1 — 2) */
-.progress-bar{
-  margin-top:14px;
-  margin-bottom:18px;
-  gap:24px;
-  justify-content:space-between;
-}
-.progress-bar span{
-  display:flex; align-items:center; gap:10px;
-  color:#6b7280; font-weight:600; font-size:0.95rem;
-}
-.progress-bar span::before{
-  content:attr(data-step);
-  width:32px; height:32px; border-radius:999px;
-  display:grid; place-items:center;
-  background:#eef2f1; color:#0f5132; border:2px solid #cfe7e0;
-  font-weight:700;
-}
-.progress-bar .active{ color:#0f5132; }
-.progress-bar .active::before{ background:#e7fbf4; border-color:#0f8b6a; }
-.progress-bar .completed{ color:#0f8b6a; }
-.progress-bar .completed::before{ content:"✓"; background:#0f8b6a; color:#fff; border-color:#0f8b6a; }
-
-/* Card + fields */
-.registration-container{
-  max-width:760px; border-radius:14px;
-  box-shadow:0 12px 30px rgba(0,0,0,.12);
-}
-.input-group input, .input-group select, .input-group textarea{
-  border-radius:8px;
-}
-
-/* Full-width primary button */
-.button-group{ margin-top:22px; }
-.button-group button[type="button"],
-.button-group button[type="submit"]{
-  width:100%;
-  background:#0f8b6a;
-}
-.button-group button:hover{ filter:brightness(1.06); }

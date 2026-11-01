@@ -184,65 +184,104 @@ function getSigninUrl(reason=""){
   }
 })();
 
+
+// ====== COMPANY BRANDING (additive, v8) ======
+// Replaces hardcoded demo company text ("Mokoko Trading (Pty) Ltd") with the
+// signed-in user's real company name everywhere it is DISPLAYED:
+//   - any element carrying [data-fs-company] (Catalog Studio eyebrow,
+//     Group Reporting parent chip, Company & Setup hero line, ...)
+//   - the --fs-company-name CSS variable consumed by the Payroll / Projects
+//     hero eyebrow pills (::before content: "Payroll · " var(...))
+// Self-contained resolver — mirrors getActiveCompanyName() fallback order but
+// works even before/without it. Called automatically whenever company data
+// arrives or changes (applyCompanyGlobals / applyLoggedInUI /
+// updateHeaderCompanyBadge / loadCompanyProfile).
+(function fsCompanyBranding() {
+  function fsResolveCompanyName() {
+    // 1) In-memory company objects (authoritative once company data loads)
+    const c =
+      window.CURRENT_COMPANY ||
+      window.COMPANY_PROFILE ||
+      window.activeCompany ||
+      window.ACTIVE_COMPANY ||
+      null;
+    const fromObj = c?.company_name || c?.name || c?.legal_name || "";
+
+    // 2) Header badge (kept in sync by applyLoggedInUI / updateHeaderCompanyBadge)
+    const badgeText = document.getElementById("companyBadge")?.textContent?.trim();
+    const fromBadge =
+      badgeText && badgeText !== "Your company" ? badgeText : "";
+
+    // 3) Persisted values (written by resolveCompanyProfile / signin)
+    const fromLS =
+      localStorage.getItem("active_company_name") ||
+      localStorage.getItem("companyName") ||
+      localStorage.getItem("company_name") ||
+      "";
+
+    // 4) Cached user payload
+    let fromUser = "";
+    try {
+      const u = JSON.parse(localStorage.getItem("fs_user") || "{}");
+      fromUser = u.company_name || (u.company && u.company.name) || "";
+    } catch (_) {}
+
+    return String(fromObj || fromBadge || fromLS || fromUser || "").trim();
+  }
+
+  window.FS_APPLY_COMPANY_BRANDING = function (explicitName) {
+    const name = String(explicitName || fsResolveCompanyName() || "").trim();
+    if (!name) return "";
+
+    // CSS var for ::before eyebrow pills ("Payroll · <company>", "Projects · <company>")
+    try {
+      document.documentElement.style.setProperty(
+        "--fs-company-name",
+        JSON.stringify(name)
+      );
+    } catch (_) {}
+
+    // Text slots
+    document.querySelectorAll("[data-fs-company]").forEach((el) => {
+      if (el.textContent !== name) el.textContent = name;
+    });
+
+    return name;
+  };
+
+  window.FS_RESOLVE_COMPANY_NAME = fsResolveCompanyName;
+
+  // First paint from cached values (head inline script already set the CSS var;
+  // this covers the [data-fs-company] text slots as soon as the DOM exists).
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      window.FS_APPLY_COMPANY_BRANDING();
+    });
+  } else {
+    window.FS_APPLY_COMPANY_BRANDING();
+  }
+})();
+
 (function bindSessionLockModalEarly() {
-  document.addEventListener("click",e=>{
-    const signOut=e.target.closest("#sessionLockSignOutBtn");
-    if(!signOut)return;
+  document.addEventListener("click", (e) => {
+    const signOut = e.target.closest("#sessionLockSignOutBtn");
+    if (!signOut) return;
 
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
 
-    if(typeof performFullLogout==="function"){
+    if (typeof performFullLogout === "function") {
       performFullLogout();
       return;
     }
 
     window.clearToken?.();
     sessionStorage.clear();
-
-    window.location.replace(
-      getSigninUrl("signed_out")
-    );
-  },true);
-
-  document.addEventListener("submit", async (e) => {
-    const form = e.target.closest("#sessionUnlockForm");
-    if (!form) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    const input = document.getElementById("sessionUnlockPassword");
-    const msg = document.getElementById("sessionUnlockMsg");
-    const password = input?.value || "";
-
-    if (msg) msg.textContent = "";
-
-    if (!password) {
-      if (msg) msg.textContent = "Enter your password.";
-      return;
-    }
-
-    try {
-      await window.apiFetch(window.ENDPOINTS.auth.reauth, {
-        method: "POST",
-        body: JSON.stringify({ password }),
-        _allowWhenLocked: true,
-      });
-
-      input.value = "";
-      sessionStorage.removeItem("fs_session_locked");
-      sessionStorage.removeItem("fs_session_lock_reason");
-
-      document.getElementById("sessionLockModal")?.classList.add("hidden");
-      document.getElementById("sessionLockModal")?.classList.remove("flex");
-
-      window.resetIdleTimer?.();
-    } catch (err) {
-      if (msg) msg.textContent = err.message || "Unlock failed.";
-    }
+    window.location.replace(getSigninUrl("signed_out"));
   }, true);
 })();
+
 
 console.log("✅ dashboard.js booting");
 
@@ -324,12 +363,15 @@ window.addEventListener("unhandledrejection", (e) => {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
-  function toApiUrl(url) {
-    if (!url) throw new Error("toApiUrl: url is missing");
-    if (/^https?:\/\//i.test(url)) return url;
-    if (url.startsWith("/")) return API_BASE + url;
-    return API_BASE + "/" + url;
-  }
+  window.toApiUrl = function toApiUrl(url) {
+      if (!url) throw new Error("toApiUrl: url is missing");
+
+      if (/^https?:\/\/?/i.test(url)) return url;
+
+      if (url.startsWith("/")) return API_BASE + url;
+
+      return API_BASE + "/" + url;
+  };
 
  // ✅ ONE global apiFetch only
   window.apiFetch = async function apiFetch(url, options = {}) {
@@ -382,7 +424,15 @@ window.addEventListener("unhandledrejection", (e) => {
         headers.set("X-FS-Target-Company-Id", String(postingCtx.targetCompanyId));
       }
 
-      console.log("API FETCH HEADERS", finalUrl, Object.fromEntries(headers.entries()));
+      if (finalUrl.includes("/revenue/contracts")) {
+        console.log("[REVENUE AUTH CHECK]", {
+          url: finalUrl,
+          authHeaderPresent: headers.has("Authorization"),
+          authHeaderIsBearer: /^Bearer\s+\S+$/i.test(
+            headers.get("Authorization") || ""
+          )
+        });
+      }
     } catch (e) {
       console.warn("Failed to attach posting context headers", e);
     }
@@ -429,6 +479,17 @@ window.addEventListener("unhandledrejection", (e) => {
 
     // Avoid infinite loops
     const approveAttempted = options._fsApproveAttempt === true;
+
+    if (finalUrl.includes("/revenue/contracts")) {
+      console.log("[REVENUE FETCH CHECK]", {
+        url: finalUrl,
+        method: options.method || "GET",
+        authorizationPresent: headers.has("Authorization"),
+        authorizationLength: (headers.get("Authorization") || "").length
+      });
+
+      console.trace("[REVENUE FETCH CALLER]");
+    }
 
     const res = await fetch(finalUrl, { ...options, headers });
 
@@ -515,6 +576,13 @@ window.addEventListener("unhandledrejection", (e) => {
     }
 
     if (!res.ok) {
+      // ✅ Handle server-returned 423 SESSION_LOCKED
+      if (res.status === 423) {
+        sessionStorage.setItem("fs_session_locked", "1");
+        sessionStorage.setItem("fs_session_lock_reason", (data && (data.error || data.message || data.reason)) || "server_423");
+        showSessionLockModal?.();
+      }
+
       const msg = (data && (data.error || data.message || data.detail)) || `HTTP ${res.status}`;
       const err = new Error(msg);
       err.status = res.status;
@@ -588,6 +656,9 @@ async function resolveCompanyProfile(currentUser) {
 
     if (companyName) {
       localStorage.setItem("active_company_name", companyName);
+
+      // ✅ v8: keep displayed company branding in sync (additive)
+      window.FS_APPLY_COMPANY_BRANDING?.(companyName);
     }
 
     // ✅ persist ONE key consistently
@@ -600,7 +671,7 @@ async function resolveCompanyProfile(currentUser) {
     if (invCur && !invCur.value && cur) invCur.value = cur;
 
     const quoteCur = document.getElementById("quoteCurrency");
-    if (quoteCur && !quoteCur.value && cur) quoteCur.value = cur;
+    if (quoteCur) quoteCur.value = resolveCurrency(cur);
   };
 
   // If user payload already contains company object, prefer it
@@ -1686,31 +1757,6 @@ const ENDPOINTS = {
     run: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}`,
 
-    runEligibility:(companyId,runId)=>
-      `${API_BASE}/api/companies/`+
-      `${encodeURIComponent(companyId)}/payroll/runs/`+
-      `${encodeURIComponent(runId)}/eligibility`,
-
-    runValidation:(companyId,runId)=>
-      `${API_BASE}/api/companies/`+
-      `${encodeURIComponent(companyId)}/payroll/runs/`+
-      `${encodeURIComponent(runId)}/validation`,
-
-    runEmployeeValidation:(
-      companyId,
-      runId,
-      employeeId
-    )=>
-      `${API_BASE}/api/companies/`+
-      `${encodeURIComponent(companyId)}/payroll/runs/`+
-      `${encodeURIComponent(runId)}/employees/`+
-      `${encodeURIComponent(employeeId)}/validation`,
-      
-    runAudit:(companyId,runId)=>
-      `${API_BASE}/api/companies/`+
-      `${encodeURIComponent(companyId)}/payroll/runs/`+
-      `${encodeURIComponent(runId)}/audit`,
-
     initialPreview: (companyId, itemId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/initial-preview`,
 
@@ -2458,6 +2504,9 @@ const ENDPOINTS = {
     run: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}`,
 
+    payslipLitePreview: (companyId, employeeId, params = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/payslip-lite/preview${params ? `?${params}` : ""}`,
+
     calculateRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/calculate`,
 
@@ -2496,6 +2545,31 @@ const ENDPOINTS = {
         `${qs?`?${qs}`:""}`
       );
     },
+
+    runEligibility:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/eligibility`,
+
+    runValidation:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/validation`,
+
+    runEmployeeValidation:(
+      companyId,
+      runId,
+      employeeId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/employees/`+
+      `${encodeURIComponent(employeeId)}/validation`,
+      
+    runAudit:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/audit`,
 
     runAttendanceBulk:(companyId,runId)=>
       `${API_BASE}/api/companies/`+
@@ -2585,6 +2659,55 @@ const ENDPOINTS = {
 
     journalPreview: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/journal-preview`,
+
+    // POST /api/companies/<cid>/payroll/runs/<runId>/liability-payment/preview
+    liabilityPaymentPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/liability-payment/preview`,
+
+    // POST /api/companies/<cid>/payroll/runs/<runId>/liability-payment
+    liabilityPayment: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/liability-payment`,
+
+    // GET /api/companies/<cid>/payroll/runs/<runId>/liability-payments
+    liabilityPayments: (companyId, runId, { liability_type = "" } = {}) => {
+      const params = new URLSearchParams();
+
+      if (liability_type) {
+        params.append("liability_type", String(liability_type));
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/liability-payments${qs ? `?${qs}` : ""}`;
+    },
+
+    liabilityBalance: (companyId, runId, {
+      liability_type = "",
+      benefit_plan_id = null,
+      defined_contribution_run_id = null
+    } = {}) => {
+      const params = new URLSearchParams();
+
+      if (liability_type) {
+        params.append("liability_type", String(liability_type));
+      }
+
+      if (benefit_plan_id) {
+        params.append("benefit_plan_id", String(benefit_plan_id));
+      }
+
+      if (defined_contribution_run_id) {
+        params.append("defined_contribution_run_id", String(defined_contribution_run_id));
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/liability-balance${qs ? `?${qs}` : ""}`;
+    },
+
+    // GET /api/companies/<cid>/payroll/liability-payments/<paymentId>
+    liabilityPaymentDetail: (companyId, paymentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/liability-payments/${encodeURIComponent(paymentId)}`,
 
     glDiagnostics: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/gl-diagnostics`,
@@ -4639,7 +4762,7 @@ const ENDPOINTS = {
     receive: (cid) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/receive`,
 
-    // Adjust stock (NEW)
+    // Adjust stock
     adjust: (cid) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/adjust`,
 
@@ -4674,8 +4797,8 @@ const ENDPOINTS = {
 
     stocktakePost: (cid, sessionId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/stocktake/${encodeURIComponent(sessionId)}/post`,
-  
-    purchaseOrders: (cid, q="") =>
+
+    purchaseOrders: (cid, q = "") =>
       `/api/companies/${cid}/purchase-orders${q ? `?${q}` : ""}`,
 
     purchaseOrder: (cid, poId) =>
@@ -4683,17 +4806,129 @@ const ENDPOINTS = {
 
     purchaseOrderReceive: (cid, poId) =>
       `/api/companies/${cid}/purchase-orders/${poId}/receive`,
+
+    // Write-Downs
+    writeDown: (cid) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/write-down`,
+
+    writeDownReasons: (cid, qs = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/write-downs/reasons${qs ? `?${qs}` : ""}`,
   },
 
   stocktake: {
     create: (cid) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/stocktake`,
+
     saveLines: (cid, sessionId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/stocktake/${encodeURIComponent(sessionId)}/lines`,
+
     compare: (cid, sessionId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/stocktake/${encodeURIComponent(sessionId)}/compare`,
+
     post: (cid, sessionId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/stocktake/${encodeURIComponent(sessionId)}/post`,
+  },
+
+  manufacturing: {
+    boms: (cid, qs = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/boms${qs ? `?${qs}` : ""}`,
+
+    bom: (cid, bomId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/boms/${encodeURIComponent(bomId)}`,
+
+    bomLines: (cid, bomId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/boms/${encodeURIComponent(bomId)}/lines`,
+
+    productionCatalog: (cid, qs = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/production-catalog${qs ? `?${qs}` : ""}`,
+
+    bomPreviewFromCatalog: (cid) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/boms/preview-from-catalog`,
+
+    orders: (cid, qs = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders${qs ? `?${qs}` : ""}`,
+
+    order: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}`,
+
+
+    stageStandards: (cid, bomId) =>
+      `/api/companies/${encodeURIComponent(cid)}/manufacturing/stage-standards${
+        bomId ? `?bom_id=${encodeURIComponent(bomId)}` : ""
+      }`,
+
+    orderStages: (cid, orderId) =>
+      `/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/stages`,
+
+    applyStageStandards: (cid, orderId) =>
+      `/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/stages/apply-standards`,
+
+    orderStageTimer: (cid, orderId, stageId) =>
+      `/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/stages/${encodeURIComponent(stageId)}/timer`,
+
+    orderMaterialUsage: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/material-usage`,
+
+    orderManagementCosts: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/management-costs`,
+
+    orderLabour: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/labour`,
+
+    orderLabourItem: (cid, orderId, labourId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/labour/${encodeURIComponent(labourId)}`,
+
+    orderDirectCosts: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/direct-costs`,
+
+    orderDirectCostItem: (cid, orderId, directCostId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/direct-costs/${encodeURIComponent(directCostId)}`,
+
+    orderOverhead: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/overhead`,
+
+    orderOverheadItem: (cid, orderId, overheadId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/overhead/${encodeURIComponent(overheadId)}`,
+
+    history: (cid, qs = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/history${qs ? `?${qs}` : ""}`,
+
+    status: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/status`,
+
+    productionProgress: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/production-progress`,
+
+    productionPerformance: (cid, qs = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/production-performance${qs ? `?${qs}` : ""}`,
+
+    productionPerformanceOrder: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/production-performance/${encodeURIComponent(orderId)}`,
+
+    orderDispatch: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatch`,
+
+    orderDispatches: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatches`,
+
+    orderEodReconciliation: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/eod-reconciliation`,
+
+    orderEodDisposals: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/eod-disposals`,
+
+    orderDispatchesFull: (cid, orderId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/dispatches/full`,
+
+
+    dispatchDocument: (cid, dispatchId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/dispatches/${encodeURIComponent(dispatchId)}/document`,
+    
+    dispatchDocumentPrint: (cid, dispatchId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/dispatches/${encodeURIComponent(dispatchId)}/document/print`,
+
+    dispatchDocumentPreviewNumber: (cid, channel) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/dispatch-preview-number?channel=${encodeURIComponent(channel)}`,
   },
 
   projects: {
@@ -4888,6 +5123,15 @@ const ENDPOINTS = {
 
     tasksUpdate: (cid, projectId, taskId) =>
       `/api/companies/${cid}/projects/${projectId}/tasks/${taskId}`,
+
+    pmWorkspace: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/pm-workspace`,
+
+    taskProgress: (cid, projectId, taskId) =>
+      `/api/companies/${cid}/projects/${projectId}/tasks/${taskId}/progress`,
+
+    progressLog: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/progress-log`,
 
     costCodesList: (cid, q = "") =>
       `/api/companies/${cid}/projects/cost-codes${q ? `?${q}` : ""}`,
@@ -5280,32 +5524,52 @@ const ENDPOINTS = {
     health: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/health`,
 
     // --- Banking ---
-    bankAccounts: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts`,
+    bankAccounts: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts`,
+
     bankAccountById: (companyId, bankAccountId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts/${encodeURIComponent(bankAccountId)}`,
+
     bankAccountUpdate: (companyId, bankAccountId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts/${encodeURIComponent(bankAccountId)}`,
 
-    bankStatements: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements`,
+    bankStatements: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements`,
+
     bankStatementLines: (companyId, stmtId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/${encodeURIComponent(stmtId)}`,
-    bankStatementImport: (companyId, bankAccountId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/import?bank_account_id=${encodeURIComponent(bankAccountId)}`,
+
+    bankStatementsPreview: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/preview`,
+
+    bankStatementImport: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/import`,
+
     bankStatementPost: (companyId, stmtId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/${encodeURIComponent(stmtId)}/post`,
+
+    bankStatementCreateReconciliation: (companyId, importId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/${encodeURIComponent(importId)}/create_reconciliation`,
+
     // --- Bank Reconciliation ---
     bankReconsCreate: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations`,
+
     bankReconItems: (companyId, reconId, status = "") =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/${encodeURIComponent(reconId)}/items` +
       (status ? `?status=${encodeURIComponent(status)}` : ""),
+
     bankReconAutoMatch: (companyId, reconId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/${encodeURIComponent(reconId)}/auto_match`,
 
     bankReconExcludeItem: (companyId, reconItemId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/items/${encodeURIComponent(reconItemId)}/exclude`,
+
     bankReconAttachJournal: (companyId, reconItemId) =>
-     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/items/${encodeURIComponent(reconItemId)}/attach_journal`,
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/items/${encodeURIComponent(reconItemId)}/attach_journal`,
+
+    bankReconItemMatch: (companyId, reconId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/${encodeURIComponent(reconId)}/items/${encodeURIComponent(itemId)}/match`,
 
   loans: {
     list: (companyId, { status = "", q = "", limit = 200 } = {}) => {
@@ -5788,7 +6052,9 @@ console.log("[bootstrap] ENDPOINTS.users =", window.ENDPOINTS?.users);
     sgb_treasurer: "SGB Treasurer",
     sgb_member: "SGB Member",
     educator: "Educator / Teacher",
-    admin_staff: "Administrative Staff"
+    admin_staff: "Administrative Staff",
+
+    production_worker: "Production / General Worker",
   };
 
   window.ROLE_ORDER = window.ROLE_ORDER || [
@@ -5954,45 +6220,58 @@ console.log("[bootstrap] ENDPOINTS.users =", window.ENDPOINTS?.users);
 
       tax_reviewer: "tax_reviewer",
       tax_manager: "tax_reviewer",
+
+      production_worker: "production_worker",
+      production_employee: "production_worker",
+      general_worker: "production_worker",
+      general_employee: "production_worker",
+      factory_worker: "production_worker",
+      production_staff: "production_worker",
+      warehouse_worker: "production_worker",
     };
 
     return MAP[r] || "viewer";
   };
 
-  window.normalizeRoleForRank = window.normalizeRoleForRank || function normalizeRoleForRank(raw) {
-    const canonical = window.normalizeRole(raw);
+window.normalizeRoleForRank = window.normalizeRole || function normalizeRoleForRank(raw) {
+  const canonical = window.normalizeRole(raw);
 
-    const rankMap = {
-      viewer: "viewer",
-      clerk: "clerk",
-      assistant: "assistant",
-      junior: "junior",
-      senior: "senior",
-      accountant: "accountant",
-      manager: "manager",
-      "credit controller": "credit controller",
-      cfo: "cfo",
-      owner: "owner",
-      admin: "admin",
+  const rankMap = {
+    viewer: "viewer",
 
-      audit_trainee: "assistant",
-      accounting_trainee: "assistant",
-      audit_staff: "assistant",
-      senior_associate: "senior",
-      audit_manager: "manager",
-      audit_partner: "owner",
-      engagement_partner: "owner",
-      quality_control_reviewer: "manager",
-      client_service_manager: "manager",
-      fs_compiler: "junior",
-      reviewer: "senior",
-      bookkeeper: "clerk",
-      tax_preparer: "junior",
-      tax_reviewer: "senior",
-    };
+    // General / production employee.
+    // This is a basic operational role, not an accounting rank.
+    production_worker: "viewer",
 
-    return rankMap[canonical] || "viewer";
+    clerk: "clerk",
+    assistant: "assistant",
+    junior: "junior",
+    senior: "senior",
+    accountant: "accountant",
+    manager: "manager",
+    "credit controller": "credit controller",
+    cfo: "cfo",
+    owner: "owner",
+    admin: "admin",
+
+    audit_trainee: "assistant",
+    accounting_trainee: "assistant",
+    audit_staff: "assistant",
+    senior_associate: "senior",
+    audit_manager: "manager",
+    audit_partner: "owner",
+    engagement_partner: "owner",
+    quality_control_reviewer: "manager",
+    client_service_manager: "manager",
+    fs_compiler: "junior",
+    reviewer: "senior",
+    bookkeeper: "clerk",
+    tax_preparer: "junior",
+    tax_reviewer: "senior",
   };
+
+  return rankMap[canonical] || "viewer";
+};
 
 window.getCurrentSystemRole = function getCurrentSystemRole() {
   const u = window.currentUser || {};
@@ -6075,17 +6354,84 @@ window.populateInviteRoleSelect = function populateInviteRoleSelect() {
   const accessScope = scopeSel?.value || "core";
   const isAssignment = accessScope === "assignment";
 
+  /*
+   * Keep the existing role pools exactly as defined elsewhere.
+   * Access scope remains the driver:
+   *
+   *   assignment -> ASSIGNMENT_ROLE_ORDER
+   *   core       -> CORE_ROLE_ORDER
+   */
   const rolePool = isAssignment
     ? (window.ASSIGNMENT_ROLE_ORDER || [])
     : (window.CORE_ROLE_ORDER || []);
 
-  let allowedRoles = rolePool.filter((r) => {
+  /*
+   * ---------------------------------------------------------
+   * COMPANY INDUSTRY
+   * ---------------------------------------------------------
+   *
+   * Production / General Worker is only relevant to
+   * manufacturing companies and only under Core / Internal.
+   */
+  const company =
+    window.CURRENT_COMPANY ||
+    window.currentUser?.company ||
+    {};
+
+  const industrySlug = String(
+    company.industry_slug ||
+    company.industrySlug ||
+    company.industry?.slug ||
+    ""
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  const isManufacturingCompany =
+    industrySlug === "manufacturing";
+
+  /*
+   * Start with the existing role pool.
+   */
+  let effectiveRolePool = [...rolePool];
+
+  /*
+   * Production workers are CORE / INTERNAL only.
+   *
+   * Do not add them to Engagement / Assignment.
+   */
+  if (
+    !isAssignment &&
+    isManufacturingCompany &&
+    !effectiveRolePool.includes("production_worker")
+  ) {
+    effectiveRolePool.push("production_worker");
+  }
+
+  let allowedRoles = effectiveRolePool.filter((r) => {
+
+    // Production / General Worker is a special
+    // Core / Internal manufacturing role and does
+    // not participate in the accounting rank hierarchy.
+    if (
+      r === "production_worker" &&
+      !isAssignment &&
+      isManufacturingCompany
+    ) {
+      return true;
+    }
+
     const candidateRankRole = window.normalizeRoleForRank(r);
-    const candidateRank = window.ROLE_RANK[candidateRankRole] ?? -1;
+    const candidateRank =
+      window.ROLE_RANK[candidateRankRole] ?? -1;
+
     return candidateRank <= myRank;
   });
 
-  const company = window.CURRENT_COMPANY || window.currentUser?.company || {};
+  /*
+   * Existing owner logic preserved.
+   */
   const hasOwner = !!company.owner_user_id;
   const forceOwnerInvite = !hasOwner;
 
@@ -6093,9 +6439,16 @@ window.populateInviteRoleSelect = function populateInviteRoleSelect() {
     allowedRoles = [...allowedRoles, "owner"];
   }
 
+  /*
+   * Existing admin restriction preserved.
+   */
   allowedRoles = allowedRoles.filter(r => r !== "admin");
 
+  /*
+   * Populate the selector.
+   */
   sel.innerHTML = `<option value="">Select role…</option>`;
+
   allowedRoles.forEach((r) => {
     const opt = document.createElement("option");
     opt.value = r;
@@ -6103,10 +6456,17 @@ window.populateInviteRoleSelect = function populateInviteRoleSelect() {
     sel.appendChild(opt);
   });
 
+  /*
+   * Existing diagnostics preserved, with manufacturing
+   * diagnostics added.
+   */
   console.log("[Roles] raw =", window.getCurrentSystemRole?.());
   console.log("[Roles] actual =", meActual);
   console.log("[Roles] rank role =", meRankRole, "rank =", myRank);
   console.log("[Roles] scope =", accessScope);
+  console.log("[Roles] industry slug =", industrySlug);
+  console.log("[Roles] manufacturing =", isManufacturingCompany);
+  console.log("[Roles] role pool =", effectiveRolePool);
   console.log("[Roles] allowed =", allowedRoles);
 };
 
@@ -7713,50 +8073,37 @@ function renderPasswordAge(user) {
 
   if (!user || !badge || !msg) return;
 
-  const pwdDate =
-    user.password_updated_at ||
-    user.created_at;
-
-  if (!pwdDate) return;
-
-  const days = Math.floor(
-    (Date.now() - new Date(pwdDate).getTime()) / 86400000
-  );
+  // Use password_age_days from API if available, otherwise compute
+  let days = user.password_age_days;
+  if (days === undefined || days === null) {
+    const pwdDate = user.password_updated_at || user.created_at;
+    if (!pwdDate) return;
+    days = Math.floor((Date.now() - new Date(pwdDate).getTime()) / 86400000);
+  }
 
   badge.textContent = `${days} days`;
 
   if (days >= 90 || user.force_password_change) {
-    badge.className =
-      "rounded-full px-2 py-[2px] bg-red-50 text-red-700 text-[11px]";
-
-    msg.textContent =
-      "Your password should be updated immediately.";
-  } else if (days >= 75) {
-    badge.className =
-      "rounded-full px-2 py-[2px] bg-amber-50 text-amber-700 text-[11px]";
-
-    msg.textContent =
-      `Password expires soon. ${90 - days} day(s) remaining.`;
+    badge.className = "rounded-full px-2 py-[2px] bg-red-50 text-red-700 text-[11px]";
+    msg.textContent = "Your password has expired. Please update it immediately.";
+  } else if (days >= 80) {
+    badge.className = "rounded-full px-2 py-[2px] bg-amber-50 text-amber-700 text-[11px]";
+    msg.textContent = `Password expires soon. ${90 - days} day(s) remaining.`;
   } else {
-    badge.className =
-      "rounded-full px-2 py-[2px] bg-emerald-50 text-emerald-700 text-[11px]";
-
-    msg.textContent =
-      `Password is healthy. ${90 - days} day(s) remaining.`;
+    badge.className = "rounded-full px-2 py-[2px] bg-emerald-50 text-emerald-700 text-[11px]";
+    msg.textContent = `Password is healthy. ${90 - days} day(s) remaining.`;
   }
 
   if (lastLogin) {
-    lastLogin.textContent =
-      user.last_login_at
-        ? new Date(user.last_login_at).toLocaleString()
-        : "—";
+    lastLogin.textContent = user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "—";
+  }
+  if (lastActivity) {
+    lastActivity.textContent = user.last_activity_at ? new Date(user.last_activity_at).toLocaleString() : "—";
   }
 
-  if (lastActivity) {
-    lastActivity.textContent =
-      user.last_activity_at
-        ? new Date(user.last_activity_at).toLocaleString()
-        : "—";
+  // Also show the expiry banner
+  if (typeof showPasswordExpiryBanner === "function") {
+    showPasswordExpiryBanner(user);
   }
 }
 
@@ -7866,6 +8213,9 @@ window.applyLoggedOutUI = applyLoggedOutUI;
       companyBadge.classList.remove("hidden");
     }
 
+    // ✅ v8: keep displayed company branding in sync (additive)
+    window.FS_APPLY_COMPANY_BRANDING?.(storedCompany);
+
     const rawRole =
       (user && (user.role || user.system_role || user.user_role)) ||
       window.FS_USER_ROLE ||
@@ -7939,11 +8289,14 @@ function showSessionLockModal() {
   const modal = document.getElementById("sessionLockModal");
   const input = document.getElementById("sessionUnlockPassword");
 
-  modal?.classList.remove("hidden");
-  modal?.classList.add("flex");
+  // Force visibility regardless of other scripts
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+  modal.style.display = "flex";
 
   setTimeout(() => input?.focus(), 50);
 }
+
 
 function hideSessionLockModal() {
   const modal = document.getElementById("sessionLockModal");
@@ -7971,6 +8324,8 @@ window.hideSessionLockModal = hideSessionLockModal;
 window.lockSession = lockSession;
 window.unlockSession = unlockSession;
 
+
+
 function bindSessionUnlockForm() {
   const form = document.getElementById("sessionUnlockForm");
   if (!form || form.dataset.bound === "1") return;
@@ -7978,81 +8333,444 @@ function bindSessionUnlockForm() {
   form.dataset.bound = "1";
 
   const msg = document.getElementById("sessionUnlockMsg");
-  const input = document.getElementById("sessionUnlockPassword");
-  const signOutBtn = document.getElementById("sessionLockSignOutBtn");
+  const passwordInput = document.getElementById("sessionUnlockPassword");
+  const passwordStep = document.getElementById("sessionUnlockPasswordStep");
+  const otpStep = document.getElementById("sessionUnlockOtpStep");
+  const otpBoxes = Array.from(
+    document.querySelectorAll("#sessionUnlockOtpBoxes .otp-digit")
+  );
+  const backBtn = document.getElementById("sessionUnlockBackBtn");
+  const unlockBtn = document.getElementById("sessionUnlockBtn");
+  const countdown = document.getElementById("sessionUnlockCountdown");
+  const timerLabel = document.getElementById("sessionUnlockTimerLabel");
 
-  signOutBtn?.addEventListener("click", (e) => {
-    e.preventDefault();
-    performFullLogout();
+  let challengeId = "";
+  let otpRequired = false;
+  let otpExpired = false;
+  let busy = false;
+  let countdownInterval = null;
+  let expiresAt = 0;
+
+  function setMessage(text, type = "error") {
+    if (!msg) return;
+
+    msg.textContent = text || "";
+    msg.className = "lock-message" +
+      (text && type !== "error" ? " " + type : "");
+  }
+
+  function stopCountdown() {
+    if (countdownInterval !== null) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
+  }
+
+  function clearOtpBoxes() {
+    otpBoxes.forEach((box) => {
+      box.value = "";
+      box.classList.remove("filled");
+    });
+  }
+
+  function getOtpCode() {
+    return otpBoxes.map((box) => box.value).join("");
+  }
+
+  function updateCountdown() {
+    if (!countdown) return;
+
+    const remainingMs = Math.max(0, expiresAt - Date.now());
+    const remainingSeconds = Math.ceil(remainingMs / 1000);
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+
+    countdown.textContent =
+      String(minutes).padStart(2, "0") + ":" +
+      String(seconds).padStart(2, "0");
+
+    if (remainingSeconds <= 30) {
+      countdown.classList.add("expired");
+    } else {
+      countdown.classList.remove("expired");
+    }
+
+    if (remainingMs <= 0) {
+      stopCountdown();
+
+      otpExpired = true;
+      challengeId = "";
+
+      countdown.textContent = "00:00";
+      countdown.classList.add("expired");
+
+      if (timerLabel) timerLabel.textContent = "Code expired";
+
+      otpBoxes.forEach((box) => {
+        box.disabled = true;
+      });
+
+      setMessage(
+        "Your verification code has expired. Go back and verify your password to request a new code."
+      );
+    }
+  }
+
+  function startCountdown() {
+    stopCountdown();
+
+    otpExpired = false;
+    expiresAt = Date.now() + 3 * 60 * 1000;
+
+    if (timerLabel) timerLabel.textContent = "Code expires in";
+
+    if (countdown) {
+      countdown.classList.remove("expired");
+    }
+
+    updateCountdown();
+
+    countdownInterval = setInterval(updateCountdown, 250);
+  }
+
+  function showPasswordStep() {
+    stopCountdown();
+
+    otpRequired = false;
+    otpExpired = false;
+    challengeId = "";
+
+    if (passwordStep) passwordStep.hidden = false;
+    if (otpStep) otpStep.hidden = true;
+    if (backBtn) backBtn.hidden = true;
+
+    if (passwordInput) {
+      passwordInput.value = "";
+      passwordInput.required = true;
+      passwordInput.disabled = false;
+    }
+
+    clearOtpBoxes();
+
+    otpBoxes.forEach((box) => {
+      box.disabled = false;
+    });
+
+    if (countdown) {
+      countdown.textContent = "03:00";
+      countdown.classList.remove("expired");
+    }
+
+    if (timerLabel) timerLabel.textContent = "Code expires in";
+
+    if (unlockBtn) {
+      unlockBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="10" width="16" height="11" rx="2"/>
+          <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+        </svg>
+        Verify password
+      `;
+    }
+
+    setMessage("");
+
+    if (!busy) passwordInput?.focus();
+  }
+
+  function showOtpStep() {
+    otpRequired = true;
+
+    if (passwordStep) passwordStep.hidden = true;
+    if (otpStep) otpStep.hidden = false;
+    if (backBtn) backBtn.hidden = false;
+
+    if (passwordInput) {
+      passwordInput.required = false;
+      passwordInput.value = "";
+    }
+
+    clearOtpBoxes();
+
+    otpBoxes.forEach((box) => {
+      box.disabled = false;
+    });
+
+    if (unlockBtn) {
+      unlockBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="m5 12 4 4L19 6"/>
+        </svg>
+        Verify code
+      `;
+    }
+
+    setMessage(
+      "Enter the six-digit code sent to your registered email.",
+      "info"
+    );
+
+    otpBoxes[0]?.focus();
+  }
+
+  function distributeDigits(value, startIndex) {
+    const digits = String(value).replace(/\D/g, "");
+
+    if (!digits) return;
+
+    let index = startIndex;
+
+    for (const digit of digits) {
+      if (index >= otpBoxes.length) break;
+
+      otpBoxes[index].value = digit;
+      otpBoxes[index].classList.add("filled");
+      index++;
+    }
+
+    const nextIndex = Math.min(index, otpBoxes.length - 1);
+    otpBoxes[nextIndex]?.focus();
+
+    if (getOtpCode().length === 6) {
+      otpBoxes[5]?.blur();
+    }
+  }
+
+  otpBoxes.forEach((box, index) => {
+    box.addEventListener("input", () => {
+      const value = box.value.replace(/\D/g, "");
+
+      box.value = "";
+      box.classList.remove("filled");
+
+      if (value) {
+        distributeDigits(value, index);
+      }
+
+      setMessage("");
+    });
+
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Backspace") {
+        if (box.value) {
+          box.value = "";
+          box.classList.remove("filled");
+        } else if (index > 0) {
+          otpBoxes[index - 1].value = "";
+          otpBoxes[index - 1].classList.remove("filled");
+          otpBoxes[index - 1].focus();
+        }
+
+        e.preventDefault();
+      } else if (e.key === "ArrowLeft" && index > 0) {
+        otpBoxes[index - 1].focus();
+        e.preventDefault();
+      } else if (e.key === "ArrowRight" && index < 5) {
+        otpBoxes[index + 1].focus();
+        e.preventDefault();
+      }
+    });
+
+    box.addEventListener("paste", (e) => {
+      e.preventDefault();
+
+      const pasted = e.clipboardData?.getData("text") || "";
+      distributeDigits(pasted, index);
+      setMessage("");
+    });
+  });
+
+  backBtn?.addEventListener("click", () => {
+    if (busy) return;
+    showPasswordStep();
   });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const password = input?.value || "";
-    // ✅ NEW: Get button reference for state control
-    const unlockBtn = document.getElementById("sessionUnlockBtn");
-    
-    // ✅ CHANGED: Reset message with proper styling
-    if (msg) {
-      msg.textContent = "";
-      msg.className = "text-xs min-h-[18px]";
-    }
+    if (busy) return;
 
-    if (!password) {
-      // ✅ CHANGED: Styled error message
-      if (msg) {
-        msg.textContent = "Enter your password.";
-        msg.className = "text-xs min-h-[18px] text-red-600";
-      }
+    const password = passwordInput?.value || "";
+    const code = getOtpCode();
+
+    if (!otpRequired && !password) {
+      setMessage("Enter your password.");
+      passwordInput?.focus();
       return;
     }
 
-    // ✅ NEW: Show "unlocking" feedback
-    if (msg) {
-      msg.textContent = "Verifying credentials...";
-      msg.className = "text-xs min-h-[18px] text-slate-500";
+    if (otpRequired && otpExpired) {
+      setMessage(
+        "Your code has expired. Go back and verify your password again."
+      );
+      return;
     }
-    // ✅ NEW: Disable button and change text
+
+    if (otpRequired && !/^\d{6}$/.test(code)) {
+      setMessage("Enter all six digits of your verification code.");
+
+      otpBoxes.find((box) => !box.value)?.focus();
+      return;
+    }
+
+    if (otpRequired && !challengeId) {
+      setMessage(
+        "Your verification challenge has expired. Verify your password again."
+      );
+      return;
+    }
+
+    busy = true;
+
     if (unlockBtn) {
       unlockBtn.disabled = true;
-      unlockBtn.textContent = "Unlocking...";
+      unlockBtn.textContent = otpRequired
+        ? "Verifying code..."
+        : "Verifying password...";
     }
 
+    if (backBtn) backBtn.disabled = true;
+
+    otpBoxes.forEach((box) => {
+      box.disabled = true;
+    });
+
+    if (passwordInput) passwordInput.disabled = true;
+
+    setMessage(
+      otpRequired
+        ? "Verifying your email code..."
+        : "Verifying your password...",
+      "info"
+    );
+
     try {
-      const res = await apiFetch(ENDPOINTS.auth.reauth, {
-        method: "POST",
-        body: JSON.stringify({ password }),
-        _allowWhenLocked: true,
+      if (!otpRequired) {
+        const res = await window.apiFetch(
+          window.ENDPOINTS.auth.reauth,
+          {
+            method: "POST",
+            body: JSON.stringify({ password }),
+            _allowWhenLocked: true,
+          }
+        );
+
+        if (!res?.otp_required || !res?.challenge_id) {
+          throw new Error(
+            "Email verification could not be started. Please check the session verification backend."
+          );
+        }
+
+        challengeId = res.challenge_id;
+
+        // Start the three-minute countdown only after the
+        // backend confirms that the OTP challenge was created.
+        showOtpStep();
+        startCountdown();
+
+        return;
+      }
+
+      // Recheck the expiry immediately before making the request.
+      if (Date.now() >= expiresAt) {
+        updateCountdown();
+
+        throw new Error(
+          "Your verification code has expired. Verify your password again."
+        );
+      }
+
+      const res = await window.apiFetch(
+        "/api/auth/reauth/verify-otp",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            challenge_id: challengeId,
+            code,
+          }),
+          _allowWhenLocked: true,
+        }
+      );
+
+      if (!res?.ok) {
+        throw new Error(
+          res?.message || "Email verification failed. Please try again."
+        );
+      }
+
+      stopCountdown();
+      challengeId = "";
+
+      setMessage(
+        res.message || "Session unlocked successfully.",
+        "success"
+      );
+
+      clearOtpBoxes();
+
+      // Only the successful backend OTP response permits unlocking.
+      unlockSession();
+
+    } catch (err) {
+      setMessage(
+        err?.message || "Verification failed. Please try again."
+      );
+
+      if (otpRequired && !otpExpired) {
+        clearOtpBoxes();
+        otpBoxes[0]?.focus();
+      } else if (!otpRequired) {
+        passwordInput?.focus();
+      }
+
+    } finally {
+      busy = false;
+
+      if (unlockBtn) unlockBtn.disabled = false;
+      if (backBtn) backBtn.disabled = false;
+
+      if (passwordInput) {
+        passwordInput.disabled = otpRequired;
+      }
+
+      otpBoxes.forEach((box) => {
+        box.disabled = otpExpired;
       });
 
-      // Show success message from backend (or fallback)
-      if (msg) {
-        msg.textContent = res?.message || "Session restored successfully.";
-        msg.className = "text-xs min-h-[18px] text-green-600 font-medium";
-      }
-      
-      input.value = "";
-      
-      // Brief delay so user sees the success message
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      unlockSession();
-    } catch (err) {
-      if (msg) {
-        msg.textContent = err.message || "Unlock failed. Please try again.";
-        msg.className = "text-xs min-h-[18px] text-red-600";
-      }
       if (unlockBtn) {
-        unlockBtn.disabled = false;
-        unlockBtn.textContent = "Unlock";
+        unlockBtn.innerHTML = otpRequired
+          ? `
+            <svg viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="m5 12 4 4L19 6"/>
+            </svg>
+            Verify code
+          `
+          : `
+            <svg viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="10" width="16" height="11" rx="2"/>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+            </svg>
+            Verify password
+          `;
       }
     }
   });
-}
-window.bindSessionUnlockForm = bindSessionUnlockForm;
 
-bindSessionUnlockForm?.();
+  showPasswordStep();
+}
+
+window.bindSessionUnlockForm = bindSessionUnlockForm;
+bindSessionUnlockForm();
+
+
 // ===============================
 // Account dropdown navigation
 // ===============================
@@ -8180,7 +8898,213 @@ function shouldNotifyPasswordChange(user) {
   if (!lastDateRaw) return false;
 
   const days = Math.floor((Date.now() - new Date(lastDateRaw).getTime()) / 86400000);
-  return days >= 90 || user?.force_password_change === true;
+  return days >= 80 || user?.force_password_change === true;
+}
+
+// ============================================================
+// PASSWORD EXPIRY NOTIFICATION + ACCOUNT SETTINGS WIRING
+// ============================================================
+
+function getPasswordAgeDays(user) {
+  const lastDateRaw = user?.password_updated_at || user?.created_at;
+  if (!lastDateRaw) return 9999;
+  return Math.floor((Date.now() - new Date(lastDateRaw).getTime()) / 86400000);
+}
+
+function showPasswordExpiryBanner(user) {
+  const banner = document.getElementById("passwordExpiryBanner");
+  const msg = document.getElementById("passwordExpiryMsg");
+  if (!banner || !msg) return;
+
+  const days = getPasswordAgeDays(user);
+  const remaining = 90 - days;
+
+  if (days >= 80 && days < 90) {
+    banner.classList.remove("hidden");
+    msg.textContent = `Your password will expire in ${remaining} day(s). Please update it soon to avoid being locked out.`;
+  } else if (days >= 90 || user?.force_password_change) {
+    banner.classList.remove("hidden");
+    msg.textContent = "Your password has expired. You must update it before you can continue using FinSage.";
+  } else {
+    banner.classList.add("hidden");
+  }
+}
+
+function bindAccountChangePasswordForm() {
+  const form = document.getElementById("accountChangePasswordForm");
+  if (!form || form.dataset.bound === "1") return;
+  form.dataset.bound = "1";
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const oldPw = document.getElementById("accOldPassword")?.value || "";
+    const newPw = document.getElementById("accNewPassword")?.value || "";
+    const confirmPw = document.getElementById("accConfirmPassword")?.value || "";
+    const msg = document.getElementById("accChangePwMsg");
+
+    if (msg) { msg.textContent = ""; msg.className = "ml-2 text-xs"; }
+
+    if (!oldPw || !newPw) {
+      if (msg) { msg.textContent = "Current and new passwords are required."; msg.className = "ml-2 text-xs text-red-600"; }
+      return;
+    }
+    if (newPw.length < 8) {
+      if (msg) { msg.textContent = "New password must be at least 8 characters."; msg.className = "ml-2 text-xs text-red-600"; }
+      return;
+    }
+    if (newPw !== confirmPw) {
+      if (msg) { msg.textContent = "Passwords do not match."; msg.className = "ml-2 text-xs text-red-600"; }
+      return;
+    }
+
+    try {
+      const res = await apiFetch(ENDPOINTS.auth.changePassword, {
+        method: "POST",
+        body: JSON.stringify({ oldPassword: oldPw, newPassword: newPw }),
+      });
+
+      if (msg) {
+        msg.textContent = res?.message || "Password updated successfully.";
+        msg.className = "ml-2 text-xs text-emerald-600";
+      }
+      form.reset();
+
+      // Refresh user data
+      if (typeof loadCurrentUser === "function") {
+        const user = await loadCurrentUser();
+        renderPasswordAge(user);
+        showPasswordExpiryBanner(user);
+      }
+    } catch (err) {
+      if (msg) {
+        msg.textContent = err.message || "Password update failed.";
+        msg.className = "ml-2 text-xs text-red-600";
+      }
+    }
+  });
+}
+
+let _emailChangeChallengeId = null;
+
+function bindAccountChangeEmailForm() {
+  const sendBtn = document.getElementById("accSendEmailOtpBtn");
+  const verifyBtn = document.getElementById("accVerifyEmailOtpBtn");
+  const otpSection = document.getElementById("accEmailOtpSection");
+  const otpInput = document.getElementById("accEmailOtp");
+  const msg = document.getElementById("accEmailOtpMsg");
+
+  if (sendBtn && sendBtn.dataset.bound !== "1") {
+    sendBtn.dataset.bound = "1";
+    sendBtn.addEventListener("click", async () => {
+      const newEmail = document.getElementById("accNewEmail")?.value?.trim()?.toLowerCase() || "";
+      if (!newEmail) {
+        if (msg) { msg.textContent = "Enter a new email address first."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+        if (msg) { msg.textContent = "Please enter a valid email address."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Sending...";
+
+      try {
+        const res = await apiFetch("/api/auth/change-email/request-otp", { method: "POST" });
+        _emailChangeChallengeId = res?.challenge_id;
+        if (otpSection) otpSection.classList.remove("hidden");
+        if (msg) {
+          msg.textContent = res?.message || "Verification code sent to your current email.";
+          msg.className = "text-xs text-slate-500";
+        }
+        if (otpInput) otpInput.focus();
+      } catch (err) {
+        if (msg) {
+          msg.textContent = err.message || "Could not send verification code.";
+          msg.className = "text-xs text-red-600";
+        }
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = "Send verification code";
+      }
+    });
+  }
+
+  if (verifyBtn && verifyBtn.dataset.bound !== "1") {
+    verifyBtn.dataset.bound = "1";
+    verifyBtn.addEventListener("click", async () => {
+      const newEmail = document.getElementById("accNewEmail")?.value?.trim()?.toLowerCase() || "";
+      const code = otpInput?.value?.trim() || "";
+
+      if (!code || !/^\d{6}$/.test(code)) {
+        if (msg) { msg.textContent = "Enter the 6-digit code."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+      if (!_emailChangeChallengeId) {
+        if (msg) { msg.textContent = "Session expired. Please request a new code."; msg.className = "text-xs text-red-600"; }
+        return;
+      }
+
+      verifyBtn.disabled = true;
+      verifyBtn.textContent = "Verifying...";
+
+      try {
+        const res = await apiFetch("/api/auth/change-email/verify", {
+          method: "POST",
+          body: JSON.stringify({
+            challenge_id: _emailChangeChallengeId,
+            code: code,
+            newEmail: newEmail,
+          }),
+        });
+
+        if (msg) {
+          msg.textContent = res?.message || "Email updated successfully.";
+          msg.className = "text-xs text-emerald-600";
+        }
+
+        // Update displayed email
+        const emailEl = document.getElementById("accEmail");
+        if (emailEl) emailEl.textContent = newEmail;
+
+        // Update stored user
+        try {
+          const storedUser = JSON.parse(localStorage.getItem("fs_user") || "{}");
+          storedUser.email = newEmail;
+          localStorage.setItem("fs_user", JSON.stringify(storedUser));
+          localStorage.setItem("userEmail", newEmail);
+        } catch (_) {}
+
+        // Reset form
+        if (otpSection) otpSection.classList.add("hidden");
+        document.getElementById("accNewEmail").value = "";
+        if (otpInput) otpInput.value = "";
+        _emailChangeChallengeId = null;
+
+        // Refresh user
+        if (typeof loadCurrentUser === "function") {
+          await loadCurrentUser();
+        }
+      } catch (err) {
+        if (msg) {
+          msg.textContent = err.message || "Verification failed.";
+          msg.className = "text-xs text-red-600";
+        }
+      } finally {
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = "Verify & update";
+      }
+    });
+  }
+}
+
+function initAccountSettingsForms() {
+  bindAccountChangePasswordForm();
+  bindAccountChangeEmailForm();
+
+  const user = window.currentUser || {};
+  showPasswordExpiryBanner(user);
 }
   // ==========================================================
   // 12) STORAGE KEYS + AUTH REQUIRED SCREENS
@@ -8486,15 +9410,10 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
           minRole: "clerk",
           children: [
             {
-              name: "Lessee Leases",
+              name: "Lease Center (Lessee)",
+              screen: "lease-center",
               icon: "📥",
-              isParent: true,
-              minRole: "clerk",
-              children: [
-                { name: "Lease Register", screen: "lease-register", icon: "📚", minRole: "assistant" },
-                { name: "Lease Payments", screen: "lease-payments", icon: "💳", minRole: "clerk" },
-                { name: "Monthly Posting", screen: "lease-monthly", icon: "📅", minRole: "assistant" },
-              ],
+              minRole: "assistant",
             },
             {
               name: "Lessor Leases",
@@ -8559,10 +9478,11 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         { name: "Inventory Items", screen: "inventory-items", icon: "📦", feature: "inventory-module" },
         { name: "Service Items", screen: "service-items", icon: "🧰", feature: "service-billing" },
         { name: "Stock Movements", screen: "inventory-movements", icon: "🚚", feature: "inventory-module", minRole: "assistant" },
+        { name: "Write-Downs", screen: "inventory-write-downs", icon: "📉", feature: "inventory-module", minRole: "assistant" }, // ✅ Added
         { name: "Stocktake", screen: "stocktake", icon: "📋", feature: "inventory-module", minRole: "assistant" },
         { name: "Reorder Alerts", screen: "reorder", icon: "🚨", feature: "inventory-module" },
         { name: "Inventory Valuation", screen: "inventory-valuation", icon: "💰", feature: "inventory-module", minRole: "assistant" },
-
+        { name: "Manufacturing", screen: "manufacturing", icon: "🏭", feature: "inventory-module", minRole: "assistant" },
         { name: "Launch POS", screen: "pos-launch", icon: "🛒", companyCapability: "uses_cogs", minRole: "clerk", permissionAny: ["can_access_pos", "can_manage_pos"] },
 
         { name: "POS Summaries", screen: "pos", icon: "🧮", companyCapability: "uses_cogs", minRole: "assistant", permissionAny: ["can_view_pos_summaries", "can_access_pos", "can_manage_pos"] },
@@ -8596,14 +9516,28 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       ],
     },
 
-    {
+{
       name: "Planning & Performance",
       icon: "📊",
       isParent: true,
       minRole: "assistant",
       permissionAny: ["can_prepare_financials", "can_view_reports"],
       children: [
-        { name: "Budgeting & Forecasting", screen: "budgeting", icon: "🎯", minRole: "assistant", permissionAny: ["can_prepare_financials", "can_view_reports"] },
+        {
+          name: "Budgeting & Forecasting",
+          screen: "budgeting",
+          icon: "🎯",
+          minRole: "assistant",
+          permissionAny: ["can_prepare_financials", "can_view_reports"],
+        },
+        {
+          name: "Production Performance",
+          screen: "production-performance",
+          icon: "🏭",
+          minRole: "assistant",
+          permissionAny: ["can_prepare_financials", "can_view_reports"],
+          feature: "inventory-module",
+        },
       ],
     },
 
@@ -8762,6 +9696,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
     dashboard:"",
     journal:"workflows/journal",
 
+    "lease-center":"workflows/leases/center",
     "lease-register":"workflows/leases/register",
     "lease-payments":"workflows/leases/payments",
     "lease-monthly":"workflows/leases/monthly-posting",
@@ -10298,12 +11233,113 @@ function companyUsesCogs(company = window.CURRENT_COMPANY) {
   );
 }
 
+function isGeneralEmployeeDashboardUser() {
+  // Backend build_permissions() gives production/general employees
+  // enterprise-dashboard access, but they must remain isolated from
+  // accounting workspaces.
+
+  const perms = window.CURRENT_USER?.permissions
+    || window.currentUser?.permissions
+    || window.FS_USER_PERMISSIONS
+    || {};
+
+  const role = typeof window.normalizeRole === "function"
+    ? window.normalizeRole(
+        window.CURRENT_USER?.role
+        || window.currentUser?.role
+        || window.FS_USER_ROLE
+        || localStorage.getItem("userRole")
+      )
+    : String(
+        window.CURRENT_USER?.role
+        || window.currentUser?.role
+        || window.FS_USER_ROLE
+        || localStorage.getItem("userRole")
+        || ""
+      ).trim().toLowerCase();
+
+  // Prefer the explicit backend permission/profile signal.
+  if (
+    perms.can_access_enterprise_dashboard === true &&
+    perms.can_access_practitioner_dashboard === false &&
+    perms.can_access_delegated_posting_workspace === true
+  ) {
+    return true;
+  }
+
+  // Defensive role fallback.
+  const generalRoles = new Set([
+    "production_worker",
+    "general_employee",
+    "employee",
+    "production_employee",
+    "warehouse_worker",
+    "factory_worker",
+  ]);
+
+  return generalRoles.has(role);
+}
+
 function shouldShowNavItem(item) {
   if (!item) return false;
 
   if (window.isSeniorFullAccess?.()) return true;
 
-  if (item.enterpriseOnly && !window.CURRENT_COMPANY?.is_enterprise) return false;
+  // ==========================================================
+  // GENERAL / PRODUCTION EMPLOYEE ISOLATION
+  // ==========================================================
+  //
+  // These users are allowed into the Enterprise Dashboard by
+  // backend policy, but their dashboard navigation is restricted
+  // to Catalog Studio.
+  //
+  // IMPORTANT:
+  // This is NAVIGATION visibility only.
+  // switchScreen() / guardScreenAccess() remains the final security
+  // boundary.
+  //
+  if (isGeneralEmployeeDashboardUser()) {
+    const itemName = String(item.name || "").trim().toLowerCase();
+
+    // The Catalog Studio parent itself must remain visible.
+    if (itemName === "catalog studio") {
+      return true;
+    }
+
+    // Only allow the catalogue screens that a general employee
+    // actually needs.
+    const generalEmployeeScreens = new Set([
+      "inventory-items",
+      "service-items",
+      "inventory-movements",
+      "inventory-write-downs",
+      "stocktake",
+      "reorder",
+      "inventory-valuation",
+      "manufacturing",
+      "purchase-orders",
+      "goods-receipts",
+    ]);
+
+    const screen = item.screen
+      ? (resolveScreenName?.(item.screen) || item.screen)
+      : null;
+
+    if (screen) {
+      return generalEmployeeScreens.has(screen);
+    }
+
+    // Any other parent is hidden.
+    return false;
+  }
+
+  // ==========================================================
+  // NORMAL ENTERPRISE / ACCOUNTING NAVIGATION
+  // ==========================================================
+
+  if (item.enterpriseOnly && !window.CURRENT_COMPANY?.is_enterprise) {
+    return false;
+  }
 
   if (item.feature) {
     const ok = typeof featureAllowed === "function"
@@ -10330,10 +11366,19 @@ function shouldShowNavItem(item) {
   // ---- Public School: hide irrelevant nav items ----
   if (typeof isPublicSchool === "function" && isPublicSchool()) {
     const _schScreen = item.screen
-      ? (typeof resolveScreenName === "function" ? resolveScreenName(item.screen) || item.screen : item.screen)
+      ? (
+          typeof resolveScreenName === "function"
+            ? resolveScreenName(item.screen) || item.screen
+            : item.screen
+        )
       : null;
+
     const _schName = String(item.name || "").trim().toLowerCase();
-    if ((_schScreen && SCHOOL_HIDDEN_SCREENS[_schScreen]) || SCHOOL_HIDDEN_PARENT_NAMES[_schName]) {
+
+    if (
+      (_schScreen && SCHOOL_HIDDEN_SCREENS[_schScreen]) ||
+      SCHOOL_HIDDEN_PARENT_NAMES[_schName]
+    ) {
       return false;
     }
   }
@@ -10342,34 +11387,36 @@ function shouldShowNavItem(item) {
     ? (resolveScreenName?.(item.screen) || item.screen)
     : null;
 
-  // ✅ delegated workspace: show broad workspace nav,
-  // but hide admin/governance-only screens.
+  // ==========================================================
+  // DELEGATED WORKSPACE
+  // ==========================================================
+
   if (isDelegatedWorkspaceToken?.()) {
     if (screen && DELEGATED_HIDDEN_SCREENS.has(screen)) {
       return false;
     }
 
-    // For parent items, show parent if at least one child is visible.
     if (!screen && Array.isArray(item.children)) {
       return item.children.some(shouldShowNavItem);
     }
 
-    // For parent items without screen/children, still respect menu permissions.
     if (!screen) {
       return canSeeMenuItem(item);
     }
 
-    // For screen items, only require it to be enabled in app allowlist.
-    // Actual opening still goes through switchScreen + guardScreenAccess.
     return canOpenScreen(screen);
   }
 
-  // ✅ core/internal: show nav broadly; screen opening still guarded later
+  // ==========================================================
+  // CORE / INTERNAL
+  // ==========================================================
+
   if (screen) {
     if (!canOpenScreen(screen)) return false;
 
     if (!isCoreInternalToken?.()) {
       const access = window.guardScreenAccess?.(screen);
+
       if (!access?.ok) return false;
     }
   }
@@ -10465,6 +11512,7 @@ const SCREEN_POLICY = {
   // Transactions
   journal: { auth: "private", minRole: "clerk", permission: "can_post_journals" },
   "journal-reversal": { auth: "private", minRole: "assistant", permission: "can_post_journals" },
+  "lease-center":   { auth: "private", minRole: "assistant", permissionAny: ["can_prepare_financials", "can_post_journals"] },
   "lease-payments": { auth: "private", minRole: "assistant", permission: "can_post_journals" },
   "lease-monthly":  { auth: "private", minRole: "assistant", permission: "can_post_journals" },
   "lease-register": { auth: "private", minRole: "assistant", permission: "can_prepare_financials" },
@@ -10531,16 +11579,18 @@ const SCREEN_POLICY = {
   // Inventory (feature flags later)
   inventory: { auth: "private", minRole: "clerk", feature: "inventory-module" },
   services:  { auth: "private", minRole: "clerk", feature: "service-billing" },
+
   // Inventory (Catalog Studio)
   "inventory-items":      { auth: "private", minRole: "clerk",     feature: "inventory-module" },
-  "inventory-movements":  { auth: "private", minRole: "clerk", feature: "inventory-module" },
-  "stocktake":            { auth: "private", minRole: "clerk", feature: "inventory-module" },
-  "inventory-valuation":  { auth: "private", minRole: "clerk", feature: "inventory-module" },
+  "inventory-movements":  { auth: "private", minRole: "clerk",     feature: "inventory-module" },
+  "inventory-write-downs":{ auth: "private", minRole: "assistant", feature: "inventory-module" }, // ✅ Added
+  "stocktake":            { auth: "private", minRole: "clerk",     feature: "inventory-module" },
+  "inventory-valuation":  { auth: "private", minRole: "clerk",     feature: "inventory-module" },
   "reorder":              { auth: "private", minRole: "clerk",     feature: "inventory-module" },
-  "purchase-orders": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
-
-  "goods-receipts": { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
-  "service-items": { auth: "private", minRole: "clerk",     feature: "service-billing" },
+  "manufacturing":        { auth: "private", minRole: "assistant", feature: "inventory-module" },
+  "purchase-orders":      { auth: "private", minRole: "clerk",     permission: "can_manage_ap" },
+  "goods-receipts":       { auth: "private", minRole: "clerk",     permission: "can_manage_ap" },
+  "service-items":        { auth: "private", minRole: "clerk",     feature: "service-billing" },
 
   projects: { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
   "project-detail": { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
@@ -10603,6 +11653,16 @@ const SCREEN_POLICY = {
       "can_view_reports",
       "can_view_control_room"
     ],
+  },
+
+  "production-performance": {
+    auth: "private",
+    minRole: "assistant",
+    permissionAny: [
+      "can_prepare_financials",
+      "can_view_reports"
+    ],
+    feature: "inventory-module",
   },
 
   "deferred-tax": {
@@ -11601,75 +12661,203 @@ function companyHasCapability(capability) {
 function guardScreenAccess(name) {
   const resolved = resolveScreenName(name);
   const rule = SCREEN_POLICY[resolved];
-  if (!rule) return { ok: false, reason: "unknown" };
 
-  // Auth gate
+  if (!rule) {
+    return { ok: false, reason: "unknown" };
+  }
+
+  // ==========================================================
+  // AUTH GATE
+  // ==========================================================
   if (rule.auth !== "public" && !isLoggedIn()) {
     return { ok: false, reason: "auth" };
   }
 
-  // ✅ Senior Accountant full-access override
+  // ==========================================================
+  // SENIOR ACCOUNTANT FULL-ACCESS OVERRIDE
+  // ==========================================================
   if (window.isSeniorFullAccess?.()) {
     return { ok: true, resolved };
   }
 
-  // Delegated provisioned workspace unlock
-  // This is checked before normal permission/role denial so operational setup
-  // screens can still open in provisioned delegated workspaces.
-  if (canUseDelegatedProvisionedScreen(resolved, rule)) {
-    // still respect feature gate if present
-    if (rule.feature && !hasFeature(rule.feature)) {
-      return { ok: false, reason: "feature" };
+  // ==========================================================
+  // PRODUCTION / GENERAL WORKER ISOLATION
+  // ==========================================================
+  //
+  // Production/general employees enter through the Enterprise
+  // shell because Catalog Studio lives there.
+  //
+  // They may ONLY open Catalog Studio screens.
+  // Everything else is denied here, even if someone attempts
+  // to open the screen directly.
+  //
+  const currentRole = typeof window.normalizeRole === "function"
+    ? window.normalizeRole(
+        window.CURRENT_USER?.role
+        || window.currentUser?.role
+        || window.FS_USER_ROLE
+        || localStorage.getItem("userRole")
+        || ""
+      )
+    : String(
+        window.FS_USER_ROLE
+        || localStorage.getItem("userRole")
+        || ""
+      ).trim().toLowerCase();
+
+  if (currentRole === "production_worker") {
+
+    const productionCatalogScreens = new Set([
+      "inventory",
+      "inventory-items",
+      "inventory-movements",
+      "inventory-write-downs",
+      "stocktake",
+      "reorder",
+      "inventory-valuation",
+      "manufacturing",
+      "service-items",
+    ]);
+
+    if (!productionCatalogScreens.has(resolved)) {
+      return {
+        ok: false,
+        reason: "catalog_only",
+        resolved,
+      };
     }
 
-    // still respect policy gates that should remain active
+    // Still respect the company's feature entitlement.
+    if (rule.feature && !hasFeature(rule.feature)) {
+      return {
+        ok: false,
+        reason: "feature",
+        resolved,
+      };
+    }
+
+    return {
+      ok: true,
+      resolved,
+      via: "production_worker_catalog_only",
+    };
+  }
+
+  // ==========================================================
+  // DELEGATED PROVISIONED WORKSPACE UNLOCK
+  // ==========================================================
+  if (canUseDelegatedProvisionedScreen(resolved, rule)) {
+
+    // Still respect feature gate if present.
+    if (rule.feature && !hasFeature(rule.feature)) {
+      return {
+        ok: false,
+        reason: "feature",
+        resolved,
+      };
+    }
+
+    // Still respect policy gates that should remain active.
     if (rule.policy === "approveCustomer") {
       const cid = FS?.control?.resolveCid?.() || null;
       const meRole = window.getCurrentRole?.() || "viewer";
-      const allowed = FS?.policy?.canApproveCustomer?.(meRole, cid) === true;
-      if (!allowed) return { ok: false, reason: "policy" };
+
+      const allowed =
+        FS?.policy?.canApproveCustomer?.(meRole, cid) === true;
+
+      if (!allowed) {
+        return {
+          ok: false,
+          reason: "policy",
+          resolved,
+        };
+      }
     }
 
-    return { ok: true, resolved, via: "delegated_provisioned_unlock" };
+    return {
+      ok: true,
+      resolved,
+      via: "delegated_provisioned_unlock",
+    };
   }
 
-  // Permission-first gate
-
+  // ==========================================================
+  // PERMISSION-FIRST GATE
+  // ==========================================================
   if (Array.isArray(rule.permissionAny) && rule.permissionAny.length) {
+
     const perms = window.currentUser?.permissions || {};
 
-    const ok = rule.permissionAny.some((p) => perms[p] === true);
+    const ok = rule.permissionAny.some(
+      (p) => perms[p] === true
+    );
 
     if (!ok) {
-      return { ok: false, reason: "permission" };
+      return {
+        ok: false,
+        reason: "permission",
+        resolved,
+      };
     }
   }
 
   else if (rule.permission) {
+
     if (!window.hasPermission?.(rule.permission)) {
-      return { ok: false, reason: "permission" };
+      return {
+        ok: false,
+        reason: "permission",
+        resolved,
+      };
     }
   }
 
   else if (rule.minRole && !window.canSeeRole(rule.minRole)) {
-    return { ok: false, reason: "role" };
+
+    return {
+      ok: false,
+      reason: "role",
+      resolved,
+    };
   }
 
-  // Feature gate
+  // ==========================================================
+  // FEATURE GATE
+  // ==========================================================
   if (rule.feature && !hasFeature(rule.feature)) {
-    return { ok: false, reason: "feature" };
+    return {
+      ok: false,
+      reason: "feature",
+      resolved,
+    };
   }
 
-  // Policy gate
+  // ==========================================================
+  // POLICY GATE
+  // ==========================================================
   if (rule.policy === "approveCustomer") {
+
     const cid = FS?.control?.resolveCid?.() || null;
     const meRole = window.getCurrentRole?.() || "viewer";
-    const allowed = FS?.policy?.canApproveCustomer?.(meRole, cid) === true;
-    if (!allowed) return { ok: false, reason: "policy" };
+
+    const allowed =
+      FS?.policy?.canApproveCustomer?.(meRole, cid) === true;
+
+    if (!allowed) {
+      return {
+        ok: false,
+        reason: "policy",
+        resolved,
+      };
+    }
   }
 
-  return { ok: true, resolved };
+  return {
+    ok: true,
+    resolved,
+  };
 }
+
 window.guardScreenAccess = guardScreenAccess;
 
 function canUseDelegatedProvisionedScreen(screenName, rule) {
@@ -12051,9 +13239,11 @@ async function switchScreen(
         "inventory",
         "inventory-items",
         "inventory-movements",
+        "inventory-write-downs",
         "stocktake",
         "reorder",
         "inventory-valuation",
+        "manufacturing",
         "service-items",
         "purchase-orders",
         "goods-receipts",
@@ -12066,6 +13256,7 @@ async function switchScreen(
       const isIFRS9Workflow = target === "ifrs9";
       const isPayrollWorkflow = target === "payroll";
       const isBudgetingWorkflow = target === "budgeting";
+      const isProductionPerformanceWorkflow = target === "production-performance";
       const isDeferredTaxWorkflow = target === "deferred-tax";
       const isDataMigrationWorkflow = target === "data-migration";    
       const isIAS41Workflow = target === "ias41";
@@ -12102,6 +13293,7 @@ async function switchScreen(
       else if (isIFRS9Workflow) base = "ifrs9";
       else if (isPayrollWorkflow) base = "payroll";
       else if (isBudgetingWorkflow) base = "budgeting";
+      else if (isProductionPerformanceWorkflow) base = "production-performance";
       else if (target === "fixedassets") base = "fixedassets";
       else if (target === "help") base = "help";
       else if (isDeferredTaxWorkflow) base = "deferred-tax";
@@ -12186,6 +13378,7 @@ async function switchScreen(
         ifrs9: "IFRS 9 Financial Instruments",
         payroll: "Payroll",
         budgeting: "Planning & Performance",
+        "production-performance": "Production Performance",
         "deferred-tax": "IAS 12 Deferred Tax",
         ias41: "IAS 41 Agriculture",
         inventory: "Inventory & Services",
@@ -12207,10 +13400,13 @@ async function switchScreen(
         "ap-statements": "Vendor Statements",
         "inventory-items": "Catalog Studio - Inventory Items",
         "inventory-movements": "Catalog Studio - Stock Movements",
+        "inventory-write-downs": "Catalog Studio - Inventory Write-Down",
         stocktake: "Catalog Studio - Stocktake",
         reorder: "Catalog Studio - Reorder Alerts",
         "inventory-valuation": "Catalog Studio - Inventory Valuation",
+        manufacturing: "Catalog Studio - Manufacturing",
         "service-items": "Catalog Studio - Service Items",
+        "lease-center": "IFRS 16 - Lease Center (Lessee)",
         "lease-payments": "IFRS 16 - Lease Payments",
         "lease-monthly": "IFRS 16 - Monthly Posting",
         "lease-mods": "IFRS 16 - Modifications",
@@ -12328,6 +13524,28 @@ async function switchScreen(
         return;
       }
 
+      if (base === "production-performance") {
+        try {
+          await ensureCompanyDataLoaded?.();
+        } catch (e) {
+          console.warn(
+            "[ProductionPerformance] company load failed:",
+            e
+          );
+        }
+
+        await window.bindProductionPerformanceScreen?.();
+
+        console.log(
+          "[switchScreen] early return at:",
+          target,
+          "base:",
+          base
+        );
+
+        return;
+      }
+
       if (base === "deferred-tax") {
           try { 
               await ensureCompanyDataLoaded?.(); 
@@ -12425,6 +13643,9 @@ async function switchScreen(
         try {
           if (!window.currentUser) await window.loadCurrentUser?.();
           window.hydrateAccountSettings?.();
+          if (typeof initAccountSettingsForms === "function") {
+            initAccountSettingsForms();
+          }
         } catch (e) {
           console.warn("Account settings hydrate failed:", e);
         }
@@ -12684,9 +13905,6 @@ async function switchScreen(
 window.switchScreen = switchScreen;
 
 // ============================================================
-// 🔒 DEFERRED TAX SCREEN GUARD - Prevents modal hijacking
-// ============================================================
-// ============================================================
 // 🔒 SCREEN GUARD SYSTEM - Prevents Modal Hijacking (LIVE FIX)
 // ============================================================
 (function() {
@@ -12791,9 +14009,11 @@ function isInventoryRoute(name) {
   return [
     "inventory-items",
     "inventory-movements",
+    "inventory-write-downs",
     "stocktake",
     "reorder",
     "inventory-valuation",
+    "manufacturing",
     "purchase-orders",
     "goods-receipts",
   ].includes(String(name || ""));
@@ -12877,6 +14097,16 @@ function renderCatalogScreen(name) {
       },
     },
 
+  // Add the route to renderCatalogScreen(name)
+  // Inside the `routes` dictionary:
+    "inventory-write-downs": {
+      tpl: "tpl-inventory-write-downs",
+      enter: () => {
+        bindInventoryWriteDownsUI?.();
+        loadInventoryWriteDowns?.();
+      },
+    },
+
     "reorder": {
       tpl: "tpl-reorder",
       enter: () => { bindReorderUI?.(); loadReorderAlerts?.(); },
@@ -12894,6 +14124,15 @@ function renderCatalogScreen(name) {
         const el = document.getElementById("valAsOf");
         if (el && !el.value) el.value = new Date().toISOString().slice(0, 10);
         loadInventoryValuation?.();
+      },
+    },
+
+    "manufacturing": {
+      tpl: "tpl-manufacturing",
+      enter: () => {
+        bindManufacturingUI?.();
+        loadManufacturingBoms?.();
+        loadManufacturingOrders?.();
       },
     },
 
@@ -13022,7 +14261,16 @@ function openLeaseWizard(ctx = {}) {
     ""
   ).trim();
 
-  const isLessor = ["BS_CA_1710", "BS_NCA_1720"].includes(accountCode);
+  const leaseRole =
+    ctx.leaseRole ||
+    getLeaseRoleFromAccount({
+      ...ctx,
+      code: accountCode,
+      account_name: accountName,
+    }) ||
+    "lessee";
+
+  const isLessor = leaseRole === "lessor";
 
   const payload = {
     type: "lease_wizard_context",
@@ -13038,7 +14286,7 @@ function openLeaseWizard(ctx = {}) {
     source: ctx.source || "journal",
     ctx: {
       mode: ctx.mode || (isLessor ? "inception" : "existing"),
-      leaseRole: ctx.leaseRole || (isLessor ? "lessor" : "lessee"),
+      leaseRole,
       accountCode,
       accountName,
       defaults: {
@@ -13066,6 +14314,13 @@ function openLeaseWizard(ctx = {}) {
     if (!frame.contentWindow) return;
 
     frame.contentWindow.postMessage(payload, origin);
+    console.log("[LEASE HOST] FINAL ROUTING CHECK", {
+      mode: payload.ctx?.mode,
+      leaseRole: payload.ctx?.leaseRole,
+      accountCode: payload.ctx?.accountCode,
+      accountName: payload.ctx?.accountName,
+      iframeUrl: frame.src,
+    });
     console.log("[LEASE HOST] context sent", payload);
   };
 
@@ -13355,6 +14610,9 @@ function updateHeaderCompanyBadge() {
 
   badge.textContent = name;
   badge.classList.remove("hidden");
+
+  // ✅ v8: keep displayed company branding in sync (additive)
+  window.FS_APPLY_COMPANY_BRANDING?.(name);
 }
 
 function ensureFixedAssetsDrawerRoot() {
@@ -13416,7 +14674,7 @@ async function openFixedAssetsDrawer(ctx = {}) {
     open: typeof window.FS_OPEN_FIXED_ASSETS_DRAWER, 
     rootParent: document.getElementById("fs-react-drawer-root")?.parentElement?.id, 
   }); 
-  
+
   if (typeof mount === "function") { 
     await mount(); 
   }  
@@ -14441,6 +15699,9 @@ async function loadCompanyProfile(companyId) {
     // ✅ also expose for non-window code (if you still use these globals)
     if (typeof CURRENT_COMPANY !== "undefined") CURRENT_COMPANY = window.CURRENT_COMPANY;
     if (typeof CURRENT_COMPANY_ID !== "undefined" && data?.id) CURRENT_COMPANY_ID = Number(data.id);
+
+    // ✅ v8: keep displayed company branding in sync (additive)
+    window.FS_APPLY_COMPANY_BRANDING?.();
 
     // ✅ sync backend policy.mode → localStorage mode (ONCE)
     try {
@@ -16763,6 +18024,7 @@ window.getSchoolTermInfo = getSchoolTermInfo;
 // ---- Public School nav visibility rules ----
 const SCHOOL_HIDDEN_SCREENS = {
   // IFRS 16
+  "lease-center": 1,
   "lease-register": 1, "lease-payments": 1, "lease-monthly": 1, "lessor-subsequent": 1,
   // Revenue Desk
   "ar-invoices": 1, "ar-quotes": 1, "revenue": 1,
@@ -18889,23 +20151,58 @@ async function resolveLedgerRange(companyId, periodKey) {
   };
 }
 
-function buildPeriodParams(periodKey, extra = {}) {
-  const r = computePeriodRange(periodKey);
 
-  const params = { ...extra };
+function buildPeriodParams(periodKey) {
+  // Custom dates must come from the actual date inputs.
+  if (periodKey === "custom") {
+    const from =
+      document.getElementById("stmtFromDate")?.value || "";
 
-  if (r.from && r.to) {
-    params.from = r.from;
-    params.to = r.to;
-  } else {
-    params.preset = r.preset || periodKey;
+    const to =
+      document.getElementById("stmtToDate")?.value || "";
+
+    if (!from || !to) {
+      return {
+        params: {},
+        label: "Custom period range",
+      };
+    }
+
+    if (from > to) {
+      throw new Error("From date cannot be after To date.");
+    }
+
+    return {
+      params: {
+        from,
+        to,
+        as_of: to,
+      },
+      label: `${from} → ${to}`,
+    };
   }
 
-  // useful for UI
-  params.__label = r.label || periodKey;
+  // Existing behaviour for all other presets remains unchanged.
+  const pr = computePeriodRange(periodKey);
 
-  return params;
+  if (pr && pr.from && pr.to) {
+    return {
+      params: {
+        from: pr.from,
+        to: pr.to,
+      },
+      label: pr.label || periodKey,
+    };
+  }
+
+  return {
+    params: {
+      preset: pr?.preset || periodKey,
+    },
+    label: pr?.label || periodKey,
+  };
 }
+
 
 async function renderDashboardKPIs(periodKey = "this_month") {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
@@ -22128,6 +23425,19 @@ async function postJournalBatch() {
   };
 
   // ------------------------------------------------------------
+  // Validate IFRS 16 schedule association
+  // ------------------------------------------------------------
+  if (
+    payload.source === "lease_monthly" &&
+    (
+      !Number.isInteger(Number(payload.source_id)) ||
+      Number(payload.source_id) <= 0
+    )
+  ) {
+    alert("IFRS 16 posting is missing a valid lease schedule ID.");
+    return;
+  }
+  // ------------------------------------------------------------
   // START POSTING
   // ------------------------------------------------------------
   setPostingState(
@@ -22209,10 +23519,13 @@ async function postJournalBatch() {
     // ----------------------------------------------------------
     JRNL_LINES.length = 0;
 
+    // Clear IFRS 16 source metadata after successful posting
+    window.__JRNL_SOURCE = "";
+    window.__JRNL_SOURCE_ID = null;
+
     renderJournalTable();
     recalcJournalSummary();
     clearJournalForm();
-
     // ----------------------------------------------------------
     // Restore button
     // ----------------------------------------------------------
@@ -22926,55 +24239,84 @@ async function renderRecentJournals() {
     return;
   }
 
-  // ✅ server-side filter url (supports from/to/limit/q)
-  const url = buildRecentJournalUrl(cid);
-  const data = await apiFetch(url, { method: "GET" });
+  const preset = document.getElementById("jrnlFilterPreset")?.value?.trim() || "current_month";
+  const from = document.getElementById("jrnlFrom")?.value?.trim() || "";
+  const to = document.getElementById("jrnlTo")?.value?.trim() || "";
 
-  // ✅ normalize: allow either [] OR {rows: []}
-  const headers = Array.isArray(data) ? data : (data?.rows || data?.items || []);
+  const loadingText =
+    preset === "custom" && (from || to)
+      ? "Loading requested period journals"
+      : "Loading recent journals";
 
-  const detailed = await Promise.all(
-    headers.map(async (h) => {
-      try {
-        const det = await fetchJournalDetail(cid, h.id);
-        return { ...h, ...det };
-      } catch (e) {
-        return { ...h, lines: [] };
-      }
-    })
-  );
+  let loadingDots = 0;
 
-  // flatten to rows + mark first line per journal
-  const rows = [];
-  for (const j of detailed) {
-    const jDate = String(j.date || "").slice(0, 10);
-    const jRef  = String(j.ref || "");
-    let jDesc   = String(j.description || "");
-    const jid   = j.id;
+  host.innerHTML = `
+    <div class="flex items-center justify-center py-8 text-sm text-slate-500">
+      <span>${esc(loadingText)}</span>
+      <span id="jrnlLoadingDots" class="inline-block w-[24px] text-left ml-1">·</span>
+    </div>
+  `;
 
-    // ✅ capture source so we can gate reversal
-    const jSource = String(j.source || "").trim();
+  const loadingTimer = setInterval(() => {
+    const dots = document.getElementById("jrnlLoadingDots");
+    if (!dots) return;
 
-    // 🔧 TEMP UI PATCH: if backend still stores "Invoice posted: INV-..."
-    if (/^invoice posted:/i.test(jDesc)) jDesc = "";
+    loadingDots = (loadingDots + 1) % 4;
+    dots.textContent = "·".repeat(loadingDots || 1);
+  }, 350);
 
-    const lines = sortJournalLines(j.lines || []);
-    lines.forEach((ln, idx) => {
-      rows.push({
-        jid,
-        source: jSource,      // ✅ NEW
-        isFirst: idx === 0,
-        date: jDate,
-        ref: jRef,
-        description: jDesc,
-        account_code: ln.account_code,
-        account_label: lineAccountLabel(ln.account_code),
-        debit: +ln.debit || 0,
-        credit: +ln.credit || 0,
-        is_vat: !!ln.is_vat
+  try {
+    // ✅ server-side filter url (supports from/to/limit/q)
+    const url = buildRecentJournalUrl(cid);
+    const data = await apiFetch(url, { method: "GET" });
+
+    // ✅ normalize: allow either [] OR {rows: []}
+    const headers = Array.isArray(data) ? data : (data?.rows || data?.items || []);
+
+    const detailed = await Promise.all(
+      headers.map(async (h) => {
+        try {
+          const det = await fetchJournalDetail(cid, h.id);
+          return { ...h, ...det };
+        } catch (e) {
+          return { ...h, lines: [] };
+        }
+      })
+    );
+
+    // flatten to rows + mark first line per journal
+    const rows = [];
+    for (const j of detailed) {
+      const jDate = String(j.date || "").slice(0, 10);
+      const jRef  = String(j.ref || "");
+      let jDesc   = String(j.description || "");
+      const jid   = j.id;
+
+      // ✅ capture source so we can gate reversal
+      const jSource = String(j.source || "").trim();
+
+      // 🔧 TEMP UI PATCH: if backend still stores "Invoice posted: INV-..."
+      if (/^invoice posted:/i.test(jDesc)) jDesc = "";
+
+      const lines = sortJournalLines(j.lines || []);
+      lines.forEach((ln, idx) => {
+        rows.push({
+          jid,
+          source: jSource,
+          isFirst: idx === 0,
+          date: jDate,
+          ref: jRef,
+          description: jDesc,
+          account_code: ln.account_code,
+          account_label: lineAccountLabel(ln.account_code),
+          debit: +ln.debit || 0,
+          credit: +ln.credit || 0,
+          is_vat: !!ln.is_vat
+        });
       });
-    });
-  }
+    }
+
+    clearInterval(loadingTimer);
 
   host.innerHTML = `
     <div class="flex items-center justify-between gap-3 mb-3">
@@ -23114,7 +24456,22 @@ async function renderRecentJournals() {
   });
 
   // reverse wiring (will only exist for manual journals now)
-  if (typeof wireReverseJournalClicks === "function") wireReverseJournalClicks(host);
+    // reverse wiring (will only exist for manual journals now)
+    if (typeof wireReverseJournalClicks === "function") {
+      wireReverseJournalClicks(host);
+    }
+
+  } catch (e) {
+    clearInterval(loadingTimer);
+
+    console.error("Failed to load recent journals:", e);
+
+    host.innerHTML = `
+      <div class="px-3 py-3 text-xs text-red-600">
+        Failed to load journals. Please try again.
+      </div>
+    `;
+  }
 }
 
 function loadJournalIntoLines(det, { mode = "replace" } = {}) {
@@ -23172,6 +24529,7 @@ function loadJournalIntoLines(det, { mode = "replace" } = {}) {
 
   console.log("[JRNL] Loaded journal into lines:", det.id, window.JRNL_LINES);
 }
+window.loadJournalIntoLines = loadJournalIntoLines;
 
 // ============================
 // Journal: search by ref (loads into lines table)
@@ -23202,8 +24560,8 @@ async function runJournalSearchByRef() {
   const det = await apiFetch(ENDPOINTS.journal.detail(cid, hit.id), { method: "GET" });
 
   // 3) Load into the circled table area (JRNL_LINES + renderJournalTable)
-  if (typeof loadJournalIntoLines === "function") {
-    loadJournalIntoLines(det, { mode: "append" });
+  if (typeof window.loadJournalIntoLines === "function") {
+      window.loadJournalIntoLines(det, { mode: "append" });
   } else {
     // fallback if you don't have loadJournalIntoLines:
     window.JRNL_LINES = Array.isArray(det?.lines) ? det.lines.map((ln, i) => ({
@@ -23316,6 +24674,49 @@ function detectSubledgerType(acct) {
   return null;
 }
 
+
+function getLeaseRoleFromAccount(account = {}) {
+  // 1. Account role has highest priority
+  const role = String(
+    account.role ||
+    account.account_role ||
+    ""
+  ).trim().toLowerCase();
+
+  if (role.includes("lessor")) return "lessor";
+  if (role.includes("lessee")) return "lessee";
+
+  // 2. Cash-flow bucket is the fallback
+  const bucket = String(
+    account.cf_bucket ||
+    account.cfBucket ||
+    ""
+  ).trim().toLowerCase();
+
+  if (bucket === "lease_receivable") return "lessor";
+
+  if (
+    bucket === "rou_asset" ||
+    bucket === "lease_rou_accum_depr" ||
+    bucket.includes("lease_liability")
+  ) {
+    return "lessee";
+  }
+
+  // 3. Legacy account-code fallback
+  const code = String(
+    account.code ||
+    account.account_code ||
+    ""
+  ).trim().toUpperCase();
+
+  if (["BS_CA_1710", "BS_NCA_1720"].includes(code)) {
+    return "lessor";
+  }
+
+  return null;
+}
+
 // Optional: future “module hints” (SOFT only)
 function detectFutureModuleHint(acct) {
   if (!acct) return null;
@@ -23331,15 +24732,16 @@ function detectFutureModuleHint(acct) {
     acct.reporting_description,
   ].join(" "));
 
-  const code = String(acct.code || acct.account_code || "").toUpperCase();
+  const code = String(acct.code || acct.account_code || "").trim().toUpperCase();
   const category = String(acct.category || "").trim().toLowerCase();
   const role = String(acct.role || "").trim().toLowerCase();
   const standard = String(acct.standard || "").trim().toUpperCase();
+  const cfBucket = String(acct.cf_bucket || "").trim().toLowerCase();
 
   // ════════════════════════════════════════════════════
-  // EXCLUSIONS (check BEFORE positive matches)
+  // EXCLUSIONS
   // ════════════════════════════════════════════════════
-  
+
   const isMaintenanceOrRepair =
     role === "maintenance_expense" ||
     role === "repair_expense" ||
@@ -23352,13 +24754,10 @@ function detectFutureModuleHint(acct) {
     code.startsWith("PL_");
 
   // ════════════════════════════════════════════════════
-  // LOAN SUBLEDGER DETECTION (MUST come before IFRS 9!)
-  // 
-  // These are DISTINCT from IFRS 9 financial instruments.
-  // Loan accounts have their own register/screen.
-  // Based on _coa_role_from_text() lines 1342-1478
+  // LOAN SUBLEDGER
+  // MUST come before IFRS 9
   // ════════════════════════════════════════════════════
-  
+
   const loanSubledgerRoles = [
     "loan_payable_current",
     "loan_payable_noncurrent",
@@ -23369,77 +24768,75 @@ function detectFutureModuleHint(acct) {
     "loan_fees_expense",
   ];
 
-  const isLoanAccount = 
+  const isLoanAccount =
     loanSubledgerRoles.includes(role) ||
-    // Additional text-based detection for loan-specific accounts
     (txt.includes("loan payable") && !role.startsWith("ifrs9")) ||
     (txt.includes("loan interest") && !role.startsWith("ifrs9")) ||
-    (txt.includes("borrowing") && (
-      role.includes("loan_") || 
-      txt.includes("loan fee") || 
-      txt.includes("deferred loan")
-    ));
+    (
+      txt.includes("borrowing") &&
+      (
+        role.includes("loan_") ||
+        txt.includes("loan fee") ||
+        txt.includes("deferred loan")
+      )
+    );
 
   if (isLoanAccount) {
-    console.log("[AD DETECT] → loan", { code: acct.code, name: acct.name, role: acct.role });
+    console.log("[AD DETECT] → loan", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+    });
     return "loan";
   }
 
   // ════════════════════════════════════════════════════
-  // IFRS 9 FINANCIAL INSTRUMENTS DETECTION
-  //
-  // These come AFTER loan roles have been caught.
-  // Only true IFRS 9 financial instrument accounts here.
-  // Based on _coa_role_from_text() lines 1480-1640+
+  // IFRS 9 FINANCIAL INSTRUMENTS
   // ════════════════════════════════════════════════════
-  
+
   const ifrs9InstrumentRoles = [
-    // ECL / Impairment
     "ifrs9_ecl_allowance_trade_receivables",
     "ifrs9_ecl_impairment_loss",
     "ifrs9_bad_debt_writeoff",
-    
-    // Financial Assets - FVOCI
     "ifrs9_fair_value_oci_reserve",
     "ifrs9_financial_asset_fvoci",
-    "deferred_tax_fvoci_reserve",  // OCI reserve from FVOCI reclass
-    
-    // Financial Assets - FVPL
+    "deferred_tax_fvoci_reserve",
     "ifrs9_financial_asset_fvpl",
     "ifrs9_fair_value_loss_fvpl",
-    
-    // Interest Income (investment securities, NOT loan interest)
     "ifrs9_interest_income_amortised_cost",
-    
-    // Interest Expense (generic only - excludes "loan" keyword per Python fn)
     "ifrs9_interest_expense_amortised_cost",
-    
-    // Modification / Derecognition
     "ifrs9_modification_gain",
     "ifrs9_modification_loss",
     "ifrs9_derecognition_gain",
     "ifrs9_derecognition_loss",
-    
-    // Financial Liabilities (amortised cost, excluding loans)
     "ifrs9_financial_liability_amortised_cost",
   ];
 
-  const isIFRS9Instrument = 
-    ifrs9InstrumentRoles.some(r => role === r || role.startsWith(r.replace("_gain", "").replace("_loss", ""))) ||
+  const isIFRS9Instrument =
+    ifrs9InstrumentRoles.some(
+      r =>
+        role === r ||
+        role.startsWith(
+          r.replace("_gain", "").replace("_loss", "")
+        )
+    ) ||
     (standard === "IFRS 9" && !isLoanAccount) ||
     (role.startsWith("ifrs9_") && !isLoanAccount);
 
   if (isIFRS9Instrument) {
-    console.log("[AD DETECT] → ifrs9", { code: acct.code, name: acct.name, role: acct.role });
+    console.log("[AD DETECT] → ifrs9", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+    });
     return "ifrs9";
   }
 
   // ════════════════════════════════════════════════════
-  // PAYROLL DETECTION (IAS 19)
+  // PAYROLL / IAS 19
   // ════════════════════════════════════════════════════
-  
+
   const payrollRoles = [
-    // Payables
     "payroll_bonus_payable",
     "payroll_leave_provision",
     "payroll_net_salary_payable",
@@ -23449,14 +24846,8 @@ function detectFutureModuleHint(acct) {
     "payroll_termination_benefit_liability",
     "payroll_defined_benefit_liability",
     "payroll_long_term_benefit_liability",
-    
-    // Assets
     "payroll_defined_benefit_asset",
-    
-    // OCI
     "payroll_defined_benefit_oci",
-    
-    // Expenses
     "payroll_salary_expense",
     "payroll_employer_contribution_expense",
     "payroll_bonus_expense",
@@ -23465,53 +24856,56 @@ function detectFutureModuleHint(acct) {
     "payroll_defined_benefit_expense",
     "payroll_long_term_benefit_expense",
     "payroll_termination_benefit_expense",
-    
-    // Employee receivables (advance from employee)
     "employee_salary_advance_receivable",
     "employee_loans_receivable",
   ];
 
-  const isPayrollAccount = 
+  const isPayrollAccount =
     payrollRoles.includes(role) ||
     role.startsWith("payroll_") ||
     standard === "IAS 19" ||
     (txt.includes("payroll") && !txt.includes("loan"));
 
   if (isPayrollAccount) {
-    console.log("[AD DETECT] → payroll", { code: acct.code, name: acct.name, role: acct.role });
+    console.log("[AD DETECT] → payroll", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+    });
     return "payroll";
   }
 
   // ════════════════════════════════════════════════════
-  // DEFERRED TAX DETECTION (IAS 12)
+  // DEFERRED TAX / IAS 12
   // ════════════════════════════════════════════════════
-  
+
   const deferredTaxRoles = [
     "deferred_tax_fvoci_reserve",
     "deferred_tax_revaluation_reserve",
-    // Add more deferred tax roles as needed from your COA
   ];
 
-  const isDeferredTax = 
+  const isDeferredTax =
     deferredTaxRoles.includes(role) ||
     role.startsWith("deferred_tax") ||
     standard === "IAS 12" ||
     txt.includes("deferred tax");
 
   if (isDeferredTax) {
-    console.log("[AD DETECT] → deferred_tax", { code: acct.code, name: acct.name, role: acct.role });
+    console.log("[AD DETECT] → deferred_tax", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+    });
     return "deferred_tax";
   }
 
   // ════════════════════════════════════════════════════
-  // IAS 41 AGRICULTURE DETECTION
-  //
-  // Must run before generic inventory, sales, fair-value and PPE rules
-  // Based on _coa_role_from_text() lines 42-270+
+  // IAS 41 AGRICULTURE
+  // MUST come before generic asset routing
   // ════════════════════════════════════════════════════
-  
+
   const isIAS41 = standard === "IAS 41";
-  
+
   const ias41BiologicalAssetRoles = [
     "ias41_biological_asset_noncurrent",
     "ias41_biological_asset_current",
@@ -23553,69 +24947,221 @@ function detectFutureModuleHint(acct) {
     "ias41_support_service_revenue",
   ];
 
-  const isIAS41Account = 
+  const isIAS41Account =
     isIAS41 ||
     ias41BiologicalAssetRoles.includes(role) ||
     ias41ProduceInventoryRoles.includes(role) ||
     ias41IncomeRoles.includes(role) ||
     role.startsWith("ias41_") ||
-    // Text-based detection matching Python function
     (txt.includes("biological asset") && !txt.includes("non-current")) ||
-    (txt.includes("growing crops") || txt.includes("growing crop")) ||
+    txt.includes("growing crops") ||
+    txt.includes("growing crop") ||
     (txt.includes("livestock") && txt.includes("biological")) ||
-    (txt.includes("agricultural produce")) ||
+    txt.includes("agricultural produce") ||
     (txt.includes("fair value gain") && txt.includes("biological"));
 
   if (isIAS41Account) {
-    console.log("[AD DETECT] → ias41", { code: acct.code, name: acct.name, role: acct.role, standard: acct.standard });
+    console.log("[AD DETECT] → ias41", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+      standard: acct.standard,
+    });
     return "ias41";
   }
 
   // ════════════════════════════════════════════════════
-  // PPE DETECTION (with exclusions)
+  // COA METADATA — SPECIALIST ASSET ROUTING
+  //
+  // standard + cf_bucket are authoritative.
+  // Do NOT use account-name text to classify PPE,
+  // ROU, intangible, investment property, etc.
   // ════════════════════════════════════════════════════
-  
-  const isPPE =
-    (txt.includes("property plant") ||
-     txt.includes("equipment") ||
-     txt.includes("ppe") ||
-     txt.includes("motor vehicle") ||
-     txt.includes("vehicles") ||
-     txt.includes("computer equipment") ||
-     txt.includes("furniture") ||
-     txt.includes("machinery")) &&
-    !isMaintenanceOrRepair &&
-    !isExpenseCategory;
 
-  const isLease =
-    txt.includes("lease") ||
-    txt.includes("right-of-use") ||
-    txt.includes("rou") ||
-    standard === "IFRS 16";
+  const SUPPORTED_ASSET_STANDARDS = new Set([
+    "IAS 16",
+    "IAS 38",
+    "IAS 40",
+    "IFRS 5",
+    "IFRS 16",
+  ]);
+
+  const isIFRS16 =
+    standard === "IFRS 16" ||
+    (
+      !isMaintenanceOrRepair &&
+      !isExpenseCategory &&
+      (
+        cfBucket === "rou_asset" ||
+        cfBucket === "lease_rou_accum_depr" ||
+        cfBucket === "lease_receivable"
+      )
+    );
+
+  const isIAS40 =
+    standard === "IAS 40" ||
+    (
+      !isMaintenanceOrRepair &&
+      !isExpenseCategory &&
+      cfBucket === "investment_property"
+    );
+
+  const isIAS38 =
+    standard === "IAS 38" ||
+    (
+      !isMaintenanceOrRepair &&
+      !isExpenseCategory &&
+      (
+        cfBucket === "intangible" ||
+        role === "amortisation_expense"
+      )
+    );
+
+  const isIAS16 =
+    standard === "IAS 16" ||
+    (
+      !isMaintenanceOrRepair &&
+      !isExpenseCategory &&
+      (
+        cfBucket === "ppe" ||
+        role.startsWith("ppe_") ||
+        role.startsWith("accumulated_depreciation_")
+      )
+    );
+
+  const isIFRS5 =
+    standard === "IFRS 5" ||
+    (
+      !isMaintenanceOrRepair &&
+      !isExpenseCategory &&
+      cfBucket === "held_for_sale"
+    );
+
+  const isDepreciationRelated =
+    category === "accumulated depreciation" ||
+    role.startsWith("accumulated_depreciation_") ||
+    cfBucket === "lease_rou_accum_depr";
+
+  const isImpairmentRelated =
+    role.includes("impairment") ||
+    cfBucket.includes("impairment");
+
+  const isSpecialistAssetAccount =
+    isIFRS16 ||
+    isIAS40 ||
+    isIAS38 ||
+    isIAS16 ||
+    isIFRS5 ||
+    isDepreciationRelated ||
+    isImpairmentRelated;
+
+  // Unsupported standard
+  if (
+    isSpecialistAssetAccount &&
+    standard &&
+    !SUPPORTED_ASSET_STANDARDS.has(standard)
+  ) {
+    console.warn("[AD DETECT] → unsupported_standard", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+      role: acct.role,
+    });
+
+    return "unsupported_standard";
+  }
+
+  // ════════════════════════════════════════════════════
+  // SPECIALIST ROUTING
+  //
+  // IFRS 16 MUST come before IAS 16.
+  // ════════════════════════════════════════════════════
+
+  if (isIFRS16) {
+    console.log("[AD DETECT] → lease", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+    });
+    return "lease";
+  }
+
+  if (isIAS40) {
+    console.log("[AD DETECT] → investment_property", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+    });
+    return "investment_property";
+  }
+
+  if (isIAS38) {
+    console.log("[AD DETECT] → amort", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+    });
+    return "amort";
+  }
+
+  if (isIFRS5) {
+    console.log("[AD DETECT] → held_for_sale", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+    });
+    return "held_for_sale";
+  }
+
+  if (isIAS16) {
+    console.log("[AD DETECT] → ppe", {
+      code: acct.code,
+      name: acct.name,
+      standard: acct.standard,
+      cf_bucket: acct.cf_bucket,
+    });
+    return "ppe";
+  }
+
+  // Related depreciation / impairment routing
+  if (isDepreciationRelated || isImpairmentRelated) {
+    if (standard === "IFRS 16") return "lease";
+    if (standard === "IAS 16") return "ppe";
+    if (standard === "IAS 38") return "amort";
+    if (standard === "IAS 40") return "investment_property";
+  }
+
+  // ════════════════════════════════════════════════════
+  // REVENUE / IFRS 15
+  // ════════════════════════════════════════════════════
 
   const isRevenue =
     code.startsWith("PL_REV") &&
     category.includes("revenue") &&
     (
-      role === "CONTRACT_REVENUE" ||
+      role === "contract_revenue" ||
       standard === "IFRS 15"
     );
 
-  const isAmort =
-    txt.includes("amort") ||
-    txt.includes("intangible");
-
-  console.log("[AD DETECT]", {
-    code: acct.code,
-    name: acct.name,
-    role: acct.role,
-    roleLower: role,
-  });
+  if (isRevenue) {
+    console.log("[AD DETECT] → revenue", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+      standard: acct.standard,
+    });
+    return "revenue";
+  }
 
   // ════════════════════════════════════════════════════
-  // ACCRUALS & DEFERRALS DETECTION
+  // ACCRUALS & DEFERRALS
   // ════════════════════════════════════════════════════
-  
+
   const adRoles = [
     "prepaid_expense",
     "deferred_expense",
@@ -23644,18 +25190,24 @@ function detectFutureModuleHint(acct) {
     txt.includes("received in advance");
 
   if (isAccrualDeferralAccount) {
+    console.log("[AD DETECT] → accrual_deferral", {
+      code: acct.code,
+      name: acct.name,
+      role: acct.role,
+    });
     return "accrual_deferral";
   }
 
-  // Return detections in priority order
-  if (isPPE) return "ppe";
-  if (isLease) return "lease";
-  if (isAmort) return "amort";
-  if (isRevenue) return "revenue";
+  console.log("[AD DETECT] → none", {
+    code: acct.code,
+    name: acct.name,
+    role: acct.role,
+    standard: acct.standard,
+    cf_bucket: acct.cf_bucket,
+  });
 
   return null;
 }
-
 
 function getPostingMode(moduleKey, ctx = {}) {
   const companyId =
@@ -23717,11 +25269,33 @@ function getJournalGuardMessage(hint, acct) {
   }
 
   if (hint === "lease") {
+    const leaseRole =
+      getLeaseRoleFromAccount(acct) || "lessee";
+
+    const isLessor = leaseRole === "lessor";
+
+    const body = isLessor
+      ? `${name} is usually managed through the Lessor Lease workflow.\n\n` +
+        `If you continue in Journal, the following may need to be maintained manually:\n\n` +
+        `• Net investment in finance leases and lease receivable schedules\n` +
+        `• Finance income recognition using the effective interest method\n` +
+        `• Lease payment allocation between finance income and principal recovery\n` +
+        `• Impairment assessment and expected credit losses\n` +
+        `• Unguaranteed residual value monitoring\n` +
+        `• Current/non-current lease receivable classification\n` +
+        `• IFRS 16 lessor disclosures`
+      : `${name} is usually managed through the Lessee Lease workflow.\n\n` +
+        `If you continue in Journal, the following may need to be maintained manually:\n\n` +
+        `• Lease liability schedules and subsequent measurement\n` +
+        `• Interest expense recognition and unwinding\n` +
+        `• Right-of-use (ROU) asset depreciation\n` +
+        `• Lease modifications and remeasurements\n` +
+        `• Current/non-current lease liability classification\n` +
+        `• IFRS 16 lessee disclosures`;
+
     return {
       title: "Use Lease Wizard instead?",
-      body:
-        `${name} is usually managed through the Lease module.\n\n` +
-        `If you continue in Journal, lease schedules, interest unwind, ROU amortisation, remeasurements, and lease disclosures will need to be handled manually.`,
+      body,
       continueLabel: "Continue in Journal",
       moduleLabel: "Open Lease Wizard",
       screen: "ifrs16-lease-wizard",
@@ -23912,22 +25486,34 @@ async function openJournalModulePrompt({ hint, acct }) {
 window.openJournalModulePrompt = openJournalModulePrompt;
 
 async function redirectJournalGuardToModule({ hint, acct, side }) {
-  // ─── Existing Handlers ──────────────────────────────────
-  
+  // ════════════════════════════════════════════════════
+  // IAS 16 — PROPERTY, PLANT & EQUIPMENT
+  // ════════════════════════════════════════════════════
+
   if (hint === "ppe") {
     await window.switchScreen?.("fixed-assets-register");
+
     window.openFixedAssetModal?.({
       mode: "acquire",
       source: "journal_guard",
       journalSide: side,
       accountCode: acct?.code || "",
       accountName: acct?.name || "",
+      standard: acct?.standard || "IAS 16",
+      cf_bucket: acct?.cf_bucket || "",
+      role: acct?.role || "",
     });
+
     return;
   }
 
+  // ════════════════════════════════════════════════════
+  // IFRS 16 — LEASES / RIGHT-OF-USE
+  // ════════════════════════════════════════════════════
+
   if (hint === "lease") {
     await window.switchScreen?.("ifrs16-lease-wizard");
+
     window.openLeaseWizard?.({
       side,
       account: acct,
@@ -23935,121 +25521,229 @@ async function redirectJournalGuardToModule({ hint, acct, side }) {
       standard: "IFRS 16",
       cf_bucket: acct?.cf_bucket || "",
       cf_section: acct?.cf_section || "",
+      role: acct?.role || "",
     });
+
     return;
   }
+
+  // ════════════════════════════════════════════════════
+  // IAS 38 — INTANGIBLES / AMORTISATION
+  // ════════════════════════════════════════════════════
+
+  if (hint === "amort") {
+    await window.switchScreen?.("fixed-assets-register");
+
+    window.openFixedAssetModal?.({
+      mode: "acquire",
+      source: "journal_guard",
+      journalSide: side,
+      accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+      standard: acct?.standard || "IAS 38",
+      cf_bucket: acct?.cf_bucket || "intangible",
+      role: acct?.role || "",
+    });
+
+    return;
+  }
+
+  // ════════════════════════════════════════════════════
+  // IAS 40 — INVESTMENT PROPERTY
+  // ════════════════════════════════════════════════════
+
+  if (hint === "investment_property") {
+    await window.switchScreen?.("fixed-assets-register");
+
+    window.openFixedAssetModal?.({
+      mode: "acquire",
+      source: "journal_guard",
+      journalSide: side,
+      accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+      standard: "IAS 40",
+      cf_bucket: acct?.cf_bucket || "investment_property",
+      role: acct?.role || "",
+    });
+
+    return;
+  }
+
+  // ════════════════════════════════════════════════════
+  // IFRS 5 — NON-CURRENT ASSETS HELD FOR SALE
+  // ════════════════════════════════════════════════════
+
+  if (hint === "held_for_sale") {
+    await window.switchScreen?.("fixed-assets-register");
+
+    window.openFixedAssetModal?.({
+      mode: "acquire",
+      source: "journal_guard",
+      journalSide: side,
+      accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+      standard: "IFRS 5",
+      cf_bucket: acct?.cf_bucket || "",
+      role: acct?.role || "",
+    });
+
+    return;
+  }
+
+  // ════════════════════════════════════════════════════
+  // IFRS 15 — REVENUE
+  // ════════════════════════════════════════════════════
 
   if (hint === "revenue") {
     await window.switchScreen?.("revenue-desk");
     return;
   }
 
-  if (hint === "amort") {
-    await window.switchScreen?.("fixed-assets-register");
+  // ════════════════════════════════════════════════════
+  // UNSUPPORTED ACCOUNTING STANDARD
+  // Do not redirect to another module.
+  // Journal Guard can handle the warning/rejection upstream.
+  // ════════════════════════════════════════════════════
+
+  if (hint === "unsupported_standard") {
+    console.warn("[JOURNAL GUARD] Unsupported accounting standard", {
+      accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+      standard: acct?.standard || "",
+      cf_bucket: acct?.cf_bucket || "",
+      role: acct?.role || "",
+    });
+
     return;
   }
 
+  // ════════════════════════════════════════════════════
+  // ACCRUALS & DEFERRALS
+  // ════════════════════════════════════════════════════
+
   if (hint === "accrual_deferral") {
     await window.switchScreen?.("accrual-deferrals");
-    
-    // Open new accrual/deferral modal pre-filled with account info
+
     setTimeout(() => {
       window.openNewAccrualDeferralModal?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
       });
     }, 300);
-    
+
     return;
   }
 
-  // ─── NEW Handlers ──────────────────────────────────────
+  // ════════════════════════════════════════════════════
+  // LOAN SUBLEDGER
+  // ════════════════════════════════════════════════════
 
-  // 📗 LOAN SUBLEDGER
   if (hint === "loan") {
     await window.switchScreen?.("loans");
-    
+
     setTimeout(() => {
-      // If there's a loan modal/function, open it with context
       window.openLoanModal?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
         accountCode: acct?.code || "",
         accountName: acct?.name || "",
       });
     }, 300);
-    
+
     return;
   }
 
-  // 💎 IFRS 9 FINANCIAL INSTRUMENTS
+  // ════════════════════════════════════════════════════
+  // IFRS 9 FINANCIAL INSTRUMENTS
+  // ════════════════════════════════════════════════════
+
   if (hint === "ifrs9") {
     await window.switchScreen?.("ifrs9");
-    
+
     setTimeout(() => {
       window.openIFRS9Modal?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
         accountCode: acct?.code || "",
         accountName: acct?.name || "",
       });
     }, 300);
-    
+
     return;
   }
 
-  // 💼 PAYROLL
+  // ════════════════════════════════════════════════════
+  // PAYROLL / IAS 19
+  // ════════════════════════════════════════════════════
+
   if (hint === "payroll") {
     await window.switchScreen?.("payroll");
-    
+
     setTimeout(() => {
       window.openPayrollRun?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
       });
     }, 300);
-    
+
     return;
   }
 
-  // 🏛️ DEFERRED TAX
+  // ════════════════════════════════════════════════════
+  // DEFERRED TAX / IAS 12
+  // ════════════════════════════════════════════════════
+
   if (hint === "deferred_tax") {
     await window.switchScreen?.("deferred-tax");
-    
+
     setTimeout(() => {
       window.openDeferredTaxAdjustment?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
         accountCode: acct?.code || "",
         accountName: acct?.name || "",
       });
     }, 300);
-    
+
     return;
   }
 
-  // 🌾 IAS 41 AGRICULTURE
+  // ════════════════════════════════════════════════════
+  // IAS 41 — AGRICULTURE
+  // ════════════════════════════════════════════════════
+
   if (hint === "ias41") {
     await window.switchScreen?.("ias41");
-    
+
     setTimeout(() => {
       window.openIAS41Event?.({
         source: "journal_guard",
         account: acct,
-        side: side,
+        side,
         accountCode: acct?.code || "",
         accountName: acct?.name || "",
       });
     }, 300);
-    
+
     return;
   }
+
+  // ════════════════════════════════════════════════════
+  // NO MODULE
+  // ════════════════════════════════════════════════════
+
+  console.log("[JOURNAL GUARD] No module redirect", {
+    hint,
+    accountCode: acct?.code || "",
+    accountName: acct?.name || "",
+  });
 }
+
 window.redirectJournalGuardToModule = redirectJournalGuardToModule;
 
 async function enforceJournalAccountGuard({ side, code }) {
@@ -24235,14 +25929,19 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
         account?.name || account?.account_name || ""
       ).trim();
 
-      const isLessor = [
-        "BS_CA_1710",
-        "BS_NCA_1720",
-      ].includes(accountCode);
+      console.log("[LEASE NUDGE] account received", {
+        account,
+        code: account?.code,
+        role: account?.role,
+        cf_bucket: account?.cf_bucket
+      });
+
+      const leaseRole = getLeaseRoleFromAccount(account);
+      const isLessor = leaseRole === "lessor";
 
       window.__LEASE_WIZARD_PENDING_CONTEXT__ = {
         mode: isLessor ? "inception" : "existing",
-        leaseRole: isLessor ? "lessor" : "lessee",
+        leaseRole: leaseRole || "lessee",
         accountCode,
         accountName,
         defaults: {
@@ -24260,7 +25959,10 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
           journal_date: postingDate,
         },
       };
-
+      console.log(
+        "[LEASE NUDGE] pending context",
+        window.__LEASE_WIZARD_PENDING_CONTEXT__
+      );
       setPostingContextDate(postingDate, {
         source: "journal-module-nudge",
         module_key: moduleKey,
@@ -24339,14 +26041,27 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
 
   if (moduleKey === "lease") {
     if (!journalDate) {
-      window.showToast?.("Select or enter a journal date first for existing lease opening balances.", "error");
+      toast("Please select a journal date first.", "error");
       return null;
     }
 
+    const leaseRole =
+      getLeaseRoleFromAccount(account) || "lessee";
+
     return await window.openLeaseWizard?.({
-      mode: "existing",
-      accountCode: account?.code || "",
-      accountName: account?.name || "",
+      mode: leaseRole === "lessor" ? "inception" : "existing",
+      leaseRole,
+
+      accountCode:
+        account?.code ||
+        account?.account_code ||
+        "",
+
+      accountName:
+        account?.name ||
+        account?.account_name ||
+        "",
+
       defaults: {
         goLiveDate: journalDate,
         openingAsAt: journalDate,
@@ -24356,9 +26071,18 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
         journalSide: side,
         moduleKey,
       },
+
       meta: {
-        account_code: account?.code || "",
-        account_name: account?.name || "",
+        account_code:
+          account?.code ||
+          account?.account_code ||
+          "",
+
+        account_name:
+          account?.name ||
+          account?.account_name ||
+          "",
+
         journal_side: side || "",
         journal_ref: journalRef || "",
         journal_date: journalDate,
@@ -26014,47 +27738,102 @@ async function startReconciliationFromImport(importId) {
 async function importBankCsv(file) {
   const cid = getActiveCompanyId();
   const bankId = document.getElementById("bankAccountSelect")?.value;
+
   if (!cid || !bankId) {
     alert("Select a bank account first.");
     return;
   }
 
-  // 1) Preview
-  const formPrev = new FormData();
-  formPrev.append("file", file);
-
-  const preview = await apiFetch(ENDPOINTS.bankStatementsPreview(cid), {
-    method: "POST",
-    body: formPrev,
-  });
-
-  if (preview?.error) {
-    alert(preview.error);
+  if (!file) {
+    alert("Select a bank statement CSV file.");
     return;
   }
 
-  // 2) Ask user to confirm mapping (for now: use suggested mapping automatically)
-  // Later you’ll build a modal UI here.
-  const mapping = preview.suggested_mapping || {};
-
-  // 3) Import with mapping + bank_account_id
-  const form = new FormData();
-  form.append("file", file);
-  form.append("bank_account_id", bankId);
-  form.append("mapping", JSON.stringify(mapping));
-
-  const res = await apiFetch(ENDPOINTS.bankStatementsImport(cid), {
-    method: "POST",
-    body: form,
+  console.log("[importBankCsv] starting", {
+    companyId: cid,
+    bankAccountId: bankId,
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type,
   });
 
-  if (res?.error) {
-    alert(res.error);
-    return;
-  }
+  try {
+    // 1) Preview
+    const formPrev = new FormData();
+    formPrev.append("file", file);
 
-  alert("Bank statement imported.");
-  await loadBankStatements();
+    console.log(
+      "[importBankCsv] preview:",
+      ENDPOINTS.bankStatementsPreview(cid)
+    );
+
+    const preview = await apiFetch(
+      ENDPOINTS.bankStatementsPreview(cid),
+      {
+        method: "POST",
+        body: formPrev,
+      }
+    );
+
+    console.log("[importBankCsv] preview response:", preview);
+
+    if (preview?.error) {
+      alert(preview.error);
+      return;
+    }
+
+    // 2) Use suggested mapping automatically
+    const mapping = preview?.suggested_mapping || {};
+
+    console.log("[importBankCsv] mapping:", mapping);
+
+    // 3) Import
+    const form = new FormData();
+    form.append("file", file);
+    form.append("bank_account_id", String(bankId));
+    form.append("mapping", JSON.stringify(mapping));
+
+    console.log(
+      "[importBankCsv] import:",
+      ENDPOINTS.bankStatementImport(cid)
+    );
+
+    const res = await apiFetch(
+      ENDPOINTS.bankStatementImport(cid),
+      {
+        method: "POST",
+        body: form,
+      }
+    );
+
+    console.log("[importBankCsv] import response:", res);
+
+    if (res?.error) {
+      alert(
+        res.details
+          ? `${res.error}\n\n${res.details}`
+          : res.error
+      );
+      return;
+    }
+
+    alert(
+      `Bank statement imported successfully.\n\n` +
+      `Import #${res.import_id}\n` +
+      `Lines: ${res.line_count ?? 0}`
+    );
+
+    // 4) Refresh statement list from database
+    await loadBankStatements();
+
+  } catch (err) {
+    console.error("[importBankCsv] FAILED:", err);
+
+    alert(
+      `Bank statement upload failed.\n\n` +
+      `${err?.message || err}`
+    );
+  }
 }
 
 // ✅ UPDATED renderReconItems (your version + small safety tweaks)
@@ -28531,19 +30310,52 @@ function bindReportsScreen() {
   }
 
   function buildPeriodParams(periodKey) {
+    // Custom dates must come from the actual date inputs.
+    if (periodKey === "custom") {
+      const from =
+        document.getElementById("stmtFromDate")?.value || "";
+
+      const to =
+        document.getElementById("stmtToDate")?.value || "";
+
+      if (!from || !to) {
+        return {
+          params: {},
+          label: "Custom period range",
+        };
+      }
+
+      if (from > to) {
+        throw new Error("From date cannot be after To date.");
+      }
+
+      return {
+        params: {
+          from,
+          to,
+          as_of: to,
+        },
+        label: `${from} → ${to}`,
+      };
+    }
+
+    // Existing behaviour for all other presets remains unchanged.
     const pr = computePeriodRange(periodKey);
 
-    // If computePeriodRange returns calendar dates (month/quarter) → use from/to
     if (pr && pr.from && pr.to) {
       return {
-        params: { from: pr.from, to: pr.to },
+        params: {
+          from: pr.from,
+          to: pr.to,
+        },
         label: pr.label || periodKey,
       };
     }
 
-    // Otherwise → backend decides FY/YTD using preset
     return {
-      params: { preset: pr?.preset || periodKey },
+      params: {
+        preset: pr?.preset || periodKey,
+      },
       label: pr?.label || periodKey,
     };
   }
@@ -30176,7 +31988,9 @@ function renderPnLClassicHtml(stmt) {
       `;
     }
 
-    if (b.totals) {
+    // Avoid printing duplicate total row if lines already ended with a subtotal row
+    const hasSubtotalLine = lines.some(ln => ln.is_subtotal && ln.code === "COGM");
+    if (b.totals && !hasSubtotalLine) {
       rows += `
         <tr>
           <td class="py-2 px-2 font-semibold text-slate-900">${esc((b.label || "Total") + " total")}</td>
@@ -30598,20 +32412,28 @@ function renderStatementV2Html(stmt) {
 
     const totals = subtotalRow(`${sec.label} total`, sec.totals, { isTotal: true });
 
-    return `
-      <div class="mb-4">
-        <div class="text-xs font-semibold text-slate-600 mb-1">${esc(sec.label)}</div>
-        <div class="border border-slate-100 rounded-lg overflow-hidden bg-white">
-          <table class="w-full text-xs">
-            <tbody>
-              ${lines}
-              ${totals}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  }
+        // ✅ Add badge check here
+        const isMfg = sec.key === "manufacturing_account";
+        const badge = isMfg 
+          ? `<span class="ml-2 text-[10px] font-normal uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">Production Schedule</span>` 
+          : "";
+
+        return `
+          <div class="mb-4">
+            <div class="text-xs font-semibold text-slate-600 mb-1">
+              ${esc(sec.label)}${badge}
+            </div>
+            <div class="border border-slate-100 rounded-lg overflow-hidden bg-white">
+              <table class="w-full text-xs">
+                <tbody>
+                  ${lines}
+                  ${totals}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+    }
 
   // Hunter blocks renderer (unchanged)
   function renderBlocks() {
@@ -32301,7 +34123,11 @@ function renderIFRS16DisclosureHTML(d) {
 
   const paymentsGross = liab.payments_gross_period ?? liab.payments_gross ?? 0;
   const paymentsVat = liab.vat_on_payments_period ?? liab.vat_on_payments ?? 0;
-
+  // Derive net payments from the posted schedule movements.
+  // Net payments = interest accretion + principal reduction.
+  const interestAccretion = Number(rec.interest_accretion) || 0;
+  const principalReduction = Number(rec.principal_reduction) || 0;
+  const netLeasePayments = interestAccretion + principalReduction;
   const currentPortion =
     liab.undiscounted_principal_current ?? liab.current_portion_as_of ?? 0;
 
@@ -32362,10 +34188,11 @@ function renderIFRS16DisclosureHTML(d) {
           <div class="font-semibold mb-2">Liability reconciliation</div>
           <div class="text-xs space-y-1">
             <div class="flex justify-between gap-3"><span>Opening</span><b>${fmtMoney(rec.opening_liability ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Additions – new leases</span><b>${fmtMoney(rec.additions_new_leases ?? 0)}</b></div>
             <div class="flex justify-between gap-3"><span>Interest accretion</span><b>${fmtMoney(rec.interest_accretion ?? 0)}</b></div>
-            <div class="flex justify-between gap-3"><span>Principal reduction</span><b>${fmtMoney(rec.principal_reduction ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Net lease payments (excluding VAT)</span><b>(${fmtMoney(netLeasePayments)})</b></div>
             <div class="flex justify-between gap-3"><span>Remeasurements</span><b>${fmtMoney(rec.remeasurements_modifications ?? 0)}</b></div>
-            <div class="flex justify-between gap-3"><span>Derecognitions</span><b>${fmtMoney(rec.derecognitions_terminations ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Derecognitions</span><b>(${fmtMoney(rec.derecognitions_terminations ?? 0)})</b></div>
             <div class="flex justify-between gap-3 border-t pt-2 mt-2"><span><b>Closing</b></span><b>${fmtMoney(rec.closing_liability ?? 0)}</b></div>
           </div>
         </div>
@@ -32543,6 +34370,7 @@ function setActiveStmtTypeSilent(t) {
 }
 
 
+
 function bindGenerateNotesBtnReportsScreen() {
   const btn = document.getElementById("generateNotesBtn");
   if (!btn || btn.dataset.bound === "1") return;
@@ -32561,10 +34389,15 @@ function bindGenerateNotesBtnReportsScreen() {
       document.getElementById("statementPreset")?.value ||
       "this_year";
 
+    // Read the current dates, not the previously saved statement period.
     const period = buildPeriodParams(periodKey);
 
-    console.log("NOTES periodKey:", periodKey);
-    console.log("NOTES period:", period);
+    console.log("[NOTES] Selected period:", {
+      periodKey,
+      period,
+      dateFrom: document.getElementById("stmtFromDate")?.value,
+      dateTo: document.getElementById("stmtToDate")?.value,
+    });
 
     try {
       btn.disabled = true;
@@ -32579,6 +34412,7 @@ function bindGenerateNotesBtnReportsScreen() {
       });
 
     } catch (e) {
+      console.error("[NOTES] Generation failed:", e);
       alert(e?.message || `Failed to generate ${reg?.label || "notes"}.`);
     } finally {
       btn.disabled = false;
@@ -32587,6 +34421,7 @@ function bindGenerateNotesBtnReportsScreen() {
 
   btn.dataset.bound = "1";
 }
+
 
 function getCurrentStmtPeriodForNotes() {
   const p = window._stmtPeriod || {};
@@ -37397,6 +39232,8 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
               date: String(r.period_end || "").slice(0, 10),
               ref: `LEASE-${leaseId}-P${periodNo}`,
               description: `IFRS 16 monthly posting – ${(r.lease_name || `Lease ${leaseId}`)} – P${periodNo}`,
+              source: "lease_monthly",
+              source_id: Number(r.schedule_id || r.id || 0),
               lines: lines.map(ln => ({
                 account_code: ln.account_code,
                 debit: Number(ln.debit) || 0,
@@ -37422,6 +39259,9 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
       showLeaseMsg(msgEl, e?.message || "Failed to load monthly due");
     }
   });
+
+  const loadBtn = mount.querySelector("#btnLmLoad");
+  if (loadBtn) loadBtn.click();
 };
 
 function showLeaseMsg(el, msg, type="error") {
@@ -37729,74 +39569,74 @@ function closeQuickModal() {
     }
   }
 
-async function saveLessor() {
-  const cid = cidOrThrow();
-  const lessorId = currentLessorId;
-  if (!lessorId) return;
+  async function saveLessor() {
+    const cid = cidOrThrow();
+    const lessorId = currentLessorId;
+    if (!lessorId) return;
 
-  showMsg(els.dMsg, "");
+    showMsg(els.dMsg, "");
 
-  const payload = {
-    name: (els.dName?.value || "").trim(),
-    reg_no: (els.dReg?.value || "").trim() || null,
-    vat_no: (els.dVat?.value || "").trim() || null,
-    email: (els.dEmail?.value || "").trim() || null,
-    phone: (els.dPhone?.value || "").trim() || null,
-    address: (els.dAddress?.value || "").trim() || null,
-    is_related_party: !!els.dRelated?.checked,
-    active: !!els.dActive?.checked,
-  };
+    const payload = {
+      name: (els.dName?.value || "").trim(),
+      reg_no: (els.dReg?.value || "").trim() || null,
+      vat_no: (els.dVat?.value || "").trim() || null,
+      email: (els.dEmail?.value || "").trim() || null,
+      phone: (els.dPhone?.value || "").trim() || null,
+      address: (els.dAddress?.value || "").trim() || null,
+      is_related_party: !!els.dRelated?.checked,
+      active: !!els.dActive?.checked,
+    };
 
-  if (!payload.name) return showMsg(els.dMsg, "Name is required.");
+    if (!payload.name) return showMsg(els.dMsg, "Name is required.");
 
-  // disable button to prevent double-save
-  const btn = els.dSave;
-  const prevText = btn?.textContent;
-  if (btn) {
-    btn.disabled = true;
-    btn.classList.add("opacity-60", "pointer-events-none");
-    btn.textContent = "Saving...";
-  }
-
-  try {
-    const updated = await window.apiFetch(ENDPOINTS.lessors.detail(cid, lessorId), {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-
-    // ✅ DO NOT DELETE after save
-    await refreshLessors();
-
-    // keep drawer values in sync with returned truth (if backend returns full row)
-    if (updated && typeof updated === "object") {
-      els.dTitle.textContent = updated.name || payload.name;
-      els.dSub.textContent = `ID ${updated.id ?? lessorId} • Created ${
-        updated.created_at ? String(updated.created_at) : "—"
-      }`;
-
-      els.dName.value = updated.name ?? payload.name;
-      els.dReg.value = updated.reg_no ?? "";
-      els.dVat.value = updated.vat_no ?? "";
-      els.dEmail.value = updated.email ?? "";
-      els.dPhone.value = updated.phone ?? "";
-      els.dAddress.value = updated.address ?? "";
-      els.dRelated.checked = !!updated.is_related_party;
-      els.dActive.checked = (updated.active !== false);
-    } else {
-      els.dTitle.textContent = payload.name;
-    }
-
-    showMsg(els.dMsg, "Saved.", "ok");
-  } catch (e) {
-    showMsg(els.dMsg, e?.message || "Failed to save lessor.");
-  } finally {
+    // disable button to prevent double-save
+    const btn = els.dSave;
+    const prevText = btn?.textContent;
     if (btn) {
-      btn.disabled = false;
-      btn.classList.remove("opacity-60", "pointer-events-none");
-      btn.textContent = prevText || "Save";
+      btn.disabled = true;
+      btn.classList.add("opacity-60", "pointer-events-none");
+      btn.textContent = "Saving...";
+    }
+
+    try {
+      const updated = await window.apiFetch(ENDPOINTS.lessors.detail(cid, lessorId), {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+
+      // ✅ DO NOT DELETE after save
+      await refreshLessors();
+
+      // keep drawer values in sync with returned truth (if backend returns full row)
+      if (updated && typeof updated === "object") {
+        els.dTitle.textContent = updated.name || payload.name;
+        els.dSub.textContent = `ID ${updated.id ?? lessorId} • Created ${
+          updated.created_at ? String(updated.created_at) : "—"
+        }`;
+
+        els.dName.value = updated.name ?? payload.name;
+        els.dReg.value = updated.reg_no ?? "";
+        els.dVat.value = updated.vat_no ?? "";
+        els.dEmail.value = updated.email ?? "";
+        els.dPhone.value = updated.phone ?? "";
+        els.dAddress.value = updated.address ?? "";
+        els.dRelated.checked = !!updated.is_related_party;
+        els.dActive.checked = (updated.active !== false);
+      } else {
+        els.dTitle.textContent = payload.name;
+      }
+
+      showMsg(els.dMsg, "Saved.", "ok");
+    } catch (e) {
+      showMsg(els.dMsg, e?.message || "Failed to save lessor.");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove("opacity-60", "pointer-events-none");
+        btn.textContent = prevText || "Save";
+      }
     }
   }
-}
 
   async function deleteLessor() {
     const cid = cidOrThrow();
@@ -38742,12 +40582,12 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
   // ============================================================
   function renderPaymentsUI(mount) {
     mount.innerHTML = `
-    <div class="flex items-center justify-between gap-3 mb-3">
-      <div class="text-sm font-semibold">Lease Payments</div>
-      <div class="flex items-center gap-2">
-        <button id="btnLpExportCsv" class="px-3 py-1.5 rounded border text-sm bg-white">Export CSV</button>
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <div class="text-sm font-semibold">Lease Payments & Amortizations</div>
+        <div class="flex items-center gap-2">
+          <button id="btnLpExportCsv" class="px-3 py-1.5 rounded border text-sm bg-white">Export CSV</button>
+        </div>
       </div>
-    </div>
 
       <div class="border rounded-xl p-3 bg-slate-50 mb-3">
         <div class="grid grid-cols-1 md:grid-cols-6 gap-2">
@@ -38778,7 +40618,11 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
         </div>
       </div>
 
-      <div class="border rounded-xl overflow-hidden">
+      <div class="border rounded-xl overflow-hidden mb-4">
+        <div class="px-3 py-2 bg-slate-50 border-b text-sm font-semibold">
+          Lease Payments
+        </div>
+
         <div class="overflow-x-auto">
           <table class="min-w-[820px] w-full text-sm">
             <thead class="bg-slate-50 border-b">
@@ -38795,58 +40639,168 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
           </table>
         </div>
       </div>
-      <div id="leasePaymentsMsg" class="text-sm hidden"></div>
+
+      <div class="border rounded-xl overflow-hidden">
+        <div class="px-3 py-2 bg-slate-50 border-b text-sm font-semibold">
+          Posted Amortizations
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-[1180px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 w-[70px] whitespace-nowrap">Period</th>
+                <th class="text-left p-2 w-[220px] whitespace-nowrap">Period</th>
+                <th class="text-right p-2 w-[145px] whitespace-nowrap">Opening Liability</th>
+                <th class="text-right p-2 w-[120px] whitespace-nowrap">Interest</th>
+                <th class="text-right p-2 w-[120px] whitespace-nowrap">Payment</th>
+                <th class="text-right p-2 w-[120px] whitespace-nowrap">Principal</th>
+                <th class="text-right p-2 w-[145px] whitespace-nowrap">Closing Liability</th>
+                <th class="text-right p-2 w-[120px] whitespace-nowrap">Depreciation</th>
+                <th class="text-left p-2 w-[120px] whitespace-nowrap">Journal</th>
+              </tr>
+            </thead>
+            <tbody id="lpAmortizationTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="leasePaymentsMsg" class="text-sm hidden mt-2"></div>
     `;
   }
 
-  function renderPaymentsTable(rows, { q = "" } = {}) {
+  function renderPaymentsTable(rows, { q = "", from = "", to = "" } = {}) {
     const body = $("lpTableBody");
-    if (!body) return;
+    const amortBody = $("lpAmortizationTableBody");
+
+    if (!body || !amortBody) return;
 
     const qq = String(q || "").trim().toLowerCase();
+    const fromDate = String(from || "").trim();
+    const toDate = String(to || "").trim();
 
     const filtered = (Array.isArray(rows) ? rows : []).filter((r) => {
+      const paymentDate = String(r.payment_date || r.date || "").slice(0, 10);
+
+      if (fromDate && paymentDate && paymentDate < fromDate) return false;
+      if (toDate && paymentDate && paymentDate > toDate) return false;
+
       if (!qq) return true;
+
       const t = [
         r.reference,
         r.description,
         r.memo,
         r.notes,
         r.journal_id,
+        r.posted_journal_id,
       ].join(" ").toLowerCase();
+
       return t.includes(qq);
     });
 
     if (!filtered.length) {
-      body.innerHTML = `<tr><td colspan="6" class="p-3 text-xs text-slate-500">No payments found</td></tr>`;
-      return;
-    }
-
-    body.innerHTML = filtered.map((r) => {
-      const jid = r.journal_id || r.posted_journal_id || "";
-      return `
-        <tr class="border-t">
-          <td class="p-2 whitespace-nowrap">${esc(fmtDate(r.payment_date || r.date))}</td>
-          <td class="p-2 text-slate-700">${esc(String(r.reference || ""))}</td>
-          <td class="p-2 text-right tabular-nums">${fmtMoney(r.amount_gross ?? r.amount ?? 0)}</td>
-          <td class="p-2 text-right tabular-nums">${fmtMoney(r.interest_amount ?? 0)}</td>
-          <td class="p-2 text-right tabular-nums">${fmtMoney(r.principal_amount ?? 0)}</td>
-          <td class="p-2">
-            ${jid ? `<button class="text-[11px] text-blue-600 hover:underline" data-journal="${esc(String(jid))}">${esc(String(jid))}</button>` : ""}
+      body.innerHTML = `
+        <tr>
+          <td colspan="6" class="p-3 text-xs text-slate-500">
+            No payments found
           </td>
         </tr>
       `;
-    }).join("");
+    } else {
+      body.innerHTML = filtered.map((r) => {
+        const jid = r.journal_id || r.posted_journal_id || "";
 
-    body.querySelectorAll("[data-journal]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const jid = btn.getAttribute("data-journal");
-        if (!jid) return;
-        window.switchScreen?.("journal");
-        window.fetchJournalDetail?.(jid);
-      });
+        return `
+          <tr class="border-t">
+            <td class="p-2 whitespace-nowrap">${esc(fmtDate(r.payment_date || r.date))}</td>
+            <td class="p-2 text-slate-700">${esc(String(r.reference || ""))}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.amount_gross ?? r.amount ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.interest_amount ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.principal_amount ?? 0)}</td>
+            <td class="p-2">
+              ${jid
+                ? `<button class="text-[11px] text-blue-600 hover:underline" data-journal="${esc(String(jid))}">${esc(String(jid))}</button>`
+                : ""}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    const amortRows = (Array.isArray(window.__leaseAmortizationRows)
+      ? window.__leaseAmortizationRows
+      : []
+    ).filter((r) => {
+      if (!r?.posted_journal_id) return false;
+
+      const periodStart = String(r.period_start || "").slice(0, 10);
+      const periodEnd = String(r.period_end || "").slice(0, 10);
+
+      if (fromDate && periodEnd && periodEnd < fromDate) return false;
+      if (toDate && periodStart && periodStart > toDate) return false;
+
+      if (!qq) return true;
+
+      const t = [
+        r.period_no,
+        r.period_start,
+        r.period_end,
+        r.posted_journal_id,
+        r.posted_at,
+      ].join(" ").toLowerCase();
+
+      return t.includes(qq);
     });
-  }
+
+    if (!amortRows.length) {
+      amortBody.innerHTML = `
+        <tr>
+          <td colspan="9" class="p-3 text-xs text-slate-500">
+            No posted amortizations found
+          </td>
+        </tr>
+      `;
+    } else {
+      amortBody.innerHTML = amortRows.map((r) => {
+        const jid = r.posted_journal_id || "";
+
+        const periodLabel = [
+          r.period_start ? fmtDate(r.period_start) : "",
+          r.period_end ? fmtDate(r.period_end) : "",
+        ].filter(Boolean).join(" – ");
+
+        return `
+          <tr class="border-t">
+            <td class="p-2 whitespace-nowrap">${esc(String(r.period_no ?? ""))}</td>
+            <td class="p-2 whitespace-nowrap">${esc(periodLabel)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.opening_liability ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.interest ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.payment ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.principal ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.closing_liability ?? 0)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(r.depreciation ?? 0)}</td>
+            <td class="p-2">
+              ${jid
+                ? `<button class="text-[11px] text-blue-600 hover:underline" data-journal="${esc(String(jid))}">${esc(String(jid))}</button>`
+                : ""}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    document.querySelectorAll("#lpTableBody [data-journal], #lpAmortizationTableBody [data-journal]")
+      .forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const jid = btn.getAttribute("data-journal");
+          if (!jid) return;
+
+          window.switchScreen?.("journal");
+          window.fetchJournalDetail?.(jid);
+        });
+      });
+    }
 
   async function loadPayments() {
     const msgEl = $("leasePaymentsMsg");
@@ -38855,20 +40809,76 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
     const cid = window.getActiveCompanyId?.();
     const leaseId = Number(($("lpFilterLeaseId")?.value || "").trim() || 0);
     const q = $("lpFilterQ")?.value || "";
+    const from = $("lpFilterFrom")?.value || "";
+    const to = $("lpFilterTo")?.value || "";
 
     if (!cid) return showMsg(msgEl, "No company selected");
     if (!leaseId) return showMsg(msgEl, "Lease ID is required");
 
-    // backend list: GET /leases/<lease_id>/payments
-    const res = await window.apiFetch(
-      window.endpoints.leases.payments.list(cid, leaseId),
-      { method: "GET" }
-    );
+    let dots = 0;
 
-    const rows = res?.payments || res?.rows || (Array.isArray(res) ? res : []);
-    renderPaymentsTable(rows, { q });
-    showMsg(msgEl, "Loaded.", "ok");
-    setTimeout(() => showMsg(msgEl, ""), 900);
+    msgEl.classList.remove("hidden");
+    msgEl.className = "text-sm";
+    msgEl.innerHTML = `
+      <span>Loading lease payments & amortizations</span>
+      <span id="lpLoadingDots" class="inline-block w-[24px] text-left ml-1">·</span>
+    `;
+
+    const loadingTimer = setInterval(() => {
+      const dotsEl = $("lpLoadingDots");
+      if (!dotsEl) return;
+
+      dots = (dots + 1) % 4;
+      dotsEl.textContent = "·".repeat(dots || 1);
+    }, 350);
+
+    try {
+      const [paymentsRes, scheduleRes] = await Promise.all([
+        window.apiFetch(
+          ENDPOINTS.leases.payments.list(cid, leaseId),
+          { method: "GET" }
+        ),
+        window.apiFetch(
+          ENDPOINTS.leases.listSchedule(cid, leaseId),
+          { method: "GET" }
+        ),
+      ]);
+
+      const paymentRows =
+        paymentsRes?.payments ||
+        paymentsRes?.rows ||
+        (Array.isArray(paymentsRes) ? paymentsRes : []);
+
+      const scheduleRows =
+        scheduleRes?.rows ||
+        (Array.isArray(scheduleRes) ? scheduleRes : []);
+
+      window.__leaseAmortizationRows = scheduleRows;
+
+      clearInterval(loadingTimer);
+
+      renderPaymentsTable(paymentRows, {
+        q,
+        from,
+        to,
+      });
+
+      showMsg(msgEl, "Loaded.", "ok");
+      setTimeout(() => showMsg(msgEl, ""), 900);
+
+    } catch (e) {
+      clearInterval(loadingTimer);
+
+      console.error(
+        "Failed to load lease payments & amortizations:",
+        e
+      );
+
+      showMsg(
+        msgEl,
+        "Failed to load lease payments & amortizations."
+      );
+    }
   }
 
   // ============================================================
@@ -39174,6 +41184,8 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
             date: String(r.period_end || "").slice(0, 10),
             ref: `LEASE-${leaseId}-P${periodNo}`,
             description: `IFRS 16 monthly posting – ${r.lease_name || `Lease ${leaseId}`} – P${periodNo}`,
+            source: "lease_monthly",
+            source_id: Number(r.schedule_id || r.id || 0),
             lines: r.preview_journal_lines.map(ln => ({
               account_code: ln.account_code,
               debit: Number(ln.debit) || 0,
@@ -39469,7 +41481,11 @@ window.submitTermDraft = submitTermDraft;
 
 window.openLeaseModificationModal = function (leaseId) {
   ensureModals();
-  state.leaseId = Number(leaseId || getActiveLeaseId()) || null;
+  // FIX (state-is-not-defined): bare `state` is not defined in this scope;
+  // this module stores its state on window.LEASE_UI.state.
+  window.LEASE_UI = window.LEASE_UI || {};
+  window.LEASE_UI.state = window.LEASE_UI.state || {};
+  window.LEASE_UI.state.leaseId = Number(leaseId || getActiveLeaseId()) || null;
   msg("leaseModMsg", "");
   document.getElementById("leaseModPreviewBox").classList.add("hidden");
   applyLeaseModalPolicy("mod");
@@ -39479,7 +41495,10 @@ window.openLeaseModificationModal = function (leaseId) {
 
 window.openLeaseTerminationModal = function (leaseId) {
   ensureModals();
-  state.leaseId = Number(leaseId || getActiveLeaseId()) || null;
+  // FIX (state-is-not-defined): same as openLeaseModificationModal above.
+  window.LEASE_UI = window.LEASE_UI || {};
+  window.LEASE_UI.state = window.LEASE_UI.state || {};
+  window.LEASE_UI.state.leaseId = Number(leaseId || getActiveLeaseId()) || null;
   msg("leaseTermMsg", "");
   document.getElementById("leaseTermPreviewBox").classList.add("hidden");
   applyLeaseModalPolicy("term");
@@ -41230,6 +43249,7 @@ window.bindLeasesScreen = async function bindLeasesScreen(routeName) {
   // 2) decide current tab from route
 // 2) decide current tab from route
 const routeToTab = {
+  "lease-center":   "center",
   "lease-payments": "payments",
   "lease-monthly":  "monthly",
   "lease-register": "register",  // ✅ default register screen shows Monthly Due
@@ -41247,8 +43267,9 @@ window.LEASE_UI.state = window.LEASE_UI.state || {};
 window.LEASE_UI.state.tab = tab;
 
 // 4) render correct header tabs based on ROUTE (not tab)
+//    lease-center renders its own in-view tabs → keep the header tabs empty
 if (tabsMount) {
-  tabsMount.innerHTML = window.renderLeaseHeaderTabs?.(routeName) || "";
+  tabsMount.innerHTML = tab === "center" ? "" : (window.renderLeaseHeaderTabs?.(routeName) || "");
 }
 
 // 5) highlight active tab button
@@ -41302,6 +43323,14 @@ window.renderLeaseScreen = async function renderLeaseScreen(opts = {}) {
       return window.renderLeaseMonthlyDueView(mount);
     }
     mount.innerHTML = `<div class="border rounded p-3 text-sm text-slate-600">Monthly Due view not loaded.</div>`;
+    return;
+  }
+
+  if (tab === "center") {
+    if (typeof window.renderLeaseCenterView === "function") {
+      return window.renderLeaseCenterView(mount);
+    }
+    mount.innerHTML = `<div class="border rounded p-3 text-sm text-slate-600">Lease Center view not loaded.</div>`;
     return;
   }
 
@@ -43686,9 +45715,12 @@ async function postLeaseJournal(lease) {
 
       for (const l of glines) {
         const code = String(l.account_code || "").trim();
-        const coaRow = window.COA_BY_CODE ? window.COA_BY_CODE[code] : null;
-        const acctLabel = (coaRow && coaRow.name) ? String(coaRow.name) : (code || "—");
-
+        const acctLabel = String(
+          l.account_name ||
+          l.name ||
+          code ||
+          "—"
+        ).trim();
         const dr = Number(l.debit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const cr = Number(l.credit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -43729,8 +45761,18 @@ async function postLeaseJournal(lease) {
     tb.innerHTML = rows.map(r => {
       const asset = String(r.asset_name || r.asset_code || r.asset_id || "—");
       const cls   = String(r.asset_class || "—");
-      const ps    = String(r.period_start || "").slice(0, 10);
-      const pe    = String(r.period_end || "").slice(0, 10);
+      const fmtDate = v => {
+        if (!v) return "—";
+        const d = new Date(String(v).slice(0, 10) + "T00:00:00");
+        return isNaN(d) ? String(v).slice(0, 10) : d.toLocaleDateString(undefined, {
+          day: "2-digit",
+          month: "short",
+          year: "numeric"
+        });
+      };
+
+      const ps = fmtDate(r.period_start);
+      const pe = fmtDate(r.period_end);
 
       const depAmt = Number(r.depreciation_amount || 0)
         .toLocaleString(undefined, { minimumFractionDigits: 2 });
@@ -57059,6 +59101,7 @@ async function saveEditModal() {
       "USD"
     );
   }
+  window.companyCurrency = companyCurrency;
 
   function bfNormalizeToken(value) {
     return String(value || "")
@@ -64473,6 +66516,13 @@ async function saveEditModal() {
       returns:[],
       selectedReturn:null,
     },
+
+    payeClearing: {
+        selectedRunId: null,
+        preview: null,
+        banks: [],
+        history: [],
+    },
   };
 
   payrollState.employeeBenefits = payrollState.employeeBenefits || {
@@ -64489,6 +66539,7 @@ async function saveEditModal() {
     selectedBonusRun: null,
     benefitPlans: [],
     selectedBenefitPlan:null,
+    openBenefitPlanRow:null,
     planMembers:[],
     actuarialValuations: [],
     selectedActuarialValuation: null,
@@ -64498,6 +66549,7 @@ async function saveEditModal() {
     loaded: false,
     definedContributionRuns:[],
     selectedDefinedContributionRun:null,
+    openDcRunRow:null,
     definedContributionPreview:null,
     definedBenefitPlans:[],
     actuarialReconciliation:null,
@@ -64568,22 +66620,22 @@ async function saveEditModal() {
   }
 
   async function loadPayrollEmployeeBenefitsWorkspace() {
-    const companyId = cid();
-    const reportingDate =
-      $("payrollBenefitReportingDate")?.value ||
+    const companyId=cid();
+    const reportingDate=$("payrollBenefitReportingDate")?.value||
       payrollState.employeeBenefits.reportingDate;
 
-    const res = await apiFetch(
+    const res=await apiFetch(
       ENDPOINTS.payroll.employeeBenefitsDashboard(
         companyId,
         reportingDate
       )
     );
 
-    payrollState.employeeBenefits.dashboard = res?.data || {};
-    payrollState.employeeBenefits.reportingDate = reportingDate;
-    payrollState.employeeBenefits.loaded = true;
+    payrollState.employeeBenefits.dashboard=res?.data||{};
+    payrollState.employeeBenefits.reportingDate=reportingDate;
+    payrollState.employeeBenefits.loaded=true;
 
+    await loadPayrollBenefitDisclosure();
     renderPayrollEmployeeBenefitsDashboard();
   }
 
@@ -64602,6 +66654,9 @@ async function saveEditModal() {
     const plans=payrollState.employeeBenefits.benefitPlans||[];
     const runs=payrollState.employeeBenefits.definedContributionRuns||[];
     if(!el)return;
+
+    const openPlanRow=Number(payrollState.employeeBenefits.openBenefitPlanRow||0);
+    const openRunRow=Number(payrollState.employeeBenefits.openDcRunRow||0);
 
     el.innerHTML=`
       <div class="payroll-card">
@@ -64639,15 +66694,20 @@ async function saveEditModal() {
                   <td>${money(p.employer_contribution_percentage)}%</td>
                   <td>${Number(p.active_members||0)}</td>
                   <td>
-                    <button class="payroll-link" data-open-benefit-plan="${p.id}">Open</button>
+                    <button class="payroll-link" data-open-benefit-plan="${p.id}">${openPlanRow===Number(p.id)?"Close":"Open"}</button>
                   </td>
                 </tr>
+                ${openPlanRow===Number(p.id)?`
+                  <tr class="payroll-inline-detail-row">
+                    <td colspan="7">
+                      <div class="payroll-inline-detail" id="payrollBenefitPlanDetail"></div>
+                    </td>
+                  </tr>
+                `:""}
               `).join(""):`<tr><td colspan="7">No benefit plans configured.</td></tr>`}
             </tbody>
           </table>
         </div>
-
-        <div id="payrollBenefitPlanDetail"></div>
       </div>
 
       <div class="payroll-card">
@@ -64659,19 +66719,39 @@ async function saveEditModal() {
           <button id="payrollNewDcRunBtn" class="payroll-primary" type="button">+ Contribution Run</button>
         </div>
 
-        <div class="payroll-sublist">
-          ${runs.length?runs.map(r=>`
-            <div class="payroll-mini-row">
-              <strong>${esc(r.run_no)}</strong>
-              <span>${esc(String(r.reporting_date||""))}</span>
-              <span>${money(r.total_payable)}</span>
-              <span class="payroll-pill">${esc(r.status)}</span>
-              <button class="payroll-link" data-open-dc-run="${r.id}">Open</button>
-            </div>
-          `).join(""):`<p class="payroll-muted">No defined-contribution runs.</p>`}
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Reporting date</th>
+                <th class="num">Total payable</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${runs.length?runs.map(r=>`
+                <tr>
+                  <td><strong>${esc(r.run_no)}</strong></td>
+                  <td>${esc(String(r.reporting_date||""))}</td>
+                  <td class="num">${money(r.total_payable)}</td>
+                  <td><span class="payroll-pill">${esc(r.status)}</span></td>
+                  <td>
+                    <button class="payroll-link" data-open-dc-run="${r.id}">${openRunRow===Number(r.id)?"Close":"Open"}</button>
+                  </td>
+                </tr>
+                ${openRunRow===Number(r.id)?`
+                  <tr class="payroll-inline-detail-row">
+                    <td colspan="5">
+                      <div class="payroll-inline-detail" id="payrollDcRunDetail"></div>
+                    </td>
+                  </tr>
+                `:""}
+              `).join(""):`<tr><td colspan="5">No defined-contribution runs.</td></tr>`}
+            </tbody>
+          </table>
         </div>
-
-        <div id="payrollDcRunDetail"></div>
       </div>`;
 
     $("payrollNewBenefitPlanBtn")?.addEventListener("click",()=>editPayrollBenefitPlan());
@@ -64679,13 +66759,46 @@ async function saveEditModal() {
       "click",
       openPayrollDcRunSetup
     );
+
     el.querySelectorAll("[data-open-benefit-plan]").forEach(b=>
-      b.addEventListener("click",()=>openPayrollBenefitPlan(Number(b.dataset.openBenefitPlan)))
+      b.addEventListener("click",()=>{
+        const id=Number(b.dataset.openBenefitPlan);
+
+        if(payrollState.employeeBenefits.openBenefitPlanRow===id){
+          payrollState.employeeBenefits.openBenefitPlanRow=null;
+          renderPayrollBenefitPlans();
+          return;
+        }
+
+        openPayrollBenefitPlan(id);
+      })
     );
 
     el.querySelectorAll("[data-open-dc-run]").forEach(b=>
-      b.addEventListener("click",()=>openPayrollDcRun(Number(b.dataset.openDcRun)))
+      b.addEventListener("click",()=>{
+        const id=Number(b.dataset.openDcRun);
+
+        if(payrollState.employeeBenefits.openDcRunRow===id){
+          payrollState.employeeBenefits.openDcRunRow=null;
+          renderPayrollBenefitPlans();
+          return;
+        }
+
+        openPayrollDcRun(id);
+      })
     );
+
+    if(
+      payrollState.employeeBenefits.openBenefitPlanRow&&
+      Number(payrollState.employeeBenefits.selectedBenefitPlan?.id)===
+        openPlanRow
+    )renderPayrollBenefitPlanDetail();
+
+    if(
+      payrollState.employeeBenefits.openDcRunRow&&
+      Number(payrollState.employeeBenefits.selectedDefinedContributionRun?.run?.id)===
+        openRunRow
+    )renderPayrollDcRunDetail();
   }
 
   function payrollRunPresetRange(preset){
@@ -65397,6 +67510,7 @@ async function saveEditModal() {
     );
 
     await loadPayrollEmployeeBenefitsWorkspace();
+    await loadPayrollBenefitPlans();
 
     const run=res?.data||res;
     if(run?.id)await openPayrollDcRun(run.id);
@@ -65958,6 +68072,8 @@ async function saveEditModal() {
   async function openPayrollDcRun(runId){
     const r=await apiFetch(ENDPOINTS.payroll.definedContributionRun(cid(),runId));
     payrollState.employeeBenefits.selectedDefinedContributionRun=r?.data||null;
+    payrollState.employeeBenefits.openDcRunRow=Number(runId);
+    renderPayrollBenefitPlans();
     renderPayrollDcRunDetail();
   }
 
@@ -65968,11 +68084,13 @@ async function saveEditModal() {
 
     const r=d.run||{},lines=d.lines||[];
     const locked=["posted","reversed"].includes(r.status);
+    const posted=r.status==="posted";
 
     el.innerHTML=`
       <div class="payroll-posting-card">
         <div>
           <h3>${esc(r.run_no||"Contribution Run")}</h3>
+
           <p class="payroll-muted">
             ${esc(String(r.period_start||""))}
             —
@@ -65985,6 +68103,7 @@ async function saveEditModal() {
         </span>
 
         <div class="payroll-run-actions">
+
           <button
             id="payrollCalculateDcBtn"
             class="payroll-secondary dark"
@@ -65993,40 +68112,57 @@ async function saveEditModal() {
             Reconcile
           </button>
 
-          <button
-            class="payroll-primary"
-            type="button"
-            disabled
-            title="Defined-contribution amounts are posted through the payroll run">
-            Posted through Payroll
-          </button>
+          ${
+            posted
+              ?`
+                <button
+                  id="payrollPayDcBtn"
+                  class="payroll-primary"
+                  type="button">
+                  Pay Contribution
+                </button>
+              `
+              :""
+          }
+
         </div>
       </div>
 
       <div class="payroll-benefit-summary-grid">
+
         <div>
           <span>Pensionable pay</span>
-          <strong>${money(r.total_pensionable_remuneration)}</strong>
+          <strong>
+            ${money(r.total_pensionable_remuneration)}
+          </strong>
         </div>
 
         <div>
           <span>Employee</span>
-          <strong>${money(r.total_employee_contribution)}</strong>
+          <strong>
+            ${money(r.total_employee_contribution)}
+          </strong>
         </div>
 
         <div>
           <span>Employer</span>
-          <strong>${money(r.total_employer_contribution)}</strong>
+          <strong>
+            ${money(r.total_employer_contribution)}
+          </strong>
         </div>
 
         <div>
           <span>Total payable</span>
-          <strong>${money(r.total_payable)}</strong>
+          <strong>
+            ${money(r.total_payable)}
+          </strong>
         </div>
+
       </div>
 
-      <div class="payroll-table-wrap">
+      <div class="payroll-table-wrap payroll-dc-lines-scroll">
         <table class="payroll-preview-table">
+
           <thead>
             <tr>
               <th>Employee</th>
@@ -66043,6 +68179,7 @@ async function saveEditModal() {
               lines.length
                 ?lines.map(x=>`
                   <tr>
+
                     <td>
                       ${esc(x.employee_no||"")}
                       —
@@ -66055,10 +68192,30 @@ async function saveEditModal() {
                       ${esc(x.plan_name||"")}
                     </td>
 
-                    <td>${money(x.pensionable_remuneration)}</td>
-                    <td>${money(x.employee_contribution)}</td>
-                    <td>${money(x.employer_contribution)}</td>
-                    <td>${money(x.total_contribution)}</td>
+                    <td>
+                      ${money(
+                        x.pensionable_remuneration
+                      )}
+                    </td>
+
+                    <td>
+                      ${money(
+                        x.employee_contribution
+                      )}
+                    </td>
+
+                    <td>
+                      ${money(
+                        x.employer_contribution
+                      )}
+                    </td>
+
+                    <td>
+                      ${money(
+                        x.total_contribution
+                      )}
+                    </td>
+
                   </tr>
                 `).join("")
                 :`
@@ -66070,12 +68227,34 @@ async function saveEditModal() {
                 `
             }
           </tbody>
+
         </table>
-      </div>`;
+      </div>
+
+      <div
+        id="payrollDcPaymentSection"
+        style="margin-top:20px;">
+      </div>
+    `;
 
     $("payrollCalculateDcBtn")?.addEventListener(
       "click",
-      ()=>calculatePayrollDcRun(r.id)
+      ()=>calculatePayrollDcRun(r.id).catch(error=>{
+        showPayrollStatus(
+          error.message,
+          "error"
+        );
+      })
+    );
+
+    $("payrollPayDcBtn")?.addEventListener(
+      "click",
+      ()=>openPayrollDcPayment(r.id).catch(error=>{
+        showPayrollStatus(
+          error.message,
+          "error"
+        );
+      })
     );
   }
 
@@ -66288,6 +68467,8 @@ async function saveEditModal() {
     const r=await apiFetch(ENDPOINTS.payroll.benefitPlan(cid(),planId));
     payrollState.employeeBenefits.selectedBenefitPlan=r?.data?.plan||null;
     payrollState.employeeBenefits.planMembers=r?.data?.members||[];
+    payrollState.employeeBenefits.openBenefitPlanRow=Number(planId);
+    renderPayrollBenefitPlans();
     renderPayrollBenefitPlanDetail();
   }
 
@@ -67764,131 +69945,131 @@ async function saveEditModal() {
   }
 
   async function openPayrollBonusScheme(item={}){
-      const payload=await payrollForm(
-          item.id?"Edit bonus scheme":"New bonus scheme",
-          [
-              payrollGeneratedCodeField(
-                  "code","Scheme code",item.code
-              ),
-              {
-                  name:"name",
-                  label:"Scheme name",
-                  required:true,
-                  value:item.name||"",
-              },
-              {
-                  name:"scheme_type",
-                  label:"Scheme type",
-                  type:"select",
-                  required:true,
-                  value:item.scheme_type||"performance_bonus",
-                  options:[
-                      ["performance_bonus","Performance bonus"],
-                      ["profit_sharing","Profit sharing"],
-                      ["thirteenth_cheque","Thirteenth cheque"],
-                      ["retention_bonus","Retention bonus"],
-                      ["commission_accrual","Commission accrual"],
-                      ["other","Other"],
-                  ],
-              },
-              {
-                  name:"measurement_basis",
-                  label:"Remuneration basis",
-                  type:"select",
-                  required:true,
-                  value:item.measurement_basis||"basic_salary",
-                  options:[
-                      ["basic_salary","Basic salary"],
-                      ["gross_salary","Gross payroll earnings"],
-                      ["pensionable_salary","Pensionable payroll earnings"],
-                      ["taxable_salary","Taxable payroll earnings"],
-                  ],
-              },
-              {
-                  name:"target_percentage",
-                  label:"Target %",
-                  type:"number",
-                  step:"0.01",
-                  min:0,
-                  value:item.target_percentage||0,
-              },
-              {
-                  name:"probability_percentage",
-                  label:"Probability %",
-                  type:"number",
-                  step:"0.01",
-                  min:0,
-                  max:100,
-                  value:item.probability_percentage??100,
-              },
-              {
-                  name:"performance_percentage",
-                  label:"Performance %",
-                  type:"number",
-                  step:"0.01",
-                  min:0,
-                  value:item.performance_percentage??100,
-              },
-              {
-                  name:"required_service_months",
-                  label:"Required service months",
-                  type:"number",
-                  step:"1",
-                  min:0,
-                  value:item.required_service_months||0,
-              },
-              {
-                  name:"payment_due_date",
-                  label:"Payment due date",
-                  type:"date",
-                  value:item.payment_due_date||"",
-              },
-              {
-                  name:"expense_account_code",
-                  label:"Bonus expense account",
-                  type:"account",
-                  accountKind:"expense",
-                  required:true,
-                  value:item.expense_account_code||"",
-              },
-              {
-                  name:"liability_account_code",
-                  label:"Bonus liability account",
-                  type:"account",
-                  accountKind:"liability",
-                  required:true,
-                  value:item.liability_account_code||"",
-              },
-              {
-                  name:"is_short_term",
-                  label:"Short-term benefit",
-                  type:"checkbox",
-                  value:item.is_short_term!==false,
-              },
-              {
-                  name:"is_active",
-                  label:"Active",
-                  type:"checkbox",
-                  value:item.is_active!==false,
-              },
-          ],
-          item
-      );
+    const payload=await payrollForm(
+        item.id?"Edit bonus scheme":"New bonus scheme",
+        [
+            payrollGeneratedCodeField(
+                "code","Scheme code",item.code
+            ),
+            {
+                name:"name",
+                label:"Scheme name",
+                required:true,
+                value:item.name||"",
+            },
+            {
+                name:"scheme_type",
+                label:"Scheme type",
+                type:"select",
+                required:true,
+                value:item.scheme_type||"performance_bonus",
+                options:[
+                    ["performance_bonus","Performance bonus"],
+                    ["profit_sharing","Profit sharing"],
+                    ["thirteenth_cheque","Thirteenth cheque"],
+                    ["retention_bonus","Retention bonus"],
+                    ["commission_accrual","Commission accrual"],
+                    ["other","Other"],
+                ],
+            },
+            {
+                name:"measurement_basis",
+                label:"Remuneration basis",
+                type:"select",
+                required:true,
+                value:item.measurement_basis||"basic_salary",
+                options:[
+                    ["basic_salary","Basic salary"],
+                    ["gross_salary","Gross payroll earnings"],
+                    ["pensionable_salary","Pensionable payroll earnings"],
+                    ["taxable_salary","Taxable payroll earnings"],
+                ],
+            },
+            {
+                name:"target_percentage",
+                label:"Target %",
+                type:"number",
+                step:"0.01",
+                min:0,
+                value:item.target_percentage||0,
+            },
+            {
+                name:"probability_percentage",
+                label:"Probability %",
+                type:"number",
+                step:"0.01",
+                min:0,
+                max:100,
+                value:item.probability_percentage??100,
+            },
+            {
+                name:"performance_percentage",
+                label:"Performance %",
+                type:"number",
+                step:"0.01",
+                min:0,
+                value:item.performance_percentage??100,
+            },
+            {
+                name:"required_service_months",
+                label:"Required service months",
+                type:"number",
+                step:"1",
+                min:0,
+                value:item.required_service_months||0,
+            },
+            {
+                name:"payment_due_date",
+                label:"Payment due date",
+                type:"date",
+                value:item.payment_due_date||"",
+            },
+            {
+                name:"expense_account_code",
+                label:"Bonus expense account",
+                type:"account",
+                accountKind:"expense",
+                required:true,
+                value:item.expense_account_code||"",
+            },
+            {
+                name:"liability_account_code",
+                label:"Bonus liability account",
+                type:"account",
+                accountKind:"liability",
+                required:true,
+                value:item.liability_account_code||"",
+            },
+            {
+                name:"is_short_term",
+                label:"Short-term benefit",
+                type:"checkbox",
+                value:item.is_short_term!==false,
+            },
+            {
+                name:"is_active",
+                label:"Active",
+                type:"checkbox",
+                value:item.is_active!==false,
+            },
+        ],
+        item
+    );
 
-      if(!payload)return;
+    if(!payload)return;
 
-      await apiFetch(
-          item.id
-              ?ENDPOINTS.payroll.bonusScheme(cid(),item.id)
-              :ENDPOINTS.payroll.bonusSchemes(cid()),
-          {
-              method:item.id?"PATCH":"POST",
-              body:JSON.stringify(payload),
-          }
-      );
+    await apiFetch(
+        item.id
+            ?ENDPOINTS.payroll.bonusScheme(cid(),item.id)
+            :ENDPOINTS.payroll.bonusSchemes(cid()),
+        {
+            method:item.id?"PATCH":"POST",
+            body:JSON.stringify(payload),
+        }
+    );
 
-      await loadPayrollBonusWorkspace();
-      showPayrollStatus("Bonus scheme saved.","success");
+    await loadPayrollBonusWorkspace();
+    showPayrollStatus("Bonus scheme saved.","success");
   }
 
   function payrollEmployeeName(employee = {}) {
@@ -68206,6 +70387,7 @@ async function saveEditModal() {
   async function loadPayrollBenefitDisclosure(){
     const reportingDate=$("payrollBenefitReportingDate")?.value||
       payrollState.employeeBenefits.reportingDate||
+      payrollState.reportingDate||
       new Date().toISOString().slice(0,10);
 
     const dateFrom=`${reportingDate.slice(0,4)}-01-01`;
@@ -68222,6 +70404,7 @@ async function saveEditModal() {
       })),
     ]);
 
+    payrollState.employeeBenefits.reportingDate=reportingDate;
     payrollState.employeeBenefits.disclosure=d?.data||{};
     payrollState.employeeBenefits.movementReport=m?.data||{};
     payrollState.employeeBenefits.benefitJournals=j?.items||[];
@@ -68344,6 +70527,1503 @@ async function saveEditModal() {
       .map(a=>[a.code,a.name]);
   }
 
+
+  async function openPayrollDcPayment(runId) {
+    const detail =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionRun;
+
+    if (
+        !detail ||
+        Number(detail.run?.id) !== Number(runId)
+    ) {
+        await openPayrollDcRun(runId);
+    }
+
+    const current =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionRun;
+
+    if (!current) {
+        throw new Error(
+            "Unable to load the contribution run."
+        );
+    }
+
+    const run =
+        current.run || {};
+
+    const lines =
+        current.lines || [];
+
+    if (run.status !== "posted") {
+        throw new Error(
+            "Only posted contribution runs can be paid."
+        );
+    }
+
+    const payrollRunId =
+        Number(run.payroll_run_id || 0);
+
+    if (!payrollRunId) {
+        throw new Error(
+            "This contribution run is not linked to a payroll run."
+        );
+    }
+
+    const plans =
+        [...new Map(
+            lines
+                .filter(line =>
+                    line.benefit_plan_id
+                )
+                .map(line => [
+                    Number(line.benefit_plan_id),
+                    {
+                        id:
+                            Number(
+                                line.benefit_plan_id
+                            ),
+                        code:
+                            line.benefit_plan_code ||
+                            "",
+                        name:
+                            line.benefit_plan_name ||
+                            ""
+                    }
+                ])
+        ).values()];
+
+    console.log("[DC PAYMENT] BEFORE refreshBankAccounts");
+    const banks =
+        await refreshBankAccounts();
+
+    console.log(
+        "[DC PAYMENT] 3 - after bank accounts"
+    );
+
+    const paymentDate =
+        normalizePayrollDate(
+            run.payment_date ||
+            run.reporting_date ||
+            run.period_end
+        );
+
+    console.log(
+        "[DC PAYMENT] 4 - payment date",
+        paymentDate
+    );
+
+    payrollState.employeeBenefits
+        .selectedDefinedContributionPayment = {
+            runId: Number(runId),
+            payrollRunId,
+            plans,
+            banks,
+            paymentDate,
+            selectedPlanId:
+                plans.length === 1
+                    ? plans[0].id
+                    : null,
+            selectedBankId:
+                banks.length === 1
+                    ? Number(banks[0].id)
+                    : null,
+            liabilityPreview: null,
+            paymentPreview: null
+        };
+
+    console.log(
+        "[DC PAYMENT] 5 - payment state created",
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment
+    );
+
+    renderPayrollDcPayment();
+
+    console.log(
+        "[DC PAYMENT] 6 - renderPayrollDcPayment completed"
+    );
+
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    console.log(
+        "[DC PAYMENT] 7 - payment state",
+        payment
+    );
+
+    if (payment.paymentDate) {
+        console.log(
+            "[DC PAYMENT] 8 - CALLING loadPayrollLiabilityClearing"
+        );
+
+        await loadPayrollLiabilityClearing({ 
+            liabilityType: 
+                "defined_contribution", 
+
+            payrollRunId: 
+                payment.payrollRunId, 
+
+            benefitPlanId: 
+                payment.selectedPlanId || null, 
+
+            definedContributionRunId: 
+                payment.runId, 
+
+            prefix: 
+                "payrollDcPayment", 
+
+            referencePrefix: 
+                "DC-PAY" 
+        }); 
+
+        console.log(
+            "[DC PAYMENT] 9 - loadPayrollLiabilityClearing completed"
+        );
+
+        renderPayrollDcPayment();
+    }else {
+        console.log(
+            "[DC PAYMENT] 8 - LIABILITY NOT CALLED",
+            {
+                selectedPlanId:
+                    payment.selectedPlanId,
+
+                selectedBankId:
+                    payment.selectedBankId,
+
+                paymentDate:
+                    payment.paymentDate
+            }
+        );
+    }
+  }
+
+  async function loadPayrollDcPaymentLiability() {
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    if (!payment) {
+        return;
+    }
+
+    const runId =
+        Number(payment.runId || 0);
+
+    const payrollRunId =
+        Number(payment.payrollRunId || 0);
+
+    if (!runId || !payrollRunId) {
+        return;
+    }
+
+    const companyId = cid();
+
+    const messageEl =
+        $("payrollDcPaymentMessage");
+
+    const outstandingEl =
+        $("payrollDcPaymentOutstanding");
+
+    const amountEl =
+        $("payrollDcPaymentAmount");
+
+    const dateEl =
+        $("payrollDcPaymentDate");
+
+    const bankEl =
+        $("payrollDcPaymentBankAccount");
+
+    const referenceEl =
+        $("payrollDcPaymentReference");
+
+    const previewEl =
+        $("payrollDcPaymentPreview");
+
+    const postBtn =
+        $("payrollDcPaymentPostBtn");
+
+    if (postBtn) {
+        postBtn.disabled = true;
+    }
+
+    if (previewEl) {
+        previewEl.innerHTML = "";
+    }
+
+    if (messageEl) {
+        messageEl.textContent =
+            "Loading contribution payable balance…";
+    }
+
+    /*
+     * The payment date is taken from the
+     * contribution/payroll run.
+     */
+    const current =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionRun;
+
+    const run =
+        current?.run || {};
+
+    const paymentDate =
+        normalizePayrollDate(
+            payment.paymentDate ||
+            run.payment_date ||
+            run.reporting_date ||
+            run.period_end
+        );
+
+    if (dateEl) {
+        dateEl.value = paymentDate;
+    }
+
+    /*
+     * Default payment reference.
+     * The user can edit this afterwards.
+     */
+    if (
+        referenceEl &&
+        !referenceEl.value
+    ) {
+        referenceEl.value =
+            `DC-PAY-${run.run_no || runId}`;
+    }
+
+    /*
+     * Use the selected bank account.
+     */
+    const bankAccountId =
+        payment.selectedBankId ||
+        bankEl?.value ||
+        null;
+
+    if (!bankAccountId) {
+        if (messageEl) {
+            messageEl.textContent =
+                "Select a payment bank account to preview the contribution payable balance.";
+        }
+
+        return;
+    }
+
+    /*
+     * Benefit plan is optional when the run contains
+     * only one plan. If there are multiple plans,
+     * the selected plan identifies the clearing account.
+     */
+    const benefitPlanId =
+        payment.selectedPlanId
+            ? Number(payment.selectedPlanId)
+            : null;
+
+    try {
+        const preview =
+            await apiFetch(
+                ENDPOINTS.payroll.liabilityPaymentPreview(
+                    companyId,
+                    payrollRunId
+                ),
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        liability_type:
+                            "defined_contribution",
+
+                        payroll_run_id:
+                            payrollRunId,
+
+                        defined_contribution_run_id:
+                            runId,
+
+                        benefit_plan_id:
+                            benefitPlanId,
+
+                        bank_account_id:
+                            Number(bankAccountId),
+
+                        payment_date:
+                            paymentDate || null
+                    })
+                }
+            );
+
+        const data =
+            preview?.preview ||
+            preview?.data ||
+            preview ||
+            {};
+
+        /*
+         * Backend should return the clearing/payable
+         * account and the liability/payment history.
+         */
+        const recognisedLiability =
+            Number(
+                data.liability_amount ??
+                data.recognised_liability ??
+                0
+            );
+
+        const historicalPayments =
+            Number(
+                data.historical_paid_amount ??
+                data.paid_amount ??
+                data.previous_payments ??
+                0
+            );
+
+        const outstanding =
+            Number(
+                data.outstanding_amount ??
+                data.remaining_amount ??
+                Math.max(
+                    recognisedLiability -
+                    historicalPayments,
+                    0
+                )
+            );
+
+        payment.liabilityPreview = {
+            ...data,
+            liabilityAmount:
+                recognisedLiability,
+            historicalPaidAmount:
+                historicalPayments,
+            outstandingAmount:
+                outstanding
+        };
+
+        /*
+         * Display outstanding amount.
+         */
+        if (outstandingEl) {
+            outstandingEl.value =
+                money(outstanding);
+        }
+
+        /*
+         * Prefill payment amount with the
+         * outstanding liability.
+         *
+         * The user can change this afterwards.
+         */
+        if (amountEl) {
+            amountEl.value =
+                outstanding > 0
+                    ? outstanding.toFixed(2)
+                    : "";
+        }
+
+        /*
+         * Keep the selected bank in state.
+         */
+        payment.selectedBankId =
+            Number(bankAccountId);
+
+        /*
+         * Display the clearing account if the
+         * payment UI has a dedicated field.
+         */
+        const clearingAccountEl =
+            $("payrollDcPaymentClearingAccount");
+
+        if (clearingAccountEl) {
+            clearingAccountEl.value =
+                data.clearing_account_name ||
+                data.clearing_account ||
+                data.clearing_account_code ||
+                "";
+        }
+
+        if (messageEl) {
+            if (outstanding > 0) {
+                messageEl.innerHTML =
+                    `Contribution payable outstanding: <strong>${money(outstanding)}</strong>`;
+            } else {
+                messageEl.textContent =
+                    "There is no outstanding contribution payable for this payroll run.";
+            }
+        }
+
+    } catch (error) {
+        console.warn(
+            "[payroll] contribution payable clearing load failed:",
+            error
+        );
+
+        if (messageEl) {
+            messageEl.textContent =
+                error?.message ||
+                "Contribution payable balance could not be loaded.";
+        }
+    }
+  }
+
+  async function previewPayrollDcPayment() {
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    if (!payment) {
+        throw new Error(
+            "Contribution payment is not loaded."
+        );
+    }
+
+    const dcRunId =
+        Number(
+            payment.runId ??
+            payrollState.employeeBenefits
+                ?.selectedDefinedContributionRun
+                ?.run?.id
+        );
+
+    if (!Number.isFinite(dcRunId) || dcRunId <= 0) {
+        throw new Error(
+            "Contribution run id is missing. Re-open the contribution run and try again."
+        );
+    }
+
+    payment.runId = dcRunId;   /* repair state for Post as well */
+
+    /*
+     * CHANGED: benefit plan resolution.
+     *
+     * payment.selectedPlanId is unreliable — run headers can
+     * carry plan_id = NULL, so the derivation chain that was
+     * supposed to fill it ends at null, and the payload went
+     * out as benefit_plan_id: null ("Benefit plan is
+     * required for contribution payment").
+     *
+     * The balance endpoint now resolves the plan from the
+     * posted contribution-run lines and
+     * loadPayrollLiabilityClearing() stores it on the
+     * payment state — prefer that id, fall back to state.
+     */
+    const planId =
+        getResolvedDcBenefitPlanId() ??
+        (Number(payment.selectedPlanId) || null);
+
+    if (!planId) {
+        throw new Error(
+            "Benefit plan could not be resolved for this contribution run. Re-open the payment screen so the balance can load, then try again."
+        );
+    }
+
+    payment.selectedPlanId = planId;   /* repair state for Post as well */
+
+    /*
+     * Bank = clearing account.
+     * Prefer the live dropdown, fall back to state.
+     * NaN-safe: Number(undefined) must not slip through.
+     */
+    const bankId =
+        Number(
+            $("payrollDcPaymentBank")?.value ||
+            payment.selectedBankId
+        );
+
+    if (!Number.isFinite(bankId) || bankId <= 0) {
+        throw new Error(
+            "Select a bank account."
+        );
+    }
+
+    payment.selectedBankId =
+        bankId;
+
+    const paymentDate =
+        normalizePayrollDate(
+            $("payrollDcPaymentDate")?.value
+        );
+
+    if (!paymentDate) {
+        throw new Error(
+            "Enter a valid payment date."
+        );
+    }
+
+    const amount =
+        Number(
+            $("payrollDcPaymentAmount")?.value
+        );
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error(
+            "Enter a valid payment amount."
+        );
+    }
+
+    const response =
+        await apiFetch(
+            ENDPOINTS.payroll.liabilityPaymentPreview(
+                cid(),  // was COMPANY_ID — kept consistent with loadPayrollLiabilityClearing
+                payment.payrollRunId
+            ),
+            {
+                method: "POST",
+
+                body: JSON.stringify({
+                    liability_type:
+                        "defined_contribution",
+
+                    payroll_run_id:
+                        payment.payrollRunId,
+
+                    defined_contribution_run_id:
+                        payment.runId,
+
+                    /*
+                     * CHANGED: the guard above guarantees this
+                     * now carries the resolved plan id.
+                     */
+                    benefit_plan_id:
+                        planId,
+
+                    bank_account_id:
+                        bankId,
+
+                    payment_date:
+                        paymentDate,
+
+                    amount,
+
+                    reference:
+                        $(
+                            "payrollDcPaymentReference"
+                        )?.value?.trim() ||
+                        null,
+
+                    notes:
+                        $(
+                            "payrollDcPaymentNotes"
+                        )?.value?.trim() ||
+                        null
+                })
+            }
+        );
+
+    const preview =
+        response?.preview ||
+        response?.data?.preview ||
+        response?.data ||
+        response ||
+        {};
+
+    payment.paymentPreview =
+        preview;
+
+    /*
+     * Refresh the liability balance from the backend,
+     * THEN re-render the screen.
+     * Old code did render first, then update — that was the bug.
+     */
+    try {
+        await loadPayrollLiabilityClearing({
+            liabilityType: "defined_contribution",
+            payrollRunId: payment.payrollRunId,
+
+            /* CHANGED: forward the resolved id */
+            benefitPlanId: planId,
+
+            definedContributionRunId: payment.runId,
+            prefix: "payrollDcPayment",
+            referencePrefix: "DC-PAY"
+        });
+    } finally {
+        renderPayrollDcPayment();
+    }
+  }
+
+  async function postPayrollDcPayment() {
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    if (!payment) {
+        throw new Error(
+            "Contribution payment is not loaded."
+        );
+    }
+
+    const preview =
+        payment.paymentPreview;
+
+    if (!preview) {
+        throw new Error(
+            "Preview the payment before posting."
+        );
+    }
+
+    const amount =
+        Number(
+            preview.payment_amount
+        );
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error(
+            "There is no valid payment amount to post."
+        );
+    }
+
+    const paymentDate =
+        normalizePayrollDate(
+            $("payrollDcPaymentDate")?.value
+        );
+
+    const bankId =
+        Number(
+            $("payrollDcPaymentBank")?.value
+        );
+
+    if (!Number.isFinite(bankId) || bankId <= 0) {
+        throw new Error(
+            "Please select a valid bank account."
+        );
+    }
+
+    const response =
+        await apiFetch(
+            ENDPOINTS.payroll.liabilityPayment(
+                cid(),
+                payment.payrollRunId
+            ),
+            {
+                method: "POST",
+
+                body: JSON.stringify({
+                    liability_type:
+                        "defined_contribution",
+
+                    payroll_run_id:
+                        payment.payrollRunId,
+
+                    defined_contribution_run_id:
+                        payment.runId,
+
+                    benefit_plan_id:
+                        getResolvedDcBenefitPlanId(),
+
+                    bank_account_id:
+                        bankId,
+
+                    payment_date:
+                        paymentDate,
+
+                    amount,
+
+                    reference:
+                        $(
+                            "payrollDcPaymentReference"
+                        )?.value?.trim() ||
+                        null,
+
+                    notes:
+                        $(
+                            "payrollDcPaymentNotes"
+                        )?.value?.trim() ||
+                        null
+                })
+            }
+        );
+
+    console.log(
+        "[DC PAYMENT] POSTED",
+        response
+    );
+
+    showPayrollStatus(
+        "Contribution payment posted successfully.",
+        "success"
+    );
+
+    await openPayrollDcRun(
+        payment.runId
+    );
+  }
+
+  function renderPayrollDcPayment() {
+    const el =
+        $("payrollDcPaymentSection");
+
+    const payment =
+        payrollState.employeeBenefits
+            .selectedDefinedContributionPayment;
+
+    if (!el || !payment) {
+        return;
+    }
+
+    const plans =
+        payment.plans || [];
+
+    const banks =
+        payment.banks || [];
+
+    const liability =
+        payment.liabilityPreview || {};
+
+    const paymentPreview =
+        payment.paymentPreview || {};
+
+    /*
+     * Clearing account = the selected BANK.
+     */
+    const selectedBank =
+        banks.find(
+            b => Number(b.id) === Number(payment.selectedBankId)
+        ) || null;
+
+    const clearingLabel = selectedBank
+        ? [
+              selectedBank.bank_name ||
+              selectedBank.bankName ||
+              selectedBank.name ||
+              "Bank",
+
+              selectedBank.account_name ||
+              selectedBank.accountName ||
+              "",
+
+              (
+                  selectedBank.account_number ||
+                  selectedBank.accountNumber
+              )
+                  ? `(${
+                        selectedBank.account_number ||
+                        selectedBank.accountNumber
+                    })`
+                  : ""
+          ]
+              .filter(Boolean)
+              .join(" ")
+        : (
+              liability.liability_account?.name ||
+              "—"
+          );
+
+    /*
+     * Normalise balance fields.
+     */
+    const recognised =
+        Number(
+            liability.recognized_amount ??
+            liability.recognised_amount ??
+            liability.recognisedLiability ??
+            liability.liabilityAmount ??
+            0
+        ) || 0;
+
+    const historical =
+        Number(
+            liability.previously_paid ??
+            liability.historical_paid_amount ??
+            liability.paid_amount ??
+            liability.historicalPaidAmount ??
+            liability.historicalPayments ??
+            0
+        ) || 0;
+
+    const reportedOutstanding =
+        Number(
+            liability.outstanding_amount ??
+            liability.remaining_amount ??
+            liability.outstandingAmount ??
+            NaN
+        );
+
+    const outstanding =
+        Number.isFinite(reportedOutstanding)
+            ? reportedOutstanding
+            : Math.max(
+                  recognised - historical,
+                  0
+              );
+
+    const selectedPlanId =
+        payment.selectedPlanId || "";
+
+    const selectedBankId =
+        payment.selectedBankId || "";
+
+    const paymentDate =
+        payment.paymentDate || "";
+
+    /*
+     * A payment preview is valid only when it
+     * contains a positive payment amount.
+     */
+    const previewAmount =
+        Number(
+            paymentPreview.payment_amount ??
+            paymentPreview.paymentAmount ??
+            0
+        ) || 0;
+
+    const hasPaymentPreview =
+        previewAmount > 0 &&
+        paymentPreview.journal &&
+        Array.isArray(
+            paymentPreview.journal.lines
+        );
+
+    el.innerHTML = `
+        <div class="payroll-posting-card">
+
+            <div class="payroll-card-head">
+
+                <div>
+                    <h3>Contribution Payment</h3>
+
+                    <p class="payroll-muted">
+                        Clear the contribution payable against the
+                        designated clearing account.
+                    </p>
+                </div>
+
+            </div>
+
+            <div class="payroll-benefit-summary-grid">
+
+                <div>
+                    <span>Clearing Account</span>
+
+                    <strong>
+                        ${esc(clearingLabel)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Liability</span>
+
+                    <strong>
+                        ${money(recognised)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Historical Payments</span>
+
+                    <strong>
+                        ${money(historical)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Outstanding</span>
+
+                    <strong>
+                        ${money(outstanding)}
+                    </strong>
+                </div>
+
+            </div>
+
+            <div
+                class="payroll-form-grid"
+                style="margin-top:18px;"
+            >
+
+                ${
+                    plans.length > 1
+                        ? `
+                            <label>
+                                <span>Benefit Plan</span>
+
+                                <select
+                                    id="payrollDcPaymentPlan"
+                                >
+                                    <option value="">
+                                        Select benefit plan
+                                    </option>
+
+                                    ${plans
+                                        .map(plan => `
+                                            <option
+                                                value="${plan.id}"
+                                                ${
+                                                    Number(
+                                                        selectedPlanId
+                                                    ) ===
+                                                    Number(
+                                                        plan.id
+                                                    )
+                                                        ? "selected"
+                                                        : ""
+                                                }
+                                            >
+                                                ${esc(
+                                                    plan.code
+                                                        ? `${plan.code} — ${plan.name}`
+                                                        : plan.name
+                                                )}
+                                            </option>
+                                        `)
+                                        .join("")}
+                                </select>
+                            </label>
+                        `
+                        : `
+                            <input
+                                type="hidden"
+                                id="payrollDcPaymentPlan"
+                                value="${
+                                    plans[0]?.id || ""
+                                }"
+                            />
+                        `
+                }
+
+                <label>
+                    <span>Bank Account</span>
+
+                    <select
+                        id="payrollDcPaymentBank"
+                    >
+                        <option value="">
+                            Select bank account
+                        </option>
+
+                        ${banks
+                            .map(bank => `
+                                <option
+                                    value="${bank.id}"
+                                    ${
+                                        Number(
+                                            selectedBankId
+                                        ) ===
+                                        Number(bank.id)
+                                            ? "selected"
+                                            : ""
+                                    }
+                                >
+                                    ${esc(
+                                        bank.account_name ||
+                                        bank.name ||
+                                        bank.account_number ||
+                                        ""
+                                    )}
+                                </option>
+                            `)
+                            .join("")}
+                    </select>
+                </label>
+
+                <label>
+                    <span>Payment Date</span>
+
+                    <input
+                        type="date"
+                        id="payrollDcPaymentDate"
+                        value="${paymentDate}"
+                    />
+                </label>
+
+                <label>
+                    <span>Amount</span>
+
+                    <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        id="payrollDcPaymentAmount"
+                        value="${
+                            outstanding > 0
+                                ? outstanding.toFixed(2)
+                                : ""
+                        }"
+                    />
+                </label>
+
+                <label>
+                    <span>Reference</span>
+
+                    <input
+                        type="text"
+                        id="payrollDcPaymentReference"
+                        placeholder="Payment reference"
+                    />
+                </label>
+
+                <label>
+                    <span>Notes</span>
+
+                    <input
+                        type="text"
+                        id="payrollDcPaymentNotes"
+                        placeholder="Optional notes"
+                    />
+                </label>
+
+            </div>
+
+            <div
+                class="payroll-run-actions"
+                style="margin-top:18px;"
+            >
+
+                <button
+                    id="payrollLoadDcLiabilityBtn"
+                    class="payroll-secondary dark"
+                    type="button"
+                >
+                    Refresh Liability
+                </button>
+
+                <button
+                    id="payrollPreviewDcPaymentBtn"
+                    class="payroll-secondary dark"
+                    type="button"
+                    ${
+                        outstanding > 0 &&
+                        selectedBankId
+                            ? ""
+                            : "disabled"
+                    }
+                >
+                    Preview Payment
+                </button>
+
+                <button
+                    id="payrollPostDcPaymentBtn"
+                    class="payroll-primary"
+                    type="button"
+                    ${
+                        hasPaymentPreview
+                            ? ""
+                            : "disabled"
+                    }
+                >
+                    Post Payment
+                </button>
+
+            </div>
+
+            <div
+                id="payrollDcPaymentStatus"
+                style="margin-top:12px;"
+            ></div>
+
+            <div
+                id="payrollDcPaymentPreview"
+                style="margin-top:18px;"
+            >
+                ${
+                    hasPaymentPreview
+                        ? renderPayrollDcPaymentJournal(
+                              paymentPreview
+                          )
+                        : ""
+                }
+            </div>
+
+        </div>
+    `;
+
+    /*
+     * Benefit plan.
+     */
+    $("payrollDcPaymentPlan")
+        ?.addEventListener(
+            "change",
+            async event => {
+
+                payment.selectedPlanId =
+                    Number(
+                        event.target.value
+                    ) || null;
+
+                payment.liabilityPreview =
+                    null;
+
+                payment.paymentPreview =
+                    null;
+
+                await loadPayrollLiabilityClearing({
+                    liabilityType:
+                        "defined_contribution",
+
+                    payrollRunId:
+                        payment.payrollRunId,
+
+                    benefitPlanId:
+                        payment.selectedPlanId ||
+                        null,
+
+                    definedContributionRunId:
+                        payment.runId,
+
+                    prefix:
+                        "payrollDcPayment",
+
+                    referencePrefix:
+                        "DC-PAY"
+                });
+
+                renderPayrollDcPayment();
+            }
+        );
+
+    /*
+     * Bank account.
+     */
+    $("payrollDcPaymentBank")
+        ?.addEventListener(
+            "change",
+            async event => {
+
+                payment.selectedBankId =
+                    Number(
+                        event.target.value
+                    ) || null;
+
+                /*
+                 * Bank changed, therefore any
+                 * existing journal preview is stale.
+                 */
+                payment.paymentPreview =
+                    null;
+
+                renderPayrollDcPayment();
+
+                try {
+
+                    await loadPayrollLiabilityClearing({
+                        liabilityType:
+                            "defined_contribution",
+
+                        payrollRunId:
+                            payment.payrollRunId,
+
+                        benefitPlanId:
+                            payment.selectedPlanId ||
+                            null,
+
+                        definedContributionRunId:
+                            payment.runId,
+
+                        prefix:
+                            "payrollDcPayment",
+
+                        referencePrefix:
+                            "DC-PAY"
+                    });
+
+                } finally {
+
+                    renderPayrollDcPayment();
+
+                }
+            }
+        );
+
+    /*
+     * Payment date.
+     */
+    $("payrollDcPaymentDate")
+        ?.addEventListener(
+            "change",
+            event => {
+
+                payment.paymentDate =
+                    event.target.value;
+
+                renderPayrollDcPayment();
+            }
+        );
+
+    /*
+     * Refresh liability.
+     */
+    $("payrollLoadDcLiabilityBtn")
+        ?.addEventListener(
+            "click",
+            async () => {
+
+                try {
+
+                    await loadPayrollLiabilityClearing({
+                        liabilityType:
+                            "defined_contribution",
+
+                        payrollRunId:
+                            payment.payrollRunId,
+
+                        benefitPlanId:
+                            payment.selectedPlanId ||
+                            null,
+
+                        definedContributionRunId:
+                            payment.runId,
+
+                        prefix:
+                            "payrollDcPayment",
+
+                        referencePrefix:
+                            "DC-PAY"
+                    });
+
+                    renderPayrollDcPayment();
+
+                } catch (error) {
+
+                    showPayrollStatus(
+                        error.message,
+                        "error"
+                    );
+
+                }
+            }
+        );
+
+    /*
+     * Preview payment.
+     */
+    $("payrollPreviewDcPaymentBtn")
+        ?.addEventListener(
+            "click",
+            async () => {
+
+                console.log(
+                    "[DC PAYMENT] Preview button clicked"
+                );
+
+                try {
+
+                    await previewPayrollDcPayment();
+
+                    console.log(
+                        "[DC PAYMENT] Preview completed",
+                        payment.paymentPreview
+                    );
+
+                } catch (error) {
+
+                    console.error(
+                        "[DC PAYMENT] Preview failed",
+                        error
+                    );
+
+                    showPayrollStatus(
+                        error.message,
+                        "error"
+                    );
+                }
+            }
+        );
+
+    /*
+     * POST PAYMENT.
+     */
+    const postPaymentBtn =
+        $("payrollPostDcPaymentBtn");
+
+    console.log(
+        "[DC PAYMENT] Post button lookup:",
+        postPaymentBtn
+    );
+
+    if (postPaymentBtn) {
+
+        console.log(
+            "[DC PAYMENT] Attaching POST click handler"
+        );
+
+        postPaymentBtn.addEventListener(
+            "click",
+            async function(event) {
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                console.log(
+                    "[DC PAYMENT] ============================="
+                );
+
+                console.log(
+                    "[DC PAYMENT] POST BUTTON CLICKED"
+                );
+
+                console.log(
+                    "[DC PAYMENT] Button disabled:",
+                    this.disabled
+                );
+
+                console.log(
+                    "[DC PAYMENT] Payment state:",
+                    payment
+                );
+
+                console.log(
+                    "[DC PAYMENT] Payment preview:",
+                    payment.paymentPreview
+                );
+
+                try {
+
+                    console.log(
+                        "[DC PAYMENT] Calling postPayrollDcPayment()..."
+                    );
+
+                    const result =
+                        await postPayrollDcPayment();
+
+                    console.log(
+                        "[DC PAYMENT] postPayrollDcPayment() returned:",
+                        result
+                    );
+
+                } catch (error) {
+
+                    console.error(
+                        "[DC PAYMENT] POST FAILED:",
+                        error
+                    );
+
+                    console.error(
+                        "[DC PAYMENT] Error message:",
+                        error?.message
+                    );
+
+                    console.error(
+                        "[DC PAYMENT] Error stack:",
+                        error?.stack
+                    );
+
+                    showPayrollStatus(
+                        error?.message ||
+                        "Failed to post contribution payment.",
+                        "error"
+                    );
+                }
+
+                console.log(
+                    "[DC PAYMENT] ============================="
+                );
+            }
+        );
+
+    } else {
+
+        console.error(
+            "[DC PAYMENT] ❌ POST BUTTON NOT FOUND"
+        );
+    }
+  }
+
+  function renderPayrollDcPaymentJournal(preview) {
+    const journal =
+        preview?.journal || {};
+
+    const lines =
+        Array.isArray(journal.lines)
+            ? journal.lines
+            : [];
+
+    if (!lines.length) {
+        return `
+            <div class="payroll-muted">
+                No payment journal lines returned.
+            </div>
+        `;
+    }
+
+    return `
+        <div class="payroll-card">
+
+            <div class="payroll-card-head">
+                <div>
+                    <h3>Payment Journal</h3>
+
+                    <p class="payroll-muted">
+                        Clearing the contribution payable
+                        against the selected bank account.
+                    </p>
+                </div>
+            </div>
+
+            <div class="payroll-table-wrap payroll-journal-scroll">
+
+                <table class="payroll-preview-table">
+
+                    <thead>
+                        <tr>
+                            <th>Account</th>
+                            <th>Description</th>
+                            <th>Debit</th>
+                            <th>Credit</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        ${lines.map(line => `
+                            <tr>
+                                <td>
+                                    ${esc(
+                                        line.account_name ||
+                                        line.account_code ||
+                                        ""
+                                    )}
+                                </td>
+
+                                <td>
+                                    ${esc(
+                                        line.description ||
+                                        ""
+                                    )}
+                                </td>
+
+                                <td>
+                                    ${money(
+                                        line.debit
+                                    )}
+                                </td>
+
+                                <td>
+                                    ${money(
+                                        line.credit
+                                    )}
+                                </td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+
+                </table>
+
+            </div>
+
+            <div class="payroll-benefit-summary-grid">
+
+                <div>
+                    <span>Payment Amount</span>
+
+                    <strong>
+                        ${money(
+                            preview.payment_amount
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Remaining Liability</span>
+
+                    <strong>
+                        ${money(
+                            preview.remaining_amount
+                        )}
+                    </strong>
+                </div>
+
+            </div>
+
+        </div>
+    `;
+  }
   function renderPayrollBenefitDisclosure(){
     const el=$("payrollBenefitPanelDisclosures");
     const d=payrollState.employeeBenefits.disclosure||{};
@@ -69308,6 +72988,15 @@ async function saveEditModal() {
         )
       );
     }
+
+    if(tab==="posting"){
+      loadPayrollLiabilityClearing().catch(error=>
+        fail(
+          error,
+          "Salary payable clearing could not be loaded."
+        )
+      );
+    }
   }
 
   function payrollSetupPanelId(tab) {
@@ -69370,6 +73059,10 @@ async function saveEditModal() {
 
     if (tab === "employee-pay") {
       renderPayrollSetupSelects();
+
+      await loadPayrollCalendars();
+
+      renderPayrollPreviewCalendarOptions();
 
       const employeeId = Number(
         $("payrollPaySetupEmployeeId")?.value || 0
@@ -69953,6 +73646,36 @@ async function saveEditModal() {
       false
     );
 
+    setButton(
+      "payrollCalculateRunOverviewBtn",
+      isDraft||isCalculated,
+      isSubmitted||isPosted||isReversed
+    );
+
+    setButton(
+      "payrollSubmitRunOverviewBtn",
+      isCalculated&&!isSubmitted,
+      !validation.ready_to_approve
+    );
+
+    setButton(
+      "payrollApproveRunOverviewBtn",
+      isSubmitted,
+      !validation.ready_to_approve
+    );
+
+    setButton(
+      "payrollReturnRunOverviewBtn",
+      isCalculated||isApproved,
+      false
+    );
+
+    setButton(
+      "payrollPostRunOverviewBtn",
+      isApproved,
+      !validation.ready_to_post
+    );
+
     let message="";
 
     if(isDraft){
@@ -69988,6 +73711,16 @@ async function saveEditModal() {
 
     setTxt(
       "payrollPostingMessage",
+      message
+    );
+
+    setTxt(
+      "payrollPostingMessage",
+      message
+    );
+
+    setTxt(
+      "payrollRunOverviewMessage",
       message
     );
   }
@@ -70247,30 +73980,76 @@ async function saveEditModal() {
   }
 
   function renderPayrollRunEmployees(run){
-    const el=$("payrollRunEmployeesList");
+    const el = $("payrollRunEmployeesList");
     if(!el)return;
 
-    const items=run?.employees||[];
+    const items = run?.employees || [];
 
     if(!items.length){
-      el.innerHTML=`
+      el.innerHTML = `
         <p class="payroll-muted">
           No employees calculated yet.
         </p>`;
       return;
     }
 
-    el.innerHTML=`
+    // ---------------------------------------------------------
+    // Discover deduction columns dynamically.
+    // Only deductions with a non-zero value somewhere in
+    // the current payroll run are displayed.
+    // ---------------------------------------------------------
+    const deductionMap = new Map();
+
+    items.forEach(item=>{
+      const deductions = item?.deductions || {};
+
+      Object.entries(deductions).forEach(([code,value])=>{
+        const amount = Number(value || 0);
+
+        if(amount === 0)return;
+
+        if(!deductionMap.has(code)){
+          deductionMap.set(code,{
+            code,
+            name: code
+          });
+        }
+      });
+    });
+
+    const deductionColumns = [...deductionMap.values()];
+
+    const deductionHeaders = deductionColumns.map(column=>`
+      <th class="payroll-deduction-col">
+        ${esc(column.code)}
+      </th>
+    `).join("");
+
+    const deductionCells = item=>{
+      const deductions = item?.deductions || {};
+
+      return deductionColumns.map(column=>`
+        <td class="payroll-number payroll-deduction-col">
+          ${money(deductions[column.code] || 0)}
+        </td>
+      `).join("");
+    };
+
+    el.innerHTML = `
       <div class="payroll-table-wrap">
-        <table class="payroll-preview-table">
+        <table class="payroll-preview-table payroll-compact-table">
+
           <thead>
             <tr>
-              <th>Employee</th>
+              <th class="payroll-employee-col">Employee</th>
               <th>Eligibility</th>
               <th>Proration</th>
               <th>Basic</th>
               <th>Gross</th>
-              <th>Deductions</th>
+
+              ${deductionHeaders}
+
+              <th>Total Deductions</th>
               <th>Employer</th>
               <th>Net</th>
             </tr>
@@ -70279,19 +74058,23 @@ async function saveEditModal() {
           <tbody>
             ${items.map(item=>`
               <tr>
-                <td>
+
+                <td class="payroll-employee-cell">
                   <strong>
-                    ${esc(item.employee_no||"")} —
                     ${esc(item.first_name||"")}
-                    ${esc(item.last_name||"")}
+                    ${esc(
+                      item.last_name
+                        ? " " + item.last_name
+                        : ""
+                    )}
                   </strong>
 
                   <div class="payroll-muted">
                     ${esc(
-                      item.calculation_message||
+                      item.calculation_message ||
                       cap(
-                        item.calculation_status||
-                        item.status||
+                        item.calculation_status ||
+                        item.status ||
                         "calculated"
                       )
                     )}
@@ -70299,30 +74082,36 @@ async function saveEditModal() {
                 </td>
 
                 <td>
-                  ${esc(String(
-                    item.eligible_from||"—"
-                  ).slice(0,10))}
-                  –
-                  ${esc(String(
-                    item.eligible_to||"—"
-                  ).slice(0,10))}
+                  <div>
+                    ${esc(
+                      String(
+                        item.eligible_from || "—"
+                      ).slice(0,10)
+                    )}
+                    –
+                    ${esc(
+                      String(
+                        item.eligible_to || "—"
+                      ).slice(0,10)
+                    )}
+                  </div>
 
                   <div class="payroll-muted">
-                    ${Number(
-                      item.eligible_days||0
-                    )} of
-                    ${Number(
-                      item.scheduled_days||0
-                    )} days
+                    ${Number(item.eligible_days||0)}
+                    of
+                    ${Number(item.scheduled_days||0)}
+                    days
                   </div>
                 </td>
 
                 <td>
-                  ${(
-                    Number(
-                      item.proration_factor||0
-                    )*100
-                  ).toFixed(2)}%
+                  <div>
+                    ${(
+                      Number(
+                        item.proration_factor||0
+                      ) * 100
+                    ).toFixed(2)}%
+                  </div>
 
                   <div class="payroll-muted">
                     ${esc(
@@ -70333,34 +74122,39 @@ async function saveEditModal() {
                   </div>
                 </td>
 
-                <td class="num">
+                <td class="payroll-number">
                   ${money(item.basic_pay)}
                 </td>
 
-                <td class="num">
+                <td class="payroll-number">
                   ${money(item.gross_pay)}
                 </td>
 
-                <td class="num">
+                ${deductionCells(item)}
+
+                <td class="payroll-number">
                   ${money(item.total_deductions)}
                 </td>
 
-                <td class="num">
+                <td class="payroll-number">
                   ${money(
                     item.employer_contributions
                   )}
                 </td>
 
-                <td class="num">
+                <td class="payroll-number">
                   <strong>
                     ${money(item.net_pay)}
                   </strong>
                 </td>
+
               </tr>
             `).join("")}
           </tbody>
+
         </table>
-      </div>`;
+      </div>
+    `;
   }
 
   async function loadPayrollRunAttendance(){
@@ -71632,9 +75426,39 @@ async function saveEditModal() {
       );
     }
 
+    const calculateOverview=$("payrollCalculateRunOverviewBtn");
+    if(calculateOverview){
+      calculateOverview.disabled=(
+        ["posted","cancelled"].includes(status)
+        ||!summary.ready_to_calculate
+      );
+    }
+
     if(post){
       post.disabled=!summary.ready_to_post;
     }
+
+    const postOverview=$("payrollPostRunOverviewBtn");
+    if(postOverview){
+      postOverview.disabled=!summary.ready_to_post;
+    }
+
+    /* Re-evaluate Submit/Approve now that fresh validation data is
+      available. renderPayrollPostingControls runs BEFORE
+      loadPayrollRunValidation, so these were left disabled against
+      stale/empty data. */
+      const canApprove = Boolean(summary.ready_to_approve);
+      console.log("[payroll] validation summary:", summary);   // ← temporary debug
+
+    [
+      "payrollSubmitRunBtn",
+      "payrollSubmitRunOverviewBtn",
+      "payrollApproveRunBtn",
+      "payrollApproveRunOverviewBtn",
+    ].forEach(id=>{
+      const button=$(id);
+      if(button)button.disabled=!canApprove;
+    });
   }
 
   async function loadPayrollRunAudit(){
@@ -72478,7 +76302,11 @@ async function saveEditModal() {
   async function calculateSelectedPayrollRun(){
     const companyId=cid();
     const runId=payrollState.selectedRun?.id;
-    const button=$("payrollCalculateRunBtn");
+      // Top of function — was: const button=$("payrollCalculateRunBtn");
+      const buttons=[
+        $("payrollCalculateRunBtn"),
+        $("payrollCalculateRunOverviewBtn"),
+      ].filter(Boolean);
 
     if(!runId){
       throw new Error(
@@ -72487,12 +76315,21 @@ async function saveEditModal() {
     }
 
     try{
-      if(button){
-        button.disabled=true;
-        button.dataset.originalText||=
-          button.textContent;
-        button.textContent="Calculating…";
-      }
+      // Inside try{ — was: if(button){ button.disabled=true; ... }
+      buttons.forEach(btn=>{
+        btn.disabled=true;
+        btn.dataset.originalText||=
+          btn.textContent;
+        btn.textContent="Calculating…";
+      });
+
+      // Inside finally{ — was: if(button){ button.disabled=false; ... }
+      buttons.forEach(btn=>{
+        btn.disabled=false;
+        btn.textContent=
+          btn.dataset.originalText||
+          "Calculate";
+      });
 
       showPayrollStatus(
         "Calculating payroll…",
@@ -72549,12 +76386,12 @@ async function saveEditModal() {
       throw error;
 
     }finally{
-      if(button){
-        button.disabled=false;
-        button.textContent=
-          button.dataset.originalText||
+      buttons.forEach(btn=>{
+        btn.disabled=false;
+        btn.textContent=
+          btn.dataset.originalText||
           "Calculate";
-      }
+      });
     }
   }
 
@@ -72988,6 +76825,2195 @@ async function saveEditModal() {
     await loadPayrollRuns();
     await openPayrollRun(runId);
     showPayrollStatus("Payroll posted successfully.", "success");
+  }
+
+  function getResolvedDcBenefitPlanId() {
+
+    const paymentState =
+      payrollState.employeeBenefits
+        ?.selectedDefinedContributionPayment;
+
+    const planId =
+      Number(
+        paymentState?.selectedBenefitPlanId ??
+        paymentState?.liabilityPreview?.benefit_plan_id ??
+        0
+      ) || 0;
+
+    return planId > 0 ? planId : undefined;
+  }
+
+  async function loadPayrollLiabilityClearing({
+    liabilityType = "salary",
+    payrollRunId = null,
+    benefitPlanId = null,
+    definedContributionRunId = null,
+    prefix = "payrollSalaryPayment",
+    referencePrefix = "SALARY-PAY"
+  } = {}) {
+
+    const runId =
+      Number(
+        payrollRunId ||
+        payrollState.selectedRun?.id ||
+        0
+      );
+
+    if (!runId) {
+      return;
+    }
+
+    const companyId = cid();
+
+    const paymentState =
+        payrollState.employeeBenefits
+            ?.selectedDefinedContributionPayment;
+
+    /*
+     * The new DC UI renders a status div (…Status) instead
+     * of a message input (…Message) — support both.
+     */
+    const messageEl =
+      $(`${prefix}Message`) ||
+      $(`${prefix}Status`);
+
+    const recognizedEl =
+      $(`${prefix}RecognisedLiability`);
+
+    const historicalEl =
+      $(`${prefix}HistoricalPayments`);
+
+    const outstandingEl =
+      $(`${prefix}Outstanding`);
+
+    const clearingAccountEl =
+      $(`${prefix}ClearingAccount`);
+
+    const amountEl =
+      $(`${prefix}Amount`);
+
+    const dateEl =
+      $(`${prefix}Date`);
+
+    /*
+     * New DC UI renders the bank select as `${prefix}Bank`;
+     * the salary UI still uses `${prefix}BankAccount`.
+     */
+    const bankEl =
+      $(`${prefix}BankAccount`) ||
+      $(`${prefix}Bank`);
+
+    const referenceEl =
+      $(`${prefix}Reference`);
+
+    const previewEl =
+      $(`${prefix}Preview`);
+
+    const postBtn =
+      $(`${prefix}PostBtn`);
+
+    if (postBtn) {
+      postBtn.disabled = true;
+    }
+
+    if (previewEl) {
+      previewEl.innerHTML = "";
+    }
+
+    if (messageEl) {
+      messageEl.textContent =
+        "Loading liability balance…";
+    }
+
+    /*
+     * Load the company bank accounts.
+     *
+     * Resilient: if the fetch fails we fall back to the
+     * bank list already held in payment state, and the
+     * balance call still proceeds.
+     */
+    let banks = [];
+
+    try {
+      banks =
+        (await refreshBankAccounts()) || [];
+    } catch (error) {
+      console.warn(
+        "[payroll] bank accounts load failed:",
+        error
+      );
+
+      banks =
+        paymentState?.banks || [];
+    }
+
+    /*
+     * Keep the payment state's bank list in sync so the
+     * re-rendered dropdown always has options, and
+     * auto-select when there is exactly one account.
+     */
+    if (paymentState) {
+
+      if (banks.length) {
+        paymentState.banks =
+          banks;
+      }
+
+      if (
+        !paymentState.selectedBankId &&
+        banks.length === 1
+      ) {
+        paymentState.selectedBankId =
+          Number(banks[0].id) || null;
+      }
+    }
+
+    if (bankEl) {
+      bankEl.innerHTML =
+        `<option value="">-- Select bank account --</option>`;
+
+      banks.forEach(bank => {
+
+        const id =
+          bank.id ??
+          bank.bank_account_id ??
+          null;
+
+        if (!id) return;
+
+        const bankName =
+          bank.bank_name ||
+          bank.bankName ||
+          bank.name ||
+          "Bank";
+
+        const accountName =
+          bank.account_name ||
+          bank.accountName ||
+          "";
+
+        const accountNumber =
+          bank.account_number ||
+          bank.accountNumber ||
+          "";
+
+        const currency =
+          bank.currency ||
+          bank.bank_currency ||
+          "";
+
+        const label = [
+          bankName,
+          accountName,
+          accountNumber
+            ? `(${accountNumber})`
+            : "",
+          currency
+            ? `• ${currency}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+
+        const option =
+          document.createElement("option");
+
+        option.value =
+          String(id);
+
+        option.textContent =
+          label ||
+          `Bank account ${id}`;
+
+        bankEl.appendChild(option);
+
+        /*
+         * Use the company's default payment bank
+         * when one exists.
+         */
+        if (
+          bank.is_default_payments === true &&
+          !bankEl.value
+        ) {
+          bankEl.value =
+            String(id);
+        }
+      });
+
+      /*
+       * Only one real option besides the placeholder:
+       * select it so a clearing bank is always set.
+       */
+      if (
+        !bankEl.value &&
+        bankEl.options.length === 2
+      ) {
+        bankEl.value =
+          bankEl.options[1].value;
+      }
+    }
+
+    /*
+     * Resolve the CLEARING BANK.
+     *
+     * Dropdown first, then payment state. This id is used
+     * as the clearing account for the balance request.
+     */
+    const clearingBankId =
+      Number(
+        bankEl?.value ||
+        paymentState?.selectedBankId ||
+        0
+      ) || null;
+
+    if (clearingBankId && paymentState) {
+      paymentState.selectedBankId =
+        clearingBankId;
+    }
+
+    const clearingLabel =
+      bankEl?.selectedOptions?.[0]?.text ||
+      (() => {
+        const b = banks.find(
+          x => Number(x.id) === Number(clearingBankId)
+        );
+
+        if (!b) return null;
+
+        return [
+          b.bank_name || b.bankName || b.name || "Bank",
+          b.account_name || b.accountName || "",
+          (b.account_number || b.accountNumber)
+            ? `(${b.account_number || b.accountNumber})`
+            : ""
+        ].filter(Boolean).join(" ");
+      })() ||
+      (clearingBankId
+        ? `Bank account ${clearingBankId}`
+        : null);
+
+    /*
+     * Determine the payroll run.
+     *
+     * For defined contributions prefer the selected DC run —
+     * payrollState.selectedRun may belong to another screen.
+     */
+    const run =
+      liabilityType === "defined_contribution"
+        ? (payrollState.employeeBenefits
+              ?.selectedDefinedContributionRun
+              ?.run ||
+            payrollState.selectedRun ||
+            {})
+        : (payrollState.selectedRun ||
+            payrollState.employeeBenefits
+              ?.selectedDefinedContributionRun
+              ?.run ||
+            {});
+
+    /*
+     * Default the payment date.
+     */
+    if (dateEl) {
+      dateEl.value =
+        normalizePayrollDate(
+          run.payment_date ||
+          run.reporting_date ||
+          run.period_end
+        );
+    }
+
+    /*
+     * Default the payment reference.
+     * Do not double-prefix a run_no that already
+     * starts with the reference prefix.
+     */
+    if (
+      referenceEl &&
+      !referenceEl.value
+    ) {
+      const runNo =
+        String(run.run_no || runId);
+
+      referenceEl.value =
+        runNo.startsWith(`${referencePrefix}-`)
+          ? runNo
+          : `${referencePrefix}-${runNo}`;
+    }
+
+    try {
+
+      /*
+       * Build the liability-balance request.
+       *
+       * This endpoint is the source of truth for:
+       *
+       * - recognised liability
+       * - historical payments
+       * - outstanding liability
+       * - liability account
+       */
+      const params = {
+        liability_type:
+          liabilityType
+      };
+
+      /*
+       * Forward the benefit plan id when we know it.
+       *
+       * First load: the caller may not have it yet — the
+       * backend resolves it from the contribution-run lines
+       * and echoes it back. Later loads: we replay the
+       * stored id explicitly so the request stays fully
+       * self-describing.
+       *
+       * DC-scoped only: salary/PAYE balance requests must
+       * never inherit a plan id from DC payment state.
+       */
+      const effectiveBenefitPlanId =
+        liabilityType === "defined_contribution"
+          ? Number(
+              benefitPlanId ??
+              paymentState?.selectedBenefitPlanId ??
+              0
+            ) || null
+          : (Number(benefitPlanId) || null);
+
+      if (effectiveBenefitPlanId) {
+        params.benefit_plan_id =
+          effectiveBenefitPlanId;
+      }
+
+      if (
+        definedContributionRunId !== null &&
+        definedContributionRunId !== undefined &&
+        definedContributionRunId !== ""
+      ) {
+        params.defined_contribution_run_id =
+          Number(definedContributionRunId);
+      }
+
+      /*
+       * Clearing account must be a bank account —
+       * scope the balance to the selected clearing bank.
+       */
+      if (clearingBankId) {
+        params.bank_account_id =
+          clearingBankId;
+      }
+
+      const balance =
+        await apiFetch(
+          ENDPOINTS.payroll.liabilityBalance(
+            companyId,
+            runId,
+            params
+          ),
+          {
+            method: "GET"
+          }
+        );
+
+      const data =
+        balance?.balance ||
+        balance?.data ||
+        balance ||
+        {};
+
+      /*
+       * Capture the benefit plan the backend resolved for
+       * this contribution run.
+       *
+       * Run headers can carry plan_id = NULL while every
+       * posted contribution-run line is tagged with its
+       * plan, so this id is authoritative. It must ride
+       * along in the preview / post payment payloads —
+       * without it the server rejects the payment with
+       * "Benefit plan is required for contribution payment".
+       */
+      const resolvedBenefitPlanId =
+        liabilityType === "defined_contribution"
+          ? Number(
+              data.benefit_plan_id ??
+              data.benefitPlanId ??
+              benefitPlanId ??
+              paymentState?.selectedBenefitPlanId ??
+              0
+            ) || null
+          : null;
+
+      /*
+       * Store it for the payload builders.
+       * Write-only-when-resolved: a salary/PAYE balance
+       * load must never wipe a stored DC plan id.
+       */
+      if (paymentState && resolvedBenefitPlanId) {
+        paymentState.selectedBenefitPlanId =
+          resolvedBenefitPlanId;
+      }
+
+      if (
+        liabilityType === "defined_contribution" &&
+        !resolvedBenefitPlanId
+      ) {
+        console.warn(
+          "[payroll] balance response carried no benefit_plan_id — " +
+          "the contribution-run lines for this run are not tagged " +
+          "with a plan, so preview/post will be rejected until the " +
+          "run is tagged at creation time."
+        );
+      }
+
+      const recognisedLiability =
+        Number(
+          data.recognized_amount ??
+          data.recognised_amount ??
+          data.liability_amount ??
+          0
+        );
+
+      const historicalPayments =
+        Number(
+          data.previously_paid ??
+          data.historical_paid_amount ??
+          data.paid_amount ??
+          data.previous_payments ??
+          0
+        );
+
+      const reportedOutstanding =
+        Number(
+          data.outstanding_amount ??
+          data.remaining_amount ??
+          NaN
+        );
+
+      const outstanding =
+        Number.isFinite(reportedOutstanding)
+          ? reportedOutstanding
+          : Math.max(
+              recognisedLiability -
+              historicalPayments,
+              0
+            );
+
+      /*
+       * Store the complete balance in payroll state.
+       *
+       * Snake_case mirrors are written so
+       * renderPayrollDcPayment() always finds them.
+       */
+      if (paymentState) {
+        paymentState.liabilityPreview = {
+          ...data,
+
+          benefit_plan_id:
+            resolvedBenefitPlanId,
+
+          benefitPlanId:
+            resolvedBenefitPlanId,
+
+          liabilityAmount:
+            recognisedLiability,
+
+          recognisedLiability:
+            recognisedLiability,
+
+          historicalPaidAmount:
+            historicalPayments,
+
+          historicalPayments:
+            historicalPayments,
+
+          outstandingAmount:
+            outstanding,
+
+          recognized_amount:
+            recognisedLiability,
+
+          previously_paid:
+            historicalPayments,
+
+          outstanding_amount:
+            outstanding,
+
+          /*
+           * Clearing account = the selected bank.
+           */
+          liability_account:
+            data.liability_account ||
+            (clearingBankId
+              ? {
+                  id: clearingBankId,
+                  name: clearingLabel
+                }
+              : null)
+        };
+      }
+
+      /*
+       * Recognised Liability
+       */
+      if (recognizedEl) {
+        recognizedEl.value =
+          money(
+            recognisedLiability
+          );
+      }
+
+      /*
+       * Historical Payments
+       */
+      if (historicalEl) {
+        historicalEl.value =
+          money(
+            historicalPayments
+          );
+      }
+
+      /*
+       * Outstanding
+       */
+      if (outstandingEl) {
+        outstandingEl.value =
+          money(outstanding);
+      }
+
+      /*
+       * Prefill the payment amount with the
+       * current outstanding balance.
+       *
+       * This remains editable for partial payments.
+       */
+      if (amountEl) {
+        amountEl.value =
+          outstanding > 0
+            ? outstanding.toFixed(2)
+            : "";
+      }
+
+      /*
+       * Liability / Clearing Account
+       */
+      if (clearingAccountEl) {
+        clearingAccountEl.value =
+          clearingLabel ||
+          data.liability_account?.name ||
+          data.liability_account?.code ||
+          data.clearing_account_name ||
+          data.clearing_account ||
+          data.clearing_account_code ||
+          "";
+      }
+
+      /*
+       * Display the balance status.
+       */
+      if (messageEl) {
+
+        if (outstanding > 0) {
+
+          messageEl.innerHTML =
+            `${liabilityType === "defined_contribution"
+              ? "Defined contribution payable"
+              : "Payroll liability"
+            } outstanding: <strong>${money(outstanding)}</strong>`;
+
+        } else {
+
+          messageEl.textContent =
+            "There is no outstanding liability for this payroll run.";
+        }
+      }
+
+    } catch (error) {
+
+      console.warn(
+        "[payroll] liability balance load failed:",
+        error
+      );
+
+      if (messageEl) {
+        messageEl.textContent =
+          error?.message ||
+          "Liability balance could not be loaded.";
+      }
+    }
+  }
+
+  async function previewPayrollSalaryPayment() {
+    const companyId = cid();
+    const runId = payrollState.selectedRun?.id;
+
+    if (!runId) {
+      throw new Error("Select a payroll run first.");
+    }
+
+    const bankAccountId =
+      $("payrollSalaryPaymentBankAccount")?.value;
+
+    if (!bankAccountId) {
+      throw new Error("Select a payment bank account.");
+    }
+
+    const paymentDate =
+      $("payrollSalaryPaymentDate")?.value;
+
+    if (!paymentDate) {
+      throw new Error("Payment date is required.");
+    }
+
+    const amount =
+      Number(
+        $("payrollSalaryPaymentAmount")?.value || 0
+      );
+
+    if (!(amount > 0)) {
+      throw new Error("Payment amount must be greater than zero.");
+    }
+
+    const reference =
+      (
+        $("payrollSalaryPaymentReference")?.value ||
+        ""
+      ).trim();
+
+    const notes =
+      (
+        $("payrollSalaryPaymentNotes")?.value ||
+        ""
+      ).trim();
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.liabilityPaymentPreview(
+        companyId,
+        runId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          liability_type: "salary",
+          bank_account_id: Number(bankAccountId),
+          payment_date: paymentDate,
+          amount: amount,
+          reference: reference || null,
+          notes: notes || null,
+        }),
+      }
+    );
+
+    const preview =
+      res?.preview ||
+      res?.data ||
+      res ||
+      {};
+
+    payrollState.salaryPaymentPreview = preview;
+
+    renderPayrollSalaryPaymentPreview(preview);
+
+    return preview;
+  }
+
+  function renderPayrollSalaryPaymentPreview(preview) {
+    const container =
+      $("payrollSalaryPaymentPreview");
+
+    const postBtn =
+      $("payrollSalaryPaymentPostBtn");
+
+    if (!container) return;
+
+    const journal =
+      preview?.journal || {};
+
+    const lines =
+      journal?.lines ||
+      preview?.lines ||
+      [];
+
+    const accounts =
+      preview?.accounts ||
+      {};
+
+    const amount =
+      Number(
+        preview?.amount ||
+        preview?.payment_amount ||
+        0
+      );
+
+    const difference =
+      Number(
+        journal?.difference ??
+        preview?.difference ??
+        0
+      );
+
+    const ready =
+      Boolean(
+        preview?.ready_to_post ??
+        (
+          lines.length > 0 &&
+          Math.abs(difference) < 0.01
+        )
+      );
+
+    if (postBtn) {
+      postBtn.disabled = !ready;
+    }
+
+    if (!lines.length) {
+      container.innerHTML = `
+        <div class="payroll-empty-state">
+          <strong>No payment journal preview available</strong>
+          <p>
+            ${esc(
+              preview?.reason ||
+              "The salary payment could not be previewed."
+            )}
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="payroll-journal-meta">
+        <div>
+          <span>Liability</span>
+          <strong>
+            ${esc(
+              accounts?.liability?.name ||
+              accounts?.liability?.code ||
+              "Salary Payable"
+            )}
+          </strong>
+        </div>
+
+        <div>
+          <span>Bank</span>
+          <strong>
+            ${esc(
+              accounts?.bank?.name ||
+              accounts?.bank?.code ||
+              "Bank"
+            )}
+          </strong>
+        </div>
+
+        <div>
+          <span>Amount</span>
+          <strong>${money(amount)}</strong>
+        </div>
+
+        <div>
+          <span>Difference</span>
+          <strong>${money(difference)}</strong>
+        </div>
+      </div>
+
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Description</th>
+              <th class="num">Debit</th>
+              <th class="num">Credit</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${lines.map(line => `
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(
+                      line.account_name ||
+                      "Unmapped account"
+                    )}
+                  </strong>
+                </td>
+
+                <td>
+                  ${esc(line.description || "")}
+                </td>
+
+                <td class="num debit-col">
+                  ${
+                    Number(line.debit || 0)
+                      ? money(line.debit)
+                      : "&mdash;"
+                  }
+                </td>
+
+                <td class="num credit-col">
+                  ${
+                    Number(line.credit || 0)
+                      ? money(line.credit)
+                      : "&mdash;"
+                  }
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+
+          <tfoot>
+            <tr>
+              <th colspan="2">
+                Total
+              </th>
+
+              <th class="num">
+                ${money(journal.debits || preview.debits || 0)}
+              </th>
+
+              <th class="num">
+                ${money(journal.credits || preview.credits || 0)}
+              </th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="${ready ? "notice success" : "notice error"}">
+        ${
+          ready
+            ? "Payment journal is balanced and ready to post."
+            : esc(
+                preview?.reason ||
+                "Payment journal is not ready to post."
+              )
+        }
+      </div>
+    `;
+  }
+
+  async function postPayrollSalaryPayment() {
+    const companyId = cid();
+    const runId = payrollState.selectedRun?.id;
+
+    if (!runId) {
+      throw new Error("Select a payroll run first.");
+    }
+
+    const preview =
+      payrollState.salaryPaymentPreview;
+
+    if (!preview) {
+      throw new Error(
+        "Preview the salary payment before posting."
+      );
+    }
+
+    if (
+      preview.ready_to_post === false
+    ) {
+      throw new Error(
+        preview.reason ||
+        "Salary payment is not ready to post."
+      );
+    }
+
+    const bankAccountId =
+      $("payrollSalaryPaymentBankAccount")?.value;
+
+    const paymentDate =
+      $("payrollSalaryPaymentDate")?.value;
+
+    const amount =
+      Number(
+        $("payrollSalaryPaymentAmount")?.value || 0
+      );
+
+    const reference =
+      (
+        $("payrollSalaryPaymentReference")?.value ||
+        ""
+      ).trim();
+
+    const notes =
+      (
+        $("payrollSalaryPaymentNotes")?.value ||
+        ""
+      ).trim();
+
+    if (!bankAccountId) {
+      throw new Error(
+        "Select a payment bank account."
+      );
+    }
+
+    if (!paymentDate) {
+      throw new Error(
+        "Payment date is required."
+      );
+    }
+
+    if (!(amount > 0)) {
+      throw new Error(
+        "Payment amount must be greater than zero."
+      );
+    }
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.liabilityPayment(
+        companyId,
+        runId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          liability_type: "salary",
+          bank_account_id: Number(bankAccountId),
+          payment_date: paymentDate,
+          amount: amount,
+          reference: reference || null,
+          notes: notes || null,
+        }),
+      }
+    );
+
+    const result =
+      res?.payment ||
+      res?.data ||
+      res ||
+      {};
+
+    payrollState.salaryPaymentPreview = null;
+
+    const previewEl =
+      $("payrollSalaryPaymentPreview");
+
+    if (previewEl) {
+      previewEl.innerHTML = `
+        <div class="notice success">
+          Salary payment posted successfully.
+          ${
+            result.journal_id
+              ? `Journal #${esc(String(result.journal_id))}.`
+              : ""
+          }
+        </div>
+      `;
+    }
+
+    $("payrollSalaryPaymentPostBtn")?.setAttribute(
+      "disabled",
+      "disabled"
+    );
+
+    await loadPayrollLiabilityClearing({
+      liabilityType: "salary",
+      payrollRunId: payrollState.selectedRun?.id,
+      prefix: "payrollSalaryPayment",
+      referencePrefix: "SALARY-PAY"
+    });
+
+    return result;
+  }
+
+  function normalizePayrollDate(value) {
+    if (!value) {
+      return "";
+    }
+
+    const raw =
+      String(value).trim();
+
+    if (!raw) {
+      return "";
+    }
+
+    /*
+    * Already YYYY-MM-DD.
+    */
+    if (
+      /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ) {
+      return raw;
+    }
+
+    /*
+    * ISO datetime.
+    *
+    * Example:
+    * 2025-04-29T00:00:00
+    * 2025-04-29T00:00:00Z
+    */
+    if (
+      /^\d{4}-\d{2}-\d{2}T/.test(raw)
+    ) {
+      return raw.slice(0, 10);
+    }
+
+    /*
+    * RFC / HTTP date.
+    *
+    * Example:
+    * Tue, 29 Apr 2025 00:00:00 GMT
+    */
+    const parsed =
+      new Date(raw);
+
+    if (
+      !Number.isNaN(
+        parsed.getTime()
+      )
+    ) {
+      const year =
+        parsed.getFullYear();
+
+      const month =
+        String(
+          parsed.getMonth() + 1
+        ).padStart(2, "0");
+
+      const day =
+        String(
+          parsed.getDate()
+        ).padStart(2, "0");
+
+      return `${year}-${month}-${day}`;
+    }
+
+    return "";
+  }
+
+  async function loadPayrollPayeClearing(runId) {
+    const companyId = cid();
+
+    if (!runId) {
+      return;
+    }
+
+    payrollState.payeClearing.selectedRunId =
+      Number(runId);
+
+    payrollState.payeClearing.preview =
+      null;
+
+    const run =
+      payrollState.selectedRun ||
+      {};
+
+    const messageEl =
+      $("payrollPayePaymentMessage");
+
+    if (messageEl) {
+      messageEl.textContent =
+        "Loading PAYE payable balance…";
+    }
+
+    /*
+    * 1. Load bank accounts.
+    */
+    const banks =
+      await refreshBankAccounts();
+
+    payrollState.payeClearing.banks =
+      Array.isArray(banks)
+        ? banks
+        : [];
+
+    /*
+    * 2. Load existing PAYE payment history.
+    */
+    let history = null;
+
+    try {
+      history =
+        await apiFetch(
+          ENDPOINTS.payroll.liabilityPayments(
+            companyId,
+            runId,
+            {
+              liability_type: "paye",
+            }
+          )
+        );
+
+      payrollState.payeClearing.history =
+        history?.items ||
+        history?.payments ||
+        [];
+
+    } catch (error) {
+
+      console.warn(
+        "[payroll] PAYE payment history load failed:",
+        error
+      );
+
+      payrollState.payeClearing.history =
+        [];
+    }
+
+    /*
+    * 3. Render first.
+    *
+    * This creates payrollPayeBankAccount.
+    */
+    renderPayrollPayeClearing(
+      payrollState.payeClearing.history
+    );
+
+    /*
+    * 4. Get the bank account that was rendered.
+    */
+    const bankEl =
+      $("payrollPayeBankAccount");
+
+    const bankAccountId =
+      bankEl?.value ||
+      "";
+
+    if (!bankAccountId) {
+
+      if (messageEl) {
+        messageEl.textContent =
+          "Select a payment bank account to load the PAYE payable balance.";
+      }
+
+      return;
+    }
+
+    /*
+    * 5. Get the payroll payment date.
+    */
+    const dateEl =
+      $("payrollPayePaymentDate");
+
+    if (dateEl) {
+      dateEl.value =
+        normalizePayrollDate(
+          run.payment_date
+        );
+    }
+
+    /*
+    * 6. Calculate the PAYE outstanding balance.
+    *
+    * DO NOT send amount here.
+    */
+    try {
+
+      const balanceResponse =
+        await apiFetch(
+          ENDPOINTS.payroll.liabilityPaymentPreview(
+            companyId,
+            runId
+          ),
+          {
+            method: "POST",
+
+            body: JSON.stringify({
+              liability_type: "paye",
+
+              bank_account_id:
+                Number(bankAccountId),
+
+              payment_date:
+                paymentDate ||
+                null,
+            }),
+          }
+        );
+
+      const balance =
+        balanceResponse?.preview ||
+        balanceResponse?.data ||
+        balanceResponse ||
+        {};
+
+      payrollState.payeClearing.balance =
+        balance;
+
+      const outstanding =
+        Number(
+          balance.outstanding_amount ??
+          balance.remaining_amount ??
+          balance.amount ??
+          0
+        );
+
+      /*
+      * 7. Prefill amount.
+      */
+      const amountEl =
+        $("payrollPayeAmount");
+
+      if (amountEl) {
+        amountEl.value =
+          outstanding > 0
+            ? outstanding.toFixed(2)
+            : "";
+      }
+
+      /*
+      * 8. Update outstanding display.
+      */
+      const outstandingEl =
+        $("payrollPayeClearingOutstanding");
+
+      if (outstandingEl) {
+        outstandingEl.innerHTML = `
+          <strong>
+            PAYE outstanding amount
+          </strong>
+
+          <p>
+            ${
+              outstanding > 0
+                ? `<strong>${money(outstanding)}</strong>`
+                : "There is no outstanding PAYE payable for this payroll run."
+            }
+          </p>
+        `;
+      }
+
+      /*
+      * 9. Update message.
+      */
+      const newMessageEl =
+        $("payrollPayePaymentMessage");
+
+      if (newMessageEl) {
+        newMessageEl.innerHTML =
+          outstanding > 0
+            ? `PAYE payable outstanding: <strong>${money(outstanding)}</strong>`
+            : "There is no outstanding PAYE payable for this payroll run.";
+      }
+
+    } catch (error) {
+
+      console.warn(
+        "[payroll] PAYE payable balance load failed:",
+        error
+      );
+
+      const newMessageEl =
+        $("payrollPayePaymentMessage");
+
+      if (newMessageEl) {
+        newMessageEl.textContent =
+          error?.message ||
+          "PAYE payable balance could not be loaded.";
+      }
+    }
+  }
+
+  window.loadPayrollPayeClearing =
+    loadPayrollPayeClearing;
+
+  function renderPayrollPayeClearing(history) {
+    const el = $("payrollPayeClearingSection");
+
+    if (!el) {
+      return;
+    }
+
+    const banks =
+      payrollState.payeClearing.banks ||
+      [];
+
+    const payments =
+      Array.isArray(history)
+        ? history
+        : [];
+
+    const runId =
+      payrollState.payeClearing.selectedRunId;
+
+    const run =
+      payrollState.selectedRun ||
+      {};
+
+    const postedRun =
+      String(run.status || "")
+        .toLowerCase() === "posted";
+
+    const paymentDate =
+      normalizePayrollDate(
+        run.payment_date
+      );
+
+    /*
+    * Balance loaded by loadPayrollPayeClearing().
+    */
+    const balance =
+      payrollState.payeClearing.balance ||
+      {};
+
+    const outstanding =
+      Number(
+        balance.outstanding_amount ??
+        balance.remaining_amount ??
+        balance.amount ??
+        0
+      );
+
+    /*
+    * Preserve any amount already entered by the user.
+    * If there isn't one, use the outstanding PAYE amount.
+    */
+    const existingAmount =
+      $("payrollPayeAmount")?.value ||
+      "";
+
+    const paymentAmount =
+      existingAmount ||
+      (
+        outstanding > 0
+          ? outstanding.toFixed(2)
+          : ""
+      );
+
+    el.innerHTML = `
+      <div class="payroll-card">
+
+        <div class="payroll-card-head">
+
+          <div>
+            <h3>PAYE Clearing</h3>
+
+            <p class="payroll-muted">
+              Clear the PAYE liability recognised by
+              this posted payroll run when payment is made
+              to the tax authority.
+            </p>
+          </div>
+
+          <span class="payroll-pill">
+            PAYE Payable
+          </span>
+
+        </div>
+
+        ${
+          !postedRun
+            ? `
+                <div class="notice error">
+                  PAYE can only be cleared after the
+                  payroll run has been posted.
+                </div>
+              `
+            : `
+                <div class="payroll-preview-meta">
+
+                  <div>
+                    <span>Payroll Run</span>
+
+                    <strong>
+                      ${esc(
+                        run.run_no ||
+                        String(runId)
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Payment Date</span>
+
+                    <strong>
+                      ${formatPayrollDate(paymentDate)}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Liability</span>
+
+                    <strong>
+                      PAYE Payable
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Status</span>
+
+                    <strong>
+                      Posted
+                    </strong>
+                  </div>
+
+                </div>
+
+                <!-- PAYE OUTSTANDING BALANCE -->
+
+                <div
+                  id="payrollPayeClearingOutstanding"
+                  class="payroll-empty-state"
+                >
+
+                  <strong>
+                    PAYE outstanding amount
+                  </strong>
+
+                  <p>
+                    ${
+                      outstanding > 0
+                        ? `<strong>${money(outstanding)}</strong>`
+                        : "There is no outstanding PAYE payable for this payroll run."
+                    }
+                  </p>
+
+                </div>
+
+                <div class="payroll-form-grid">
+
+                  <!-- PAYMENT DATE -->
+
+                  <div class="payroll-field">
+
+                    <label
+                      for="payrollPayePaymentDate"
+                    >
+                      Payment Date
+                    </label>
+
+                    <input
+                      id="payrollPayePaymentDate"
+                      class="payroll-input"
+                      type="date"
+                      value="${esc(paymentDate)}"
+                    >
+
+                  </div>
+
+
+                  <!-- BANK ACCOUNT -->
+
+                  <div class="payroll-field">
+
+                    <label
+                      for="payrollPayeBankAccount"
+                    >
+                      Bank Account
+                    </label>
+
+                    <select
+                      id="payrollPayeBankAccount"
+                      class="payroll-input"
+                    >
+
+                      <option value="">
+                        Select bank account
+                      </option>
+
+                      ${
+                        banks.map(bank => {
+
+                          const label = [
+                            bank.bank_name,
+                            bank.account_name,
+                            bank.account_number
+                              ? `••••${String(
+                                  bank.account_number
+                                ).slice(-4)}`
+                              : ""
+                          ]
+                            .filter(Boolean)
+                            .join(" — ");
+
+                          return `
+                            <option
+                              value="${esc(
+                                String(bank.id)
+                              )}"
+                            >
+                              ${esc(
+                                label ||
+                                bank.name ||
+                                `Bank Account ${bank.id}`
+                              )}
+                            </option>
+                          `;
+
+                        }).join("")
+                      }
+
+                    </select>
+
+                  </div>
+
+
+                  <!-- PAYMENT AMOUNT -->
+
+                  <div class="payroll-field">
+
+                    <label
+                      for="payrollPayeAmount"
+                    >
+                      Payment Amount
+                    </label>
+
+                    <input
+                      id="payrollPayeAmount"
+                      class="payroll-input"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      placeholder="0.00"
+                      value="${esc(paymentAmount)}"
+                    >
+
+                  </div>
+
+
+                  <!-- REFERENCE -->
+
+                  <div class="payroll-field">
+
+                    <label
+                      for="payrollPayeReference"
+                    >
+                      Payment Reference
+                    </label>
+
+                    <input
+                      id="payrollPayeReference"
+                      class="payroll-input"
+                      type="text"
+                      maxlength="150"
+                      value="${esc(
+                        $("payrollPayeReference")?.value ||
+                        `PAYE-PAY-${run.run_no || runId}`
+                      )}"
+                      placeholder="e.g. SARS payment reference"
+                    >
+
+                  </div>
+
+
+                  <!-- NOTES -->
+
+                  <div
+                    class="payroll-field"
+                    style="grid-column:1/-1;"
+                  >
+
+                    <label
+                      for="payrollPayeNotes"
+                    >
+                      Notes
+                    </label>
+
+                    <textarea
+                      id="payrollPayeNotes"
+                      class="payroll-input"
+                      rows="3"
+                      placeholder="Optional payment notes"
+                    >${esc(
+                      $("payrollPayeNotes")?.value ||
+                      ""
+                    )}</textarea>
+
+                  </div>
+
+                </div>
+
+
+                <!-- ACTIONS -->
+
+                <div class="payroll-run-actions">
+
+                  <button
+                    id="payrollPayePreviewBtn"
+                    type="button"
+                    class="payroll-primary"
+                  >
+                    Preview PAYE Payment
+                  </button>
+
+                  <button
+                    id="payrollPayePostBtn"
+                    type="button"
+                    class="payroll-primary"
+                    disabled
+                  >
+                    Post PAYE Payment
+                  </button>
+
+                </div>
+
+
+                <!-- PAYMENT PREVIEW -->
+
+                <div
+                  id="payrollPayePaymentPreview"
+                  class="hidden"
+                ></div>
+
+
+                <!-- PAYMENT HISTORY -->
+
+                <div class="payroll-card">
+
+                  <div class="payroll-card-head">
+
+                    <div>
+
+                      <h3>
+                        PAYE Payment History
+                      </h3>
+
+                      <p class="payroll-muted">
+                        Payments already posted against
+                        this payroll run.
+                      </p>
+
+                    </div>
+
+                  </div>
+
+
+                  <div id="payrollPayePaymentHistory">
+
+                    ${
+                      payments.length
+                        ? `
+                            <div class="payroll-table-wrap">
+
+                              <table class="payroll-preview-table">
+
+                                <thead>
+
+                                  <tr>
+
+                                    <th>
+                                      Date
+                                    </th>
+
+                                    <th>
+                                      Reference
+                                    </th>
+
+                                    <th>
+                                      Bank
+                                    </th>
+
+                                    <th>
+                                      Status
+                                    </th>
+
+                                    <th class="num">
+                                      Amount
+                                    </th>
+
+                                  </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                  ${
+                                    payments.map(
+                                      payment => `
+                                        <tr>
+
+                                          <td>
+                                            ${formatPayrollDate(
+                                              payment.payment_date
+                                            )}
+                                          </td>
+
+                                          <td>
+                                            ${esc(
+                                              payment.reference ||
+                                              "—"
+                                            )}
+                                          </td>
+
+                                          <td>
+                                            ${esc(
+                                              payment.bank_account_code ||
+                                              payment.bank_account_name ||
+                                              "—"
+                                            )}
+                                          </td>
+
+                                          <td>
+                                            ${esc(
+                                              cap(
+                                                payment.status ||
+                                                ""
+                                              )
+                                            )}
+                                          </td>
+
+                                          <td class="num">
+                                            ${money(
+                                              payment.amount
+                                            )}
+                                          </td>
+
+                                        </tr>
+                                      `
+                                    ).join("")
+                                  }
+
+                                </tbody>
+
+                              </table>
+
+                            </div>
+                          `
+                        : `
+                            <div class="payroll-empty-state">
+
+                              <strong>
+                                No PAYE payments posted
+                              </strong>
+
+                              <p>
+                                No PAYE clearing payment
+                                has been posted against
+                                this payroll run.
+                              </p>
+
+                            </div>
+                          `
+                    }
+
+                  </div>
+
+                </div>
+              `
+        }
+
+      </div>
+    `;
+
+    if (!postedRun) {
+      return;
+    }
+
+    /*
+    * Re-apply the default bank account after
+    * the HTML has been rebuilt.
+    */
+    const newBankEl =
+      $("payrollPayeBankAccount");
+
+    if (
+      newBankEl &&
+      banks.length
+    ) {
+      const defaultBank =
+        banks.find(
+          bank =>
+            bank.is_default_payments === true
+        );
+
+      if (defaultBank) {
+        const defaultId =
+          defaultBank.id ??
+          defaultBank.bank_account_id;
+
+        if (defaultId) {
+          newBankEl.value =
+            String(defaultId);
+        }
+      }
+    }
+
+    /*
+    * Preview button.
+    */
+    $("payrollPayePreviewBtn")
+      ?.addEventListener(
+        "click",
+        previewPayrollPayePayment
+      );
+
+    /*
+    * Post button.
+    */
+    $("payrollPayePostBtn")
+      ?.addEventListener(
+        "click",
+        postPayrollPayePayment
+      );
+  }
+
+  async function previewPayrollPayePayment(){
+    const companyId=cid();
+
+    const runId=
+        payrollState.payeClearing?.selectedRunId||
+        null;
+
+    if(!runId){
+        throw new Error(
+            "Select a payroll run first."
+        );
+    }
+
+    const bankAccountId=
+        $("payrollPayeBankAccount")?.value||
+        "";
+
+    const paymentDate=
+        $("payrollPayePaymentDate")?.value||
+        "";
+
+    const amount=
+        $("payrollPayeAmount")?.value||
+        "";
+
+    const reference=
+        $("payrollPayeReference")?.value.trim()||
+        "";
+
+    const notes=
+        $("payrollPayeNotes")?.value.trim()||
+        "";
+
+    if(!bankAccountId){
+        throw new Error(
+            "Select a bank account."
+        );
+    }
+
+    if(!paymentDate){
+        throw new Error(
+            "Payment date is required."
+        );
+    }
+
+    if(!amount||Number(amount)<=0){
+        throw new Error(
+            "Enter a valid PAYE payment amount."
+        );
+    }
+
+    const res=await apiFetch(
+        ENDPOINTS.payroll.liabilityPaymentPreview(
+            companyId,
+            runId
+        ),
+        {
+            method:"POST",
+            body:JSON.stringify({
+                liability_type:"paye",
+                bank_account_id:Number(
+                    bankAccountId
+                ),
+                payment_date:paymentDate,
+                amount:Number(amount),
+                reference:reference||null,
+                notes:notes||null,
+            }),
+        }
+    );
+
+    payrollState.payeClearing.preview=
+        res?.preview||
+        res?.data||
+        null;
+
+    renderPayrollPayePaymentPreview(
+        payrollState.payeClearing.preview
+    );
+  }
+
+
+  async function postPayrollPayePayment(){
+    const companyId=cid();
+
+    const runId=
+        payrollState.payeClearing?.selectedRunId||
+        null;
+
+    const preview=
+        payrollState.payeClearing?.preview||
+        null;
+
+    if(!runId){
+        throw new Error(
+            "Select a payroll run first."
+        );
+    }
+
+    if(!preview?.ready_to_post){
+        throw new Error(
+            "Preview the PAYE payment and resolve any errors before posting."
+        );
+    }
+
+    const bankAccountId=
+        $("payrollPayeBankAccount")?.value||
+        "";
+
+    const paymentDate=
+        $("payrollPayePaymentDate")?.value||
+        "";
+
+    const amount=
+        $("payrollPayeAmount")?.value||
+        "";
+
+    const reference=
+        $("payrollPayeReference")?.value.trim()||
+        "";
+
+    const notes=
+        $("payrollPayeNotes")?.value.trim()||
+        "";
+
+    const res=await apiFetch(
+        ENDPOINTS.payroll.liabilityPayment(
+            companyId,
+            runId
+        ),
+        {
+            method:"POST",
+            body:JSON.stringify({
+                liability_type:"paye",
+                bank_account_id:Number(
+                    bankAccountId
+                ),
+                payment_date:paymentDate,
+                amount:Number(amount),
+                reference:reference||null,
+                notes:notes||null,
+            }),
+        }
+    );
+
+    payrollState.payeClearing.preview=null;
+
+    showPayrollStatus(
+        "PAYE payment posted successfully.",
+        "success"
+    );
+
+    await loadPayrollPayeRunClearing(
+        runId
+    );
+  }
+
+  function renderPayrollPayePaymentPreview(preview){
+    const el=$("payrollPayePaymentPreview");
+
+    if(!el){
+        return;
+    }
+
+    const lines=
+        preview?.journal?.lines||
+        preview?.lines||
+        [];
+
+    const ready=Boolean(
+        preview?.ready_to_post
+    );
+
+    el.classList.remove("hidden");
+
+    el.innerHTML=`
+        <div class="payroll-card">
+            <div class="payroll-card-head">
+                <div>
+                    <h3>PAYE Payment Preview</h3>
+                    <p class="payroll-muted">
+                        Review the accounting entry before posting.
+                    </p>
+                </div>
+            </div>
+
+            ${
+                preview?.error
+                    ? `
+                        <div class="notice error">
+                            ${esc(preview.error)}
+                        </div>
+                    `
+                    : ""
+            }
+
+            <div class="payroll-journal-meta">
+
+                <div>
+                    <span>Liability</span>
+                    <strong>
+                        ${esc(
+                            preview?.accounts?.liability?.code||
+                            "PAYE Payable"
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Bank</span>
+                    <strong>
+                        ${esc(
+                            preview?.accounts?.bank?.code||
+                            preview?.bank_account?.ledger_account_code||
+                            "—"
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Payment Amount</span>
+                    <strong>
+                        ${money(
+                            preview?.amount||
+                            preview?.payment_amount||
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Difference</span>
+                    <strong>
+                        ${money(
+                            preview?.difference||
+                            0
+                        )}
+                    </strong>
+                </div>
+
+            </div>
+
+            ${
+                lines.length
+                    ? `
+                        <div class="payroll-table-wrap">
+                            <table class="payroll-preview-table">
+                                <thead>
+                                    <tr>
+                                        <th>Account</th>
+                                        <th>Description</th>
+                                        <th class="num">
+                                            Debit
+                                        </th>
+                                        <th class="num">
+                                            Credit
+                                        </th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    ${
+                                        lines.map(line=>`
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        ${esc(
+                                                            line.account_name||
+                                                            line.account_code||
+                                                            "Unmapped account"
+                                                        )}
+                                                    </strong>
+                                                </td>
+
+                                                <td>
+                                                    ${esc(
+                                                        line.description||
+                                                        ""
+                                                    )}
+                                                </td>
+
+                                                <td class="num debit-col">
+                                                    ${
+                                                        Number(
+                                                            line.debit||0
+                                                        )
+                                                            ? money(
+                                                                line.debit
+                                                            )
+                                                            : "&mdash;"
+                                                    }
+                                                </td>
+
+                                                <td class="num credit-col">
+                                                    ${
+                                                        Number(
+                                                            line.credit||0
+                                                        )
+                                                            ? money(
+                                                                line.credit
+                                                            )
+                                                            : "&mdash;"
+                                                    }
+                                                </td>
+                                            </tr>
+                                        `).join("")
+                                    }
+                                </tbody>
+
+                                <tfoot>
+                                    <tr>
+                                        <th colspan="2">
+                                            Total
+                                        </th>
+
+                                        <th class="num">
+                                            ${money(
+                                                preview?.journal?.debits||
+                                                preview?.debits||
+                                                0
+                                            )}
+                                        </th>
+
+                                        <th class="num">
+                                            ${money(
+                                                preview?.journal?.credits||
+                                                preview?.credits||
+                                                0
+                                            )}
+                                        </th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    `
+                    : `
+                        <div class="payroll-empty-state">
+                            <strong>
+                                No journal lines available
+                            </strong>
+                            <p>
+                                ${esc(
+                                    preview?.reason||
+                                    "The PAYE payment could not be previewed."
+                                )}
+                            </p>
+                        </div>
+                    `
+            }
+
+            <div
+                class="${
+                    ready
+                        ? "notice success"
+                        : "notice error"
+                } payroll-preview-result"
+            >
+                ${
+                    ready
+                        ? "PAYE payment journal is balanced and ready to post."
+                        : esc(
+                            preview?.reason||
+                            "PAYE payment is not ready to post."
+                        )
+                }
+            </div>
+        </div>
+    `;
+
+    const postButton=$(
+        "payrollPayePostBtn"
+    );
+
+    if(postButton){
+        postButton.disabled=!ready;
+    }
   }
 
   function collectPayrollPaySetupItems() {
@@ -74544,12 +80570,32 @@ async function saveEditModal() {
                   Fixed amount
                 </option>
 
-                <option value="percentage">
-                  Percentage
+                <option value="basic_salary">
+                  Basic salary
+                </option>
+
+                <option value="basic_commission">
+                  Basic + commission
+                </option>
+
+                <option value="hours_rate">
+                  Hours × rate
+                </option>
+
+                <option value="days_rate">
+                  Days × rate
                 </option>
 
                 <option value="quantity_rate">
                   Quantity × rate
+                </option>
+
+                <option value="commission_only">
+                  Commission only
+                </option>
+
+                <option value="percentage">
+                  Percentage
                 </option>
 
                 <option value="manual">
@@ -74575,6 +80621,36 @@ async function saveEditModal() {
 
             <label
               class="payroll-pay-input-wrap hidden"
+              data-pay-basic-wrap="${esc(key)}"
+            >
+              Basic amount
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                data-pay-choice-basic="${esc(key)}"
+                placeholder="0.00"
+              >
+            </label>
+
+            <label
+              class="payroll-pay-input-wrap hidden"
+              data-pay-commission-wrap="${esc(key)}"
+            >
+              Commission
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                data-pay-choice-commission="${esc(key)}"
+                placeholder="0.00"
+              >
+            </label>
+
+            <label
+              class="payroll-pay-input-wrap hidden"
               data-pay-percent-wrap="${esc(key)}"
             >
               Percentage
@@ -74592,7 +80668,9 @@ async function saveEditModal() {
               class="payroll-pay-input-wrap hidden"
               data-pay-quantity-wrap="${esc(key)}"
             >
-              Hours / Quantity
+              <span data-pay-quantity-label="${esc(key)}">
+                Quantity
+              </span>
 
               <input
                 type="number"
@@ -74664,7 +80742,10 @@ async function saveEditModal() {
         );
 
         if (checkbox.checked) {
-          updatePayChoiceMethodFields(key, el);
+          updatePayChoiceMethodFields(
+            key,
+            el
+          );
         }
       });
     });
@@ -74676,22 +80757,36 @@ async function saveEditModal() {
         const key =
           select.dataset.payChoiceMethod;
 
-        updatePayChoiceMethodFields(key, el);
+        updatePayChoiceMethodFields(
+          key,
+          el
+        );
       });
     });
 
     el.querySelectorAll(
-      "[data-pay-choice-quantity], [data-pay-choice-rate]"
+      "[data-pay-choice-quantity]," +
+      " [data-pay-choice-rate]," +
+      " [data-pay-choice-amount]," +
+      " [data-pay-choice-basic]," +
+      " [data-pay-choice-commission]"
     ).forEach(input => {
       input.addEventListener("input", () => {
         const key =
           input.dataset.payChoiceQuantity ||
-          input.dataset.payChoiceRate;
+          input.dataset.payChoiceRate ||
+          input.dataset.payChoiceAmount ||
+          input.dataset.payChoiceBasic ||
+          input.dataset.payChoiceCommission;
 
-        calculatePayChoiceTotal(key, el);
+        calculatePayChoiceTotal(
+          key,
+          el
+        );
       });
     });
   }
+
 
   function togglePayChoiceWrap(
     container,
@@ -74732,51 +80827,131 @@ async function saveEditModal() {
         `[data-pay-choice-method="${key}"]`
       )?.value || "fixed_amount";
 
+    const isFixed =
+      method === "fixed_amount";
+
+    const isBasicSalary =
+      method === "basic_salary";
+
+    const isBasicCommission =
+      method === "basic_commission";
+
+    const isHours =
+      method === "hours_rate";
+
+    const isDays =
+      method === "days_rate";
+
+    const isQuantity =
+      method === "quantity_rate";
+
+    const isCommission =
+      method === "commission_only";
+
+    const isPercentage =
+      method === "percentage";
+
+    const isManual =
+      method === "manual";
+
     togglePayChoiceWrap(
       container,
       `[data-pay-fixed-wrap="${key}"]`,
-      method === "fixed_amount"
+      isFixed
+    );
+
+    togglePayChoiceWrap(
+      container,
+      `[data-pay-basic-wrap="${key}"]`,
+      isBasicSalary ||
+      isBasicCommission
+    );
+
+    togglePayChoiceWrap(
+      container,
+      `[data-pay-commission-wrap="${key}"]`,
+      isCommission ||
+      isBasicCommission
     );
 
     togglePayChoiceWrap(
       container,
       `[data-pay-percent-wrap="${key}"]`,
-      method === "percentage"
+      isPercentage
     );
 
     togglePayChoiceWrap(
       container,
       `[data-pay-quantity-wrap="${key}"]`,
-      method === "quantity_rate"
+      isHours ||
+      isDays ||
+      isQuantity
     );
 
     togglePayChoiceWrap(
       container,
       `[data-pay-rate-wrap="${key}"]`,
-      method === "quantity_rate"
+      isHours ||
+      isDays ||
+      isQuantity
     );
 
     togglePayChoiceWrap(
       container,
       `[data-pay-total-wrap="${key}"]`,
-      method === "quantity_rate"
+      isHours ||
+      isDays ||
+      isQuantity ||
+      isCommission ||
+      isBasicCommission
     );
 
     togglePayChoiceWrap(
       container,
       `[data-pay-manual-wrap="${key}"]`,
-      method === "manual"
+      isManual
     );
 
-    if (method === "quantity_rate") {
-      calculatePayChoiceTotal(key, container);
+    const quantityLabel =
+      container.querySelector(
+        `[data-pay-quantity-label="${key}"]`
+      );
+
+    if (quantityLabel) {
+      if (isHours) {
+        quantityLabel.textContent = "Hours";
+      } else if (isDays) {
+        quantityLabel.textContent = "Days";
+      } else {
+        quantityLabel.textContent = "Quantity";
+      }
+    }
+
+    if (
+      isBasicSalary ||
+      isBasicCommission ||
+      isHours ||
+      isDays ||
+      isQuantity ||
+      isCommission
+    ) {
+      calculatePayChoiceTotal(
+        key,
+        container
+      );
     }
   }
+
 
   function calculatePayChoiceTotal(
     key,
     container = document,
   ) {
+    const method =
+      container.querySelector(
+        `[data-pay-choice-method="${key}"]`
+      )?.value || "fixed_amount";
+
     const quantity = Number(
       container.querySelector(
         `[data-pay-choice-quantity="${key}"]`
@@ -74789,14 +80964,62 @@ async function saveEditModal() {
       )?.value || 0
     );
 
-    const total = quantity * rate;
-
-    const totalInput = container.querySelector(
-      `[data-pay-choice-total="${key}"]`
+    const basic = Number(
+      container.querySelector(
+        `[data-pay-choice-basic="${key}"]`
+      )?.value || 0
     );
 
+    const commission = Number(
+      container.querySelector(
+        `[data-pay-choice-commission="${key}"]`
+      )?.value || 0
+    );
+
+    const amount = Number(
+      container.querySelector(
+        `[data-pay-choice-amount="${key}"]`
+      )?.value || 0
+    );
+
+    let total = 0;
+
+    if (method === "basic_salary") {
+      total = basic;
+    }
+
+    else if (method === "basic_commission") {
+      total = basic + commission;
+    }
+
+    else if (method === "hours_rate") {
+      total = quantity * rate;
+    }
+
+    else if (method === "days_rate") {
+      total = quantity * rate;
+    }
+
+    else if (method === "quantity_rate") {
+      total = quantity * rate;
+    }
+
+    else if (method === "commission_only") {
+      total = commission;
+    }
+
+    else if (method === "fixed_amount") {
+      total = amount;
+    }
+
+    const totalInput =
+      container.querySelector(
+        `[data-pay-choice-total="${key}"]`
+      );
+
     if (totalInput) {
-      totalInput.value = total.toFixed(2);
+      totalInput.value =
+        total.toFixed(2);
     }
   }
 
@@ -74994,643 +81217,570 @@ async function saveEditModal() {
     `).join("");
   }
 
-  const SARS_FALLBACK_BRACKETS = [
-    { from: 0,        to: 247500,  rate: 0.18, base: 0 },
-    { from: 247500,   to: 384000,  rate: 0.26, base: 44550 },
-    { from: 384000,   to: 531600,  rate: 0.31, base: 80100 },
-    { from: 531600,   to: 697000,  rate: 0.36, base: 125826 },
-    { from: 697000,   to: 882000,  rate: 0.39, base: 185326 },
-    { from: 882000,   to: 1893600, rate: 0.41, base: 257541 },
-    { from: 1893600,  to: null,    rate: 0.45, base: 672037 },
-  ];
+  function formatPayrollCalendarPeriodLabel(calendar) {
+    if (!calendar) return "";
 
-  /**
-   * Hardcoded Lesotho RSL brackets — fallback.
-   * Aligned with seed_payroll_tax.sql.
-   */
-  const RSL_FALLBACK_BRACKETS = [
-    { from: 0,       to: 84000,  rate: 0.00, base: 0 },
-    { from: 84000,   to: 156000, rate: 0.20, base: 0 },
-    { from: 156000,  to: 252000, rate: 0.30, base: 14400 },
-    { from: 252000,  to: null,   rate: 0.35, base: 43200 },
-  ];
+    const start = calendar.period_start;
+    const end = calendar.period_end;
 
-  /**
-   * Hardcoded Botswana BURS brackets — fallback.
-   * Aligned with seed_payroll_tax.sql.
-   */
-  const BURS_FALLBACK_BRACKETS = [
-    { from: 0,       to: 48000,  rate: 0.00, base: 0 },
-    { from: 48000,   to: 84000,  rate: 0.05, base: 0 },
-    { from: 84000,   to: 120000, rate: 0.125, base: 1800 },
-    { from: 120000,  to: 156000, rate: 0.1875, base: 6300 },
-    { from: 156000,  to: 192000, rate: 0.25, base: 13050 },
-    { from: 192000,  to: null,   rate: 0.30, base: 22050 },
-  ];
+    if (!start && !end) {
+      return "Payroll period";
+    }
 
-  /**
-   * Normalise a bracket row to the simple format { from, to, rate, base }.
-   *
-   * Handles BOTH your DB column names AND the simple format, so it
-   * works regardless of whether your API transforms the data or
-   * returns raw DB rows.
-   *
-   * DB format:  { lower_bound, upper_bound, base_tax, marginal_rate, excess_over }
-   * Simple:     { from, to, rate, base }
-   */
-  function normaliseBracket(raw) {
-    return {
-      from:   Number(raw.from   ?? raw.lower_bound  ?? 0),
-      to:     raw.to     ?? raw.upper_bound  ?? null,
-      rate:   Number(raw.rate   ?? raw.marginal_rate ?? 0),
-      base:   Number(raw.base   ?? raw.base_tax     ?? 0),
-      excess: Number(raw.excess ?? raw.excess_over  ?? raw.from ?? raw.lower_bound ?? 0),
-    };
-  }
+    const startDate = start
+      ? new Date(start)
+      : null;
 
-  /**
-   * Calculate annual tax from normalised brackets.
-   *
-   * For each bracket:
-   *   tax = base + (taxable_income - excess) × rate
-   *
-   * @param {number} annualTaxable
-   * @param {Array}  rawBrackets  — array of bracket objects (either format)
-   * @returns {number} annual tax before rebates
-   */
-  function calculateBracketTax(annualTaxable, rawBrackets) {
-    if (!rawBrackets || !rawBrackets.length || annualTaxable <= 0) return 0;
+    const endDate = end
+      ? new Date(end)
+      : null;
 
-    const brackets = rawBrackets.map(normaliseBracket);
-    let tax = 0;
-    let applied = false;
-
-    for (let i = 0; i < brackets.length; i++) {
-      const b = brackets[i];
-      const upper = (b.to === null || b.to === undefined) ? Infinity : Number(b.to);
-
-      if (annualTaxable > Number(b.excess) && annualTaxable <= upper) {
-        tax = Number(b.base) + (annualTaxable - Number(b.excess)) * Number(b.rate);
-        applied = true;
-        break;
+    const formatter = new Intl.DateTimeFormat(
+      "en-US",
+      {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
       }
+    );
+
+    if (!startDate) {
+      return endDate
+        ? formatter.format(endDate)
+        : "Payroll period";
     }
 
-    // Income exceeds the highest defined bracket
-    if (!applied && brackets.length > 0) {
-      const top = brackets[brackets.length - 1];
-      tax = Number(top.base) + (annualTaxable - Number(top.excess)) * Number(top.rate);
+    if (!endDate) {
+      return formatter.format(startDate);
     }
 
-    return Math.max(0, tax);
+    const startMonth = formatter.format(startDate);
+    const endMonth = formatter.format(endDate);
+
+    if (startMonth === endMonth) {
+      return startMonth;
+    }
+
+    return `${startMonth} – ${endMonth}`;
   }
 
-  /**
-   * Get a parameter value from the tax context.
-   * Checks both flat keys (from API) and nested parameters array.
-   */
-  function getTaxParam(taxContext, key, fallback) {
-    // Check flat keys first (e.g. context.primary_rebate)
-    if (taxContext[key] !== undefined && taxContext[key] !== null) {
-      return Number(taxContext[key]);
-    }
 
-    // Check nested parameters array
-    // (in case the API returns them grouped)
-    if (Array.isArray(taxContext.parameters)) {
-      const param = taxContext.parameters.find(
-        p => p.parameter_key === key
-      );
-      if (param && param.numeric_value !== null) {
-        return Number(param.numeric_value);
-      }
-    }
+  function renderPayrollPreviewCalendarOptions() {
+    const select = $("payrollPreviewCalendarId");
 
-    return fallback !== undefined ? Number(fallback) : null;
+    if (!select) return;
+
+    const calendars = Array.isArray(
+      payrollState?.calendars
+    )
+      ? payrollState.calendars
+      : [];
+
+    const currentValue = select.value;
+
+    select.innerHTML = `
+      <option value="">
+        Select payroll period…
+      </option>
+    `;
+
+    calendars
+      .slice()
+      .sort((a, b) =>
+        String(b?.period_end || "")
+          .localeCompare(
+            String(a?.period_end || "")
+          )
+      )
+      .forEach(calendar => {
+        if (!calendar?.id) return;
+
+        const option =
+          document.createElement("option");
+
+        option.value = calendar.id;
+
+        option.textContent =
+          formatPayrollCalendarPeriodLabel(
+            calendar
+          );
+
+        select.appendChild(option);
+      });
+
+    if (
+      currentValue &&
+      calendars.some(
+        calendar =>
+          String(calendar?.id) ===
+          String(currentValue)
+      )
+    ) {
+      select.value = currentValue;
+    }
   }
 
-  /**
-   * Calculate age from a date-of-birth string (yyyy-mm-dd).
-   */
-  function getAgeFromDate(dobStr) {
-    if (!dobStr) return 0;
-    try {
-      const dob = new Date(dobStr);
-      const today = new Date();
-      let age = today.getFullYear() - dob.getFullYear();
-      const monthDiff = today.getMonth() - dob.getMonth();
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-        age--;
-      }
-      return Math.max(0, age);
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  /**
-   * South Africa SARS PAYE — progressive brackets + age-based rebates
-   * + medical aid tax credits (section 6A).
-   *
-   * Taxable income = Gross pay
-   *   – employee pension/retirement fund contributions (section 11F)
-   *
-   * Medical credits are deducted from the TAX (not from income).
-   */
-  function calculateSARSPayE(monthlyTaxable, taxContext) {
-    const annualTaxable = monthlyTaxable * 12;
-
-    // 1. Brackets — prefer API, fall back to hardcoded
-    const apiBrackets = taxContext.brackets;
-    const brackets = (Array.isArray(apiBrackets) && apiBrackets.length > 0)
-      ? apiBrackets
-      : SARS_FALLBACK_BRACKETS;
-
-    // 2. Calculate gross annual tax
-    let annualTax = calculateBracketTax(annualTaxable, brackets);
-
-    // 3. Age-dependent rebates
+  async function renderPayrollPayslipPreview() {
     const employee = payrollPreviewSelectedEmployee();
-    const taxProfile = (employee?.tax_profiles || [])[0] || {};
-    const dob = taxProfile.date_of_birth || "";
-    const residencyStatus = taxProfile.residency_status || "resident";
 
-    // Non-residents get NO rebates
-    const rebatesApply = residencyStatus !== "non_resident" &&
-      getTaxParam(taxContext, "rebate_applies_non_resident", 0) !== 1;
+    const employeeName = employee
+      ? [employee.first_name, employee.last_name]
+          .filter(Boolean)
+          .join(" ")
+      : "Select employee";
 
-    if (rebatesApply) {
-      const primaryRebate   = getTaxParam(taxContext, "primary_rebate", 17235);
-      const secondaryRebate = getTaxParam(taxContext, "secondary_rebate", 9150);
-      const tertiaryRebate  = getTaxParam(taxContext, "tertiary_rebate", 3047);
+    const payBasisLabels = {
+      monthly: "Monthly Salary",
+      hourly: "Hours × Rate",
+      daily: "Days × Rate",
+      quantity: "Quantity × Rate",
+      commission_only: "Commission Only",
+    };
 
-      let totalRebate = primaryRebate;
+    const clearPreview = (period = "Current setup") => {
+      setTxt("payrollPreviewPeriod", period);
 
-      if (dob) {
-        const age = getAgeFromDate(dob);
-        if (age >= 75) {
-          totalRebate += secondaryRebate + tertiaryRebate;
-        } else if (age >= 65) {
-          totalRebate += secondaryRebate;
-        }
-      }
-
-      annualTax -= totalRebate;
-      if (annualTax < 0) annualTax = 0;
-    }
-
-    // 4. Medical aid tax credit (section 6A) — deducted from tax, not income
-    const medicalMembers = Number(taxProfile.medical_scheme_members || 0);
-
-    if (medicalMembers > 0) {
-      const monthlyCredit = getTaxParam(
-        taxContext, "medical_credit_monthly", 364
+      renderPayrollPreviewLines(
+        "payrollPreviewEarnings",
+        []
       );
 
-      const additionalCredit = getTaxParam(
-        taxContext, "medical_credit_additional_monthly", 246
+      renderPayrollPreviewLines(
+        "payrollPreviewDeductions",
+        []
       );
 
-      const dependants = Math.max(0, medicalMembers - 1);
-      const annualMedicalCredit = (monthlyCredit + dependants * additionalCredit) * 12;
+      setTxt(
+        "payrollPreviewGross",
+        payrollPreviewMoney(0)
+      );
 
-      annualTax -= annualMedicalCredit;
-      if (annualTax < 0) annualTax = 0;
-    }
+      setTxt(
+        "payrollPreviewDeductionsTotal",
+        payrollPreviewMoney(0)
+      );
 
-    // 5. Monthly conversion
-    return Math.round((annualTax / 12) * 100) / 100;
-  }
+      setTxt(
+        "payrollPreviewNet",
+        payrollPreviewMoney(0)
+      );
 
-  /**
-   * Lesotho RSL PAYE — progressive brackets, no age rebates.
-   */
-  function calculateRSLPayE(monthlyTaxable, taxContext) {
-    const annualTaxable = monthlyTaxable * 12;
-
-    const apiBrackets = taxContext.brackets;
-    const brackets = (Array.isArray(apiBrackets) && apiBrackets.length > 0)
-      ? apiBrackets
-      : RSL_FALLBACK_BRACKETS;
-
-    let annualTax = calculateBracketTax(annualTaxable, brackets);
-
-    // Lesotho has no separate rebate system (the 0% first bracket
-    // acts as the tax-free threshold), but check for an annual_rebate
-    // parameter just in case.
-    const annualRebate = getTaxParam(taxContext, "annual_rebate", 0);
-    if (annualRebate > 0) {
-      annualTax -= annualRebate;
-      if (annualTax < 0) annualTax = 0;
-    }
-
-    return Math.round((annualTax / 12) * 100) / 100;
-  }
-
-  /**
-   * Generic PAYE calculator — for any authority that returns bracket data.
-   * Used for Botswana BURS and any future authorities.
-   */
-  function calculateGenericPayE(monthlyTaxable, taxContext) {
-    const apiBrackets = taxContext.brackets;
-    if (!Array.isArray(apiBrackets) || !apiBrackets.length) return 0;
-
-    const basis = String(taxContext.calculation_basis || "annualised").toLowerCase();
-    const isMonthly = basis.includes("monthly");
-
-    const effectiveIncome = isMonthly ? monthlyTaxable : monthlyTaxable * 12;
-    let tax = calculateBracketTax(effectiveIncome, apiBrackets);
-
-    // Apply rebate if any (only for annualised calculations)
-    if (!isMonthly) {
-      const annualRebate = getTaxParam(taxContext, "annual_rebate", 0);
-      if (annualRebate > 0) {
-        tax -= annualRebate;
-        if (tax < 0) tax = 0;
-      }
-      // Also check primary_rebate key (SA-style)
-      const primaryRebate = getTaxParam(taxContext, "primary_rebate", 0);
-      if (primaryRebate > 0) {
-        tax -= primaryRebate;
-        if (tax < 0) tax = 0;
-      }
-    }
-
-    if (isMonthly) {
-      return Math.round(tax * 100) / 100;
-    }
-
-    return Math.round((tax / 12) * 100) / 100;
-  }
-
-  /**
-   * MAIN ENTRY POINT — calculate PAYE for the payslip preview.
-   *
-   * Routes to the correct calculator based on country code,
-   * using API brackets if available, falling back to hardcoded tables.
-   *
-   * @param {number} monthlyTaxableIncome
-   * @returns {number} monthly PAYE
-   */
-  function calculatePreviewPaye(monthlyTaxableIncome) {
-    if (monthlyTaxableIncome <= 0) return 0;
-
-    const ctx = payrollState.taxContext;
-    if (!ctx) return 0;
-
-    const country = String(
-      ctx.country_code ||
-      window.CURRENT_COMPANY?.country ||
-      window.CURRENT_COMPANY_COUNTRY ||
-      ""
-    ).trim().toUpperCase();
-
-    // South Africa
-    if (["ZA", "RSA", "SOUTH AFRICA"].includes(country)) {
-      return calculateSARSPayE(monthlyTaxableIncome, ctx);
-    }
-
-    // Lesotho
-    if (["LS", "LES", "LESOTHO"].includes(country)) {
-      return calculateRSLPayE(monthlyTaxableIncome, ctx);
-    }
-
-    // Botswana or any other — try generic with API brackets,
-    // then try BURS fallback
-    if (Array.isArray(ctx.brackets) && ctx.brackets.length > 0) {
-      return calculateGenericPayE(monthlyTaxableIncome, ctx);
-    }
-
-    if (["BW", "BOT", "BOTSWANA"].includes(country)) {
-      // Use BURS fallback brackets
-      const ctxWithBrackets = { ...ctx, brackets: BURS_FALLBACK_BRACKETS };
-      return calculateGenericPayE(monthlyTaxableIncome, ctxWithBrackets);
-    }
-
-    // No matching authority
-    return 0;
-  }
-
-  function renderPayrollPayslipPreview() {
-    const employee=payrollPreviewSelectedEmployee();
-
-    const employeeName=employee
-      ?[employee.first_name,employee.last_name]
-        .filter(Boolean)
-        .join(" ")
-      :"Select employee";
+      setTxt(
+        "payrollPreviewEmployerTotal",
+        payrollPreviewMoney(0)
+      );
+    };
 
     setTxt(
       "payrollPreviewEmployeeName",
-      employeeName||"Select employee"
+      employeeName
     );
 
     setTxt(
       "payrollPreviewEmployeeNo",
-      employee?.employee_no||"—"
+      employee?.employee_no || "—"
     );
-
-    const payBasisLabels={
-      monthly:"Monthly Salary",
-      hourly:"Hours × Rate",
-      daily:"Days × Rate",
-      quantity:"Quantity × Rate",
-      commission_only:"Commission Only",
-    };
 
     setTxt(
       "payrollPreviewPayBasis",
-      payBasisLabels[$("payrollPayBasis")?.value]||
-        "Monthly Salary"
+      payBasisLabels[
+        $("payrollPayBasis")?.value
+      ] || "Monthly Salary"
     );
+
+    const effectiveFrom =
+      $("payrollPaySetupEffectiveFrom")?.value;
 
     setTxt(
       "payrollPreviewEffectiveFrom",
-      $("payrollPaySetupEffectiveFrom")?.value
-        ?formatPayrollDate(
-          $("payrollPaySetupEffectiveFrom").value
-        )
-        :"—"
+      effectiveFrom
+        ? formatPayrollDate(effectiveFrom)
+        : "—"
     );
 
-    const company=window.CURRENT_COMPANY||{};
+    const company =
+      window.CURRENT_COMPANY || {};
 
     setTxt(
       "payrollPreviewCompanyName",
-      company.name||"Company"
+      company.name || "Company"
     );
 
     setTxt(
       "payrollPreviewCompanyDetails",
       [
         company.company_reg_no
-          ?`Reg No: ${company.company_reg_no}`
-          :"",
+          ? `Reg No: ${company.company_reg_no}`
+          : "",
         company.vat
-          ?`VAT No: ${company.vat}`
-          :"",
-      ].filter(Boolean).join(" | ")||
-        "Payroll preview"
+          ? `VAT No: ${company.vat}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" | ") || "Payroll preview"
     );
 
-    const companyLogo=$("payrollPreviewCompanyLogo");
-    const logoFallback=$("payrollPreviewLogoFallback");
-    const companyName=company.name||"Company";
+    const companyLogo =
+      $("payrollPreviewCompanyLogo");
 
-    const initials=companyName
-      .replace(/[^A-Za-z\s]/g,"")
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(w=>w[0].toUpperCase())
-      .slice(0,3)
-      .join("");
+    const logoFallback =
+      $("payrollPreviewLogoFallback");
 
-    if(companyLogo&&company.logo_url){
-      companyLogo.src=company.logo_url;
+    const initials =
+      (company.name || "Company")
+        .replace(/[^A-Za-z\s]/g, "")
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(w => w[0].toUpperCase())
+        .slice(0, 3)
+        .join("");
+
+    if (companyLogo && company.logo_url) {
+      companyLogo.src = company.logo_url;
       companyLogo.classList.remove("hidden");
       logoFallback?.classList.add("hidden");
-    }else{
+    } else {
       companyLogo?.classList.add("hidden");
 
-      if(logoFallback){
-        logoFallback.textContent=initials||"F";
-        logoFallback.classList.remove("hidden");
+      if (logoFallback) {
+        logoFallback.textContent =
+          initials || "F";
+
+        logoFallback.classList.remove(
+          "hidden"
+        );
       }
 
-      if(!company.logo_url&&cid()){
+      if (!company.logo_url && cid()) {
         apiFetch(`/api/companies/${cid()}`)
-          .then(c=>{
-            if(c?.logo_url){
-              companyLogo.src=c.logo_url;
-              companyLogo.classList.remove("hidden");
-              logoFallback?.classList.add("hidden");
+          .then(c => {
+            if (!c?.logo_url) return;
 
-              if(window.CURRENT_COMPANY){
-                window.CURRENT_COMPANY.logo_url=
-                  c.logo_url;
-              }
+            companyLogo.src = c.logo_url;
+
+            companyLogo.classList.remove(
+              "hidden"
+            );
+
+            logoFallback?.classList.add(
+              "hidden"
+            );
+
+            if (window.CURRENT_COMPANY) {
+              window.CURRENT_COMPANY.logo_url =
+                c.logo_url;
             }
           })
-          .catch(()=>{});
+          .catch(() => {});
       }
     }
 
-    const earnings=
-      collectPayrollPreviewLines("earning")
-        .filter(line=>line.code!=="BASIC");
-
-    const deductions=
-      collectPayrollPreviewLines("deduction");
-
-    const benefits=
-      collectPayrollPreviewLines("benefit");
-
-    const contributions=
-      collectPayrollPreviewLines("contribution");
-
-    const basicPay=payrollPreviewBasicPay();
-
-    const basicEarning={
-      code:"BASIC",
-      name:
-        $("payrollBasicEarningTypeId")
-          ?.selectedOptions?.[0]
-          ?.textContent?.trim()||
-        "Basic Salary",
-      amount:basicPay,
-    };
-
-    const earningLines=
-      basicPay>0
-        ?[basicEarning,...earnings]
-        :earnings;
-
-    const cashGross=earningLines.reduce(
-      (total,line)=>
-        total+Number(line.amount||0),
-      0
-    );
-
-    const taxableBenefits=benefits
-      .filter(line=>line.taxable!==false)
-      .reduce(
-        (total,line)=>
-          total+Number(line.amount||0),
-        0
-      );
-
-    const taxableEmployerContributions=
-      contributions
-        .filter(line=>
-          line.source==="benefit_plan"
-        )
-        .reduce(
-          (total,line)=>
-            total+Number(line.amount||0),
-          0
-        );
-
-    const grossPay=
-      cashGross+
-      taxableBenefits;
-
-    const taxableRemuneration=
-      grossPay+
-      taxableEmployerContributions;
-
-    const payeTreatment=
-      $("payrollPayTaxTreatment")?.value||
-      "standard";
-
-    let calculatedPaye=0;
-
-    if(payeTreatment==="manual"){
-      calculatedPaye=Number(
-        $("payrollManualPayeAmount")?.value||0
-      );
-
-    }else if(payeTreatment==="exempt"){
-      calculatedPaye=0;
-
-    }else{
-      let taxableIncome=taxableRemuneration;
-
-      const pensionDeductions=
-        deductions.filter(d=>
-          /PENSION|RETIREMENT|RA_/i.test(
-            `${d.code||""} ${d.name||""}`
-          )
-        );
-
-      const employeeRetirementContribution=
-        pensionDeductions.reduce(
-          (sum,d)=>
-            sum+Number(d.amount||0),
-          0
-        );
-
-      const employerRetirementContribution=
-        contributions
-          .filter(c=>
-            c.source==="benefit_plan"&&
-            [
-              "defined_contribution",
-              "defined_benefit",
-            ].includes(
-              String(c.source_plan_type||"")
-            )
-          )
-          .reduce(
-            (sum,c)=>
-              sum+Number(c.amount||0),
-            0
-          );
-
-      const retirementDeduction=
-        employeeRetirementContribution+
-        employerRetirementContribution;
-
-      taxableIncome-=retirementDeduction;
-
-      if(taxableIncome<0){
-        taxableIncome=0;
-      }
-
-      calculatedPaye=
-        calculatePreviewPaye(taxableIncome);
+    if (!employee?.id) {
+      clearPreview();
+      return;
     }
 
-    const deductionLines=
-      deductions.filter(
-        d=>d.code!=="PAYE"
-      );
+    const calendars =
+      Array.isArray(payrollState?.calendars)
+        ? payrollState.calendars
+        : [];
 
-    if(calculatedPaye>0){
-      deductionLines.push({
-        code:"PAYE",
-        name:"PAYE",
-        amount:calculatedPaye,
-      });
+    if (!calendars.length) {
+      clearPreview(
+        "No payroll period available"
+      );
+      return;
     }
 
-    const payeNoteEl=
-      $("payrollPreviewPayeNote");
+    const calendarSelect =
+      $("payrollPreviewCalendarId");
 
-    if(payeNoteEl){
-      if(
-        payeTreatment==="standard"&&
-        calculatedPaye>0
-      ){
-        const ctx=payrollState.taxContext;
-        const authorityName=
-          ctx?.authority_code||"Tax Authority";
-        const yearLabel=
-          ctx?.tax_year_label||"current year";
+    const selectedCalendarId =
+      calendarSelect?.value;
 
-        payeNoteEl.textContent=
-          `Bracket-based (${authorityName}, ${yearLabel})`;
-
-        payeNoteEl.classList.remove("hidden");
-
-      }else if(payeTreatment==="exempt"){
-        payeNoteEl.textContent="PAYE exempt";
-        payeNoteEl.classList.remove("hidden");
-
-      }else if(payeTreatment==="manual"){
-        payeNoteEl.textContent="Manually entered";
-        payeNoteEl.classList.remove("hidden");
-
-      }else{
-        payeNoteEl.classList.add("hidden");
-      }
+    if (!selectedCalendarId) {
+      clearPreview(
+        "Select a payroll period"
+      );
+      return;
     }
 
-    const totalDeductions=
-      deductionLines.reduce(
-        (total,line)=>
-          total+Number(line.amount||0),
-        0
+    const payrollCalendar =
+      calendars.find(
+        calendar =>
+          String(calendar?.id) ===
+          String(selectedCalendarId)
       );
 
-    const employerTotal=
-      contributions.reduce(
-        (total,line)=>
-          total+Number(line.amount||0),
-        0
+    if (!payrollCalendar) {
+      clearPreview(
+        "Selected payroll period not found"
       );
+      return;
+    }
 
-    const netPay=
-      grossPay-totalDeductions;
+    const calendarId =
+      payrollCalendar.id;
 
-    renderPayrollPreviewLines(
-      "payrollPreviewEarnings",
-      earningLines
-    );
+    const periodStart =
+      payrollCalendar.period_start;
 
-    renderPayrollPreviewLines(
-      "payrollPreviewDeductions",
-      deductionLines
+    const periodEnd =
+      payrollCalendar.period_end;
+
+    setTxt(
+      "payrollPreviewPeriod",
+      "Calculating..."
     );
 
     setTxt(
       "payrollPreviewGross",
-      payrollPreviewMoney(grossPay)
+      "..."
     );
 
     setTxt(
       "payrollPreviewDeductionsTotal",
-      payrollPreviewMoney(totalDeductions)
+      "..."
     );
 
     setTxt(
       "payrollPreviewNet",
-      payrollPreviewMoney(netPay)
+      "..."
     );
 
     setTxt(
       "payrollPreviewEmployerTotal",
-      payrollPreviewMoney(employerTotal)
+      "..."
     );
+
+    try {
+      const params =
+        new URLSearchParams({
+          calendar_id: String(calendarId),
+        });
+
+      const result =
+        await apiFetch(
+          ENDPOINTS.payroll.payslipLitePreview(
+            cid(),
+            employee.id,
+            params.toString()
+          )
+        );
+
+      if (!result) {
+        throw new Error(
+          "No payroll preview was returned."
+        );
+      }
+
+      setTxt(
+        "payrollPreviewEmployeeName",
+        result.employee_name ||
+          employeeName ||
+          "Select employee"
+      );
+
+      setTxt(
+        "payrollPreviewEmployeeNo",
+        result.employee_no ||
+          employee.employee_no ||
+          "—"
+      );
+
+      setTxt(
+        "payrollPreviewPayBasis",
+        payBasisLabels[
+          result.setup?.pay_basis ||
+          $("payrollPayBasis")?.value
+        ] || "Monthly Salary"
+      );
+
+      setTxt(
+        "payrollPreviewEffectiveFrom",
+        result.setup?.effective_from
+          ? formatPayrollDate(
+              result.setup.effective_from
+            )
+          : effectiveFrom
+            ? formatPayrollDate(
+                effectiveFrom
+              )
+            : "—"
+      );
+
+      const previewCalendar =
+        result.payroll_calendar;
+
+      const previewStart =
+        previewCalendar?.period_start ||
+        periodStart;
+
+      const previewEnd =
+        previewCalendar?.period_end ||
+        periodEnd;
+
+      setTxt(
+        "payrollPreviewPeriod",
+        previewStart && previewEnd
+          ? `${formatPayrollDate(
+              previewStart
+            )} – ${formatPayrollDate(
+              previewEnd
+            )}`
+          : "Current setup"
+      );
+
+      renderPayrollPreviewLines(
+        "payrollPreviewEarnings",
+        Array.isArray(result.earnings)
+          ? result.earnings
+          : []
+      );
+
+      renderPayrollPreviewLines(
+        "payrollPreviewDeductions",
+        Array.isArray(result.deductions)
+          ? result.deductions
+          : []
+      );
+
+      const gross =
+        Number(result.gross || 0);
+
+      const totalDeductions =
+        Number(
+          result.total_deductions || 0
+        );
+
+      const netPay =
+        Number(result.net_pay || 0);
+
+      const employerTotal =
+        Number(
+          result.employer_contributions || 0
+        );
+
+      setTxt(
+        "payrollPreviewGross",
+        payrollPreviewMoney(gross)
+      );
+
+      setTxt(
+        "payrollPreviewDeductionsTotal",
+        payrollPreviewMoney(
+          totalDeductions
+        )
+      );
+
+      setTxt(
+        "payrollPreviewNet",
+        payrollPreviewMoney(netPay)
+      );
+
+      setTxt(
+        "payrollPreviewEmployerTotal",
+        payrollPreviewMoney(
+          employerTotal
+        )
+      );
+
+      const payeNoteEl =
+        $("payrollPreviewPayeNote");
+
+      if (payeNoteEl) {
+        const method =
+          result.tax_result?.method;
+
+        const authority =
+          result.tax_authority_code ||
+          result.tax_result?.authority_code ||
+          "Tax Authority";
+
+        const year =
+          result.tax_year_label ||
+          result.tax_result?.tax_year_label ||
+          "current year";
+
+        if (method === "manual") {
+          payeNoteEl.textContent =
+            "Manually entered";
+
+          payeNoteEl.classList.remove(
+            "hidden"
+          );
+        } else if (method === "exempt") {
+          payeNoteEl.textContent =
+            "PAYE exempt";
+
+          payeNoteEl.classList.remove(
+            "hidden"
+          );
+        } else if (method) {
+          payeNoteEl.textContent =
+            `Backend calculated (${authority}, ${year})`;
+
+          payeNoteEl.classList.remove(
+            "hidden"
+          );
+        } else {
+          payeNoteEl.classList.add(
+            "hidden"
+          );
+        }
+      }
+
+    } catch (error) {
+      console.error(
+        "Payslip Lite preview failed:",
+        error
+      );
+
+      clearPreview(
+        "Preview unavailable"
+      );
+
+      $("payrollPreviewPayeNote")
+        ?.classList.add("hidden");
+    }
+  }
+
+  function getPayrollPreviewCalendar() {
+    const calendars = Array.isArray(
+      payrollState?.calendars
+    )
+      ? payrollState.calendars
+      : [];
+
+    if (!calendars.length) {
+      return null;
+    }
+
+    // Prefer an open calendar.
+    const openCalendars = calendars
+      .filter(calendar =>
+        String(calendar?.status || "")
+          .toLowerCase() === "open"
+      )
+      .sort((a, b) =>
+        String(b?.period_end || "")
+          .localeCompare(
+            String(a?.period_end || "")
+          )
+      );
+
+    if (openCalendars.length) {
+      return openCalendars[0];
+    }
+
+    // Otherwise use the most recent calendar.
+    return [...calendars]
+      .sort((a, b) =>
+        String(b?.period_end || "")
+          .localeCompare(
+            String(a?.period_end || "")
+          )
+      )[0] || null;
   }
 
   function renderPayrollMasterSetup(){
@@ -76010,33 +82160,11 @@ async function saveEditModal() {
         settings.payment_adjustment;
     }
 
-    // FIX 2 — Safe month formatting.
-    // The backend may return payroll_start_date as various formats:
-    //   "2025-07-01",  "2025-07-01T00:00:00",
-    //   a Python date object,  or even null.
-    // We need a reliable "yyyy-MM" for <input type="month">.
-    if ($("payrollFirstPeriodMonth")) {
-      const val = settings.payroll_start_date;
-      if (val) {
-        const s = String(val);
-        // Try ISO "2025-07-01" or "2025-07-01T..."
-        const isoMatch = s.match(/^(\d{4})-(\d{2})/);
-        if (isoMatch) {
-          $("payrollFirstPeriodMonth").value =
-            isoMatch[1] + "-" + isoMatch[2];
-        }
-        // If not ISO, try parsing as Date
-        else {
-          const d = new Date(s);
-          if (!isNaN(d.getTime())) {
-            const mm = String(d.getMonth() + 1).padStart(2, "0");
-            const yyyy = d.getFullYear();
-            $("payrollFirstPeriodMonth").value =
-              yyyy + "-" + mm;
-          }
-        }
-      }
-      // If no value at all, leave blank — don't set anything.
+    // Payroll calendar start date.
+    // This must be YYYY-MM-DD because the field is <input type="date">.
+    if ($("payrollFirstPeriodDate")) {
+      $("payrollFirstPeriodDate").value =
+        payrollToInputDate(settings.payroll_start_date);
     }
 
     renderPayrollSchedulePreview();
@@ -76145,6 +82273,18 @@ async function saveEditModal() {
         : Array.isArray(res?.items) ? res.items
         : Array.isArray(res) ? res
         : payrollState.calendars;
+
+      console.log(
+        "PAYROLL CALENDARS LOADED:",
+        payrollState.calendars
+      );
+
+      console.log(
+        "PAYROLL PERIOD SELECT:",
+        $("payrollPreviewCalendarId")
+      );
+
+      renderPayrollPreviewCalendarOptions();
       renderPayrollCalendars();
     } catch (e) {
       console.warn("Failed to load payroll calendars:", e);
@@ -77397,9 +83537,22 @@ async function saveEditModal() {
 
     if(tab==="employees"){
       renderPayrollEmployees();
+
+      loadPayrollCalendars().catch(error =>
+        showPayrollStatus(
+          error?.message ||
+          "Payroll periods could not be loaded.",
+          "error"
+        )
+      );
+
     }else if(tab==="calendars"){
-      loadPayrollCalendars().catch(error=>
-        showPayrollStatus(error?.message||"Calendars could not be loaded.","error")
+      loadPayrollCalendars().catch(error =>
+        showPayrollStatus(
+          error?.message ||
+          "Calendars could not be loaded.",
+          "error"
+        )
       );
     }else if(tab==="runs"){
       loadPayrollRuns().catch(error=>
@@ -80654,20 +86807,24 @@ async function saveEditModal() {
     });
   }
 
-  async function loadPayrollStatutoryWorkspace(){
-    const params={
+
+  async function loadPayrollStatutoryWorkspace() {
+    const params = {
       authority_code:
-        $("payrollStatutoryAuthorityFilter")?.value||"",
+        $("payrollStatutoryAuthorityFilter")?.value || "",
+
       return_type:
-        $("payrollStatutoryTypeFilter")?.value||"",
+        $("payrollStatutoryTypeFilter")?.value || "",
+
       status:
-        $("payrollStatutoryStatusFilter")?.value||"",
+        $("payrollStatutoryStatusFilter")?.value || "",
     };
 
-    const [mappings,returns]=await Promise.all([
+    const [mappings, returns] = await Promise.all([
       apiFetch(
         ENDPOINTS.payroll.statutoryMappings(cid())
       ),
+
       apiFetch(
         ENDPOINTS.payroll.statutoryReturns(
           cid(),
@@ -80676,196 +86833,2261 @@ async function saveEditModal() {
       ),
     ]);
 
-    payrollState.statutory.mappings=
-      mappings?.items||[];
-    payrollState.statutory.returns=
-      returns?.items||[];
+    console.log(
+      "STATUTORY RETURNS RAW RESPONSE",
+      returns
+    );
 
-    renderPayrollStatutoryReturns();
+    console.log(
+      "STATUTORY CALENDAR RAW",
+      returns?.calendar
+    );
 
-    if (window.__taxFiling && typeof window.__taxFiling.init === 'function') {
-        // This ensures the PAYE Export panel is ready
-        window.__taxFiling.init();
-    }
+    console.log(
+      "STATUTORY CALENDAR COUNT",
+      Array.isArray(returns?.calendar)
+        ? returns.calendar.length
+        : "NOT ARRAY"
+    );
 
-    // ✅ ADD THIS: Initialize your PAYE Tax Filing module
-    if (typeof initPayeTaxFiling === 'function') {
-      initPayeTaxFiling({
-        companyId: cid(),
-        containerId: 'payeTaxFilingContainer',  // New div ID
-        endpointBase: '/api/companies/' + cid() + '/tax-filing'
-      });
+
+    payrollState.statutory.mappings =
+      mappings?.items || [];
+
+    payrollState.statutory.returns =
+      returns?.items || [];
+
+    payrollState.statutory.calendar =
+      returns?.calendar || [];
+
+    console.log(
+      "STATUTORY RETURNS RESPONSE",
+      returns
+    );
+
+    console.log(
+      "STATUTORY RETURNS ITEMS",
+      payrollState.statutory.returns
+    );
+
+    console.log(
+      "PAYROLL STATUTORY CALENDAR",
+      payrollState.statutory.calendar
+    );
+
+    renderPayrollStatutoryDashboard();
+
+    if (
+      window.__taxFiling &&
+      typeof window.__taxFiling.init === "function"
+    ) {
+      window.__taxFiling.init();
     }
   }
 
-  /**
-   * Render Statutory Returns Tab with Integrated PAYE Tax Filing
-   * ==============================================================
-   * This function renders BOTH:
-   * 1. The existing statutory returns table (other returns like UIF, SDL, etc.)
-   * 2. The NEW PAYE Tax Filing export section (SARS/RSL/BURS)
-   */
-  function renderPayrollStatutoryReturns() {
-    // ─── EXISTING: Original Statutory Returns Table ───
-    const el = $("payrollStatutoryReturnsList");
-    const items = payrollState.statutory.returns || [];
+  window.loadPayrollStatutoryWorkspace=
+    loadPayrollStatutoryWorkspace;
 
+  function populatePayrollStatutoryFilingMonths() {
+    const select = $("taxFilingMonth");
+
+    if (!select) {
+      return;
+    }
+
+    const calendar =
+      payrollState.statutory.calendar || [];
+
+    const months = [];
+
+    [...calendar]
+      .filter(period =>
+        period &&
+        period.period_start
+      )
+      .sort((a, b) => {
+        const dateA =
+          new Date(a.period_start);
+
+        const dateB =
+          new Date(b.period_start);
+
+        return dateA - dateB;
+      })
+      .forEach(period => {
+        const date =
+          new Date(period.period_start);
+
+        if (Number.isNaN(date.getTime())) {
+          return;
+        }
+
+        const year =
+          date.getUTCFullYear();
+
+        const month =
+          String(
+            date.getUTCMonth() + 1
+          ).padStart(2, "0");
+
+        const monthValue =
+          `${year}-${month}`;
+
+        if (
+          !months.includes(monthValue)
+        ) {
+          months.push(monthValue);
+        }
+      });
+
+    select.innerHTML = `
+      <option value="">
+        All Filing Months
+      </option>
+
+      ${months.map(monthValue => {
+        const [year, month] =
+          monthValue.split("-");
+
+        const date =
+          new Date(
+            Date.UTC(
+              Number(year),
+              Number(month) - 1,
+              1
+            )
+          );
+
+        const label =
+          date.toLocaleString(
+            "en-US",
+            {
+              month: "long",
+              year: "numeric",
+              timeZone: "UTC"
+            }
+          );
+
+        return `
+          <option value="${esc(monthValue)}">
+            ${esc(label)}
+          </option>
+        `;
+      }).join("")}
+    `;
+  }
+
+  function openPayrollStatutoryAuthority(authority){
+    payrollState.statutory.selectedAuthority=authority;
+
+    const el=$("payeTaxFilingSection");
+    if(!el)return;
+
+    const now=new Date();
+    const year=now.getFullYear();
+
+    el.innerHTML=`
+        <div class="payroll-card">
+
+            <div class="payroll-section-navigation">
+                <button
+                    type="button"
+                    class="payroll-back-btn"
+                    data-statutory-dashboard
+                >
+                    ← Back to Statutory Dashboard
+                </button>
+            </div>
+
+            <div class="payroll-card-head">
+                <div>
+                    <h3>${esc(authority)} Statutory Returns</h3>
+                    <p class="payroll-muted">
+                        Manage ${esc(authority)} payroll statutory filings.
+                    </p>
+                </div>
+            </div>
+
+            <div
+                id="taxFilingTopBar"
+                style="
+                    display:flex;
+                    align-items:flex-end;
+                    justify-content:space-between;
+                    gap:16px;
+                    flex-wrap:wrap;
+                    margin-top:20px;
+                    padding:16px;
+                    background:#f8fafc;
+                    border:1px solid #e2e8f0;
+                    border-radius:10px;
+                "
+            >
+
+                <div
+                    style="
+                        display:flex;
+                        gap:12px;
+                        flex-wrap:wrap;
+                        align-items:flex-end;
+                    "
+                >
+
+                    <div>
+                        <label
+                            style="
+                                display:block;
+                                font-size:12px;
+                                font-weight:600;
+                                margin-bottom:5px;
+                            "
+                        >
+                            Tax Year
+                        </label>
+
+                        <select
+                            id="taxFilingYear"
+                            class="payroll-input"
+                        >
+                            <option value="">
+                                Select tax year
+                            </option>
+
+                            <option value="${year}/${String(year+1).slice(-2)}">
+                                ${year}/${String(year+1).slice(-2)}
+                            </option>
+
+                            <option value="${year-1}/${String(year).slice(-2)}">
+                                ${year-1}/${String(year).slice(-2)}
+                            </option>
+
+                            <option value="${year-2}/${String(year-1).slice(-2)}">
+                                ${year-2}/${String(year-1).slice(-2)}
+                            </option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label
+                            style="
+                                display:block;
+                                font-size:12px;
+                                font-weight:600;
+                                margin-bottom:5px;
+                            "
+                        >
+                            Filing Month
+                        </label>
+
+                        <select
+                            id="taxFilingMonth"
+                            class="payroll-input"
+                        >
+                            <option value="">
+                                Select month
+                            </option>
+
+                            ${Array.from({length:12},(_,i)=>{
+                                const m=String(i+1).padStart(2,"0");
+                                const name=new Date(
+                                    2000,
+                                    i,
+                                    1
+                                ).toLocaleString(
+                                    "en-US",
+                                    {month:"long"}
+                                );
+
+                                return `
+                                    <option value="${m}">
+                                        ${name}
+                                    </option>
+                                `;
+                            }).join("")}
+                        </select>
+
+                      <div class="payroll-filter-group">
+                          <label for="payrollStatutoryTypeFilter">Return Type</label>
+                          <select id="payrollStatutoryTypeFilter">
+                              <option value="EMP201">EMP201 — Monthly Employer Declaration</option>
+                              <option value="EMP501">EMP501 — Employer Reconciliation</option>
+                              <option value="IRP5">IRP5 / IT3(a) — Tax Certificates</option>
+                          </select>
+                      </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        id="taxFilingPreviewBtn"
+                        class="payroll-primary"
+                        onclick="window.previewPayeData()"
+                    >
+                        👁 Preview Returns
+                    </button>
+
+                </div>
+
+                <div
+                    id="taxFilingActions"
+                    style="
+                        display:none;
+                        gap:8px;
+                        flex-wrap:wrap;
+                    "
+                >
+
+                    <button
+                        type="button"
+                        class="payroll-secondary"
+                        onclick="window.validatePayeFiling?.()"
+                    >
+                        ✓ Validate
+                    </button>
+
+                    <button
+                        type="button"
+                        class="payroll-secondary"
+                        onclick="window.exportPayeFiling(event,'csv')"
+                    >
+                        Export CSV
+                    </button>
+
+                    <button
+                        type="button"
+                        class="payroll-secondary"
+                        onclick="window.exportPayeFiling(event,'xlsx')"
+                    >
+                        Export Excel
+                    </button>
+
+                    <button
+                        type="button"
+                        class="payroll-secondary"
+                        onclick="window.exportPayeFiling(event,'xml')"
+                    >
+                        Export XML
+                    </button>
+
+                </div>
+
+            </div>
+
+            <div
+                id="taxFilingTopHint"
+                class="payroll-muted"
+                style="margin-top:10px;"
+            >
+                Select a tax year and filing month, then preview the return.
+            </div>
+
+            <div
+                id="taxFilingValidationResults"
+                style="
+                    display:none;
+                    margin-top:12px;
+                "
+            ></div>
+
+            <div
+                id="taxFilingPreview"
+                style="
+                    display:none;
+                    margin-top:20px;
+                "
+            ></div>
+
+            <div
+                id="statutoryReturnsList"
+                style="
+                    margin-top:24px;
+                "
+            ></div>
+
+        </div>
+    `;
+
+    populatePayrollStatutoryFilingMonths();
+    el.querySelector("[data-statutory-dashboard]")
+        ?.addEventListener("click",()=>{
+            renderPayrollStatutoryDashboard();
+        });
+
+    renderPayrollStatutoryReturns("statutoryReturnsList");
+
+    if(
+        window.__taxFiling &&
+        typeof window.__taxFiling.init==="function"
+    ){
+        window.__taxFiling.init();
+    }
+  }
+
+  window.openPayrollStatutoryAuthority=
+    openPayrollStatutoryAuthority;
+
+
+  function renderPayrollStatutoryDashboard(){
+    const el=$("payeTaxFilingSection");
+    if(!el)return;
+
+    const items=payrollState.statutory.returns||[];
+
+    const authorities=[
+        { 
+            code:"SARS", 
+            name:"South African Revenue Service", 
+            description:"EMP201, EMP501, IRP5 / IT3(a), PAYE, UIF, SDL and ETI", 
+        },
+        {
+            code:"RSL",
+            name:"Revenue Services Lesotho",
+            description:"PAYE",
+        },
+        {
+            code:"BURS",
+            name:"Botswana Unified Revenue Service",
+            description:"PAYE",
+        },
+    ];
+
+    el.innerHTML=`
+        <div class="payroll-card">
+            <div class="payroll-card-head">
+                <div>
+                    <h3>Statutory Returns Dashboard</h3>
+                    <p class="payroll-muted">
+                        Select a statutory authority to manage its returns.
+                    </p>
+                </div>
+            </div>
+
+            <div style="
+                display:grid;
+                grid-template-columns:
+                    repeat(auto-fit,minmax(240px,1fr));
+                gap:16px;
+                margin-top:20px;
+            ">
+                ${authorities.map(a=>{
+                    const count=items.filter(item=>
+                        String(item.authority_code||"")
+                            .toUpperCase()===a.code
+                    ).length;
+
+                    return `
+                        <button
+                            type="button"
+                            class="payroll-card"
+                            data-statutory-authority="${a.code}"
+                            style="
+                                text-align:left;
+                                cursor:pointer;
+                                border:1px solid #e2e8f0;
+                                background:#fff;
+                            "
+                        >
+                            <div style="
+                                font-size:18px;
+                                font-weight:700;
+                                margin-bottom:6px;
+                            ">
+                                ${esc(a.code)}
+                            </div>
+
+                            <div style="
+                                font-weight:600;
+                                color:#334155;
+                            ">
+                                ${esc(a.name)}
+                            </div>
+
+                            <div class="payroll-muted">
+                                ${esc(a.description)}
+                            </div>
+
+                            <div style="
+                                margin-top:14px;
+                                font-size:13px;
+                                color:#64748b;
+                            ">
+                                ${count}
+                                return${count===1?"":"s"}
+                            </div>
+                        </button>
+                    `;
+                }).join("")}
+            </div>
+        </div>
+    `;
+
+    el.querySelectorAll(
+        "[data-statutory-authority]"
+    ).forEach(btn=>{
+        btn.addEventListener("click",()=>{
+            openPayrollStatutoryAuthority(
+                btn.dataset.statutoryAuthority
+            );
+        });
+    });
+  }
+
+  function renderPayrollStatutoryReturns(targetId) {
+    /*
+     * Default target is the returns list mount inside the
+     * authority view — NOT #payeTaxFilingSection, which is
+     * owned by renderPayrollStatutoryDashboard(). Bare calls
+     * (e.g. from tax-filing-dashboard-integration.js) can no
+     * longer overwrite the statutory dashboard; they only
+     * fill #statutoryReturnsList when the authority view is
+     * open. All element ids are untouched.
+     */
+    const el = $(targetId || "statutoryReturnsList");
     if (!el) return;
 
-    el.innerHTML = items.length ? `
-        <div class="payroll-table-wrap">
-          <table class="payroll-preview-table">
-            <thead>
-              <tr>
-                <th>Return</th>
-                <th>Authority</th>
-                <th>Type</th>
-                <th>Period</th>
-                <th>Employees</th>
-                <th>Employee Amount</th>
-                <th>Employer Amount</th>
-                <th>Total Payable</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${items.map(item => `
-                <tr>
-                  <td><strong>${esc(item.return_no)}</strong></td>
-                  <td>${esc(item.authority_code)}</td>
-                  <td>${esc(cap(String(item.return_type || "").replaceAll("_", " ")))}</td>
-                  <td>
-                    ${esc(String(item.period_start || "").slice(0, 10))}
-                    –
-                    ${esc(String(item.period_end || "").slice(0, 10))}
-                  </td>
-                  <td>${Number(item.employee_count || 0)}</td>
-                  <td class="num">${money(item.employee_amount)}</td>
-                  <td class="num">${money(item.employer_amount)}</td>
-                  <td class="num"><strong>${money(item.total_payable)}</strong></td>
-                  <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
-                  <td>
-                    <button class="payroll-link" data-open-statutory-return="${item.id}">Open</button>
-                  </td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        </div>
-      ` : `<p class="payroll-muted">No statutory returns found.</p>`;
+    const items = payrollState.statutory.returns || [];
 
-    el.querySelectorAll("[data-open-statutory-return]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        openPayrollStatutoryReturn(Number(btn.dataset.openStatutoryReturn));
-      });
+    const authority =
+        payrollState.statutory.selectedAuthority ||
+        window.__taxFiling?.getSelectedAuthority?.() ||
+        "SARS";
+
+    const yearEl = $("taxFilingYear");
+    const monthEl = $("taxFilingMonth");
+
+    const selectedYear = yearEl ? String(yearEl.value || "") : "";
+    const selectedMonth = monthEl ? String(monthEl.value || "") : "";
+
+    let filteredItems = items.filter(item => {
+        return String(item.authority_code || "")
+            .toUpperCase() === authority.toUpperCase();
     });
 
-    // ═══════════════════════════════════════════════════════════════
-    // 🆕 UPDATED: PAYE TAX FILING SECTION
-    // ═══════════════════════════════════════════════════════════════
+    const returnTypeEl=
+        $("payrollStatutoryTypeFilter");
 
-    let payeContainer = document.getElementById('payeTaxFilingSection');
-    if (!payeContainer) {
-      payeContainer = document.createElement('div');
-      payeContainer.id = 'payeTaxFilingSection';
-      payeContainer.className = 'paye-tax-filing-section';
-      el.parentNode.appendChild(payeContainer);
+    const selectedReturnType=
+        returnTypeEl
+            ? String(returnTypeEl.value || "")
+            : "";
+
+    if(selectedReturnType){
+        filteredItems=
+            filteredItems.filter(item=>{
+                const itemType=
+                    String(
+                        item.return_type ||
+                        item.return_code ||
+                        item.form_type ||
+                        ""
+                    ).toUpperCase();
+
+                return itemType ===
+                    selectedReturnType.toUpperCase();
+            });
     }
 
-    // 1. Dynamic Authority Selection (Auto-detect company setting)
-    const companyAuthority = payrollState.settings?.tax_authority_code || 'SARS';
-    
-    // 2. Dynamic Year Generation (Last 3 years)
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth() + 1;
-    // Tax years in Southern Africa usually span two calendar years (e.g., 2024/2025)
-    // If we are before March (for SARS), we are still in the previous tax year cycle
-    const baseYear = currentMonth < 3 ? currentYear - 1 : currentYear;
-    
-    let yearOptions = '';
-    for (let i = 0; i < 3; i++) {
-      const yr = baseYear - i;
-      const label = `${yr}/${yr + 1}`;
-      yearOptions += `<option value="${label}">${label}</option>`;
+    if (selectedYear) {
+        filteredItems = filteredItems.filter(item => {
+            const periodStart =
+                String(item.period_start || "").slice(0, 10);
+
+            const periodEnd =
+                String(item.period_end || "").slice(0, 10);
+
+            if (selectedYear.includes('/')) {
+                const [year1, year2] = selectedYear.split('/');
+
+                return (
+                    periodStart.startsWith(year1) ||
+                    periodEnd.startsWith(year1) ||
+                    periodStart.startsWith(year2) ||
+                    periodEnd.startsWith(year2)
+                );
+            }
+
+            return (
+                periodStart.startsWith(selectedYear) ||
+                periodEnd.startsWith(selectedYear)
+            );
+        });
     }
 
-    payeContainer.innerHTML = `
-        <div style="margin: 28px 0 20px 0; padding: 16px 20px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #3b82f6;">
-          <h3 style="margin: 0 0 6px 0; font-size: 15px; font-weight: 600; color: #334155; display: flex; align-items: center; gap: 8px;">
-            📋 PAYE Tax Filing Export
-          </h3>
-          <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
-            Generate compliant export files including **Employee Benefits** for SARS (South Africa), RSL (Lesotho), or BURS (Botswana).
-          </p>
+    if (
+        selectedMonth &&
+        selectedMonth !== "All Filing Months" &&
+        !selectedMonth.toLowerCase().includes("all")
+    ) {
+        filteredItems = filteredItems.filter(item => {
+            const periodStart =
+                String(item.period_start || "").slice(0, 10);
+
+            const periodEnd =
+                String(item.period_end || "").slice(0, 10);
+
+            const startMonth = periodStart.slice(0, 7);
+            const endMonth = periodEnd.slice(0, 7);
+
+            return (
+                startMonth === selectedMonth ||
+                endMonth === selectedMonth
+            );
+        });
+    }
+
+    el.innerHTML = `
+        <div class="payroll-card">
+
+            <div class="payroll-card-head">
+                <div>
+                    <h3>${esc(authority)} Statutory Returns</h3>
+
+                    <p class="payroll-muted">
+                        Manage statutory returns and clear
+                        recognised payroll PAYE liabilities.
+                    </p>
+                </div>
+            </div>
+
+            ${
+                filteredItems.length
+                    ? `
+                        <div class="payroll-table-wrap">
+                            <table class="payroll-preview-table">
+                                <thead>
+                                    <tr>
+                                        <th>Return</th>
+                                        <th>Period</th>
+                                        <th>Filed Date</th>
+                                        <th>Employees</th>
+                                        <th>PAYE / Employee</th>
+                                        <th>Employer</th>
+                                        <th>Total Payable</th>
+                                        <th>Status</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    ${filteredItems.map(item => {
+                                        const status =
+                                            String(
+                                                item.status || ""
+                                            ).toLowerCase();
+
+                                        const displayStatus =
+                                            status === "submitted"
+                                                ? "Filed"
+                                                : cap(status);
+
+                                        const canView = [
+                                            "draft",
+                                            "calculated",
+                                            "approved",
+                                            "submitted",
+                                            "accepted",
+                                            "rejected",
+                                            "cancelled"
+                                        ].includes(status);
+
+                                        const canRevise = [
+                                            "submitted",
+                                            "accepted",
+                                            "rejected"
+                                        ].includes(status);
+
+                                        const filedDate =
+                                            item.submission_date ||
+                                            item.reporting_date ||
+                                            null;
+
+                                        return `
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        ${esc(
+                                                            item.return_no
+                                                        )}
+                                                    </strong>
+                                                </td>
+
+                                                <td>
+                                                    ${esc(
+                                                        String(
+                                                            item.period_start || ""
+                                                        ).slice(0, 10)
+                                                    )}
+                                                    –
+                                                    ${esc(
+                                                        String(
+                                                            item.period_end || ""
+                                                        ).slice(0, 10)
+                                                    )}
+                                                </td>
+
+                                                <td>
+                                                    ${
+                                                        filedDate
+                                                            ? esc(
+                                                                String(
+                                                                    filedDate
+                                                                ).slice(0, 10)
+                                                            )
+                                                            : "—"
+                                                    }
+                                                </td>
+
+                                                <td>
+                                                    ${
+                                                        Number(
+                                                            item.employee_count || 0
+                                                        )
+                                                    }
+                                                </td>
+
+                                                <td class="num">
+                                                    ${money(
+                                                        item.employee_amount
+                                                    )}
+                                                </td>
+
+                                                <td class="num">
+                                                    ${money(
+                                                        item.employer_amount
+                                                    )}
+                                                </td>
+
+                                                <td class="num">
+                                                    <strong>
+                                                        ${money(
+                                                            item.total_payable
+                                                        )}
+                                                    </strong>
+                                                </td>
+
+                                                <td>
+                                                    <span class="payroll-pill">
+                                                        ${esc(
+                                                            displayStatus
+                                                        )}
+                                                    </span>
+                                                </td>
+
+                                                <td>
+                                                    <div style="
+                                                        display:flex;
+                                                        gap:8px;
+                                                        align-items:center;
+                                                    ">
+                                                        ${
+                                                            canView
+                                                                ? `
+                                                                    <button
+                                                                        class="payroll-link"
+                                                                        data-view-statutory-return="${item.id}"
+                                                                    >
+                                                                        View
+                                                                    </button>
+                                                                `
+                                                                : ""
+                                                        }
+
+                                                        ${
+                                                            canRevise
+                                                                ? `
+                                                                    <button
+                                                                        class="payroll-link"
+                                                                        data-revise-statutory-return="${item.id}"
+                                                                    >
+                                                                        Revise
+                                                                    </button>
+                                                                `
+                                                                : ""
+                                                        }
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join("")}
+                                </tbody>
+                            </table>
+                        </div>
+                    `
+                    : `
+                        <div style="
+                            padding:35px 20px;
+                            text-align:center;
+                            color:#94a3b8;
+                            background:#f8fafc;
+                            border:1px dashed #cbd5e1;
+                            border-radius:8px;
+                        ">
+                            <div style="
+                                font-size:28px;
+                                margin-bottom:8px;
+                            ">
+                                📭
+                            </div>
+
+                            <strong style="color:#475569;">
+                                No ${esc(authority)}
+                                statutory returns found
+                            </strong>
+
+                            <p style="margin:6px 0 0;">
+                                Try another tax year or filing month.
+                            </p>
+                        </div>
+                    `
+            }
+
         </div>
 
-        <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; padding: 18px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
-          
-          <!-- Authority Selector -->
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Tax Authority</label>
-            <select id="payeAuthoritySelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 200px; color: #334155;">
-              <option value="SARS" ${companyAuthority === 'SARS' ? 'selected' : ''}>🇿🇦 SARS — South Africa</option>
-              <option value="RSL" ${companyAuthority === 'RSL' ? 'selected' : ''}>🇱🇸 RSL — Lesotho</option>
-              <option value="BURS" ${companyAuthority === 'BURS' ? 'selected' : ''}>🇧🇼 BURS — Botswana</option>
-            </select>
-          </div>
+        ${
+            (
+                authority.toUpperCase() === "SARS" &&
+                selectedReturnType.toUpperCase() === "EMP201"
+            ) ||
+            authority.toUpperCase() === "RSL" ||
+            authority.toUpperCase() === "BURS"
+                            ? `
+                    <div
+                        id="payrollPayeClearingSection"
+                        style="margin-top:20px;"
+                    >
+                        <div class="payroll-card">
 
-          <!-- Period Selector -->
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Tax Year</label>
-            <select id="payePeriodSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 140px; color: #334155;">
-              ${yearOptions}
-            </select>
-          </div>
+                            <div class="payroll-card-head">
+                                <div>
+                                    <h3>PAYE Clearing</h3>
 
-          <!-- Format Selector -->
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <label style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Export Format</label>
-            <select id="payeFormatSelect" style="padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; min-width: 130px; color: #334155;">
-              <option value="csv">📄 CSV (Standard)</option>
-              <option value="xlsx">📊 Excel (.xlsx)</option>
-              <option value="xml">🔧 SARS XML (e-Filing)</option>
-            </select>
-          </div>
+                                    <p class="payroll-muted">
+                                        Clear PAYE recognised from
+                                        posted payroll runs when
+                                        payment is made to the
+                                        tax authority.
+                                    </p>
+                                </div>
 
-          <!-- Action Buttons -->
-          <div style="display: flex; gap: 10px; align-items: flex-end; margin-left: auto;">
-            <button id="payePreviewBtn" style="padding: 9px 18px; background: #ffffff; color: #475569; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
-              👁️ Preview Data
-            </button>
-            
-            <button id="payeExportBtn" style="padding: 9px 18px; background: #1e293b; color: #ffffff; border: 1px solid #0f172a; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
-              📥 Export Filing
-            </button>
-          </div>
-        </div>
+                                <span class="payroll-pill">
+                                    PAYE Payable
+                                </span>
+                            </div>
 
-        <div id="payePreviewArea" style="margin-top: 16px; min-height: 120px; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <div style="text-align: center; color: #94a3b8; padding: 30px;">
-            <p style="margin: 0 0 8px 0; font-size: 32px;">📊</p>
-            <p style="margin: 0; font-size: 14px;">Select parameters and click Preview to verify tax data</p>
-          </div>
-        </div>
-      `;
+                            <div
+                                id="payrollPayeClearingContent"
+                                class="payroll-empty-state"
+                            >
+                                <strong>
+                                    Select a payroll run
+                                </strong>
 
-    // Attach event listeners using the proper "FinSage" pattern
-    $("payePreviewBtn")?.addEventListener("click", () => {
-      if (typeof window.previewPayeData === 'function') {
-        window.previewPayeData();
-      } else {
-        showPayrollStatus("Tax Filing module not fully loaded.", "error");
-      }
+                                <p>
+                                    Select a posted payroll run below
+                                    to view and clear its PAYE liability.
+                                </p>
+                            </div>
+
+                        </div>
+                    </div>
+                `
+                : ""
+        }
+    `;
+
+    el.querySelectorAll(
+        "[data-view-statutory-return]"
+    ).forEach(btn => {
+        btn.addEventListener("click", () => {
+            window.openPayrollStatutoryReturn(
+                Number(
+                    btn.dataset.viewStatutoryReturn
+                )
+            );
+        });
     });
 
-    $("payeExportBtn")?.addEventListener("click", (e) => {
-      if (typeof window.exportPayeFiling === 'function') {
-        window.exportPayeFiling(e);
-      } else {
-        showPayrollStatus("Tax Filing module not fully loaded.", "error");
-      }
+    el.querySelectorAll(
+        "[data-revise-statutory-return]"
+    ).forEach(btn => {
+        btn.addEventListener("click", () => {
+            revisePayrollStatutoryReturn(
+                Number(
+                    btn.dataset.reviseStatutoryReturn
+                )
+            );
+        });
     });
+
+    if (
+        authority.toUpperCase() === "SARS" ||
+        authority.toUpperCase() === "RSL" ||
+        authority.toUpperCase() === "BURS"
+    ) {
+        renderPayrollPayeClearingSelector();
+    }
+  }
+
+  function renderPayrollSarsEmp201Preview(data){
+    const el=$("payrollStatutoryPreview");
+    if(!el)return;
+
+    const rows=
+        Array.isArray(data?.employees)
+            ? data.employees
+            : Array.isArray(data?.rows)
+                ? data.rows
+                : [];
+
+    const totals=
+        data?.totals ||
+        {};
+
+    el.innerHTML=`
+        <div class="payroll-card">
+
+            <div class="payroll-card-head">
+                <div>
+                    <h3>SARS EMP201</h3>
+
+                    <p class="payroll-muted">
+                        Monthly Employer Declaration
+                    </p>
+                </div>
+
+                <span class="payroll-pill">
+                    SARS
+                </span>
+            </div>
+
+            <div class="payroll-table-wrap">
+                <table class="payroll-preview-table">
+
+                    <thead>
+                        <tr>
+                            <th>Employee</th>
+                            <th>Gross Remuneration</th>
+                            <th>PAYE</th>
+                            <th>Employee UIF</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        ${
+                            rows.length
+                                ? rows.map(row=>`
+                                    <tr>
+
+                                        <td>
+                                            ${esc(
+                                                row.employee_name ||
+                                                row.employee ||
+                                                row.employee_no ||
+                                                ""
+                                            )}
+                                        </td>
+
+                                        <td class="num">
+                                            ${money(
+                                                row.gross_remuneration ??
+                                                row.gross_income ??
+                                                0
+                                            )}
+                                        </td>
+
+                                        <td class="num">
+                                            ${money(
+                                                row.paye ??
+                                                row.paye_deducted ??
+                                                0
+                                            )}
+                                        </td>
+
+                                        <td class="num">
+                                            ${money(
+                                                row.uif_employee ??
+                                                row.uif_deducted ??
+                                                0
+                                            )}
+                                        </td>
+
+                                    </tr>
+                                `).join("")
+                                :`
+                                    <tr>
+                                        <td colspan="4">
+                                            No employee payroll data
+                                            available for this EMP201.
+                                        </td>
+                                    </tr>
+                                `
+                        }
+                    </tbody>
+
+                </table>
+            </div>
+
+            <div
+                class="payroll-benefit-summary-grid"
+                style="margin-top:20px;"
+            >
+
+                <div>
+                    <span>PAYE</span>
+                    <strong>
+                        ${money(
+                            totals.paye ??
+                            totals.paye_deducted ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>UIF — Employee</span>
+                    <strong>
+                        ${money(
+                            totals.uif_employee ??
+                            totals.uif_deducted ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>UIF — Employer</span>
+                    <strong>
+                        ${money(
+                            totals.uif_employer ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>UIF Total</span>
+                    <strong>
+                        ${money(
+                            totals.uif_total ??
+                            (
+                                Number(
+                                    totals.uif_employee ??
+                                    totals.uif_deducted ??
+                                    0
+                                ) +
+                                Number(
+                                    totals.uif_employer ??
+                                    0
+                                )
+                            )
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>SDL</span>
+                    <strong>
+                        ${money(
+                            totals.sdl ??
+                            totals.sdl_deducted ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>ETI</span>
+                    <strong>
+                        ${money(
+                            totals.eti ??
+                            totals.eti_amount ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Total Amount Payable to SARS</span>
+                    <strong>
+                        ${money(
+                            totals.total_sars_liability ??
+                            totals.total_payable ??
+                            0
+                        )}
+                    </strong>
+                </div>
+
+            </div>
+
+        </div>
+    `;
+  }
+
+  async function renderPayrollPayeClearingSelector(){
+    const el=$("payrollPayeClearingContent");
+
+    if(!el){
+        return;
+    }
+
+    const companyId=cid();
+
+    el.innerHTML=`
+        <div class="payroll-empty-state">
+            <strong>Loading payroll runs&hellip;</strong>
+            <p>
+                Fetching posted payroll runs with PAYE liabilities.
+            </p>
+        </div>
+    `;
+
+    try{
+        const res=await apiFetch(
+            ENDPOINTS.payroll.runs(companyId)
+        );
+
+        const runs=
+            res?.items||
+            res?.runs||
+            res?.data||
+            [];
+
+        const postedRuns=Array.isArray(runs)
+            ? runs.filter(run=>
+                String(run.status||"").toLowerCase()==="posted"
+            )
+            : [];
+
+        if(!postedRuns.length){
+            el.innerHTML=`
+                <div class="payroll-empty-state">
+                    <strong>No posted payroll runs</strong>
+
+                    <p>
+                        PAYE can only be cleared after a payroll
+                        run has been posted.
+                    </p>
+                </div>
+            `;
+
+            return;
+        }
+
+        el.innerHTML=`
+            <div class="payroll-field">
+                <label for="payrollPayeRunSelector">
+                    Payroll Run
+                </label>
+
+                <select
+                    id="payrollPayeRunSelector"
+                    class="payroll-input"
+                >
+                    <option value="">
+                        Select posted payroll run
+                    </option>
+
+                    ${postedRuns.map(run=>`
+                        <option value="${esc(String(run.id))}">
+                            ${esc(
+                                run.run_no||
+                                `Payroll Run ${run.id}`
+                            )}
+                            ${
+                                run.period_start
+                                    ? ` — ${esc(
+                                        String(
+                                            run.period_start
+                                        ).slice(0,10)
+                                    )}`
+                                    : ""
+                            }
+                            ${
+                                run.period_end
+                                    ? ` – ${esc(
+                                        String(
+                                            run.period_end
+                                        ).slice(0,10)
+                                    )}`
+                                    : ""
+                            }
+                        </option>
+                    `).join("")}
+                </select>
+            </div>
+
+            <div
+                id="payrollPayeRunClearing"
+                style="margin-top:20px;"
+            >
+                <div class="payroll-empty-state">
+                    <strong>
+                        Select a payroll run
+                    </strong>
+
+                    <p>
+                        Select a posted payroll run to view
+                        its PAYE liability and payment history.
+                    </p>
+                </div>
+            </div>
+        `;
+
+        const selector=$(
+            "payrollPayeRunSelector"
+        );
+
+        selector?.addEventListener(
+            "change",
+            async()=>{
+                const runId=selector.value;
+
+                if(!runId){
+                    const target=$(
+                        "payrollPayeRunClearing"
+                    );
+
+                    if(target){
+                        target.innerHTML=`
+                            <div class="payroll-empty-state">
+                                <strong>
+                                    Select a payroll run
+                                </strong>
+
+                                <p>
+                                    Select a posted payroll run to
+                                    view its PAYE liability.
+                                </p>
+                            </div>
+                        `;
+                    }
+
+                    return;
+                }
+
+                await loadPayrollPayeRunClearing(
+                    Number(runId)
+                );
+            }
+        );
+
+    }catch(error){
+        el.innerHTML=`
+            <div class="notice error">
+                ${esc(
+                    error?.message||
+                    "Payroll runs could not be loaded."
+                )}
+            </div>
+        `;
+    }
+  }
+
+
+  async function loadPayrollPayeRunClearing(runId) {
+    const companyId = cid();
+
+    if (!runId) {
+        throw new Error("Select a payroll run first.");
+    }
+
+    payrollState.payeClearing =
+        payrollState.payeClearing || {};
+
+    payrollState.payeClearing.selectedRunId =
+        Number(runId);
+
+    payrollState.payeClearing.preview =
+        null;
+
+    payrollState.payeClearing.balance =
+        null;
+
+    payrollState.payeClearing.history =
+        [];
+
+    payrollState.payeClearing.banks =
+        [];
+
+    console.log(
+        "[PAYE CLEARING] START",
+        {
+            companyId,
+            runId
+        }
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 1. Load the payroll run.
+     * ---------------------------------------------------------
+     */
+
+    const runResponse =
+        await apiFetch(
+            ENDPOINTS.payroll.runs(
+                companyId,
+                runId
+            )
+        );
+
+    console.log(
+        "[PAYE CLEARING] RAW RUN RESPONSE",
+        runResponse
+    );
+
+    const run =
+        runResponse?.run ||
+        runResponse?.data?.run ||
+        runResponse?.data ||
+        runResponse ||
+        {};
+
+    console.log(
+        "[PAYE CLEARING] RESOLVED RUN",
+        run
+    );
+
+    payrollState.selectedRun =
+        run;
+
+    console.log(
+        "[PAYE CLEARING] RUN LOADED",
+        run
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 2. Load existing PAYE payment history.
+     * ---------------------------------------------------------
+     */
+
+    let history = [];
+
+    try {
+        const historyResponse =
+            await apiFetch(
+                ENDPOINTS.payroll.liabilityPayments(
+                    companyId,
+                    runId,
+                    {
+                        liability_type: "paye"
+                    }
+                )
+            );
+
+        history =
+            historyResponse?.items ||
+            historyResponse?.payments ||
+            historyResponse?.data ||
+            [];
+
+        if (!Array.isArray(history)) {
+            history = [];
+        }
+
+        payrollState.payeClearing.history =
+            history;
+
+        console.log(
+            "[PAYE CLEARING] HISTORY LOADED",
+            history
+        );
+
+    } catch (error) {
+
+        console.warn(
+            "[PAYE CLEARING] HISTORY LOAD FAILED",
+            error
+        );
+
+        history = [];
+
+        payrollState.payeClearing.history =
+            [];
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 3. Load bank accounts.
+     * ---------------------------------------------------------
+     */
+
+    let banks = [];
+
+    try {
+        const bankResponse =
+            await refreshBankAccounts();
+
+        banks =
+            Array.isArray(bankResponse)
+                ? bankResponse
+                : [];
+
+        payrollState.payeClearing.banks =
+            banks;
+
+        console.log(
+            "[PAYE CLEARING] BANKS LOADED",
+            banks
+        );
+
+    } catch (error) {
+
+        console.error(
+            "[PAYE CLEARING] BANK ACCOUNT LOAD FAILED",
+            error
+        );
+
+        throw error;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 4. Normalize payroll payment date.
+     *
+     * IMPORTANT:
+     *
+     * Do NOT use:
+     *
+     * String(run.payment_date).slice(0,10)
+     *
+     * because an RFC date such as:
+     *
+     * Tue, 29 Apr 2025 00:00:00 GMT
+     *
+     * becomes:
+     *
+     * Tue, 29 Ap
+     *
+     * which is invalid for input[type=date].
+     * ---------------------------------------------------------
+     */
+
+    const rawPaymentDate =
+        run?.payment_date ??
+        run?.pay_date ??
+        run?.payroll_payment_date ??
+        run?.paymentDate ??
+        run?.payDate ??
+        run?.payrollPaymentDate ??
+        run?.period_end ??
+        run?.periodEnd ??
+        null;
+
+    const paymentDate =
+        normalizePayrollDate(
+            rawPaymentDate
+        );
+
+    console.log(
+        "[PAYE CLEARING] PAYMENT DATE",
+        {
+            rawPaymentDate,
+            normalized: paymentDate,
+            run
+        }
+    );
+
+    if (!paymentDate) {
+        console.warn(
+            "[PAYE CLEARING] No payment date returned by payroll run.",
+            run
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 5. Select the bank account.
+     *
+     * We need a bank account because the backend preview
+     * calculates the actual Dr liability / Cr bank entry.
+     * ---------------------------------------------------------
+     */
+
+    const configuredBankAccountId =
+        payrollState.payeClearing.bankAccountId ||
+        "";
+
+    let bankAccountId =
+        configuredBankAccountId;
+
+    /*
+     * If no previously selected bank exists,
+     * use the first available bank account.
+     */
+    if (!bankAccountId && banks.length) {
+
+        bankAccountId =
+            banks[0]?.id ||
+            banks[0]?.account_id ||
+            "";
+    }
+
+    console.log(
+        "[PAYE CLEARING] BANK ACCOUNT SELECTED",
+        bankAccountId
+    );
+
+    if (!bankAccountId) {
+
+        console.warn(
+            "[PAYE CLEARING] No bank account available; liability preview cannot be calculated."
+        );
+
+        /*
+         * Render what we have so the user can select a bank.
+         */
+        renderPayrollPayeRunClearing(
+            run,
+            history,
+            banks
+        );
+
+        return;
+    }
+
+    payrollState.payeClearing.bankAccountId =
+        Number(bankAccountId);
+
+    /*
+     * ---------------------------------------------------------
+     * 6. NOW calculate the PAYE liability.
+     *
+     * THIS IS THE REQUEST THAT WAS MISSING.
+     *
+     * IMPORTANT:
+     * Do NOT send amount.
+     *
+     * The backend will calculate:
+     *
+     * recognized PAYE liability
+     * -
+     * previous PAYE payments
+     * =
+     * outstanding_amount
+     * ---------------------------------------------------------
+     */
+
+    console.log(
+        "[PAYE CLEARING] REQUESTING LIABILITY PREVIEW",
+        {
+            companyId,
+            runId,
+            liability_type: "paye",
+            bank_account_id:
+                Number(bankAccountId),
+            payment_date:
+                paymentDate
+        }
+    );
+
+    const liabilityResponse =
+        await apiFetch(
+            ENDPOINTS.payroll.liabilityPaymentPreview(
+                companyId,
+                runId
+            ),
+            {
+                method: "POST",
+
+                body: JSON.stringify({
+                    liability_type:
+                        "paye",
+
+                    bank_account_id:
+                        Number(bankAccountId),
+
+                    payment_date:
+                        paymentDate
+                })
+            }
+        );
+
+    console.log(
+        "[PAYE CLEARING] LIABILITY RESPONSE",
+        liabilityResponse
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 7. Extract preview.
+     * ---------------------------------------------------------
+     */
+
+    const preview =
+        liabilityResponse?.preview ||
+        liabilityResponse?.data ||
+        liabilityResponse ||
+        {};
+
+    payrollState.payeClearing.balance =
+        preview;
+
+    payrollState.payeClearing.preview =
+        preview;
+
+    const outstanding =
+        Number(
+            preview.outstanding_amount ??
+            preview.remaining_amount ??
+            0
+        );
+
+    console.log(
+        "[PAYE CLEARING] OUTSTANDING PAYE",
+        outstanding
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 8. Render the clearing screen.
+     * ---------------------------------------------------------
+     */
+
+    renderPayrollPayeRunClearing(
+        run,
+        history,
+        banks
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 9. Restore selected bank account.
+     * ---------------------------------------------------------
+     */
+
+    const bankEl =
+        $("payrollPayeBankAccount");
+
+    if (bankEl && bankAccountId) {
+        bankEl.value =
+            String(bankAccountId);
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 10. Set the payment date.
+     * ---------------------------------------------------------
+     */
+
+    const dateEl =
+        $("payrollPayePaymentDate");
+
+    if (dateEl) {
+        dateEl.value =
+            paymentDate;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 11. PREFILL PAYMENT AMOUNT.
+     * ---------------------------------------------------------
+     */
+
+    const amountEl =
+        $("payrollPayeAmount");
+
+    if (amountEl) {
+
+        amountEl.value =
+            outstanding > 0
+                ? outstanding.toFixed(2)
+                : "";
+
+        console.log(
+            "[PAYE CLEARING] AMOUNT PREFILLED",
+            amountEl.value
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 12. Update outstanding amount display if present.
+     * ---------------------------------------------------------
+     */
+
+    const outstandingEl =
+        $("payrollPayeClearingOutstanding");
+
+    if (outstandingEl) {
+
+        outstandingEl.innerHTML =
+            outstanding > 0
+
+                ? `
+                    <strong>
+                        PAYE outstanding amount
+                    </strong>
+
+                    <p>
+                        ${money(outstanding)}
+                    </p>
+                  `
+
+                : `
+                    <strong>
+                        No outstanding PAYE
+                    </strong>
+
+                    <p>
+                        There is no outstanding PAYE payable
+                        for this payroll run.
+                    </p>
+                  `;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 13. Update payment message.
+     * ---------------------------------------------------------
+     */
+
+    const messageEl =
+        $("payrollPayePaymentMessage");
+
+    if (messageEl) {
+
+        messageEl.innerHTML =
+            outstanding > 0
+
+                ? `
+                    PAYE payable outstanding:
+                    <strong>
+                        ${money(outstanding)}
+                    </strong>
+                  `
+
+                : `
+                    There is no outstanding PAYE
+                    payable for this payroll run.
+                  `;
+    }
+
+    console.log(
+        "[PAYE CLEARING] COMPLETE",
+        {
+            runId,
+            paymentDate,
+            bankAccountId,
+            outstanding
+        }
+    );
+  }
+
+
+function renderPayrollPayeRunClearing(
+    run,
+    history,
+    banks
+){
+    const target=$(
+        "payrollPayeRunClearing"
+    );
+
+    if(!target){
+        return;
+    }
+
+    const payments=
+        Array.isArray(history)
+            ? history
+            : [];
+
+    const paymentDate =
+        normalizePayrollDate(
+            run?.payment_date
+        );
+
+    const postedPayments=
+        payments.filter(payment=>
+            String(
+                payment.status||""
+            ).toLowerCase()==="posted"
+        );
+
+    const paidAmount=
+        postedPayments.reduce(
+            (total,payment)=>
+                total+
+                Number(
+                    payment.amount||0
+                ),
+            0
+        );
+
+    target.innerHTML=`
+        <div class="payroll-card">
+
+            <div class="payroll-card-head">
+                <div>
+                    <h3>
+                        PAYE Liability
+                    </h3>
+
+                    <p class="payroll-muted">
+                        ${
+                            esc(
+                                run?.run_no||
+                                `Payroll Run ${run?.id||""}`
+                            )
+                        }
+                    </p>
+                </div>
+
+                <span class="payroll-pill">
+                    Posted
+                </span>
+            </div>
+
+            <div class="payroll-preview-meta">
+
+                <div>
+                    <span>Payroll Run</span>
+
+                    <strong>
+                        ${esc(
+                            run?.run_no||
+                            `#${run?.id||""}`
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Payroll Payment Date</span>
+
+                    <strong>
+                        ${formatPayrollDate(
+                            paymentDate
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Payments Already Posted</span>
+
+                    <strong>
+                        ${money(paidAmount)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Liability</span>
+
+                    <strong>
+                        PAYE Payable
+                    </strong>
+                </div>
+
+            </div>
+
+            <div
+                class="payroll-empty-state"
+                style="margin-top:16px;"
+            >
+                <strong>
+                    PAYE payment
+                </strong>
+
+                <p>
+                    Enter the actual amount paid to the
+                    tax authority. The server will validate
+                    it against the PAYE liability recognised
+                    by this payroll run and previous payments.
+                </p>
+            </div>
+
+            <div class="payroll-form-grid">
+
+                <div class="payroll-field">
+
+                    <label for="payrollPayePaymentDate">
+                        Payment Date
+                    </label>
+
+                    <input
+                        id="payrollPayePaymentDate"
+                        class="payroll-input"
+                        type="date"
+                        value="${esc(paymentDate)}"
+                    >
+
+                </div>
+
+                <div class="payroll-field">
+
+                    <label for="payrollPayeBankAccount">
+                        Bank Account
+                    </label>
+
+                    <select
+                        id="payrollPayeBankAccount"
+                        class="payroll-input"
+                    >
+
+                        <option value="">
+                            Select bank account
+                        </option>
+
+                        ${banks.map(bank=>{
+                            const accountNumber=
+                                bank.account_number
+                                    ? `••••${String(
+                                        bank.account_number
+                                    ).slice(-4)}`
+                                    : "";
+
+                            const label=[
+                                bank.bank_name,
+                                bank.account_name,
+                                accountNumber
+                            ]
+                            .filter(Boolean)
+                            .join(" — ");
+
+                            return `
+                                <option
+                                    value="${esc(
+                                        String(bank.id)
+                                    )}"
+                                >
+                                    ${esc(
+                                        label||
+                                        bank.name||
+                                        `Bank Account ${bank.id}`
+                                    )}
+                                </option>
+                            `;
+                        }).join("")}
+
+                    </select>
+
+                </div>
+
+                <div class="payroll-field">
+
+                    <label for="payrollPayeAmount">
+                        Payment Amount
+                    </label>
+
+                    <input
+                        id="payrollPayeAmount"
+                        class="payroll-input"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        placeholder="0.00"
+                    >
+
+                </div>
+
+                <div class="payroll-field">
+
+                    <label for="payrollPayeReference">
+                        Payment Reference
+                    </label>
+
+                    <input
+                        id="payrollPayeReference"
+                        class="payroll-input"
+                        type="text"
+                        maxlength="150"
+                        placeholder="Tax authority payment reference"
+                    >
+
+                </div>
+
+                <div
+                    class="payroll-field"
+                    style="grid-column:1/-1;"
+                >
+
+                    <label for="payrollPayeNotes">
+                        Notes
+                    </label>
+
+                    <textarea
+                        id="payrollPayeNotes"
+                        class="payroll-input"
+                        rows="3"
+                        placeholder="Optional payment notes"
+                    ></textarea>
+
+                </div>
+
+            </div>
+
+            <div class="payroll-run-actions">
+
+                <button
+                    id="payrollPayePreviewBtn"
+                    type="button"
+                    class="payroll-primary"
+                >
+                    Preview PAYE Payment
+                </button>
+
+                <button
+                    id="payrollPayePostBtn"
+                    type="button"
+                    class="payroll-primary"
+                    disabled
+                >
+                    Post PAYE Payment
+                </button>
+
+            </div>
+
+            <div
+                id="payrollPayePaymentPreview"
+                class="hidden"
+                style="margin-top:20px;"
+            ></div>
+
+        </div>
+
+        <div
+            class="payroll-card"
+            style="margin-top:20px;"
+        >
+
+            <div class="payroll-card-head">
+
+                <div>
+                    <h3>
+                        PAYE Payment History
+                    </h3>
+
+                    <p class="payroll-muted">
+                        Payments already posted against
+                        this payroll run.
+                    </p>
+                </div>
+
+            </div>
+
+            <div id="payrollPayePaymentHistory">
+
+                ${
+                    payments.length
+                        ? `
+                            <div class="payroll-table-wrap">
+
+                                <table class="payroll-preview-table">
+
+                                    <thead>
+                                        <tr>
+                                            <th>
+                                                Date
+                                            </th>
+
+                                            <th>
+                                                Reference
+                                            </th>
+
+                                            <th>
+                                                Bank
+                                            </th>
+
+                                            <th>
+                                                Status
+                                            </th>
+
+                                            <th class="num">
+                                                Amount
+                                            </th>
+
+                                            <th>
+                                                Journal
+                                            </th>
+                                        </tr>
+                                    </thead>
+
+                                    <tbody>
+
+                                        ${
+                                            payments.map(
+                                                payment=>`
+                                                    <tr>
+
+                                                        <td>
+                                                            ${formatPayrollDate(
+                                                                payment.payment_date
+                                                            )}
+                                                        </td>
+
+                                                        <td>
+                                                            ${esc(
+                                                                payment.reference||
+                                                                "—"
+                                                            )}
+                                                        </td>
+
+                                                        <td>
+                                                            ${esc(
+                                                                payment.bank_account_code||
+                                                                payment.bank_account_name||
+                                                                "—"
+                                                            )}
+                                                        </td>
+
+                                                        <td>
+                                                            <span class="payroll-pill">
+                                                                ${esc(
+                                                                    cap(
+                                                                        payment.status||
+                                                                        ""
+                                                                    )
+                                                                )}
+                                                            </span>
+                                                        </td>
+
+                                                        <td class="num">
+                                                            ${money(
+                                                                payment.amount
+                                                            )}
+                                                        </td>
+
+                                                        <td>
+                                                            ${
+                                                                payment.journal_id
+                                                                    ? `#${esc(
+                                                                        String(
+                                                                            payment.journal_id
+                                                                        )
+                                                                    )}`
+                                                                    : "—"
+                                                            }
+                                                        </td>
+
+                                                    </tr>
+                                                `
+                                            ).join("")
+                                        }
+
+                                    </tbody>
+
+                                </table>
+
+                            </div>
+                        `
+                        : `
+                            <div class="payroll-empty-state">
+
+                                <strong>
+                                    No PAYE payments posted
+                                </strong>
+
+                                <p>
+                                    This payroll run has not yet
+                                    had a PAYE clearing payment posted.
+                                </p>
+
+                            </div>
+                        `
+                }
+
+            </div>
+
+        </div>
+    `;
+
+    $("payrollPayePreviewBtn")
+        ?.addEventListener(
+            "click",
+            async()=>{
+                try{
+                    await previewPayrollPayePayment();
+                }catch(error){
+                    showPayrollStatus(
+                        error?.message||
+                        "PAYE payment preview failed.",
+                        "error"
+                    );
+                }
+            }
+        );
+
+    $("payrollPayePostBtn")
+        ?.addEventListener(
+            "click",
+            async()=>{
+                try{
+                    await postPayrollPayePayment();
+                }catch(error){
+                    showPayrollStatus(
+                        error?.message||
+                        "PAYE payment could not be posted.",
+                        "error"
+                    );
+                }
+            }
+        );
+  }
+
+  window.loadPayrollStatutoryWorkspace = loadPayrollStatutoryWorkspace;
+  window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
+
+  function generatePayeFilingMonths(authority, taxYear) {
+    const startYear = parseInt(String(taxYear).split('/')[0], 10);
+
+    if (!startYear) return '';
+
+    let months = [];
+
+    if (authority === 'SARS') {
+      months = [
+        ['03', 'March'],
+        ['04', 'April'],
+        ['05', 'May'],
+        ['06', 'June'],
+        ['07', 'July'],
+        ['08', 'August'],
+        ['09', 'September'],
+        ['10', 'October'],
+        ['11', 'November'],
+        ['12', 'December'],
+        ['01', 'January'],
+        ['02', 'February']
+      ];
+    } else if (authority === 'RSL') {
+      months = [
+        ['04', 'April'],
+        ['05', 'May'],
+        ['06', 'June'],
+        ['07', 'July'],
+        ['08', 'August'],
+        ['09', 'September'],
+        ['10', 'October'],
+        ['11', 'November'],
+        ['12', 'December'],
+        ['01', 'January'],
+        ['02', 'February'],
+        ['03', 'March']
+      ];
+    } else {
+      months = [
+        ['07', 'July'],
+        ['08', 'August'],
+        ['09', 'September'],
+        ['10', 'October'],
+        ['11', 'November'],
+        ['12', 'December'],
+        ['01', 'January'],
+        ['02', 'February'],
+        ['03', 'March'],
+        ['04', 'April'],
+        ['05', 'May'],
+        ['06', 'June']
+      ];
+    }
+
+    return months.map(([month, name]) => {
+      const year = ['01', '02', '03'].includes(month)
+        ? startYear + 1
+        : startYear;
+
+      return `<option value="${year}-${month}">${name} ${year}</option>`;
+    }).join('');
   }
 
   async function editPayrollStatutoryReturn(item={}){
@@ -80953,89 +89175,252 @@ async function saveEditModal() {
     );
   }
 
+  async function revisePayrollStatutoryReturn(returnId){
+    if(!returnId)return;
+
+    await apiFetch(
+        ENDPOINTS.payroll.statutoryReturnAction(
+            cid(),
+            returnId,
+            "revise"
+        ),
+        {
+            method:"POST",
+            body:"{}",
+        }
+    );
+
+    await loadPayrollStatutoryWorkspace();
+
+    showPayrollStatus(
+        "Statutory return revision created.",
+        "success"
+    );
+  }
+  
   async function openPayrollStatutoryReturn(returnId){
     const res=await apiFetch(
-      ENDPOINTS.payroll.statutoryReturn(
-        cid(),
-        returnId
-      )
+        ENDPOINTS.payroll.statutoryReturn(cid(),returnId)
     );
 
     const item=res?.data||null;
+    if(!item)return;
+
     payrollState.statutory.selectedReturn=item;
+    payrollState.statutory.view="detail";
+
     renderPayrollStatutoryReturnDetail();
+
+    $("payeTaxFilingSection")
+        ?.scrollIntoView({
+            behavior:"smooth",
+            block:"start",
+        });
   }
 
+  window.openPayrollStatutoryReturn=
+    openPayrollStatutoryReturn;
+
+  function renderPayrollStatutoryPreview(data){
+    const authority=
+        String(
+            payrollState.statutory.selectedAuthority ||
+            ""
+        ).toUpperCase();
+
+    const returnType=
+        String(
+            $("payrollStatutoryTypeFilter")?.value ||
+            "EMP201"
+        ).toUpperCase();
+
+    if(authority==="SARS"){
+
+        if(returnType==="EMP201"){
+            renderPayrollSarsEmp201Preview(data);
+            return;
+        }
+
+        if(returnType==="EMP501"){
+            renderPayrollSarsEmp501Preview(data);
+            return;
+        }
+
+        if(returnType==="IRP5"){
+            renderPayrollSarsIrp5Preview(data);
+            return;
+        }
+
+    }
+
+    if(authority==="RSL"){
+        renderPayrollRslPayePreview(data);
+        return;
+    }
+
+    if(authority==="BURS"){
+        renderPayrollBursPayePreview(data);
+        return;
+    }
+  }
+
+  function renderPayrollStatutoryWorkspace() {
+      const el = $("payeTaxFilingSection");
+
+      if (!el) {
+          console.warn(
+              "[Statutory Workspace] #payeTaxFilingSection not found"
+          );
+          return;
+      }
+
+      const view =
+          payrollState.statutory.view || "list";
+
+      console.log(
+          "[Statutory Workspace] rendering:",
+          view
+      );
+
+      if (view === "detail") {
+          renderPayrollStatutoryReturnDetail();
+          return;
+      }
+
+      if (view === "preview") {
+          renderPayrollStatutoryPreview();
+          return;
+      }
+
+      if (view === "list") {
+          renderPayrollStatutoryReturns(
+              "statutoryReturnsList"
+          );
+      }
+  }
+
+  window.renderPayrollStatutoryWorkspace =
+      renderPayrollStatutoryWorkspace;
+
   function renderPayrollStatutoryReturnDetail(){
-    const el=$("payrollStatutoryReturnDetail");
+    const el = $("payeTaxFilingSection");
     const item=payrollState.statutory.selectedReturn;
     if(!el||!item)return;
 
+    const editableStatus = [
+        "draft",
+        "calculated",
+        "rejected",
+    ].includes(item.status);
+
     const actions=[];
 
-    if(["draft","calculated","rejected"].includes(item.status)){
-      actions.push(["Edit",()=>editPayrollStatutoryReturn(item)]);
-    }
+    if(editableStatus){
+        actions.push([
+            "Edit",
+            ()=>editPayrollStatutoryReturn(item),
+        ]);
 
-    if(["draft","calculated","rejected"].includes(item.status)){
-      actions.push([
-        "Calculate",
-        ()=>calculatePayrollStatutoryReturn(item.id),
-      ]);
+        actions.push([
+            "Calculate",
+            ()=>calculatePayrollStatutoryReturn(item.id),
+        ]);
     }
 
     if(item.status==="calculated"){
-      actions.push([
-        "Approve",
-        ()=>setPayrollStatutoryReturnStatus(
-          item.id,
-          "approve"
-        ),
-      ]);
+        actions.push([
+            "Approve",
+            ()=>setPayrollStatutoryReturnStatus(
+                item.id,
+                "approve"
+            ),
+        ]);
     }
 
     if(item.status==="approved"){
-      actions.push([
-        "Submit",
-        ()=>submitPayrollStatutoryReturn(item),
-      ]);
+        actions.push([
+            "Submit",
+            ()=>submitPayrollStatutoryReturn(item),
+        ]);
     }
 
     if(item.status==="submitted"){
-      actions.push(
-        [
-          "Accept",
-          ()=>setPayrollStatutoryReturnStatus(
-            item.id,
-            "accept"
-          ),
-        ],
-        [
-          "Reject",
-          ()=>rejectPayrollStatutoryReturn(item),
-        ],
-      );
+        actions.push(
+            [
+                "Accept",
+                ()=>setPayrollStatutoryReturnStatus(
+                    item.id,
+                    "accept"
+                ),
+            ],
+            [
+                "Reject",
+                ()=>rejectPayrollStatutoryReturn(item),
+            ],
+        );
     }
 
     if(["calculated","approved","rejected"].includes(item.status)){
-      actions.push([
-        "Return to Draft",
-        ()=>setPayrollStatutoryReturnStatus(
-          item.id,
-          "return-to-draft"
-        ),
-      ]);
+        actions.push([
+            "Return to Draft",
+            ()=>setPayrollStatutoryReturnStatus(
+                item.id,
+                "return-to-draft"
+            ),
+        ]);
     }
 
-    actions.push([
-      "Export",
-      ()=>exportPayrollStatutoryReturn(item),
-    ]);
+    if(["submitted","accepted"].includes(item.status)){
+        actions.push([
+            "Revise",
+            ()=>revisePayrollStatutoryReturn(item.id),
+        ]);
+    }
+
+    /*
+     * Export buttons — one per format. The third tuple
+     * element is rendered as extra attributes on the
+     * button so CSS can target exports via
+     * button[data-export-format] if needed.
+     */
+    actions.push(
+        [
+            "Export XLSX",
+            ()=>exportPayrollStatutoryReturn(
+                item,
+                "xlsx"
+            ),
+            { "data-export-format": "xlsx" },
+        ],
+        [
+            "Export CSV",
+            ()=>exportPayrollStatutoryReturn(
+                item,
+                "csv"
+            ),
+            { "data-export-format": "csv" },
+        ],
+        [
+            "Export XML",
+            ()=>exportPayrollStatutoryReturn(
+                item,
+                "xml"
+            ),
+            { "data-export-format": "xml" },
+        ],
+    );
 
     const lines=item.lines||[];
 
     el.innerHTML=`
       <div class="payroll-card mt-4">
+        <div class="payroll-section-navigation">
+          <button type="button"
+            class="payroll-back-btn"
+            data-statutory-back>
+            ← Back to Returns
+          </button>
+        </div>
         <div class="payroll-card-head">
           <div>
             <h3>
@@ -81051,13 +89436,24 @@ async function saveEditModal() {
           </div>
 
           <div class="payroll-run-actions">
-            ${actions.map((action,index)=>`
-              <button type="button"
-                class="payroll-secondary"
-                data-statutory-action="${index}">
-                ${esc(action[0])}
-              </button>
-            `).join("")}
+            ${actions.map((action,index)=>{
+              const extraAttrs = action[2] || {};
+
+              const extraString = Object
+                .entries(extraAttrs)
+                .map(([name,value]) =>
+                  `${name}="${esc(value)}"`
+                )
+                .join(" ");
+
+              return `
+                <button type="button"
+                  class="payroll-secondary"
+                  data-statutory-action="${index}"
+                  ${extraString}>
+                  ${esc(action[0])}
+                </button>`;
+            }).join("")}
           </div>
         </div>
 
@@ -81124,10 +89520,84 @@ async function saveEditModal() {
     el.querySelectorAll(
       "[data-statutory-action]"
     ).forEach(btn=>{
-      btn.addEventListener("click",()=>{
-        actions[Number(btn.dataset.statutoryAction)]?.[1]?.();
+      btn.addEventListener("click", async ()=>{
+        const handler = actions[
+          Number(btn.dataset.statutoryAction)
+        ]?.[1];
+
+        if(typeof handler!=="function"){
+          return;
+        }
+
+        if(btn.disabled){
+          return;
+        }
+
+        /*
+         * Disable every action button while the
+         * handler runs — prevents double-clicking
+         * a slow export (or double-approving).
+         */
+        const allButtons = el.querySelectorAll(
+          "[data-statutory-action]"
+        );
+
+        allButtons.forEach(b=>{
+          b.disabled = true;
+        });
+
+        try{
+          await handler();
+        }catch(error){
+          console.error(
+            "[STATUTORY ACTION FAILED]",
+            error
+          );
+
+          /*
+           * Hook your toast/notification helper here,
+           * e.g. showToast(error.message, "error")
+           */
+        }finally{
+          allButtons.forEach(b=>{
+            b.disabled = false;
+          });
+        }
       });
     });
+
+    el.querySelector("[data-statutory-back]")
+      ?.addEventListener("click",()=>{
+        closePayrollStatutoryReturn();
+      });
+  }
+
+  function closePayrollStatutoryReturn(){
+    payrollState.statutory.selectedReturn=null;
+    payrollState.statutory.view="list";
+
+    /*
+     * Rebuild the view the user came from so every element
+     * id (taxFilingYear, taxFilingMonth, payrollStatutoryTypeFilter,
+     * taxFilingTopBar, taxFilingActions, taxFilingTopHint,
+     * taxFilingValidationResults, taxFilingPreview,
+     * statutoryReturnsList, payrollPayeClearing*) is restored,
+     * instead of a bare returns table overwriting the whole
+     * section and dropping those ids.
+     */
+    if(payrollState.statutory.selectedAuthority){
+      openPayrollStatutoryAuthority(
+        payrollState.statutory.selectedAuthority
+      );
+    }else{
+      renderPayrollStatutoryDashboard();
+    }
+
+    $("payeTaxFilingSection")
+        ?.scrollIntoView({
+            behavior:"smooth",
+            block:"start",
+        });
   }
 
   async function calculatePayrollStatutoryReturn(returnId){
@@ -81222,25 +89692,243 @@ async function saveEditModal() {
     );
   }
 
-  async function exportPayrollStatutoryReturn(item){
-    if(!item?.id)return;
+  async function downloadPayrollStatutoryReturn(
+    companyId,
+    returnId,
+    format = "xlsx"
+  ) {
+    if (!companyId || !returnId) {
+        throw new Error(
+            "Company ID and statutory return ID are required"
+        );
+    }
 
-    const token=await getReportExportToken(
-      "payroll_statutory_return"
+    format = String(format || "xlsx")
+        .trim()
+        .toLowerCase();
+
+    const SUPPORTED_FORMATS = [
+        "xlsx",
+        "csv",
+        "xml",
+    ];
+
+    if (!SUPPORTED_FORMATS.includes(format)) {
+        throw new Error(
+            `Unsupported export format '${format}'. ` +
+            `Supported: ${SUPPORTED_FORMATS.join(", ")}`
+        );
+    }
+
+    const exportUrl =
+        ENDPOINTS.reports.payrollStatutoryReturnExport(
+            companyId,
+            returnId
+        );
+
+    const url = new URL(
+        exportUrl,
+        window.location.origin
     );
 
-    const url=new URL(
-      ENDPOINTS.reports.payrollStatutoryReturnExport(
-        cid(),
-        item.id
-      ),
-      window.location.origin
+    url.searchParams.set(
+        "format",
+        format
     );
 
-    url.searchParams.set("format","xlsx");
-    url.searchParams.set("export_token",token);
+    console.log(
+        "[EMP201 EXPORT REQUEST]",
+        url.toString()
+    );
 
-    window.open(url.toString(),"_blank");
+    /*
+     * Generate the signed export URL.
+     * This uses the existing report export-token
+     * mechanism instead of manually creating the token.
+     */
+    const signedUrl =
+        await getReportExportUrl(
+            companyId,
+            "payroll_statutory_return",
+            url.toString()
+        );
+
+    console.log(
+        "[EMP201 EXPORT SIGNED URL]",
+        signedUrl
+    );
+
+    const finalUrl =
+        toApiUrl(signedUrl);
+
+    const token =
+        getToken();
+
+    const headers = {};
+
+    if (token) {
+        headers.Authorization =
+            `Bearer ${token}`;
+    }
+
+    const response =
+        await fetch(
+            finalUrl,
+            {
+                method: "GET",
+                headers,
+                credentials: "include",
+            }
+        );
+
+    const contentType =
+        String(
+            response.headers.get(
+                "content-type"
+            ) || ""
+        ).toLowerCase();
+
+    console.log(
+        "[EMP201 EXPORT RESPONSE]",
+        {
+            status: response.status,
+            contentType,
+            url: finalUrl,
+        }
+    );
+
+    if (!response.ok) {
+        const text =
+            await response.text();
+
+        console.error(
+            "[EMP201 EXPORT FAILED]",
+            {
+                status: response.status,
+                body: text,
+            }
+        );
+
+        let message = text;
+
+        try {
+            const parsed =
+                JSON.parse(text);
+
+            message =
+                parsed.error ||
+                parsed.message ||
+                text;
+
+        } catch (_) {}
+
+        throw new Error(
+            `EMP201 export failed (${response.status}): ` +
+            `${String(message).slice(0, 500)}`
+        );
+    }
+
+    const blob =
+        await response.blob();
+
+    if (!blob || blob.size === 0) {
+        throw new Error(
+            "EMP201 export returned an empty file"
+        );
+    }
+
+    const objectUrl =
+        URL.createObjectURL(blob);
+
+    const disposition =
+        response.headers.get(
+            "content-disposition"
+        ) || "";
+
+    const utf8Match =
+        disposition.match(
+            /filename\*=UTF-8''([^;]+)/i
+        );
+
+    const normalMatch =
+        disposition.match(
+            /filename="?([^";]+)"?/i
+        );
+
+    let filename =
+        utf8Match?.[1] ||
+        normalMatch?.[1];
+
+    if (filename) {
+        try {
+            filename =
+                decodeURIComponent(
+                    filename
+                );
+        } catch (_) {}
+    }
+
+    if (!filename) {
+        filename =
+            `EMP201_${companyId}_${returnId}.${format}`;
+    }
+
+    const anchor =
+        document.createElement("a");
+
+    anchor.href =
+        objectUrl;
+
+    anchor.download =
+        filename;
+
+    anchor.style.display =
+        "none";
+
+    document.body.appendChild(
+        anchor
+    );
+
+    anchor.click();
+
+    anchor.remove();
+
+    setTimeout(() => {
+        URL.revokeObjectURL(
+            objectUrl
+        );
+    }, 30000);
+
+    console.log(
+        "[EMP201 EXPORT COMPLETE]",
+        filename
+    );
+
+    return {
+        ok: true,
+        filename,
+        size: blob.size,
+    };
+  }
+
+  async function exportPayrollStatutoryReturn(item) {
+    if (!item?.id) {
+        return;
+    }
+
+    const companyId = cid();
+
+    if (!companyId) {
+        throw new Error(
+            "No active company selected"
+        );
+    }
+
+    await downloadPayrollStatutoryReturn(
+        companyId,
+        item.id,
+        "xlsx"
+    );
   }
 
   function bindPayrollReportsEvents() {
@@ -81831,8 +90519,8 @@ async function saveEditModal() {
       throw new Error("No active company selected.");
     }
 
-    const firstPeriodMonth =
-      $("payrollFirstPeriodMonth")?.value || "";
+    const firstPeriodDate =
+      $("payrollFirstPeriodDate")?.value || "";
 
     const res = await apiFetch(
       ENDPOINTS.payroll.generateCalendars(companyId),
@@ -81840,9 +90528,7 @@ async function saveEditModal() {
         method: "POST",
         body: JSON.stringify({
           periods: 12,
-          from_month: firstPeriodMonth
-            ? `${firstPeriodMonth}-01`
-            : null,
+          from_date: firstPeriodDate || null,
         }),
       }
     );
@@ -81888,8 +90574,8 @@ async function saveEditModal() {
       }
     }
 
-    const firstPeriodMonth =
-      $("payrollFirstPeriodMonth")?.value || "";
+    const firstPeriodDate =
+      $("payrollFirstPeriodDate")?.value || "";
 
     const payload = {
       default_frequency:
@@ -81909,9 +90595,7 @@ async function saveEditModal() {
         $("payrollPaymentAdjustment")?.value || "none",
 
       payroll_start_date:
-        firstPeriodMonth
-          ? `${firstPeriodMonth}-01`
-          : null,
+        firstPeriodDate || null,
 
       calendar_generation_months: 12,
 
@@ -83295,14 +91979,57 @@ async function saveEditModal() {
       catch (e) { showPayrollStatus(e.message, "error"); }
     });
 
-    $("payrollPreviewJournalBtn")?.addEventListener("click", async () => {
-      try { await previewSelectedPayrollJournal(); }
+    $("payrollCalculateRunOverviewBtn")?.addEventListener("click", async () => {
+      try { await calculateSelectedPayrollRun(); }
       catch (e) { showPayrollStatus(e.message, "error"); }
     });
 
-    $("payrollPostRunBtn")?.addEventListener("click", async () => {
-      try { await previewSelectedPayrollJournal(); }
+    $("payrollSubmitRunOverviewBtn")?.addEventListener(
+      "click",
+      async (event) => {
+        console.log("SUBMIT FOR APPROVAL CLICKED", event);
+
+        try {
+          await submitSelectedPayrollRun();
+        } catch (e) {
+          console.error("SUBMIT FOR APPROVAL FAILED", e);
+          showPayrollStatus(e.message, "error");
+        }
+      }
+    );
+
+    $("payrollApproveRunOverviewBtn")?.addEventListener("click", async () => {
+      try { await approveSelectedPayrollRun(); }
       catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollReturnRunOverviewBtn")?.addEventListener("click", async () => {
+      try { await returnSelectedPayrollRun(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollPostRunOverviewBtn")?.addEventListener("click", async () => {
+      try {
+        await postSelectedPayrollRun();
+      } catch (e) {
+        showPayrollStatus(e.message, "error");
+      }
+    });
+
+    $("payrollPreviewJournalBtn")?.addEventListener("click", async () => {
+      try {
+        await previewSelectedPayrollJournal();
+      } catch (e) {
+        showPayrollStatus(e.message, "error");
+      }
+    });
+
+    $("payrollPostRunBtn")?.addEventListener("click", async () => {
+      try {
+        await postSelectedPayrollRun();
+      } catch (e) {
+        showPayrollStatus(e.message, "error");
+      }
     });
 
     $("payrollJournalPreviewPostBtn")?.addEventListener("click", async () => {
@@ -83508,6 +92235,14 @@ async function saveEditModal() {
         })
       );
 
+    $("payrollPreviewCalendarId")
+      ?.addEventListener(
+        "change",
+        runPayrollAction(async () => {
+          await renderPayrollPayslipPreview();
+        })
+      );
+
     $("payDepartmentId")?.addEventListener("change",()=>{
       renderPayrollEmployeePositions();
     });
@@ -83645,6 +92380,70 @@ async function saveEditModal() {
       runPayrollAction(createPayrollBenefitType)
     );
 
+    $("payrollSalaryPaymentPreviewBtn")?.addEventListener(
+      "click",
+      async () => {
+        try {
+          const button =
+            $("payrollSalaryPaymentPreviewBtn");
+
+          if (button) {
+            button.disabled = true;
+          }
+
+          await previewPayrollSalaryPayment();
+
+        } catch (e) {
+          showPayrollStatus(
+            e.message,
+            "error"
+          );
+
+        } finally {
+          const button =
+            $("payrollSalaryPaymentPreviewBtn");
+
+          if (button) {
+            button.disabled = false;
+          }
+        }
+      }
+    );
+
+    $("payrollSalaryPaymentPostBtn")?.addEventListener(
+      "click",
+      async () => {
+        try {
+          const button =
+            $("payrollSalaryPaymentPostBtn");
+
+          if (button) {
+            button.disabled = true;
+          }
+
+          await postPayrollSalaryPayment();
+
+          showPayrollStatus(
+            "Salary payment posted successfully.",
+            "success"
+          );
+
+        } catch (e) {
+          showPayrollStatus(
+            e.message,
+            "error"
+          );
+
+          const preview =
+            payrollState.salaryPaymentPreview;
+
+          if (preview?.ready_to_post) {
+            $("payrollSalaryPaymentPostBtn")
+              ?.removeAttribute("disabled");
+          }
+        }
+      }
+    );
       [
         "payrollScheduleFrequency",
         "payrollPeriodStartDay",
@@ -83653,7 +92452,7 @@ async function saveEditModal() {
         "payrollPaymentDayRule",
         "payrollPaymentMonthOffset",
         "payrollPaymentAdjustment",
-        "payrollFirstPeriodMonth",
+        "payrollFirstPeriodDate",
       ].forEach(id => {
         $(id)?.addEventListener(
           "change",
@@ -83681,6 +92480,12 @@ async function saveEditModal() {
     switchPayrollTab("overview");
     await payrollLoadAll();
   };
+
+  // FIX: expose statutory renderers so tax-filing-dashboard-integration.js can call
+  // them. They were IIFE-private, so bare renderPayrollStatutoryReturns() calls
+  // from that file (e.g. inside TaxFilingAPI.selectAuthority) threw a ReferenceError.
+  window.renderPayrollStatutoryReturns = renderPayrollStatutoryReturns;
+  window.loadPayrollStatutoryWorkspace = loadPayrollStatutoryWorkspace;
 
   function esc(v) {
     return String(v ?? "")
@@ -91110,16 +99915,22 @@ async function saveEditModal() {
   }
 
   async function previewRun() {
-    const cid = state.cid;
-    if (!cid) throw new Error("Missing company id");
+    // FIX (state-is-not-defined): this function was copy-pasted from a module that
+    // had its own `state` object. This module's state object is IFRS9, and the
+    // company id comes from cid().
+    const companyId = cid();
+    if (!companyId) throw new Error("Missing company id");
+
+    IFRS9.contracts = IFRS9.contracts || [];
+    IFRS9.runs = IFRS9.runs || [];
 
     // Auto-select first contract if none selected
     let contractId = Number($("revContractId")?.value || 0) || null;
-    if (!contractId && (state.contracts || []).length > 0) {
-      const firstContract = state.contracts[0];
+    if (!contractId && (IFRS9.contracts || []).length > 0) {
+      const firstContract = IFRS9.contracts[0];
       contractId = firstContract.id;
       if ($("revContractId")) $("revContractId").value = String(contractId);
-      state.selectedContract = firstContract;
+      IFRS9.selectedContract = firstContract;
       renderContractKpis(firstContract);
       console.log("[Revenue] Auto-selected first contract for preview:", contractId);
     }
@@ -91129,12 +99940,12 @@ async function saveEditModal() {
     const periodEnd = payload.period_end || "";
 
     // First, ensure runs are loaded
-    if (!state.runs || !state.runs.length) {
+    if (typeof loadRuns === "function" && (!IFRS9.runs || !IFRS9.runs.length)) {
       await loadRuns();
     }
 
     // Check for existing DRAFT run with same period + contract
-    const existingDraftRun = (state.runs || []).find(r => {
+    const existingDraftRun = (IFRS9.runs || []).find(r => {
       const rStart = String(r.period_start || "").slice(0, 10);
       const rEnd = String(r.period_end || "").slice(0, 10);
       const rContractId = Number(r.contract_id || 0) || null;
@@ -91151,14 +99962,14 @@ async function saveEditModal() {
 
       try {
         // Try to get run detail with entries
-        const runDetailUrl = ENDPOINTS.revenue.runDetail(cid, existingDraftRun.id);
+        const runDetailUrl = ENDPOINTS.revenue.runDetail(companyId, existingDraftRun.id);
         const runRes = await apiFetch(runDetailUrl, { method: "GET" });
         
         data = runRes?.data || runRes;
         
         // If we got entries from the existing run, use them
         if (data?.entries && data.entries.length > 0) {
-          state.preview = data;
+          IFRS9.preview = data;
           // Set the run ID in UI
           if ($("revRunId")) $("revRunId").value = String(existingDraftRun.id);
           renderRunPreview(data);
@@ -91172,13 +99983,13 @@ async function saveEditModal() {
     }
 
     // No existing draft run or fetch failed - call preview API
-    const out = await apiFetch(ENDPOINTS.revenue.previewRun(cid), {
+    const out = await apiFetch(ENDPOINTS.revenue.previewRun(companyId), {
       method: "POST",
       body: JSON.stringify(payload),
     });
 
     data = out?.data || out;
-    state.preview = data;
+    IFRS9.preview = data;
     renderRunPreview(data);
     refreshRunActionState(out);
     
@@ -94558,8 +103369,8 @@ async function saveEditModal() {
       "";
 
     $("revObligationName").value = displayName;
-    $("revRecognitionTiming").value = o.recognition_timing || "point_in_time";
-    $("revProgressMethod").value = o.progress_method || "";
+    setRecognitionTimingValue(o.recognition_timing || "point_in_time");
+    setProgressMethodValue(o.progress_method || "");
 
     if ($("revPitTrigger")) {
       $("revPitTrigger").value = o.recognition_trigger || pj.recognition_trigger || "";
@@ -95465,6 +104276,55 @@ async function renderContractPreview(c = {}) {
     }
   }
 
+  /**
+   * Safe programmatic setter for the Progress Method dropdown.
+   *
+   * Setting el.value = "manual" directly does NOT fire a "change" event,
+   * so toggleObligationFields() never runs and the dependent field blocks
+   * (Expected Total Cost, Progress %, etc.) stay hidden. This helper sets
+   * the value AND runs the toggle so the UI stays in sync regardless of
+   * whether the value came from a user click or a programmatic hydration
+   * (edit-mode load, setup defaults, milestone linking, etc.).
+   */
+  function setProgressMethodValue(value) {
+    const el = $("revProgressMethod");
+    if (!el) {
+      console.warn("[Revenue] setProgressMethodValue: #revProgressMethod not in DOM");
+      return;
+    }
+    const next = String(value ?? "");
+    if (el.value === next) {
+      // Even when the value did not change, the dependent blocks may be out
+      // of sync (e.g. they were left hidden from a previous point-in-time
+      // state). Run the toggle so visibility always matches the value.
+      toggleObligationFields();
+      return;
+    }
+    el.value = next;
+    toggleObligationFields();
+  }
+
+  /**
+   * Safe programmatic setter for the Recognition Timing dropdown.
+   * Same rationale as setProgressMethodValue: keeps the dependent blocks
+   * (revOverTimeBlock vs revPointInTimeBlock, plus their inner field groups)
+   * in sync with the dropdown value.
+   */
+  function setRecognitionTimingValue(value) {
+    const el = $("revRecognitionTiming");
+    if (!el) {
+      console.warn("[Revenue] setRecognitionTimingValue: #revRecognitionTiming not in DOM");
+      return;
+    }
+    const next = String(value ?? "point_in_time");
+    if (el.value === next) {
+      toggleObligationFields();
+      return;
+    }
+    el.value = next;
+    toggleObligationFields();
+  }
+
   function toggleFinancingFields() {
     const checked = !!$("revHasFinancing")?.checked;
     const box = $("revFinancingFields");
@@ -95720,12 +104580,12 @@ async function renderContractPreview(c = {}) {
       $("revChkSubstance").checked = !!setup?.contract_rules?.commercial_substance_required;
     }
 
-    if ($("revRecognitionTiming") && setup?.obligation_rules?.default_recognition_timing) {
-      $("revRecognitionTiming").value = setup.obligation_rules.default_recognition_timing;
+    if (setup?.obligation_rules?.default_recognition_timing) {
+      setRecognitionTimingValue(setup.obligation_rules.default_recognition_timing);
     }
 
-    if ($("revProgressMethod") && setup?.obligation_rules?.default_progress_method) {
-      $("revProgressMethod").value = setup.obligation_rules.default_progress_method;
+    if (setup?.obligation_rules?.default_progress_method) {
+      setProgressMethodValue(setup.obligation_rules.default_progress_method);
     }
   }
 
@@ -97427,6 +106287,84 @@ async function renderContractPreview(c = {}) {
     }
   }
 
+  /**
+   * LANDING HERO — aggregate portfolio KPIs across all loaded contracts.
+   * Independent of which contract is selected; refreshes whenever
+   * renderContractList() runs (i.e. whenever state.contracts changes).
+   */
+  function renderHeroAggregate() {
+    const list = Array.isArray(state.contracts) ? state.contracts : [];
+
+    const txn = list.reduce((s, c) => s + num(c.transaction_price || 0), 0);
+    const rec = list.reduce((s, c) => s + num(c.recognized_revenue_to_date || 0), 0);
+    const bil = list.reduce((s, c) => s + num(c.billed_to_date || 0), 0);
+
+    const activeCount = list.filter(
+      (c) => String(c.status || "").toLowerCase() === "active"
+    ).length;
+
+    const setText = (id, v) => {
+      const el = $(id);
+      if (el) el.textContent = v;
+    };
+
+    setText("revHeroCount", String(list.length));
+    setText("revHeroActiveCount", `${activeCount} active`);
+    setText("revHeroTxn", money(txn));
+    setText("revHeroRec", money(rec));
+    setText("revHeroBilled", money(bil));
+
+    // Recognition % of total transaction price
+    const recPct = txn > 0 ? (rec / txn) * 100 : 0;
+    setText("revHeroRecPct", `${recPct.toFixed(1)}% of txn`);
+
+    // Contract position (over-billed / under-billed / balanced)
+    const netPos = bil - rec;
+    let posLabel = "balanced";
+    let posColor = "rgba(255,255,255,.85)";
+    if (netPos > 0) {
+      posLabel = `▼ over-billed ${money(netPos)}`;
+      posColor = "#fca5a5"; // light red
+    } else if (netPos < 0) {
+      posLabel = `▲ under-billed ${money(Math.abs(netPos))}`;
+      posColor = "#86efac"; // light green
+    }
+    const posEl = $("revHeroPosition");
+    if (posEl) {
+      posEl.textContent = posLabel;
+      posEl.style.color = posColor;
+    }
+
+    // Greeting by time of day
+    const hour = new Date().getHours();
+    const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+    setText("revHeroGreeting", `${greet}. Here's your revenue portfolio.`);
+
+    // Narrative summary
+    const summaryEl = $("revHeroSummary");
+    if (summaryEl) {
+      const posText =
+        netPos > 0 ? `over-billed by ${money(netPos)} (contract liability)`
+        : netPos < 0 ? `under-billed by ${money(Math.abs(netPos))} (contract asset)`
+        : `billing and recognition are balanced`;
+      summaryEl.textContent =
+        list.length === 0
+          ? "No contracts yet. Click \u201cNew Contract\u201d to set up your first IFRS 15 revenue contract."
+          : `${list.length} contract(s) loaded \u00b7 recognized ${money(rec)} of ${money(txn)} \u00b7 ${posText}. Pick one below to drill in.`;
+    }
+
+    // Period pill
+    const periodEnd = $("revPeriodEnd")?.value || "";
+    const periodStart = $("revPeriodStart")?.value || "";
+    let periodText = "All periods";
+    if (periodEnd) {
+      periodText = periodStart
+        ? `Period ${periodStart} \u2192 ${periodEnd}`
+        : `Period ending ${periodEnd}`;
+    }
+    setText("revHeroPeriodPill", periodText);
+  }
+
   function renderContractList() {
     const el = $("revContractList");
     if (!el) return;
@@ -97535,6 +106473,9 @@ async function renderContractPreview(c = {}) {
         await loadCashOverview(row.id);
       });
     });
+
+    // LANDING HERO — refresh aggregate counters whenever the list re-renders
+    try { renderHeroAggregate(); } catch (e) { console.warn("[Revenue] renderHeroAggregate failed", e); }
   }
 
   function getSelectedBillingPolicy() {
@@ -98167,6 +107108,12 @@ async function renderContractPreview(c = {}) {
     setMsg("Loading contracts...");
     try {
       // temporary: contracts list endpoint is create-only, so use existing company route if you add list later
+      console.trace("[Revenue] loadContracts called");
+      console.log("[Revenue] contracts request", {
+        cid,
+        url: `${ENDPOINTS.revenue.contracts(cid)}?limit=100`,
+        apiFetchType: typeof apiFetch
+      });
       const data = await apiFetch(`${ENDPOINTS.revenue.contracts(cid)}?limit=100`);
       state.contracts = data?.items || data?.data?.items || data?.data || [];
       renderContractList();
@@ -99522,7 +108469,13 @@ async function renderContractPreview(c = {}) {
       applySelectedMilestoneToObligationFields();
     });
 
-    $("revRecognitionTiming")?.addEventListener("change", toggleObligationFields);
+    // Defensive binding — see comment above the #revProgressMethod binding.
+    const _rtEl = $("revRecognitionTiming");
+    if (_rtEl) {
+      _rtEl.addEventListener("change", toggleObligationFields);
+    } else {
+      console.warn("[Revenue] bindRevenueScreenEvents: #revRecognitionTiming not found — change listener not attached, over-time / point-in-time toggle will not work until element is rendered.");
+    }
 
     $("revMarkSatisfiedBtn")?.addEventListener("click", async () => {
       try {
@@ -99691,7 +108644,15 @@ async function renderContractPreview(c = {}) {
       }
     });
 
-    $("revProgressMethod")?.addEventListener("change", toggleObligationFields);
+    // Defensive binding: if the element is missing when bindRevenueScreenEvents
+    // runs, the optional-chaining ?. silently no-ops and the toggle never fires
+    // on user clicks. Log a warning so this regression is visible in DevTools.
+    const _pmEl = $("revProgressMethod");
+    if (_pmEl) {
+      _pmEl.addEventListener("change", toggleObligationFields);
+    } else {
+      console.warn("[Revenue] bindRevenueScreenEvents: #revProgressMethod not found — change listener not attached, manual toggle will not work until element is rendered.");
+    }
     $("revProgressType")?.addEventListener("change", toggleRevenueProgressDriverFields);
 
     $("revSaveProgress")?.addEventListener("click", async () => {
@@ -99784,6 +108745,44 @@ async function renderContractPreview(c = {}) {
 
     $("revRunReverseBtn")?.addEventListener("click", async () => {
       try { await reverseRun(); } catch (e) { setRunMsg(e?.message || "Reverse failed", "error"); }
+    });
+
+    // -------- LANDING HERO button bindings (reuse existing handlers) --------
+    // + New Contract → triggers the existing grid "New Contract" button
+    $("revHeroNewContract")?.addEventListener("click", () => {
+      $("revGridNewContractBtn")?.click();
+    });
+
+    // Refresh → triggers the existing sidebar "Reload" button
+    $("revHeroReload")?.addEventListener("click", () => {
+      $("revBtnReload")?.click();
+    });
+
+    // IFRS 15 Disclosure → switches to the disclosure screen
+    $("revHeroDisclose")?.addEventListener("click", () => {
+      const discloseTrigger =
+        document.querySelector('[data-screen="revenue-disclosure"]') ||
+        document.querySelector('[data-target-screen="revenue-disclosure"]') ||
+        document.querySelector('a[href="#revenue-disclosure"]') ||
+        document.querySelector('#navItemRevenueDisclosure');
+
+      if (discloseTrigger) {
+        discloseTrigger.click();
+      } else {
+        const cid = state.cid || (typeof activeCid === "function" ? activeCid() : null);
+        if (cid) {
+          window.open(`${ENDPOINTS.revenue.disclosure(cid)}&as_html=1`, "_blank");
+        } else {
+          setMsg("Could not resolve company for disclosure report.", "error");
+        }
+      }
+    });
+
+    // Run Recognition → jump to the Runs tab and focus the preview button
+    $("revHeroRunRecognition")?.addEventListener("click", () => {
+      setActiveTab("runs");
+      $("revRunPreviewBtn")?.focus();
+      setMsg("Pick a period and click Preview to compute recognition.");
     });
 
     toggleObligationFields();
@@ -100729,6 +109728,7 @@ async function postDeferredTaxJournal(dt) {
 function applyInvItemModalContextLabels(isEdit = false) {
   const ctx = getInventoryContextMode();
 
+  // Modal Title
   const title = document.getElementById("invItemModalTitle");
   if (title) {
     title.textContent = ctx.isProjectMaterial
@@ -100736,6 +109736,7 @@ function applyInvItemModalContextLabels(isEdit = false) {
       : (isEdit ? "Edit Inventory Item" : "New Inventory Item");
   }
 
+  // Sales Price / Issue Rate Label
   const salesLabel = document.getElementById("invItemSalesPriceLabel");
   if (salesLabel) {
     salesLabel.textContent = ctx.isProjectMaterial
@@ -100743,13 +109744,64 @@ function applyInvItemModalContextLabels(isEdit = false) {
       : "Sell price";
   }
 
+  // Purchase / Acquisition Cost Label
+  const costLabel = document.getElementById("invItemCostPriceLabel");
+  if (costLabel) {
+    costLabel.textContent = ctx.isProjectMaterial
+      ? "Standard Material Unit Cost"
+      : "Purchase cost";
+  }
+
+  // Save Button
   const saveBtn = document.getElementById("invItemSaveBtn");
   if (saveBtn) {
     saveBtn.textContent = ctx.isProjectMaterial
-      ? "Save Material"
-      : "Save Item";
+      ? (isEdit ? "Update Material" : "Save Material")
+      : (isEdit ? "Update Item" : "Save Item");
+  }
+
+  // Track Stock checkbox label
+  const trackLabel = document.getElementById("invItemTrackStockLabel");
+  if (trackLabel) {
+    trackLabel.textContent = ctx.isProjectMaterial
+      ? "Track material warehouse on-hand balances"
+      : "Track stock balance";
   }
 }
+window.applyInvItemModalContextLabels = applyInvItemModalContextLabels;
+
+// ✅ Write-Down Modal Terminology Context
+function applyWriteDownModalContextLabels() {
+  const ctx = getInventoryContextMode();
+
+  const title = document.getElementById("writeDownModalTitle");
+  if (title) {
+    title.textContent = ctx.isProjectMaterial
+      ? "New Material Write-Down / Disposal"
+      : "New Stock Write-Down";
+  }
+
+  const screenTitle = document.getElementById("wdScreenTitle");
+  if (screenTitle) {
+    screenTitle.textContent = ctx.isProjectMaterial
+      ? "Material Write-Downs & Scrappage"
+      : "Inventory Write-Downs & Write-Offs";
+  }
+
+  const newBtn = document.getElementById("wdNewBtn");
+  if (newBtn) {
+    newBtn.textContent = ctx.isProjectMaterial ? "+ New Material Write-Down" : "+ New Write-Down";
+  }
+
+  const submitBtn = document.getElementById("wdSubmitBtn");
+  if (submitBtn) {
+    submitBtn.textContent = ctx.isProjectMaterial
+      ? "Post Material Write-Down"
+      : "Post Write-Down";
+  }
+}
+window.applyWriteDownModalContextLabels = applyWriteDownModalContextLabels;
+
 
 function showInvItemModalMsg(text = "", kind = "info") {
   const el = document.getElementById("invItemModalMsg");
@@ -104371,7 +113423,7 @@ function collectQuoteFromForm() {
   const quoteId      = idInput?.value ? parseInt(idInput.value, 10) : null;
   const customerName = custInput?.value?.trim() || "";
   const number       = (numInput?.value || "").trim(); // draft-friendly (may be empty)
-  const currency     = (currInput?.value || "USD").trim();
+  const currency = resolveCurrency(currInput?.value);
 
   if (!customerName) throw new Error("Customer is required.");
 
@@ -105153,7 +114205,7 @@ function wireQuotesScreen() {
     safeValue(getEl("quoteDate"), today);
     safeValue(getEl("quoteValidUntil"), "");
     safeValue(getEl("quoteValidDays"), "30");
-    safeValue(getEl("quoteCurrency"), "USD");
+    safeValue(getEl("quoteCurrency"), resolveCurrency());
 
     // discount / notes / terms
     safeValue(getEl("quoteDisc"), "0");
@@ -105649,7 +114701,7 @@ window.openQuoteInForm = async function openQuoteInForm(quoteId) {
   document.getElementById("quoteValidUntil").value = (quote.valid_until || "").slice(0, 10);
 
   // currency + notes
-  document.getElementById("quoteCurrency").value = quote.currency || "USD";
+  document.getElementById("quoteCurrency").value = resolveCurrency(quote.currency);
   document.getElementById("quoteNotes").value = quote.notes || "";
   document.getElementById("quoteTerms").value = quote.terms || "";
 
@@ -110969,35 +120021,58 @@ function customerDisplayName(c) {
   return tin || "(No name)";
 }
 
+
 async function openCustomerInvoicesPane(customerId, customerObj) {
   const pane = document.getElementById("arCustomerInvoicesPane");
   const list = document.getElementById("custInvoiceList");
   if (!pane || !list) return;
 
+  // Hide the customer quotes pane.
   document.getElementById("arCustomerQuotesPane")?.classList.add("hidden");
+
+  // Remember the selected customer.
   window._selectedInvoiceCustomer = customerObj || null;
 
+  // Reset invoice search for this customer.
   const searchEl = document.getElementById("custInvSearch");
   if (searchEl) {
     searchEl.value = "";
-    const nm = String(customerObj?.name || "").trim();
-    searchEl.placeholder = nm ? `Search invoices for ${nm}` : "Search invoice #";
+
+    const customerName = String(customerObj?.name || "").trim();
+    searchEl.placeholder = customerName
+      ? `Search invoices for ${customerName}`
+      : "Search invoice #";
   }
 
+  // Show the invoice pane.
   pane.classList.remove("hidden");
   pane.style.display = "";
 
-  // ✅ IMPORTANT: exclude drafts/pending from customer pane
+  // Load all non-draft invoices, including reversed and void invoices.
+  // The renderer handles payment filters and status badges.
   await renderCustomerInvoicesList(customerId, {
-    status: ["approved", "posted", "paid", "partial", "unpaid"] // adjust to your real lifecycle
+    status: [
+      "approved",
+      "posted",
+      "paid",
+      "partial",
+      "unpaid",
+      "reversed",
+      "void",
+      "voided",
+      "cancelled",
+      "canceled",
+      "written_off"
+    ]
   });
 }
+
 window.openCustomerInvoicesPane = openCustomerInvoicesPane;
 
 async function renderCustomerInvoicesList(customerId, opts = {}) {
   const list = document.getElementById("custInvoiceList");
   const filterSel = document.getElementById("custInvFilter");
-  const searchEl  = document.getElementById("custInvSearch");
+  const searchEl = document.getElementById("custInvSearch");
   if (!list) return;
 
   const scope = (filterSel?.value || "all").toLowerCase();
@@ -111006,39 +120081,98 @@ async function renderCustomerInvoicesList(customerId, opts = {}) {
   list.innerHTML = `<div class="text-xs text-slate-400">Loading…</div>`;
 
   try {
-    // ✅ pass status filter through
-    let invoices = await fetchInvoicesForCustomer(customerId, { scope, status: opts.status || null });
+    let invoices = await fetchInvoicesForCustomer(customerId, {
+      scope,
+      status: opts.status || null
+    });
 
-    // normalize + compute amounts
+    const nonPayableStatuses = [
+      "void",
+      "voided",
+      "reversed",
+      "cancelled",
+      "canceled",
+      "written_off"
+    ];
+
+    // Normalize invoice statuses and payment amounts.
     invoices = (invoices || []).map(inv => {
-      const total = toNum(inv.total_amount ?? inv.total ?? inv.gross_amount, 0);
-      const paid  = toNum(inv.paid_amount ?? inv.paid ?? inv.paidAmount, 0);
+      const total = toNum(
+        inv.total_amount ?? inv.total ?? inv.gross_amount,
+        0
+      );
 
-      // prefer backend outstanding_amount if present
+      const paid = toNum(
+        inv.paid_amount ?? inv.paid ?? inv.paidAmount,
+        0
+      );
+
       const outstanding = toNum(
         inv.outstanding_amount ?? inv.outstanding ?? (total - paid),
         0
       );
 
-      // prefer backend payment_status, else fallback
-      const payStatus = String(inv.payment_status || "").toLowerCase().trim()
-        || (outstanding <= 0.00001 ? "paid" : (paid > 0.00001 ? "partial" : "unpaid"));
+      const docStatus = String(inv.status || "")
+        .toLowerCase()
+        .trim();
 
-      return { ...inv, _total: total, _paid: paid, _outstanding: outstanding, _payStatus: payStatus };
+      const backendPayStatus = String(inv.payment_status || "")
+        .toLowerCase()
+        .trim();
+
+      // Void/reversed invoices must never appear as unpaid or paid.
+      const payStatus = nonPayableStatuses.includes(docStatus)
+        ? docStatus
+        : (
+            backendPayStatus ||
+            (
+              outstanding <= 0.00001
+                ? "paid"
+                : paid > 0.00001
+                  ? "partial"
+                  : "unpaid"
+            )
+          );
+
+      return {
+        ...inv,
+        _total: total,
+        _paid: paid,
+        _outstanding: outstanding,
+        _docStatus: docStatus,
+        _payStatus: payStatus
+      };
     });
 
-    // ✅ scope filter (UI)
+    // Apply the selected payment filter.
     if (scope === "open") {
-      invoices = invoices.filter(inv => inv._outstanding > 0.00001 && inv._payStatus !== "paid");
+      invoices = invoices.filter(inv =>
+        !nonPayableStatuses.includes(inv._docStatus) &&
+        inv._outstanding > 0.00001 &&
+        inv._payStatus !== "paid"
+      );
     } else if (scope === "paid") {
-      invoices = invoices.filter(inv => inv._payStatus === "paid" || inv._outstanding <= 0.00001);
+      invoices = invoices.filter(inv =>
+        !nonPayableStatuses.includes(inv._docStatus) &&
+        (
+          inv._payStatus === "paid" ||
+          inv._outstanding <= 0.00001
+        )
+      );
     } else if (scope === "partial") {
-      invoices = invoices.filter(inv => inv._payStatus === "partial");
+      invoices = invoices.filter(inv =>
+        !nonPayableStatuses.includes(inv._docStatus) &&
+        inv._payStatus === "partial"
+      );
     } else if (scope === "unpaid") {
-      invoices = invoices.filter(inv => inv._payStatus === "unpaid");
-    } // scope === "all" => no filter
+      invoices = invoices.filter(inv =>
+        !nonPayableStatuses.includes(inv._docStatus) &&
+        inv._payStatus === "unpaid"
+      );
+    }
+    // "all" displays every invoice, including void and reversed invoices.
 
-    // search
+    // Search by invoice number or ID.
     if (q) {
       invoices = invoices.filter(inv =>
         String(inv.number || inv.id || "").toLowerCase().includes(q)
@@ -111050,16 +120184,20 @@ async function renderCustomerInvoicesList(customerId, opts = {}) {
       return;
     }
 
-    // newest first
-    invoices.sort((a, b) => String(b.invoice_date || "").localeCompare(String(a.invoice_date || "")));
+    // Newest first.
+    invoices.sort((a, b) =>
+      String(b.invoice_date || "").localeCompare(
+        String(a.invoice_date || "")
+      )
+    );
 
     list.innerHTML = invoices.map(inv => {
       const num = inv.number || `INV-${inv.id}`;
-      const dt  = inv.invoice_date || inv.date || "";
+      const dt = inv.invoice_date || inv.date || "";
       const due = inv.due_date || "";
 
-      // show payment status badge (not doc status)
-      const badge = inv._payStatus; // paid/partial/unpaid
+      // Show reversed/void status; otherwise show payment status.
+      const badge = inv._payStatus;
 
       return `
         <button type="button"
@@ -111076,7 +120214,7 @@ async function renderCustomerInvoicesList(customerId, opts = {}) {
 
           <div class="text-xs text-slate-500">
             ${esc(dt)}
-            ${due ? ` • Due ${esc(due)}` : ``}
+            ${due ? ` • Due ${esc(due)}` : ""}
           </div>
 
           <div class="text-xs text-slate-600">
@@ -111090,7 +120228,11 @@ async function renderCustomerInvoicesList(customerId, opts = {}) {
 
     list.querySelectorAll("[data-inv-open]").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const invId = parseInt(btn.getAttribute("data-inv-open"), 10);
+        const invId = parseInt(
+          btn.getAttribute("data-inv-open"),
+          10
+        );
+
         if (!invId) return;
         await openInvoiceViewer(invId);
       });
@@ -111098,7 +120240,11 @@ async function renderCustomerInvoicesList(customerId, opts = {}) {
 
   } catch (e) {
     console.error(e);
-    list.innerHTML = `<div class="text-xs text-red-500">Failed to load customer invoices.</div>`;
+    list.innerHTML = `
+      <div class="text-xs text-red-500">
+        Failed to load customer invoices.
+      </div>
+    `;
   }
 }
 
@@ -116390,15 +125536,25 @@ function getInventoryContextMode() {
     newItemLabel: isProjectMaterial
       ? "+ New Material"
       : "+ New Item",
+    writeDownLabel: isProjectMaterial
+      ? "📉 Material Write-Downs"
+      : "📉 Stock Write-Downs",
+    newWriteDownLabel: isProjectMaterial
+      ? "+ New Material Write-Down"
+      : "+ New Write-Down",
   };
 }
 
 function applyInventoryContextLabels() {
   const ctx = getInventoryContextMode();
 
+  // Screen header title
   const title = document.querySelector("#screen-inventory h3");
-  if (title) title.textContent = ctx.isProjectMaterial ? "Materials & Inventory" : "Catalog Studio";
+  if (title) {
+    title.textContent = ctx.isProjectMaterial ? "Materials & Inventory" : "Catalog Studio";
+  }
 
+  // Quick tab buttons
   document.querySelectorAll('[data-nav="inventory-items"]').forEach(btn => {
     btn.textContent = ctx.itemLabel;
   });
@@ -116407,10 +125563,36 @@ function applyInventoryContextLabels() {
     btn.textContent = ctx.movementLabel;
   });
 
+  document.querySelectorAll('[data-nav="stocktake"]').forEach(btn => {
+    btn.textContent = ctx.countLabel;
+  });
+
+  document.querySelectorAll('[data-nav="reorder"]').forEach(btn => {
+    btn.textContent = ctx.reorderLabel;
+  });
+
+  document.querySelectorAll('[data-nav="inventory-valuation"]').forEach(btn => {
+    btn.textContent = ctx.valuationLabel;
+  });
+
+  // ✅ Write-Downs Quick-Tab Button
+  document.querySelectorAll('[data-nav="inventory-write-downs"]').forEach(btn => {
+    btn.textContent = ctx.writeDownLabel || (ctx.isProjectMaterial ? "📉 Material Write-Downs" : "📉 Stock Write-Downs");
+  });
+
+  // ✅ Sidebar navigation items (if using data-screen or data-nav)
+  document.querySelectorAll('[data-screen="inventory-write-downs"], [data-nav="inventory-write-downs"]').forEach(el => {
+    const textEl = el.querySelector(".nav-label, span") || el;
+    if (textEl && textEl.textContent.includes("Write-Down")) {
+      textEl.textContent = ctx.isProjectMaterial ? "Material Write-Downs" : "Stock Write-Downs";
+    }
+  });
+
+  // Mode banner text
   const modeText = document.getElementById("catalogCompanyModeText");
   if (modeText) {
     modeText.textContent = ctx.isProjectMaterial
-      ? `Mode: Materials for ${ctx.workUnit}`
+      ? `Mode: Materials (Job / Project WIP)`
       : modeText.textContent;
   }
 }
@@ -117268,6 +126450,12865 @@ function applyReceiveColumnPolicy() {
   m.querySelectorAll("[data-cell='expiry']").forEach(el => el.style.display = showExpiry ? "" : "none");
 }
 
+// =====================================================
+// Inventory Write-Downs Controller
+// =====================================================
+
+window._WD_REASONS_CACHE = [];
+
+async function ensureWriteDownReasonsCache() {
+  if (window._WD_REASONS_CACHE.length) return window._WD_REASONS_CACHE;
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return [];
+
+  try {
+    const reasons = await apiFetch(ENDPOINTS.inventory.writeDownReasons(cid));
+    window._WD_REASONS_CACHE = Array.isArray(reasons) ? reasons : [];
+  } catch (err) {
+    console.warn("[Write-Down] failed to load reasons:", err);
+    window._WD_REASONS_CACHE = [];
+  }
+  return window._WD_REASONS_CACHE;
+}
+
+function bindInventoryWriteDownsUI() {
+  bindWriteDownModalOnce();
+
+  const refBtn = document.getElementById("wdRefreshBtn");
+  if (refBtn && refBtn.dataset.bound !== "1") {
+    refBtn.dataset.bound = "1";
+    refBtn.addEventListener("click", () => loadInventoryWriteDowns());
+  }
+
+  const newBtn = document.getElementById("wdNewBtn");
+  if (newBtn && newBtn.dataset.bound !== "1") {
+    newBtn.dataset.bound = "1";
+    newBtn.addEventListener("click", () => openWriteDownModal());
+  }
+
+  const ctx = getInventoryContextMode();
+  if (newBtn) newBtn.textContent = ctx.newWriteDownLabel || "+ New Write-Down";
+
+  ["wdFilterFrom", "wdFilterTo"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && el.dataset.bound !== "1") {
+      el.dataset.bound = "1";
+      el.addEventListener("change", () => loadInventoryWriteDowns());
+    }
+  });
+
+  const search = document.getElementById("wdFilterSearch");
+  if (search && search.dataset.bound !== "1") {
+    search.dataset.bound = "1";
+    search.addEventListener("input", debounce(() => loadInventoryWriteDowns(), 250));
+  }
+}
+
+async function loadInventoryWriteDowns({ limit = 50, offset = 0 } = {}) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const mount = document.getElementById("writeDownsTable");
+  if (mount) mount.innerHTML = `<div class="text-xs text-slate-500">Loading write-downs…</div>`;
+
+  const dateFrom = document.getElementById("wdFilterFrom")?.value || "";
+  const dateTo = document.getElementById("wdFilterTo")?.value || "";
+  const q = (document.getElementById("wdFilterSearch")?.value || "").trim();
+
+  const params = new URLSearchParams();
+  params.set("tx_type", "write_down");
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  if (dateFrom) params.set("from", dateFrom);
+  if (dateTo) params.set("to", dateTo);
+  if (q) params.set("q", q);
+
+  try {
+    const data = await apiFetch(ENDPOINTS.inventory.txList(cid, params.toString()));
+    const items = data?.items || data?.rows || [];
+    renderWriteDownsTable(items);
+  } catch (err) {
+    if (mount) mount.innerHTML = renderApiError(err);
+  }
+}
+
+function renderWriteDownsTable(items) {
+  const mount = document.getElementById("writeDownsTable");
+  if (!mount) return;
+
+  if (!items.length) {
+    mount.innerHTML = `<div class="text-xs text-slate-500">No write-down movements recorded.</div>`;
+    return;
+  }
+
+  const row = (r) => `
+    <tr class="border-b hover:bg-slate-50 cursor-pointer" onclick="openMovementDetail?.(${Number(r.id)})">
+      <td class="px-2 py-2 font-medium">${esc(String(r.ref || `WD-${r.id}`))}</td>
+      <td class="px-2 py-2">${esc(String(r.tx_date || "").slice(0, 10))}</td>
+      <td class="px-2 py-2">
+        <span class="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-semibold text-[10px]">
+          ${esc(r.write_down_reason_code || "WRITE-DOWN")}
+        </span>
+      </td>
+      <td class="px-2 py-2 text-slate-600">${esc(r.notes || "—")}</td>
+      <td class="px-2 py-2 text-center">
+        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] ${
+          r.status === "posted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"
+        }">
+          ${esc(r.status || "posted")}
+        </span>
+      </td>
+      <td class="px-2 py-2 text-right">${r.posted_journal_id ? "✅ Posted" : "—"}</td>
+    </tr>
+  `;
+
+  mount.innerHTML = `
+    <div class="overflow-auto border rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr class="text-slate-600">
+            <th class="text-left px-2 py-2">Ref</th>
+            <th class="text-left px-2 py-2">Date</th>
+            <th class="text-left px-2 py-2">Reason</th>
+            <th class="text-left px-2 py-2">Notes</th>
+            <th class="text-center px-2 py-2">Status</th>
+            <th class="text-right px-2 py-2">GL Post</th>
+          </tr>
+        </thead>
+        <tbody>${items.map(row).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function bindWriteDownModalOnce() {
+  const m = document.getElementById("invWriteDownModal");
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("wdModalCloseBtn")?.addEventListener("click", closeWriteDownModal);
+  document.getElementById("wdCancelBtn")?.addEventListener("click", closeWriteDownModal);
+
+  document.getElementById("wdAddLineBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    addWriteDownLine();
+  });
+
+  document.getElementById("wdSubmitBtn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    await submitWriteDownStock();
+  });
+}
+
+function showWriteDownMsg(text = "", kind = "info") {
+  const el = document.getElementById("wdModalMsg");
+  if (!el) return;
+  const cls =
+    kind === "error" ? "text-red-600 font-semibold" :
+    kind === "ok" ? "text-emerald-600 font-semibold" :
+    "text-slate-600";
+  el.className = `text-xs my-2 ${cls}`;
+  el.textContent = text || "";
+}
+
+function closeWriteDownModal() {
+  const m = document.getElementById("invWriteDownModal");
+  if (m) m.classList.add("hidden");
+}
+
+async function openWriteDownModal() {
+  const m = document.getElementById("invWriteDownModal");
+  if (!m) return;
+ applyWriteDownModalContextLabels();
+  showWriteDownMsg("");
+
+  // Default date to today
+  document.getElementById("wdDate").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("wdRef").value = `WD-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(100 + Math.random() * 900)}`;
+  document.getElementById("wdNotes").value = "";
+
+  // Load Reasons Dropdown
+  const reasonSel = document.getElementById("wdReason");
+  reasonSel.innerHTML = `<option value="">Loading reasons...</option>`;
+
+  try {
+    const reasons = await ensureWriteDownReasonsCache();
+    if (reasons.length) {
+      reasonSel.innerHTML = `<option value="">— Select write-down reason —</option>` +
+        reasons.map(r => `<option value="${esc(r.code)}">${esc(r.name)}</option>`).join("");
+    } else {
+      reasonSel.innerHTML = `
+        <option value="OBSOLESCENCE">Obsolescence / Slow Moving</option>
+        <option value="DAMAGE">Physical Damage / Breakage</option>
+        <option value="EXPIRY">Expired Product</option>
+        <option value="SHRINKAGE">Shrinkage / Theft / Stocktake Loss</option>
+        <option value="SCRAP">Scrapped / Waste</option>
+      `;
+    }
+  } catch (_) {
+    reasonSel.innerHTML = `<option value="OBSOLESCENCE">Obsolescence</option>`;
+  }
+
+  // Pre-fetch items cache & on-hand snapshot
+  await ensureInvItemCache();
+
+  const tbody = document.getElementById("wdLinesTbody");
+  if (tbody) tbody.innerHTML = "";
+
+  addWriteDownLine();
+  m.classList.remove("hidden");
+}
+
+function addWriteDownLine(line = {}) {
+  const tbody = document.getElementById("wdLinesTbody");
+  if (!tbody) return;
+
+  const items = window._INV_ITEM_CACHE?.items || [];
+
+  const options = [`<option value="">Select item…</option>`].concat(
+    items.map(it =>
+      `<option value="${it.id}" data-sku="${esc(it.sku || "")}">
+        ${esc(it.sku)} — ${esc(it.name)}
+      </option>`
+    )
+  ).join("");
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b hover:bg-slate-50";
+  tr.innerHTML = `
+    <!-- Barcode / SKU scan -->
+    <td class="px-2 py-2">
+      <input
+        class="w-full border rounded px-2 py-1 text-xs wd-line-sku"
+        placeholder="Scan / SKU"
+        value="${esc(line.sku || "")}"
+      />
+    </td>
+
+    <!-- Item Select -->
+    <td class="px-2 py-2">
+      <select class="w-full border rounded px-2 py-1 text-xs wd-line-item">
+        ${options}
+      </select>
+    </td>
+
+    <!-- On Hand (Auto-loaded) -->
+    <td class="px-2 py-2 text-right">
+      <span class="wd-line-onhand text-slate-500 font-medium">0</span>
+    </td>
+
+    <!-- Qty to Write Off -->
+    <td class="px-2 py-2">
+      <input type="number" step="0.0001" min="0.0001"
+        class="w-full border rounded px-2 py-1 text-xs text-right font-semibold text-red-600 wd-line-qty"
+        placeholder="0.00" value="${esc(line.qty ?? "")}">
+    </td>
+
+    <!-- Memo -->
+    <td class="px-2 py-2">
+      <input type="text"
+        class="w-full border rounded px-2 py-1 text-xs wd-line-memo"
+        placeholder="Specific line memo"
+        value="${esc(line.memo || "")}">
+    </td>
+
+    <!-- Delete line button -->
+    <td class="px-2 py-2 text-center">
+      <button type="button" class="text-xs text-red-600 hover:text-red-800 wd-line-del">✕</button>
+    </td>
+  `;
+
+  const sel = tr.querySelector(".wd-line-item");
+  const skuInp = tr.querySelector(".wd-line-sku");
+  const onhandEl = tr.querySelector(".wd-line-onhand");
+  const qtyInp = tr.querySelector(".wd-line-qty");
+
+  const updateOnHandForItem = async (itemId) => {
+    if (!itemId) {
+      onhandEl.textContent = "0";
+      return;
+    }
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    try {
+      const snap = await apiFetch(ENDPOINTS.inventory.onHand(cid, `item_id=${itemId}`));
+      const itemRow = (snap?.items || []).find(x => Number(x.item_id) === Number(itemId));
+      const onHandVal = Number(itemRow?.on_hand ?? 0);
+      onhandEl.textContent = String(onHandVal);
+      if (onHandVal <= 0) {
+        onhandEl.classList.add("text-red-500");
+      } else {
+        onhandEl.classList.remove("text-red-500");
+      }
+    } catch (_) {
+      onhandEl.textContent = "—";
+    }
+  };
+
+  // Sync SKU when dropdown changes
+  sel.addEventListener("change", () => {
+    const opt = sel.selectedOptions?.[0];
+    const sku = opt?.getAttribute("data-sku") || "";
+    if (skuInp && sku) skuInp.value = sku;
+    updateOnHandForItem(sel.value);
+  });
+
+  // Sync dropdown when SKU/Barcode entered
+  skuInp.addEventListener("change", () => {
+    const val = String(skuInp.value || "").trim().toLowerCase();
+    if (!val) return;
+    const match = items.find(it =>
+      String(it.sku || "").toLowerCase() === val ||
+      String(it.barcode || "").toLowerCase() === val
+    );
+    if (match) {
+      sel.value = String(match.id);
+      updateOnHandForItem(match.id);
+    }
+  });
+
+  // Warn if qty exceeds on-hand
+  qtyInp.addEventListener("input", () => {
+    const req = Number(qtyInp.value || 0);
+    const avail = Number(onhandEl.textContent || 0);
+    if (avail > 0 && req > avail) {
+      qtyInp.classList.add("border-red-500", "bg-red-50");
+    } else {
+      qtyInp.classList.remove("border-red-500", "bg-red-50");
+    }
+  });
+
+  tr.querySelector(".wd-line-del")?.addEventListener("click", () => tr.remove());
+  tbody.appendChild(tr);
+
+  if (line.item_id) {
+    sel.value = String(line.item_id);
+    updateOnHandForItem(line.item_id);
+  }
+}
+
+async function submitWriteDownStock() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  showWriteDownMsg("");
+
+  const tx_date = normalizeToISODate(document.getElementById("wdDate")?.value);
+  const ref = (document.getElementById("wdRef")?.value || "").trim();
+  const reason_code = (document.getElementById("wdReason")?.value || "").trim();
+  const notes = (document.getElementById("wdNotes")?.value || "").trim() || null;
+
+  if (!tx_date) return showWriteDownMsg("Transaction date is required (YYYY-MM-DD).", "error");
+  if (!ref) return showWriteDownMsg("Reference / Doc # is required.", "error");
+  if (!reason_code) return showWriteDownMsg("Please select a primary write-down reason.", "error");
+
+  const tbody = document.getElementById("wdLinesTbody");
+  const rows = Array.from(tbody?.querySelectorAll("tr") || []);
+  const lines = [];
+
+  for (const tr of rows) {
+    const itemId = Number(tr.querySelector(".wd-line-item")?.value || 0);
+    const qty = Number(String(tr.querySelector(".wd-line-qty")?.value || "0").replace(/,/g, ""));
+    const memo = (tr.querySelector(".wd-line-memo")?.value || "").trim() || null;
+    const avail = Number(tr.querySelector(".wd-line-onhand")?.textContent || 0);
+
+    if (!itemId || qty <= 0) continue;
+
+    if (qty > avail) {
+      return showWriteDownMsg(
+        `Quantity (${qty}) exceeds available stock (${avail}) for one of the items. Adjust quantity before posting.`,
+        "error"
+      );
+    }
+
+    lines.push({
+      item_id: itemId,
+      qty,
+      memo,
+      reason_code,
+    });
+  }
+
+  if (!lines.length) {
+    return showWriteDownMsg("Add at least one valid line with Item and Qty > 0.", "error");
+  }
+
+  if (!confirm(`Are you sure you want to write down stock for ${lines.length} item(s)? This will credit inventory and debit loss expense.`)) {
+    return;
+  }
+
+  const btn = document.getElementById("wdSubmitBtn");
+  const oldText = btn?.textContent || "Post Write-Down";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Posting...";
+  }
+
+  try {
+    await apiFetch(ENDPOINTS.inventory.writeDown(cid), {
+      method: "POST",
+      body: JSON.stringify({
+        tx_date,
+        ref,
+        reason_code,
+        notes,
+        lines,
+      }),
+    });
+
+    closeWriteDownModal();
+    showToast?.("Write-down posted successfully", "ok");
+    loadInventoryWriteDowns();
+  } catch (err) {
+    showWriteDownMsg(err?.message || "Write-down failed.", "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+}
+
+// =====================================================
+// Manufacturing / Production Controller
+// Requires: apiFetch, ENDPOINTS, esc, fmtMoney,
+//           getActiveCompanyId, showToast, currentIndustry
+// =====================================================
+
+window._MFG_ITEM_CACHE = window._MFG_ITEM_CACHE || { loaded: false, rows: [] };
+
+// Unified cache shape: { loaded: bool, rows: [...] }
+// Each row carries sales_price so the BOM definition modal can
+// show live unit cost from inventory_items.sales_price BEFORE
+// the BOM is saved. The backend's _get_manufacturing_bom_standard_unit_cost
+// treats inventory_items.sales_price as the authoritative standard
+// material cost per inventory unit, so the frontend display stays
+// in sync with the backend on save.
+async function ensureManufacturingItemCache() {
+  if (window._MFG_ITEM_CACHE.loaded) return window._MFG_ITEM_CACHE.rows;
+
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return [];
+
+  const params = new URLSearchParams({
+    limit: "500",
+    offset: "0",
+    active: "1"
+  });
+
+  const data = await apiFetch(
+    ENDPOINTS.inventory.items(cid, params.toString())
+  );
+
+  const rows = (data?.rows || data?.items || data || []).map(r => ({
+    id: Number(r.id),
+    sku: r.sku || "",
+    name: r.name || "",
+    unit: r.unit || r.stock_unit || "",
+    track_stock: !!r.track_stock,
+    sales_price: Number(r.sales_price ?? 0)
+  }));
+
+  window._MFG_ITEM_CACHE = { loaded: true, rows };
+
+  return window._MFG_ITEM_CACHE.rows;
+}
+
+function getManufacturingMount() {
+  return document.getElementById("manufacturingMount");
+}
+
+function showManufacturingMsg(text = "", kind = "info") {
+  const el = document.getElementById("mfgMsg");
+  if (!el) return;
+
+  el.className =
+    kind === "error"
+      ? "text-xs my-2 text-red-600 font-semibold"
+      : kind === "ok"
+        ? "text-xs my-2 text-emerald-600 font-semibold"
+        : "text-xs my-2 text-slate-600";
+
+  el.textContent = text || "";
+}
+
+function manufacturingItemOptions(selectedId = "") {
+  const items = Array.isArray(window._MFG_ITEM_CACHE?.rows)
+    ? window._MFG_ITEM_CACHE.rows
+    : [];
+
+  const sid = String(selectedId || "");
+
+  return `<option value="">Select item…</option>` +
+    items.map(it => `
+      <option value="${it.id}" ${String(it.id) === sid ? "selected" : ""}>
+        ${esc(it.sku)} — ${esc(it.name)}
+      </option>
+    `).join("");
+}
+
+// =====================================================
+// Manufacturing Screen
+// =====================================================
+
+async function bindManufacturingUI() {
+  const mount = getManufacturingMount();
+  if (!mount) return false;
+
+  const newBomBtn = document.getElementById("mfgNewBomBtn");
+
+  if (newBomBtn && newBomBtn.dataset.bound !== "1") {
+    newBomBtn.dataset.bound = "1";
+
+    newBomBtn.addEventListener("click", () => {
+      openManufacturingBomDefinitionModal();
+    });
+  }
+
+  const bomTab = document.getElementById("mfgTabBoms");
+
+  if (bomTab && bomTab.dataset.bound !== "1") {
+    bomTab.dataset.bound = "1";
+
+    bomTab.addEventListener("click", async () => {
+      await loadManufacturingBoms();
+    });
+  }
+
+  const ordersTab = document.getElementById("mfgTabOrders");
+
+  if (ordersTab && ordersTab.dataset.bound !== "1") {
+    ordersTab.dataset.bound = "1";
+
+    ordersTab.addEventListener("click", async () => {
+      await loadManufacturingOrders();
+    });
+  }
+
+  const usageTab = document.getElementById("mfgTabUsage");
+
+  if (usageTab && usageTab.dataset.bound !== "1") {
+    usageTab.dataset.bound = "1";
+
+    usageTab.addEventListener("click", async () => {
+      await loadManufacturingMaterialUsage();
+    });
+  }
+
+  const historyTab = document.getElementById("mfgTabHistory");
+
+  if (historyTab && historyTab.dataset.bound !== "1") {
+    historyTab.dataset.bound = "1";
+
+    historyTab.addEventListener("click", async () => {
+      await loadManufacturingProductionHistory();
+    });
+  }
+
+  if (mount.dataset.bound !== "1") {
+    mount.dataset.bound = "1";
+
+    mount.addEventListener("click", async (e) => {
+      const bomBtn = e.target.closest("[data-mfg-bom]");
+
+      if (bomBtn) {
+        openManufacturingBomDefinitionModal(
+          Number(bomBtn.dataset.mfgBom)
+        );
+        return;
+      }
+
+      const orderBtn = e.target.closest("[data-mfg-order]");
+
+      if (orderBtn) {
+        openManufacturingOrderDetail(
+          Number(orderBtn.dataset.mfgOrder)
+        );
+        return;
+      }
+
+      const historyBtn = e.target.closest("[data-mfg-history-order]");
+
+      if (historyBtn) {
+        openManufacturingOrderDetail(
+          Number(historyBtn.dataset.mfgHistoryOrder)
+        );
+        return;
+      }
+
+      const usageBtn = e.target.closest("[data-mfg-usage]");
+
+      if (usageBtn) {
+        await postManufacturingMaterialUsageUI(
+          Number(usageBtn.dataset.mfgUsage)
+        );
+        return;
+      }
+    });
+  }
+
+  await ensureManufacturingItemCache();
+  await loadManufacturingBoms();
+
+  return true;
+}
+
+window.bindManufacturingUI = bindManufacturingUI;
+// =====================================================
+// BOM / Recipe List
+// =====================================================
+
+async function loadManufacturingBoms() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const mount = getManufacturingMount();
+
+  if (!cid || !mount) return;
+
+  mount.innerHTML = `
+    <div class="text-xs text-slate-500">Loading BOM…</div>
+  `;
+
+  try {
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.boms(cid)
+    );
+
+    const rows =
+      data?.boms ||
+      data?.rows ||
+      data?.items ||
+      [];
+
+    renderManufacturingBoms(rows);
+  } catch (err) {
+    mount.innerHTML = renderApiError(err);
+  }
+}
+
+function renderManufacturingBoms(rows) {
+  const mount = getManufacturingMount();
+  if (!mount) return;
+
+  mount.innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="font-semibold text-slate-800">
+          Bills of Material
+        </div>
+        <div class="text-xs text-slate-500">
+          Define the standard materials or components required to produce a finished item.
+          Cost per product and contribution per product are computed from batch costs.
+        </div>
+      </div>
+    </div>
+
+    <div id="mfgMsg"></div>
+
+    <div class="overflow-auto border rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr class="text-slate-600">
+            <th class="text-left px-2 py-2">Code</th>
+            <th class="text-left px-2 py-2">Bill of Materials</th>
+            <th class="text-left px-2 py-2">Finished Item</th>
+            <th class="text-right px-2 py-2">Batch Qty</th>
+            <th class="text-right px-2 py-2">Selling Price / Unit</th>
+            <th class="text-right px-2 py-2">Cost / Product</th>
+            <th class="text-right px-2 py-2">Contribution / Product</th>
+            <th class="text-center px-2 py-2">Status</th>
+            <th class="text-right px-2 py-2">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${
+            rows.length
+              ? rows.map(r => {
+                  const sellingPrice = Number(r.selling_price ?? 0);
+                  const costPerUnit =
+                    Number(r.cost_per_unit ?? r.unit_cost ?? r.standard_cost_per_unit ?? 0);
+                  const contributionPerUnit = sellingPrice - costPerUnit;
+                  const contributionPct =
+                    sellingPrice > 0
+                      ? ((contributionPerUnit / sellingPrice) * 100).toFixed(1)
+                      : null;
+                  const contributionClass =
+                    contributionPerUnit >= 0
+                      ? "text-emerald-700 font-semibold"
+                      : "text-red-600 font-semibold";
+                  return `
+                <tr class="border-b hover:bg-slate-50">
+                  <td class="px-2 py-2 font-medium">
+                    ${esc(r.bom_code || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(r.name || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(
+                      r.item_name ||
+                      r.finished_item_name ||
+                      r.product_name ||
+                      `Item #${r.item_id || ""}`
+                    )}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${esc(r.batch_qty ?? "")}
+                    ${esc(r.batch_unit || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${sellingPrice > 0 ? fmtMoney(sellingPrice) : "—"}
+                  </td>
+
+                  <td class="px-2 py-2 text-right text-indigo-700 font-medium">
+                    ${costPerUnit > 0 ? fmtMoney(costPerUnit) : "—"}
+                  </td>
+
+                  <td class="px-2 py-2 text-right ${contributionClass}">
+                    ${sellingPrice > 0
+                      ? `${fmtMoney(contributionPerUnit)}${contributionPct !== null ? ` (${contributionPct}%)` : ""}`
+                      : "—"}
+                  </td>
+
+                  <td class="px-2 py-2 text-center">
+                    ${esc(r.status || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    <button
+                      type="button"
+                      class="text-xs underline"
+                      data-mfg-bom="${Number(r.id)}">
+                      Open
+                    </button>
+                  </td>
+                </tr>
+              `;
+                }).join("")
+              : `
+                <tr>
+                  <td colspan="9" class="px-2 py-4 text-slate-500">
+                    No manufacturing BOM yet.
+                  </td>
+                </tr>
+              `
+          }
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ==========================================================================
+   MANUFACTURING BOM DEFINITION MODAL
+   Calculates cost for 1 Unit with Per-Unit vs Per-Batch basis flexibility
+   ========================================================================== */
+
+/* ==========================================================================
+   MANUFACTURING BOM DEFINITION MODAL
+   - Modal widened to max-w-6xl
+   - Auto-populates Material Unit Cost from Inventory sales_price
+   - Automatically converts full batch hours/costs into per-unit cost
+   ========================================================================== */
+
+function mfgGetEmployeeName(employee) {
+  const firstName = employee?.first_name || employee?.firstName || "";
+  const lastName = employee?.last_name || employee?.lastName || "";
+  const fullName = `${firstName} ${lastName}`.trim();
+  return (
+    employee?.full_name ||
+    employee?.name ||
+    fullName ||
+    employee?.employee_name ||
+    employee?.employee_no ||
+    employee?.employee_number ||
+    `Employee ${employee?.id || ""}`
+  ).trim();
+}
+
+function mfgGetEmployeeRole(employee) {
+  return String(
+    employee?.role ||
+    employee?.job_title ||
+    employee?.position ||
+    employee?.designation ||
+    employee?.job_role ||
+    ""
+  ).trim();
+}
+
+function mfgGetHourlyRateFromSetup(setup) {
+  const contractRate = Number(setup?.contract?.hourly_rate ?? 0);
+  if (contractRate > 0) return contractRate;
+
+  const payBasis = String(setup?.pay_basis || "").trim().toLowerCase();
+  const setupRate = Number(setup?.rate ?? 0);
+
+  if ((payBasis === "hourly" || payBasis === "hourly_rate") && setupRate > 0) {
+    return setupRate;
+  }
+
+  const basicSalary = Number(
+    setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0
+  );
+  const normalHours = Number(
+    setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0
+  );
+
+  return basicSalary > 0 && normalHours > 0 ? basicSalary / normalHours : 0;
+}
+
+// --------------------------------------------------------------------------
+// 1. MODAL CONTAINER
+// --------------------------------------------------------------------------
+async function openManufacturingBomDefinitionModal(bomId = 0) {
+  if (window.__MFG_BOM_OPENING) {
+    console.warn("[MFG BOM] already opening, skipping duplicate", { bomId });
+    return;
+  }
+  window.__MFG_BOM_OPENING = true;
+  try {
+    await _openManufacturingBomDefinitionModalInner(bomId);
+  } finally {
+    window.__MFG_BOM_OPENING = false;
+  }
+}
+
+async function _openManufacturingBomDefinitionModalInner(bomId = 0) {
+  let modal = document.getElementById("mfgBomDefinitionModal");
+
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "mfgBomDefinitionModal";
+    modal.className =
+      "fixed inset-0 z-50 hidden bg-white overflow-y-auto";
+
+    modal.innerHTML = `
+      <div class="bg-white w-full flex flex-col min-h-screen">
+        <!-- HEADER -->
+        <!-- BACK BAR -->
+        <div class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-3 sticky top-0 z-30">
+          <button type="button" id="mfgBomDefinitionBackBtn"
+                  class="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 font-medium">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to BOM list
+          </button>
+          <button type="button" id="mfgBomDefinitionCloseBtn"
+                  class="text-slate-400 hover:text-slate-700 text-2xl font-bold px-2">×</button>
+        </div>
+
+        <!-- HEADER -->
+        <div class="flex items-center justify-between border-b px-6 py-4 bg-white">
+          <div>
+            <div id="mfgBomDefinitionTitle" class="text-lg font-semibold text-slate-900">New BOM</div>
+            <div class="text-xs text-slate-500">
+              Define the finished item, standard recipe materials, and unit production costs.
+            </div>
+          </div>
+        </div>
+
+        <div class="p-6">
+          <div id="mfgBomDefinitionMsg"></div>
+
+          <!-- WHAT DO YOU WANT TO PRODUCE? -->
+          <div class="border rounded-lg p-4 mb-5 bg-slate-50">
+            <div class="font-semibold text-sm text-slate-900 mb-1">What do you want to produce?</div>
+            <div class="text-xs text-slate-500 mb-3">
+              Pick your industry, then the product. The BOM form below fills itself with the standard recipe and quantities.
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1 font-medium">Industry</div>
+                <select id="mfgCatalogIndustry"
+                        class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- Select industry --</option>
+                </select>
+              </label>
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1 font-medium">Category</div>
+                <select id="mfgCatalogCategory" disabled
+                        class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- Select category --</option>
+                </select>
+              </label>
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1 font-medium">Product</div>
+                <select id="mfgCatalogProduct" disabled
+                        class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- Select product --</option>
+                </select>
+              </label>
+              <label class="text-xs">
+                <div id="mfgCatalogBasisLabel" class="text-slate-600 mb-1 font-medium">Batch size</div>
+                <select id="mfgCatalogBasisQty"
+                        class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- Select batch size --</option>
+                </select>
+                <input id="mfgCatalogBasisQtyCustom" type="number" min="0" step="0.0001"
+                       class="w-full border rounded px-2 py-2 text-sm mt-1 hidden"
+                       placeholder="Enter custom batch size">
+              </label>
+            </div>
+
+            <div class="flex items-center gap-2 mt-3">
+              <button type="button" id="mfgCatalogCreateBtn"
+                      class="px-3 py-1.5 border border-indigo-300 text-indigo-700 rounded text-xs hover:bg-indigo-50 font-medium">
+                + Create Product / Formula
+              </button>
+            </div>
+            <div id="mfgCatalogCreatePanel"
+                class="hidden mt-3 border rounded-lg bg-white p-4">
+              <div class="flex items-center justify-between gap-2 mb-3">
+                <div class="font-semibold text-sm">Create Product / Formula</div>
+                <button type="button" id="mfgCatalogCreateClose"
+                        class="text-slate-500 hover:text-slate-800 text-sm">
+                  Close
+                </button>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Industry</div>
+                  <input id="mfgNewIndustry" class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. Manufacturing">
+                </label>
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Category</div>
+                  <input id="mfgNewCategory" class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. Furniture">
+                </label>
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Product name</div>
+                  <input id="mfgNewProductName" class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. Standard Panel">
+                </label>
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Output unit</div>
+                  <input id="mfgNewProductUom" class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. panel, roll, unit">
+                </label>
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Formula type</div>
+                  <select id="mfgNewFormulaType" class="w-full border rounded px-2 py-2 text-sm">
+                    <option value="absolute">Absolute quantities per output unit</option>
+                    <option value="bakers_pct">Baker's percentage</option>
+                  </select>
+                </label>
+                <label class="text-xs">
+                  <div class="mb-1 font-medium">Expected yield (%)</div>
+                  <input id="mfgNewYield" type="number" min="0.01" max="100"
+                        step="0.01" value="100"
+                        class="w-full border rounded px-2 py-2 text-sm">
+                </label>
+                <label id="mfgNewTargetWeightWrap" class="hidden text-xs md:col-span-2">
+                  <div class="mb-1 font-medium">Target baked weight per good unit (g)</div>
+                  <input id="mfgNewTargetWeight" type="number" min="0.0001" step="0.0001"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. 120">
+                </label>
+              </div>
+
+              <div class="mt-4">
+                <div class="font-medium text-xs mb-1">Ingredients</div>
+                <div class="text-xs text-slate-500 mb-2">
+                  Use a unique key for each ingredient. Absolute quantities are per output unit;
+                  percentage formulas use percentages relative to flour.
+                </div>
+                <div id="mfgNewIngredients" class="space-y-2"></div>
+                <button type="button" id="mfgNewIngredientAdd"
+                        class="mt-2 px-3 py-1.5 border rounded text-xs hover:bg-slate-50">
+                  + Add ingredient
+                </button>
+              </div>
+
+              <div class="mt-4">
+                <label class="text-xs">
+                  <div class="font-medium mb-1">Standard batch sizes</div>
+                  <input id="mfgNewBatchSizes"
+                        class="w-full border rounded px-2 py-2 text-sm"
+                        placeholder="e.g. 1, 10, 25, 50">
+                  <div id="mfgNewBatchSizesHint" class="text-slate-500 mt-1">
+                    Enter quantities in output units, separated by commas.
+                  </div>
+                </label>
+              </div>
+
+              <div class="flex items-center gap-2 mt-4 flex-wrap">
+                <button type="button" id="mfgNewProductSave"
+                        class="px-4 py-2 bg-indigo-600 text-white rounded text-xs font-medium hover:bg-indigo-700">
+                  Save Product / Formula
+                </button>
+                <div id="mfgNewProductMsg" class="text-xs text-slate-600"></div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 mt-3 flex-wrap">
+              <button type="button" id="mfgCatalogApplyBtn"
+                      class="px-3 py-1.5 bg-slate-800 text-white rounded text-xs hover:bg-slate-700 font-medium">
+                Fill BOM from product
+              </button>
+              <button type="button" id="mfgCatalogCostPreviewBtn"
+                      class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">
+                Cost preview
+              </button>
+              <button type="button" id="mfgCatalogRematchBtn"
+                      class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">
+                Re-match items
+              </button>
+              <div id="mfgCatalogMsg" class="text-xs text-slate-600"></div>
+            </div>
+            <div id="mfgCatalogCostBox" class="hidden mt-3 border rounded bg-white px-3 py-2 text-xs"></div>
+          </div>
+
+          <!-- BOM HEADER FORM -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1 font-medium">BOM Code</div>
+              <input id="mfgBomDefinitionCode"
+                     class="w-full border rounded px-3 py-2 text-sm"
+                     placeholder="e.g. BOM-001">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1 font-medium">BOM Name</div>
+              <input id="mfgBomDefinitionName"
+                     class="w-full border rounded px-3 py-2 text-sm"
+                     placeholder="e.g. Standard Product BOM">
+            </label>
+
+            <label class="text-xs md:col-span-2">
+              <div class="text-slate-600 mb-1 font-medium">Finished Item</div>
+              <input id="mfgBomDefinitionFinishedItem" type="text"
+                     class="w-full border rounded px-3 py-2 text-sm"
+                     placeholder="e.g. Finished Product Name">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1 font-medium">Selling Price (per unit)</div>
+              <input id="mfgBomDefinitionSellingPrice" type="number"
+                     min="0" step="0.01"
+                     class="w-full border rounded px-3 py-2 text-sm font-semibold text-slate-800"
+                     placeholder="0.00">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1 font-medium">Output Quantity</div>
+              <input id="mfgBomDefinitionBatchQty" type="number"
+                     min="0.0001" step="0.0001"
+                     class="w-full border rounded px-3 py-2 text-sm font-semibold text-slate-800"
+                     value="1">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1 font-medium">Output Unit</div>
+              <input id="mfgBomDefinitionBatchUnit"
+                     class="w-full border rounded px-3 py-2 text-sm"
+                     value="unit"
+                     placeholder="unit / piece / kg">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1 font-medium">Yield % (e.g. 88 = 12% bake/process loss)</div>
+              <input id="mfgBomDefinitionYieldPercent" type="number"
+                     min="0.0001" max="100" step="0.0001"
+                     class="w-full border rounded px-3 py-2 text-sm font-semibold text-slate-800"
+                     value="100">
+            </label>
+
+            <label class="text-xs md:col-span-2">
+              <div class="text-slate-600 mb-1 font-medium">Description</div>
+              <textarea id="mfgBomDefinitionDescription" rows="2"
+                        class="w-full border rounded px-3 py-2 text-sm"></textarea>
+            </label>
+          </div>
+
+          <!-- 1. DIRECT MATERIALS -->
+          <div class="mt-7 flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-sm text-slate-900">1. Direct Materials</div>
+              <div class="text-xs text-slate-500">
+                Standard raw materials and components required. Unit costs auto-load from material inventory.
+              </div>
+            </div>
+            <button type="button" id="mfgBomDefinitionAddLineBtn"
+                    class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">+ Add Component</button>
+          </div>
+
+          <div class="overflow-x-auto border rounded mt-2">
+            <table class="w-full min-w-[850px] text-xs">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-3 py-2 w-[280px]">Component</th>
+                  <th class="text-right px-3 py-2 w-[120px]">Quantity</th>
+                  <th class="text-left px-3 py-2 w-[80px]">Unit</th>
+                  <th class="text-right px-3 py-2 w-[100px]">Scrap %</th>
+                  <th class="text-right px-3 py-2 w-[140px]">Unit Cost</th>
+                  <th class="text-right px-3 py-2 w-[140px]">Total Material Cost</th>
+                  <th class="text-center px-3 py-2 w-[60px]"></th>
+                </tr>
+              </thead>
+              <tbody id="mfgBomDefinitionLinesTbody"></tbody>
+            </table>
+          </div>
+
+          <!-- 2. DIRECT LABOUR -->
+          <div class="mt-7 flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-sm text-slate-900">2. Direct Labour</div>
+              <div class="text-xs text-slate-500">
+                Labour hours directly required to produce this product. Cost auto-fills as Hours × Hourly Rate.
+              </div>
+            </div>
+            <button type="button" id="mfgBomAddLabourBtn"
+                    class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">+ Add Labour</button>
+          </div>
+
+          <div class="overflow-x-auto border rounded mt-2">
+            <table class="w-full min-w-[850px] text-xs">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-3 py-2 w-[240px]">Employee / Worker (Payroll)</th>
+                  <th class="text-left px-3 py-2 w-[160px]">Worker Name</th>
+                  <th class="text-left px-3 py-2 w-[120px]">Role</th>
+                  <th class="text-right px-3 py-2 w-[100px]">Shift Hours</th>
+                  <th class="text-right px-3 py-2 w-[120px]">Rate (per hr)</th>
+                  <th class="text-right px-3 py-2 w-[130px]">Full Shift Cost<br><span class="font-normal text-[10px] text-slate-500">(batch)</span></th>
+                  <th class="text-center px-3 py-2 w-[60px]"></th>
+                </tr>
+              </thead>
+              <tbody id="mfgBomLabourTbody"></tbody>
+            </table>
+          </div>
+
+          <!-- 3. OTHER DIRECT COSTS -->
+          <div class="mt-7 flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-sm text-slate-900">3. Other Direct Costs</div>
+              <div class="text-xs text-slate-500">
+                Direct costs directly attributable to this product (e.g. packaging, consumables).
+              </div>
+            </div>
+            <button type="button" id="mfgBomAddDirectBtn"
+                    class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">+ Add Direct Cost</button>
+          </div>
+
+          <div class="overflow-x-auto border rounded mt-2">
+            <table class="w-full min-w-[700px] text-xs">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-3 py-2">Description</th>
+                  <th class="text-left px-3 py-2 w-[200px]">Cost Type</th>
+                  <th class="text-right px-3 py-2 w-[150px]">Amount (batch)</th>
+                  <th class="text-right px-3 py-2 w-[120px]">Per Unit</th>
+                  <th class="text-center px-3 py-2 w-[60px]"></th>
+                </tr>
+              </thead>
+              <tbody id="mfgBomDirectTbody"></tbody>
+            </table>
+          </div>
+
+          <!-- 4. MANUFACTURING OVERHEAD -->
+          <div class="mt-7 flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-sm text-slate-900">4. Manufacturing Overhead</div>
+              <div class="text-xs text-slate-500">
+                Machine runtime or factory allocations required to produce this product (Quantity × Rate).
+              </div>
+            </div>
+            <button type="button" id="mfgBomAddOverheadBtn"
+                    class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">+ Add Overhead</button>
+          </div>
+
+          <div class="overflow-x-auto border rounded mt-2">
+            <table class="w-full min-w-[850px] text-xs">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-3 py-2 w-[240px]">Machine / Asset</th>
+                  <th class="text-left px-3 py-2 w-[180px]">Cost / Allocation</th>
+                  <th class="text-left px-3 py-2 w-[140px]">Basis</th>
+                  <th class="text-right px-3 py-2 w-[100px]">Quantity</th>
+                  <th class="text-right px-3 py-2 w-[110px]">Rate</th>
+                  <th class="text-right px-3 py-2 w-[130px]">Allocated Amount<br><span class="font-normal text-[10px] text-slate-500">(batch)</span></th>
+                  <th class="text-right px-3 py-2 w-[120px]">Per Unit</th>
+                  <th class="text-center px-3 py-2 w-[60px]"></th>
+                </tr>
+              </thead>
+              <tbody id="mfgBomOverheadTbody"></tbody>
+            </table>
+          </div>
+
+          <!-- 5. UTILITIES (WATER & ELECTRICITY) -->
+          <div class="mt-7 flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-sm text-slate-900">5. Utilities (Water &amp; Electricity)</div>
+              <div class="text-xs text-slate-500">
+                Shared compound bills, per-batch consumption, or machine kW × hours × kWh rate.
+                Each row is auto-converted to a per-product cost using the BOM output quantity.
+              </div>
+            </div>
+            <button type="button" id="mfgBomAddUtilityBtn"
+                    class="px-3 py-1.5 border rounded text-xs hover:bg-slate-50 font-medium">+ Add Utility</button>
+          </div>
+
+          <div class="overflow-x-auto border rounded mt-2">
+            <table class="w-full min-w-[1100px] text-xs">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-3 py-2 w-[180px]">Utility / Method</th>
+                  <th class="text-left px-3 py-2">Description</th>
+                  <th class="text-left px-3 py-2 w-[320px]">Calculation inputs</th>
+                  <th class="text-right px-3 py-2 w-[130px]">Batch Cost</th>
+                  <th class="text-right px-3 py-2 w-[120px]">Per Unit</th>
+                  <th class="text-center px-3 py-2 w-[60px]"></th>
+                </tr>
+              </thead>
+              <tbody id="mfgBomUtilityTbody"></tbody>
+            </table>
+          </div>
+
+          <!-- STANDARD COST SUMMARY -->
+          <div class="mt-7 border rounded p-4 bg-slate-50 text-xs">
+            <div class="font-semibold text-sm text-slate-900 mb-1">
+              Cost per Product &amp; Contribution
+            </div>
+            <div class="text-[11px] text-slate-500 mb-3">
+              All batch costs (labour, direct costs, overheads) are auto-converted to a per-product basis using the BOM output quantity. Material cost is fetched from inventory on save.
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-2">
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Direct Materials (batch)</span>
+                <strong id="mfgBomTotMaterials">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Direct Labour (batch)</span>
+                <strong id="mfgBomTotLabour">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Other Direct Costs (batch)</span>
+                <strong id="mfgBomTotDirect">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1 font-semibold">
+                <span>Total Direct Cost</span>
+                <strong id="mfgBomTotDirectTotal">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Manufacturing Overhead (batch)</span>
+                <strong id="mfgBomTotOverhead">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1">
+                <span class="text-slate-600">Utilities — Water &amp; Electricity (batch)</span>
+                <strong id="mfgBomTotUtilities">0.00</strong>
+              </div>
+              <div class="flex justify-between border-b pb-1 font-semibold">
+                <span>Total Batch Cost</span>
+                <strong id="mfgBomTotTotal">0.00</strong>
+              </div>
+            </div>
+
+            <!-- PER-PRODUCT OUTPUT -->
+            <div class="mt-4 pt-3 border-t-2 border-indigo-200">
+              <div class="text-[11px] uppercase tracking-wide text-indigo-700 font-semibold mb-2">
+                Per-Product Costing (final output)
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-2">
+                <div class="flex justify-between border-b pb-1">
+                  <span class="text-slate-600">Cost per Product</span>
+                  <strong id="mfgBomTotUnit" class="text-indigo-700 font-bold">—</strong>
+                </div>
+                <div class="flex justify-between border-b pb-1">
+                  <span class="text-slate-600">Selling Price per Product</span>
+                  <strong id="mfgBomSummaryPriceUnit">0.00</strong>
+                </div>
+                <div class="flex justify-between border-b pb-1 font-semibold bg-indigo-50 -mx-2 px-2 py-1 rounded">
+                  <span>Contribution per Product</span>
+                  <strong id="mfgBomTotMargin" class="text-base">—</strong>
+                </div>
+              </div>
+              <div class="text-[10px] text-slate-500 mt-2">
+                Contribution per Product = Selling Price per Product − Cost per Product (including materials, labour, direct costs &amp; overheads).
+              </div>
+            </div>
+          </div>
+
+          <!-- ACTIONS -->
+          <div class="flex justify-end gap-2 mt-6">
+            <button type="button" id="mfgBomDefinitionCancelBtn"
+                    class="px-4 py-2 border rounded text-xs hover:bg-slate-50">Cancel</button>
+            <button type="button" id="mfgBomDefinitionSaveBtn"
+                    class="px-4 py-2 bg-slate-900 text-white rounded text-xs hover:bg-slate-800 font-medium">
+              Save BOM
+            </button>
+          </div>
+
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    document.getElementById("mfgBomDefinitionCloseBtn")?.addEventListener("click", closeManufacturingBomDefinitionModal);
+    document.getElementById("mfgBomDefinitionBackBtn")?.addEventListener("click", closeManufacturingBomDefinitionModal);
+    document.getElementById("mfgBomDefinitionCancelBtn")?.addEventListener("click", closeManufacturingBomDefinitionModal);
+    document.getElementById("mfgBomDefinitionAddLineBtn")?.addEventListener("click", () => addManufacturingBomDefinitionLine());
+    document.getElementById("mfgBomAddLabourBtn")?.addEventListener("click", () => addMfgBomLabourRow());
+    document.getElementById("mfgBomAddDirectBtn")?.addEventListener("click", () => addMfgBomDirectCostRow());
+    document.getElementById("mfgBomAddOverheadBtn")?.addEventListener("click", () => addMfgBomOverheadRow());
+    document.getElementById("mfgBomAddUtilityBtn")?.addEventListener("click", () => addMfgBomUtilityRow());
+    document.getElementById("mfgBomDefinitionSaveBtn")?.addEventListener("click", saveManufacturingBomDefinition);
+
+    document.getElementById("mfgCatalogIndustry")?.addEventListener("change", onMfgCatalogIndustryChange);
+    document.getElementById("mfgCatalogCategory")?.addEventListener("change", onMfgCatalogCategoryChange);
+    document.getElementById("mfgCatalogProduct")?.addEventListener("change", onMfgCatalogProductChange);
+    document.getElementById("mfgCatalogApplyBtn")?.addEventListener("click", applyCatalogProductToBomForm);
+    document.getElementById("mfgCatalogCostPreviewBtn")?.addEventListener("click", previewCatalogBomCost);
+    document.getElementById("mfgCatalogRematchBtn")?.addEventListener("click", () => {
+      autoMatchMfgLineItems(); 
+    });
+    initMfgCatalogCreateForm();
+    modal.addEventListener("input", handleMfgBomModalInput);
+    modal.addEventListener("change", handleMfgBomModalInput);
+  }
+
+  modal.dataset.bomId = String(bomId || 0);
+
+  document.getElementById("mfgBomDefinitionCode").value = "";
+  document.getElementById("mfgBomDefinitionName").value = "";
+  document.getElementById("mfgBomDefinitionFinishedItem").value = "";
+  document.getElementById("mfgBomDefinitionSellingPrice").value = "";
+  document.getElementById("mfgBomDefinitionBatchQty").value = "1";
+  document.getElementById("mfgBomDefinitionBatchUnit").value = "unit";
+  document.getElementById("mfgBomDefinitionDescription").value = "";
+  document.getElementById("mfgBomDefinitionYieldPercent").value = "100";
+  resetCatalogPicker();
+
+  document.getElementById("mfgBomDefinitionLinesTbody").innerHTML = "";
+  document.getElementById("mfgBomLabourTbody").innerHTML = "";
+  document.getElementById("mfgBomDirectTbody").innerHTML = "";
+  document.getElementById("mfgBomOverheadTbody").innerHTML = "";
+  document.getElementById("mfgBomUtilityTbody").innerHTML = "";
+
+  document.getElementById("mfgBomDefinitionTitle").textContent = bomId ? "Edit BOM" : "New BOM";
+  modal.classList.remove("hidden");
+  modal.scrollTo(0, 0);
+
+  try {
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    if (!cid) throw new Error("Active company could not be determined");
+
+    const [inventoryData, payrollRes, assetsRes] = await Promise.all([
+      apiFetch(ENDPOINTS.inventory.items(cid, "active=1&limit=500"))
+        .catch(err => {
+          console.error("[MFG BOM] inventory fetch failed:", err);
+          return null;
+        }),
+      apiFetch(`/api/companies/${encodeURIComponent(cid)}/payroll/employees?status=active`).catch(() => null),
+      apiFetch(
+        ENDPOINTS?.assets?.list
+          ? ENDPOINTS.assets.list(cid, { limit: 100 })
+          : `/api/companies/${encodeURIComponent(cid)}/assets?limit=100`
+      ).catch(() => null)
+    ]);
+
+    // Robust inventory extraction — try many shapes the API might return.
+    // If the API returned an error envelope `{ ok: false, error: ... }`,
+    // none of the array fields will be present and we fall through to `[]`.
+    let inventoryItems = [];
+    if (Array.isArray(inventoryData)) {
+      inventoryItems = inventoryData;
+    } else if (inventoryData && typeof inventoryData === "object") {
+      inventoryItems =
+        inventoryData.items ||
+        inventoryData.data?.items ||
+        inventoryData.data?.rows ||
+        inventoryData.data ||
+        inventoryData.rows ||
+        inventoryData.results ||
+        (Array.isArray(inventoryData.data) ? inventoryData.data : []) ||
+        [];
+    }
+
+    if (!Array.isArray(inventoryItems)) inventoryItems = [];
+
+    // Unified cache shape: { loaded: bool, rows: [...] } with
+    // sales_price preserved so the modal can show live material
+    // cost from inventory_items.sales_price BEFORE save.
+    window._MFG_ITEM_CACHE = {
+      loaded: true,
+      rows: inventoryItems.map(r => ({
+        id: Number(r.id),
+        sku: r.sku || "",
+        name: r.name || "",
+        unit: r.unit || r.stock_unit || "",
+        track_stock: !!r.track_stock,
+        sales_price: Number(r.sales_price ?? 0)
+      }))
+    };
+
+    console.info(
+      `[MFG BOM] inventory cache populated with ${inventoryItems.length} items. ` +
+      `Sample:`,
+      inventoryItems.slice(0, 3).map(it => ({
+        id: it?.id,
+        name: it?.name,
+        sku: it?.sku,
+        unit: it?.unit
+      }))
+    );
+
+    if (inventoryItems.length === 0) {
+      console.warn(
+        "[MFG BOM] WARNING: inventory cache is empty. Auto-match of " +
+        "materials to inventory items will not work. Verify the " +
+        "inventory endpoint /api/companies/{cid}/inventory/items is " +
+        "returning data and that the user has read permissions."
+      );
+      document.getElementById("mfgBomDefinitionMsg").innerHTML = `
+        <div class="mb-3 border border-amber-300 bg-amber-50 text-amber-800 rounded px-3 py-2 text-xs">
+          Inventory returned 0 items — material auto-match will not work. Pick materials manually or check inventory permissions.
+        </div>
+      `;
+    }
+
+    const payrollEmployees =
+      payrollRes?.items || payrollRes?.data || payrollRes || [];
+    const assets =
+      assetsRes?.data || assetsRes?.items || assetsRes?.assets || assetsRes || [];
+
+    window.__MFG_BOM_REF = {
+      cid,
+      payroll: Array.isArray(payrollEmployees) ? payrollEmployees : [],
+      assets: Array.isArray(assets) ? assets : []
+    };
+
+    if (!bomId) {
+      await loadProductionCatalogPicker(cid);
+      addManufacturingBomDefinitionLine();
+      addMfgBomLabourRow();
+      addMfgBomDirectCostRow();
+      addMfgBomOverheadRow();
+      addMfgBomUtilityRow();
+      recalcMfgBomTotals();
+      return;
+    }
+
+    const data = await apiFetch(ENDPOINTS.manufacturing.bom(cid, bomId));
+    if (!data?.ok || !data?.bom) throw new Error(data?.error || "Unable to load BOM");
+
+    const bom = data.bom;
+    document.getElementById("mfgBomDefinitionCode").value = bom.bom_code ?? "";
+    document.getElementById("mfgBomDefinitionName").value = bom.name ?? "";
+    document.getElementById("mfgBomDefinitionFinishedItem").value = bom.finished_item_name ?? "";
+    document.getElementById("mfgBomDefinitionSellingPrice").value = bom.selling_price ?? "";
+    document.getElementById("mfgBomDefinitionBatchQty").value = bom.batch_qty ?? "1";
+    document.getElementById("mfgBomDefinitionBatchUnit").value = bom.batch_unit ?? "unit";
+    document.getElementById("mfgBomDefinitionYieldPercent").value = bom.yield_percent ?? 100;
+    document.getElementById("mfgBomDefinitionDescription").value = bom.description ?? "";
+
+    (bom.lines || []).forEach(l => addManufacturingBomDefinitionLine(l));
+    (bom.labour || []).forEach(r => addMfgBomLabourRow(r));
+    (bom.direct_costs || []).forEach(r => addMfgBomDirectCostRow(r));
+    (bom.overheads || []).forEach(r => addMfgBomOverheadRow(r));
+    (bom.utilities || []).forEach(r => addMfgBomUtilityRow(r));
+
+    recalcMfgBomTotals();
+  } catch (err) {
+    console.error("[Manufacturing BOM] failed to load:", err);
+    document.getElementById("mfgBomDefinitionMsg").innerHTML = `
+      <div class="mb-3 border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2 text-xs">
+        ${esc(err?.message || "Unable to load manufacturing BOM.")}
+      </div>
+    `;
+  }
+}
+
+// --------------------------------------------------------------------------
+// 1b. "WHAT DO YOU WANT TO PRODUCE?" CATALOG PICKER
+// Industry -> Category -> Product. Fills the BOM form from the
+// production catalog (baker's-% recipes for bakery, absolute
+// per-unit recipes for furniture / clothing / footwear / bricks).
+// --------------------------------------------------------------------------
+
+const __MFG_CATALOG = { products: [], loaded: false };
+
+function mfgCatalogSetMsg(text, isError = false) {
+  const box = document.getElementById("mfgCatalogMsg");
+  if (!box) return;
+  box.textContent = text || "";
+  box.className = `text-xs ${isError ? "text-red-600" : "text-slate-600"}`;
+}
+
+function resetCatalogPicker() {
+  const ind = document.getElementById("mfgCatalogIndustry");
+  const cat = document.getElementById("mfgCatalogCategory");
+  const prod = document.getElementById("mfgCatalogProduct");
+  const qty = document.getElementById("mfgCatalogBasisQty");
+  const qtyCustom = document.getElementById("mfgCatalogBasisQtyCustom");
+  const costBox = document.getElementById("mfgCatalogCostBox");
+
+  if (ind) ind.value = "";
+  if (cat) { cat.value = ""; cat.disabled = true; }
+  if (prod) { prod.value = ""; prod.disabled = true; }
+  if (qty) {
+    qty.innerHTML = `<option value="">-- Select batch size --</option>`;
+    qty.value = "";
+  }
+  if (qtyCustom) {
+    qtyCustom.value = "";
+    qtyCustom.classList.add("hidden");
+  }
+  if (costBox) costBox.classList.add("hidden");
+  mfgCatalogSetMsg("");
+}
+
+async function loadProductionCatalogPicker(cid) {
+  try {
+    if (__MFG_CATALOG.loaded) {
+      onMfgCatalogIndustryChange();
+      return;
+    }
+
+    mfgCatalogSetMsg("Loading product catalog...");
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.productionCatalog(cid)
+    );
+    if (!data?.ok) throw new Error(data?.error || "Unable to load catalog");
+
+    __MFG_CATALOG.products = data.products || [];
+    __MFG_CATALOG.loaded = true;
+
+    const ind = document.getElementById("mfgCatalogIndustry");
+    if (ind) {
+      ind.innerHTML =
+        `<option value="">-- Select industry --</option>` +
+        (data.industries || [])
+          .map(i => `<option value="${esc(i)}">${esc(i)}</option>`)
+          .join("");
+    }
+    onMfgCatalogIndustryChange();
+    mfgCatalogSetMsg("");
+  } catch (err) {
+    mfgCatalogSetMsg(
+      `Catalog unavailable: ${err?.message || err}`,
+      true
+    );
+  }
+}
+
+
+function initMfgCatalogCreateForm() {
+  const panel = document.getElementById("mfgCatalogCreatePanel");
+  if (!panel || panel.dataset.bound === "1") return;
+  panel.dataset.bound = "1";
+
+  const $ = (id) => document.getElementById(id);
+  const msg = $("mfgNewProductMsg");
+  const ingredients = $("mfgNewIngredients");
+  const type = $("mfgNewFormulaType");
+
+  const setMessage = (text, error = false) => {
+    if (!msg) return;
+    msg.textContent = text;
+    msg.className = "text-xs " + (error ? "text-red-600" : "text-slate-600");
+  };
+
+  const isBakers = () => type?.value === "bakers_pct";
+
+  function updateFormulaFields() {
+    const baker = isBakers();
+    $("mfgNewTargetWeightWrap")?.classList.toggle("hidden", !baker);
+
+    const hint = $("mfgNewBatchSizesHint");
+    if (hint) {
+      hint.textContent = baker
+        ? "Enter flour quantities in kg, separated by commas (e.g. 2.5, 5, 10)."
+        : "Enter quantities in output units, separated by commas (e.g. 1, 10, 25).";
+    }
+
+    ingredients?.querySelectorAll("[data-ingredient-amount-label]").forEach((el) => {
+      el.textContent = baker ? "% of flour" : "Qty per output unit";
+    });
+
+    ingredients?.querySelectorAll("[data-ingredient-amount]").forEach((el) => {
+      el.placeholder = baker ? "e.g. 100" : "e.g. 0.25";
+    });
+  }
+
+  function addIngredientRow(values = {}) {
+    if (!ingredients) return;
+
+    const row = document.createElement("div");
+    row.className = "border rounded p-3 grid grid-cols-1 md:grid-cols-6 gap-2";
+    row.dataset.ingredientRow = "1";
+
+    const field = (label, key, placeholder, value = "", type = "text") => `
+      <label class="text-xs">
+        <span class="block mb-1 text-slate-600">${label}</span>
+        <input data-field="${key}" type="${type}"
+          class="w-full min-w-0 border rounded px-2 py-2 text-sm"
+          placeholder="${placeholder}"
+          value="${esc(String(value ?? ""))}"
+          ${type === "number" ? 'min="0" step="any"' : ""}>
+      </label>`;
+
+    row.innerHTML = `
+      <div class="md:col-span-2">
+        ${field("Ingredient key", "key", "e.g. flour", values.key || "")}
+        ${field("Display name", "label", "e.g. Cake flour", values.label || "")}
+      </div>
+      <div>
+        ${field(isBakers() ? "% of flour" : "Qty per output unit",
+          "amount", isBakers() ? "e.g. 100" : "e.g. 1",
+          values.amount ?? values.pct ?? values.qty ?? "", "number")}
+        <span data-ingredient-amount-label class="hidden"></span>
+      </div>
+      <div>
+        ${field("Unit", "unit", "e.g. kg, L, unit", values.unit || "kg")}
+        ${field("Scrap (%)", "scrap", "0", values.scrap_percent ?? 0, "number")}
+      </div>
+      <div>
+        ${field("Unit cost (non-stock)", "unit_cost", "0.00",
+          values.unit_cost ?? "", "number")}
+        <label class="flex items-center gap-2 mt-3 text-xs">
+          <input type="checkbox" data-field="non_stock"
+            ${values.non_stock ? "checked" : ""}>
+          Non-stock item
+        </label>
+      </div>
+      <div class="flex items-start justify-end">
+        <button type="button" data-remove-ingredient
+          class="border rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50">
+          Remove
+        </button>
+      </div>`;
+
+    // Put the amount label above the amount input.
+    const amountInput = row.querySelector('[data-field="amount"]');
+    if (amountInput) {
+      const label = amountInput.closest("label");
+      const span = label?.querySelector("span");
+      if (span) {
+        span.dataset.ingredientAmountLabel = "1";
+        span.textContent = isBakers() ? "% of flour" : "Qty per output unit";
+      }
+      amountInput.dataset.ingredientAmount = "1";
+    }
+
+    ingredients.appendChild(row);
+    updateFormulaFields();
+  }
+
+  function readIngredients() {
+    return [...(ingredients?.querySelectorAll("[data-ingredient-row]") || [])]
+      .map((row) => {
+        const val = (key) =>
+          row.querySelector(`[data-field="${key}"]`)?.value?.trim() || "";
+
+        const item = {
+          key: val("key").toLowerCase().replace(/\s+/g, "_"),
+          label: val("label"),
+          unit: val("unit"),
+          scrap_percent: Number(val("scrap") || 0)
+        };
+
+        const amount = Number(val("amount"));
+        if (isBakers()) item.pct = amount;
+        else item.qty = amount;
+
+        const nonStock = !!row.querySelector('[data-field="non_stock"]')?.checked;
+        if (nonStock) {
+          item.non_stock = true;
+          item.unit_cost = Number(val("unit_cost") || 0);
+        }
+
+        return item;
+      })
+      .filter((item) => item.key || item.label);
+  }
+
+  function parseBatchSizes() {
+    const raw = $("mfgNewBatchSizes")?.value || "";
+    return [...new Set(raw.split(",")
+      .map((v) => Number(v.trim()))
+      .filter((v) => Number.isFinite(v) && v > 0))];
+  }
+
+  $("mfgCatalogCreateBtn")?.addEventListener("click", () => {
+    panel.classList.toggle("hidden");
+    if (!panel.classList.contains("hidden")) {
+      if (!ingredients?.children.length) addIngredientRow();
+      updateFormulaFields();
+    }
+  });
+
+  $("mfgCatalogCreateClose")?.addEventListener("click", () => {
+    panel.classList.add("hidden");
+  });
+
+  $("mfgNewIngredientAdd")?.addEventListener("click", () => {
+    addIngredientRow();
+  });
+
+  ingredients?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-remove-ingredient]");
+    if (button) button.closest("[data-ingredient-row]")?.remove();
+  });
+
+  type?.addEventListener("change", updateFormulaFields);
+
+  $("mfgNewProductSave")?.addEventListener("click", async () => {
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    if (!cid) return setMessage("Select a company first.", true);
+
+    const industry = $("mfgNewIndustry")?.value.trim();
+    const category = $("mfgNewCategory")?.value.trim();
+    const productName = $("mfgNewProductName")?.value.trim();
+    const productUom = $("mfgNewProductUom")?.value.trim();
+    const formulaType = type?.value;
+    const yieldPercent = Number($("mfgNewYield")?.value);
+    const rows = readIngredients();
+    const batches = parseBatchSizes();
+
+    if (!industry || !category || !productName || !productUom) {
+      return setMessage("Complete industry, category, product name and output unit.", true);
+    }
+    if (!Number.isFinite(yieldPercent) || yieldPercent <= 0 || yieldPercent > 100) {
+      return setMessage("Expected yield must be greater than 0 and no more than 100%.", true);
+    }
+    if (!rows.length) return setMessage("Add at least one ingredient.", true);
+
+    for (const item of rows) {
+      const amount = formulaType === "bakers_pct" ? item.pct : item.qty;
+      if (!item.key || !item.label || !item.unit ||
+          !Number.isFinite(amount) || amount <= 0) {
+        return setMessage("Each ingredient needs a key, name, unit and positive quantity/percentage.", true);
+      }
+      if (item.scrap_percent < 0) {
+        return setMessage("Scrap percentage cannot be negative.", true);
+      }
+      if (item.non_stock && item.unit_cost < 0) {
+        return setMessage("Non-stock unit cost cannot be negative.", true);
+      }
+    }
+
+    if (new Set(rows.map((r) => r.key)).size !== rows.length) {
+      return setMessage("Ingredient keys must be unique.", true);
+    }
+
+    const formulaMeta = { ingredients: rows };
+
+    if (formulaType === "bakers_pct") {
+      if (!rows.some((r) => r.key === "flour")) {
+        return setMessage("Baker's percentage formulas require an ingredient key named 'flour'.", true);
+      }
+      const targetWeight = Number($("mfgNewTargetWeight")?.value);
+      if (!Number.isFinite(targetWeight) || targetWeight <= 0) {
+        return setMessage("Enter the target baked weight per good unit in grams.", true);
+      }
+      formulaMeta.target_baked_weight_g = targetWeight;
+      formulaMeta.bake_loss_pct = 0;
+      formulaMeta.batch_tiers = batches.map((kg) => ({
+        key: `flour_${String(kg).replace(".", "_")}kg`,
+        label: `${kg} kg flour`,
+        flour_kg: kg
+      }));
+    } else {
+      formulaMeta.batch_tiers = batches.map((qty) => ({
+        key: `batch_${String(qty).replace(".", "_")}`,
+        label: `${qty} ${productUom}`,
+        batch_qty: qty
+      }));
+    }
+
+    // The API upserts by company + industry + category + product name.
+    const existing = (__MFG_CATALOG.products || []).find((p) =>
+      String(p.industry || "").trim().toLowerCase() === industry.toLowerCase() &&
+      String(p.category || "").trim().toLowerCase() === category.toLowerCase() &&
+      String(p.product_name || p.name || "").trim().toLowerCase() === productName.toLowerCase()
+    );
+
+    if (existing && !confirm(
+      "A product with this industry, category and name already exists. Saving may update its formula. Continue?"
+    )) return;
+
+    const button = $("mfgNewProductSave");
+    if (button) button.disabled = true;
+    setMessage("Saving formula…");
+
+    try {
+      const response = await apiFetch(
+        ENDPOINTS.manufacturing.productionCatalog(cid),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            industry,
+            category,
+            product_name: productName,
+            product_uom: productUom,
+            formula_type: formulaType,
+            default_yield_percent: yieldPercent,
+            formula_meta: formulaMeta
+          })
+        }
+      );
+
+      if (!response || response.ok === false) {
+        throw new Error(response?.error || response?.message || "The product could not be saved.");
+      }
+
+      __MFG_CATALOG.loaded = false;
+      await loadProductionCatalogPicker(cid);
+
+      const industrySelect = $("mfgCatalogIndustry");
+      if (industrySelect) {
+        industrySelect.value = industry;
+        onMfgCatalogIndustryChange();
+      }
+
+      const categorySelect = $("mfgCatalogCategory");
+      if (categorySelect) {
+        categorySelect.value = category;
+        onMfgCatalogCategoryChange();
+      }
+
+      const productSelect = $("mfgCatalogProduct");
+      const savedProduct = (__MFG_CATALOG.products || []).find((p) =>
+        String(p.industry || "").trim().toLowerCase() === industry.toLowerCase() &&
+        String(p.category || "").trim().toLowerCase() === category.toLowerCase() &&
+        String(p.product_name || p.name || "").trim().toLowerCase() === productName.toLowerCase()
+      );
+
+      if (productSelect && savedProduct) {
+        productSelect.value = String(savedProduct.id);
+        onMfgCatalogProductChange();
+      }
+
+      setMessage("Product formula saved. You can now preview its cost or fill the BOM.");
+    } catch (error) {
+      console.error("[manufacturing catalog] save failed", error);
+      setMessage(error?.message || "Could not save the product formula.", true);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+
+  updateFormulaFields();
+}
+
+function onMfgCatalogIndustryChange() {
+  const industry =
+    document.getElementById("mfgCatalogIndustry")?.value || "";
+  const cat = document.getElementById("mfgCatalogCategory");
+  const prod = document.getElementById("mfgCatalogProduct");
+  if (!cat || !prod) return;
+
+  const categories = [...new Set(
+    __MFG_CATALOG.products
+      .filter(p => !industry || p.industry === industry)
+      .map(p => p.category)
+  )].sort();
+
+  cat.innerHTML =
+    `<option value="">-- Select category --</option>` +
+    categories
+      .map(c => `<option value="${esc(c)}">${esc(c)}</option>`)
+      .join("");
+  cat.disabled = !industry || categories.length === 0;
+
+  prod.innerHTML = `<option value="">-- Select product --</option>`;
+  prod.disabled = true;
+}
+
+function onMfgCatalogCategoryChange() {
+  const industry =
+    document.getElementById("mfgCatalogIndustry")?.value || "";
+  const category =
+    document.getElementById("mfgCatalogCategory")?.value || "";
+  const prod = document.getElementById("mfgCatalogProduct");
+  if (!prod) return;
+
+  const products = __MFG_CATALOG.products.filter(
+    p =>
+      (!industry || p.industry === industry) &&
+      (!category || p.category === category)
+  );
+
+  prod.innerHTML =
+    `<option value="">-- Select product --</option>` +
+    products
+      .map(p => `<option value="${esc(p.id)}">${esc(p.product_name)}</option>`)
+      .join("");
+  prod.disabled = products.length === 0;
+}
+
+function getSelectedCatalogProduct() {
+  const pid = Number(
+    document.getElementById("mfgCatalogProduct")?.value || 0
+  );
+  if (!pid) return null;
+  return (
+    __MFG_CATALOG.products.find(p => Number(p.id) === pid) || null
+  );
+}
+
+
+function mfgCatalogBatchOptions(product) {
+  if (!product) return [];
+
+  let meta = product.formula_meta || {};
+  if (typeof meta === "string") {
+    try {
+      meta = JSON.parse(meta);
+    } catch (_) {
+      meta = {};
+    }
+  }
+
+  const uom = String(
+    product.product_uom || product.uom || "unit"
+  ).trim();
+
+  // Prefer batch sizes saved with this specific product formula.
+  const tiers = Array.isArray(meta.batch_tiers)
+    ? meta.batch_tiers
+    : [];
+
+  const savedOptions = tiers
+    .map((tier) => {
+      if (!tier || typeof tier !== "object") return null;
+
+      if (product.formula_type === "bakers_pct") {
+        const qty = Number(
+          tier.flour_kg ??
+          tier.batch_flour_kg ??
+          tier.qty
+        );
+
+        if (!(qty > 0)) return null;
+
+        return {
+          value: String(qty),
+          label: String(
+            tier.label || `${qty} kg flour batch`
+          )
+        };
+      }
+
+      const qty = Number(
+        tier.batch_qty ??
+        tier.quantity ??
+        tier.qty ??
+        tier.value
+      );
+
+      if (!(qty > 0)) return null;
+
+      return {
+        value: String(qty),
+        label: String(tier.label || `${qty} ${uom}`)
+      };
+    })
+    .filter(Boolean);
+
+  // Saved tiers are authoritative when present.
+  if (savedOptions.length) {
+    return savedOptions.filter(
+      (option, index, all) =>
+        all.findIndex(
+          other => other.value === option.value
+        ) === index
+    );
+  }
+
+  // Backward-compatible defaults for existing catalogue products.
+  if (product.formula_type === "bakers_pct") {
+    return [2.5, 5, 10, 12.5, 25, 50, 100].map(qty => ({
+      value: String(qty),
+      label: `${qty} kg flour`
+    }));
+  }
+
+  return [1, 10, 25, 50, 100, 250, 500, 1000].map(qty => ({
+    value: String(qty),
+    label: `${qty} ${uom}`
+  }));
+}
+
+
+function onMfgCatalogProductChange() {
+  const product = getSelectedCatalogProduct();
+  const qtyLabel = document.getElementById("mfgCatalogBasisLabel");
+  const qtySelect = document.getElementById("mfgCatalogBasisQty");
+  const qtyCustom = document.getElementById("mfgCatalogBasisQtyCustom");
+  if (!product || !qtyLabel || !qtySelect) return;
+
+  // Configure label and dropdown options for the selected product
+  if (product.formula_type === "bakers_pct") {
+    qtyLabel.textContent = "Batch size (kg of flour)";
+  } else {
+    const uom = product.product_uom || product.uom || "unit";
+    qtyLabel.textContent = `Batch size (${uom})`;
+  }
+
+  const options = mfgCatalogBatchOptions(product);
+  qtySelect.innerHTML =
+    `<option value="">-- Select batch size --</option>` +
+    options
+      .map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`)
+      .join("") +
+    `<option value="__custom__">Custom…</option>`;
+
+  if (qtyCustom) {
+    qtyCustom.value = "";
+    qtyCustom.classList.add("hidden");
+  }
+
+  // Detach any prior custom-change handlers by cloning, then attach fresh.
+  // IMPORTANT: cloneNode(true) does NOT preserve a `.value` set in JS,
+  // so we capture it before cloning and re-apply it on the fresh node.
+  const preSelectedValue =
+    options.length >= 4 ? options[3].value
+    : options.length > 0 ? options[0].value
+    : "";
+
+  const freshSelect = qtySelect.cloneNode(true);
+  qtySelect.parentNode.replaceChild(freshSelect, qtySelect);
+
+  // Re-apply the pre-selected value on the fresh node
+  if (preSelectedValue) {
+    freshSelect.value = preSelectedValue;
+  }
+
+  freshSelect.addEventListener("change", () => {
+    const v = freshSelect.value;
+    if (v === "__custom__") {
+      if (qtyCustom) {
+        qtyCustom.classList.remove("hidden");
+        qtyCustom.focus();
+      }
+      return;
+    }
+    if (qtyCustom) {
+      qtyCustom.value = "";
+      qtyCustom.classList.add("hidden");
+    }
+    // Auto-fill ingredient quantities for the selected batch size
+    if (v) {
+      applyCatalogProductToBomForm().catch(err => {
+        mfgCatalogSetMsg(err?.message || String(err), true);
+      });
+    }
+  });
+
+  if (qtyCustom) {
+    qtyCustom.addEventListener("input", () => {
+      const v = Number(qtyCustom.value || 0);
+      if (v > 0) {
+        applyCatalogProductToBomForm().catch(err => {
+          mfgCatalogSetMsg(err?.message || String(err), true);
+        });
+      }
+    });
+  }
+
+  // Auto-fire the ingredient fill on first product selection so the
+  // user sees ingredients immediately (the change handler above only
+  // fires on explicit user-driven changes, not programmatic ones).
+  if (freshSelect.value) {
+    applyCatalogProductToBomForm().catch(err => {
+      mfgCatalogSetMsg(err?.message || String(err), true);
+    });
+  }
+}
+
+function getCatalogBasisQtyValue() {
+  const sel = document.getElementById("mfgCatalogBasisQty");
+  const custom = document.getElementById("mfgCatalogBasisQtyCustom");
+  const v = sel?.value || "";
+  if (v === "__custom__") {
+    return Number(custom?.value || 0);
+  }
+  return Number(v || 0);
+}
+
+function catalogBasisPayload() {
+  const product = getSelectedCatalogProduct();
+  if (!product) {
+    throw new Error(
+      "Select an industry, category and product first."
+    );
+  }
+
+  const raw = getCatalogBasisQtyValue();
+  if (!(raw > 0)) {
+    throw new Error(
+      "Select (or enter) the batch size for the selected product."
+    );
+  }
+
+  const body = { catalog_product_id: Number(product.id) };
+  if (product.formula_type === "bakers_pct") {
+    body.batch_flour_g = raw * 1000;
+  } else {
+    body.batch_qty = raw;
+  }
+  return body;
+}
+
+function mfgCatalogItemMapFromForm() {
+  const map = {};
+  document
+    .querySelectorAll("#mfgBomDefinitionLinesTbody tr")
+    .forEach(tr => {
+      const sel = tr.querySelector(".mfg-line-item");
+      const key = tr.dataset.catalogKey || "";
+      if (sel?.value && key) map[key] = Number(sel.value);
+    });
+  return map;
+}
+
+// Convert a quantity between same-family units (mass / volume /
+// length / area / count). Returns null when the families differ.
+function mfgCatalogConvertQty(value, fromUnit, toUnit) {
+  const u = String(fromUnit || "").trim().toLowerCase();
+  const v = String(toUnit || "").trim().toLowerCase();
+  if (!u || !v || u === v) return Number(value);
+
+  const families = {
+    mass: {
+      g: 1, gram: 1, grams: 1,
+      kg: 1000, kgs: 1000, kilogram: 1000, kilograms: 1000,
+      mg: 0.001, milligram: 0.001, milligrams: 0.001,
+      t: 1000000, ton: 1000000, tonne: 1000000, tonnes: 1000000
+    },
+    volume: {
+      ml: 1, milliliter: 1, milliliters: 1,
+      millilitre: 1, millilitres: 1,
+      l: 1000, lt: 1000, ltr: 1000,
+      liter: 1000, liters: 1000, litre: 1000, litres: 1000
+    },
+    length: {
+      mm: 1, millimeter: 1, millimeters: 1,
+      millimetre: 1, millimetres: 1,
+      cm: 10, centimeter: 10, centimeters: 10,
+      centimetre: 10, centimetres: 10,
+      m: 1000, meter: 1000, meters: 1000,
+      metre: 1000, metres: 1000
+    },
+    area: { mm2: 1, cm2: 100, m2: 1000000 },
+    count: {
+      unit: 1, units: 1, each: 1, piece: 1, pieces: 1,
+      pc: 1, pcs: 1, dozen: 12, dozens: 12,
+      sheet: 1, sheets: 1, pair: 1, pairs: 1
+    }
+  };
+
+  for (const name of Object.keys(families)) {
+    const fam = families[name];
+    if (fam[u] !== undefined && fam[v] !== undefined) {
+      return (Number(value) * fam[u]) / fam[v];
+    }
+  }
+  return null;
+}
+
+// When the user picks an inventory item, the row unit switches to
+// the inventory unit -- so the quantity must be re-expressed in that
+// unit too, using the catalog base quantity as the source of truth.
+function attachCatalogQtyCorrection(tr) {
+  const itemSelect = tr.querySelector(".mfg-line-item");
+  if (!itemSelect || tr.dataset.catalogQtyHook === "1") return;
+
+  tr.dataset.catalogQtyHook = "1";
+
+  itemSelect.addEventListener("change", () => {
+    const unitInput = tr.querySelector(".mfg-line-unit");
+    const qtyInput = tr.querySelector(".mfg-line-qty");
+    if (!unitInput || !qtyInput) return;
+
+    const baseQty = Number(tr.dataset.catalogBaseQty ?? "");
+    const baseUnit = tr.dataset.catalogBaseUnit || "";
+
+    if (!Number.isFinite(baseQty) || !baseUnit) return;
+
+    const converted = mfgCatalogConvertQty(
+      baseQty,
+      baseUnit,
+      unitInput.value
+    );
+
+    if (converted !== null && Number.isFinite(converted)) {
+      qtyInput.value = String(
+        Math.round(converted * 1e6) / 1e6
+      );
+    }
+  });
+}
+
+async function applyCatalogProductToBomForm() {
+  const cid =
+    getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return mfgCatalogSetMsg("No active company.", true);
+
+  try {
+    const body = catalogBasisPayload();
+    await fillBomFormFromCatalog(cid, body);
+  } catch (err) {
+    mfgCatalogSetMsg(err?.message || String(err), true);
+  }
+}
+
+async function fillBomFormFromCatalog(cid, body) {
+  mfgCatalogSetMsg("Calculating standard recipe...");
+
+  const data = await apiFetch(
+    ENDPOINTS.manufacturing.bomPreviewFromCatalog(cid),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+
+  if (!data?.ok) throw new Error(data?.error || "Preview failed");
+
+  const pv = data.preview || {};
+  const product = pv.product || {};
+
+  // DEBUG: log the raw catalog preview response so the user can see
+  // exactly which fields each line exposes (key, name, item_id, etc.).
+  // Safe to leave on; only useful when troubleshooting matching.
+  console.info("[MFG BOM] catalog preview response:", {
+    product,
+    output: pv.output,
+    lines: (pv.lines || []).map(l => ({
+      key: l.key,
+      name: l.name,
+      label: l.label,
+      description: l.description,
+      item_id: l.item_id,
+      quantity: l.quantity,
+      base_unit: l.base_unit || l.unit,
+      allFields: Object.keys(l)
+    })),
+    inventoryCacheSize: window._MFG_ITEM_CACHE?.rows?.length || 0
+  });
+
+  // Preserve inventory-item choices when re-applying a new batch size
+  const prevMap = mfgCatalogItemMapFromForm();
+
+  document.getElementById(
+    "mfgBomDefinitionFinishedItem"
+  ).value =
+    product.product_name ||
+    document.getElementById("mfgBomDefinitionFinishedItem").value;
+
+  if (!document.getElementById("mfgBomDefinitionName").value) {
+    document.getElementById("mfgBomDefinitionName").value =
+      `${product.product_name || "Product"} - standard BOM`;
+  }
+
+  document.getElementById("mfgBomDefinitionBatchQty").value =
+    pv.output?.batch_qty ?? "1";
+  document.getElementById("mfgBomDefinitionBatchUnit").value =
+    pv.output?.batch_unit || product.product_uom || "unit";
+  document.getElementById("mfgBomDefinitionYieldPercent").value =
+    pv.output?.yield_percent ?? 100;
+
+  const tbody =
+    document.getElementById("mfgBomDefinitionLinesTbody");
+  tbody.innerHTML = "";
+
+  (pv.lines || []).forEach(line => {
+    addManufacturingBomDefinitionLine({
+      item_id: line.item_id || prevMap[line.key] || null,
+      quantity: line.quantity,
+      unit: line.base_unit || line.unit,
+      scrap_percent: line.scrap_percent || 0,
+      name: line.name || line.label || line.description || line.key || ""
+    });
+
+    const tr = tbody.lastElementChild;
+    if (tr) {
+      tr.dataset.catalogKey = line.key || "";
+      tr.dataset.catalogName =
+        line.name || line.label || line.description || line.key || "";
+      tr.dataset.catalogBaseQty = String(
+        line.base_qty ?? line.quantity ?? ""
+      );
+      tr.dataset.catalogBaseUnit = String(
+        line.base_unit || line.unit || ""
+      );
+      attachCatalogQtyCorrection(tr);
+    }
+  });
+
+  // Auto-match each line's catalog key/name to an inventory item
+  // so the user does not have to manually pick from the dropdown.
+  autoMatchMfgLineItems();
+
+  recalcMfgBomTotals();
+  mfgCatalogSetMsg(
+    `Loaded ${(pv.lines || []).length} components from ` +
+    `${product.product_name || "catalog"}.`
+  );
+}
+
+// --------------------------------------------------------------------------
+// AUTO-MATCH MATERIALS TO INVENTORY ITEMS
+// Tries several strategies to pick the best inventory item for a
+// catalog line, so the user does not have to manually populate the
+// "Component" dropdown for every row.
+// --------------------------------------------------------------------------
+function normalizeForMatch(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+function autoMatchMfgLineItems() {
+  const items = window._MFG_ITEM_CACHE?.rows || [];
+
+  if (!items.length) {
+    console.warn(
+      "[MFG BOM] autoMatchMfgLineItems: inventory cache is empty."
+    );
+    mfgCatalogSetMsg(
+      "Inventory cache is empty — cannot auto-match materials. " +
+      "Reload the modal or check inventory permissions.",
+      true
+    );
+    return;
+  }
+
+  // Normalize punctuation, hyphens, spaces and letter case consistently.
+  // "premix", "pre-mix" and "pre mix" all become "premix".
+  const normalizeIngredient = value =>
+    String(value || "")
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
+
+  const normalizeUnit = value =>
+    String(value || "").trim().toLowerCase();
+
+  console.info(
+    "[MFG BOM] autoMatchMfgLineItems: inventory sample:",
+    items.slice(0, 5).map(it => ({
+      id: it.id,
+      name: it.name,
+      sku: it.sku,
+      unit: it.unit
+    }))
+  );
+
+  let matched = 0;
+  let unmatched = 0;
+  const unmatchedRows = [];
+
+  document
+    .querySelectorAll("#mfgBomDefinitionLinesTbody tr")
+    .forEach(tr => {
+      const sel = tr.querySelector(".mfg-line-item");
+      if (!sel || sel.value) return;
+
+      const key = normalizeIngredient(tr.dataset.catalogKey || "");
+      const name = normalizeIngredient(tr.dataset.catalogName || "");
+      const lineUnit = normalizeUnit(tr.dataset.catalogBaseUnit || "");
+
+      if (!key && !name) {
+        console.warn(
+          "[MFG BOM] Row has no catalog key/name to match:",
+          tr
+        );
+        return;
+      }
+
+      const candidates = [...new Set([name, key].filter(Boolean))];
+
+      console.info(
+        `[MFG BOM] matching row: key="${key}" name="${name}" unit="${lineUnit}"`,
+        "candidates=",
+        candidates
+      );
+
+      let match = null;
+      let matchStrategy = "none";
+
+      // Strategy 1: exact normalized name or SKU.
+      if (name) {
+        match = items.find(it =>
+          normalizeIngredient(it.name) === name ||
+          normalizeIngredient(it.sku) === name
+        );
+        if (match) matchStrategy = "exact-name";
+      }
+
+      // Strategy 2: exact normalized catalogue key or SKU.
+      if (!match && key) {
+        match = items.find(it =>
+          normalizeIngredient(it.name) === key ||
+          normalizeIngredient(it.sku) === key
+        );
+        if (match) matchStrategy = "exact-key";
+      }
+
+      // Strategy 3: safe containment match, preferring longer candidates.
+      if (!match) {
+        const sortedCandidates = [...candidates].sort(
+          (a, b) => b.length - a.length
+        );
+
+        for (const candidate of sortedCandidates) {
+          if (candidate.length < 3) continue;
+
+          match = items.find(it => {
+            const itemName = normalizeIngredient(it.name);
+            const itemSku = normalizeIngredient(it.sku);
+
+            return itemName === candidate ||
+              itemSku === candidate ||
+              itemName.includes(candidate) ||
+              (candidate.length >= 4 && candidate.includes(itemName));
+          });
+
+          if (match) {
+            matchStrategy = "substring";
+            break;
+          }
+        }
+      }
+
+      // Strategy 4: match a complete normalized word.
+      // Avoid matching generic fragments such as "mix" to unrelated items.
+      if (!match) {
+        match = items.find(it => {
+          const itemWords = String(it.name || "")
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter(Boolean)
+            .map(normalizeIngredient);
+
+          return candidates.some(candidate =>
+            candidate.length >= 4 &&
+            itemWords.includes(candidate)
+          );
+        });
+
+        if (match) matchStrategy = "word-overlap";
+      }
+
+      // Strategy 5: unit-only matching is deliberately disabled.
+      // Matching the first item with unit "kg" or "g" can select
+      // completely unrelated inventory and distort production costs.
+
+      if (match) {
+        sel.value = String(match.id);
+
+        const unitInput = tr.querySelector(".mfg-line-unit");
+        if (unitInput && match.unit) {
+          unitInput.value = match.unit;
+        }
+
+        tr.dataset.autoMatched = "1";
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+        matched++;
+
+        console.info(
+          `[MFG BOM] ✓ matched row "${name || key}" → ` +
+          `item #${match.id} "${match.name}" ` +
+          `(strategy: ${matchStrategy})`
+        );
+      } else {
+        tr.dataset.autoMatched = "0";
+        unmatched++;
+        unmatchedRows.push({ key, name, unit: lineUnit });
+
+        console.warn(
+          `[MFG BOM] ✗ could not match row key="${key}" ` +
+          `name="${name}" unit="${lineUnit}" to any inventory item`
+        );
+      }
+    });
+
+  if (matched || unmatched) {
+    mfgCatalogSetMsg(
+      `Auto-matched ${matched} of ${matched + unmatched} components to inventory items.` +
+      (unmatched ? ` ${unmatched} need manual selection.` : "")
+    );
+  }
+
+  console.info("[MFG BOM] Unmatched catalogue rows:", unmatchedRows);
+}
+
+
+async function previewCatalogBomCost() {
+  const cid =
+    getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return mfgCatalogSetMsg("No active company.", true);
+
+  try {
+    const product = getSelectedCatalogProduct();
+    if (!product) {
+      throw new Error("Select a product to preview cost.");
+    }
+
+    const body = catalogBasisPayload();
+    body.item_map = mfgCatalogItemMapFromForm();
+
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.bomPreviewFromCatalog(cid),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }
+    );
+
+    if (!data?.ok) throw new Error(data?.error || "Cost preview failed");
+
+    const pv = data.preview || {};
+    const cost = pv.cost || {};
+    const box = document.getElementById("mfgCatalogCostBox");
+    if (!box) return;
+
+    const unmapped = cost.unmapped_keys || [];
+    const good = pv.output?.expected_good_output;
+    const unit = pv.output?.batch_unit || "";
+
+    box.innerHTML = `
+      <div class="font-semibold text-slate-800 mb-1">
+        Materials cost estimate (inventory standard costs)
+      </div>
+      <div class="grid grid-cols-2 gap-x-6 gap-y-1">
+        <div>Batch output (nominal):</div>
+        <div class="text-right font-medium">${esc(String(pv.output?.batch_qty ?? "-"))} ${esc(unit)}</div>
+        <div>Good output after yield:</div>
+        <div class="text-right font-medium">${esc(String(good ?? "-"))} ${esc(unit)}</div>
+        <div>Materials total:</div>
+        <div class="text-right font-medium">${esc(String(cost.material_total ?? "-"))}</div>
+        <div>Cost per good unit:</div>
+        <div class="text-right font-bold">${esc(String(cost.unit_cost_estimate ?? "-"))}</div>
+      </div>
+      ${
+        unmapped.length
+          ? `<div class="mt-1 text-amber-700">Not costed yet (no inventory item chosen): ${esc(unmapped.join(", "))}</div>`
+          : `<div class="mt-1 text-emerald-700">All components mapped to inventory items.</div>`
+      }
+    `;
+    box.classList.remove("hidden");
+    mfgCatalogSetMsg("");
+  } catch (err) {
+    mfgCatalogSetMsg(err?.message || String(err), true);
+  }
+}
+
+// --------------------------------------------------------------------------
+// 2. DIRECT MATERIALS ROW
+// --------------------------------------------------------------------------
+function addManufacturingBomDefinitionLine(line = {}) {
+  const tbody =
+    document.getElementById("mfgBomDefinitionLinesTbody");
+
+  if (!tbody) return;
+
+  const items =
+    window._MFG_ITEM_CACHE?.rows || [];
+
+  const itemOptions =
+    `<option value="">-- Select Material Item --</option>` +
+    items.map(i => {
+      return `
+        <option
+          value="${esc(i.id)}"
+          data-unit="${esc(i.unit || "unit")}"
+        >
+          ${esc(i.sku ? i.sku + " — " : "")}${esc(i.name || "")}
+        </option>
+      `;
+    }).join("");
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b";
+
+  tr.innerHTML = `
+    <td class="px-3 py-2">
+      <select
+        class="mfg-line-item w-full border rounded px-2 py-1 text-xs bg-white">
+        ${itemOptions}
+      </select>
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="number"
+        min="0"
+        step="0.000001"
+        class="mfg-line-qty w-full border rounded px-2 py-1 text-right text-xs"
+        value="${esc(line.quantity ?? "")}"
+        placeholder="0.000000">
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="text"
+        class="mfg-line-unit w-full border rounded px-2 py-1 text-xs bg-slate-50 text-slate-600"
+        value="${esc(line.unit || "")}"
+        placeholder="e.g. kg, g, L, ml, unit"
+        readonly>
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="number"
+        min="0"
+        max="100"
+        step="0.01"
+        class="mfg-line-scrap w-full border rounded px-2 py-1 text-right text-xs"
+        value="${esc(
+          line.scrap_percent ??
+          line.scrap_pct ??
+          "0"
+        )}"
+        placeholder="0.00">
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="number"
+        min="0"
+        step="0.000001"
+        class="mfg-line-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-500 font-medium"
+        value=""
+        placeholder="Calculated on save (or enter for non-stock items)">
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="text"
+        class="mfg-line-total w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold"
+        value=""
+        placeholder="Calculated on save"
+        readonly>
+    </td>
+
+    <td class="px-3 py-2 text-center">
+      <button
+        type="button"
+        class="text-red-600 hover:text-red-800 text-xs"
+        data-mfg-bom-line-remove>
+        Remove
+      </button>
+    </td>
+  `;
+
+  // Restore existing item
+  if (line.item_id) {
+    const itemSelect =
+      tr.querySelector(".mfg-line-item");
+
+    if (itemSelect) {
+      itemSelect.value =
+        String(line.item_id);
+    }
+  }
+
+  // Fix #8: on initial render, toggle the unit_cost input's
+  // readonly state based on whether an item is selected. Phantom
+  // lines (no item) get an editable input so the user can enter
+  // a manual cost; lines with an item stay readonly (backend
+  // derives from inventory_items.sales_price).
+  {
+    const hasItem = !!(line.item_id);
+    const costInput0 = tr.querySelector(".mfg-line-cost");
+    if (costInput0) {
+      if (hasItem) {
+        costInput0.setAttribute("readonly", "");
+        costInput0.classList.add("bg-slate-50");
+        costInput0.classList.remove("bg-white");
+      } else {
+        costInput0.removeAttribute("readonly");
+        costInput0.classList.remove("bg-slate-50");
+        costInput0.classList.add("bg-white");
+        // For phantom lines, restore the stored unit_cost into
+        // the input so the user can see / edit it.
+        if (line.unit_cost !== undefined && line.unit_cost !== null) {
+          costInput0.value = Number(line.unit_cost).toFixed(6);
+          costInput0.placeholder = "";
+        } else {
+          costInput0.placeholder = "Enter cost (no inventory item)";
+        }
+      }
+    }
+  }
+
+  // Restore / determine unit
+  const itemSelect =
+    tr.querySelector(".mfg-line-item");
+
+  const unitInput =
+    tr.querySelector(".mfg-line-unit");
+
+  if (itemSelect?.value && unitInput) {
+    const selected =
+      itemSelect.selectedOptions?.[0];
+
+    unitInput.value =
+      line.unit ||
+      selected?.dataset?.unit ||
+      "unit";
+  }
+
+  // ── Restore material unit cost from saved BOM data ───────────────
+  // The cost input is readonly and was hardcoded to value=""
+  // with placeholder="Calculated on save", so on reopen the
+  // recalcMfgBomTotals saw cost == 0 and showed "— (pending save)".
+  //
+  // IMPORTANT:
+  // The backend's _get_manufacturing_bom_standard_unit_cost treats
+  // inventory_items.sales_price as the authoritative standard
+  // material cost per inventory unit. So the frontend fallback
+  // chain MUST also start from sales_price when the BOM line has
+  // no snapshot yet. The legacy standard_cost / planned_cost /
+  // last_purchase_price fields are kept as deep fallbacks only for
+  // backwards compatibility with older inventory APIs.
+  const costInput = tr.querySelector(".mfg-line-cost");
+  const totalInput = tr.querySelector(".mfg-line-total");
+
+  if (costInput) {
+    let unitCost =
+      Number(line.unit_cost ?? line.cost ?? line.standard_cost ?? 0) || 0;
+
+    // Live inventory cost fallback (preferred order: snapshot
+    // first, then inventory.sales_price, then legacy fields).
+    if (line.item_id && window._MFG_ITEM_CACHE?.rows) {
+      const inv = window._MFG_ITEM_CACHE.rows.find(
+        it => Number(it.id) === Number(line.item_id)
+      );
+      if (inv) {
+        if (unitCost <= 0) {
+          unitCost = Number(
+            inv.sales_price ??          // authoritative source
+            inv.standard_cost ??
+            inv.planned_cost ??
+            inv.cost ??
+            inv.unit_cost ??
+            inv.average_cost ??
+            inv.last_purchase_price ??
+            0
+          ) || 0;
+        }
+      }
+    }
+
+    if (unitCost > 0) {
+      costInput.value = unitCost.toFixed(6);
+      costInput.placeholder = "";
+
+      const backendLineCost =
+        Number(line.line_cost ?? line.total_cost ?? line.material_cost ?? 0) || 0;
+      const qty = Number(line.quantity ?? 0) || 0;
+      const scrap = Number(line.scrap_percent ?? line.scrap_pct ?? 0) || 0;
+      const computedLineCost = qty > 0 ? qty * (1 + scrap / 100) * unitCost : 0;
+      const finalLineCost = backendLineCost > 0 ? backendLineCost : computedLineCost;
+
+      if (totalInput && finalLineCost > 0) {
+        totalInput.value = finalLineCost.toFixed(2);
+        totalInput.placeholder = "";
+      }
+    }
+  }
+
+  // Item selection changes the consumption unit.
+  // It does NOT calculate or populate cost.
+  // Fix #8: when no item is selected (phantom line), make the
+  // unit_cost input editable so the user can enter a manual cost
+  // (e.g. for water, salt, air). When an item IS selected, keep
+  // the input readonly — the backend will derive the cost from
+  // inventory_items.sales_price.
+  itemSelect?.addEventListener("change", (e) => {
+    const opt =
+      e.target.selectedOptions?.[0];
+
+    if (unitInput) {
+      unitInput.value =
+        opt?.dataset?.unit ||
+        "unit";
+    }
+
+    const costInput =
+      tr.querySelector(".mfg-line-cost");
+
+    const totalInput =
+      tr.querySelector(".mfg-line-total");
+
+    const hasItemSelected = !!(itemSelect && itemSelect.value);
+
+    if (costInput) {
+      costInput.value = "";
+      if (hasItemSelected) {
+        costInput.placeholder =
+          "Calculated on save";
+        costInput.setAttribute("readonly", "");
+        costInput.classList.add("bg-slate-50");
+        costInput.classList.remove("bg-white");
+      } else {
+        costInput.placeholder =
+          "Enter cost (no inventory item)";
+        costInput.removeAttribute("readonly");
+        costInput.classList.remove("bg-slate-50");
+        costInput.classList.add("bg-white");
+      }
+    }
+
+    if (totalInput) {
+      totalInput.value = "";
+      totalInput.placeholder =
+        "Calculated on save";
+    }
+
+    recalcMfgBomTotals();
+  });
+
+  tr.querySelector(
+    "[data-mfg-bom-line-remove]"
+  )?.addEventListener("click", () => {
+    tr.remove();
+    recalcMfgBomTotals();
+  });
+
+  tbody.appendChild(tr);
+}
+
+
+function closeManufacturingBomDefinitionModal() {
+  const modal =
+    document.getElementById("mfgBomDefinitionModal");
+
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+
+function showManufacturingBomDefinitionMsg(
+  text = "",
+  kind = "info"
+) {
+  const el =
+    document.getElementById("mfgBomDefinitionMsg");
+
+  if (!el) return;
+
+  el.className =
+    kind === "error"
+      ? "text-xs my-2 text-red-600 font-semibold"
+      : kind === "ok"
+        ? "text-xs my-2 text-emerald-600 font-semibold"
+        : "text-xs my-2 text-slate-600";
+
+  el.textContent = text || "";
+}
+
+
+async function saveManufacturingBomDefinition() {
+  const cid =
+    getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+
+  const modal =
+    document.getElementById("mfgBomDefinitionModal");
+
+  if (!cid || !modal) return;
+
+  showManufacturingBomDefinitionMsg("Saving BOM...", "info");
+
+  // ============================================================
+  // 1. BOM HEADER
+  // ============================================================
+
+  const payload = {
+    bom_code:
+      document.getElementById("mfgBomDefinitionCode")?.value.trim(),
+
+    name:
+      document.getElementById("mfgBomDefinitionName")?.value.trim(),
+
+    finished_item_name:
+      document.getElementById("mfgBomDefinitionFinishedItem")?.value.trim(),
+
+    selling_price: Number(
+      document.getElementById("mfgBomDefinitionSellingPrice")?.value || 0
+    ),
+
+    batch_qty: Number(
+      document.getElementById("mfgBomDefinitionBatchQty")?.value || 0
+    ),
+
+    batch_unit:
+      document.getElementById("mfgBomDefinitionBatchUnit")?.value.trim(),
+
+    yield_percent: Number(
+      document.getElementById("mfgBomDefinitionYieldPercent")?.value || 100
+    ),
+
+    description:
+      document.getElementById("mfgBomDefinitionDescription")?.value.trim() || null
+  };
+
+  if (!payload.bom_code) {
+    return showManufacturingBomDefinitionMsg(
+      "BOM code is required.",
+      "error"
+    );
+  }
+
+  if (!payload.name) {
+    return showManufacturingBomDefinitionMsg(
+      "BOM name is required.",
+      "error"
+    );
+  }
+
+  if (!payload.finished_item_name) {
+    return showManufacturingBomDefinitionMsg(
+      "Finished item is required.",
+      "error"
+    );
+  }
+
+  if (!(payload.selling_price >= 0)) {
+    return showManufacturingBomDefinitionMsg(
+      "Selling price cannot be negative.",
+      "error"
+    );
+  }
+
+  if (!(payload.batch_qty > 0)) {
+    return showManufacturingBomDefinitionMsg(
+      "Output quantity must be greater than zero.",
+      "error"
+    );
+  }
+
+  // ============================================================
+  // 2. DIRECT MATERIALS
+  //
+  // IMPORTANT:
+  // Material unit_cost is NOT read from the browser.
+  //
+  // The backend calculates authoritative material cost from:
+  //   - inventory item's planned/standard cost
+  //   - BOM consumption unit
+  //   - universal/item-specific unit conversion
+  //   - scrap percentage
+  // ============================================================
+
+  const lines = [];
+
+  const materialRows =
+    document.querySelectorAll(
+      "#mfgBomDefinitionLinesTbody tr"
+    );
+
+  for (const row of materialRows) {
+
+    // IMPORTANT:
+    // These selectors match addManufacturingBomDefinitionLine()
+    const itemEl =
+      row.querySelector(".mfg-line-item");
+
+    const qtyEl =
+      row.querySelector(".mfg-line-qty");
+
+    const unitEl =
+      row.querySelector(".mfg-line-unit");
+
+    const scrapEl =
+      row.querySelector(".mfg-line-scrap");
+
+    const itemId =
+      Number(itemEl?.value || 0);
+
+    const quantity =
+      Number(qtyEl?.value || 0);
+
+    const unit =
+      unitEl?.value?.trim() || "";
+
+    const scrapPct =
+      Number(scrapEl?.value || 0);
+
+    // Completely empty row
+    if (
+      !itemId &&
+      !quantity &&
+      !unit &&
+      !scrapPct
+    ) {
+      continue;
+    }
+
+    // Fix #8: allow phantom BOM lines (no inventory item) for
+    // materials not tracked in retail inventory (e.g. water, salt).
+    // A phantom line MUST have a manually-entered unit_cost >= 0,
+    // otherwise the line is invalid (we don't know how to cost it).
+    const unitCostEl = row.querySelector(".mfg-line-cost");
+    const phantomUnitCost = Number(unitCostEl?.value || 0);
+
+    if (!itemId) {
+      if (!(phantomUnitCost > 0) && phantomUnitCost !== 0) {
+        return showManufacturingBomDefinitionMsg(
+          "Phantom BOM line (no item) must have a unit cost.",
+          "error"
+        );
+      }
+      // Phantom line is allowed — fall through and include it.
+    }
+
+    if (!(quantity > 0)) {
+      return showManufacturingBomDefinitionMsg(
+        "Each BOM component must have a quantity greater than zero.",
+        "error"
+      );
+    }
+
+    if (!unit) {
+      return showManufacturingBomDefinitionMsg(
+        "Each BOM component must have a consumption unit.",
+        "error"
+      );
+    }
+
+    if (
+      scrapPct < 0 ||
+      scrapPct > 100
+    ) {
+      return showManufacturingBomDefinitionMsg(
+        "Scrap percentage must be between 0 and 100.",
+        "error"
+      );
+    }
+
+    // Fix #8: include unit_cost in the payload so the backend can
+    // use it for phantom lines (no inventory item). For normal
+    // lines, the backend ignores this and re-derives from inventory.
+    const unitCostEl2 = row.querySelector(".mfg-line-cost");
+    const feUnitCost = Number(unitCostEl2?.value || 0);
+
+    lines.push({
+      item_id: itemId || null,
+      quantity: quantity,
+      unit: unit,
+      scrap_pct: scrapPct,
+      unit_cost: feUnitCost
+    });
+  }
+
+  if (!lines.length) {
+    return showManufacturingBomDefinitionMsg(
+      "Add at least one BOM component.",
+      "error"
+    );
+  }
+
+  // ============================================================
+  // 3. DIRECT LABOUR
+  // ============================================================
+
+  const labour = [];
+
+  for (
+    const tr of document.querySelectorAll(
+      "#mfgBomLabourTbody tr"
+    )
+  ) {
+
+    const workerId =
+      Number(
+        tr.querySelector(".mfg-lab-worker")?.value || 0
+      ) || null;
+
+    const worker_name =
+      tr.querySelector(".mfg-lab-name")?.value.trim() || null;
+
+    const role =
+      tr.querySelector(".mfg-lab-role")?.value.trim() || null;
+
+    const hours =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-lab-hours")
+      );
+
+    const rate =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-lab-rate")
+      );
+
+    const labour_cost =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-lab-cost")
+      );
+
+    // Completely blank row
+    if (
+      !workerId &&
+      !worker_name &&
+      !role &&
+      hours === null &&
+      rate === null &&
+      labour_cost === null
+    ) {
+      continue;
+    }
+
+    if (
+      !(hours > 0 && rate > 0) &&
+      !(labour_cost > 0)
+    ) {
+      return showManufacturingBomDefinitionMsg(
+        "Each labour row needs hours and rate, or a cost.",
+        "error"
+      );
+    }
+
+    labour.push({
+      employee_id: workerId,
+      worker_name,
+      role,
+      hours,
+      rate,
+      labour_cost
+    });
+  }
+
+  // ============================================================
+  // 4. OTHER DIRECT COSTS
+  // ============================================================
+
+  const direct_costs = [];
+
+  for (
+    const tr of document.querySelectorAll(
+      "#mfgBomDirectTbody tr"
+    )
+  ) {
+
+    const description =
+      tr.querySelector(".mfg-dc-desc")?.value.trim() || null;
+
+    const cost_type =
+      tr.querySelector(".mfg-dc-type")?.value.trim() || null;
+
+    const amount =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-dc-amount")
+      );
+
+    // Completely blank row
+    if (
+      !description &&
+      amount === null
+    ) {
+      continue;
+    }
+
+    if (!(amount > 0)) {
+      return showManufacturingBomDefinitionMsg(
+        "Each other-cost row needs an amount greater than zero.",
+        "error"
+      );
+    }
+
+    direct_costs.push({
+      description,
+      cost_type,
+      amount
+    });
+  }
+
+  // ============================================================
+  // 5. MANUFACTURING OVERHEAD
+  // ============================================================
+
+  const overheads = [];
+
+  for (
+    const tr of document.querySelectorAll(
+      "#mfgBomOverheadTbody tr"
+    )
+  ) {
+
+    const allocation_name =
+      tr.querySelector(".mfg-oh-name")?.value.trim() || null;
+
+    const basis =
+      tr.querySelector(".mfg-oh-basis")?.value.trim() || null;
+
+    const quantity =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-oh-qty")
+      );
+
+    const rate =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-oh-rate")
+      );
+
+    const allocated_amount =
+      mfgBomNullableNum(
+        tr.querySelector(".mfg-oh-alloc")
+      );
+
+    // Completely blank row
+    if (
+      !allocation_name &&
+      quantity === null &&
+      rate === null &&
+      allocated_amount === null
+    ) {
+      continue;
+    }
+
+    if (
+      !(quantity > 0 && rate > 0) &&
+      !(allocated_amount > 0)
+    ) {
+      return showManufacturingBomDefinitionMsg(
+        "Each overhead row needs quantity × rate, or an allocated amount.",
+        "error"
+      );
+    }
+
+    overheads.push({
+      allocation_name,
+      basis,
+      quantity,
+      rate,
+      allocated_amount
+    });
+  }
+
+  // ============================================================
+  // 6. UTILITIES (WATER & ELECTRICITY)
+  // ============================================================
+
+  const utilities = [];
+
+  for (
+    const tr of document.querySelectorAll(
+      "#mfgBomUtilityTbody tr"
+    )
+  ) {
+
+    const method =
+      tr.querySelector(".mfg-util-type")?.value || "water-direct";
+    const description =
+      tr.querySelector(".mfg-util-desc")?.value.trim() || null;
+    const cost =
+      mfgBomNullableNum(tr.querySelector(".mfg-util-cost"));
+
+    // Completely blank row
+    if (!description && cost === null) {
+      continue;
+    }
+
+    if (!(cost > 0)) {
+      return showManufacturingBomDefinitionMsg(
+        "Each utility row must produce a positive batch cost. Check qty/rate/monthly%/batches/hours/kW inputs.",
+        "error"
+      );
+    }
+
+    const utility = {
+      method,
+      utility_type: method.startsWith("water") ? "water" : "electricity",
+      description,
+      cost
+    };
+
+    // Method-specific fields
+    if (method === "water-direct" || method === "elec-direct") {
+      utility.quantity = mfgBomNullableNum(tr.querySelector(".mfg-util-qty"));
+      utility.rate = mfgBomNullableNum(tr.querySelector(".mfg-util-rate"));
+      utility.unit = method === "water-direct" ? "L" : "kWh";
+    } else if (method === "water-allocation") {
+      utility.monthly_amount = mfgBomNullableNum(tr.querySelector(".mfg-util-monthly"));
+      utility.allocation_pct = mfgBomNullableNum(tr.querySelector(".mfg-util-pct"));
+      utility.batches_per_month = mfgBomNullableNum(tr.querySelector(".mfg-util-batches"));
+    } else if (method === "elec-machine") {
+      utility.asset_id =
+        Number(tr.querySelector(".mfg-util-asset")?.value || 0) || null;
+      utility.effective_kw =
+        mfgBomNullableNum(tr.querySelector(".mfg-util-effective-kw-manual"));
+      utility.hours = mfgBomNullableNum(tr.querySelector(".mfg-util-hours"));
+      utility.kwh_rate = mfgBomNullableNum(tr.querySelector(".mfg-util-kwh-rate"));
+    }
+
+    utilities.push(utility);
+  }
+
+  // ============================================================
+  // FINAL PAYLOAD
+  //
+  // Material unit_cost is intentionally NOT included.
+  // Backend owns material costing.
+  //
+  // The payload now also sends the BOM output quantity so the
+  // backend can normalize labour / direct-cost / overhead / utility
+  // amounts to a per-product basis before inserting BOM rows. The
+  // same per-product figures are also computed on the frontend so
+  // the user sees the contribution-per-product breakdown live.
+  // ============================================================
+
+  payload.output_qty = payload.batch_qty;
+  payload.output_unit = payload.batch_unit;
+
+  // Per-product breakdown (already displayed in the UI) so the
+  // backend has authoritative per-product figures even if it
+  // chooses to store batch-level costs.
+  const _normQty = Math.max(Number(payload.batch_qty) || 1, 0.0001);
+  payload.labour_per_unit = labour
+    .map(l => Number(l.labour_cost ?? (Number(l.hours || 0) * Number(l.rate || 0))) || 0)
+    .reduce((a, b) => a + b, 0) / _normQty;
+  payload.direct_costs_per_unit = direct_costs
+    .map(d => Number(d.amount) || 0)
+    .reduce((a, b) => a + b, 0) / _normQty;
+  payload.overheads_per_unit = overheads
+    .map(o => Number(o.allocated_amount ?? (Number(o.quantity || 0) * Number(o.rate || 0))) || 0)
+    .reduce((a, b) => a + b, 0) / _normQty;
+  payload.utilities_per_unit = utilities
+    .map(u => Number(u.cost) || 0)
+    .reduce((a, b) => a + b, 0) / _normQty;
+
+  payload.lines = lines;
+  payload.labour = labour;
+  payload.direct_costs = direct_costs;
+  payload.overheads = overheads;
+  payload.utilities = utilities;
+
+  const btn =
+    document.getElementById(
+      "mfgBomDefinitionSaveBtn"
+    );
+
+  const oldText =
+    btn?.textContent || "Save BOM";
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+  }
+
+  try {
+
+    const bomId =
+      Number(
+        modal.dataset.bomId || 0
+      );
+
+    const saved = await apiFetch(
+      bomId
+        ? ENDPOINTS.manufacturing.bom(cid, bomId)
+        : ENDPOINTS.manufacturing.boms(cid),
+      {
+        method: bomId ? "PATCH" : "POST",
+
+        headers: {
+          "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify(payload)
+      }
+    );
+
+    if (!saved?.ok) {
+      throw new Error(
+        saved?.error ||
+        "Failed to save BOM."
+      );
+    }
+
+    showManufacturingBomDefinitionMsg(
+      "BOM saved successfully.",
+      "ok"
+    );
+
+    await loadManufacturingBoms();
+
+    setTimeout(() => {
+      closeManufacturingBomDefinitionModal();
+    }, 500);
+
+  } catch (err) {
+
+    console.error(
+      "[Manufacturing] save BOM failed:",
+      err
+    );
+
+    showManufacturingBomDefinitionMsg(
+      err?.message ||
+      "Failed to save BOM.",
+      "error"
+    );
+
+  } finally {
+
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+}
+// =====================================================
+// Costed BOM Definition Modal (single-request save)
+// =====================================================
+
+function mfgBomNum(el) {
+  const v = parseFloat(el?.value);
+  return Number.isFinite(v) ? v : 0;
+}
+
+function mfgBomNullableNum(el) {
+  const raw = el?.value;
+  if (raw === undefined || raw === null || String(raw).trim() === "") return null;
+  const v = parseFloat(raw);
+  return Number.isFinite(v) ? v : null;
+}
+
+// ---------- section row builders ----------
+
+// --------------------------------------------------------------------------
+// 3. DIRECT LABOUR ROW
+// --------------------------------------------------------------------------
+function addMfgBomLabourRow(row = {}) {
+  const tbody =
+    document.getElementById("mfgBomLabourTbody");
+
+  if (!tbody) return;
+
+  const payroll =
+    window.__MFG_BOM_REF?.payroll || [];
+
+  const payrollOptions =
+    `<option value="">-- Manual (not on payroll) --</option>` +
+    payroll.map(e => {
+      const eid =
+        e?.id ??
+        e?.employee_id;
+
+      const name =
+        mfgGetEmployeeName(e);
+
+      const empNo =
+        e?.employee_no ||
+        e?.employee_number ||
+        "";
+
+      return `
+        <option value="${esc(eid)}">
+          ${esc(
+            empNo
+              ? `${name} (${empNo})`
+              : name
+          )}
+        </option>
+      `;
+    }).join("");
+
+  const initialLabourCost =
+    Number(
+      row.labour_cost ??
+      (
+        Number(row.hours || 0) *
+        Number(row.rate || 0)
+      )
+    );
+
+  const tr =
+    document.createElement("tr");
+
+  tr.className = "border-b";
+
+  tr.innerHTML = `
+    <td class="px-3 py-2">
+      <select
+        class="mfg-lab-worker w-full border rounded px-2 py-1 text-xs bg-white">
+        ${payrollOptions}
+      </select>
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="text"
+        class="mfg-lab-name w-full border rounded px-2 py-1 text-xs"
+        value="${esc(row.worker_name || "")}"
+        placeholder="Worker name">
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="text"
+        class="mfg-lab-role w-full border rounded px-2 py-1 text-xs"
+        value="${esc(row.role || "")}"
+        placeholder="Role">
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="number"
+        min="0"
+        step="0.0001"
+        class="mfg-lab-hours w-full border rounded px-2 py-1 text-right text-xs"
+        value="${esc(row.hours ?? "")}"
+        placeholder="e.g. 8">
+      <div class="mfg-lab-shift-info text-[10px] text-slate-500 mt-0.5 text-right"></div>
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        class="mfg-lab-rate w-full border rounded px-2 py-1 text-right text-xs font-medium text-slate-800"
+        value="${esc(row.rate ?? "")}"
+        placeholder="0.00">
+
+      <div
+        class="mfg-lab-rate-info text-[10px] text-slate-500 mt-0.5 truncate">
+      </div>
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        readonly
+        class="mfg-lab-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
+        value="${initialLabourCost > 0
+          ? initialLabourCost.toFixed(2)
+          : ""}"
+        placeholder="0.00">
+      <div class="mfg-lab-per-unit text-[10px] text-indigo-700 mt-0.5 text-right font-medium"></div>
+    </td>
+
+    <td class="px-3 py-2 text-center">
+      <button
+        type="button"
+        class="text-red-600 hover:text-red-800 text-xs"
+        data-mfg-bom-row-remove>
+        Remove
+      </button>
+    </td>
+  `;
+
+  if (row.employee_id) {
+    const workerSelect =
+      tr.querySelector(".mfg-lab-worker");
+
+    if (workerSelect) {
+      workerSelect.value =
+        String(row.employee_id);
+    }
+  }
+
+  const calculateLabourCost = () => {
+    const hours =
+      Number(
+        tr.querySelector(".mfg-lab-hours")?.value || 0
+      );
+
+    const rate =
+      Number(
+        tr.querySelector(".mfg-lab-rate")?.value || 0
+      );
+
+    const cost =
+      hours > 0 && rate > 0
+        ? hours * rate
+        : 0;
+
+    const costInput =
+      tr.querySelector(".mfg-lab-cost");
+
+    if (costInput) {
+      costInput.value =
+        cost > 0
+          ? cost.toFixed(2)
+          : "";
+    }
+
+    // Per-unit labour cost (full shift cost ÷ output qty)
+    const perUnitEl = tr.querySelector(".mfg-lab-per-unit");
+    if (perUnitEl) {
+      const outQty = Math.max(
+        Number(document.getElementById("mfgBomDefinitionBatchQty")?.value || 1),
+        0.0001
+      );
+      if (cost > 0) {
+        const perUnit = cost / outQty;
+        perUnitEl.textContent = `= ${fmtMoney(perUnit)} / unit`;
+      } else {
+        perUnitEl.textContent = "";
+      }
+    }
+
+    // Shift hint: e.g. "8 hr shift = $X"
+    const shiftInfoEl = tr.querySelector(".mfg-lab-shift-info");
+    if (shiftInfoEl && rate > 0) {
+      if (hours > 0) {
+        shiftInfoEl.textContent = `${hours}h × ${fmtMoney(rate)}/h`;
+      } else {
+        shiftInfoEl.textContent = "enter shift hours";
+      }
+    } else if (shiftInfoEl) {
+      shiftInfoEl.textContent = "";
+    }
+  };
+
+  tr.querySelector(".mfg-lab-hours")
+    ?.addEventListener("input", () => {
+      calculateLabourCost();
+      recalcMfgBomTotals();
+    });
+
+  tr.querySelector(".mfg-lab-rate")
+    ?.addEventListener("input", () => {
+      calculateLabourCost();
+      recalcMfgBomTotals();
+    });
+
+  tr.querySelector(".mfg-lab-worker")
+    ?.addEventListener("change", async (e) => {
+
+      const employeeId =
+        e.target.value;
+
+      const nameInput =
+        tr.querySelector(".mfg-lab-name");
+
+      const roleInput =
+        tr.querySelector(".mfg-lab-role");
+
+      const rateInput =
+        tr.querySelector(".mfg-lab-rate");
+
+      const info =
+        tr.querySelector(".mfg-lab-rate-info");
+
+      if (!employeeId) {
+        if (info) info.textContent = "";
+        return;
+      }
+
+      const employee =
+        payroll.find(
+          p =>
+            String(
+              p?.id ??
+              p?.employee_id
+            ) === String(employeeId)
+        );
+
+      if (employee) {
+        nameInput.value =
+          mfgGetEmployeeName(employee);
+
+        const role =
+          mfgGetEmployeeRole(employee);
+
+        if (role) {
+          roleInput.value = role;
+        }
+      }
+
+      const cid =
+        window.__MFG_BOM_REF?.cid ||
+        getActiveCompanyId?.() ||
+        window.CURRENT_COMPANY_ID;
+
+      if (info) {
+        info.textContent =
+          "Loading rate...";
+      }
+
+      try {
+        const res =
+          await apiFetch(
+            `/api/companies/${encodeURIComponent(cid)}/payroll/employees/${encodeURIComponent(employeeId)}/pay-setup`
+          );
+
+        const setup =
+          res?.data ||
+          res?.setup ||
+          res;
+
+        const hourlyRate =
+          mfgGetHourlyRateFromSetup(setup);
+
+        const contractType =
+          String(
+            setup?.contract?.salary_type || ""
+          )
+            .trim()
+            .toLowerCase();
+
+        const basicSalary =
+          Number(
+            setup?.fixed_basic_amount ??
+            setup?.contract?.basic_salary ??
+            0
+          );
+
+        const normalHours =
+          Number(
+            setup?.contract?.normal_hours_per_month ??
+            setup?.standard_quantity ??
+            0
+          );
+
+        if (hourlyRate > 0) {
+
+          rateInput.value =
+            hourlyRate.toFixed(2);
+
+          // Daily rate ≈ hourly rate × 8 hr shift; Monthly salary ÷ 21.67 working days
+          const dailyRate = hourlyRate * 8;
+          const monthlySalary =
+            basicSalary > 0 ? basicSalary : hourlyRate * (normalHours > 0 ? normalHours : 173.33);
+          const shiftRate = dailyRate; // standard 8-hr shift
+
+          if (
+            contractType === "hourly" ||
+            contractType === "hourly_rate"
+          ) {
+            info.textContent =
+              `Hourly: ${fmtMoney(hourlyRate)} · Shift (8h): ${fmtMoney(shiftRate)}`;
+
+          } else if (
+            basicSalary > 0 &&
+            normalHours > 0
+          ) {
+            info.textContent =
+              `Salary ${fmtMoney(monthlySalary)}/mo · Daily: ${fmtMoney(dailyRate)} · Shift: ${fmtMoney(shiftRate)}`;
+
+          } else {
+            info.textContent =
+              `Hourly: ${fmtMoney(hourlyRate)} · Daily: ${fmtMoney(dailyRate)}`;
+          }
+
+          // Auto-fill shift hours with standard 8 if empty
+          const hoursInput = tr.querySelector(".mfg-lab-hours");
+          if (hoursInput && !hoursInput.value) {
+            hoursInput.value = "8";
+          }
+
+          calculateLabourCost();
+        }
+
+      } catch (err) {
+        console.warn(
+          "[Manufacturing BOM] payroll rate lookup failed:",
+          err
+        );
+
+        if (info) {
+          info.textContent =
+            "Rate not found.";
+        }
+      }
+
+      recalcMfgBomTotals();
+    });
+
+  tr.querySelector(
+    "[data-mfg-bom-row-remove]"
+  )?.addEventListener("click", () => {
+    tr.remove();
+    recalcMfgBomTotals();
+  });
+
+  tbody.appendChild(tr);
+}
+
+// --------------------------------------------------------------------------
+// 4. OTHER DIRECT COSTS ROW
+// --------------------------------------------------------------------------
+function addMfgBomDirectCostRow(row = {}) {
+  const tbody = document.getElementById("mfgBomDirectTbody");
+  if (!tbody) return;
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b";
+
+  tr.innerHTML = `
+    <td class="px-3 py-2">
+      <input type="text" class="mfg-dc-desc w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.description || "")}" placeholder="e.g. Packaging, consumables">
+    </td>
+    <td class="px-3 py-2">
+      <input type="text" class="mfg-dc-type w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.cost_type || "")}" placeholder="e.g. Packaging / Fuel">
+    </td>
+    <td class="px-3 py-2">
+      <input type="number" min="0" step="0.01"
+             class="mfg-dc-amount w-full border rounded px-2 py-1 text-right text-xs font-semibold text-slate-800"
+             value="${esc(row.amount ?? "")}" placeholder="0.00">
+    </td>
+    <td class="px-3 py-2">
+      <div class="mfg-dc-per-unit text-right text-xs text-indigo-700 font-medium"></div>
+    </td>
+    <td class="px-3 py-2 text-center">
+      <button type="button" class="text-red-600 hover:text-red-800 text-xs"
+              data-mfg-bom-row-remove>Remove</button>
+    </td>
+  `;
+
+  const dcAmountInput = tr.querySelector(".mfg-dc-amount");
+  const dcPerUnitEl = tr.querySelector(".mfg-dc-per-unit");
+
+  const updateDcPerUnit = () => {
+    const amt = Number(dcAmountInput?.value || 0);
+    const outQty = Math.max(
+      Number(document.getElementById("mfgBomDefinitionBatchQty")?.value || 1),
+      0.0001
+    );
+    if (dcPerUnitEl) {
+      dcPerUnitEl.textContent = amt > 0
+        ? fmtMoney(amt / outQty)
+        : "";
+    }
+  };
+
+  dcAmountInput?.addEventListener("input", () => {
+    updateDcPerUnit();
+    recalcMfgBomTotals();
+  });
+
+  tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    recalcMfgBomTotals();
+  });
+
+  tbody.appendChild(tr);
+  updateDcPerUnit();
+}
+
+// --------------------------------------------------------------------------
+// 5. MANUFACTURING OVERHEAD ROW
+// --------------------------------------------------------------------------
+function addMfgBomOverheadRow(row = {}) {
+  const tbody =
+    document.getElementById("mfgBomOverheadTbody");
+
+  if (!tbody) return;
+
+  const assets =
+    window.__MFG_BOM_REF?.assets || [];
+
+  const assetOptions =
+    `<option value="">-- None / Manual Allocation --</option>` +
+    assets.map(a => {
+
+      const cost =
+        Number(a.cost || 0);
+
+      const residual =
+        Number(a.residual_value || 0);
+
+      const totalUnits =
+        Number(a.uop_total_units || 0);
+
+      const calculatedRate =
+        totalUnits > 0
+          ? (cost - residual) / totalUnits
+          : 0;
+
+      const basisName =
+        a.uop_unit_name ||
+        "Machine hours";
+
+      return `
+        <option
+          value="${esc(a.id)}"
+          data-name="${esc(a.asset_name || "")}"
+          data-code="${esc(a.asset_code || "")}"
+          data-rate="${calculatedRate > 0
+            ? calculatedRate.toFixed(2)
+            : ""}"
+          data-basis="${esc(basisName)}">
+          ${esc(a.asset_code || "")} -
+          ${esc(a.asset_name || "")}
+          ${
+            calculatedRate > 0
+              ? `(${fmtMoney(calculatedRate)}/hr)`
+              : "(UOP)"
+          }
+        </option>
+      `;
+    }).join("");
+
+  const initialAllocated =
+    Number(
+      row.allocated_amount ??
+      (
+        Number(row.quantity || 0) *
+        Number(row.rate || 0)
+      )
+    );
+
+  const tr =
+    document.createElement("tr");
+
+  tr.className = "border-b";
+
+  tr.innerHTML = `
+    <td class="px-3 py-2">
+      <select
+        class="mfg-oh-asset w-full border rounded px-2 py-1 text-xs bg-white">
+        ${assetOptions}
+      </select>
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="text"
+        class="mfg-oh-name w-full border rounded px-2 py-1 text-xs"
+        value="${esc(row.allocation_name || "")}"
+        placeholder="e.g. Machinery depreciation">
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="text"
+        class="mfg-oh-basis w-full border rounded px-2 py-1 text-xs"
+        value="${esc(row.basis || "")}"
+        placeholder="e.g. Machine hours">
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="number"
+        min="0"
+        step="0.0001"
+        class="mfg-oh-qty w-full border rounded px-2 py-1 text-right text-xs"
+        value="${esc(row.quantity ?? "")}"
+        placeholder="0.00">
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        class="mfg-oh-rate w-full border rounded px-2 py-1 text-right text-xs font-medium text-slate-800"
+        value="${esc(row.rate ?? "")}"
+        placeholder="0.00">
+    </td>
+
+    <td class="px-3 py-2">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        readonly
+        class="mfg-oh-alloc w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
+        value="${initialAllocated > 0
+          ? initialAllocated.toFixed(2)
+          : ""}"
+        placeholder="0.00">
+    </td>
+
+    <td class="px-3 py-2">
+      <div class="mfg-oh-per-unit text-right text-xs text-indigo-700 font-medium"></div>
+    </td>
+
+    <td class="px-3 py-2 text-center">
+      <button
+        type="button"
+        class="text-red-600 hover:text-red-800 text-xs"
+        data-mfg-bom-row-remove>
+        Remove
+      </button>
+    </td>
+  `;
+
+  if (row.asset_id) {
+    const assetSelect =
+      tr.querySelector(".mfg-oh-asset");
+
+    if (assetSelect) {
+      assetSelect.value =
+        String(row.asset_id);
+    }
+  }
+
+  const calculateOverhead =
+    () => {
+
+      const qty =
+        Number(
+          tr.querySelector(".mfg-oh-qty")?.value || 0
+        );
+
+      const rate =
+        Number(
+          tr.querySelector(".mfg-oh-rate")?.value || 0
+        );
+
+      const amount =
+        qty > 0 && rate > 0
+          ? qty * rate
+          : 0;
+
+      const allocInput =
+        tr.querySelector(".mfg-oh-alloc");
+
+      if (allocInput) {
+        allocInput.value =
+          amount > 0
+            ? amount.toFixed(2)
+            : "";
+      }
+
+      const perUnitEl = tr.querySelector(".mfg-oh-per-unit");
+      if (perUnitEl) {
+        const outQty = Math.max(
+          Number(document.getElementById("mfgBomDefinitionBatchQty")?.value || 1),
+          0.0001
+        );
+        perUnitEl.textContent = amount > 0
+          ? fmtMoney(amount / outQty)
+          : "";
+      }
+    };
+
+  tr.querySelector(".mfg-oh-qty")
+    ?.addEventListener("input", () => {
+      calculateOverhead();
+      recalcMfgBomTotals();
+    });
+
+  tr.querySelector(".mfg-oh-rate")
+    ?.addEventListener("input", () => {
+      calculateOverhead();
+      recalcMfgBomTotals();
+    });
+
+  tr.querySelector(".mfg-oh-asset")
+    ?.addEventListener("change", (e) => {
+
+      const opt =
+        e.target.selectedOptions?.[0];
+
+      const assetId =
+        e.target.value;
+
+      const nameInput =
+        tr.querySelector(".mfg-oh-name");
+
+      const basisInput =
+        tr.querySelector(".mfg-oh-basis");
+
+      const rateInput =
+        tr.querySelector(".mfg-oh-rate");
+
+      if (assetId && opt) {
+
+        const assetName =
+          opt.dataset.name ||
+          opt.textContent.trim();
+
+        const defaultBasis =
+          opt.dataset.basis ||
+          "Machine hours";
+
+        const defaultRate =
+          opt.dataset.rate ||
+          "";
+
+        nameInput.value =
+          `Machinery depreciation (${assetName})`;
+
+        basisInput.value =
+          defaultBasis;
+
+        if (defaultRate) {
+          rateInput.value =
+            defaultRate;
+        }
+
+      } else {
+
+        nameInput.value = "";
+        basisInput.value = "";
+        rateInput.value = "";
+      }
+
+      calculateOverhead();
+      recalcMfgBomTotals();
+    });
+
+  tr.querySelector(
+    "[data-mfg-bom-row-remove]"
+  )?.addEventListener("click", () => {
+    tr.remove();
+    recalcMfgBomTotals();
+  });
+
+  tbody.appendChild(tr);
+}
+// --------------------------------------------------------------------------
+// 5b. UTILITIES (WATER & ELECTRICITY) ROW
+//
+// Supports four calculation methods:
+//   • water-direct     : qty (L) × rate (R/L) per batch
+//   • water-allocation : monthly_amount × allocation_pct ÷ batches_per_month
+//   • elec-direct      : qty (kWh) × rate (R/kWh) per batch
+//   • elec-machine     : effective_kw × hours × kwh_rate  (kw auto-fetched
+//                        from selected asset profile, with manual override)
+// --------------------------------------------------------------------------
+const MFG_UTILITY_METHODS = {
+  "water-direct": {
+    label: "Water · Direct",
+    inputs: [
+      { cls: "mfg-util-qty",     placeholder: "Liters",   label: "L / batch" },
+      { cls: "mfg-util-rate",    placeholder: "0.00",     label: "R / liter" }
+    ]
+  },
+  "water-allocation": {
+    label: "Water · Compound Allocation",
+    inputs: [
+      { cls: "mfg-util-monthly", placeholder: "Monthly R", label: "Monthly bill" },
+      { cls: "mfg-util-pct",     placeholder: "35",        label: "Allocation %" },
+      { cls: "mfg-util-batches", placeholder: "150",        label: "Batches / month" }
+    ]
+  },
+  "elec-direct": {
+    label: "Electricity · Direct",
+    inputs: [
+      { cls: "mfg-util-qty",     placeholder: "kWh",  label: "kWh / batch" },
+      { cls: "mfg-util-rate",    placeholder: "0.00", label: "R / kWh" }
+    ]
+  },
+  "elec-machine": {
+    label: "Electricity · Machine",
+    inputs: [
+      { cls: "mfg-util-asset",    placeholder: "",     label: "Machine",     isAsset: true },
+      { cls: "mfg-util-hours",     placeholder: "0.00", label: "Run hours / batch" },
+      { cls: "mfg-util-kwh-rate",  placeholder: "0.00", label: "R / kWh" },
+      { cls: "mfg-util-effective-kw-manual", placeholder: "0", label: "Effective kW (manual override)" }
+    ]
+  }
+};
+
+function addMfgBomUtilityRow(row = {}) {
+  const tbody = document.getElementById("mfgBomUtilityTbody");
+  if (!tbody) return;
+
+  const assets = window.__MFG_BOM_REF?.assets || [];
+
+  const assetOptions =
+    `<option value="">-- Select machine --</option>` +
+    assets.map(a => {
+      const kw =
+        Number(a.effective_kw ?? a.power_kw ?? a.kw ?? a.rated_kw ?? 0) || 0;
+      return `
+        <option
+          value="${esc(a.id)}"
+          data-name="${esc(a.asset_name || "")}"
+          data-effective-kw="${kw > 0 ? kw.toFixed(2) : ""}">
+          ${esc(a.asset_code || "")} ${esc(a.asset_name || "")}
+          ${kw > 0 ? `(${kw} kW)` : "(no kW set)"}
+        </option>
+      `;
+    }).join("");
+
+  // Determine method from row data — supports both new and legacy shapes
+  const initialMethod =
+    row.method ||
+    (row.utility_type === "water" && row.monthly_amount ? "water-allocation"
+     : row.utility_type === "water" ? "water-direct"
+     : row.utility_type === "electricity" && row.asset_id ? "elec-machine"
+     : row.utility_type === "electricity" ? "elec-direct"
+     : "water-direct");
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b";
+  tr.dataset.method = initialMethod;
+
+  tr.innerHTML = `
+    <td class="px-3 py-2">
+      <select class="mfg-util-type w-full border rounded px-2 py-1 text-xs bg-white">
+        ${Object.entries(MFG_UTILITY_METHODS).map(([k, v]) =>
+          `<option value="${esc(k)}" ${k === initialMethod ? "selected" : ""}>${esc(v.label)}</option>`
+        ).join("")}
+      </select>
+    </td>
+
+    <td class="px-3 py-2">
+      <input type="text"
+             class="mfg-util-desc w-full border rounded px-2 py-1 text-xs"
+             value="${esc(row.description || "")}"
+             placeholder="e.g. Compound water — bakery share">
+    </td>
+
+    <td class="px-3 py-2">
+      <div class="mfg-util-inputs-direct flex items-center gap-1">
+        <input type="number" min="0" step="0.0001"
+               class="mfg-util-qty w-20 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.quantity ?? "")}"
+               placeholder="0">
+        <input type="number" min="0" step="0.0001"
+               class="mfg-util-rate w-20 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.rate ?? "")}"
+               placeholder="0.00">
+      </div>
+      <div class="mfg-util-inputs-allocation hidden flex items-center gap-1">
+        <input type="number" min="0" step="0.01"
+               class="mfg-util-monthly w-20 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.monthly_amount ?? "")}"
+               placeholder="2200">
+        <span class="text-[10px]">×</span>
+        <input type="number" min="0" max="100" step="0.01"
+               class="mfg-util-pct w-12 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.allocation_pct ?? "")}"
+               placeholder="35">
+        <span class="text-[10px]">%</span>
+        <span class="text-[10px]">÷</span>
+        <input type="number" min="0" step="1"
+               class="mfg-util-batches w-20 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.batches_per_month ?? "")}"
+               placeholder="150">
+      </div>
+      <div class="mfg-util-inputs-machine hidden flex items-center gap-1">
+        <select class="mfg-util-asset w-32 border rounded px-1 py-1 text-xs bg-white">
+          ${assetOptions}
+        </select>
+        <input type="number" min="0" step="0.01"
+               class="mfg-util-hours w-16 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.hours ?? "")}"
+               placeholder="4.17">
+        <input type="number" min="0" step="0.01"
+               class="mfg-util-kwh-rate w-16 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.kwh_rate ?? "")}"
+               placeholder="3.00">
+        <input type="number" min="0" step="0.01"
+               class="mfg-util-effective-kw-manual w-16 border rounded px-1 py-1 text-xs text-right"
+               value="${esc(row.effective_kw ?? "")}"
+               placeholder="auto">
+        <div class="mfg-util-effective-kw text-[10px] text-slate-500 truncate"></div>
+      </div>
+    </td>
+
+    <td class="px-3 py-2">
+      <input type="number" min="0" step="0.01" readonly
+             class="mfg-util-cost w-full border rounded px-2 py-1 text-right text-xs bg-slate-50 text-slate-800 font-semibold cursor-not-allowed"
+             value=""
+             placeholder="0.00">
+      <div class="mfg-util-per-unit text-[10px] text-indigo-700 mt-0.5 text-right font-medium"></div>
+    </td>
+
+    <td class="px-3 py-2 text-center">
+      <button type="button" class="text-red-600 hover:text-red-800 text-xs"
+              data-mfg-bom-row-remove>Remove</button>
+    </td>
+  `;
+
+  // Restore asset selection if provided
+  if (row.asset_id) {
+    const assetSelect = tr.querySelector(".mfg-util-asset");
+    if (assetSelect) assetSelect.value = String(row.asset_id);
+  }
+
+  // ── visibility toggle for method-specific input groups ──
+  const refreshInputVisibility = () => {
+    const method = tr.querySelector(".mfg-util-type")?.value || "water-direct";
+    tr.dataset.method = method;
+    tr.querySelector(".mfg-util-inputs-direct")?.classList.toggle("hidden", method !== "water-direct" && method !== "elec-direct");
+    tr.querySelector(".mfg-util-inputs-allocation")?.classList.toggle("hidden", method !== "water-allocation");
+    tr.querySelector(".mfg-util-inputs-machine")?.classList.toggle("hidden", method !== "elec-machine");
+  };
+  refreshInputVisibility();
+
+  // ── per-row cost calculation ──
+  const calculateUtilityCost = () => {
+    const method = tr.querySelector(".mfg-util-type")?.value || "water-direct";
+    let cost = 0;
+    let effectiveKw = 0;
+
+    if (method === "water-direct" || method === "elec-direct") {
+      const qty = Number(tr.querySelector(".mfg-util-qty")?.value || 0);
+      const rate = Number(tr.querySelector(".mfg-util-rate")?.value || 0);
+      cost = (qty > 0 && rate > 0) ? qty * rate : 0;
+    } else if (method === "water-allocation") {
+      const monthly = Number(tr.querySelector(".mfg-util-monthly")?.value || 0);
+      const pct = Number(tr.querySelector(".mfg-util-pct")?.value || 0);
+      const batches = Number(tr.querySelector(".mfg-util-batches")?.value || 0);
+      cost = (monthly > 0 && batches > 0) ? (monthly * pct / 100) / batches : 0;
+    } else if (method === "elec-machine") {
+      const opt = tr.querySelector(".mfg-util-asset")?.selectedOptions?.[0];
+      const assetKw = Number(opt?.dataset?.effectiveKw || 0) || 0;
+      const manualKw = Number(tr.querySelector(".mfg-util-effective-kw-manual")?.value || 0);
+      effectiveKw = manualKw > 0 ? manualKw : assetKw;
+      const hours = Number(tr.querySelector(".mfg-util-hours")?.value || 0);
+      const kwhRate = Number(tr.querySelector(".mfg-util-kwh-rate")?.value || 0);
+      cost = (effectiveKw > 0 && hours > 0 && kwhRate > 0) ? effectiveKw * hours * kwhRate : 0;
+
+      const kwInfo = tr.querySelector(".mfg-util-effective-kw");
+      if (kwInfo) {
+        if (manualKw > 0) {
+          kwInfo.textContent = `Using ${manualKw} kW (manual)`;
+        } else if (assetKw > 0) {
+          kwInfo.textContent = `Using ${assetKw} kW (from asset)`;
+        } else {
+          kwInfo.textContent = "Enter effective kW manually";
+        }
+      }
+    }
+
+    const costInput = tr.querySelector(".mfg-util-cost");
+    if (costInput) {
+      costInput.value = cost > 0 ? cost.toFixed(2) : "";
+    }
+
+    // Per-unit utility cost (batch cost ÷ output qty)
+    const perUnitEl = tr.querySelector(".mfg-util-per-unit");
+    if (perUnitEl) {
+      const outQty = Math.max(
+        Number(document.getElementById("mfgBomDefinitionBatchQty")?.value || 1),
+        0.0001
+      );
+      perUnitEl.textContent = cost > 0 ? fmtMoney(cost / outQty) : "";
+    }
+  };
+
+  // ── event listeners ──
+  tr.querySelector(".mfg-util-type")?.addEventListener("change", () => {
+    refreshInputVisibility();
+    calculateUtilityCost();
+    recalcMfgBomTotals();
+  });
+
+  tr.querySelectorAll(
+    ".mfg-util-qty, .mfg-util-rate, .mfg-util-monthly, .mfg-util-pct, .mfg-util-batches, .mfg-util-hours, .mfg-util-kwh-rate, .mfg-util-effective-kw-manual"
+  ).forEach(el => el?.addEventListener("input", () => {
+    calculateUtilityCost();
+    recalcMfgBomTotals();
+  }));
+
+  tr.querySelector(".mfg-util-asset")?.addEventListener("change", () => {
+    // When asset changes, clear manual override so the asset's kw takes effect
+    const manualKwInput = tr.querySelector(".mfg-util-effective-kw-manual");
+    if (manualKwInput && !manualKwInput.value) {
+      // keep manual override if user already typed one
+    }
+    calculateUtilityCost();
+    recalcMfgBomTotals();
+  });
+
+  tr.querySelector("[data-mfg-bom-row-remove]")?.addEventListener("click", () => {
+    tr.remove();
+    recalcMfgBomTotals();
+  });
+
+  tbody.appendChild(tr);
+  calculateUtilityCost();
+}
+
+
+// --------------------------------------------------------------------------
+// 6. TOTALS & UNIT MARGIN CALCULATION
+// --------------------------------------------------------------------------
+function handleMfgBomModalInput() {
+  recalcMfgBomTotals();
+}
+
+function recalcMfgBomTotals() {
+
+  const outputQty =
+    Math.max(
+      Number(
+        document.getElementById(
+          "mfgBomDefinitionBatchQty"
+        )?.value || 1
+      ),
+      0.0001
+    );
+
+  const sellingPricePerUnit =
+    Number(
+      document.getElementById(
+        "mfgBomDefinitionSellingPrice"
+      )?.value || 0
+    );
+
+  // ============================================================
+  // 1. MATERIALS
+  //
+  // Material costing is backend-authoritative.
+  // The frontend does NOT invent a cost here.
+  // ============================================================
+
+  let materialDisplayTotal = 0;
+  let hasMaterialCost = false;
+
+  document
+    .querySelectorAll(
+      "#mfgBomDefinitionLinesTbody tr"
+    )
+    .forEach(tr => {
+
+      const cost =
+        Number(
+          tr.querySelector(
+            ".mfg-line-cost"
+          )?.value || 0
+        );
+
+      const qty =
+        Number(
+          tr.querySelector(
+            ".mfg-line-qty"
+          )?.value || 0
+        );
+
+      const scrap =
+        Number(
+          tr.querySelector(
+            ".mfg-line-scrap"
+          )?.value || 0
+        );
+
+      const totalInput =
+        tr.querySelector(
+          ".mfg-line-total"
+        );
+
+      /*
+       * Only use a material cost if one has
+       * actually been returned/populated by
+       * the backend.
+       */
+      if (
+        cost > 0 &&
+        qty > 0
+      ) {
+        const lineCost =
+          qty *
+          (1 + scrap / 100) *
+          cost;
+
+        materialDisplayTotal +=
+          lineCost;
+
+        hasMaterialCost = true;
+
+        if (totalInput) {
+          totalInput.value =
+            lineCost.toFixed(2);
+        }
+      } else if (totalInput) {
+        totalInput.value = "";
+        totalInput.placeholder =
+          "Calculated on save";
+      }
+    });
+
+  // ============================================================
+  // 2. DIRECT LABOUR
+  // ============================================================
+
+  let totLabour = 0;
+
+  document
+    .querySelectorAll(
+      "#mfgBomLabourTbody tr"
+    )
+    .forEach(tr => {
+
+      const hours =
+        Number(
+          tr.querySelector(
+            ".mfg-lab-hours"
+          )?.value || 0
+        );
+
+      const rate =
+        Number(
+          tr.querySelector(
+            ".mfg-lab-rate"
+          )?.value || 0
+        );
+
+      const cost =
+        hours > 0 && rate > 0
+          ? hours * rate
+          : 0;
+
+      totLabour += cost;
+
+      const costInput =
+        tr.querySelector(
+          ".mfg-lab-cost"
+        );
+
+      if (costInput) {
+        costInput.value =
+          cost > 0
+            ? cost.toFixed(2)
+            : "";
+      }
+
+      // Refresh per-unit labour display (full shift cost ÷ output qty)
+      const perUnitEl =
+        tr.querySelector(".mfg-lab-per-unit");
+      if (perUnitEl) {
+        perUnitEl.textContent =
+          cost > 0
+            ? `= ${fmtMoney(cost / outputQty)} / unit`
+            : "";
+      }
+
+      // Refresh shift-info display
+      const shiftInfoEl =
+        tr.querySelector(".mfg-lab-shift-info");
+      if (shiftInfoEl && rate > 0) {
+        shiftInfoEl.textContent =
+          hours > 0
+            ? `${hours}h × ${fmtMoney(rate)}/h`
+            : "enter shift hours";
+      }
+    });
+
+  // ============================================================
+  // 3. OTHER DIRECT COSTS
+  // ============================================================
+
+  let totDirect = 0;
+
+  document
+    .querySelectorAll(
+      "#mfgBomDirectTbody tr"
+    )
+    .forEach(tr => {
+
+      const amount =
+        Number(
+          tr.querySelector(
+            ".mfg-dc-amount"
+          )?.value || 0
+        );
+
+      if (amount > 0) {
+        totDirect += amount;
+      }
+
+      // Refresh per-unit direct-cost display
+      const dcPerUnitEl =
+        tr.querySelector(".mfg-dc-per-unit");
+      if (dcPerUnitEl) {
+        dcPerUnitEl.textContent =
+          amount > 0
+            ? fmtMoney(amount / outputQty)
+            : "";
+      }
+    });
+
+  // ============================================================
+  // 4. MANUFACTURING OVERHEAD
+  // ============================================================
+
+  let totOverhead = 0;
+
+  document
+    .querySelectorAll(
+      "#mfgBomOverheadTbody tr"
+    )
+    .forEach(tr => {
+
+      const qty =
+        Number(
+          tr.querySelector(
+            ".mfg-oh-qty"
+          )?.value || 0
+        );
+
+      const rate =
+        Number(
+          tr.querySelector(
+            ".mfg-oh-rate"
+          )?.value || 0
+        );
+
+      const amount =
+        qty > 0 && rate > 0
+          ? qty * rate
+          : 0;
+
+      totOverhead += amount;
+
+      const allocInput =
+        tr.querySelector(
+          ".mfg-oh-alloc"
+        );
+
+      if (allocInput) {
+        allocInput.value =
+          amount > 0
+            ? amount.toFixed(2)
+            : "";
+      }
+
+      // Refresh per-unit overhead display
+      const ohPerUnitEl =
+        tr.querySelector(".mfg-oh-per-unit");
+      if (ohPerUnitEl) {
+        ohPerUnitEl.textContent =
+          amount > 0
+            ? fmtMoney(amount / outputQty)
+            : "";
+      }
+    });
+
+  // ============================================================
+  // 5. UTILITIES (WATER & ELECTRICITY)
+  // ============================================================
+
+  let totUtilities = 0;
+
+  document
+    .querySelectorAll(
+      "#mfgBomUtilityTbody tr"
+    )
+    .forEach(tr => {
+      const cost =
+        Number(
+          tr.querySelector(
+            ".mfg-util-cost"
+          )?.value || 0
+        );
+
+      if (cost > 0) {
+        totUtilities += cost;
+      }
+
+      // Refresh per-unit utility display
+      const utilPerUnitEl =
+        tr.querySelector(".mfg-util-per-unit");
+      if (utilPerUnitEl) {
+        utilPerUnitEl.textContent =
+          cost > 0
+            ? fmtMoney(cost / outputQty)
+            : "";
+      }
+    });
+
+  // ============================================================
+  // SUMMARY
+  //
+  // Always present per-unit cost & contribution per unit,
+  // even if material costs are pending backend load.
+  // When materials aren't costed yet, we still show
+  // labour + direct + overhead + utilities totals and flag
+  // that materials are pending.
+  // ============================================================
+
+  const totDirectTotal =
+    materialDisplayTotal +
+    totLabour +
+    totDirect;
+
+  const totFullCost =
+    totDirectTotal +
+    totOverhead +
+    totUtilities;
+
+  // For per-unit: if materials aren't costed yet, use
+  // labour + direct + overhead + utilities as a partial cost
+  // so the user sees a meaningful number while they're entering data.
+  const partialCost =
+    totLabour + totDirect + totOverhead + totUtilities;
+
+  const costPerUnit =
+    hasMaterialCost
+      ? totFullCost / outputQty
+      : partialCost / outputQty;
+
+  const marginPerUnit =
+    sellingPricePerUnit -
+    costPerUnit;
+
+  const materialEl =
+    document.getElementById(
+      "mfgBomTotMaterials"
+    );
+
+  const labourEl =
+    document.getElementById(
+      "mfgBomTotLabour"
+    );
+
+  const directEl =
+    document.getElementById(
+      "mfgBomTotDirect"
+    );
+
+  const directTotalEl =
+    document.getElementById(
+      "mfgBomTotDirectTotal"
+    );
+
+  const overheadEl =
+    document.getElementById(
+      "mfgBomTotOverhead"
+    );
+
+  const utilitiesEl =
+    document.getElementById(
+      "mfgBomTotUtilities"
+    );
+
+  const totalEl =
+    document.getElementById(
+      "mfgBomTotTotal"
+    );
+
+  const unitEl =
+    document.getElementById(
+      "mfgBomTotUnit"
+    );
+
+  const priceEl =
+    document.getElementById(
+      "mfgBomSummaryPriceUnit"
+    );
+
+  const marginEl =
+    document.getElementById(
+      "mfgBomTotMargin"
+    );
+
+  if (materialEl) {
+    materialEl.textContent =
+      hasMaterialCost
+        ? fmtMoney(materialDisplayTotal)
+        : "— (pending save)";
+  }
+
+  if (labourEl) {
+    labourEl.textContent =
+      fmtMoney(totLabour);
+  }
+
+  if (directEl) {
+    directEl.textContent =
+      fmtMoney(totDirect);
+  }
+
+  if (directTotalEl) {
+    directTotalEl.textContent =
+      hasMaterialCost
+        ? fmtMoney(totDirectTotal)
+        : fmtMoney(totLabour + totDirect) + " + materials pending";
+  }
+
+  if (overheadEl) {
+    overheadEl.textContent =
+      fmtMoney(totOverhead);
+  }
+
+  if (utilitiesEl) {
+    utilitiesEl.textContent =
+      fmtMoney(totUtilities);
+  }
+
+  if (totalEl) {
+    totalEl.textContent =
+      hasMaterialCost
+        ? fmtMoney(totFullCost)
+        : fmtMoney(partialCost) + " + materials pending";
+  }
+
+  if (unitEl) {
+    unitEl.textContent =
+      fmtMoney(costPerUnit) +
+      (hasMaterialCost ? "" : " (excl. materials)");
+    unitEl.className =
+      "text-indigo-700 font-bold" +
+      (hasMaterialCost ? "" : " text-indigo-500");
+  }
+
+  if (priceEl) {
+    priceEl.textContent =
+      fmtMoney(sellingPricePerUnit);
+  }
+
+  if (marginEl) {
+    if (sellingPricePerUnit > 0) {
+      const marginPercent =
+        (
+          marginPerUnit /
+          sellingPricePerUnit *
+          100
+        ).toFixed(1);
+
+      marginEl.textContent =
+        `${fmtMoney(marginPerUnit)} (${marginPercent}%)` +
+        (hasMaterialCost ? "" : " (excl. materials)");
+
+      marginEl.className =
+        marginPerUnit >= 0
+          ? "text-emerald-700 font-bold"
+          : "text-red-600 font-bold";
+    } else {
+      marginEl.textContent =
+        "Enter selling price";
+      marginEl.className =
+        "text-slate-500 font-normal";
+    }
+  }
+}
+
+window.__MFG_BOM_REF = window.__MFG_BOM_REF || { cid: null, payroll: [], assets: [] };
+// =====================================================
+// BOM Modal
+// =====================================================
+
+function openManufacturingBomModal(bomId = 0) {
+  let modal = document.getElementById("mfgBomModal");
+
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "mfgBomModal";
+    modal.className =
+      "fixed inset-0 z-50 hidden bg-black/40 flex items-center justify-center p-4";
+
+    modal.innerHTML = `
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-auto">
+
+        <div class="flex items-center justify-between border-b px-4 py-3">
+          <div>
+            <div id="mfgBomModalTitle" class="font-semibold">
+              New BOM
+            </div>
+            <div class="text-xs text-slate-500">
+              Define the finished product and standard material quantities.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            id="mfgBomCloseBtn"
+            class="text-slate-500 text-lg">
+            ×
+          </button>
+        </div>
+
+        <div class="p-4">
+
+          <div id="mfgBomMsg"></div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">BOM Code</div>
+              <input
+                id="mfgBomCode"
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="e.g. PROD-001">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">BOM Name</div>
+              <input
+                id="mfgBomName"
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="Enter BOM name">
+            </label>
+
+            <label class="text-xs md:col-span-2">
+              <div class="text-slate-600 mb-1">Finished Item</div>
+              <select
+                id="mfgBomItem"
+                class="w-full border rounded px-2 py-2 text-sm">
+              </select>
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">Batch Quantity</div>
+              <input
+                id="mfgBomBatchQty"
+                type="number"
+                min="0.0001"
+                step="0.0001"
+                class="w-full border rounded px-2 py-2 text-sm"
+                value="1">
+            </label>
+
+            <label class="text-xs">
+              <div class="text-slate-600 mb-1">Batch Unit</div>
+              <input
+                id="mfgBomBatchUnit"
+                class="w-full border rounded px-2 py-2 text-sm"
+                placeholder="units / kg / trays">
+            </label>
+
+            <label class="text-xs md:col-span-2">
+              <div class="text-slate-600 mb-1">Description</div>
+              <textarea
+                id="mfgBomDescription"
+                rows="2"
+                class="w-full border rounded px-2 py-2 text-sm"></textarea>
+            </label>
+
+          </div>
+
+          <div class="mt-5 flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-sm">BOM Components</div>
+              <div class="text-xs text-slate-500">
+                Standard quantity required for one batch.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              id="mfgBomAddLineBtn"
+              class="px-2 py-1 border rounded text-xs">
+              + Add Material
+            </button>
+          </div>
+
+          <div class="overflow-auto border rounded mt-2">
+            <table class="w-full text-xs">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-2 py-2">Material</th>
+                  <th class="text-right px-2 py-2">Quantity</th>
+                  <th class="text-left px-2 py-2">Unit</th>
+                  <th class="text-right px-2 py-2">Scrap %</th>
+                  <th class="text-center px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody id="mfgBomLinesTbody"></tbody>
+            </table>
+          </div>
+
+          <div class="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              id="mfgBomCancelBtn"
+              class="px-3 py-2 border rounded text-xs">
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              id="mfgBomSaveBtn"
+              class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
+              Save BOM
+            </button>
+          </div>
+
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    document.getElementById("mfgBomCloseBtn")
+      ?.addEventListener("click", closeManufacturingBomModal);
+
+    document.getElementById("mfgBomCancelBtn")
+      ?.addEventListener("click", closeManufacturingBomModal);
+
+    document.getElementById("mfgBomAddLineBtn")
+      ?.addEventListener("click", () => addManufacturingBomLine());
+
+    document.getElementById("mfgBomSaveBtn")
+      ?.addEventListener("click", saveManufacturingBom);
+  }
+
+  modal.dataset.bomId = String(bomId || 0);
+
+  const itemSel = document.getElementById("mfgBomItem");
+
+  if (itemSel) {
+    try {
+      itemSel.innerHTML = manufacturingItemOptions();
+    } catch (err) {
+      console.error(
+        "[Manufacturing] manufacturingItemOptions failed:",
+        err
+      );
+
+      itemSel.innerHTML =
+        `<option value="">Unable to load finished items</option>`;
+    }
+  }
+
+  document.getElementById("mfgBomCode").value = "";
+  document.getElementById("mfgBomName").value = "";
+  document.getElementById("mfgBomBatchQty").value = "1";
+  document.getElementById("mfgBomBatchUnit").value = "";
+  document.getElementById("mfgBomDescription").value = "";
+
+  const tbody = document.getElementById("mfgBomLinesTbody");
+
+  if (tbody) {
+    tbody.innerHTML = "";
+  }
+
+  document.getElementById("mfgBomModalTitle").textContent =
+    bomId ? "Edit BOM" : "New BOM";
+
+  if (!bomId) {
+    addManufacturingBomLine();
+  } else {
+    loadManufacturingBomIntoModal(bomId);
+  }
+
+  modal.classList.remove("hidden");
+}
+
+async function loadManufacturingBomIntoModal(bomId) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+
+  try {
+    const bom = await apiFetch(
+      ENDPOINTS.manufacturing.bom(cid, bomId)
+    );
+
+    document.getElementById("mfgBomCode").value =
+      bom?.bom_code || "";
+
+    document.getElementById("mfgBomName").value =
+      bom?.name || "";
+
+    document.getElementById("mfgBomBatchQty").value =
+      bom?.batch_qty ?? 1;
+
+    document.getElementById("mfgBomBatchUnit").value =
+      bom?.batch_unit || "";
+
+    document.getElementById("mfgBomDescription").value =
+      bom?.description || "";
+
+    document.getElementById("mfgBomItem").value =
+      String(bom?.item_id || "");
+
+    const tbody = document.getElementById("mfgBomLinesTbody");
+    if (tbody) tbody.innerHTML = "";
+
+    const lines = bom?.lines || bom?.bom_lines || [];
+
+    lines.forEach(line => addManufacturingBomLine(line));
+
+    if (!lines.length) addManufacturingBomLine();
+
+  } catch (err) {
+    showManufacturingBomMsg(
+      err?.message || "Failed to load BOM.",
+      "error"
+    );
+  }
+}
+
+function addManufacturingBomLine(line = {}) {
+  const tbody = document.getElementById("mfgBomLinesTbody");
+  if (!tbody) return;
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b";
+
+  tr.innerHTML = `
+    <td class="px-2 py-2">
+      <select class="w-full border rounded px-2 py-1 text-xs mfg-bom-item">
+        ${manufacturingItemOptions(line.item_id)}
+      </select>
+    </td>
+
+    <td class="px-2 py-2">
+      <input
+        type="number"
+        min="0.0001"
+        step="0.0001"
+        class="w-full border rounded px-2 py-1 text-xs text-right mfg-bom-qty"
+        value="${esc(line.quantity ?? "")}">
+    </td>
+
+    <td class="px-2 py-2">
+      <input
+        class="w-full border rounded px-2 py-1 text-xs mfg-bom-unit"
+        value="${esc(line.unit || "")}"
+        placeholder="kg / L / units">
+    </td>
+
+    <td class="px-2 py-2">
+      <input
+        type="number"
+        min="0"
+        max="100"
+        step="0.01"
+        class="w-full border rounded px-2 py-1 text-xs text-right mfg-bom-scrap"
+        value="${esc(line.scrap_percent ?? 0)}">
+    </td>
+
+    <td class="px-2 py-2 text-center">
+      <button
+        type="button"
+        class="text-xs text-red-600 mfg-bom-del">
+        ✕
+      </button>
+    </td>
+  `;
+
+  tr.querySelector(".mfg-bom-del")
+    ?.addEventListener("click", () => tr.remove());
+
+  tbody.appendChild(tr);
+}
+
+function showManufacturingBomMsg(text = "", kind = "info") {
+  const el = document.getElementById("mfgBomMsg");
+  if (!el) return;
+
+  el.className =
+    kind === "error"
+      ? "text-xs my-2 text-red-600 font-semibold"
+      : "text-xs my-2 text-emerald-600 font-semibold";
+
+  el.textContent = text;
+}
+
+function closeManufacturingBomModal() {
+  document.getElementById("mfgBomModal")?.classList.add("hidden");
+}
+
+async function saveManufacturingBom() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const modal = document.getElementById("mfgBomModal");
+
+  if (!cid || !modal) return;
+
+  const bomId = Number(modal.dataset.bomId || 0);
+
+  const payload = {
+    bom_code: document.getElementById("mfgBomCode")?.value.trim(),
+    name: document.getElementById("mfgBomName")?.value.trim(),
+    description:
+      document.getElementById("mfgBomDescription")?.value.trim() || null,
+    item_id: Number(
+      document.getElementById("mfgBomItem")?.value || 0
+    ),
+    batch_qty: Number(
+      document.getElementById("mfgBomBatchQty")?.value || 0
+    ),
+    batch_unit:
+      document.getElementById("mfgBomBatchUnit")?.value.trim() || null
+  };
+
+  if (!payload.bom_code)
+    return showManufacturingBomMsg("BOM code is required.", "error");
+
+  if (!payload.name)
+    return showManufacturingBomMsg("BOM name is required.", "error");
+
+  if (!payload.item_id)
+    return showManufacturingBomMsg("Select the finished item.", "error");
+
+  if (!payload.batch_qty || payload.batch_qty <= 0)
+    return showManufacturingBomMsg("Batch quantity must be greater than zero.", "error");
+
+  const rows = Array.from(
+    document.querySelectorAll("#mfgBomLinesTbody tr")
+  );
+
+  const lines = [];
+
+  for (const tr of rows) {
+    const itemId = Number(
+      tr.querySelector(".mfg-bom-item")?.value || 0
+    );
+
+    const quantity = Number(
+      tr.querySelector(".mfg-bom-qty")?.value || 0
+    );
+
+    const unit =
+      tr.querySelector(".mfg-bom-unit")?.value.trim() || null;
+
+    const scrapPercent = Number(
+      tr.querySelector(".mfg-bom-scrap")?.value || 0
+    );
+
+    if (!itemId && !quantity) continue;
+
+    if (!itemId)
+      return showManufacturingBomMsg("Every material line needs an item.", "error");
+
+    if (quantity <= 0)
+      return showManufacturingBomMsg("Material quantity must be greater than zero.", "error");
+
+    lines.push({
+      item_id: itemId,
+      quantity,
+      unit,
+      scrap_percent: scrapPercent
+    });
+  }
+
+  if (!lines.length)
+    return showManufacturingBomMsg("Add at least one material.", "error");
+
+  const btn = document.getElementById("mfgBomSaveBtn");
+  const oldText = btn?.textContent || "Save BOM";
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+  }
+
+  try {
+    let savedBomId = bomId;
+
+    if (!savedBomId) {
+      const created = await apiFetch(
+        ENDPOINTS.manufacturing.boms(cid),
+        {
+          method: "POST",
+          body: JSON.stringify(payload)
+        }
+      );
+
+      savedBomId = Number(
+        created?.id ||
+        created?.bom_id ||
+        created?.manufacturing_bom_id
+      );
+    } else {
+      await apiFetch(
+        ENDPOINTS.manufacturing.bom(cid, savedBomId),
+        {
+          method: "PATCH",
+          body: JSON.stringify(payload)
+        }
+      );
+    }
+
+    for (const line of lines) {
+      await apiFetch(
+        ENDPOINTS.manufacturing.bomLines(cid, savedBomId),
+        {
+          method: "POST",
+          body: JSON.stringify(line)
+        }
+      );
+    }
+
+    closeManufacturingBomModal();
+
+    showToast?.(
+      bomId ? "BOM updated successfully" : "BOM created successfully",
+      "ok"
+    );
+
+    await loadManufacturingBoms();
+
+  } catch (err) {
+    showManufacturingBomMsg(
+      err?.message || "Failed to Save BOM.",
+      "error"
+    );
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+}
+
+// =====================================================
+// Manufacturing Orders
+// =====================================================
+
+async function loadManufacturingOrders() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const mount = getManufacturingMount();
+
+  if (!cid || !mount) return;
+
+  mount.innerHTML = `
+    <div class="text-xs text-slate-500">
+      Loading production batches…
+    </div>
+  `;
+
+  try {
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.orders(cid)
+    );
+
+    const rows =
+      data?.orders ||
+      data?.rows ||
+      data?.items ||
+      [];
+
+    renderManufacturingOrders(rows);
+
+  } catch (err) {
+    mount.innerHTML = renderApiError(err);
+  }
+}
+
+function formatManufacturingDate(value) {
+  if (!value) return "";
+
+  const raw = String(value).trim();
+
+  // ISO / database date:
+  // 2026-09-22
+  // 2026-09-22T00:00:00...
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+
+    const months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+
+    const monthName = months[Number(month) - 1];
+
+    if (monthName) {
+      return `${day} ${monthName} ${year}`;
+    }
+  }
+
+  // Browser / API date such as:
+  // Tue, 22 Sep 2026 00:00:00 GMT
+  const longMatch = raw.match(
+    /(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i
+  );
+
+  if (longMatch) {
+    const [, day, month, year] = longMatch;
+
+    const monthMap = {
+      jan: "Jan",
+      feb: "Feb",
+      mar: "Mar",
+      apr: "Apr",
+      may: "May",
+      jun: "Jun",
+      jul: "Jul",
+      aug: "Aug",
+      sep: "Sep",
+      oct: "Oct",
+      nov: "Nov",
+      dec: "Dec"
+    };
+
+    return `${day.padStart(2, "0")} ${monthMap[month.toLowerCase()]} ${year}`;
+  }
+
+  // Fallback
+  return raw;
+}
+
+async function loadManufacturingMaterialUsage() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const mount = getManufacturingMount();
+
+  if (!cid || !mount) return;
+
+  mount.innerHTML = `
+    <div class="text-xs text-slate-500">
+      Loading production batches…
+    </div>
+  `;
+
+  try {
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.orders(cid)
+    );
+
+    const rows =
+      data?.orders ||
+      data?.rows ||
+      data?.items ||
+      [];
+
+    if (!rows.length) {
+      mount.innerHTML = `
+        <div class="border rounded p-4 text-sm text-slate-500">
+          No production batches are available for material usage.
+        </div>
+      `;
+      return;
+    }
+
+    mount.innerHTML = `
+      <div class="mb-3">
+        <div class="font-semibold text-slate-800">
+          Material Usage
+        </div>
+
+        <div class="text-xs text-slate-500">
+          Select a production batch to record the actual raw materials consumed.
+        </div>
+      </div>
+
+      <div class="border rounded overflow-hidden">
+        <div class="overflow-auto">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left px-2 py-2">Batch</th>
+                <th class="text-left px-2 py-2">Finished Item</th>
+                <th class="text-left px-2 py-2">Date</th>
+                <th class="text-right px-2 py-2">Planned</th>
+                <th class="text-center px-2 py-2">Status</th>
+                <th class="text-right px-2 py-2">Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${rows.map(r => `
+                <tr class="border-b hover:bg-slate-50">
+                  <td class="px-2 py-2 font-medium">
+                    ${esc(r.mo_no || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(r.finished_item_name || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(formatManufacturingDate(r.tx_date))}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${esc(r.planned_qty ?? "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-center">
+                    ${esc(r.status || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    <button
+                      type="button"
+                      class="text-xs underline"
+                      data-mfg-usage-batch="${Number(r.id)}">
+                      Record Usage
+                    </button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    mount.querySelectorAll("[data-mfg-usage-batch]")
+      .forEach(btn => {
+        btn.addEventListener("click", () => {
+          openManufacturingMaterialUsage(
+            Number(btn.dataset.mfgUsageBatch)
+          );
+        });
+      });
+
+  } catch (err) {
+    mount.innerHTML = renderApiError(err);
+  }
+}
+
+async function openManufacturingMaterialUsage(orderId) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid || !orderId) return;
+
+  try {
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.order(cid, orderId)
+    );
+
+    const order = data?.order || data;
+
+    const materials =
+      order?.materials ||
+      order?.material_lines ||
+      order?.lines ||
+      [];
+
+    if (!materials.length) {
+      alert("This production batch has no material lines.");
+      return;
+    }
+
+    if (
+      order?.status === "cancelled" ||
+      order?.status === "completed"
+    ) {
+      alert("Material usage cannot be posted for this production batch.");
+      return;
+    }
+
+    const modal = document.createElement("div");
+
+    modal.className =
+      "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
+
+    modal.innerHTML = `
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-auto">
+
+        <div class="flex items-center justify-between border-b px-4 py-3">
+          <div>
+            <div class="font-semibold">
+              Record Material Usage
+            </div>
+
+            <div class="text-xs text-slate-500">
+              ${esc(order?.mo_no || "")}
+              —
+              ${esc(order?.finished_item_name || "")}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="text-lg text-slate-500"
+            data-close>
+            ×
+          </button>
+        </div>
+
+        <div class="p-4">
+
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs">
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">Production Batch</div>
+              <div class="font-semibold">
+                ${esc(order?.mo_no || "")}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">Finished Item</div>
+              <div class="font-semibold">
+                ${esc(order?.finished_item_name || "")}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">Planned Output</div>
+              <div class="font-semibold">
+                ${esc(order?.planned_qty ?? "")}
+              </div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="text-slate-500">Status</div>
+              <div class="font-semibold">
+                ${esc(order?.status || "")}
+              </div>
+            </div>
+
+          </div>
+
+          <div class="mb-2">
+            <div class="font-semibold text-sm">
+              Raw Materials Consumed
+            </div>
+
+            <div class="text-xs text-slate-500">
+              Actual quantities are pre-filled from the planned quantities. Adjust them to reflect the quantities actually consumed.
+            </div>
+          </div>
+
+          <div class="overflow-auto border rounded">
+            <table class="w-full text-xs">
+
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left px-2 py-2">
+                    Material
+                  </th>
+
+                  <th class="text-right px-2 py-2">
+                    Planned Qty
+                  </th>
+
+                  <th class="text-right px-2 py-2">
+                    Actual Qty
+                  </th>
+
+                  <th class="text-left px-2 py-2">
+                    Unit
+                  </th>
+
+                  <th class="text-right px-2 py-2">
+                    Unit Cost
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${materials.map(m => `
+                  <tr class="border-b">
+
+                    <td class="px-2 py-2">
+                      <div class="font-medium">
+                        ${esc(
+                          m.item_name ||
+                          m.material_name ||
+                          `Item #${m.item_id || ""}`
+                        )}
+                      </div>
+
+                      ${
+                        m.item_sku
+                          ? `
+                            <div class="text-[10px] text-slate-400">
+                              ${esc(m.item_sku)}
+                            </div>
+                          `
+                          : ""
+                      }
+                    </td>
+
+                    <td class="px-2 py-2 text-right">
+                      ${esc(m.planned_qty ?? "")}
+                    </td>
+
+                    <td class="px-2 py-2 text-right">
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value="${esc(
+                        Number(m.actual_qty || 0) > 0
+                          ? m.actual_qty
+                          : m.planned_qty ?? ""
+                      )}"
+                      data-material-id="${Number(m.id)}"
+                      class="w-28 border rounded px-2 py-1 text-right">
+                    </td>
+
+                    <td class="px-2 py-2">
+                      ${esc(m.unit || "")}
+                    </td>
+
+                    <td class="px-2 py-2 text-right">
+                      ${fmtMoney(m.unit_cost || 0)}
+                    </td>
+
+                  </tr>
+                `).join("")}
+              </tbody>
+
+            </table>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 mt-4">
+
+            <button
+              type="button"
+              data-close
+              class="px-3 py-2 border rounded text-xs">
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              data-submit
+              class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
+              Post Material Usage
+            </button>
+
+          </div>
+
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.querySelectorAll("[data-close]")
+      .forEach(btn => {
+        btn.addEventListener("click", () => modal.remove());
+      });
+
+    modal.querySelector("[data-submit]")
+      ?.addEventListener("click", async () => {
+
+        const lines = [];
+
+        modal.querySelectorAll("[data-material-id]")
+          .forEach(input => {
+
+            const actualQty = Number(input.value || 0);
+
+            if (actualQty > 0) {
+              lines.push({
+                material_id: Number(
+                  input.dataset.materialId
+                ),
+                actual_qty: actualQty,
+              });
+            }
+          });
+
+        if (!lines.length) {
+          alert(
+            "Enter an actual quantity for at least one material."
+          );
+          return;
+        }
+
+        await postManufacturingMaterialUsageUI(
+          orderId,
+          lines,
+          modal
+        );
+      });
+
+  } catch (err) {
+    alert(
+      err?.message ||
+      "Failed to load material usage."
+    );
+  }
+}
+
+function renderManufacturingProductionHistory(rows) {
+  const mount = getManufacturingMount();
+  if (!mount) return;
+
+  mount.innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="font-semibold text-slate-800">
+          Production History
+        </div>
+        <div class="text-xs text-slate-500">
+          Completed and historical production batches, material usage and costs.
+        </div>
+      </div>
+    </div>
+
+    <div class="overflow-auto border rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-2">Batch</th>
+            <th class="text-left px-2 py-2">Date</th>
+            <th class="text-left px-2 py-2">Finished Item</th>
+            <th class="text-left px-2 py-2">BOM</th>
+            <th class="text-right px-2 py-2">Planned</th>
+            <th class="text-right px-2 py-2">Actual</th>
+            <th class="text-right px-2 py-2">Material Cost</th>
+            <th class="text-center px-2 py-2">Status</th>
+            <th class="text-right px-2 py-2">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${
+            rows.length
+              ? rows.map(r => `
+                <tr class="border-b hover:bg-slate-50">
+
+                  <td class="px-2 py-2 font-medium">
+                    ${esc(r.mo_no || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(formatManufacturingDate(r.tx_date))}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(r.finished_item_name || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(
+                      r.bom_code
+                        ? `${r.bom_code} — ${r.bom_name || ""}`
+                        : (r.bom_name || "")
+                    )}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${esc(r.planned_qty ?? "")}
+                    ${esc(r.unit || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${esc(r.actual_qty ?? "0")}
+                    ${esc(r.unit || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${fmtMoney(r.material_cost || 0)}
+                  </td>
+
+                  <td class="px-2 py-2 text-center">
+                    ${esc(r.status || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    <button
+                      type="button"
+                      class="text-xs underline"
+                      data-mfg-history-order="${Number(r.id)}">
+                      Open
+                    </button>
+                  </td>
+
+                </tr>
+              `).join("")
+              : `
+                <tr>
+                  <td colspan="9" class="px-2 py-4 text-slate-500">
+                    No production history yet.
+                  </td>
+                </tr>
+              `
+          }
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadManufacturingProductionHistory() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const mount = getManufacturingMount();
+
+  if (!cid || !mount) return;
+
+  mount.innerHTML = `
+    <div class="text-xs text-slate-500">
+      Loading production history…
+    </div>
+  `;
+
+  try {
+    const data = await apiFetch(
+      ENDPOINTS.manufacturing.history(cid)
+    );
+
+    const rows =
+      data?.history ||
+      data?.rows ||
+      data?.items ||
+      [];
+
+    renderManufacturingProductionHistory(rows);
+
+  } catch (err) {
+    mount.innerHTML = renderApiError(err);
+  }
+}
+
+function renderManufacturingOrders(rows) {
+  const mount = getManufacturingMount();
+  if (!mount) return;
+
+  mount.innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="font-semibold text-slate-800">
+          Production Batches
+        </div>
+        <div class="text-xs text-slate-500">
+          Track planned production, material usage and actual output.
+        </div>
+      </div>
+    </div>
+
+    <div class="overflow-auto border rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-2">Batch</th>
+            <th class="text-left px-2 py-2">Date</th>
+            <th class="text-left px-2 py-2">Finished Item</th>
+            <th class="text-right px-2 py-2">Planned</th>
+            <th class="text-right px-2 py-2">Actual</th>
+            <th class="text-center px-2 py-2">Status</th>
+            <th class="text-right px-2 py-2">Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${
+            rows.length
+              ? rows.map(r => `
+                <tr class="border-b hover:bg-slate-50">
+                  <td class="px-2 py-2 font-medium">
+                    ${esc(r.mo_no || "")}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(formatManufacturingDate(r.tx_date))}
+                  </td>
+
+                  <td class="px-2 py-2">
+                    ${esc(r.finished_item_name || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${esc(r.planned_qty ?? "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    ${esc(r.actual_qty ?? "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-center">
+                    ${esc(r.status || "")}
+                  </td>
+
+                  <td class="px-2 py-2 text-right">
+                    <button
+                      type="button"
+                      class="text-xs underline"
+                      data-mfg-order="${Number(r.id)}">
+                      Open
+                    </button>
+                  </td>
+                </tr>
+              `).join("")
+              : `
+                <tr>
+                  <td colspan="7" class="px-2 py-4 text-slate-500">
+                    No production batches yet.
+                  </td>
+                </tr>
+              `
+          }
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  document.getElementById("mfgNewOrderBtn")
+    ?.addEventListener("click", () => openManufacturingOrderModal());
+}
+// =====================================================
+// Production Order Modal
+// =====================================================
+
+let _mfgOrderSelectedBom = null;
+let _mfgOrderBomRequest = 0;
+
+function _mfgReviewNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function _mfgReviewMoney(value) {
+  return _mfgReviewNumber(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function _mfgReviewQty(value) {
+  return _mfgReviewNumber(value).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4
+  });
+}
+
+function _mfgReviewText(value) {
+  return esc(String(value ?? ""));
+}
+
+function _mfgReviewCard(label, value, detail = "") {
+  return `
+    <div class="rounded-lg bg-gray-50 border border-gray-200 p-3">
+      <div class="text-xs text-gray-500">${_mfgReviewText(label)}</div>
+      <div class="text-lg font-semibold text-gray-900 mt-1">${_mfgReviewText(value)}</div>
+      ${detail ? `<div class="text-xs text-gray-500 mt-1">${_mfgReviewText(detail)}</div>` : ""}
+    </div>
+  `;
+}
+
+function _mfgReviewCostRows(rows, type) {
+  if (!Array.isArray(rows) || !rows.length) {
+    return '<p class="text-gray-400">No entries recorded.</p>';
+  }
+
+  return `
+    <div class="space-y-2">
+      ${rows.map(row => {
+        let label = "";
+        let amount = 0;
+        let detail = "";
+
+        if (type === "labour") {
+          label = row.worker_name || row.role || row.worker_reference || "Labour";
+          amount = row.labour_cost ?? (
+            _mfgReviewNumber(row.hours) * _mfgReviewNumber(row.rate)
+          );
+          detail = `${_mfgReviewQty(row.hours)} hours × ${_mfgReviewMoney(row.rate)}`;
+        } else if (type === "direct") {
+          label = row.description || row.cost_type || "Direct cost";
+          amount = row.amount;
+          detail = row.memo || "";
+        } else {
+          label = row.allocation_name || row.basis || "Overhead";
+          amount = row.allocated_amount ?? (
+            _mfgReviewNumber(row.quantity) * _mfgReviewNumber(row.rate)
+          );
+          detail = row.memo || "";
+        }
+
+        return `
+          <div class="flex justify-between gap-3 border-b border-gray-100 pb-2">
+            <div class="min-w-0">
+              <div class="font-medium text-gray-800">${_mfgReviewText(label)}</div>
+              ${detail ? `<div class="text-xs text-gray-500">${_mfgReviewText(detail)}</div>` : ""}
+            </div>
+            <div class="whitespace-nowrap font-medium">${_mfgReviewMoney(amount)}</div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function _mfgRenderBomReview() {
+  const panel = document.getElementById("mfgOrderBomReview");
+  if (!panel) return;
+
+  const bom = _mfgOrderSelectedBom;
+  if (!bom) {
+    panel.classList.add("hidden");
+    return;
+  }
+
+  panel.classList.remove("hidden");
+
+  const quantityInput = document.getElementById("mfgOrderQty");
+  const plannedQty = Math.max(0, _mfgReviewNumber(quantityInput?.value));
+  const batchQty = _mfgReviewNumber(bom.batch_qty);
+  const yieldPercent = bom.yield_percent == null
+    ? 100
+    : _mfgReviewNumber(bom.yield_percent);
+
+  const effectiveBatchQty = batchQty * yieldPercent / 100;
+  const factor = effectiveBatchQty > 0 ? plannedQty / effectiveBatchQty : 0;
+
+  const summary = bom.cost_summary || {};
+  const total = _mfgReviewNumber(summary.total ?? bom.standard_total_cost);
+  const unitCost = _mfgReviewNumber(summary.unit_cost ?? bom.standard_unit_cost);
+  const sellingPrice = _mfgReviewNumber(summary.selling_price ?? bom.selling_price);
+  const margin = _mfgReviewNumber(
+    summary.margin_per_unit ?? (sellingPrice - unitCost)
+  );
+
+  document.getElementById("mfgReviewTitle").textContent =
+    `${bom.bom_code || "BOM"} — ${bom.finished_item_name || bom.name || "Finished product"}`;
+
+  document.getElementById("mfgReviewSubtitle").textContent =
+    `${bom.name || ""}${bom.version_no != null ? ` · Version ${bom.version_no}` : ""}`;
+
+  document.getElementById("mfgReviewYield").textContent =
+    `Batch: ${_mfgReviewQty(batchQty)} ${bom.batch_unit || ""} · Yield: ${_mfgReviewQty(yieldPercent)}%`;
+
+  document.getElementById("mfgReviewCostSummary").innerHTML = [
+    _mfgReviewCard("Standard batch cost", _mfgReviewMoney(total)),
+    _mfgReviewCard("Standard unit cost", _mfgReviewMoney(unitCost)),
+    _mfgReviewCard("Selling price / unit", _mfgReviewMoney(sellingPrice)),
+    _mfgReviewCard("Standard margin / unit", _mfgReviewMoney(margin))
+  ].join("");
+
+  const materials = Array.isArray(bom.lines) ? bom.lines : [];
+  document.getElementById("mfgReviewMaterials").innerHTML = materials.length
+    ? materials.map(line => {
+        const bomLineQty = _mfgReviewNumber(line.quantity);
+        const scrap = _mfgReviewNumber(line.scrap_percent);
+        const estimatedQty = bomLineQty * factor * (1 + scrap / 100);
+        const unitCostValue = _mfgReviewNumber(line.unit_cost);
+        const estimatedCost = estimatedQty * unitCostValue;
+
+        return `
+          <tr>
+            <td class="p-2 border">
+              <div class="font-medium">${_mfgReviewText(line.item_name || line.sku || `Item ${line.item_id ?? ""}`)}</div>
+              <div class="text-xs text-gray-500">${_mfgReviewText(line.sku || "")}${line.is_optional ? " · Optional" : ""}</div>
+            </td>
+            <td class="p-2 border">${_mfgReviewQty(bomLineQty)}</td>
+            <td class="p-2 border">${_mfgReviewText(line.unit || "")}</td>
+            <td class="p-2 border text-right">${_mfgReviewMoney(unitCostValue)}</td>
+            <td class="p-2 border text-right">${_mfgReviewQty(estimatedQty)}</td>
+            <td class="p-2 border text-right">${_mfgReviewMoney(estimatedCost)}</td>
+          </tr>
+        `;
+      }).join("")
+    : '<tr><td colspan="6" class="p-3 text-gray-500">No material lines recorded for this BOM.</td></tr>';
+
+  document.getElementById("mfgReviewLabour").innerHTML =
+    _mfgReviewCostRows(bom.labour, "labour");
+
+  document.getElementById("mfgReviewDirectCosts").innerHTML =
+    _mfgReviewCostRows(bom.direct_costs, "direct");
+
+  document.getElementById("mfgReviewOverheads").innerHTML =
+    _mfgReviewCostRows(bom.overheads, "overhead");
+
+  document.getElementById("mfgReviewNote").textContent =
+    `Quantity estimate is based on ${_mfgReviewQty(plannedQty)} planned ${bom.batch_unit || "units"} and ${_mfgReviewQty(yieldPercent)}% BOM yield. Material estimates include each line's scrap percentage. Labour and other costs are shown from the BOM standard-cost records; actual production costs may differ.`;
+}
+
+async function _mfgLoadSelectedBomReview() {
+  const select = document.getElementById("mfgOrderBom");
+  const panel = document.getElementById("mfgOrderBomReview");
+  const message = document.getElementById("mfgOrderMsg");
+  if (!select || !panel) return;
+
+  const bomId = Number(select.value || 0);
+  const requestId = ++_mfgOrderBomRequest;
+  _mfgOrderSelectedBom = null;
+
+  if (!bomId) {
+    panel.classList.add("hidden");
+    return;
+  }
+
+  panel.classList.remove("hidden");
+  document.getElementById("mfgReviewTitle").textContent = "Loading BOM details…";
+  document.getElementById("mfgReviewSubtitle").textContent = "";
+  document.getElementById("mfgReviewCostSummary").innerHTML = "";
+  document.getElementById("mfgReviewMaterials").innerHTML =
+    '<tr><td colspan="6" class="p-3 text-gray-500">Loading materials…</td></tr>';
+  document.getElementById("mfgReviewLabour").textContent = "Loading…";
+  document.getElementById("mfgReviewDirectCosts").textContent = "Loading…";
+  document.getElementById("mfgReviewOverheads").textContent = "Loading…";
+
+  try {
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    const response = await apiFetch(ENDPOINTS.manufacturing.bom(cid, bomId));
+    if (requestId !== _mfgOrderBomRequest) return;
+
+    const bom = response?.bom;
+    if (!response?.ok || !bom) {
+      throw new Error(response?.error || "Could not load BOM details.");
+    }
+
+    _mfgOrderSelectedBom = bom;
+
+    // Default planned output to one finished batch.
+    // Keep the field editable after this initial value is set.
+    const quantityInput = document.getElementById("mfgOrderQty");
+    const finishedBatchQty = Number(bom.batch_qty);
+
+    if (
+      quantityInput &&
+      Number.isFinite(finishedBatchQty) &&
+      finishedBatchQty > 0
+    ) {
+      quantityInput.value = String(Math.round(finishedBatchQty));
+    }
+
+    _mfgRenderBomReview();
+  } catch (error) {
+    if (requestId !== _mfgOrderBomRequest) return;
+    panel.classList.remove("hidden");
+    document.getElementById("mfgReviewTitle").textContent = "Unable to load BOM";
+    document.getElementById("mfgReviewMaterials").innerHTML =
+      `<tr><td colspan="6" class="p-3 text-red-600">${_mfgReviewText(error?.message || "Could not load BOM details.")}</td></tr>`;
+    if (message) {
+      message.textContent = error?.message || "Could not load BOM details.";
+      message.classList.remove("hidden");
+    }
+  }
+}
+
+async function openManufacturingOrderModal() {
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID;
+
+  const existing =
+    document.getElementById("mfgOrderModal");
+
+  if (existing) {
+    existing.remove();
+  }
+
+  const modal = document.createElement("div");
+
+  modal.id = "mfgOrderModal";
+
+  modal.className =
+    "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
+
+  modal.innerHTML = `
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[94vh] overflow-auto">
+
+      <div class="flex items-center justify-between border-b px-4 py-3">
+
+        <div class="font-semibold">
+          New Production Batch
+        </div>
+
+        <button
+          type="button"
+          class="text-lg text-slate-500"
+          data-close-mfg-order>
+          ×
+        </button>
+
+      </div>
+
+      <div class="p-4 space-y-3">
+
+        <div id="mfgOrderMsg"></div>
+
+        <label class="text-xs block">
+          <div class="text-slate-600 mb-1">
+            BOM
+          </div>
+
+          <select
+            id="mfgOrderBom"
+            class="w-full border rounded px-2 py-2 text-sm">
+
+            <option value="">
+              Loading BOMs…
+            </option>
+
+          </select>
+        </label>
+
+        <div id="mfgOrderBomReview" class="hidden mt-4 border border-gray-200 rounded-lg p-4 space-y-4">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 id="mfgReviewTitle" class="text-lg font-semibold text-gray-900">BOM details</h3>
+              <p id="mfgReviewSubtitle" class="text-sm text-gray-500 mt-1"></p>
+            </div>
+            <span id="mfgReviewYield" class="text-sm font-medium text-gray-700"></span>
+          </div>
+
+          <div id="mfgReviewCostSummary" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+
+          <div>
+            <h4 class="font-semibold text-gray-800 mb-2">Material requirements</h4>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm border-collapse">
+                <thead>
+                  <tr class="bg-gray-50 text-left">
+                    <th class="p-2 border">Material</th>
+                    <th class="p-2 border">BOM quantity</th>
+                    <th class="p-2 border">Unit</th>
+                    <th class="p-2 border text-right">Unit cost</th>
+                    <th class="p-2 border text-right">Estimated quantity</th>
+                    <th class="p-2 border text-right">Estimated cost</th>
+                  </tr>
+                </thead>
+                <tbody id="mfgReviewMaterials">
+                  <tr><td colspan="6" class="p-3 text-gray-500">Select a BOM to review its materials.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div>
+              <h4 class="font-semibold text-gray-800 mb-2">Labour</h4>
+              <div id="mfgReviewLabour" class="text-sm text-gray-600"></div>
+            </div>
+            <div>
+              <h4 class="font-semibold text-gray-800 mb-2">Other direct costs</h4>
+              <div id="mfgReviewDirectCosts" class="text-sm text-gray-600"></div>
+            </div>
+            <div>
+              <h4 class="font-semibold text-gray-800 mb-2">Manufacturing overhead</h4>
+              <div id="mfgReviewOverheads" class="text-sm text-gray-600"></div>
+            </div>
+          </div>
+
+          <p id="mfgReviewNote" class="text-xs text-gray-500"></p>
+        </div>
+
+        <label class="text-xs block">
+          <div class="text-slate-600 mb-1">
+            Production Tracking
+          </div>
+
+          <select
+            id="mfgOrderTrackingMethod"
+            class="w-full border rounded px-2 py-2 text-sm">
+
+            <option value="batch">
+              Batch / Daily Production
+            </option>
+
+            <option value="progressive">
+              Progressive Production
+            </option>
+
+          </select>
+
+          <div class="mt-1 text-[11px] text-slate-500">
+            Batch / Daily Production is intended for production normally
+            completed within a short production cycle. Progressive Production
+            is for orders tracked over multiple days or stages.
+          </div>
+        </label>
+
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+          <label class="text-xs block">
+            <div class="text-slate-600 mb-1">
+              Planned Start Date
+            </div>
+            <input
+              id="mfgOrderStartDate"
+              type="date"
+              required
+              class="w-full border rounded px-2 py-2 text-sm"
+              value="${new Date().toISOString().slice(0, 10)}">
+          </label>
+
+          <label class="text-xs block">
+            <div class="text-slate-600 mb-1">
+              Expected Finish Date
+            </div>
+            <input
+              id="mfgOrderFinishDate"
+              type="date"
+              required
+              class="w-full border rounded px-2 py-2 text-sm"
+              value="${new Date().toISOString().slice(0, 10)}">
+          </label>
+
+          <label class="text-xs block">
+            <div class="text-slate-600 mb-1">
+              Expected Start Time
+            </div>
+            <input
+              id="mfgOrderStartTime"
+              type="time"
+              required
+              class="w-full border rounded px-2 py-2 text-sm"
+              value="08:00">
+          </label>
+
+          <label class="text-xs block">
+            <div class="text-slate-600 mb-1">
+              Expected Finish Time
+            </div>
+            <input
+              id="mfgOrderFinishTime"
+              type="time"
+              required
+              class="w-full border rounded px-2 py-2 text-sm"
+              value="17:00">
+          </label>
+
+        </div>
+
+        <label class="text-xs block">
+          <div class="text-slate-600 mb-1">
+            Planned Quantity
+          </div>
+
+          <input
+            id="mfgOrderQty"
+            type="number"
+            min="0.0001"
+            step="0.0001"
+            class="w-full border rounded px-2 py-2 text-sm"
+            value="1">
+        </label>
+
+        <label class="text-xs block">
+          <div class="text-slate-600 mb-1">
+            Location
+          </div>
+
+          <input
+            id="mfgOrderLocation"
+            class="w-full border rounded px-2 py-2 text-sm"
+            placeholder="Bakery / Factory">
+        </label>
+
+        <label class="text-xs block">
+          <div class="text-slate-600 mb-1">
+            Notes
+          </div>
+
+          <textarea
+            id="mfgOrderNotes"
+            rows="2"
+            class="w-full border rounded px-2 py-2 text-sm"></textarea>
+        </label>
+
+        <div class="flex justify-end gap-2 pt-2">
+
+          <button
+            type="button"
+            data-close-mfg-order
+            class="px-3 py-2 border rounded text-xs">
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            id="mfgOrderSaveBtn"
+            class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
+            Create Batch
+          </button>
+
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal
+    .querySelectorAll("[data-close-mfg-order]")
+    .forEach(btn =>
+      btn.addEventListener(
+        "click",
+        () => modal.remove()
+      )
+    );
+
+  document
+    .getElementById("mfgOrderSaveBtn")
+    ?.addEventListener(
+      "click",
+      saveManufacturingOrder
+    );
+
+  // Keep expected finish date from being earlier than start date.
+  const startDateInput =
+    document.getElementById("mfgOrderStartDate");
+
+  const finishDateInput =
+    document.getElementById("mfgOrderFinishDate");
+
+  startDateInput?.addEventListener("change", () => {
+    if (!startDateInput.value) return;
+
+    finishDateInput.min =
+      startDateInput.value;
+
+    if (
+      finishDateInput.value &&
+      finishDateInput.value < startDateInput.value
+    ) {
+      finishDateInput.value =
+        startDateInput.value;
+    }
+  });
+
+  if (startDateInput?.value && finishDateInput) {
+    finishDateInput.min =
+      startDateInput.value;
+  }
+
+  // Load BOMs after the modal is already visible.
+  try {
+    if (!cid) {
+      throw new Error(
+        "No active company selected"
+      );
+    }
+
+    const boms = await apiFetch(
+      ENDPOINTS.manufacturing.boms(cid)
+    );
+
+    console.log(
+      "[Manufacturing] BOM API response:",
+      boms
+    );
+
+    console.log(
+      "[Manufacturing] BOM API boms:",
+      boms?.boms
+    );
+
+    const rows =
+      boms?.boms ||
+      boms?.rows ||
+      boms?.items ||
+      [];
+
+    const select =
+      document.getElementById("mfgOrderBom");
+
+    if (!select) return;
+
+    if (!rows.length) {
+      select.innerHTML = `
+        <option value="">
+          No active BOMs available
+        </option>
+      `;
+      return;
+    }
+
+    select.innerHTML = `
+      <option value="">
+        Select BOM
+      </option>
+
+      ${
+        rows.map(r => `
+          <option value="${Number(r.id)}">
+            ${esc(r.bom_code || "")}
+            — ${esc(
+              r.finished_item_name ||
+              r.name ||
+              ""
+            )}
+          </option>
+        `).join("")
+      }
+    `;
+
+  } catch (err) {
+
+    console.error(
+      "[Manufacturing] Failed to load BOMs:",
+      err
+    );
+
+    const select =
+      document.getElementById("mfgOrderBom");
+
+    if (select) {
+      select.innerHTML = `
+        <option value="">
+          Failed to load BOMs
+        </option>
+      `;
+    }
+
+    const msg =
+      document.getElementById("mfgOrderMsg");
+
+    if (msg) {
+      msg.innerHTML = `
+        <div class="text-xs text-red-600">
+          Unable to load BOMs.
+          ${esc(err?.message || String(err))}
+        </div>
+      `;
+    }
+  }
+
+  const bomSelect = document.getElementById("mfgOrderBom");
+  const qtyInput = document.getElementById("mfgOrderQty");
+
+  bomSelect?.addEventListener("change", _mfgLoadSelectedBomReview);
+  qtyInput?.addEventListener("input", _mfgRenderBomReview);
+}
+
+
+async function saveManufacturingOrder() {
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID;
+
+  const startDate =
+    document.getElementById("mfgOrderStartDate")?.value || "";
+
+  const finishDate =
+    document.getElementById("mfgOrderFinishDate")?.value || "";
+
+  const startTime =
+    document.getElementById("mfgOrderStartTime")?.value || "";
+
+  const finishTime =
+    document.getElementById("mfgOrderFinishTime")?.value || "";
+
+  const payload = {
+    bom_id: Number(
+      document.getElementById("mfgOrderBom")?.value || 0
+    ),
+
+    // Retain the existing backend/order field.
+    tx_date: startDate,
+
+    // Planned schedule.
+    planned_start_date: startDate,
+    planned_finish_date: finishDate,
+    planned_start_time: startTime,
+    planned_finish_time: finishTime,
+
+    production_tracking_method:
+      document.getElementById("mfgOrderTrackingMethod")?.value ||
+      "batch",
+
+    planned_qty: Number(
+      document.getElementById("mfgOrderQty")?.value || 0
+    ),
+
+    location:
+      document.getElementById("mfgOrderLocation")?.value.trim() ||
+      null,
+
+    notes:
+      document.getElementById("mfgOrderNotes")?.value.trim() ||
+      null
+  };
+
+  if (!payload.bom_id) {
+    return showManufacturingOrderMsg(
+      "Select a BOM.",
+      "error"
+    );
+  }
+
+  if (!startDate) {
+    return showManufacturingOrderMsg(
+      "Planned start date is required.",
+      "error"
+    );
+  }
+
+  if (!finishDate) {
+    return showManufacturingOrderMsg(
+      "Expected finish date is required.",
+      "error"
+    );
+  }
+
+  if (!startTime || !finishTime) {
+    return showManufacturingOrderMsg(
+      "Expected start and finish times are required.",
+      "error"
+    );
+  }
+
+  if (finishDate < startDate) {
+    return showManufacturingOrderMsg(
+      "Expected finish date cannot be before the planned start date.",
+      "error"
+    );
+  }
+
+  if (
+    finishDate === startDate &&
+    finishTime <= startTime
+  ) {
+    return showManufacturingOrderMsg(
+      "Expected finish time must be later than start time.",
+      "error"
+    );
+  }
+
+  if (
+    payload.production_tracking_method !== "batch" &&
+    payload.production_tracking_method !== "progressive"
+  ) {
+    return showManufacturingOrderMsg(
+      "Select a valid production tracking method.",
+      "error"
+    );
+  }
+
+  if (
+    !Number.isFinite(payload.planned_qty) ||
+    payload.planned_qty <= 0
+  ) {
+    return showManufacturingOrderMsg(
+      "Planned quantity must be greater than zero.",
+      "error"
+    );
+  }
+
+  if (!cid) {
+    return showManufacturingOrderMsg(
+      "No active company selected.",
+      "error"
+    );
+  }
+
+  const btn =
+    document.getElementById("mfgOrderSaveBtn");
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Creating…";
+  }
+
+  try {
+    await apiFetch(
+      ENDPOINTS.manufacturing.orders(cid),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    document
+      .getElementById("mfgOrderModal")
+      ?.remove();
+
+    showToast?.(
+      "Production batch created successfully",
+      "ok"
+    );
+
+    await loadManufacturingOrders();
+
+  } catch (err) {
+    console.error(
+      "[Manufacturing] Failed to create production order:",
+      err
+    );
+
+    showManufacturingOrderMsg(
+      err?.message ||
+      "Failed to create production batch.",
+      "error"
+    );
+
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Create Batch";
+    }
+  }
+}
+
+function showManufacturingOrderMsg(text, kind = "info") {
+  const el = document.getElementById("mfgOrderMsg");
+  if (!el) return;
+
+  el.className =
+    kind === "error"
+      ? "text-xs text-red-600 font-semibold"
+      : "text-xs text-slate-600";
+
+  el.textContent = text || "";
+}
+
+// =====================================================
+// Production Order Detail
+// =====================================================
+async function updateManufacturingOrderStatus(orderId, status) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+
+  if (!cid || !orderId || !status) return null;
+
+  const labels = {
+    released: "Release this production batch?",
+    in_progress: "Start production for this batch?",
+    completed: "Complete this production batch?",
+    cancelled: "Cancel this production batch?"
+  };
+
+  const message =
+    labels[status] ||
+    `Change production batch status to ${status}?`;
+
+  if (!confirm(message)) {
+    return null;
+  }
+
+  try {
+    const result = await apiFetch(
+      ENDPOINTS.manufacturing.status(cid, orderId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          status
+        })
+      }
+    );
+
+    showToast?.(
+      `Production batch status changed to ${result?.status || status}.`,
+      "ok"
+    );
+
+    return result;
+
+  } catch (err) {
+    alert(
+      err?.message ||
+      "Failed to update production batch status."
+    );
+
+    return null;
+  }
+}
+
+async function recordManufacturingProductionProgress(
+  orderId
+) {
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID;
+
+  if (!cid) {
+    showToast?.(
+      "No active company selected",
+      "error"
+    );
+    return;
+  }
+
+  const order =
+    window.__mfgProductionOrder;
+
+  if (!order) {
+    showToast?.(
+      "Production order is no longer loaded",
+      "error"
+    );
+    return;
+  }
+
+  const plannedQty =
+    Number(order.planned_qty || 0);
+
+  const actualQty =
+    Number(order.actual_qty || 0);
+
+  const remainingQty =
+    Math.max(
+      plannedQty - actualQty,
+      0
+    );
+
+  if (remainingQty <= 0) {
+    showToast?.(
+      "There is no remaining production quantity.",
+      "error"
+    );
+    return;
+  }
+
+  const modal =
+    document.getElementById(
+      "mfgProductionProgressModal"
+    );
+
+  modal?.remove();
+
+  const progressModal =
+    document.createElement("div");
+
+  progressModal.id =
+    "mfgProductionProgressModal";
+
+  progressModal.className =
+    "fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4";
+
+  progressModal.innerHTML = `
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+
+      <div class="flex items-center justify-between border-b px-4 py-3">
+
+        <div class="font-semibold">
+          Record Production
+        </div>
+
+        <button
+          type="button"
+          class="text-lg text-slate-500"
+          data-close-production-progress>
+          ×
+        </button>
+
+      </div>
+
+      <div class="p-4 space-y-4">
+
+        <div
+          id="mfgProductionProgressMsg">
+        </div>
+
+        <div class="grid grid-cols-3 gap-2">
+
+          <div class="border rounded p-2">
+            <div class="text-[10px] text-slate-500">
+              Planned
+            </div>
+            <div class="font-semibold text-sm">
+              ${plannedQty}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-[10px] text-slate-500">
+              Completed
+            </div>
+            <div class="font-semibold text-sm">
+              ${actualQty}
+            </div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-[10px] text-slate-500">
+              Remaining
+            </div>
+            <div class="font-semibold text-sm">
+              ${remainingQty}
+            </div>
+          </div>
+
+        </div>
+
+        <label class="text-xs block">
+
+          <div class="text-slate-600 mb-1">
+            Production Date
+          </div>
+
+          <input
+            id="mfgProductionProgressDate"
+            type="date"
+            class="w-full border rounded px-2 py-2 text-sm"
+            value="${new Date().toISOString().slice(0, 10)}">
+
+        </label>
+
+        <label class="text-xs block">
+
+          <div class="text-slate-600 mb-1">
+            Quantity Produced
+          </div>
+
+          <input
+            id="mfgProductionProgressQty"
+            type="number"
+            min="0.0001"
+            max="${remainingQty}"
+            step="0.0001"
+            class="w-full border rounded px-2 py-2 text-sm"
+            value="${remainingQty}">
+
+        </label>
+
+        <label class="text-xs block">
+
+          <div class="text-slate-600 mb-1">
+            Notes
+          </div>
+
+          <textarea
+            id="mfgProductionProgressNotes"
+            rows="2"
+            class="w-full border rounded px-2 py-2 text-sm"
+            placeholder="Optional production notes"></textarea>
+
+        </label>
+
+        <div class="flex justify-end gap-2 pt-2">
+
+          <button
+            type="button"
+            data-close-production-progress
+            class="px-3 py-2 border rounded text-xs">
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            id="mfgProductionProgressSaveBtn"
+            class="px-3 py-2 bg-slate-900 text-white rounded text-xs">
+            Record Production
+          </button>
+
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(
+    progressModal
+  );
+
+  progressModal
+    .querySelectorAll(
+      "[data-close-production-progress]"
+    )
+    .forEach(btn => {
+      btn.addEventListener(
+        "click",
+        () => progressModal.remove()
+      );
+    });
+
+  document
+    .getElementById(
+      "mfgProductionProgressSaveBtn"
+    )
+    ?.addEventListener(
+      "click",
+      async () => {
+
+        const quantity =
+          Number(
+            document
+              .getElementById(
+                "mfgProductionProgressQty"
+              )
+              ?.value || 0
+          );
+
+        const txDate =
+          document
+            .getElementById(
+              "mfgProductionProgressDate"
+            )
+            ?.value || "";
+
+        const notes =
+          document
+            .getElementById(
+              "mfgProductionProgressNotes"
+            )
+            ?.value
+            .trim() || null;
+
+        if (quantity <= 0) {
+          const msg =
+            document.getElementById(
+              "mfgProductionProgressMsg"
+            );
+
+          if (msg) {
+            msg.innerHTML = `
+              <div class="text-xs text-red-600">
+                Production quantity must be greater than zero.
+              </div>
+            `;
+          }
+
+          return;
+        }
+
+        if (quantity > remainingQty) {
+          const msg =
+            document.getElementById(
+              "mfgProductionProgressMsg"
+            );
+
+          if (msg) {
+            msg.innerHTML = `
+              <div class="text-xs text-red-600">
+                Quantity cannot exceed the remaining
+                production quantity of ${remainingQty}.
+              </div>
+            `;
+          }
+
+          return;
+        }
+
+        if (!txDate) {
+          const msg =
+            document.getElementById(
+              "mfgProductionProgressMsg"
+            );
+
+          if (msg) {
+            msg.innerHTML = `
+              <div class="text-xs text-red-600">
+                Production date is required.
+              </div>
+            `;
+          }
+
+          return;
+        }
+
+        const btn =
+          document.getElementById(
+            "mfgProductionProgressSaveBtn"
+          );
+
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "Saving…";
+        }
+
+        try {
+
+          await apiFetch(
+            ENDPOINTS
+              .manufacturing
+              .productionProgress(
+                cid,
+                orderId
+              ),
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+                Accept:
+                  "application/json",
+              },
+              body: JSON.stringify({
+                quantity,
+                tx_date: txDate,
+                notes,
+              }),
+            }
+          );
+
+          progressModal.remove();
+
+          showToast?.(
+            "Production progress recorded",
+            "ok"
+          );
+
+          await openManufacturingOrderDetail(
+            orderId
+          );
+
+        } catch (err) {
+
+          console.error(
+            "[Manufacturing] Failed to record production progress:",
+            err
+          );
+
+          const msg =
+            document.getElementById(
+              "mfgProductionProgressMsg"
+            );
+
+          if (msg) {
+            msg.innerHTML = `
+              <div class="text-xs text-red-600">
+                ${esc(
+                  err?.message ||
+                  "Failed to record production progress."
+                )}
+              </div>
+            `;
+          }
+
+        } finally {
+
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent =
+              "Record Production";
+          }
+        }
+      }
+    );
+}
+
+function refreshManufacturingOrderManagementSummary(modal, order) {
+  const summary = order?.production_summary || {};
+
+  const materialCost =
+    Number(summary.material_cost ?? 0);
+
+  const labourCost =
+    Number(summary.labour_cost ?? 0);
+
+  const directCosts =
+    Number(summary.other_direct_costs ?? 0);
+
+  const totalDirectProductionCost =
+    Number(summary.total_direct_cost ?? 0);
+
+  const overheadCost =
+    Number(summary.manufacturing_overhead ?? 0);
+
+  const fullProductionCost =
+    Number(summary.full_production_cost ?? 0);
+
+  const sellingPrice =
+    Number(summary.selling_price ?? 0);
+
+  const productionValue =
+    Number(summary.production_value ?? 0);
+
+  const contribution =
+    Number(summary.contribution ?? 0);
+
+  const contributionMargin =
+    summary.contribution_margin != null
+      ? Number(summary.contribution_margin)
+      : null;
+
+  const fullProductionMargin =
+    Number(summary.full_production_margin ?? 0);
+
+  const fullProductionMarginPercent =
+    summary.full_production_margin_percent != null
+      ? Number(summary.full_production_margin_percent)
+      : null;
+
+  const unitDirectCost =
+    summary.unit_direct_cost != null
+      ? Number(summary.unit_direct_cost)
+      : null;
+
+  const unitFullProductionCost =
+    summary.unit_full_production_cost != null
+      ? Number(summary.unit_full_production_cost)
+      : null;
+
+  const unitContribution =
+    summary.unit_contribution != null
+      ? Number(summary.unit_contribution)
+      : null;
+
+  const unitFullProductionMargin =
+    summary.unit_full_production_margin != null
+      ? Number(summary.unit_full_production_margin)
+      : null;
+
+  const setMoney = (selector, value) => {
+    const el = modal.querySelector(selector);
+    if (el) {
+      el.textContent = fmtMoney(value);
+    }
+  };
+
+  const setOptionalMoney = (selector, value) => {
+    const el = modal.querySelector(selector);
+    if (el) {
+      el.textContent =
+        value == null ? "—" : fmtMoney(value);
+    }
+  };
+
+  const setPercent = (selector, value) => {
+    const el = modal.querySelector(selector);
+    if (el) {
+      el.textContent =
+        value == null ? "—" : `${value.toFixed(1)}%`;
+    }
+  };
+
+  setMoney("[data-summary-materials]", materialCost);
+  setMoney("[data-summary-labour]", labourCost);
+  setMoney("[data-summary-direct-costs]", directCosts);
+  setMoney("[data-summary-direct-total]", totalDirectProductionCost);
+  setMoney("[data-summary-overhead]", overheadCost);
+  setMoney("[data-summary-full-cost]", fullProductionCost);
+
+  setMoney("[data-summary-selling-price]", sellingPrice);
+  setMoney("[data-summary-production-value]", productionValue);
+  setMoney("[data-summary-contribution]", contribution);
+
+  setPercent(
+    "[data-summary-contribution-margin]",
+    contributionMargin
+  );
+
+  setMoney(
+    "[data-summary-full-margin]",
+    fullProductionMargin
+  );
+
+  setPercent(
+    "[data-summary-full-margin-percent]",
+    fullProductionMarginPercent
+  );
+
+  setOptionalMoney(
+    "[data-summary-unit-direct-cost]",
+    unitDirectCost
+  );
+
+  setOptionalMoney(
+    "[data-summary-unit-full-cost]",
+    unitFullProductionCost
+  );
+
+  setOptionalMoney(
+    "[data-summary-unit-contribution]",
+    unitContribution
+  );
+
+  setOptionalMoney(
+    "[data-summary-unit-full-margin]",
+    unitFullProductionMargin
+  );
+}
+
+const MFG_ORDER_COST_EDIT_SPECS = {
+  labour: {
+    title: "Update Labour",
+    url: (cid, orderId, id) =>
+      `/api/companies/${cid}/manufacturing/orders/${orderId}/labour/${id}`,
+    fields: [
+      { key: "worker_name", label: "Worker", type: "text", full: true },
+      { key: "role", label: "Role", type: "text" },
+      { key: "hours", label: "Hours", type: "number", step: "0.01" },
+      { key: "rate", label: "Rate", type: "number", step: "0.01" },
+      { key: "labour_cost", label: "Labour Cost", type: "number", step: "0.01" }
+    ]
+  },
+  direct_costs: {
+    title: "Update Direct Cost",
+    url: (cid, orderId, id) =>
+      `/api/companies/${cid}/manufacturing/orders/${orderId}/direct-costs/${id}`,
+    fields: [
+      { key: "description", label: "Description", type: "text", full: true },
+      { key: "cost_type", label: "Cost Type", type: "text" },
+      { key: "amount", label: "Amount", type: "number", step: "0.01" }
+    ]
+  },
+  overhead: {
+    title: "Update Overhead",
+    url: (cid, orderId, id) =>
+      `/api/companies/${cid}/manufacturing/orders/${orderId}/overhead/${id}`,
+    fields: [
+      { key: "allocation_name", label: "Cost / Allocation", type: "text", full: true },
+      { key: "basis", label: "Basis", type: "text" },
+      { key: "quantity", label: "Quantity", type: "number", step: "0.01" },
+      { key: "rate", label: "Rate", type: "number", step: "0.01" },
+      { key: "allocated_amount", label: "Allocated Amount", type: "number", step: "0.01" }
+    ]
+  }
+};
+
+function openMfgOrderCostRowEditModal(orderId, section, line) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid || !orderId || !line?.id) return;
+
+  const spec = MFG_ORDER_COST_EDIT_SPECS[section];
+  if (!spec) return;
+
+  const modal = document.createElement("div");
+  modal.className =
+    "fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4";
+
+  modal.innerHTML = `
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-auto">
+      <div class="flex items-center justify-between border-b px-4 py-3">
+        <div class="font-semibold text-sm">${esc(spec.title)}</div>
+        <button type="button" data-cancel class="text-slate-500 text-lg">×</button>
+      </div>
+      <div class="p-4">
+        <div data-edit-msg class="hidden mb-3 border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2 text-xs"></div>
+        <div class="text-xs text-slate-500 mb-3">
+          Adjust this cost to reflect what actually happened. Updated rows are
+          preserved even when the order is re-synced from the BOM.
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          ${spec.fields.map(f => `
+            <label class="text-xs ${f.full ? "md:col-span-2" : ""}">
+              <div class="text-slate-600 mb-1">${esc(f.label)}</div>
+              <input
+                type="${f.type || "text"}"
+                ${f.type === "number" ? `step="${f.step || "any"}" min="0"` : ""}
+                data-field="${esc(f.key)}"
+                class="w-full border rounded px-2 py-2 text-sm"
+                value="${esc(line[f.key] ?? "")}">
+            </label>
+          `).join("")}
+        </div>
+        <div class="flex justify-end gap-2 mt-4">
+          <button type="button" data-cancel class="px-3 py-2 border rounded text-xs">Cancel</button>
+          <button type="button" data-save class="px-3 py-2 bg-slate-900 text-white rounded text-xs">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+  modal.querySelectorAll("[data-cancel]")
+    .forEach(b => b.addEventListener("click", close));
+
+  // live auto-fill: hours × rate -> cost, qty × rate -> allocated
+  const num = v => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  modal.addEventListener("input", e => {
+    const f = e.target?.dataset?.field;
+    if (!f) return;
+
+    if (section === "labour" && (f === "hours" || f === "rate")) {
+      const h = num(modal.querySelector('[data-field="hours"]')?.value);
+      const r = num(modal.querySelector('[data-field="rate"]')?.value);
+      const c = modal.querySelector('[data-field="labour_cost"]');
+      if (c && h > 0 && r > 0) c.value = (h * r).toFixed(2);
+    }
+
+    if (section === "overhead" && (f === "quantity" || f === "rate")) {
+      const q = num(modal.querySelector('[data-field="quantity"]')?.value);
+      const r = num(modal.querySelector('[data-field="rate"]')?.value);
+      const a = modal.querySelector('[data-field="allocated_amount"]');
+      if (a && q > 0 && r > 0) a.value = (q * r).toFixed(2);
+    }
+  });
+
+  modal.querySelector("[data-save]")?.addEventListener("click", async () => {
+    const body = {};
+
+    for (const f of spec.fields) {
+      const raw = modal.querySelector(`[data-field="${f.key}"]`)?.value ?? "";
+      body[f.key] =
+        f.type === "number"
+          ? (raw === "" ? null : Number(raw))
+          : (raw.trim() || null);
+    }
+
+    const btn = modal.querySelector("[data-save]");
+    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+
+    try {
+      const res = await apiFetch(spec.url(cid, orderId, Number(line.id)), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+
+      if (!res?.ok) throw new Error(res?.error || "Failed to update.");
+
+      close();
+
+      // refresh the detail modal underneath
+      document.querySelector("[data-mfg-order-detail]")?.remove();
+      await openManufacturingOrderDetail(orderId);
+
+    } catch (err) {
+      const msg = modal.querySelector("[data-edit-msg]");
+      if (msg) {
+        msg.classList.remove("hidden");
+        msg.textContent = err?.message || "Failed to update.";
+      }
+      if (btn) { btn.disabled = false; btn.textContent = "Save Changes"; }
+    }
+  });
+}
+
+// ── Auto-post planned materials when order progresses or completes ──
+// Triggered by the "Auto-post materials" checkbox in the order detail modal.
+// Posts planned_qty as actual_qty for every material line that hasn't been
+// recorded yet (delta = planned - already_posted). Skips lines that have
+// already been fully recorded.
+async function autoPostManufacturingMaterials(orderId, { reason = "progress" } = {}) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid || !orderId) return false;
+
+  try {
+    const data = await apiFetch(ENDPOINTS.manufacturing.order(cid, orderId));
+    const order = data?.order || data;
+    const materials =
+      order?.materials || order?.material_lines || order?.lines || [];
+
+    if (!materials.length) {
+      console.info("[MFG] autoPost: no material lines to post");
+      return false;
+    }
+
+    // Build the lines payload — post remaining = planned - actual
+    const lines = [];
+    for (const m of materials) {
+      const planned = Number(m.planned_qty ?? m.quantity ?? 0) || 0;
+      const alreadyPosted = Number(m.actual_qty ?? 0) || 0;
+      const remaining = planned - alreadyPosted;
+      if (remaining > 0) {
+        lines.push({
+          material_id: Number(m.material_id ?? m.id ?? m.item_id),
+          actual_qty: remaining,
+        });
+      }
+    }
+
+    if (!lines.length) {
+      console.info("[MFG] autoPost: all planned materials already posted");
+      showToast?.("All planned materials already recorded.", "info");
+      return true;
+    }
+
+    const result = await apiFetch(
+      ENDPOINTS.manufacturing.orderMaterialUsage(cid, orderId),
+      {
+        method: "POST",
+        body: JSON.stringify({ lines }),
+      }
+    );
+
+    showToast?.(
+      `Auto-posted ${lines.length} material line(s) — Cost ${fmtMoney(result?.total_cost || 0)}`,
+      "ok"
+    );
+    return true;
+  } catch (err) {
+    console.error("[MFG] autoPost failed:", err);
+    alert(`Auto-post of materials failed: ${err?.message || err}`);
+    return false;
+  }
+}
+
+async function openManufacturingOrderDetail(orderId) {
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID;
+
+  if (!cid || !orderId) return;
+
+  // 1. Fetch Order and Assets in parallel
+  const [data, assetsRes] = await Promise.all([
+    apiFetch(ENDPOINTS.manufacturing.order(cid, orderId)),
+    apiFetch(
+      ENDPOINTS?.assets?.list
+        ? ENDPOINTS.assets.list(cid, { limit: 100 })
+        : `/api/companies/${encodeURIComponent(cid)}/assets?limit=100`
+    ).catch(() => ({ data: [] })),
+  ]);
+
+  // Read from .data (matches your API response)
+  const availableAssets = Array.isArray(assetsRes?.data)
+    ? assetsRes.data
+    : Array.isArray(assetsRes?.items)
+    ? assetsRes.items
+    : Array.isArray(assetsRes?.assets)
+    ? assetsRes.assets
+    : Array.isArray(assetsRes)
+    ? assetsRes
+    : [];
+  const order = data?.order || data;
+
+  window.__mfgProductionOrder = order;
+
+  const managementCosts =
+    order?.management_costs || {};
+
+  const labourLines =
+    Array.isArray(managementCosts.labour)
+      ? managementCosts.labour
+      : [];
+
+  const directCostLines =
+    Array.isArray(managementCosts.direct_costs)
+      ? managementCosts.direct_costs
+      : [];
+
+  const overheadLines =
+    Array.isArray(managementCosts.overhead)
+      ? managementCosts.overhead
+      : [];
+
+  const materials =
+    Array.isArray(order?.materials)
+      ? order.materials
+      : [];
+
+  const finishedItem =
+    order?.finished_item_name ||
+    order?.item_name ||
+    "";
+
+  const outputUnit =
+    order?.unit ||
+    "";
+
+  const status =
+    String(order?.status || "")
+      .trim()
+      .toLowerCase();
+
+  const trackingMethod =
+    String(
+      order?.production_tracking_method ||
+      "batch"
+    )
+      .trim()
+      .toLowerCase();
+
+  const trackingLabel =
+    trackingMethod === "progressive"
+      ? "Progressive Production"
+      : "Batch / Daily Production";
+
+  const canRecordUsage =
+    status === "draft" ||
+    status === "released" ||
+    status === "in_progress";
+
+  /* -------------------------------------------------------
+     PRODUCTION SUMMARY
+  ------------------------------------------------------- */
+
+  const productionSummary =
+    order?.production_summary || {};
+
+  const plannedOutput =
+    Number(
+      productionSummary.planned_output ??
+      order?.planned_qty ??
+      0
+    );
+
+  const productionProgress =
+    Array.isArray(order?.production_progress)
+      ? order.production_progress
+      : [];
+
+  // Completed output is calculated strictly from recorded progress entries
+  const completedOutput =
+    productionProgress.length > 0
+      ? productionProgress.reduce(
+          (total, entry) => total + Number(entry?.quantity || 0),
+          0
+        )
+      : status === "completed"
+      ? Number(order?.actual_qty ?? plannedOutput)
+      : 0; // MUST be 0 when in draft, released, or in_progress
+
+  const remainingOutput = Math.max(plannedOutput - completedOutput, 0);
+
+  const productionProgressPercent =
+    plannedOutput > 0
+      ? Math.min((completedOutput / plannedOutput) * 100, 100)
+      : 0;
+
+  const sellingPrice =
+    Number(
+      productionSummary.selling_price ??
+      order?.bom_selling_price ??
+      order?.selling_price ??
+      0
+    );
+
+  const productionValue =
+    Number(
+      productionSummary.production_value ?? 0
+    );
+
+  const materialCost =
+    Number(
+      productionSummary.material_cost ?? 0
+    );
+
+  const labourCost =
+    Number(
+      productionSummary.labour_cost ?? 0
+    );
+
+  const directCostTotal =
+    Number(
+      productionSummary.other_direct_costs ?? 0
+    );
+
+  const totalDirectCost =
+    Number(
+      productionSummary.total_direct_cost ?? 0
+    );
+
+  const overheadTotal =
+    Number(
+      productionSummary.manufacturing_overhead ?? 0
+    );
+
+  const fullProductionCost =
+    Number(
+      productionSummary.full_production_cost ?? 0
+    );
+
+  const contribution =
+    Number(
+      productionSummary.contribution ?? 0
+    );
+
+  const contributionMargin =
+    productionSummary.contribution_margin != null
+      ? Number(
+          productionSummary.contribution_margin
+        )
+      : null;
+
+  const fullProductionMargin =
+    Number(
+      productionSummary.full_production_margin ?? 0
+    );
+
+  const fullProductionMarginPercent =
+    productionSummary.full_production_margin_percent != null
+      ? Number(
+          productionSummary.full_production_margin_percent
+        )
+      : null;
+
+  const unitDirectCost =
+    productionSummary.unit_direct_cost != null
+      ? Number(
+          productionSummary.unit_direct_cost
+        )
+      : null;
+
+  const unitFullProductionCost =
+    productionSummary.unit_full_production_cost != null
+      ? Number(
+          productionSummary.unit_full_production_cost
+        )
+      : null;
+
+  const unitContribution =
+    productionSummary.unit_contribution != null
+      ? Number(
+          productionSummary.unit_contribution
+        )
+      : null;
+
+  const unitFullProductionMargin =
+    productionSummary.unit_full_production_margin != null
+      ? Number(
+          productionSummary.unit_full_production_margin
+        )
+      : null;
+
+  const modal =
+    document.createElement("div");
+
+  modal.className =
+    "fixed inset-0 z-50 bg-white overflow-y-auto";
+  modal.innerHTML = `
+    <div class="bg-white w-full min-h-screen flex flex-col">
+
+      <!-- BACK BAR -->
+      <div class="sticky top-0 z-30 bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center justify-between">
+        <button type="button" data-close
+                class="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 font-medium">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Production Orders
+        </button>
+        <button type="button" data-close
+                class="text-2xl text-slate-400 hover:text-slate-700 px-2">×</button>
+      </div>
+
+      <!-- HEADER -->
+      <div class="bg-white border-b px-5 py-4 flex items-center justify-between">
+        <div>
+          <div class="text-lg font-semibold">
+            ${esc(order?.mo_no || `MO-${orderId}`)}
+          </div>
+          <div class="text-sm text-slate-600">
+            Production of ${esc(finishedItem)}
+          </div>
+        </div>
+      </div>
+
+      <div class="p-5">
+
+        <!-- PRODUCTION HEADER -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <div class="text-slate-500">Finished Item</div>
+            <div class="font-semibold">${esc(finishedItem)}</div>
+          </div>
+
+          <div>
+            <div class="text-slate-500">Production Tracking</div>
+            <div class="font-semibold">${esc(trackingLabel)}</div>
+          </div>
+
+          <div>
+            <div class="text-slate-500">Planned Start</div>
+            <div class="font-semibold">
+              ${esc(order?.planned_start_date || order?.tx_date || "—")}
+            </div>
+          </div>
+
+          <div>
+            <div class="text-slate-500">Expected Finish</div>
+            <div class="font-semibold">
+              ${esc(order?.planned_finish_date || "—")}
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <div class="text-slate-500">Planned Output</div>
+            <div class="font-semibold">
+              ${esc(plannedOutput)} ${esc(outputUnit)}
+            </div>
+          </div>
+
+          <div>
+            <div class="text-slate-500">Completed Output</div>
+            <div class="font-semibold">
+              ${esc(completedOutput)} ${esc(outputUnit)}
+            </div>
+          </div>
+
+          <div>
+            <div class="text-slate-500">Remaining Output</div>
+            <div class="font-semibold">
+              ${esc(remainingOutput)} ${esc(outputUnit)}
+            </div>
+          </div>
+
+          <div>
+            <div class="text-slate-500">Production Progress</div>
+            <div class="font-semibold">
+              ${productionProgressPercent.toFixed(1)}%
+            </div>
+          </div>
+        </div>
+
+        <!-- PROGRESS BAR -->
+        <div class="mt-4">
+          <div class="flex justify-between text-xs text-slate-500 mb-1">
+            <span>Production progress</span>
+            <span>${productionProgressPercent.toFixed(1)}%</span>
+          </div>
+
+          <div class="w-full h-2 bg-slate-100 rounded overflow-hidden">
+            <div
+              class="h-full bg-slate-700"
+              style="width:${Math.min(productionProgressPercent, 100)}%">
+            </div>
+          </div>
+        </div>
+
+        <!-- RECORD PRODUCTION & ACTIONS -->
+        ${
+          status !== "completed" &&
+          status !== "cancelled" &&
+          remainingOutput > 0
+            ? `
+              <div class="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  data-record-production
+                  class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+                  Record Production
+                </button>
+              </div>
+            `
+            : ""
+        }
+
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+          <div class="text-xs px-2.5 py-1.5 rounded font-mono uppercase bg-slate-100 border text-slate-700">
+            Status: <strong>${esc(order?.status || "draft")}</strong>
+          </div>
+
+          ${
+            trackingMethod === "progressive"
+              ? `<div class="text-xs px-2 py-1 rounded bg-slate-100 text-slate-600">Progressive Tracking</div>`
+              : ""
+          }
+
+          <!-- LIFECYCLE TRANSITION BUTTONS -->
+          ${
+            status === "draft"
+              ? `
+                <button
+                  type="button"
+                  data-mfg-status="released"
+                  class="px-3 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500">
+                  Release Order
+                </button>
+                <button
+                  type="button"
+                  data-mfg-status="in_progress"
+                  class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+                  Start Production
+                </button>
+              `
+              : ""
+          }
+
+          ${
+            status === "released"
+              ? `
+                <button
+                  type="button"
+                  data-mfg-status="in_progress"
+                  class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+                  Start Production
+                </button>
+              `
+              : ""
+          }
+
+          ${
+            status === "in_progress"
+              ? `
+                <button
+                  type="button"
+                  data-mfg-status="completed"
+                  class="px-3 py-1.5 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-500">
+                  Complete Production
+                </button>
+              `
+              : ""
+          }
+
+          ${
+            status === "completed"
+              ? `
+                <button
+                  type="button"
+                  data-action-dispatch
+                  class="px-3 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500 font-medium">
+                  Dispatch / Release Goods
+                </button>
+
+                <button
+                  type="button"
+                  data-action-eod
+                  class="px-3 py-1.5 text-sm rounded bg-amber-600 text-white hover:bg-amber-500 font-medium">
+                  End-of-Day Reconciliation & Waste
+                </button>
+              `
+              : ""
+          }
+        </div>
+
+
+        <!-- PRODUCTION STAGES -->
+        <div class="mt-6 border rounded-lg" id="mfgProductionStages">
+          <div class="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="font-semibold">Production Stages & Timers</div>
+              <div class="text-xs text-slate-500 mt-1">
+                Track actual stage duration against configured standards.
+                These timers do not post materials or change order status.
+              </div>
+            </div>
+            <button
+              type="button"
+              data-mfg-apply-stage-standards
+              class="px-3 py-2 text-xs rounded bg-slate-800 text-white">
+              Apply Stage Standards
+            </button>
+          </div>
+
+          <div class="p-4 border-b bg-slate-50">
+            <div class="font-medium text-sm mb-3">Configure a Stage Standard</div>
+
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <label class="text-xs">
+                <span class="block text-slate-600 mb-1">Stage Name</span>
+                <input data-mfg-standard-name
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="e.g. Mixing">
+              </label>
+
+              <label class="text-xs">
+                <span class="block text-slate-600 mb-1">Stage Code</span>
+                <input data-mfg-standard-code
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="e.g. MIXING">
+              </label>
+
+              <label class="text-xs">
+                <span class="block text-slate-600 mb-1">Sequence</span>
+                <input data-mfg-standard-sequence type="number" min="1" step="1"
+                  class="w-full border rounded px-2 py-2 text-sm" value="1">
+              </label>
+
+              <label class="text-xs">
+                <span class="block text-slate-600 mb-1">Standard Minutes</span>
+                <input data-mfg-standard-minutes type="number" min="1" step="1"
+                  class="w-full border rounded px-2 py-2 text-sm" value="45">
+              </label>
+
+              <label class="text-xs">
+                <span class="block text-slate-600 mb-1">Default Equipment</span>
+                <input data-mfg-standard-equipment
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="e.g. Mixer 1">
+              </label>
+            </div>
+
+            <div class="mt-3 flex justify-end">
+              <button type="button" data-mfg-save-stage-standard
+                class="px-3 py-2 text-xs rounded border bg-white">
+                Save Stage Standard
+              </button>
+            </div>
+
+            <p class="text-xs text-slate-500 mt-2">
+              Standards saved here apply to this BOM. Configure each stage once,
+              then apply the standards to production orders using this BOM.
+            </p>
+          </div>
+
+          <div class="p-4">
+            <div class="font-medium text-sm mb-2">Configured Standards</div>
+            <div data-mfg-stage-standards class="space-y-2">
+              <div class="text-sm text-slate-500">Loading stage standards…</div>
+            </div>
+          </div>
+
+          <div class="px-4 py-3 border-t">
+            <div class="font-medium text-sm mb-2">Stages for This Production Order</div>
+            <div data-mfg-order-stages class="space-y-3">
+              <div class="text-sm text-slate-500">Loading production stages…</div>
+            </div>
+            <div data-mfg-stage-message class="mt-3 text-sm" role="status"></div>
+          </div>
+        </div>
+
+        <!-- PRODUCTION INFORMATION -->
+        <div class="mt-6 border rounded">
+          <div class="px-4 py-3 border-b">
+            <div class="font-semibold">Production Order</div>
+            <div class="mt-1 text-sm text-slate-600">
+              ${
+                trackingMethod === "progressive"
+                  ? `This production order can remain open across multiple production days or stages. Material, labour, direct costs and overhead can accumulate while production output is recorded progressively.`
+                  : `This is a batch / daily production order intended for a short production cycle.`
+              }
+            </div>
+          </div>
+
+          <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <div class="text-slate-500">BOM</div>
+              <div class="font-semibold">${esc(order?.bom_code || order?.bom_name || "—")}</div>
+            </div>
+
+            <div>
+              <div class="text-slate-500">Location</div>
+              <div class="font-semibold">${esc(order?.location || "—")}</div>
+            </div>
+
+            <div>
+              <div class="text-slate-500">Planned Start</div>
+              <div class="font-semibold">${esc(order?.planned_start_date || order?.tx_date || "—")}</div>
+            </div>
+
+            <div>
+              <div class="text-slate-500">Expected Finish</div>
+              <div class="font-semibold">${esc(order?.planned_finish_date || "—")}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PRODUCTION PROGRESS HISTORY -->
+        <div class="mt-6 border rounded">
+          <div class="px-4 py-3 border-b">
+            <div class="font-semibold">Production Progress History</div>
+            <div class="text-xs text-slate-500">
+              Individual production entries recorded against this order.
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-3 py-2 text-left">Date</th>
+                  <th class="px-3 py-2 text-right">Quantity</th>
+                  <th class="px-3 py-2 text-left">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  Array.isArray(order?.production_progress) && order.production_progress.length
+                    ? order.production_progress
+                        .map(entry => `
+                          <tr class="border-b">
+                            <td class="px-3 py-2">${esc(entry.tx_date || "—")}</td>
+                            <td class="px-3 py-2 text-right">${esc(entry.quantity ?? 0)} ${esc(outputUnit)}</td>
+                            <td class="px-3 py-2">${esc(entry.notes || "—")}</td>
+                          </tr>
+                        `).join("")
+                    : `<tr><td colspan="3" class="px-3 py-4 text-slate-500">No production progress has been recorded yet.</td></tr>`
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- MATERIALS -->
+        <div class="mt-6 border rounded">
+          <div class="px-4 py-3 border-b flex items-center justify-between">
+            <div>
+              <div class="font-semibold">Materials / Material Usage</div>
+              <div class="text-xs text-slate-500">
+                Planned quantities come from the BOM. Actual quantities show what was consumed.
+              </div>
+            </div>
+
+            ${
+              canRecordUsage
+                ? `
+                  <label class="flex items-center gap-2 text-xs cursor-pointer select-none"
+                         title="When ticked, planned materials auto-post when you click Start Production or Complete Production.">
+                    <input type="checkbox"
+                           id="mfgOrderAutoPostMaterials"
+                           class="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500" />
+                    <span class="text-slate-700 font-medium">Auto-post materials on progress / completion</span>
+                  </label>
+                  <button
+                    type="button"
+                    data-post-usage
+                    class="px-2 py-1 text-xs rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+                    title="Open the manual material-usage entry modal">
+                    Manual entry…
+                  </button>
+                `
+                : ""
+            }
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-3 py-2 text-left">Material</th>
+                  <th class="px-3 py-2 text-right">Planned Qty</th>
+                  <th class="px-3 py-2 text-right">Actual Qty</th>
+                  <th class="px-3 py-2 text-left">Unit</th>
+                  <th class="px-3 py-2 text-right">Unit Cost</th>
+                  <th class="px-3 py-2 text-right">Total Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  materials.length
+                    ? materials
+                        .map(line => `
+                          <tr class="border-b">
+                            <td class="px-3 py-2">${esc(line.item_name || line.name || line.description || "")}</td>
+                            <td class="px-3 py-2 text-right">${esc(line.planned_qty ?? 0)}</td>
+                            <td class="px-3 py-2 text-right">${esc(line.actual_qty ?? 0)}</td>
+                            <td class="px-3 py-2">${esc(line.unit || "")}</td>
+                            <td class="px-3 py-2 text-right">${fmtMoney(line.unit_cost || 0)}</td>
+                            <td class="px-3 py-2 text-right">${fmtMoney(line.total_cost || 0)}</td>
+                          </tr>
+                        `).join("")
+                    : `<tr><td colspan="6" class="px-3 py-4 text-slate-500">No materials have been recorded.</td></tr>`
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- DISPATCH & DISTRIBUTION HISTORY -->
+        <div class="mt-6 border rounded">
+          <div class="px-4 py-3 border-b flex justify-between items-center bg-slate-50">
+            <div>
+              <div class="font-semibold text-slate-800">Goods Dispatches & Distribution</div>
+              <div class="text-xs text-slate-500">Tracks rolls sent to kitchen, branches, or retail.</div>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs">
+              <thead class="bg-white border-b text-slate-600">
+                <tr>
+                  <th class="px-3 py-2 text-left">Destination</th>
+                  <th class="px-3 py-2 text-right">Quantity</th>
+                  <th class="px-3 py-2 text-left">Recipient</th>
+                  <th class="px-3 py-2 text-left">Ref Slip</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  Array.isArray(order?.dispatches) && order.dispatches.length
+                    ? order.dispatches.map(d => `
+                      <tr class="border-b">
+                        <td class="px-3 py-2 font-medium">${esc(d.destination || d.channel)}</td>
+                        <td class="px-3 py-2 text-right font-semibold">${esc(d.quantity)} ${esc(outputUnit)}</td>
+                        <td class="px-3 py-2">${esc(d.received_by || "—")}</td>
+                        <td class="px-3 py-2 font-mono">${esc(d.reference_no || "—")}</td>
+                      </tr>
+                    `).join("")
+                    : `<tr><td colspan="4" class="px-3 py-4 text-center text-slate-400">No dispatches logged yet.</td></tr>`
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- END-OF-DAY RECONCILIATION SUMMARY -->
+        ${
+          order?.eod_reconciliation && (order.eod_reconciliation.treatments || []).length
+            ? `
+              <div class="mt-6 border border-amber-200 rounded bg-amber-50/40 p-4">
+                <div class="font-semibold text-slate-800 mb-2">Day-End Produce Reconciliation & Donations</div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-3">
+                  <div><span class="text-slate-500">Unsold On Hand:</span> <strong>${order.eod_reconciliation.leftover_qty ?? order?.dispatch_summary?.leftover_on_hand ?? 0} ${outputUnit}</strong></div>
+                  <div><span class="text-slate-500">Reconciled At:</span> <strong>${order.eod_reconciliation.reconciled_at ? new Date(order.eod_reconciliation.reconciled_at).toLocaleDateString() : "—"}</strong></div>
+                </div>
+                <table class="w-full text-xs bg-white border rounded">
+                  <thead class="bg-slate-100 border-b">
+                    <tr>
+                      <th class="px-2 py-1 text-left">Action</th>
+                      <th class="px-2 py-1 text-right">Qty</th>
+                      <th class="px-2 py-1 text-right">Total Cost Value</th>
+                      <th class="px-2 py-1 text-left">Recipient / Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${(order.eod_reconciliation.treatments || []).map(t => {
+                      const label = String(t.treatment_type || t.type || "").replace(/_/g, ' ');
+                      return `
+                        <tr class="border-b">
+                          <td class="px-2 py-1 font-medium capitalize">${esc(label)}</td>
+                          <td class="px-2 py-1 text-right font-bold">${esc(t.quantity)}</td>
+                          <td class="px-2 py-1 text-right">${fmtMoney(t.total_value || (Number(t.quantity || 0) * Number(t.unit_cost || 0)))}</td>
+                          <td class="px-2 py-1">${esc(t.notes || "—")}</td>
+                        </tr>
+                      `;
+                    }).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : ""
+        }
+
+        <!-- DIRECT LABOUR -->
+        <div class="border rounded mt-5">
+          <div class="px-4 py-3 border-b flex items-center justify-between">
+            <div>
+              <div class="font-semibold">Direct Labour</div>
+              <div class="text-xs text-slate-500">
+                Labour directly attributable to this production order.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-add-labour
+              class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
+              Add Labour
+            </button>
+          </div>
+
+          <div data-labour-form class="hidden px-4 py-3 border-b bg-slate-50">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">Employee / Worker</div>
+                <select
+                  data-labour-worker
+                  class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">Loading employees...</option>
+                </select>
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">Role</div>
+                <input
+                  type="text"
+                  data-labour-role
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="Role">
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">Hours</div>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-labour-hours
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="0.00">
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">Hourly Rate</div>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-labour-rate
+                  class="w-full border rounded px-2 py-2 text-sm bg-slate-100"
+                  placeholder="0.00"
+                  readonly>
+                <div
+                  data-labour-rate-info
+                  class="mt-1 text-[11px] text-slate-500">
+                </div>
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">Labour Cost</div>
+                <input
+                  type="text"
+                  data-labour-cost
+                  readonly
+                  class="w-full border rounded px-2 py-2 text-sm bg-white"
+                  value="LSL 0.00">
+              </label>
+
+            </div>
+
+            <div class="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                data-cancel-labour
+                class="px-3 py-1.5 text-sm rounded border hover:bg-white">
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                data-save-labour
+                class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+                Save Labour
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-3 py-2 text-left">Employee / Worker</th>
+                  <th class="px-3 py-2 text-left">Role</th>
+                  <th class="px-3 py-2 text-right">Hours</th>
+                  <th class="px-3 py-2 text-right">Rate</th>
+                  <th class="px-3 py-2 text-right">Labour Cost</th>
+                  <th class="px-3 py-2 text-right">Action</th>
+                </tr>
+              </thead>
+
+              <tbody data-labour-lines>
+                ${
+                  labourLines.length
+                    ? labourLines.map(line => `
+                      <tr class="border-b">
+                        <td class="px-3 py-2">
+                          ${esc(line.worker_name || line.worker_reference || "")}
+                        </td>
+
+                        <td class="px-3 py-2">
+                          ${esc(line.role || "")}
+                        </td>
+
+                        <td class="px-3 py-2 text-right">
+                          ${line.hours != null ? esc(line.hours) : "—"}
+                        </td>
+
+                        <td class="px-3 py-2 text-right">
+                          ${line.rate != null ? fmtMoney(line.rate) : "—"}
+                        </td>
+
+                        <td class="px-3 py-2 text-right">
+                          ${line.labour_cost != null ? fmtMoney(line.labour_cost) : "—"}
+                        </td>
+
+                        <td class="px-3 py-2 text-right">
+                          ${
+                            canRecordUsage
+                              ? `<button
+                                  type="button"
+                                  class="text-xs text-indigo-600 hover:underline mr-2"
+                                  data-edit-labour="${Number(line.id)}">
+                                  Update
+                                </button>`
+                              : ""
+                          }
+                          <button
+                            type="button"
+                            class="text-xs text-red-600 hover:underline"
+                            data-delete-labour="${Number(line.id)}">
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    `).join("")
+                    : `
+                      <tr data-labour-empty>
+                        <td colspan="6" class="px-3 py-4 text-slate-500">
+                          No direct labour has been recorded for this production order.
+                        </td>
+                      </tr>
+                    `
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- OTHER DIRECT COSTS -->
+        <div class="border rounded mt-5">
+          <div class="px-4 py-3 border-b flex items-center justify-between">
+            <div>
+              <div class="font-semibold">Other Direct Costs</div>
+              <div class="text-xs text-slate-500">Other costs directly attributable to this production order.</div>
+            </div>
+
+            <button
+              type="button"
+              data-add-direct-cost
+              class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
+              Add Direct Cost
+            </button>
+          </div>
+
+          <div data-direct-cost-form class="hidden px-4 py-3 border-b bg-slate-50">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <label class="text-xs md:col-span-2">
+                <div class="text-slate-600 mb-1">Description</div>
+                <input type="text" data-direct-cost-description class="w-full border rounded px-2 py-2 text-sm" placeholder="Description">
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">Cost Type</div>
+                <input type="text" data-direct-cost-type class="w-full border rounded px-2 py-2 text-sm" placeholder="Cost type">
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">Amount</div>
+                <input type="number" min="0" step="0.01" data-direct-cost-amount class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
+              </label>
+            </div>
+
+            <div class="mt-3 flex justify-end gap-2">
+              <button type="button" data-cancel-direct-cost class="px-3 py-1.5 text-sm rounded border hover:bg-white">Cancel</button>
+              <button type="button" data-save-direct-cost class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">Save Direct Cost</button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-3 py-2 text-left">Description</th>
+                  <th class="px-3 py-2 text-left">Cost Type</th>
+                  <th class="px-3 py-2 text-right">Amount</th>
+                  <th class="px-3 py-2 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody data-direct-cost-lines>
+                ${
+                  directCostLines.length
+                    ? directCostLines.map(line => `
+                      <tr class="border-b">
+                        <td class="px-3 py-2">${esc(line.description || "")}</td>
+                        <td class="px-3 py-2">${esc(line.cost_type || "")}</td>
+                        <td class="px-3 py-2 text-right">${line.amount != null ? fmtMoney(line.amount) : "—"}</td>
+                        <td class="px-3 py-2 text-right">
+                          ${
+                            canRecordUsage
+                              ? `<button type="button" class="text-xs text-indigo-600 hover:underline mr-2"
+                                         data-edit-direct-cost="${Number(line.id)}">Update</button>`
+                              : ""
+                          }
+                          <button type="button" class="text-xs text-red-600 hover:underline"
+                                  data-delete-direct-cost="${Number(line.id)}">Delete</button>
+                        </td>
+                      </tr>
+                    `).join("")
+                    : `<tr data-direct-cost-empty><td colspan="4" class="px-3 py-4 text-slate-500">No other direct costs have been recorded for this production order.</td></tr>`
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- MANUFACTURING OVERHEAD -->
+        <div class="border rounded mt-5">
+          <div class="px-4 py-3 border-b flex items-center justify-between">
+            <div>
+              <div class="font-semibold">Manufacturing Overhead</div>
+              <div class="text-xs text-slate-500">Factory costs allocated to this production order.</div>
+            </div>
+
+            <button
+              type="button"
+              data-add-overhead
+              class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
+              Add Overhead
+            </button>
+          </div>
+
+          <!-- ENRICHED OVERHEAD FORM WITH ASSET LINK -->
+          <div data-overhead-form class="hidden px-4 py-3 border-b bg-slate-50">
+            <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+              <label class="text-xs md:col-span-2">
+                <div class="text-slate-600 mb-1">Machine / Asset (Optional)</div>
+                <select data-overhead-asset class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- None / Manual Allocation --</option>
+                  ${
+                    availableAssets.map(a => {
+                      const cost = Number(a.cost || 0);
+                      const residual = Number(a.residual_value || 0);
+                      const totalUnits = Number(a.uop_total_units || 0);
+                      const calculatedRate = totalUnits > 0 ? (cost - residual) / totalUnits : 0;
+                      const basisName = a.uop_unit_name || "Machine hours";
+
+                      return `
+                        <option 
+                          value="${esc(a.id)}" 
+                          data-name="${esc(a.asset_name || '')}" 
+                          data-code="${esc(a.asset_code || '')}"
+                          data-rate="${calculatedRate > 0 ? calculatedRate.toFixed(2) : ''}"
+                          data-basis="${esc(basisName)}">
+                          ${esc(a.asset_code)} - ${esc(a.asset_name)} (${calculatedRate > 0 ? fmtMoney(calculatedRate) + '/hr' : 'UOP'})
+                        </option>
+                      `;
+                    }).join("")
+                  }
+                </select>
+              </label>
+
+              <label class="text-xs md:col-span-2">
+                <div class="text-slate-600 mb-1">Cost / Allocation</div>
+                <input
+                  type="text"
+                  data-overhead-name
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="e.g. Machinery depreciation">
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">Basis</div>
+                <input
+                  type="text"
+                  data-overhead-basis
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="e.g. Machine hours">
+              </label>
+
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">Quantity / Hours</div>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-overhead-quantity
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="0.00">
+              </label>
+            </div>
+
+            <div class="mt-3 grid grid-cols-1 md:grid-cols-6 gap-3">
+              <label class="text-xs">
+                <div class="text-slate-600 mb-1">Rate (LSL)</div>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-overhead-rate
+                  class="w-full border rounded px-2 py-2 text-sm"
+                  placeholder="0.00">
+              </label>
+            </div>
+
+            <div class="mt-3 flex items-center justify-between">
+              <div class="text-sm text-slate-600">
+                Allocated Amount: <strong data-overhead-amount>LSL 0.00</strong>
+              </div>
+
+              <div class="flex gap-2">
+                <button type="button" data-cancel-overhead class="px-3 py-1.5 text-sm rounded border hover:bg-white">Cancel</button>
+                <button type="button" data-save-overhead class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">Save Overhead</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-3 py-2 text-left">Cost / Allocation</th>
+                  <th class="px-3 py-2 text-left">Basis</th>
+                  <th class="px-3 py-2 text-right">Rate</th>
+                  <th class="px-3 py-2 text-right">Allocated Amount</th>
+                  <th class="px-3 py-2 text-right">Action</th>
+                </tr>
+              </thead>
+
+              <tbody data-overhead-lines>
+                ${
+                  overheadLines.length
+                    ? overheadLines.map(line => `
+                      <tr class="border-b">
+                        <td class="px-3 py-2">
+                          <div>${esc(line.allocation_name || "")}</div>
+                          ${
+                            line.asset_name
+                              ? `<div class="text-xs text-slate-500 font-mono">Linked Machine: ${esc(line.asset_code ? line.asset_code + ' - ' : '')}${esc(line.asset_name)}</div>`
+                              : ""
+                          }
+                        </td>
+
+                        <td class="px-3 py-2">${esc(line.basis || "")}</td>
+                        <td class="px-3 py-2 text-right">${line.rate != null ? fmtMoney(line.rate) : "—"}</td>
+                        <td class="px-3 py-2 text-right">${line.allocated_amount != null ? fmtMoney(line.allocated_amount) : "—"}</td>
+
+                        <td class="px-3 py-2 text-right">
+                          ${
+                            line.asset_depreciation_id
+                              ? `<span class="inline-block px-2 py-0.5 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Depreciation Posted</span>`
+                              : `
+                                ${
+                                  canRecordUsage
+                                    ? `<button type="button" class="text-xs text-indigo-600 hover:underline mr-2"
+                                               data-edit-overhead="${Number(line.id)}">Update</button>`
+                                    : ""
+                                }
+                                <button
+                                  type="button"
+                                  class="text-xs text-red-600 hover:underline"
+                                  data-delete-overhead="${Number(line.id)}">
+                                  Delete
+                                </button>
+                              `
+                          }
+                        </td>
+                      </tr>
+                    `).join("")
+                    : `
+                      <tr data-overhead-empty>
+                        <td colspan="5" class="px-3 py-4 text-slate-500">
+                          No manufacturing overhead has been allocated to this production order.
+                        </td>
+                      </tr>
+                    `
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- PRODUCTION COST SUMMARY -->
+        <div class="border rounded mt-5">
+          <div class="px-4 py-3 border-b">
+            <div class="font-semibold">Production Cost Summary</div>
+            <div class="text-xs text-slate-500">Management accounting view of the production order.</div>
+          </div>
+
+          <div class="p-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div class="flex justify-between py-2 border-b">
+                <span>Direct Materials</span>
+                <strong data-summary-materials>${fmtMoney(materialCost)}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b">
+                <span>Direct Labour</span>
+                <strong data-summary-labour>${fmtMoney(labourCost)}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b">
+                <span>Other Direct Costs</span>
+                <strong data-summary-direct-costs>${fmtMoney(directCostTotal)}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Total Direct Production Cost</span>
+                <strong data-summary-direct-total>${fmtMoney(totalDirectCost)}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b">
+                <span>Manufacturing Overhead</span>
+                <strong data-summary-overhead>${fmtMoney(overheadTotal)}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Full Production Cost</span>
+                <strong data-summary-full-cost>${fmtMoney(fullProductionCost)}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b">
+                <span>Selling Price / Unit</span>
+                <strong data-summary-selling-price>${fmtMoney(sellingPrice)}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b">
+                <span>Production Value</span>
+                <strong data-summary-production-value>${fmtMoney(productionValue)}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Contribution</span>
+                <strong data-summary-contribution>${fmtMoney(contribution)}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Contribution Margin</span>
+                <strong data-summary-contribution-margin>
+                  ${contributionMargin !== null ? contributionMargin.toFixed(1) + "%" : "—"}
+                </strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Full Production Margin</span>
+                <strong data-summary-full-margin>${fmtMoney(fullProductionMargin)}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Full Production Margin %</span>
+                <strong data-summary-full-margin-percent>
+                  ${fullProductionMarginPercent !== null ? fullProductionMarginPercent.toFixed(1) + "%" : "—"}
+                </strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- UNIT ECONOMICS -->
+        <div class="border rounded mt-5">
+          <div class="px-4 py-3 border-b">
+            <div class="font-semibold">Unit Economics</div>
+            <div class="text-xs text-slate-500">
+              Per-unit production economics using actual output where available, otherwise planned output.
+            </div>
+          </div>
+
+          <div class="p-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div class="flex justify-between py-2 border-b">
+                <span>Direct Cost / Unit</span>
+                <strong>${unitDirectCost !== null ? fmtMoney(unitDirectCost) : "—"}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b">
+                <span>Full Production Cost / Unit</span>
+                <strong>${unitFullProductionCost !== null ? fmtMoney(unitFullProductionCost) : "—"}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Contribution / Unit</span>
+                <strong>${unitContribution !== null ? fmtMoney(unitContribution) : "—"}</strong>
+              </div>
+
+              <div class="flex justify-between py-2 border-b font-semibold">
+                <span>Full Production Margin / Unit</span>
+                <strong>${unitFullProductionMargin !== null ? fmtMoney(unitFullProductionMargin) : "—"}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-5 flex justify-end">
+          <button type="button" data-close class="px-4 py-2 border rounded hover:bg-slate-50">Close</button>
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  modal.dataset.mfgOrderDetail = "1";
+
+  /* -------------------------------------------------------
+     COST ROW EDIT (labour / direct costs / overhead)
+  ------------------------------------------------------- */
+  const labourById = new Map(labourLines.map(l => [Number(l.id), l]));
+  const directById = new Map(directCostLines.map(l => [Number(l.id), l]));
+  const overheadById = new Map(overheadLines.map(l => [Number(l.id), l]));
+
+  modal.querySelectorAll("[data-edit-labour]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const line = labourById.get(Number(btn.dataset.editLabour));
+      if (line) openMfgOrderCostRowEditModal(orderId, "labour", line);
+    });
+  });
+
+  modal.querySelectorAll("[data-edit-direct-cost]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const line = directById.get(Number(btn.dataset.editDirectCost));
+      if (line) openMfgOrderCostRowEditModal(orderId, "direct_costs", line);
+    });
+  });
+
+  modal.querySelectorAll("[data-edit-overhead]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const line = overheadById.get(Number(btn.dataset.editOverhead));
+      if (line) openMfgOrderCostRowEditModal(orderId, "overhead", line);
+    });
+  });
+
+  /* -------------------------------------------------------
+     CLOSE
+  ------------------------------------------------------- */
+  modal.querySelectorAll("[data-close]").forEach(btn => {
+    btn.addEventListener("click", () => modal.remove());
+  });
+
+  /* -------------------------------------------------------
+     MATERIAL USAGE
+  ------------------------------------------------------- */
+  modal.querySelectorAll("[data-post-usage]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await openManufacturingMaterialUsage(orderId);
+      modal.remove();
+    });
+  });
+
+  modal.querySelector("[data-action-dispatch]")?.addEventListener("click", () => {
+    openFinishedGoodsDispatchModal(orderId);
+  });
+
+  modal.querySelector("[data-action-eod]")?.addEventListener("click", () => {
+    openEndOfDayReconciliationModal(orderId);
+  });
+
+  // RECORD PRODUCTION
+  modal.querySelectorAll("[data-record-production]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await recordManufacturingProductionProgress(orderId);
+    });
+  });
+
+  /* -------------------------------------------------------
+     STATUS TRANSITION
+  ------------------------------------------------------- */
+  modal.querySelectorAll("[data-mfg-status]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const newStatus = btn.dataset.mfgStatus;
+
+      // ── Auto-post materials BEFORE the status changes ───────────────
+      // If the "Auto-post materials" checkbox is ticked in the Materials
+      // section AND we're transitioning to in_progress or completed,
+      // auto-post the remaining planned material quantities first.
+      // If auto-post fails, abort the status change so the user can
+      // resolve the issue (e.g. insufficient inventory) before retrying.
+      const autoPostCheckbox = modal.querySelector("#mfgOrderAutoPostMaterials");
+      const shouldAutoPost = autoPostCheckbox?.checked &&
+                              (newStatus === "in_progress" || newStatus === "completed");
+
+      if (shouldAutoPost) {
+        const ok = await autoPostManufacturingMaterials(orderId, {
+          reason: newStatus === "in_progress" ? "start" : "complete"
+        });
+        if (!ok) {
+          // Auto-post failed — abort the status transition
+          return;
+        }
+      }
+
+      // ── Status change (existing logic) ─────────────────────────────
+      const result = await updateManufacturingOrderStatus(orderId, newStatus);
+      if (!result) return;
+
+      modal.remove();
+      await loadManufacturingOrders();
+      await loadManufacturingProductionHistory();
+      await openManufacturingOrderDetail(orderId);
+    });
+  });
+
+  /* -------------------------------------------------------
+    LABOUR FORM HANDLERS
+  ------------------------------------------------------- */
+  const labourForm = modal.querySelector("[data-labour-form]");
+  const labourWorker = modal.querySelector("[data-labour-worker]");
+  const labourRole = modal.querySelector("[data-labour-role]");
+  const labourHours = modal.querySelector("[data-labour-hours]");
+  const labourRate = modal.querySelector("[data-labour-rate]");
+  const labourCostInput = modal.querySelector("[data-labour-cost]");
+  const labourRateInfo = modal.querySelector("[data-labour-rate-info]");
+
+  let payrollEmployees = [];
+  let selectedPayrollEmployee = null;
+  let selectedPayrollSetup = null;
+
+  const payrollEmployeesUrl = `/api/companies/${encodeURIComponent(cid)}/payroll/employees?status=active`;
+  const payrollEmployeePaySetupUrl = employeeId => `/api/companies/${encodeURIComponent(cid)}/payroll/employees/${encodeURIComponent(employeeId)}/pay-setup`;
+
+  const getEmployeeName = employee => {
+    const firstName = employee?.first_name || employee?.firstName || "";
+    const lastName = employee?.last_name || employee?.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+    return (employee?.full_name || employee?.name || fullName || employee?.employee_name || employee?.employee_no || employee?.employee_number || `Employee ${employee?.id || ""}`).trim();
+  };
+
+  const getEmployeeRole = employee => String(employee?.role || employee?.job_title || employee?.position || employee?.designation || employee?.job_role || "").trim();
+
+  const getHourlyRate = setup => {
+    const contractRate = Number(setup?.contract?.hourly_rate ?? 0);
+    if (contractRate > 0) return contractRate;
+
+    const payBasis = String(setup?.pay_basis || "").trim().toLowerCase();
+    const setupRate = Number(setup?.rate ?? 0);
+
+    if ((payBasis === "hourly" || payBasis === "hourly_rate") && setupRate > 0) {
+      return setupRate;
+    }
+
+    const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
+    const normalHours = Number(setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0);
+
+    return basicSalary > 0 && normalHours > 0 ? basicSalary / normalHours : 0;
+  };
+
+  const updateLabourCost = () => {
+    const hours = Number(labourHours?.value || 0);
+    const rate = Number(labourRate?.value || 0);
+    const cost = Number.isFinite(hours) && Number.isFinite(rate) ? hours * rate : 0;
+
+    if (labourCostInput) labourCostInput.value = fmtMoney(cost);
+  };
+
+  const populateLabourRateFromSetup = setup => {
+    selectedPayrollSetup = setup || null;
+
+    const hourlyRate = getHourlyRate(setup);
+    const contractType = String(setup?.contract?.salary_type || "").trim().toLowerCase();
+    const basicSalary = Number(setup?.fixed_basic_amount ?? setup?.contract?.basic_salary ?? 0);
+    const normalHours = Number(setup?.contract?.normal_hours_per_month ?? setup?.standard_quantity ?? 0);
+
+    if (labourRate) labourRate.value = hourlyRate > 0 ? hourlyRate.toFixed(2) : "";
+
+    if (labourRateInfo) {
+      if ((contractType === "hourly" || contractType === "hourly_rate") && hourlyRate > 0) {
+        labourRateInfo.textContent = `Contract hourly rate: ${fmtMoney(hourlyRate)}`;
+      } else if (basicSalary > 0 && normalHours > 0 && hourlyRate > 0) {
+        labourRateInfo.textContent = `Basic salary ${fmtMoney(basicSalary)} ÷ ${normalHours.toFixed(2)} hrs = ${fmtMoney(hourlyRate)}/hr`;
+      } else {
+        labourRateInfo.textContent = "No valid hourly labour rate is configured in Payroll.";
+      }
+    }
+
+    updateLabourCost();
+  };
+
+  const loadPayrollEmployees = async () => {
+    if (!labourWorker) return;
+
+    labourWorker.innerHTML = `<option value="">Loading payroll employees...</option>`;
+
+    try {
+      const result = await apiFetch(payrollEmployeesUrl);
+
+      payrollEmployees = Array.isArray(result?.items)
+        ? result.items
+        : Array.isArray(result?.data)
+        ? result.data
+        : Array.isArray(result)
+        ? result
+        : [];
+
+      labourWorker.innerHTML = `<option value="">Select payroll employee...</option>`;
+
+      payrollEmployees.forEach(employee => {
+        const employeeId = employee?.id ?? employee?.employee_id;
+        if (!employeeId) return;
+
+        const name = getEmployeeName(employee);
+        const employeeNo = employee?.employee_no || employee?.employee_number || employee?.employee_code || "";
+        const role = getEmployeeRole(employee);
+        const option = document.createElement("option");
+
+        option.value = String(employeeId);
+        option.textContent = employeeNo ? `${name} (${employeeNo})` : name;
+        option.dataset.role = role;
+
+        labourWorker.appendChild(option);
+      });
+
+      if (!payrollEmployees.length) {
+        labourWorker.innerHTML = `<option value="">No active Payroll Employees found</option>`;
+      }
+    } catch (err) {
+      console.error("Load manufacturing payroll employees failed:", err);
+      labourWorker.innerHTML = `<option value="">Unable to load Payroll Employees</option>`;
+      alert(err?.message || "Failed to load Payroll Employees.");
+    }
+  };
+
+  const loadSelectedPayrollEmployee = async employeeId => {
+    selectedPayrollEmployee = null;
+    selectedPayrollSetup = null;
+
+    if (labourRate) labourRate.value = "";
+    if (labourRateInfo) labourRateInfo.textContent = "";
+    if (labourCostInput) labourCostInput.value = fmtMoney(0);
+
+    if (!employeeId) {
+      if (labourRole) labourRole.value = "";
+      return;
+    }
+
+    const employee = payrollEmployees.find(item => String(item?.id ?? item?.employee_id) === String(employeeId));
+    selectedPayrollEmployee = employee || null;
+
+    if (labourRole && employee) labourRole.value = getEmployeeRole(employee);
+
+    if (labourRateInfo) labourRateInfo.textContent = "Loading payroll remuneration setup...";
+
+    try {
+      const result = await apiFetch(payrollEmployeePaySetupUrl(employeeId));
+      const setup = result?.data || result;
+      populateLabourRateFromSetup(setup);
+    } catch (err) {
+      console.error("Load employee payroll pay setup failed:", err);
+
+      if (labourRate) labourRate.value = "";
+      if (labourRateInfo) labourRateInfo.textContent = "Unable to load payroll remuneration setup.";
+
+      alert(err?.message || "Failed to load the employee payroll setup.");
+    }
+  };
+
+  labourHours?.addEventListener("input", updateLabourCost);
+
+  labourWorker?.addEventListener("change", async () => {
+    await loadSelectedPayrollEmployee(labourWorker.value);
+  });
+
+  modal.querySelector("[data-add-labour]")?.addEventListener("click", async () => {
+    if (!labourForm) return;
+
+    labourForm.classList.remove("hidden");
+    await loadPayrollEmployees();
+    labourWorker?.focus();
+  });
+
+  modal.querySelector("[data-cancel-labour]")?.addEventListener("click", () => {
+    labourForm?.classList.add("hidden");
+
+    if (labourWorker) labourWorker.value = "";
+    if (labourRole) labourRole.value = "";
+    if (labourHours) labourHours.value = "";
+    if (labourRate) labourRate.value = "";
+    if (labourCostInput) labourCostInput.value = fmtMoney(0);
+    if (labourRateInfo) labourRateInfo.textContent = "";
+
+    selectedPayrollEmployee = null;
+    selectedPayrollSetup = null;
+  });
+
+  modal.querySelector("[data-save-labour]")?.addEventListener("click", async () => {
+    const employeeId = Number(labourWorker?.value || 0);
+    const workerName = selectedPayrollEmployee ? getEmployeeName(selectedPayrollEmployee) : "";
+    const role = String(labourRole?.value || "").trim();
+    const hours = Number(labourHours?.value || 0);
+    const rate = Number(labourRate?.value || 0);
+
+    if (!employeeId) {
+      alert("Please select a Payroll Employee.");
+      labourWorker?.focus();
+      return;
+    }
+
+    if (!workerName) {
+      alert("The selected Payroll Employee has no valid name.");
+      labourWorker?.focus();
+      return;
+    }
+
+    if (!Number.isFinite(hours) || hours <= 0) {
+      alert("Hours must be greater than zero.");
+      labourHours?.focus();
+      return;
+    }
+
+    if (!Number.isFinite(rate) || rate <= 0) {
+      alert("The selected employee does not have a valid payroll hourly rate.");
+      return;
+    }
+
+    const labourCost = hours * rate;
+
+    try {
+      await apiFetch(ENDPOINTS.manufacturing.orderLabour(cid, orderId), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          employee_id: employeeId,
+          worker_name: workerName,
+          role,
+          hours,
+          rate,
+          labour_cost: labourCost,
+          source: "payroll",
+        }),
+      });
+
+      modal.remove();
+      await openManufacturingOrderDetail(orderId);
+    } catch (err) {
+      console.error("Add manufacturing labour failed:", err);
+      alert(err?.message || "Failed to add direct labour.");
+    }
+  });
+
+  modal.querySelectorAll("[data-delete-labour]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const labourId = Number(btn.dataset.deleteLabour);
+
+      if (!labourId || !confirm("Delete this direct labour entry?")) return;
+
+      try {
+        await apiFetch(ENDPOINTS.manufacturing.orderLabourItem(cid, orderId, labourId), {
+          method: "DELETE",
+          headers: {
+            Accept: "application/json",
+          },
+        });
+
+        modal.remove();
+        await openManufacturingOrderDetail(orderId);
+      } catch (err) {
+        console.error("Delete manufacturing labour failed:", err);
+        alert(err?.message || "Failed to delete direct labour.");
+      }
+    });
+  });
+
+  /* -------------------------------------------------------
+     DIRECT COST FORM HANDLERS
+  ------------------------------------------------------- */
+  const directCostForm = modal.querySelector("[data-direct-cost-form]");
+  const directCostDescription = modal.querySelector("[data-direct-cost-description]");
+  const directCostType = modal.querySelector("[data-direct-cost-type]");
+  const directCostAmount = modal.querySelector("[data-direct-cost-amount]");
+
+  modal.querySelector("[data-add-direct-cost]")?.addEventListener("click", () => {
+    if (!directCostForm) return;
+    directCostForm.classList.remove("hidden");
+    directCostDescription?.focus();
+  });
+
+  modal.querySelector("[data-cancel-direct-cost]")?.addEventListener("click", () => {
+    directCostForm?.classList.add("hidden");
+    if (directCostDescription) directCostDescription.value = "";
+    if (directCostType) directCostType.value = "";
+    if (directCostAmount) directCostAmount.value = "";
+  });
+
+  modal.querySelector("[data-save-direct-cost]")?.addEventListener("click", async () => {
+    const description = String(directCostDescription?.value || "").trim();
+    const costType = String(directCostType?.value || "").trim();
+    const amount = Number(directCostAmount?.value || 0);
+
+    if (!description) {
+      alert("Description is required.");
+      directCostDescription?.focus();
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert("Amount must be greater than zero.");
+      directCostAmount?.focus();
+      return;
+    }
+
+    try {
+      await apiFetch(ENDPOINTS.manufacturing.orderDirectCosts(cid, orderId), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ description, cost_type: costType, amount, source: "manual" }),
+      });
+
+      modal.remove();
+      await openManufacturingOrderDetail(orderId);
+    } catch (err) {
+      console.error("Add manufacturing direct cost failed:", err);
+      alert(err?.message || "Failed to add other direct cost.");
+    }
+  });
+
+  modal.querySelectorAll("[data-delete-direct-cost]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const directCostId = Number(btn.dataset.deleteDirectCost);
+      if (!directCostId || !confirm("Delete this direct cost?")) return;
+
+      try {
+        await apiFetch(ENDPOINTS.manufacturing.orderDirectCostItem(cid, orderId, directCostId), {
+          method: "DELETE",
+          headers: { Accept: "application/json" },
+        });
+        modal.remove();
+        await openManufacturingOrderDetail(orderId);
+      } catch (err) {
+        console.error("Delete manufacturing direct cost failed:", err);
+        alert(err?.message || "Failed to delete direct cost.");
+      }
+    });
+  });
+
+  /* -------------------------------------------------------
+     OVERHEAD FORM HANDLERS (ENRICHED WITH ASSET LINK)
+  ------------------------------------------------------- */
+  const overheadForm = modal.querySelector("[data-overhead-form]");
+  const overheadAssetSelect = modal.querySelector("[data-overhead-asset]");
+  const overheadName = modal.querySelector("[data-overhead-name]");
+  const overheadBasis = modal.querySelector("[data-overhead-basis]");
+  const overheadQuantity = modal.querySelector("[data-overhead-quantity]");
+  const overheadRate = modal.querySelector("[data-overhead-rate]");
+  const overheadAmount = modal.querySelector("[data-overhead-amount]");
+
+  const updateOverheadAmount = () => {
+    const quantity = Number(overheadQuantity?.value || 0);
+    const rate = Number(overheadRate?.value || 0);
+    const amount = Number.isFinite(quantity) && Number.isFinite(rate) ? quantity * rate : 0;
+    if (overheadAmount) overheadAmount.textContent = fmtMoney(amount);
+  };
+
+  overheadQuantity?.addEventListener("input", updateOverheadAmount);
+  overheadRate?.addEventListener("input", updateOverheadAmount);
+
+  // When an asset is picked from the dropdown, auto-fill name, basis, AND rate
+  overheadAssetSelect?.addEventListener("change", () => {
+    const selectedOption = overheadAssetSelect.selectedOptions[0];
+    const assetId = overheadAssetSelect.value;
+
+    if (assetId && selectedOption) {
+      const assetName = selectedOption.dataset.name || selectedOption.textContent.trim();
+      const defaultBasis = selectedOption.dataset.basis || "Machine hours";
+      const defaultRate = selectedOption.dataset.rate || "";
+
+      overheadName.value = `Machinery depreciation (${assetName})`;
+      overheadBasis.value = defaultBasis;
+
+      if (defaultRate && (!overheadRate.value || Number(overheadRate.value) === 0)) {
+        overheadRate.value = defaultRate;
+      }
+      
+      updateOverheadAmount();
+    }
+  });
+
+  modal.querySelector("[data-add-overhead]")?.addEventListener("click", () => {
+    if (!overheadForm) return;
+    overheadForm.classList.remove("hidden");
+    overheadName?.focus();
+  });
+
+  modal.querySelector("[data-cancel-overhead]")?.addEventListener("click", () => {
+    overheadForm?.classList.add("hidden");
+    if (overheadAssetSelect) overheadAssetSelect.value = "";
+    if (overheadName) overheadName.value = "";
+    if (overheadBasis) overheadBasis.value = "";
+    if (overheadQuantity) overheadQuantity.value = "";
+    if (overheadRate) overheadRate.value = "";
+    updateOverheadAmount();
+  });
+
+  modal.querySelector("[data-save-overhead]")?.addEventListener("click", async () => {
+    const allocationName = String(overheadName?.value || "").trim();
+    const basis = String(overheadBasis?.value || "").trim();
+    const quantity = Number(overheadQuantity?.value || 0);
+    const rate = Number(overheadRate?.value || 0);
+    const rawAssetId = overheadAssetSelect?.value;
+    const assetId = rawAssetId ? Number(rawAssetId) : null;
+
+    if (!allocationName) {
+      alert("Cost / Allocation is required.");
+      overheadName?.focus();
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      alert("Quantity must be greater than zero.");
+      overheadQuantity?.focus();
+      return;
+    }
+    if (!Number.isFinite(rate) || rate < 0) {
+      alert("Please enter a valid overhead rate.");
+      overheadRate?.focus();
+      return;
+    }
+
+    try {
+      await apiFetch(ENDPOINTS.manufacturing.orderOverhead(cid, orderId), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          allocation_name: allocationName,
+          basis,
+          quantity,
+          rate,
+          allocated_amount: quantity * rate,
+          asset_id: assetId,                  // <--- Sent to backend
+          source: assetId ? "asset" : "manual",
+        }),
+      });
+
+      modal.remove();
+      await openManufacturingOrderDetail(orderId);
+    } catch (err) {
+      console.error("Add manufacturing overhead failed:", err);
+      alert(err?.message || "Failed to add manufacturing overhead.");
+    }
+  });
+
+  modal.querySelectorAll("[data-delete-overhead]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const overheadId = Number(btn.dataset.deleteOverhead);
+      if (!overheadId || !confirm("Delete this manufacturing overhead allocation?")) return;
+
+      try {
+        await apiFetch(ENDPOINTS.manufacturing.orderOverheadItem(cid, orderId, overheadId), {
+          method: "DELETE",
+          headers: { Accept: "application/json" },
+        });
+        modal.remove();
+        await openManufacturingOrderDetail(orderId);
+      } catch (err) {
+        console.error("Delete manufacturing overhead failed:", err);
+        alert(err?.message || "Failed to delete manufacturing overhead.");
+      }
+    });
+  });
+
+  /* -------------------------------------------------------
+     INITIAL SUMMARY
+  ------------------------------------------------------- */
+  refreshManufacturingOrderManagementSummary?.(modal, order);
+
+
+  /* -------------------------------------------------------
+     PRODUCTION STAGE TIMERS
+  ------------------------------------------------------- */
+  const mfgStageList = modal.querySelector("[data-mfg-stage-list]");
+
+  if (mfgStageList) {
+    const stageUrl = ENDPOINTS.manufacturing.orderStages(cid, orderId);
+    const standardsUrl = ENDPOINTS.manufacturing.stageStandards(
+      cid,
+      order?.bom_id || null
+    );
+
+    const stageEscape = (value) =>
+      String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+
+    const stageDuration = (seconds) => {
+      const total = Math.max(0, Number(seconds) || 0);
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const secs = Math.floor(total % 60);
+      return hours
+        ? `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+        : `${minutes}:${String(secs).padStart(2, "0")}`;
+    };
+
+    const stageRows = (result, key) => {
+      if (Array.isArray(result)) return result;
+      if (Array.isArray(result?.[key])) return result[key];
+      if (Array.isArray(result?.items)) return result.items;
+      if (Array.isArray(result?.data)) return result.data;
+      return [];
+    };
+
+    const stageRequest = async (url, options = {}) => {
+      const response = await apiFetch(url, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {})
+        }
+      });
+
+      if (response?.ok === false) {
+        throw new Error(response.error || response.message || "Production-stage request failed.");
+      }
+
+      return response;
+    };
+
+    const loadMfgStages = async () => {
+      mfgStageList.innerHTML =
+        '<div class="text-sm text-slate-500">Loading production stages…</div>';
+
+      try {
+        const result = await stageRequest(stageUrl);
+        const stages = stageRows(result, "stages");
+
+        if (!stages.length) {
+          mfgStageList.innerHTML =
+            '<div class="text-sm text-slate-500">No production stages yet. Save stage standards, then select Apply Stage Standards.</div>';
+          return;
+        }
+
+        mfgStageList.innerHTML = stages.map((stage) => {
+          const id = stage.id ?? stage.stage_id;
+          const status = String(stage.status || "pending").toLowerCase();
+          const elapsed = Number(stage.elapsed_seconds || 0);
+          const standard = Number(stage.standard_minutes || 45);
+          const operator = stage.operator_name || "";
+          const equipment = stage.equipment_name || "";
+
+          const actions = status === "pending"
+            ? [["start", "Start"]]
+            : status === "running"
+              ? [["pause", "Pause"], ["complete", "Complete"]]
+              : status === "paused"
+                ? [["resume", "Resume"], ["complete", "Complete"]]
+                : [];
+
+          return `
+            <div class="border rounded-lg p-3 mb-3" data-mfg-stage-card="${stageEscape(id)}">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div class="font-semibold">${stageEscape(stage.stage_name || stage.name || stage.stage_code || "Production Stage")}</div>
+                  <div class="text-xs text-slate-500">
+                    Status: ${stageEscape(status)} · Standard: ${standard} min
+                  </div>
+                  <div class="text-sm mt-1">
+                    Elapsed: <strong>${stageDuration(elapsed)}</strong>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  ${actions.map(([action, label]) => `
+                    <button type="button"
+                      data-mfg-stage-action="${action}"
+                      data-stage-id="${stageEscape(id)}"
+                      class="px-3 py-1.5 rounded text-sm border">
+                      ${label}
+                    </button>
+                  `).join("")}
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                <label class="text-xs">Operator
+                  <input data-stage-operator value="${stageEscape(operator)}"
+                    class="mt-1 w-full border rounded px-2 py-1.5 text-sm"
+                    placeholder="Operator name">
+                </label>
+                <label class="text-xs">Equipment
+                  <input data-stage-equipment value="${stageEscape(equipment)}"
+                    class="mt-1 w-full border rounded px-2 py-1.5 text-sm"
+                    placeholder="Mixer, oven, etc.">
+                </label>
+                <label class="text-xs">Downtime (minutes)
+                  <input data-stage-downtime type="number" min="0" step="1" value="0"
+                    class="mt-1 w-full border rounded px-2 py-1.5 text-sm">
+                </label>
+                <label class="text-xs">Downtime reason
+                  <input data-stage-downtime-reason
+                    class="mt-1 w-full border rounded px-2 py-1.5 text-sm"
+                    placeholder="Optional">
+                </label>
+              </div>
+              <label class="block text-xs mt-2">Notes
+                <input data-stage-notes value="${stageEscape(stage.notes || "")}"
+                  class="mt-1 w-full border rounded px-2 py-1.5 text-sm"
+                  placeholder="Optional stage notes">
+              </label>
+            </div>
+          `;
+        }).join("");
+      } catch (error) {
+        console.error("[manufacturing stages] Load failed:", error);
+        mfgStageList.innerHTML = `
+          <div class="text-sm text-red-600">
+            Could not load production stages: ${stageEscape(error.message)}
+          </div>`;
+      }
+    };
+
+    modal.querySelector("[data-mfg-apply-stage-standards]")
+      ?.addEventListener("click", async () => {
+        try {
+          await stageRequest(
+            ENDPOINTS.manufacturing.applyStageStandards(cid, orderId),
+            { method: "POST", body: JSON.stringify({}) }
+          );
+          await loadMfgStages();
+        } catch (error) {
+          console.error("[manufacturing stages] Apply standards failed:", error);
+          alert(error.message || "Could not apply production-stage standards.");
+        }
+      });
+
+    modal.querySelector("[data-mfg-save-stage-standard]")
+      ?.addEventListener("click", async () => {
+        const field = (selector) =>
+          modal.querySelector(selector)?.value?.trim() || "";
+
+        const stageName = field("[data-mfg-stage-name]");
+        const stageCode = field("[data-mfg-stage-code]")
+          .toUpperCase()
+          .replace(/[^A-Z0-9_-]/g, "_");
+        const sequence = Number(field("[data-mfg-stage-sequence]") || 1);
+        const minutes = Number(field("[data-mfg-stage-minutes]") || 45);
+        const equipment = field("[data-mfg-stage-equipment]");
+
+        if (!stageName || !stageCode) {
+          alert("Enter both a stage name and stage code.");
+          return;
+        }
+
+        if (!Number.isFinite(minutes) || minutes < 1) {
+          alert("Standard minutes must be at least 1.");
+          return;
+        }
+
+        try {
+          await stageRequest(standardsUrl, {
+            method: "POST",
+            body: JSON.stringify({
+              bom_id: order?.bom_id || null,
+              stage_name: stageName,
+              stage_code: stageCode,
+              sequence_no: sequence,
+              standard_minutes: minutes,
+              equipment_name: equipment,
+              active: true
+            })
+          });
+
+          modal.querySelector("[data-mfg-stage-name]").value = "";
+          modal.querySelector("[data-mfg-stage-code]").value = "";
+          modal.querySelector("[data-mfg-stage-sequence]").value = "1";
+          modal.querySelector("[data-mfg-stage-minutes]").value = "45";
+          modal.querySelector("[data-mfg-stage-equipment]").value = "";
+
+          alert("Stage standard saved.");
+          await loadMfgStages();
+        } catch (error) {
+          console.error("[manufacturing stages] Save standard failed:", error);
+          alert(error.message || "Could not save the stage standard.");
+        }
+      });
+
+    mfgStageList.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-mfg-stage-action]");
+      if (!button) return;
+
+      const card = button.closest("[data-mfg-stage-card]");
+      const action = button.dataset.mfgStageAction;
+      const stageId = button.dataset.stageId;
+
+      const value = (selector) =>
+        card?.querySelector(selector)?.value?.trim() || "";
+
+      const downtime = Number(value("[data-stage-downtime]") || 0);
+
+      if (action === "complete" &&
+          !confirm("Mark this production stage as complete?")) {
+        return;
+      }
+
+      button.disabled = true;
+
+      try {
+        await stageRequest(
+          ENDPOINTS.manufacturing.orderStageTimer(cid, orderId, stageId),
+          {
+            method: "POST",
+            body: JSON.stringify({
+              action,
+              operator_name: value("[data-stage-operator]"),
+              equipment_name: value("[data-stage-equipment]"),
+              notes: value("[data-stage-notes]"),
+              downtime_minutes: downtime,
+              downtime_reason: value("[data-stage-downtime-reason]")
+            })
+          }
+        );
+
+        await loadMfgStages();
+      } catch (error) {
+        console.error("[manufacturing stages] Timer action failed:", error);
+        alert(error.message || "Could not update the stage timer.");
+        button.disabled = false;
+      }
+    });
+
+    loadMfgStages();
+  }
+}
+// =====================================================
+// Post Material Usage
+// =====================================================
+
+async function postManufacturingMaterialUsageUI(
+  orderId,
+  lines = null,
+  modal = null
+) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid || !orderId) return;
+
+  if (!lines) {
+    alert(
+      "Material quantities must be entered before posting."
+    );
+    return;
+  }
+
+  if (!confirm(
+    "Post material usage for this production batch?\n\n" +
+    "This will consume the specified raw-material quantities " +
+    "from inventory and debit Manufacturing WIP."
+  )) {
+    return;
+  }
+
+  try {
+    const result = await apiFetch(
+      ENDPOINTS.manufacturing.orderMaterialUsage(
+        cid,
+        orderId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          lines,
+        }),
+      }
+    );
+
+    showToast?.(
+      `Material usage posted — Cost ${fmtMoney(
+        result?.total_cost || 0
+      )}`,
+      "ok"
+    );
+
+    modal?.remove();
+
+    await loadManufacturingMaterialUsage();
+    await loadManufacturingOrders();
+
+  } catch (err) {
+    alert(
+      err?.message ||
+      "Failed to post manufacturing material usage."
+    );
+  }
+}
+
+// =====================================================
+// FINISHED GOODS DISPATCH & RELEASE MODAL
+// =====================================================
+async function openFinishedGoodsDispatchModal(orderId) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const order = window.__mfgProductionOrder;
+  if (!cid || !order) return;
+
+  const completedQty = Number(order.actual_qty ?? order.planned_qty ?? 0);
+  const totalDispatched = (order.dispatches || []).reduce(
+    (sum, d) => sum + Number(d.quantity || 0),
+    0
+  );
+
+  const availableToDispatch =
+    order.dispatch_summary?.available_to_dispatch != null
+      ? Number(order.dispatch_summary.available_to_dispatch)
+      : Math.max(completedQty - totalDispatched, 0);
+
+  if (availableToDispatch <= 0) {
+    alert("All produced goods from this batch have already been dispatched.");
+    return;
+  }
+
+  const modal = document.createElement("div");
+  modal.className =
+    "fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4";
+
+  modal.innerHTML = `
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg">
+
+      <div class="flex items-center justify-between border-b px-4 py-3">
+        <div>
+          <div class="font-semibold text-slate-800">
+            Dispatch / Release Produced Goods
+          </div>
+          <div class="text-xs text-slate-500">
+            Finished goods distribution
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="text-lg text-slate-500 hover:text-slate-800"
+          data-close>
+          ✕
+        </button>
+      </div>
+
+      <div class="p-4 space-y-3 text-xs">
+
+        <div class="grid grid-cols-2 gap-2 p-2 bg-slate-50 rounded border">
+          <div>
+            <span class="text-slate-500">Produced Item:</span>
+            <div class="font-semibold">
+              ${esc(order.finished_item_name || "Finished Goods")}
+            </div>
+          </div>
+
+          <div>
+            <span class="text-slate-500">Available to Dispatch:</span>
+            <div class="font-semibold text-emerald-700">
+              ${availableToDispatch} ${esc(order.unit || "units")}
+            </div>
+          </div>
+        </div>
+
+        <label class="block">
+          <span class="text-slate-600 mb-1 block font-medium">
+            Destination Channel
+          </span>
+
+          <select
+            id="dispatchChannel"
+            class="w-full border rounded px-2 py-2 text-sm bg-white font-medium">
+
+            <option value="internal_usage">
+              Internal Consumption / Kitchen Requisition
+            </option>
+
+            <option value="branch_transfer">
+              Branch / Warehouse Transfer
+            </option>
+
+            <option value="retail_sales">
+              Sales Floor / Counter Restock
+            </option>
+
+            <option value="customer_delivery">
+              Customer Order / Delivery
+            </option>
+
+          </select>
+        </label>
+
+        <!-- CUSTOMER -->
+        <label id="customerFieldWrap" class="hidden block">
+          <span class="text-slate-600 mb-1 block font-medium">
+            Customer Name / Account
+          </span>
+
+          <input
+            id="dispatchCustomerName"
+            type="text"
+            class="w-full border rounded px-2 py-2 text-sm"
+            placeholder="e.g. Maseru Hotel, Walk-in Client">
+        </label>
+
+        <!-- DESTINATION -->
+        <label class="block">
+          <span
+            id="destinationLabel"
+            class="text-slate-600 mb-1 block font-medium">
+            Destination Department
+          </span>
+
+          <input
+            id="dispatchDestination"
+            type="text"
+            class="w-full border rounded px-2 py-2 text-sm"
+            placeholder="e.g. Main Kitchen, Grill Station">
+        </label>
+
+        <div class="grid grid-cols-2 gap-3">
+
+          <label class="block">
+            <span class="text-slate-600 mb-1 block font-medium">
+              Quantity to Release
+            </span>
+
+            <input
+              id="dispatchQty"
+              type="number"
+              min="0.01"
+              max="${availableToDispatch}"
+              step="any"
+              value="${availableToDispatch}"
+              class="w-full border rounded px-2 py-2 text-sm font-semibold">
+          </label>
+
+          <label class="block">
+            <span class="text-slate-600 mb-1 block font-medium">
+              Received By / Handled By
+            </span>
+
+            <input
+              id="dispatchRecipient"
+              type="text"
+              class="w-full border rounded px-2 py-2 text-sm"
+              placeholder="e.g. Supervisor or driver name">
+          </label>
+
+        </div>
+
+        <!-- DOCUMENT TRACE -->
+        <div class="p-3 bg-slate-50 border rounded space-y-2">
+
+          <div class="flex items-center justify-between">
+
+            <span class="text-slate-700 font-semibold">
+              Document Trace
+            </span>
+
+            <label
+              class="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-500">
+
+              <input
+                type="checkbox"
+                id="chkManualRef"
+                class="rounded">
+
+              Use external physical slip #
+            </label>
+
+          </div>
+
+          <input
+            id="dispatchRef"
+            type="text"
+            readonly
+            class="w-full border rounded px-2 py-1.5 text-xs bg-slate-100 font-mono text-slate-700"
+            value="Generating document number...">
+
+          <div
+            id="traceHint"
+            class="text-[10px] text-slate-500">
+            Creates an Internal Consumption Note (ISS-XXXXXX) for finished goods consumed internally.
+          </div>
+
+        </div>
+
+        <div class="flex justify-end gap-2 pt-3 border-t">
+
+          <button
+            type="button"
+            data-close
+            class="px-3 py-1.5 border rounded text-slate-600 hover:bg-slate-50">
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            id="btnSaveDispatch"
+            class="px-4 py-1.5 bg-slate-900 text-white rounded hover:bg-slate-800 font-semibold">
+            Post Dispatch
+          </button>
+
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.querySelectorAll("[data-close]").forEach(btn => {
+    btn.addEventListener("click", () => modal.remove());
+  });
+
+  const channelSelect = modal.querySelector("#dispatchChannel");
+  const destInput = modal.querySelector("#dispatchDestination");
+  const destLabel = modal.querySelector("#destinationLabel");
+  const customerWrap = modal.querySelector("#customerFieldWrap");
+  const refInput = modal.querySelector("#dispatchRef");
+  const chkManual = modal.querySelector("#chkManualRef");
+  const traceHint = modal.querySelector("#traceHint");
+  const saveBtn = modal.querySelector("#btnSaveDispatch");
+
+  async function updateChannelUI() {
+    const ch = channelSelect.value;
+
+    if (ch === "customer_delivery") {
+      customerWrap.classList.remove("hidden");
+
+      destLabel.textContent = "Delivery Address / Notes";
+      destInput.placeholder = "e.g. Delivery dock, Site A";
+
+      traceHint.textContent =
+        "Creates a Delivery Note (DN-XXXXXX) for finished goods delivered to the customer.";
+
+    } else {
+      customerWrap.classList.add("hidden");
+
+      if (ch === "internal_usage") {
+        destLabel.textContent = "Destination Department";
+        destInput.placeholder =
+          "e.g. Main Kitchen, Grill Station, Staff Canteen";
+
+        traceHint.textContent =
+          "Creates an Internal Consumption Note (ISS-XXXXXX) for finished goods consumed internally.";
+
+      } else if (ch === "branch_transfer") {
+        destLabel.textContent = "Destination Branch / Warehouse";
+        destInput.placeholder =
+          "e.g. Maseru Mall Outlet, Central Store B";
+
+        traceHint.textContent =
+          "Creates a Transfer Manifest (TRF-XXXXXX) for finished goods moving to another branch or warehouse.";
+
+      } else if (ch === "retail_sales") {
+        destLabel.textContent = "Retail Location / Shelf";
+        destInput.placeholder =
+          "e.g. Front Bakery Counter, Display Shelf 1";
+
+        traceHint.textContent =
+          "Creates a Stock Staging / Restock Sheet (STG-XXXXXX). The actual customer sale is recorded separately at POS.";
+      }
+    }
+
+    if (!chkManual.checked) {
+      refInput.readOnly = true;
+      refInput.classList.add("bg-slate-100");
+
+      try {
+        const res = await apiFetch(
+          ENDPOINTS.manufacturing.dispatchDocumentPreviewNumber(
+            cid,
+            ch
+          )
+        );
+
+        refInput.value =
+          res?.reference_no ||
+          "Generating...";
+      } catch (err) {
+        console.warn(
+          "Unable to preview dispatch document number:",
+          err
+        );
+
+        refInput.value = "Auto-generated on posting";
+      }
+    }
+  }
+
+  channelSelect.addEventListener("change", updateChannelUI);
+
+  chkManual.addEventListener("change", () => {
+    if (chkManual.checked) {
+      refInput.readOnly = false;
+      refInput.classList.remove("bg-slate-100");
+      refInput.value = "";
+      refInput.placeholder =
+        "Enter physical paper docket / waybill #";
+      refInput.focus();
+    } else {
+      updateChannelUI();
+    }
+  });
+
+  await updateChannelUI();
+
+  saveBtn.addEventListener("click", async () => {
+    const qty = Number(
+      modal.querySelector("#dispatchQty").value
+    );
+
+    if (
+      !Number.isFinite(qty) ||
+      qty <= 0 ||
+      qty > availableToDispatch
+    ) {
+      alert(
+        `Please enter a valid quantity between 0.01 and ${availableToDispatch}.`
+      );
+      return;
+    }
+
+    const destination =
+      destInput.value.trim();
+
+    const customerName =
+      modal
+        .querySelector("#dispatchCustomerName")
+        ?.value
+        .trim() || null;
+
+    const receivedBy =
+      modal
+        .querySelector("#dispatchRecipient")
+        .value
+        .trim();
+
+    if (!destination) {
+      alert("Destination / location is required.");
+      destInput.focus();
+      return;
+    }
+
+    if (
+      channelSelect.value === "customer_delivery" &&
+      !customerName
+    ) {
+      alert("Customer Name / Account is required.");
+      modal
+        .querySelector("#dispatchCustomerName")
+        ?.focus();
+      return;
+    }
+
+    const payload = {
+      channel: channelSelect.value,
+      destination,
+      customer_name: customerName,
+      quantity: qty,
+      received_by: receivedBy,
+      reference_no: refInput.value.trim(),
+      is_manual_ref: chkManual.checked,
+      tx_date: new Date().toISOString().slice(0, 10),
+    };
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Posting...";
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.manufacturing.orderDispatch(
+          cid,
+          orderId
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const dispatch = res?.dispatch || res;
+
+      const officialDoc =
+        dispatch?.reference_no ||
+        dispatch?.official_reference ||
+        payload.reference_no;
+
+      const dispatchId =
+        dispatch?.id ||
+        dispatch?.dispatch_id;
+
+      showToast?.(
+        `Dispatched successfully — ${officialDoc} generated`,
+        "ok"
+      );
+
+      modal.remove();
+
+      /*
+       * Refresh the production order first so the new
+       * dispatch is reflected in the order detail.
+       */
+      await openManufacturingOrderDetail(orderId);
+
+      /*
+       * Then open the generated document.
+       */
+      if (dispatchId) {
+        await openManufacturingDispatchDocument(
+          orderId,
+          dispatchId
+        );
+      }
+
+    } catch (err) {
+      console.error(
+        "Finished goods dispatch failed:",
+        err
+      );
+
+      alert(
+        err?.message ||
+        "Failed to dispatch goods."
+      );
+
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Post Dispatch";
+    }
+  });
+}
+
+async function openManufacturingDispatchDocument(orderId, dispatchId) {
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID;
+
+  if (!cid || !orderId || !dispatchId) return;
+
+  try {
+    const res = await apiFetch(
+      ENDPOINTS.manufacturing.dispatchDocument(cid, dispatchId)
+    );
+
+    const documentData =
+      res?.document ||
+      res;
+
+    renderManufacturingDispatchDocument(
+      documentData
+    );
+
+  } catch (err) {
+    console.error(
+      "Load manufacturing dispatch document failed:",
+      err
+    );
+
+    alert(
+      err?.message ||
+      "The dispatch was posted, but the document could not be loaded."
+    );
+  }
+}
+
+
+function renderManufacturingDispatchDocument(documentData) {
+  const doc =
+    documentData || {};
+
+  const company =
+    doc.company || {};
+
+  const production =
+    doc.production_order || {};
+
+  const product =
+    doc.product || {};
+
+  const sections =
+    doc.sections || {};
+
+  const modal =
+    document.createElement("div");
+
+  modal.className =
+    "fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4";
+
+  const destination =
+    sections.issue_to ||
+    sections.to_location ||
+    sections.sales_location ||
+    sections.delivery_to ||
+    doc.destination ||
+    "—";
+
+  const documentTitle =
+    doc.document_title ||
+    doc.title ||
+    "Dispatch Document";
+
+  const documentType =
+    doc.document_short_title ||
+    doc.short_title ||
+    doc.document_type ||
+    "—";
+
+  const documentDate =
+    doc.date ||
+    doc.tx_date ||
+    "—";
+
+  const productionNumber =
+    production.number ||
+    doc.mo_no ||
+    "—";
+
+  const finishedProduct =
+    product.name ||
+    doc.finished_item_name ||
+    "Finished Goods";
+
+  const quantity =
+    product.quantity ??
+    doc.quantity ??
+    0;
+
+  const unit =
+    product.unit ||
+    doc.unit ||
+    "";
+
+  const receivedBy =
+    doc.received_by ||
+    sections.received_by ||
+    "—";
+
+  const companyName =
+    company.name ||
+    doc.company_name ||
+    "Company";
+
+  const companyAddress =
+    company.physical_address ||
+    "";
+
+  const companyPostalAddress =
+    company.postal_address ||
+    "";
+
+  const companyPhone =
+    company.company_phone ||
+    "";
+
+  const companyEmail =
+    company.company_email ||
+    "";
+
+  const companyRegNo =
+    company.company_reg_no ||
+    "";
+
+  const companyTin =
+    company.tin ||
+    "";
+
+  const companyVat =
+    company.vat ||
+    "";
+
+  modal.innerHTML = `
+    <div
+      class="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[94vh] overflow-hidden flex flex-col">
+
+      <div
+        class="flex items-center justify-between border-b px-5 py-3 bg-white">
+
+        <div>
+          <div class="font-semibold text-slate-800">
+            ${esc(documentTitle)}
+          </div>
+
+          <div class="text-xs text-slate-500 font-mono">
+            ${esc(doc.reference_no || "—")}
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+
+          <button
+            type="button"
+            data-print-document
+            class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">
+            Print
+          </button>
+
+          <button
+            type="button"
+            data-close-document
+            class="px-3 py-1.5 text-lg text-slate-500 hover:text-slate-800">
+            ✕
+          </button>
+
+        </div>
+      </div>
+
+      <div
+        class="overflow-auto p-6 bg-slate-100">
+
+        <div
+          id="manufacturingDispatchDocument"
+          class="bg-white mx-auto shadow-sm p-8 max-w-3xl">
+
+          <!-- COMPANY HEADER -->
+
+          <div
+            class="flex justify-between gap-8 border-b-2 border-slate-800 pb-5">
+
+            <div class="flex-1">
+
+              ${
+                company.logo_url
+                  ? `
+                    <img
+                      src="${esc(company.logo_url)}"
+                      alt="${esc(companyName)}"
+                      class="max-h-16 max-w-[220px] object-contain mb-2">
+                  `
+                  : ""
+              }
+
+              <div class="text-xl font-bold text-slate-900">
+                ${esc(companyName)}
+              </div>
+
+              ${
+                companyAddress
+                  ? `
+                    <div class="text-xs text-slate-600 mt-1">
+                      ${esc(companyAddress)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyPostalAddress
+                  ? `
+                    <div class="text-xs text-slate-500 mt-0.5">
+                      ${esc(companyPostalAddress)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyPhone
+                  ? `
+                    <div class="text-xs text-slate-500 mt-1">
+                      Tel: ${esc(companyPhone)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyEmail
+                  ? `
+                    <div class="text-xs text-slate-500">
+                      ${esc(companyEmail)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyRegNo
+                  ? `
+                    <div class="text-xs text-slate-500 mt-1">
+                      Reg No: ${esc(companyRegNo)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyTin
+                  ? `
+                    <div class="text-xs text-slate-500">
+                      TIN: ${esc(companyTin)}
+                    </div>
+                  `
+                  : ""
+              }
+
+              ${
+                companyVat
+                  ? `
+                    <div class="text-xs text-slate-500">
+                      VAT: ${esc(companyVat)}
+                    </div>
+                  `
+                  : ""
+              }
+
+            </div>
+
+            <div class="text-right min-w-[220px]">
+
+              <div class="text-2xl font-bold text-slate-900">
+                ${esc(documentTitle)}
+              </div>
+
+              <div class="font-mono text-sm mt-2">
+                ${esc(doc.reference_no || "—")}
+              </div>
+
+              <div class="text-xs text-slate-500 mt-1">
+                Date: ${esc(documentDate)}
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <!-- DOCUMENT DETAILS -->
+
+          <div
+            class="grid grid-cols-2 gap-x-8 gap-y-5 py-6 text-sm">
+
+            <div>
+              <div class="text-xs text-slate-500">
+                Production Order
+              </div>
+
+              <div class="font-semibold text-slate-900">
+                ${esc(productionNumber)}
+              </div>
+            </div>
+
+            <div>
+              <div class="text-xs text-slate-500">
+                Document Type
+              </div>
+
+              <div class="font-semibold text-slate-900">
+                ${esc(documentType)}
+              </div>
+            </div>
+
+            <div>
+              <div class="text-xs text-slate-500">
+                Finished Product
+              </div>
+
+              <div class="font-semibold text-slate-900">
+                ${esc(finishedProduct)}
+              </div>
+            </div>
+
+            <div>
+              <div class="text-xs text-slate-500">
+                ${
+                  doc.channel === "internal_usage"
+                    ? "Issued To"
+                    : doc.channel === "branch_transfer"
+                    ? "Transfer To"
+                    : doc.channel === "retail_sales"
+                    ? "Sales Location"
+                    : doc.channel === "customer_delivery"
+                    ? "Deliver To"
+                    : "Destination"
+                }
+              </div>
+
+              <div class="font-semibold text-slate-900">
+                ${esc(destination)}
+              </div>
+            </div>
+
+            ${
+              doc.customer_name
+                ? `
+                  <div>
+                    <div class="text-xs text-slate-500">
+                      Customer
+                    </div>
+
+                    <div class="font-semibold text-slate-900">
+                      ${esc(doc.customer_name)}
+                    </div>
+                  </div>
+                `
+                : ""
+            }
+
+            <div>
+              <div class="text-xs text-slate-500">
+                Received / Handled By
+              </div>
+
+              <div class="font-semibold text-slate-900">
+                ${esc(receivedBy)}
+              </div>
+            </div>
+
+          </div>
+
+
+          <!-- DISPATCH TABLE -->
+
+          <table
+            class="w-full text-sm border-collapse border border-slate-300">
+
+            <thead class="bg-slate-50">
+
+              <tr>
+
+                <th
+                  class="border border-slate-300 px-3 py-2 text-left">
+                  Finished Goods
+                </th>
+
+                <th
+                  class="border border-slate-300 px-3 py-2 text-right">
+                  Quantity
+                </th>
+
+                <th
+                  class="border border-slate-300 px-3 py-2 text-left">
+                  Unit
+                </th>
+
+              </tr>
+
+            </thead>
+
+            <tbody>
+
+              <tr>
+
+                <td
+                  class="border border-slate-300 px-3 py-3 font-semibold">
+                  ${esc(finishedProduct)}
+                </td>
+
+                <td
+                  class="border border-slate-300 px-3 py-3 text-right font-semibold">
+                  ${esc(quantity)}
+                </td>
+
+                <td
+                  class="border border-slate-300 px-3 py-3">
+                  ${esc(unit)}
+                </td>
+
+              </tr>
+
+            </tbody>
+
+          </table>
+
+
+          <!-- NOTES -->
+
+          ${
+            doc.notes
+              ? `
+                <div
+                  class="mt-5 border border-slate-300 rounded p-3 text-sm">
+
+                  <div
+                    class="text-xs text-slate-500 mb-1">
+                    Notes / Remarks
+                  </div>
+
+                  <div class="text-slate-800">
+                    ${esc(doc.notes)}
+                  </div>
+
+                </div>
+              `
+              : ""
+          }
+
+
+          <!-- SIGNATURES -->
+
+          <div
+            class="grid grid-cols-2 gap-10 mt-16">
+
+            <div
+              class="border-t border-slate-800 pt-2 text-xs text-slate-500">
+              Released / Prepared By
+              ${
+                doc.created_by
+                  ? `
+                    <div class="text-sm text-slate-800 font-semibold mt-1">
+                      ${esc(doc.created_by)}
+                    </div>
+                  `
+                  : ""
+              }
+            </div>
+
+            <div
+              class="border-t border-slate-800 pt-2 text-xs text-slate-500">
+              Received By
+              ${
+                receivedBy !== "—"
+                  ? `
+                    <div class="text-sm text-slate-800 font-semibold mt-1">
+                      ${esc(receivedBy)}
+                    </div>
+                  `
+                  : ""
+              }
+            </div>
+
+          </div>
+
+
+          <!-- FOOTER -->
+
+          <div
+            class="mt-8 pt-4 border-t text-[10px] text-slate-400 text-center">
+
+            ${esc(
+              doc.footer_text ||
+              `${companyName} — ${documentTitle} — ${doc.reference_no || ""}`
+            )}
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal
+    .querySelector("[data-close-document]")
+    ?.addEventListener(
+      "click",
+      () => modal.remove()
+    );
+
+  modal
+    .querySelector("[data-print-document]")
+    ?.addEventListener(
+      "click",
+      () => printManufacturingDispatchDocument(
+        modal
+      )
+    );
+}
+
+
+function printManufacturingDispatchDocument(modal) {
+  const documentElement =
+    modal.querySelector(
+      "#manufacturingDispatchDocument"
+    );
+
+  if (!documentElement) return;
+
+  const printWindow =
+    window.open(
+      "",
+      "_blank",
+      "width=1000,height=800"
+    );
+
+  if (!printWindow) {
+    alert(
+      "Please allow pop-ups to print the document."
+    );
+    return;
+  }
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+
+      <head>
+
+        <title>
+          FinSage Dispatch Document
+        </title>
+
+        <meta charset="UTF-8">
+
+        <script src="https://cdn.tailwindcss.com"></script>
+
+        <style>
+
+          @page {
+            size: A4;
+            margin: 15mm;
+          }
+
+          html,
+          body {
+            margin: 0;
+            padding: 0;
+            background: white;
+            font-family: Arial, sans-serif;
+          }
+
+          body {
+            padding: 0;
+          }
+
+          #manufacturingDispatchDocument {
+            box-shadow: none !important;
+            max-width: none !important;
+            margin: 0 !important;
+          }
+
+          @media print {
+
+            body {
+              margin: 0;
+              padding: 0;
+            }
+
+            #manufacturingDispatchDocument {
+              box-shadow: none !important;
+            }
+
+          }
+
+        </style>
+
+      </head>
+
+      <body>
+
+        ${documentElement.outerHTML}
+
+        <script>
+
+          window.onload = function () {
+            window.print();
+          };
+
+        <\/script>
+
+      </body>
+
+    </html>
+  `);
+
+  printWindow.document.close();
+}
+// =====================================================
+// END-OF-DAY RECONCILIATION & LEFTOVER DISPOSAL MODAL
+// =====================================================
+
+function openEndOfDayReconciliationModal(orderId) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const order = window.__mfgProductionOrder;
+  if (!cid || !order) return;
+
+  const unitCost = Number(
+    order?.production_summary?.unit_full_production_cost ??
+    order?.production_summary?.unit_direct_cost ??
+    0
+  );
+
+  const initialLeftover = Number(order?.dispatch_summary?.leftover_on_hand ?? 0);
+
+  const modal = document.createElement("div");
+  modal.className = "fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4";
+  modal.innerHTML = `
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
+      <div class="flex items-center justify-between border-b px-5 py-3">
+        <div>
+          <div class="font-semibold text-slate-800">End-of-Day Produce Reconciliation</div>
+          <div class="text-xs text-slate-500">Account for remaining daily bakery stock and record charity donations or destruction.</div>
+        </div>
+        <button type="button" class="text-lg text-slate-500 hover:text-slate-800" data-close>✕</button>
+      </div>
+
+      <div class="p-5 space-y-4 text-xs">
+        <div class="grid grid-cols-3 gap-3 p-3 bg-slate-50 rounded border">
+          <div>
+            <span class="text-slate-500">Produced Batch</span>
+            <div class="font-bold text-sm text-slate-800">${esc(order.mo_no)} (${esc(order.finished_item_name)})</div>
+          </div>
+          <div>
+            <span class="text-slate-500">Full Production Cost</span>
+            <div class="font-bold text-sm text-slate-800">${fmtMoney(unitCost)} / unit</div>
+          </div>
+          <div>
+            <span class="text-slate-500">Audit Status</span>
+            <div class="font-bold text-sm text-indigo-700">Day-End Close</div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-medium text-slate-700 mb-1">Total Produce Left On Hand at Close of Day</label>
+          <div class="flex items-center gap-2">
+            <input id="eodLeftoverTotal" type="number" min="0" step="any" placeholder="0" class="border rounded px-3 py-2 text-sm w-36 font-bold text-right" value="${initialLeftover}">
+            <span class="text-slate-500">${esc(order.unit || "units")} remaining on cooling racks/shelves</span>
+          </div>
+        </div>
+
+        <div class="border-t pt-3">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold text-slate-800">Disposition of Leftover Produce</div>
+              <div class="text-slate-500">Specify what happened to the unsold goods (must match counted leftover).</div>
+            </div>
+            <button type="button" id="btnAddDisposalRow" class="px-2.5 py-1 text-xs border rounded bg-white hover:bg-slate-50 font-medium">+ Add Treatment</button>
+          </div>
+
+          <table class="w-full text-left border rounded overflow-hidden">
+            <thead class="bg-slate-100 text-slate-600">
+              <tr>
+                <th class="p-2">Action / Destination</th>
+                <th class="p-2 w-24 text-right">Quantity</th>
+                <th class="p-2 w-28 text-right">Valuation</th>
+                <th class="p-2">Recipient / Cause / Notes</th>
+                <th class="p-2 w-10"></th>
+              </tr>
+            </thead>
+            <tbody id="disposalRowsTbody">
+              <!-- Dynamically added rows -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="p-3 bg-amber-50 border border-amber-200 rounded text-amber-900 flex justify-between items-center">
+          <div>
+            <span>Allocated: <strong id="allocatedCount">0</strong> / Leftover: <strong id="targetCount">0</strong></span>
+          </div>
+          <div id="allocationWarning" class="font-semibold text-xs"></div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t">
+          <button type="button" data-close class="px-3 py-1.5 border rounded text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button type="button" id="btnSaveEOD" class="px-4 py-1.5 bg-slate-900 text-white rounded hover:bg-slate-800 font-semibold">Post Day-End Reconciliation</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  modal.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => modal.remove()));
+
+  const tbody = modal.querySelector("#disposalRowsTbody");
+  const leftoverInput = modal.querySelector("#eodLeftoverTotal");
+  const allocatedCountEl = modal.querySelector("#allocatedCount");
+  const targetCountEl = modal.querySelector("#targetCount");
+  const warningEl = modal.querySelector("#allocationWarning");
+
+  function addRow(defaultType = "charity", defaultQty = 0) {
+    const tr = document.createElement("tr");
+    tr.className = "border-b text-xs";
+    tr.innerHTML = `
+      <td class="p-2">
+        <select class="disposal-type w-full border rounded p-1 bg-white">
+          <option value="charity" ${defaultType === "charity" ? "selected" : ""}>Donated to Charity</option>
+          <option value="destroyed" ${defaultType === "destroyed" ? "selected" : ""}>Destroyed / Spoilage / Expired</option>
+          <option value="staff_meal" ${defaultType === "staff_meal" ? "selected" : ""}>Staff Meal / Welfare</option>
+          <option value="carried_forward" ${defaultType === "carried_forward" ? "selected" : ""}>Carry Forward (Day-Old Discount)</option>
+        </select>
+      </td>
+      <td class="p-2">
+        <input type="number" min="0" step="any" value="${defaultQty}" class="disposal-qty w-full border rounded p-1 text-right font-medium">
+      </td>
+      <td class="p-2 text-right font-mono disposal-val">
+        ${fmtMoney(defaultQty * unitCost)}
+      </td>
+      <td class="p-2">
+        <!-- PUT IT RIGHT HERE -->
+        <input type="text" class="disposal-notes w-full border rounded p-1" placeholder="e.g. Organization name, reason for disposal, or shift details">
+      </td>
+      <td class="p-2 text-center">
+        <button type="button" class="text-red-500 font-bold hover:text-red-700 btn-remove-row">✕</button>
+      </td>
+    `;
+
+    tr.querySelector(".btn-remove-row").addEventListener("click", () => {
+      tr.remove();
+      recalc();
+    });
+
+    tr.querySelector(".disposal-qty").addEventListener("input", recalc);
+    tbody.appendChild(tr);
+    recalc();
+  }
+
+  function recalc() {
+    const target = Number(leftoverInput.value || 0);
+    targetCountEl.textContent = target;
+
+    let allocated = 0;
+    tbody.querySelectorAll("tr").forEach(row => {
+      const q = Number(row.querySelector(".disposal-qty").value || 0);
+      row.querySelector(".disposal-val").textContent = fmtMoney(q * unitCost);
+      allocated += q;
+    });
+
+    allocatedCountEl.textContent = allocated;
+    if (allocated === target) {
+      warningEl.textContent = "✓ Balanced";
+      warningEl.className = "font-semibold text-xs text-emerald-700";
+    } else {
+      const diff = target - allocated;
+      warningEl.textContent = diff > 0 ? `Unallocated: ${diff}` : `Over-allocated by: ${Math.abs(diff)}`;
+      warningEl.className = "font-semibold text-xs text-red-600";
+    }
+  }
+
+  leftoverInput.addEventListener("input", recalc);
+  modal.querySelector("#btnAddDisposalRow").addEventListener("click", () => addRow());
+
+  addRow("charity", initialLeftover > 0 ? initialLeftover : 0);
+
+  modal.querySelector("#btnSaveEOD").addEventListener("click", async () => {
+    const target = Number(leftoverInput.value || 0);
+    let rowsData = [];
+    let allocated = 0;
+
+    tbody.querySelectorAll("tr").forEach(tr => {
+      const q = Number(tr.querySelector(".disposal-qty").value || 0);
+      if (q > 0) {
+        allocated += q;
+        rowsData.push({
+          type: tr.querySelector(".disposal-type").value,
+          treatment_type: tr.querySelector(".disposal-type").value,
+          quantity: q,
+          unit_cost: unitCost,
+          total_value: q * unitCost,
+          notes: tr.querySelector(".disposal-notes").value.trim(),
+        });
+      }
+    });
+
+    if (target > 0 && allocated !== target) {
+      alert("Allocated quantities must balance exactly with total produce left on hand.");
+      return;
+    }
+
+    const payload = {
+      order_id: orderId,
+      leftover_qty: target,
+      treatments: rowsData,
+      reconciled_at: new Date().toISOString(),
+    };
+
+    try {
+      const endpoint = ENDPOINTS?.manufacturing?.orderEodReconciliation
+        ? ENDPOINTS.manufacturing.orderEodReconciliation(cid, orderId)
+        : `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/eod-reconciliation`;
+
+      await apiFetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      showToast?.("End-of-day produce reconciliation saved", "ok");
+      modal.remove();
+      await openManufacturingOrderDetail(orderId);
+    } catch (err) {
+      alert(err.message || "Failed to post reconciliation.");
+    }
+  });
+}
+
+window.loadManufacturingBoms = loadManufacturingBoms;
+window.loadManufacturingOrders = loadManufacturingOrders;
+window.openManufacturingBomModal = openManufacturingBomModal;
+window.openManufacturingOrderModal = openManufacturingOrderModal;
+window.openManufacturingOrderDetail = openManufacturingOrderDetail;
+window.postManufacturingMaterialUsageUI = postManufacturingMaterialUsageUI;
+
+
+(function () {
+  "use strict";
+
+  const state = {
+    companyId: null,
+    rows: [],
+    selectedOrder: null,
+    loading: false,
+    view: "overview",
+  };
+
+  function getCompanyId() {
+    if (typeof window.getActiveCompanyId === "function") {
+      return window.getActiveCompanyId();
+    }
+
+    return null;
+  }
+
+  function esc(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function num(value, decimals = 2) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+
+    return n.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
+
+  function money(value, decimals = 2) {
+    const n = Number(value);
+
+    if (!Number.isFinite(n)) {
+      return "—";
+    }
+
+    return n.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
+
+  function percent(value, decimals = 1) {
+    const n = Number(value);
+
+    if (!Number.isFinite(n)) {
+      return "—";
+    }
+
+    return `${n.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })}%`;
+  }
+
+  function signedMoney(value) {
+    const n = Number(value);
+
+    if (!Number.isFinite(n)) {
+      return "—";
+    }
+
+    const formatted = Math.abs(n).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    if (n > 0) return `+${formatted}`;
+    if (n < 0) return `-${formatted}`;
+
+    return formatted;
+  }
+
+  function varianceClass(value) {
+    const n = Number(value);
+
+    if (!Number.isFinite(n) || n === 0) {
+      return "";
+    }
+
+    return n > 0 ? "is-negative" : "is-positive";
+  }
+
+  function statusLabel(status) {
+    const value = String(status || "").trim();
+
+    if (!value) return "—";
+
+    return value
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+
+  function getAuthHeaders() {
+    if (typeof window.getAuthHeaders === "function") {
+      return window.getAuthHeaders();
+    }
+
+    const token =
+      window.authToken ||
+      localStorage.getItem("token") ||
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("jwt");
+
+    return token
+      ? {
+          Authorization: `Bearer ${token}`,
+        }
+      : {};
+  }
+
+  async function apiGet(url) {
+    if (typeof window.apiFetch !== "function") {
+      throw new Error("apiFetch is not available");
+    }
+
+    return await window.apiFetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+  }
+
+  function root() {
+    return document.getElementById("productionPerformanceRoot");
+  }
+
+  function ensureStyles() {
+    if (document.getElementById("production-performance-styles")) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "production-performance-styles";
+
+    style.textContent = `
+      #screen-production-performance {
+        padding: 20px;
+        background: #fff;
+      }
+
+      #screen-production-performance .pp-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+
+      #screen-production-performance .pp-title {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      #screen-production-performance .pp-subtitle {
+        margin: 5px 0 0;
+        opacity: .68;
+        font-size: 13px;
+      }
+
+      #screen-production-performance .pp-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      #screen-production-performance .pp-filters {
+        display: flex;
+        gap: 10px;
+        align-items: end;
+        flex-wrap: wrap;
+        padding: 14px;
+        border: 1px solid rgba(127,127,127,.18);
+        border-radius: 10px;
+        margin-bottom: 16px;
+      }
+
+      #screen-production-performance .pp-field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        min-width: 150px;
+      }
+
+      #screen-production-performance .pp-field label {
+        font-size: 11px;
+        font-weight: 600;
+        opacity: .7;
+      }
+
+      #screen-production-performance .pp-field input,
+      #screen-production-performance .pp-field select {
+        height: 36px;
+        padding: 0 9px;
+        border: 1px solid rgba(127,127,127,.25);
+        border-radius: 7px;
+        background: inherit;
+        color: inherit;
+      }
+
+      #screen-production-performance .pp-btn {
+        height: 36px;
+        padding: 0 13px;
+        border: 1px solid rgba(127,127,127,.25);
+        border-radius: 7px;
+        background: inherit;
+        color: inherit;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      #screen-production-performance .pp-btn:hover {
+        background: rgba(127,127,127,.08);
+      }
+
+      #screen-production-performance .pp-kpis {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      #screen-production-performance .pp-kpi {
+        padding: 15px;
+        border: 1px solid rgba(127,127,127,.18);
+        border-radius: 10px;
+        min-height: 88px;
+      }
+
+      #screen-production-performance .pp-kpi-label {
+        font-size: 11px;
+        opacity: .65;
+        margin-bottom: 7px;
+      }
+
+      #screen-production-performance .pp-kpi-value {
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      #screen-production-performance .pp-kpi-note {
+        margin-top: 4px;
+        font-size: 11px;
+        opacity: .55;
+      }
+
+      #screen-production-performance .pp-panel {
+        border: 1px solid rgba(127,127,127,.18);
+        border-radius: 10px;
+        overflow: hidden;
+        margin-bottom: 18px;
+      }
+
+      #screen-production-performance .pp-panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 13px 15px;
+        border-bottom: 1px solid rgba(127,127,127,.15);
+      }
+
+      #screen-production-performance .pp-panel-title {
+        font-weight: 700;
+      }
+
+      #screen-production-performance .pp-table-wrap {
+        overflow-x: auto;
+      }
+
+      #screen-production-performance table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 1050px;
+      }
+
+      #screen-production-performance th,
+      #screen-production-performance td {
+        padding: 10px 11px;
+        border-bottom: 1px solid rgba(127,127,127,.12);
+        text-align: right;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+
+      #screen-production-performance th:first-child,
+      #screen-production-performance td:first-child,
+      #screen-production-performance th:nth-child(2),
+      #screen-production-performance td:nth-child(2) {
+        text-align: left;
+      }
+
+      #screen-production-performance th {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        opacity: .62;
+      }
+
+      #screen-production-performance tr.pp-clickable {
+        cursor: pointer;
+      }
+
+      #screen-production-performance tr.pp-clickable:hover {
+        background: rgba(127,127,127,.06);
+      }
+
+      #screen-production-performance .pp-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 7px;
+        border-radius: 999px;
+        background: rgba(127,127,127,.12);
+        font-size: 10px;
+        font-weight: 600;
+      }
+
+      #screen-production-performance .pp-positive {
+        font-weight: 600;
+      }
+
+      #screen-production-performance .pp-negative {
+        font-weight: 600;
+      }
+
+      #screen-production-performance .is-positive {
+        font-weight: 600;
+      }
+
+      #screen-production-performance .is-negative {
+        font-weight: 600;
+      }
+
+      #screen-production-performance .pp-empty {
+        padding: 35px;
+        text-align: center;
+        opacity: .6;
+      }
+
+      #screen-production-performance .pp-loading {
+        padding: 35px;
+        text-align: center;
+        opacity: .65;
+      }
+
+      #screen-production-performance .pp-unavailable {
+        padding: 12px 14px;
+        margin-bottom: 15px;
+        border: 1px solid rgba(127,127,127,.18);
+        border-radius: 9px;
+        font-size: 12px;
+        opacity: .75;
+      }
+
+      #screen-production-performance .pp-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.42);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        z-index: 10000;
+      }
+
+      #screen-production-performance .pp-modal {
+        width: min(1100px, 96vw);
+        max-height: 90vh;
+        overflow: auto;
+        background: var(--card-bg, #fff);
+        color: inherit;
+        border-radius: 12px;
+        border: 1px solid rgba(127,127,127,.2);
+        box-shadow: 0 20px 60px rgba(0,0,0,.22);
+      }
+
+      #screen-production-performance .pp-modal-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+        align-items: center;
+        padding: 15px 18px;
+        border-bottom: 1px solid rgba(127,127,127,.15);
+      }
+
+      #screen-production-performance .pp-modal-body {
+        padding: 18px;
+      }
+
+      #screen-production-performance .pp-detail-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      #screen-production-performance .pp-detail-card {
+        padding: 11px;
+        border: 1px solid rgba(127,127,127,.15);
+        border-radius: 8px;
+      }
+
+      #screen-production-performance .pp-detail-label {
+        font-size: 10px;
+        opacity: .6;
+        margin-bottom: 5px;
+      }
+
+      #screen-production-performance .pp-detail-value {
+        font-weight: 700;
+        font-size: 14px;
+      }
+
+      @media (max-width: 1100px) {
+        #screen-production-performance .pp-kpis {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        #screen-production-performance .pp-detail-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 700px) {
+        #screen-production-performance .pp-header {
+          flex-direction: column;
+        }
+
+        #screen-production-performance .pp-kpis {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        #screen-production-performance .pp-detail-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      #screen-production-performance [hidden] {
+        display: none !important;
+      }
+
+      #screen-production-performance .pp-kpi-action {
+        display: block;
+        width: 100%;
+        text-align: left;
+        font: inherit;
+        color: inherit;
+        background: inherit;
+        cursor: pointer;
+        transition: background .15s ease, border-color .15s ease;
+      }
+
+      #screen-production-performance .pp-kpi-action:hover,
+      #screen-production-performance .pp-kpi-action:focus-visible {
+        background: rgba(127,127,127,.08);
+        border-color: rgba(127,127,127,.5);
+        outline-offset: 2px;
+      }
+
+      #screen-production-performance .pp-analytics-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      #screen-production-performance .pp-analytics-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      #screen-production-performance .pp-analytics-card {
+        border: 1px solid rgba(127,127,127,.18);
+        border-radius: 10px;
+        padding: 13px;
+        min-width: 0;
+      }
+
+      #screen-production-performance .pp-analytics-label {
+        font-size: 11px;
+        opacity: .68;
+        margin-bottom: 7px;
+      }
+
+      #screen-production-performance .pp-analytics-value {
+        font-size: 19px;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+
+      #screen-production-performance .pp-analytics-note {
+        margin-top: 5px;
+        font-size: 11px;
+        opacity: .58;
+      }
+
+      #screen-production-performance .pp-analytics-grid .pp-panel {
+        min-width: 0;
+      }
+
+      @media (max-width: 900px) {
+        #screen-production-performance .pp-analytics-grid {
+          grid-template-columns: 1fr;
+        }
+
+        #screen-production-performance .pp-analytics-summary {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function setView(view) {
+    state.view = view === "orders" ? "orders" : "overview";
+
+    const overview = document.getElementById("pp-overview-view");
+    const orders = document.getElementById("pp-orders-view");
+
+    if (overview) {
+      overview.hidden = state.view !== "overview";
+    }
+
+    if (orders) {
+      orders.hidden = state.view !== "orders";
+    }
+
+    if (state.view === "orders") {
+      document.getElementById("pp-orders-back")?.focus();
+    }
+  }
+
+  function renderShell() {
+    const el = root();
+
+    if (!el) {
+      console.warn(
+        "[ProductionPerformance] #screen-production-performance not found"
+      );
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="pp-header">
+        <div>
+          <h2 class="pp-title">Production Performance</h2>
+          <div class="pp-subtitle">
+            Production costing, material efficiency and contribution analysis
+          </div>
+        </div>
+
+        <div class="pp-actions">
+          <button type="button" class="pp-btn" data-pp-action="refresh">
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div class="pp-filters">
+        <div class="pp-field">
+          <label for="pp-date-from">Date from</label>
+          <input type="date" id="pp-date-from">
+        </div>
+
+        <div class="pp-field">
+          <label for="pp-date-to">Date to</label>
+          <input type="date" id="pp-date-to">
+        </div>
+
+        <div class="pp-field">
+          <label for="pp-status">Status</label>
+          <select id="pp-status">
+            <option value="">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="in_progress">In progress</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+
+        <button type="button" class="pp-btn" data-pp-action="apply">
+          Apply
+        </button>
+      </div>
+
+      <div id="pp-overview-view">
+        <div class="pp-kpis" id="pp-kpis">
+          ${renderKpiPlaceholders()}
+        </div>
+
+        <div id="pp-unavailable"></div>
+
+        <div id="pp-performance-analytics">
+          <div class="pp-loading">
+            Loading stage and machine performance...
+          </div>
+        </div>
+      </div>
+
+      <div id="pp-orders-view" hidden>
+        <div class="pp-panel">
+          <div class="pp-panel-header">
+            <div>
+              <div class="pp-panel-title">Production orders</div>
+              <div id="pp-count" style="font-size:11px;opacity:.6;margin-top:4px;"></div>
+            </div>
+
+            <button
+              type="button"
+              class="pp-btn"
+              id="pp-orders-back"
+              data-pp-action="overview"
+            >
+              ← Back to Performance
+            </button>
+          </div>
+
+          <div class="pp-table-wrap" id="pp-table">
+            <div class="pp-loading">Loading production orders...</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="pp-detail-container"></div>
+    `;
+    setView(state.view);
+  }
+
+  function renderKpiPlaceholders() {
+    return [
+      ["Production orders", "—", ""],
+      ["Planned material cost", "—", ""],
+      ["Actual material cost", "—", ""],
+      ["Material contribution", "—", ""],
+      ["Contribution margin", "—", ""],
+      ["Produced quantity", "—", ""],
+      ["Dispatched quantity", "—", ""],
+      ["Finished goods remaining", "—", ""],
+    ]
+      .map(
+        ([label, value, note]) => `
+          <div class="pp-kpi">
+            <div class="pp-kpi-label">${esc(label)}</div>
+            <div class="pp-kpi-value">${esc(value)}</div>
+            <div class="pp-kpi-note">${esc(note)}</div>
+          </div>
+        `
+      )
+      .join("");
+  }
+
+  function renderKpis(rows, summary = {}) {
+    const el = document.getElementById("pp-kpis");
+
+    if (!el) return;
+
+    const productionOrders = Number(
+      summary.production_orders ?? rows.length
+    );
+
+    const plannedMaterialCost = Number(
+      summary.planned_material_cost ??
+        rows.reduce(
+          (sum, row) =>
+            sum + Number(row.planned_material_cost || 0),
+          0
+        )
+    );
+
+    const actualMaterialCost = Number(
+      summary.actual_material_cost ??
+        rows.reduce(
+          (sum, row) =>
+            sum + Number(row.actual_material_cost || 0),
+          0
+        )
+    );
+
+    const materialContribution = Number(
+      summary.material_contribution ??
+        rows.reduce(
+          (sum, row) =>
+            sum + Number(row.material_contribution || 0),
+          0
+        )
+    );
+
+    const productionValue = Number(
+      summary.production_value ??
+        rows.reduce(
+          (sum, row) =>
+            sum + Number(row.production_value || 0),
+          0
+        )
+    );
+
+    const contributionMargin =
+      summary.material_contribution_margin != null
+        ? Number(summary.material_contribution_margin)
+        : productionValue !== 0
+        ? (materialContribution / productionValue) * 100
+        : null;
+
+    const plannedQty = Number(
+      summary.planned_qty ??
+        rows.reduce(
+          (sum, row) => sum + Number(row.planned_qty || 0),
+          0
+        )
+    );
+
+    const actualQty = Number(
+      summary.actual_qty ??
+        rows.reduce(
+          (sum, row) => sum + Number(row.actual_qty || 0),
+          0
+        )
+    );
+
+    const dispatchedQty = Number(
+      summary.dispatched_qty || 0
+    );
+
+    const finishedGoodsRemaining = Number(
+      summary.finished_goods_remaining ??
+        Math.max(actualQty - dispatchedQty, 0)
+    );
+
+    el.innerHTML = `
+      <button
+        type="button"
+        class="pp-kpi pp-kpi-action"
+        data-pp-action="orders"
+        aria-label="View production orders"
+      >
+        <div class="pp-kpi-label">Production orders</div>
+        <div class="pp-kpi-value">${num(productionOrders, 0)}</div>
+        <div class="pp-kpi-note">Click to view the orders register →</div>
+      </button>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Planned material cost</div>
+        <div class="pp-kpi-value">${money(plannedMaterialCost)}</div>
+        <div class="pp-kpi-note">Order planned material cost</div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Actual material cost</div>
+        <div class="pp-kpi-value">${money(actualMaterialCost)}</div>
+        <div class="pp-kpi-note">Posted material usage</div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Material contribution</div>
+        <div class="pp-kpi-value">${money(materialContribution)}</div>
+        <div class="pp-kpi-note">
+          Production value less actual materials
+        </div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Contribution margin</div>
+        <div class="pp-kpi-value">${percent(contributionMargin)}</div>
+        <div class="pp-kpi-note">
+          Material contribution / production value
+        </div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Produced quantity</div>
+        <div class="pp-kpi-value">${num(actualQty)}</div>
+        <div class="pp-kpi-note">
+          Planned ${num(plannedQty)}
+        </div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Dispatched quantity</div>
+        <div class="pp-kpi-value">${num(dispatchedQty)}</div>
+        <div class="pp-kpi-note">
+          Finished goods dispatched
+        </div>
+      </div>
+
+      <div class="pp-kpi">
+        <div class="pp-kpi-label">Finished goods remaining</div>
+        <div class="pp-kpi-value">${num(finishedGoodsRemaining)}</div>
+        <div class="pp-kpi-note">
+          Produced less dispatched
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPerformanceAnalytics(rows) {
+    const el = document.getElementById("pp-performance-analytics");
+    if (!el) return;
+
+    const allRows = Array.isArray(rows) ? rows : [];
+
+    const value = (row, key) => {
+      const n = Number(row?.[key]);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const hasStageTiming = (row) =>
+      value(row, "standard_stage_minutes") > 0 ||
+      value(row, "actual_active_minutes") > 0 ||
+      value(row, "downtime_minutes") > 0 ||
+      value(row, "waiting_minutes") > 0;
+
+    const timedRows = allRows.filter(hasStageTiming);
+
+    const machineRows = timedRows.filter(
+      (row) =>
+        value(row, "machine_count") > 0 ||
+        value(row, "machine_standard_minutes") > 0 ||
+        value(row, "machine_active_minutes") > 0
+    );
+
+    const total = (list, key) =>
+      list.reduce((sum, row) => sum + value(row, key), 0);
+
+    const standard = total(timedRows, "standard_stage_minutes");
+    const actual = total(timedRows, "actual_active_minutes");
+    const downtime = total(timedRows, "downtime_minutes");
+    const waiting = total(timedRows, "waiting_minutes");
+
+    const timeVariance = timedRows.reduce(
+      (sum, row) =>
+        sum +
+        (row.time_variance_minutes != null
+          ? value(row, "time_variance_minutes")
+          : value(row, "actual_active_minutes") -
+            value(row, "standard_stage_minutes")),
+      0
+    );
+
+    const timeEfficiency =
+      standard > 0 && actual > 0
+        ? (standard / actual) * 100
+        : null;
+
+    const machineStandard = total(
+      machineRows,
+      "machine_standard_minutes"
+    );
+
+    const machineActual = total(
+      machineRows,
+      "machine_active_minutes"
+    );
+
+    const machineVariance = machineRows.reduce(
+      (sum, row) =>
+        sum +
+        (row.machine_time_variance_minutes != null
+          ? value(row, "machine_time_variance_minutes")
+          : value(row, "machine_active_minutes") -
+            value(row, "machine_standard_minutes")),
+      0
+    );
+
+    const machineEfficiency =
+      machineStandard > 0 && machineActual > 0
+        ? (machineStandard / machineActual) * 100
+        : null;
+
+    const machineCount = machineRows.reduce(
+      (sum, row) => sum + value(row, "machine_count"),
+      0
+    );
+
+    const efficiencyLabel = (v) =>
+      v == null ? "—" : percent(v);
+
+    const timingTable = timedRows.length
+      ? `
+        <div class="pp-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Production order</th>
+                <th>Stages completed</th>
+                <th>Standard min</th>
+                <th>Actual active min</th>
+                <th>Time variance min</th>
+                <th>Time efficiency</th>
+                <th>Downtime min</th>
+                <th>Waiting min</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${timedRows.map((row) => {
+                const variance =
+                  row.time_variance_minutes != null
+                    ? value(row, "time_variance_minutes")
+                    : value(row, "actual_active_minutes") -
+                      value(row, "standard_stage_minutes");
+
+                return `
+                  <tr>
+                    <td>
+                      <strong>${esc(row.mo_no || row.order_no || "—")}</strong>
+                    </td>
+                    <td>
+                      ${num(row.stages_completed, 0)} /
+                      ${num(row.stages_total, 0)}
+                    </td>
+                    <td>${num(row.standard_stage_minutes, 1)}</td>
+                    <td>${num(row.actual_active_minutes, 1)}</td>
+                    <td class="${varianceClass(variance)}">
+                      ${num(variance, 1)}
+                    </td>
+                    <td>${efficiencyLabel(row.time_efficiency_pct)}</td>
+                    <td>${num(row.downtime_minutes, 1)}</td>
+                    <td>${num(row.waiting_minutes, 1)}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : `
+        <div class="pp-empty">
+          No stage timing data yet. Start and complete production stages
+          to populate actual time, downtime and waiting-time metrics.
+        </div>
+      `;
+
+    const machineTable = machineRows.length
+      ? `
+        <div class="pp-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Production order</th>
+                <th>Machines recorded</th>
+                <th>Standard min</th>
+                <th>Actual machine min</th>
+                <th>Time variance min</th>
+                <th>Time efficiency</th>
+                <th>Machine utilisation</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${machineRows.map((row) => {
+                const variance =
+                  row.machine_time_variance_minutes != null
+                    ? value(row, "machine_time_variance_minutes")
+                    : value(row, "machine_active_minutes") -
+                      value(row, "machine_standard_minutes");
+
+                return `
+                  <tr>
+                    <td>
+                      <strong>${esc(row.mo_no || row.order_no || "—")}</strong>
+                    </td>
+                    <td>${num(row.machine_count, 0)}</td>
+                    <td>${num(row.machine_standard_minutes, 1)}</td>
+                    <td>${num(row.machine_active_minutes, 1)}</td>
+                    <td class="${varianceClass(variance)}">
+                      ${num(variance, 1)}
+                    </td>
+                    <td>${efficiencyLabel(row.machine_time_efficiency_pct)}</td>
+                    <td>
+                      ${row.machine_utilisation_pct == null
+                        ? "Not tracked"
+                        : percent(row.machine_utilisation_pct)}
+                    </td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : `
+        <div class="pp-empty">
+          No machine timing data yet. Record equipment against production
+          stages to populate machine performance.
+        </div>
+      `;
+
+    el.innerHTML = `
+      <div class="pp-analytics-summary">
+        <div class="pp-analytics-card">
+          <div class="pp-analytics-label">Standard stage time</div>
+          <div class="pp-analytics-value">${num(standard, 1)} min</div>
+          <div class="pp-analytics-note">Across orders with timing data</div>
+        </div>
+
+        <div class="pp-analytics-card">
+          <div class="pp-analytics-label">Actual active time</div>
+          <div class="pp-analytics-value">${num(actual, 1)} min</div>
+          <div class="pp-analytics-note">Recorded stage activity</div>
+        </div>
+
+        <div class="pp-analytics-card">
+          <div class="pp-analytics-label">Time efficiency</div>
+          <div class="pp-analytics-value">${efficiencyLabel(timeEfficiency)}</div>
+          <div class="pp-analytics-note">Standard time ÷ actual time</div>
+        </div>
+
+        <div class="pp-analytics-card">
+          <div class="pp-analytics-label">Recorded downtime</div>
+          <div class="pp-analytics-value">${num(downtime, 1)} min</div>
+          <div class="pp-analytics-note">Plus ${num(waiting, 1)} min waiting time</div>
+        </div>
+      </div>
+
+      <div class="pp-analytics-grid">
+        <div class="pp-panel">
+          <div class="pp-panel-header">
+            <div class="pp-panel-title">Stage &amp; time performance</div>
+          </div>
+          ${timingTable}
+        </div>
+
+        <div class="pp-panel">
+          <div class="pp-panel-header">
+            <div class="pp-panel-title">Machine performance</div>
+          </div>
+
+          <div class="pp-analytics-summary" style="padding:12px;margin:0;">
+            <div class="pp-analytics-card">
+              <div class="pp-analytics-label">Machines recorded</div>
+              <div class="pp-analytics-value">${num(machineCount, 0)}</div>
+            </div>
+
+            <div class="pp-analytics-card">
+              <div class="pp-analytics-label">Machine time efficiency</div>
+              <div class="pp-analytics-value">${efficiencyLabel(machineEfficiency)}</div>
+            </div>
+          </div>
+
+          ${machineTable}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTable(rows) {
+    const el = document.getElementById("pp-table");
+    const count = document.getElementById("pp-count");
+
+    if (!el) return;
+
+    if (count) {
+      count.textContent = `${rows.length} order${rows.length === 1 ? "" : "s"}`;
+    }
+
+    if (!rows.length) {
+      el.innerHTML = `
+        <div class="pp-empty">
+          No production orders match the selected filters.
+        </div>
+      `;
+      return;
+    }
+
+    el.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>Finished product</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Planned qty</th>
+            <th>Actual qty</th>
+            <th>Completion</th>
+            <th>Planned materials</th>
+            <th>Actual materials</th>
+            <th>Material variance</th>
+            <th>Production value</th>
+            <th>Contribution</th>
+            <th>Margin</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${rows.map(renderRow).join("")}
+        </tbody>
+      </table>
+    `;
+
+    el.querySelectorAll("tr[data-order-id]").forEach((row) => {
+      row.addEventListener("click", () => {
+        const orderId = Number(row.dataset.orderId);
+
+        if (orderId) {
+          openDetail(orderId);
+        }
+      });
+    });
+  }
+
+  function renderRow(row) {
+    const completion = Number(row.production_completion);
+    const variance = Number(row.material_cost_variance);
+
+    return `
+      <tr
+        class="pp-clickable"
+        data-order-id="${esc(row.manufacturing_order_id || row.id)}"
+      >
+        <td>
+          <strong>${esc(row.mo_no || row.order_no || "—")}</strong>
+        </td>
+
+        <td>
+          ${esc(
+            row.finished_item_name ||
+              row.finished_product ||
+              row.bom_name ||
+              "—"
+          )}
+        </td>
+
+        <td>${esc(row.tx_date || "—")}</td>
+
+        <td>
+          <span class="pp-badge">
+            ${esc(statusLabel(row.status))}
+          </span>
+        </td>
+
+        <td>${num(row.planned_qty)}</td>
+
+        <td>${num(row.actual_qty)}</td>
+
+        <td>${percent(completion)}</td>
+
+        <td>${money(row.planned_material_cost)}</td>
+
+        <td>${money(row.actual_material_cost)}</td>
+
+        <td class="${varianceClass(variance)}">
+          ${signedMoney(variance)}
+        </td>
+
+        <td>${money(row.production_value)}</td>
+
+        <td>${money(row.material_contribution)}</td>
+
+        <td>${percent(row.material_contribution_margin)}</td>
+      </tr>
+    `;
+  }
+
+  function renderUnavailableNotice() {
+    const el = document.getElementById("pp-unavailable");
+
+    if (!el) return;
+
+    el.innerHTML = `
+      <div class="pp-unavailable">
+        <strong>Costing scope:</strong>
+        material costs are currently available from production usage.
+        Labour and manufacturing overhead are not yet allocated, so full
+        production cost and absorption margin are not calculated.
+      </div>
+    `;
+  }
+
+  async function load() {
+    const companyId = getCompanyId();
+
+    if (!companyId) {
+      const table = document.getElementById("pp-table");
+
+      if (table) {
+        table.innerHTML = `
+          <div class="pp-empty">
+            No company is currently selected.
+          </div>
+        `;
+      }
+
+      return;
+    }
+
+    state.companyId = companyId;
+    state.loading = true;
+
+    const dateFrom = document.getElementById("pp-date-from")?.value || "";
+    const dateTo = document.getElementById("pp-date-to")?.value || "";
+    const status = document.getElementById("pp-status")?.value || "";
+
+    const params = new URLSearchParams();
+
+    if (dateFrom) {
+      params.set("date_from", dateFrom);
+    }
+
+    if (dateTo) {
+      params.set("date_to", dateTo);
+    }
+
+    if (status) {
+      params.set("status", status);
+    }
+
+    params.set("limit", "200");
+    params.set("offset", "0");
+
+    const table = document.getElementById("pp-table");
+
+    if (table) {
+      table.innerHTML = `
+        <div class="pp-loading">
+          Loading production performance...
+        </div>
+      `;
+    }
+
+    try {
+      const url = window.API?.manufacturing?.productionPerformance
+        ? window.API.manufacturing.productionPerformance(
+            companyId,
+            params.toString()
+          )
+        : `${API_BASE}/api/companies/${encodeURIComponent(
+            companyId
+          )}/manufacturing/production-performance${
+            params.toString() ? `?${params.toString()}` : ""
+          }`;
+
+      const payload = await apiGet(url);
+
+      state.rows = Array.isArray(payload.items)
+        ? payload.items
+        : Array.isArray(payload.rows)
+        ? payload.rows
+        : [];
+
+    renderKpis(
+      state.rows,
+      payload.summary || {}
+    );
+
+    renderPerformanceAnalytics(state.rows);
+    renderTable(state.rows);
+    renderUnavailableNotice();
+    setView(state.view);
+    } catch (error) {
+      console.error(
+        "[ProductionPerformance] load failed:",
+        error
+      );
+
+      if (table) {
+        table.innerHTML = `
+          <div class="pp-empty">
+            Failed to load production performance.
+            <br>
+            <small>${esc(error.message || error)}</small>
+          </div>
+        `;
+      }
+    } finally {
+      state.loading = false;
+    }
+  }
+
+  async function openDetail(orderId) {
+    if (!state.companyId || !orderId) {
+      return;
+    }
+
+    const container = document.getElementById(
+      "pp-detail-container"
+    );
+
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="pp-modal-backdrop" data-pp-modal>
+        <div class="pp-modal">
+          <div class="pp-modal-header">
+            <strong>Production Performance Detail</strong>
+
+            <button
+              type="button"
+              class="pp-btn"
+              data-pp-close
+            >
+              Close
+            </button>
+          </div>
+
+          <div class="pp-modal-body">
+            <div class="pp-loading">
+              Loading production order detail...
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const backdrop = container.querySelector("[data-pp-modal]");
+
+    backdrop?.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        closeDetail();
+      }
+    });
+
+    container
+      .querySelector("[data-pp-close]")
+      ?.addEventListener("click", closeDetail);
+
+    try {
+      const performanceUrl =
+        window.API?.manufacturing?.productionPerformanceOrder
+          ? window.API.manufacturing.productionPerformanceOrder(
+              state.companyId,
+              orderId
+            )
+          : `${API_BASE}/api/companies/${encodeURIComponent(
+              state.companyId
+            )}/manufacturing/production-performance/${encodeURIComponent(
+              orderId
+            )}`;
+
+      const dispatchUrl =
+        window.API?.manufacturing?.orderDispatchesFull
+          ? window.API.manufacturing.orderDispatchesFull(
+              state.companyId,
+              orderId
+            )
+          : `${API_BASE}/api/companies/${encodeURIComponent(
+              state.companyId
+            )}/manufacturing/orders/${encodeURIComponent(
+              orderId
+            )}/dispatches/full`;
+
+      const [performancePayload, dispatchPayload] =
+        await Promise.all([
+          apiGet(performanceUrl),
+          apiGet(dispatchUrl),
+        ]);
+
+      const payload = {
+        ...performancePayload,
+
+        dispatches: Array.isArray(dispatchPayload?.dispatches)
+          ? dispatchPayload.dispatches
+          : [],
+      };
+
+      state.selectedOrder = payload;
+
+      renderDetail(payload);
+    } catch (error) {
+      console.error(
+        "[ProductionPerformance] detail failed:",
+        error
+      );
+
+      const body = container.querySelector(".pp-modal-body");
+
+      if (body) {
+        body.innerHTML = `
+          <div class="pp-empty">
+            Failed to load production order detail.
+            <br>
+            <small>${esc(error.message || error)}</small>
+          </div>
+        `;
+      }
+    }
+  }
+
+  function closeDetail() {
+    const container = document.getElementById(
+      "pp-detail-container"
+    );
+
+    if (container) {
+      container.innerHTML = "";
+    }
+
+    state.selectedOrder = null;
+  }
+
+  function getDispatchSummary(payload, order) {
+    const dispatches = Array.isArray(payload.dispatches)
+      ? payload.dispatches
+      : [];
+
+    const producedQty = Number(
+      payload.production_summary?.actual_qty ??
+        payload.financial?.actual_qty ??
+        order.actual_qty ??
+        0
+    );
+
+    const dispatchedQty = dispatches.reduce(
+      (sum, dispatch) =>
+        sum + Number(dispatch.quantity || 0),
+      0
+    );
+
+    const dispatchCost = dispatches.reduce(
+      (sum, dispatch) =>
+        sum + Number(dispatch.dispatch_cost || 0),
+      0
+    );
+
+    const disposedQty = Number(
+      payload.production_summary?.disposed_qty ??
+        payload.disposed_qty ??
+        0
+    );
+
+    const finishedGoodsRemaining = Math.max(
+      producedQty -
+        dispatchedQty -
+        disposedQty,
+      0
+    );
+
+    return {
+      dispatches,
+      producedQty,
+      dispatchedQty,
+      disposedQty,
+      finishedGoodsRemaining,
+      dispatchCost,
+    };
+  }
+
+  function renderDispatchRow(dispatch) {
+    return `
+      <tr>
+        <td>${esc(dispatch.tx_date || "—")}</td>
+
+        <td>
+          ${esc(
+            statusLabel(dispatch.channel)
+          )}
+        </td>
+
+        <td>
+          ${esc(
+            dispatch.customer_name ||
+              dispatch.destination ||
+              "—"
+          )}
+        </td>
+
+        <td>
+          ${esc(dispatch.customer_code || "—")}
+        </td>
+
+        <td>
+          ${num(dispatch.quantity)}
+        </td>
+
+        <td>
+          ${esc(dispatch.unit || "—")}
+        </td>
+
+        <td>
+          ${money(dispatch.dispatch_cost)}
+        </td>
+
+        <td>
+          ${esc(
+            dispatch.reference_no ||
+              dispatch.journal_ref ||
+              "—"
+          )}
+        </td>
+      </tr>
+    `;
+  }
+
+  function renderProductionDispatchSection(
+    payload,
+    order
+  ) {
+    const summary = getDispatchSummary(
+      payload,
+      order
+    );
+
+    return `
+      <div class="pp-panel">
+        <div class="pp-panel-header">
+          <div class="pp-panel-title">
+            Production & Dispatch
+          </div>
+        </div>
+
+        <div class="pp-detail-grid" style="padding:15px;margin:0;">
+          <div class="pp-detail-card">
+            <div class="pp-detail-label">
+              Planned output
+            </div>
+            <div class="pp-detail-value">
+              ${num(order.planned_qty)}
+            </div>
+          </div>
+
+          <div class="pp-detail-card">
+            <div class="pp-detail-label">
+              Actual output
+            </div>
+            <div class="pp-detail-value">
+              ${num(summary.producedQty)}
+            </div>
+          </div>
+
+          <div class="pp-detail-card">
+            <div class="pp-detail-label">
+              Dispatched
+            </div>
+            <div class="pp-detail-value">
+              ${num(summary.dispatchedQty)}
+            </div>
+          </div>
+
+          <div class="pp-detail-card">
+            <div class="pp-detail-label">
+              Finished goods remaining
+            </div>
+            <div class="pp-detail-value">
+              ${num(summary.finishedGoodsRemaining)}
+            </div>
+          </div>
+        </div>
+
+        ${
+          summary.dispatches.length
+            ? `
+              <div class="pp-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Channel</th>
+                      <th>Destination / Customer</th>
+                      <th>Customer code</th>
+                      <th>Quantity</th>
+                      <th>Unit</th>
+                      <th>Dispatch cost</th>
+                      <th>Reference</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${summary.dispatches
+                      .map(renderDispatchRow)
+                      .join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `
+              <div class="pp-empty">
+                No dispatches have been recorded for this production order.
+              </div>
+            `
+        }
+      </div>
+    `;
+  }
+
+  function renderDetail(payload) {
+    const container = document.getElementById(
+      "pp-detail-container"
+    );
+
+    if (!container) return;
+
+    const order =
+      payload.order ||
+      payload.manufacturing_order ||
+      payload;
+
+    // 1. Read the financial block from the payload
+    const financial =
+      payload.financial ||
+      payload.financials ||
+      payload.production_summary ||
+      {};
+
+    const materials =
+      payload.materials ||
+      payload.lines ||
+      payload.material_details ||
+      [];
+
+    const costing = payload.costing || {};
+
+    // 2. Include financial.* in the fallback chain
+    const plannedMaterialCost = Number(
+      payload.planned_material_cost ??
+        financial.planned_material_cost ??
+        order.planned_material_cost ??
+        0
+    );
+
+    const actualMaterialCost = Number(
+      payload.actual_material_cost ??
+        financial.actual_material_cost ??
+        order.actual_material_cost ??
+        0
+    );
+
+    const materialContribution = Number(
+      payload.material_contribution ??
+        financial.material_contribution ??
+        order.material_contribution ??
+        0
+    );
+
+    const productionValue = Number(
+      payload.production_value ??
+        financial.production_value ??
+        order.production_value ??
+        0
+    );
+
+    const contributionMargin =
+      payload.material_contribution_margin ??
+      financial.material_contribution_margin ??
+      order.material_contribution_margin;
+
+    const variance =
+      payload.material_cost_variance ??
+      financial.material_cost_variance ??
+      order.material_cost_variance;
+
+    const body = container.querySelector(".pp-modal-body");
+
+    if (!body) return;
+
+    body.innerHTML = `
+      <div class="pp-detail-grid">
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Production order</div>
+          <div class="pp-detail-value">
+            ${esc(order.mo_no || order.order_no || order.id || "—")}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Finished product</div>
+          <div class="pp-detail-value">
+            ${esc(
+              order.finished_item_name ||
+                order.finished_product ||
+                order.bom_name ||
+                "—"
+            )}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Planned quantity</div>
+          <div class="pp-detail-value">
+            ${num(order.planned_qty)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Actual quantity</div>
+          <div class="pp-detail-value">
+            ${num(order.actual_qty)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Production value</div>
+          <div class="pp-detail-value">
+            ${money(productionValue)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Planned material cost</div>
+          <div class="pp-detail-value">
+            ${money(plannedMaterialCost)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Actual material cost</div>
+          <div class="pp-detail-value">
+            ${money(actualMaterialCost)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Material variance</div>
+          <div class="pp-detail-value">
+            ${signedMoney(variance)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Material contribution</div>
+          <div class="pp-detail-value">
+            ${money(materialContribution)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Contribution margin</div>
+          <div class="pp-detail-value">
+            ${percent(contributionMargin)}
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Labour cost</div>
+          <div class="pp-detail-value">
+            ${
+              costing.labour_cost != null
+                ? money(costing.labour_cost)
+                : "Not allocated"
+            }
+          </div>
+        </div>
+
+        <div class="pp-detail-card">
+          <div class="pp-detail-label">Manufacturing overhead</div>
+          <div class="pp-detail-value">
+            ${
+              costing.manufacturing_overhead != null
+                ? money(costing.manufacturing_overhead)
+                : "Not allocated"
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class="pp-panel">
+        <div class="pp-panel-header">
+          <div class="pp-panel-title">
+            Material efficiency
+          </div>
+        </div>
+
+        <div class="pp-table-wrap">
+          ${
+            materials.length
+              ? `
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Material</th>
+                      <th>Standard qty</th>
+                      <th>Actual qty</th>
+                      <th>Qty variance</th>
+                      <th>Unit cost</th>
+                      <th>Standard cost</th>
+                      <th>Actual cost</th>
+                      <th>Cost variance</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${materials.map(renderMaterialRow).join("")}
+                  </tbody>
+                </table>
+              `
+              : `
+                <div class="pp-empty">
+                  No material detail is available for this order.
+                </div>
+              `
+          }
+        </div>
+      </div>
+
+      ${renderProductionDispatchSection(payload, order)}
+
+      <div class="pp-unavailable">
+        <strong>Management accounting note:</strong>
+        contribution shown here is based on production value less material
+        cost. Labour and manufacturing overhead are currently not allocated,
+        so this screen does not present an absorption/full-production margin.
+      </div>
+    `;
+  }
+
+  function renderMaterialRow(material) {
+    const quantityVariance =
+      material.quantity_variance ??
+      material.qty_variance ??
+      null;
+
+    const costVariance =
+      material.cost_variance ??
+      material.material_cost_variance ??
+      null;
+
+    return `
+      <tr>
+        <td>
+          ${esc(
+            material.item_name ||
+              material.material_name ||
+              material.item_id ||
+              "—"
+          )}
+        </td>
+
+        <td>${num(material.standard_qty)}</td>
+
+        <td>${num(material.actual_qty)}</td>
+
+        <td class="${varianceClass(quantityVariance)}">
+          ${signedMoney(quantityVariance)}
+        </td>
+
+        <td>${money(material.unit_cost)}</td>
+
+        <td>${money(material.standard_cost)}</td>
+
+        <td>${money(material.actual_cost)}</td>
+
+        <td class="${varianceClass(costVariance)}">
+          ${signedMoney(costVariance)}
+        </td>
+      </tr>
+    `;
+  }
+
+  function bindEvents() {
+    const el = root();
+
+    if (!el || el.dataset.ppBound === "1") {
+      return;
+    }
+
+    el.dataset.ppBound = "1";
+
+    el.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-pp-action]");
+
+      if (!action) return;
+
+      const value = action.dataset.ppAction;
+
+      if (value === "orders") {
+        setView("orders");
+        return;
+      }
+
+      if (value === "overview") {
+        setView("overview");
+        return;
+      }
+
+      if (value === "refresh" || value === "apply") {
+        load();
+      }
+    });
+  }
+
+  async function bindProductionPerformanceScreen() {
+    const el = root();
+
+    if (!el) {
+      console.warn(
+        "[ProductionPerformance] screen container not found"
+      );
+      return;
+    }
+
+    ensureStyles();
+    renderShell();
+    bindEvents();
+
+    await load();
+  }
+
+  window.bindProductionPerformanceScreen =
+    bindProductionPerformanceScreen;
+
+  window.productionPerformance = {
+    load,
+    openDetail,
+    closeDetail,
+  };
+})();
 // =====================================================
 // Reorder Alerts (Frontend)
 // =====================================================
@@ -118135,6 +140176,39 @@ function closeReceiveModal() {
   m.classList.add("hidden");
 }
 
+async function loadReceiveInventoryItems() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+
+  if (!cid) {
+    throw new Error("No active company selected.");
+  }
+
+  const params = new URLSearchParams({
+    limit: "500",
+    offset: "0",
+    active: "1"
+  });
+
+  console.log("[Receive] Loading inventory items:", ENDPOINTS.inventory.items(cid, params.toString()));
+
+  const data = await apiFetch(
+    ENDPOINTS.inventory.items(cid, params.toString())
+  );
+
+  const items = data?.rows || data?.items || [];
+
+  window._INV_ITEM_CACHE = {
+    loaded: true,
+    items
+  };
+
+  console.log("[Receive] Inventory items loaded:", items.length);
+
+  return items;
+}
+
+window.loadReceiveInventoryItems = loadReceiveInventoryItems;
+
 function addReceiveLine(line = {}) {
   const tbody = document.getElementById("invReceiveTbody");
   if (!tbody) return;
@@ -118566,9 +140640,9 @@ async function openReceiveModal(prefill = {}) {
   applyReceiveColumnPolicy();
 
   try {
-    await ensureInvItemCache();
+    await loadReceiveInventoryItems();
   } catch (e) {
-    console.warn("[Receive] item cache load failed", e);
+    console.warn("[Receive] inventory item load failed", e);
   }
 
   addReceiveLine();
@@ -124926,52 +147000,54 @@ function bindBillViewerModal() {
     return out > 0 ? out : 0;
   }
 
-  async function loadBanks() {
-    if (!elBank) return;
+  async function loadBanks(targetSelect = elBank) {
+    if (!targetSelect) return;
 
-    // keep your existing safety prune (even though we won't be using COA options anymore)
     pruneBankSelectOptions?.();
 
     const { cid } = getCtx();
     if (!cid) return;
 
-    // ✅ Correct endpoint: company bank accounts (used to pay vendors)
     const url =
       (typeof ENDPOINTS?.bankAccounts === "function")
         ? ENDPOINTS.bankAccounts(cid)
         : `${API_BASE}/api/companies/${cid}/bank_accounts`;
 
     try {
-      const keep = String(elBank.value || "");
+      const keep = String(targetSelect.value || "");
 
-      // optional: show loading state
-      elBank.innerHTML = `<option value="">Loading bank accounts…</option>`;
+      targetSelect.innerHTML =
+        `<option value="">Loading bank accounts…</option>`;
 
       const raw = await apiFetch(url, { method: "GET" });
-      const payload = (typeof unwrapApi === "function") ? unwrapApi(raw) : raw;
+      const payload =
+        (typeof unwrapApi === "function")
+          ? unwrapApi(raw)
+          : raw;
 
-      // Your Flask route returns jsonify(accounts) => likely an array
       const rows =
         Array.isArray(payload) ? payload :
         Array.isArray(payload?.data) ? payload.data :
         Array.isArray(payload?.accounts) ? payload.accounts :
         [];
 
-      // rebuild select
-      elBank.innerHTML = `<option value="">-- Select bank account --</option>`;
+      targetSelect.innerHTML =
+        `<option value="">-- Select bank account --</option>`;
 
       if (!rows.length) {
-        elBank.insertAdjacentHTML(
+        targetSelect.insertAdjacentHTML(
           "beforeend",
           `<option value="" disabled>(No bank accounts found)</option>`
         );
         return;
       }
 
-      // ✅ Normalize bank accounts into options
-      // Value: prefer bank_account_code / posting code if it exists, else fall back to id
       rows.forEach(b => {
-        const id = b.id ?? b.bank_account_id ?? b.bankAccountId ?? null;
+        const id =
+          b.id ??
+          b.bank_account_id ??
+          b.bankAccountId ??
+          null;
 
         const value =
           b.bank_account_code ||
@@ -124983,42 +147059,62 @@ function bindBillViewerModal() {
         if (!value) return;
 
         const bankName =
-          b.bank_name || b.bankName || b.name || "Bank";
+          b.bank_name ||
+          b.bankName ||
+          b.name ||
+          "Bank";
 
         const acctName =
-          b.account_name || b.accountName || b.label || "";
+          b.account_name ||
+          b.accountName ||
+          b.label ||
+          "";
 
         const acctNo =
-          b.account_number || b.accountNumber || "";
+          b.account_number ||
+          b.accountNumber ||
+          "";
 
         const ccy =
-          b.currency || b.bank_currency || "";
+          b.currency ||
+          b.bank_currency ||
+          "";
 
         const label = [
           bankName,
           acctName,
           acctNo ? `(${acctNo})` : "",
           ccy ? `• ${ccy}` : "",
-        ].filter(Boolean).join(" ").trim();
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
 
-        elBank.insertAdjacentHTML(
+        targetSelect.insertAdjacentHTML(
           "beforeend",
-          `<option value="${escapeHtml(String(value))}">${escapeHtml(label || String(value))}</option>`
+          `<option value="${escapeHtml(String(value))}">
+            ${escapeHtml(label || String(value))}
+          </option>`
         );
       });
 
-      // restore selection if still valid
-      if (keep) elBank.value = keep;
+      if (keep) {
+        targetSelect.value = keep;
+      }
 
     } catch (e) {
       console.warn("[AP] loadBanks failed:", url, e);
-      elBank.innerHTML = `<option value="" disabled>(Failed to load bank accounts)</option>`;
+
+      targetSelect.innerHTML =
+        `<option value="" disabled>
+          (Failed to load bank accounts)
+        </option>`;
+
     } finally {
-      // keep your prune hook
       pruneBankSelectOptions?.();
     }
   }
-
+  window.loadBanks = loadBanks;
   function bindWhtToggle() {
     if (!elWhtEnabled || !elWhtWrap) return;
     if (elWhtEnabled.dataset.bound === "1") return;
@@ -128354,12 +150450,14 @@ async function populateProjectCustomerDropdown() {
 
 function projectPostingAccounts(kind = "all") {
   const rows =
-    window.COA_CACHE ||
-    window.COMPANY_COA ||
-    window.CHART_OF_ACCOUNTS ||
+    Array.isArray(window.CURRENT_COA) ? window.CURRENT_COA :
+    Array.isArray(window.COA) ? window.COA :
+    Array.isArray(window.COA_CACHE) ? window.COA_CACHE :
+    Array.isArray(window.COMPANY_COA) ? window.COMPANY_COA :
+    Array.isArray(window.CHART_OF_ACCOUNTS) ? window.CHART_OF_ACCOUNTS :
     [];
 
-  const accounts = (Array.isArray(rows) ? rows : [])
+  const accounts = rows
     .map(account => {
       const code = String(
         account.code ||
@@ -128376,16 +150474,14 @@ function projectPostingAccounts(kind = "all") {
       ).trim();
 
       const posting =
-        account.posting === undefined ||
-        account.posting === null
+        account.posting == null
           ? true
           : !["false", "0", "no"].includes(
               String(account.posting).toLowerCase()
             );
 
       const active =
-        account.is_active === undefined ||
-        account.is_active === null
+        account.is_active == null
           ? true
           : !["false", "0", "no"].includes(
               String(account.is_active).toLowerCase()
@@ -128407,84 +150503,42 @@ function projectPostingAccounts(kind = "all") {
     );
 
   const filtered = accounts.filter(account => {
-    const section = String(
-      account.section ||
-      account.account_section ||
-      ""
-    ).toLowerCase();
-
-    const category = String(
-      account.category ||
-      account.account_category ||
-      ""
-    ).toLowerCase();
-
-    const type = String(
-      account.account_type ||
-      account.type ||
-      ""
-    ).toLowerCase();
-
-    const role = String(
-      account.role || ""
-    ).toLowerCase();
-
-    const name = String(
-      account.name || ""
-    ).toLowerCase();
+    if (kind === "all") return true;
 
     const text = [
-      section,
-      category,
-      type,
-      role,
-      name,
-    ].join(" ");
-
-    if (kind === "all") {
-      return true;
-    }
+      account.section,
+      account.account_section,
+      account.category,
+      account.account_category,
+      account.account_type,
+      account.type,
+      account.role,
+      account.name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
 
     if (kind === "asset") {
-      return (
-        section.includes("asset") ||
-        category.includes("asset") ||
-        type.includes("asset") ||
-        /asset|work in progress|\bwip\b|construction in progress|\bcip\b|inventory/.test(text)
-      );
+      return /asset|work in progress|\bwip\b|construction in progress|\bcip\b|inventory/.test(text);
     }
 
     if (kind === "revenue") {
-      return (
-        section.includes("revenue") ||
-        category.includes("revenue") ||
-        type.includes("revenue") ||
-        /revenue|income|sales|contract revenue/.test(text)
-      );
+      return /revenue|income|sales|contract revenue/.test(text);
     }
 
     if (kind === "expense") {
-      return (
-        section.includes("expense") ||
-        category.includes("expense") ||
-        type.includes("expense") ||
-        /expense|cost|cost of sales|materials|labour|subcontract/.test(text)
-      );
+      return /expense|cost|cost of sales|materials|labour|subcontract/.test(text);
     }
 
     return true;
   });
 
   return (filtered.length ? filtered : accounts)
-    .sort((a, b) => {
-      const nameCompare = a.name.localeCompare(b.name);
-
-      if (nameCompare !== 0) {
-        return nameCompare;
-      }
-
-      return a.code.localeCompare(b.code);
-    });
+    .sort((a, b) =>
+      a.name.localeCompare(b.name) ||
+      a.code.localeCompare(b.code)
+    );
 }
 
 function fillProjectAccountSelect(
@@ -129414,6 +151468,8 @@ function renderProjectRevenueObligationsMini(
     `;
   }
 
+  const pctLabel = v => `${Number(v || 0).toFixed(0)}%`;
+
   return `
     <div class="overflow-auto">
       <table class="w-full text-xs">
@@ -129436,56 +151492,730 @@ function renderProjectRevenueObligationsMini(
             </th>
 
             <th class="text-right px-2 py-1">
-              Revenue
+              Allocated
+            </th>
+
+            <th class="text-right px-2 py-1">
+              Recognised
+            </th>
+
+            <th class="text-left px-2 py-1">
+              Last Update
             </th>
           </tr>
         </thead>
 
         <tbody>
-          ${items.map(x => `
-            <tr class="border-b">
+          ${items.map(x => {
+            const timing = String(x.recognition_timing || "").toLowerCase();
+            const satisfied =
+              String(x.satisfaction_status || "").toLowerCase() === "satisfied";
 
-              <td class="px-2 py-1">
-                ${esc(
-                  x.obligation_name ||
-                  x.obligation_code ||
-                  ""
-                )}
-              </td>
+            const recognised = Number(
+              x.recognized_to_date !== null &&
+              x.recognized_to_date !== undefined
+                ? x.recognized_to_date
+                : (x.revenue_to_date || 0)
+            );
 
-              <td class="px-2 py-1">
-                ${esc(
-                  x.project_task_name ||
-                  "—"
-                )}
-              </td>
+            const allocated = Number(
+              x.allocated_transaction_price || 0
+            );
 
-              <td class="px-2 py-1">
-                ${esc(
-                  x.progress_method ||
-                  x.recognition_timing ||
-                  ""
-                )}
-              </td>
+            const methodLabel =
+              timing === "point_in_time"
+                ? `point_in_time${satisfied ? " • satisfied" : ""}`
+                : (x.progress_method || x.recognition_timing || "");
 
-              <td class="px-2 py-1 text-right">
-                ${Number(
-                  x.progress_percent || 0
-                ).toFixed(0)}%
-              </td>
+            const lastUpdate = x.last_progress_period_end
+              ? `${String(x.last_progress_period_end).slice(0, 10)} · ${pctLabel(
+                  x.last_progress_percent
+                )} (${esc(x.last_progress_update_type || "")})`
+              : "—";
 
-              <td class="px-2 py-1 text-right">
-                ${fmtMoney(
-                  x.revenue_to_date || 0
-                )}
-              </td>
+            const pmProgress =
+              x.pm_progress_percent === null ||
+              x.pm_progress_percent === undefined
+                ? null
+                : Number(x.pm_progress_percent);
 
-            </tr>
-          `).join("")}
+            const pmVariance =
+              pmProgress !== null &&
+              Math.abs(pmProgress - Number(x.progress_percent || 0)) > 0.01;
+
+            return `
+              <tr class="border-b">
+
+                <td class="px-2 py-1">
+                  ${esc(
+                    x.obligation_name ||
+                    x.obligation_code ||
+                    ""
+                  )}
+
+                  ${timing === "point_in_time" ? `
+                    <span class="ml-1 text-[10px] px-1 rounded border ${
+                      satisfied
+                        ? "text-emerald-700 border-emerald-200"
+                        : "text-slate-400 border-slate-200"
+                    }">
+                      ${satisfied ? "satisfied" : "unsatisfied"}
+                    </span>
+                  ` : ""}
+                </td>
+
+                <td class="px-2 py-1">
+                  ${esc(
+                    x.project_task_name ||
+                    "—"
+                  )}
+                </td>
+
+                <td class="px-2 py-1">
+                  ${esc(methodLabel)}
+                </td>
+
+                <td class="px-2 py-1 text-right">
+                  ${pctLabel(x.progress_percent)}
+
+                  ${pmVariance ? `
+                    <div class="text-[10px] text-amber-600">
+                      site ${pmProgress.toFixed(0)}%
+                    </div>
+                  ` : ""}
+                </td>
+
+                <td class="px-2 py-1 text-right">
+                  ${fmtMoney(allocated)}
+                </td>
+
+                <td class="px-2 py-1 text-right font-semibold">
+                  ${fmtMoney(recognised)}
+                </td>
+
+                <td class="px-2 py-1 text-slate-500">
+                  ${lastUpdate}
+                </td>
+
+              </tr>
+            `;
+          }).join("")}
         </tbody>
       </table>
     </div>
   `;
+}
+
+// ============================================================
+// PM WORKSPACE (project manager progress + revenue sync)
+// ============================================================
+
+let pmWorkspaceState = {
+  projectId: null,
+  data: null,
+};
+
+async function loadProjectPmWorkspace(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return;
+
+  const mount = document.getElementById(
+    `projectPmMount-${projectId}`
+  );
+
+  if (!mount) return;
+
+  mount.innerHTML = `
+    <div class="text-xs text-slate-500">
+      Loading workspace...
+    </div>
+  `;
+
+  try {
+    const out = await apiFetch(
+      ENDPOINTS.projects.pmWorkspace(cid, projectId)
+    );
+
+    const data = out?.data || out || {};
+    pmWorkspaceState = {
+      projectId: Number(projectId),
+      data,
+    };
+
+    mount.innerHTML = renderPmWorkspace(data);
+    bindPmWorkspace(mount, Number(projectId), data);
+
+  } catch (err) {
+    mount.innerHTML = renderApiError(err);
+  }
+}
+
+function pmProgressBar(pct) {
+  const v = Math.max(0, Math.min(100, Number(pct) || 0));
+
+  return `
+    <div class="flex items-center gap-2 min-w-[120px]">
+      <div class="flex-1 h-2 bg-slate-100 rounded overflow-hidden">
+        <div
+          class="h-2 rounded"
+          style="width:${v.toFixed(1)}%;background:var(--fs-navy,#1e3a5f)">
+        </div>
+      </div>
+
+      <span class="text-[10px] text-slate-500 w-9 text-right">
+        ${v.toFixed(0)}%
+      </span>
+    </div>
+  `;
+}
+
+function pmSyncBadge(status) {
+  const map = {
+    in_sync: [
+      "In sync",
+      "bg-emerald-50 text-emerald-700 border-emerald-200",
+    ],
+    variance: [
+      "Variance",
+      "bg-amber-50 text-amber-700 border-amber-200",
+    ],
+    unlinked: [
+      "Not linked",
+      "bg-slate-50 text-slate-500 border-slate-200",
+    ],
+  };
+
+  const [label, cls] = map[status] || map.unlinked;
+
+  return `
+    <span class="inline-block px-2 py-0.5 rounded border text-[10px] ${cls}">
+      ${label}
+    </span>
+  `;
+}
+
+function renderPmWorkspace(data) {
+  const stats = data?.stats || {};
+  const tasks = data?.tasks || [];
+  const obligations = data?.obligations || [];
+  const log = data?.progress_log || [];
+
+  const projectProgress =
+    stats.computed_project_progress ??
+    stats.stored_project_progress ??
+    0;
+
+  const varianceCount = Number(stats.variance_count || 0);
+
+  const cards = `
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Project Progress</div>
+        <div class="font-semibold">
+          ${Number(projectProgress || 0).toFixed(0)}%
+        </div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Tasks Done</div>
+        <div class="font-semibold">
+          ${Number(stats.completed_tasks || 0)}
+          /
+          ${Number(stats.task_count || 0)}
+        </div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">In Progress</div>
+        <div class="font-semibold">
+          ${Number(stats.in_progress_tasks || 0)}
+        </div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Blocked</div>
+        <div class="font-semibold">
+          ${Number(stats.blocked_tasks || 0)}
+        </div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Task-Obligation Sync</div>
+        <div class="font-semibold">
+          ${varianceCount > 0
+            ? `<span class="text-amber-600">${varianceCount} variance</span>`
+            : "In sync"}
+        </div>
+      </div>
+
+      <div class="border rounded p-2">
+        <div class="text-slate-500">Recognised Revenue</div>
+        <div class="font-semibold">
+          ${fmtMoney(stats.recognized_revenue || 0)}
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  const taskRows = tasks.map(t => {
+    const linked = t.linked_obligations || [];
+    const firstObl = linked[0] || null;
+
+    const oblLabel = firstObl
+      ? `${esc(
+          firstObl.obligation_name ||
+          firstObl.obligation_code ||
+          "Obligation"
+        )}
+        <div class="text-[10px] text-slate-500">
+          ${esc(
+            firstObl.recognition_timing === "point_in_time"
+              ? "point_in_time"
+              : (firstObl.progress_method || "over_time")
+          )}
+          · accounting ${Number(
+            firstObl.progress_percent || 0
+          ).toFixed(0)}%
+        </div>`
+      : `<span class="text-slate-400">—</span>`;
+
+    return `
+      <tr class="border-b hover:bg-slate-50">
+
+        <td class="px-2 py-1">
+          ${esc(t.wbs_code || t.task_code || "")}
+        </td>
+
+        <td class="px-2 py-1">
+          <div class="font-medium">
+            ${esc(t.task_name || "")}
+          </div>
+
+          <div class="text-[10px] text-slate-500 capitalize">
+            ${esc(t.task_type || "task")}
+            ${t.is_summary ? " · phase roll-up" : ""}
+          </div>
+        </td>
+
+        <td class="px-2 py-1 capitalize">
+          ${esc(t.status || "")}
+        </td>
+
+        <td class="px-2 py-1">
+          ${pmProgressBar(t.progress_percent)}
+        </td>
+
+        <td class="px-2 py-1">
+          ${oblLabel}
+        </td>
+
+        <td class="px-2 py-1">
+          ${pmSyncBadge(t.sync_status)}
+        </td>
+
+        <td class="px-2 py-1 text-right">
+          <button
+            class="px-2 py-1 text-[11px] border rounded"
+            data-pm-update="${esc(String(t.id))}">
+            Update Progress
+          </button>
+        </td>
+
+      </tr>
+    `;
+  }).join("");
+
+  const tasksTable = `
+    <div class="border rounded p-2">
+      <div class="flex items-center justify-between mb-2">
+        <div class="font-semibold">
+          Task Progress
+        </div>
+
+        <div class="text-slate-500 text-[11px]">
+          Updating a task syncs its linked revenue obligations
+        </div>
+      </div>
+
+      ${tasks.length ? `
+        <div class="overflow-auto">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left px-2 py-1">WBS</th>
+                <th class="text-left px-2 py-1">Task</th>
+                <th class="text-left px-2 py-1">Status</th>
+                <th class="text-left px-2 py-1">Progress</th>
+                <th class="text-left px-2 py-1">Linked Obligation</th>
+                <th class="text-left px-2 py-1">Sync</th>
+                <th class="text-right px-2 py-1"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${taskRows}
+            </tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="text-slate-500">
+          No project plan yet. Add tasks under the Planning tab first.
+        </div>
+      `}
+    </div>
+  `;
+
+  const oblRows = obligations.map(o => {
+    const timing = String(o.recognition_timing || "").toLowerCase();
+    const satisfied =
+      String(o.satisfaction_status || "").toLowerCase() === "satisfied";
+
+    const recognised = Number(
+      o.recognized_to_date !== null &&
+      o.recognized_to_date !== undefined
+        ? o.recognized_to_date
+        : (o.revenue_to_date || 0)
+    );
+
+    const lastUpdate = o.last_progress_period_end
+      ? `${String(o.last_progress_period_end).slice(0, 10)} · ${Number(
+          o.last_progress_percent || 0
+        ).toFixed(0)}%`
+      : "—";
+
+    const siteProgress =
+      o.pm_progress_percent === null ||
+      o.pm_progress_percent === undefined
+        ? "—"
+        : `${Number(o.pm_progress_percent).toFixed(0)}%`;
+
+    return `
+      <tr class="border-b">
+        <td class="px-2 py-1">
+          ${esc(o.obligation_name || o.obligation_code || "")}
+          ${timing === "point_in_time"
+            ? `<span class="text-[10px] ${satisfied ? "text-emerald-700" : "text-slate-400"}">
+                ${satisfied ? "satisfied" : "unsatisfied"}
+              </span>`
+            : ""}
+        </td>
+
+        <td class="px-2 py-1">
+          ${esc(o.project_task_name || "—")}
+        </td>
+
+        <td class="px-2 py-1">
+          ${esc(
+            timing === "point_in_time"
+              ? "point_in_time"
+              : (o.progress_method || "over_time")
+          )}
+        </td>
+
+        <td class="px-2 py-1 text-right">
+          ${Number(o.progress_percent || 0).toFixed(0)}%
+        </td>
+
+        <td class="px-2 py-1 text-right">
+          ${siteProgress}
+        </td>
+
+        <td class="px-2 py-1 text-right font-semibold">
+          ${fmtMoney(recognised)}
+        </td>
+
+        <td class="px-2 py-1 text-slate-500">
+          ${lastUpdate}
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  const obligationsTable = `
+    <div class="border rounded p-2">
+      <div class="font-semibold mb-2">
+        Revenue Obligations Sync Overview
+      </div>
+
+      ${obligations.length ? `
+        <div class="overflow-auto">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left px-2 py-1">Obligation</th>
+                <th class="text-left px-2 py-1">Task</th>
+                <th class="text-left px-2 py-1">Method</th>
+                <th class="text-right px-2 py-1">Accounting %</th>
+                <th class="text-right px-2 py-1">Site %</th>
+                <th class="text-right px-2 py-1">Recognised</th>
+                <th class="text-left px-2 py-1">Last Update</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${oblRows}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="text-[10px] text-slate-500 mt-1">
+          Site % is PM-recorded progress. For cost/unit/time-driven methods it
+          is logged for comparison only — the accountant's method drives revenue.
+        </div>
+      ` : `
+        <div class="text-slate-500">
+          No revenue obligations linked to this project yet.
+        </div>
+      `}
+    </div>
+  `;
+
+  const logFeed = `
+    <div class="border rounded p-2">
+      <div class="font-semibold mb-2">
+        Recent Progress Log
+      </div>
+
+      ${log.length ? `
+        <div class="space-y-1 max-h-64 overflow-auto">
+          ${log.map(e => `
+            <div class="flex items-start gap-2 text-xs border-b pb-1">
+              <div class="text-slate-400 w-20 shrink-0">
+                ${String(e.update_date || e.created_at || "").slice(0, 10)}
+              </div>
+
+              <div class="flex-1">
+                <span class="font-medium">
+                  ${esc(e.task_name || e.task_code || `Task #${e.task_id}`)}
+                </span>
+                <span class="text-slate-500">
+                  → ${Number(e.progress_percent || 0).toFixed(0)}%
+                  (${esc(e.status || "")})
+                </span>
+
+                ${e.note ? `
+                  <div class="text-slate-500">
+                    ${esc(e.note)}
+                  </div>
+                ` : ""}
+              </div>
+
+              <div class="text-[10px] text-slate-400 shrink-0">
+                ${esc(e.source || "pm_workspace")}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      ` : `
+        <div class="text-slate-500">
+          No progress recorded yet. Use "Update Progress" on a task.
+        </div>
+      `}
+    </div>
+  `;
+
+  return `
+    ${cards}
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      ${tasksTable}
+      ${logFeed}
+    </div>
+
+    <div class="mt-3">
+      ${obligationsTable}
+    </div>
+  `;
+}
+
+function bindPmWorkspace(mount, projectId, data) {
+  mount.querySelectorAll("[data-pm-update]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const taskId = Number(btn.dataset.pmUpdate);
+      const task = (data?.tasks || []).find(
+        x => Number(x.id) === taskId
+      );
+
+      if (task) {
+        openPmProgressModal(projectId, task);
+      }
+    });
+  });
+}
+
+function bindPmProgressModalOnce() {
+  const m = document.getElementById("pmProgressModal");
+
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document
+    .getElementById("pmProgressOverlay")
+    ?.addEventListener("click", closePmProgressModal);
+
+  document
+    .getElementById("pmProgressCloseBtn")
+    ?.addEventListener("click", closePmProgressModal);
+
+  document
+    .getElementById("pmProgressCancelBtn")
+    ?.addEventListener("click", closePmProgressModal);
+
+  document
+    .getElementById("pmProgressSaveBtn")
+    ?.addEventListener("click", submitPmProgress);
+}
+
+function openPmProgressModal(projectId, task) {
+  bindPmProgressModalOnce();
+
+  const linked = task.linked_obligations || [];
+  const obl = linked[0] || null;
+
+  document.getElementById("pmProgressProjectId").value =
+    String(projectId);
+
+  document.getElementById("pmProgressTaskId").value =
+    String(task.id);
+
+  document.getElementById("pmProgressTaskLabel").textContent =
+    task.task_name ||
+    task.task_code ||
+    `Task #${task.id}`;
+
+  const meta = [];
+
+  meta.push(
+    `Current: ${Number(task.progress_percent || 0).toFixed(0)}% · ${
+      task.status || "open"
+    }`
+  );
+
+  if (obl) {
+    meta.push(
+      `Linked obligation: ${
+        obl.obligation_name || obl.obligation_code || "Obligation"
+      } (${
+        obl.recognition_timing === "point_in_time"
+          ? "point_in_time"
+          : obl.progress_method || "over_time"
+      } at ${Number(obl.progress_percent || 0).toFixed(0)}%)`
+    );
+
+    if (
+      String(obl.recognition_timing || "").toLowerCase() === "over_time" &&
+      !["manual", "", "none"].includes(
+        String(obl.progress_method || "manual").toLowerCase()
+      )
+    ) {
+      meta.push(
+        "This obligation is accounting-driven — your progress is logged as site progress for the accountant."
+      );
+    }
+  } else {
+    meta.push("No revenue obligation linked to this task.");
+  }
+
+  document.getElementById("pmProgressTaskMeta").textContent =
+    meta.join(" — ");
+
+  document.getElementById("pmProgressPercent").value = Number(
+    task.progress_percent || 0
+  );
+
+  document.getElementById("pmProgressStatus").value = "";
+
+  document.getElementById("pmProgressDate").value =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("pmProgressNote").value = "";
+
+  setElText("pmProgressMsg", "");
+  setElText("pmProgressSyncInfo", "");
+
+  document
+    .getElementById("pmProgressModal")
+    ?.classList.remove("hidden");
+}
+
+function closePmProgressModal() {
+  document
+    .getElementById("pmProgressModal")
+    ?.classList.add("hidden");
+}
+
+async function submitPmProgress() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+
+  const projectId = Number(
+    document.getElementById("pmProgressProjectId")?.value || 0
+  );
+
+  const taskId = Number(
+    document.getElementById("pmProgressTaskId")?.value || 0
+  );
+
+  if (!cid || !projectId || !taskId) return;
+
+  const payload = {
+    progress_percent: Number(
+      document.getElementById("pmProgressPercent")?.value || 0
+    ),
+
+    status:
+      document.getElementById("pmProgressStatus")?.value || null,
+
+    update_date:
+      document.getElementById("pmProgressDate")?.value || null,
+
+    note:
+      document.getElementById("pmProgressNote")?.value?.trim() || null,
+  };
+
+  const btn = document.getElementById("pmProgressSaveBtn");
+
+  if (btn) btn.disabled = true;
+  setElText("pmProgressMsg", "Saving progress...");
+
+  try {
+    const out = await apiFetch(
+      ENDPOINTS.projects.taskProgress(cid, projectId, taskId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const sync = out?.obligation_sync || [];
+    const syncedCount = sync.filter(s => s.synced).length;
+    const shadowCount = sync.filter(s => s.shadow_only).length;
+
+    let msg = "Task progress saved.";
+
+    if (syncedCount) {
+      msg += ` ${syncedCount} revenue obligation(s) updated.`;
+    }
+
+    if (shadowCount) {
+      msg += ` ${shadowCount} accounting-driven obligation(s) logged as site progress.`;
+    }
+
+    setElText("pmProgressMsg", msg);
+
+    setTimeout(() => {
+      closePmProgressModal();
+      loadProjectDetail(projectId);
+      loadProjectPmWorkspace(projectId);
+    }, 700);
+
+  } catch (err) {
+    setElText(
+      "pmProgressMsg",
+      err?.message || "Failed to save task progress"
+    );
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function loadProjectPerformance(projectId) {
@@ -129749,6 +152479,12 @@ function renderProjectDetail(p) {
           class="project-detail-tab active"
           data-project-tab="planning">
           Planning
+        </button>
+
+        <button
+          class="project-detail-tab"
+          data-project-tab="pm">
+          PM Workspace
         </button>
 
         <button
@@ -130105,6 +152841,37 @@ function renderProjectDetail(p) {
             ${renderProjectDependenciesMini(
               dependencies
             )}
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================================================
+          PM WORKSPACE
+      ================================================== -->
+      <div data-project-panel="pm">
+        <div class="border rounded p-2">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="font-semibold">
+                PM Workspace
+              </div>
+
+              <div class="text-slate-500">
+                Record site progress per task — two-way sync with revenue obligations
+              </div>
+            </div>
+
+            <button
+              class="px-2 py-1 text-[11px] border rounded"
+              data-pm-refresh="${esc(String(p.id))}">
+              Refresh
+            </button>
+          </div>
+
+          <div id="projectPmMount-${esc(String(p.id))}">
+            <div class="text-slate-500">
+              Loading workspace...
+            </div>
           </div>
         </div>
       </div>
@@ -130711,10 +153478,17 @@ function renderProjectDetail(p) {
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
       showProjectTab(tab.dataset.projectTab);
+
+      if (tab.dataset.projectTab === "pm") {
+        loadProjectPmWorkspace(p.id);
+      }
     });
   });
 
   showProjectTab("planning");
+
+  // Preload the PM workspace data so the tab is instant on first open.
+  loadProjectPmWorkspace(p.id);
 
   if (p.accounting_mode === "capital") {
     loadProjectCapitalPosition(p.id)
@@ -130800,6 +153574,14 @@ function renderProjectDetail(p) {
       if (task) {
         openProjectAssignModal?.(p.id, task);
       }
+    });
+  });
+
+  mount.querySelectorAll("[data-pm-refresh]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      loadProjectPmWorkspace(
+        Number(btn.dataset.pmRefresh) || p.id
+      );
     });
   });
 
@@ -131475,6 +154257,40 @@ async function populateProjectTaskParentDropdown(
   `;
 }
 
+
+
+function bindProjectTaskParentDropdownRefresh() {
+  const sel = document.getElementById("projectTaskParentId");
+  if (!sel || sel.dataset.refreshBound === "1") return;
+
+  sel.dataset.refreshBound = "1";
+
+  sel.addEventListener("focus", async () => {
+    const projectId =
+      document.getElementById("projectTaskProjectId")?.value;
+
+    const excludeTaskId =
+      document.getElementById("projectTaskId")?.value || "";
+
+    if (!projectId) return;
+
+    const selectedId = sel.value;
+
+    try {
+      await populateProjectTaskParentDropdown(
+        projectId,
+        selectedId,
+        excludeTaskId
+      );
+    } catch (err) {
+      console.error(
+        "[Project Tasks] Failed to refresh parent dropdown:",
+        err
+      );
+    }
+  });
+}
+
 async function openProjectTaskModal(projectId, task = null) {
   bindProjectTaskModalOnce();
   ACTIVE_PROJECT_ID = Number(projectId);
@@ -131532,9 +154348,15 @@ async function openProjectTaskModal(projectId, task = null) {
   document.getElementById("projectTaskNotes").value =
     task?.notes || "";
 
+
   await populateProjectTaskParentDropdown(
     projectId,
     task?.parent_task_id || "",
+    task?.id || ""
+  );
+
+  bindProjectTaskParentDropdownRefresh(
+    projectId,
     task?.id || ""
   );
 
@@ -135644,28 +158466,6 @@ function bindProjectTaskModalOnce() {
   document.getElementById("projectTaskSaveBtn")?.addEventListener("click", submitProjectTask);
 }
 
-function openProjectTaskModal(projectId, task = null) {
-  bindProjectTaskModalOnce();
-  ACTIVE_PROJECT_ID = Number(projectId);
-
-  document.getElementById("projectTaskProjectId").value = String(projectId);
-  document.getElementById("projectTaskId").value = task?.id || "";
-
-  document.getElementById("projectTaskCode").value = task?.task_code || "";
-  document.getElementById("projectTaskName").value = task?.task_name || "";
-  document.getElementById("projectTaskStatus").value = task?.status || "open";
-  document.getElementById("projectTaskBudgetValue").value = task?.budget_value || "";
-  document.getElementById("projectTaskStartDate").value = task?.start_date || "";
-  document.getElementById("projectTaskExpectedEndDate").value = task?.expected_end_date || "";
-  document.getElementById("projectTaskNotes").value = task?.notes || "";
-
-  document.getElementById("projectTaskSaveBtn").textContent = task?.id ? "Update Task" : "Save Task";
-  document.getElementById("projectTaskArchiveBtn")?.classList.toggle("hidden", !task?.id);
-
-  setElText("projectTaskMsg", "");
-  document.getElementById("projectTaskModal")?.classList.remove("hidden");
-}
-
 function closeProjectTaskModal() {
   document.getElementById("projectTaskModal")?.classList.add("hidden");
 }
@@ -138381,7 +161181,6 @@ async function enforceAuth() {
   try {
     const me = await window.apiFetch(window.ENDPOINTS.auth.me, { method: "GET" });
 
-    // ✅ expose all aliases used by guards/screens
     window.currentUser = me;
     window.CURRENT_USER = me;
     window.AUTH_USER = me;
@@ -138390,6 +161189,12 @@ async function enforceAuth() {
     return me;
   } catch (err) {
     console.warn("enforceAuth: /me failed", err?.status, err?.message, err?.url);
+
+    // ✅ Session locked — show modal and return sentinel so init() stops
+    if (err?.status === 423) {
+      showSessionLockModal?.();
+      return "SESSION_LOCKED";
+    }
 
     if (err?.status === 401 || err?.status === 403) {
       window.clearToken?.();
@@ -138414,6 +161219,12 @@ async function init() {
   }
 
   const me = await window.enforceAuth?.();
+
+  // ✅ Session locked — stop init, modal is already shown by enforceAuth/apiFetch
+  if (me === "SESSION_LOCKED") {
+    return;
+  }
+
   if (!me) {
     window.applyLoggedOutUI?.();
     window.switchScreen?.("sign-in");
@@ -138541,3 +161352,1028 @@ if (document.readyState === "loading") {
 })(); // ✅ ONLY THIS ONE closing for the main IIFE// ✅ ONLY THIS ONE closing for the main IIFE
 
 
+/* ================================================================
+ * Address Autocomplete wiring for Customer + Vendor forms
+ * ----------------------------------------------------------------
+ * Appended as a separate IIFE so it does not interfere with the
+ * main dashboard app. Uses window.AddressAutocomplete (loaded from
+ * /static/js/address-autocomplete.js) which talks to your own backend
+ * at /api/address/search (Flask route added in api_server.py).
+ *
+ * Backend uses free Photon (OSM) by default — no API key, no cost.
+ * When you have paying customers, set env vars on the backend:
+ *   ADDRESS_PROVIDER=mapbox
+ *   MAPBOX_TOKEN=pk.xxx
+ * The frontend never changes.
+ *
+ * Wired inputs:
+ *   #custBillSearch  → fills #custBillAddr, #custBillCountry
+ *   #custShipSearch  → fills #custShipAddr
+ *   #vendRemitSearch → fills #vendRemitAddr
+ *
+ * Re-runs safely if the modal re-renders inputs.
+ * ================================================================ */
+(function () {
+  "use strict";
+
+  function _id(id) {
+    return document.getElementById(id);
+  }
+
+  function _setVal(id, value) {
+    var el = _id(id);
+    if (!el) return;
+    el.value = value || "";
+    try { el.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) {}
+  }
+
+  // Build a one-line formatted billing address for the textarea
+  function formatForTextarea(addr) {
+    var bits = [];
+    if (addr.line1) bits.push(addr.line1);
+    if (addr.line2) bits.push(addr.line2);
+    if (addr.locality) bits.push(addr.locality);
+    if (addr.postcode) bits.push(addr.postcode);
+    if (addr.city) bits.push(addr.city);
+    if (addr.state && addr.state !== addr.city) bits.push(addr.state);
+    if (bits.length === 0 && addr.formatted) return addr.formatted;
+    return bits.join(", ");
+  }
+
+  // Track instances so we don't double-bind
+  var _bound = {};
+
+  function bind(inputId, opts) {
+    var input = _id(inputId);
+    if (!input) return false;
+    if (_bound[inputId]) {
+      // Update the onSelect callback (form context may have changed)
+      _bound[inputId].setOnSelect(opts.onSelect);
+      return true;
+    }
+    if (!window.AddressAutocomplete) {
+      console.warn("[address] AddressAutocomplete not loaded — cannot bind #" + inputId);
+      return false;
+    }
+    var inst = new AddressAutocomplete(input, {
+      country: opts.country || null,
+      minLength: 3,
+      debounceMs: 300,
+      onSelect: opts.onSelect,
+    });
+    _bound[inputId] = inst;
+    return true;
+  }
+
+  function wireCustomerBilling() {
+    bind("custBillSearch", {
+      onSelect: function (addr) {
+        _setVal("custBillAddr", formatForTextarea(addr));
+        // Try to set country as ISO code (2 letters)
+        var cc = addr.countryCode || (addr.country ? addr.country.slice(0, 2).toUpperCase() : "");
+        _setVal("custBillCountry", cc || addr.country || "");
+      },
+    });
+  }
+
+  function wireCustomerShipping() {
+    bind("custShipSearch", {
+      onSelect: function (addr) {
+        _setVal("custShipAddr", formatForTextarea(addr));
+      },
+    });
+  }
+
+  function wireVendorRemittance() {
+    bind("vendRemitSearch", {
+      onSelect: function (addr) {
+        _setVal("vendRemitAddr", formatForTextarea(addr));
+      },
+    });
+  }
+
+  function wireAll() {
+    wireCustomerBilling();
+    wireCustomerShipping();
+    wireVendorRemittance();
+  }
+
+  // Run on first DOMContentLoaded, then watch for re-rendered modals
+  function init() {
+    wireAll();
+
+    // Customer/Vendor modals may re-render their inputs when reopened.
+    // Re-bind on any node insertion; safe because we track instances.
+    var mo = new MutationObserver(function (mutations) {
+      var needsRebind = false;
+      for (var i = 0; i < mutations.length; i++) {
+        if (mutations[i].addedNodes && mutations[i].addedNodes.length) {
+          needsRebind = true;
+          break;
+        }
+      }
+      if (needsRebind) {
+        // small delay to let the modal fully render
+        setTimeout(wireAll, 50);
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+
+    // Also rebind on common modal-open events
+    document.addEventListener("click", function (e) {
+      var t = e.target.closest("[data-tab], [data-pane], .pill, .btn");
+      if (t) setTimeout(wireAll, 60);
+    }, true);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+
+  // Expose for debugging
+  window.__fsAddressAutocomplete = {
+    rebind: wireAll,
+    instances: _bound,
+  };
+})();
+
+
+/* ============================================================
+   IFRS 16 LESSEE LEASE CENTER — consolidated single screen
+   (merges: lease-register + lease-payments + lease-monthly)
+   ------------------------------------------------------------
+   - Master-detail workspace: register list (left) ⇄ lease workspace
+   - Tabs: Overview / Schedule / Payments / Month-End / Mods / Terms
+   - Reuses existing app infrastructure:
+       · #leasePayModal            → window.openLeasePaymentModal(...)
+       · IFRS 16 Lease Wizard      → window.openLeaseWizard(...)  (same
+       · drawer the Manual Journal launches on lease-related account)
+       · Register modal            → window.openLeaseRegisterModal(...)
+       · Month-end "Post IFRS 16"  → loadJournalIntoLines(det, { mode:
+         "append" }) — identical to the Monthly Posting view, so the
+         IFRS 16 month-end journal still lands in Manual Journal
+   - Endpoints: window.endpoints.leases.* / window.endpoints.reports.*
+   - Gating: window.hasPermission("can_post_journals")
+   ============================================================ */
+(function () {
+  if (window.__FS_LEASE_CENTER__) return;
+  window.__FS_LEASE_CENTER__ = true;
+
+  const LC = {
+    leases: [], monthly: [], schedule: [], payments: [], mods: [], terms: [],
+    leaseId: null, lease: null,
+    tab: "overview", q: "", status: "all",
+    asOf: "", qME: "",
+    loading: {},
+    _dataFor: null, _monthlyLoaded: false,
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) =>
+    typeof window.escapeHtml === "function"
+      ? window.escapeHtml(s)
+      : String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m]));
+  const money = (v) => { try { return fmtMoney(Number(v) || 0); } catch (_) { return String(v ?? ""); } };
+  const cid = () => Number(window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || 0);
+  const canPost = () => window.isSeniorFullAccess?.() === true || window.hasPermission?.("can_post_journals") === true;
+  const iso = (v) => String(v || "").slice(0, 10);
+  const today = () => new Date().toISOString().slice(0, 10);
+  const debounce = (fn, ms = 200) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+  const leaseIdOf = (l) => Number(l?.id ?? l?.lease_id ?? 0);
+  const nameOf = (l) => l?.lease_name || l?.name || `Lease ${leaseIdOf(l)}`;
+  const lessorOf = (l) => l?.lessor_name || l?.lessor || "";
+  const statusOf = (l) => String(l?.status || (iso(l?.end_date) && iso(l.end_date) < today() ? "ended" : "active")).toLowerCase();
+  const rowsOf = (res, keys) => { for (const k of keys) if (Array.isArray(res?.[k])) return res[k]; return Array.isArray(res) ? res : []; };
+  const EP = () => window.endpoints?.leases || {};
+  const REP = () => window.endpoints?.reports || {};
+
+  function lcMsg(id, msg, type = "error") {
+    const el = typeof id === "string" ? $(id) : id;
+    if (!el) return;
+    el.textContent = msg || "";
+    el.classList.toggle("hidden", !msg);
+    el.classList.toggle("text-rose-600", type === "error");
+    el.classList.toggle("text-emerald-600", type === "ok");
+  }
+
+  function chipHtml(txt, tone) {
+    const tones = {
+      green: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      amber: "bg-amber-50 text-amber-700 border-amber-200",
+      red: "bg-rose-50 text-rose-700 border-rose-200",
+      slate: "bg-slate-50 text-slate-600 border-slate-200",
+    };
+    return `<span class="inline-flex items-center px-2 py-0.5 rounded border text-[11px] ${tones[tone] || tones.slate}">${esc(txt)}</span>`;
+  }
+
+  /* ── normalizers (defensive, same spirit as the existing views) ── */
+  function meRow(r) {
+    const leaseId = Number(r.lease_id ?? r.id ?? 0);
+    const periodNo = r.period_no ?? r.period ?? r.period_number ?? "";
+    const due = (r?.amounts?.payment ?? null) ?? r.amount_due ?? r.due_amount ?? r.payment ?? r.payment_amount ?? 0;
+    const ps = String(r.payment_status || "").toLowerCase();
+    const reversed = ["reversed", "void", "cancelled", "canceled"].includes(ps);
+    const isPaid = (!!r.paid || !!r.is_paid || ps === "posted" || Number(r.payment_journal_id || 0) > 0) && !reversed;
+    const isPosted = !!r.posted || !!r.is_posted || Number(r.posted_journal_id || 0) > 0;
+    return {
+      r, leaseId, periodNo, due, isPaid, isPosted, reversed,
+      interest: Number(r.amounts?.interest ?? r.interest ?? 0),
+      depreciation: Number(r.amounts?.depreciation ?? r.depreciation ?? 0),
+    };
+  }
+
+  const payFields = (p) => ({
+      date: p.payment_date ?? p.date ?? p.tx_date ?? null,
+      ref: p.reference || p.ref || "",
+      desc: p.description || p.narr || p.memo || "",
+      gross: Number(p.amount_gross ?? p.amount ?? p.total ?? 0),
+      interest: Number(p.interest_amount ?? p.interest ?? 0),
+      principal: Number(p.principal_amount ?? p.principal ?? 0),
+      journal: Number(p.journal_id ?? p.journal ?? 0),
+  });
+
+  const schedFields = (s) => ({
+      no: s.period_no ?? s.period ?? "",
+      start: s.period_start ?? s.start_date ?? null,
+      end: s.period_end ?? s.end_date ?? null,
+      payment: Number(s.payment ?? s.payment_amount ?? 0),
+      interest: Number(s.interest ?? s.interest_amount ?? 0),
+      principal: Number(s.principal ?? s.principal_amount ?? 0),
+      depreciation: Number(s.depreciation ?? 0),
+      closingLiab: Number(s.closing_liability ?? s.closing_balance ?? 0),
+      scheduleId: s.schedule_id ?? s.id ?? null,
+  });
+
+  /* ── API ─────────────────────────────────────────────────────── */
+  const api = (url, opts) => window.apiFetch(url, opts || { method: "GET" });
+
+  async function loadLeases() {
+    const c = cid();
+    if (!c) return;
+    LC.loading.leases = true; paintRegister();
+    try {
+      const res = await api(EP().list(c, { limit: 200, offset: 0 }));
+      LC.leases = rowsOf(res, ["rows", "leases", "data"]);
+    } catch (e) { console.warn("[LeaseCenter] leases:", e); }
+    LC.loading.leases = false;
+    paintRegister(); paintKpis();
+  }
+
+  async function loadMonthly() {
+    const c = cid();
+    if (!c) return;
+    LC.loading.monthly = true; paintKpis(); if (LC.tab === "monthend") paintMonthEnd();
+    try {
+      const res = await api(EP().monthlyDue(c, { as_of: LC.asOf }));
+      LC.monthly = rowsOf(res, ["rows", "due", "leases"]);
+    } catch (e) { console.warn("[LeaseCenter] monthly:", e); LC.monthly = []; }
+    LC.loading.monthly = false;
+    LC._monthlyLoaded = true;
+    paintKpis(); paintOverview(); if (LC.tab === "monthend") paintMonthEnd();
+  }
+
+  async function ensureLeaseData(id, force = false) {
+    const key = String(id);
+    if (!force && LC._dataFor === key) return;
+    const c = cid();
+    if (!c || !id) return;
+    LC.loading.detail = true; paintPanel();
+    const tasks = [
+      api(EP().get(c, id)).then((r) => { const one = r?.lease || r?.row || r; if (one && typeof one === "object" && !Array.isArray(one)) LC.lease = { ...(LC.lease || {}), ...one }; }).catch(() => {}),
+      api(EP().listSchedule(c, id)).then((r) => { LC.schedule = rowsOf(r, ["rows", "schedule", "data"]); }).catch(() => { LC.schedule = []; }),
+      api(EP().payments.list(c, id)).then((r) => { LC.payments = rowsOf(r, ["payments", "rows", "data"]); }).catch(() => { LC.payments = []; }),
+      api(EP().listModifications(c, id)).then((r) => { LC.mods = rowsOf(r, ["rows", "modifications", "data"]); }).catch(() => { LC.mods = []; }),
+      api(EP().listTerminations(c, id)).then((r) => { LC.terms = rowsOf(r, ["rows", "terminations", "data"]); }).catch(() => { LC.terms = []; }),
+    ];
+    await Promise.all(tasks);
+    LC._dataFor = key;
+    LC.loading.detail = false;
+    paintWorkspace();
+  }
+
+  /* ── selection / navigation ──────────────────────────────────── */
+  async function selectLease(id, tab) {
+    LC.leaseId = Number(id) || null;
+    LC.lease = LC.leases.find((l) => leaseIdOf(l) === LC.leaseId) || null;
+    window.__ACTIVE_LEASE_ID = LC.leaseId;
+    window.LEASE_UI = window.LEASE_UI || { state: {} };
+    window.LEASE_UI.state = window.LEASE_UI.state || {};
+    window.LEASE_UI.state.leaseId = LC.leaseId;
+    if (tab) LC.tab = tab;
+    paintWorkspace();
+    if (LC.leaseId) await ensureLeaseData(LC.leaseId);
+  }
+
+  function setTab(tab) {
+    LC.tab = String(tab || "overview");
+    paintWorkspace();
+    if (LC.tab === "monthend" && !LC._monthlyLoaded) loadMonthly();
+  }
+
+  async function refreshAll() {
+    LC._dataFor = null; LC._monthlyLoaded = false;
+    await Promise.all([loadLeases(), loadMonthly()]);
+    if (LC.leaseId) await ensureLeaseData(LC.leaseId, true);
+  }
+
+  /* ── actions ─────────────────────────────────────────────────── */
+  function payModal({ leaseId, scheduleId = null, amount = "", date = "" } = {}) {
+    const lease = LC.leases.find((l) => leaseIdOf(l) === Number(leaseId)) || LC.lease;
+    window.openLeasePaymentModal?.({
+      lease_id: Number(leaseId),
+      lease_name: lease ? nameOf(lease) : "",
+      lessor_name: lease ? lessorOf(lease) : "",
+      schedule_id: scheduleId ? Number(scheduleId) : null,
+      default_amount: amount ? String(amount) : "",
+      default_date: date || today(),
+    });
+  }
+
+  function currentDueRow(leaseId) {
+    return LC.monthly.map(meRow).find((x) => x.leaseId === Number(leaseId)) || null;
+  }
+
+  /* Month-end IFRS 16 journal → Manual Journal form.
+     SAME hand-off as the Monthly Posting view (loadJournalIntoLines,
+     mode "append", ref LEASE-<id>-P<no>) — behaviour preserved. */
+  function postToManualJournal(leaseId, periodNo, msgEl) {
+    const row = LC.monthly.map(meRow).find((x) => x.leaseId === Number(leaseId) && String(x.periodNo) === String(periodNo));
+    if (!row) { lcMsg(msgEl, "Could not find monthly row in memory. Click Refresh first."); return; }
+
+    const lines = Array.isArray(row.r.preview_journal_lines) ? row.r.preview_journal_lines : [];
+    if (!lines.length) { lcMsg(msgEl, "No preview journal lines on this row."); return; }
+
+    const det = {
+      id: `lease-month-${row.leaseId}-${row.periodNo}`,
+      date: iso(row.r.period_end),
+      ref: `LEASE-${row.leaseId}-P${row.periodNo}`,
+      description: `IFRS 16 monthly posting – ${row.r.lease_name || `Lease ${row.leaseId}`} – P${row.periodNo}`,
+      source: "lease_monthly",
+      source_id: Number(row.r.schedule_id || row.r.id || 0),
+      lines: lines.map((ln) => ({
+        account_code: ln.account_code,
+        debit: Number(ln.debit) || 0,
+        credit: Number(ln.credit) || 0,
+        memo: ln.memo || "",
+      })),
+    };
+
+    if (typeof loadJournalIntoLines === "function") {
+      loadJournalIntoLines(det, { mode: "append" });
+      lcMsg(msgEl, `IFRS 16 journal ${det.ref} loaded into Manual Journal (${det.lines.length} lines, dated ${det.date}).`, "ok");
+    } else {
+      lcMsg(msgEl, "Manual Journal hand-off (loadJournalIntoLines) not available.");
+    }
+  }
+
+  /* ── shell ───────────────────────────────────────────────────── */
+  const LC_TABS = [
+    ["overview", "Overview"],
+    ["schedule", "Schedule"],
+    ["payments", "Payments"],
+    ["monthend", "Month-End (all leases)"],
+    ["mods", "Modifications"],
+    ["terms", "Terminations"],
+  ];
+
+  function shellHTML() {
+    return `
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+      <div class="min-w-0">
+        <div class="text-sm font-semibold">Lessee Lease Center</div>
+        <div class="text-[11px] text-slate-500">Register · Payments · Month-End — one workspace. New leases open the <b>IFRS 16 Lease Wizard</b> (same drawer as Manual Journal → lease-related account).</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="lcRefresh" class="px-3 py-1.5 rounded border text-sm bg-white">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <div id="lcKpis" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mb-3"></div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-[330px_minmax(0,1fr)] gap-3 items-start">
+      <aside class="border rounded-xl p-3 bg-slate-50/50 min-w-0">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[13px] font-semibold">Lease Register</div>
+          <div class="flex items-center gap-1.5">
+            <span id="lcRegCount" class="inline-flex items-center px-2 py-0.5 rounded border text-[11px] bg-slate-50 text-slate-600 border-slate-200">0</span>
+            <button id="lcAddLease" class="px-2 py-1 rounded border text-xs bg-white"
+              title="Opens the IFRS 16 Lease Wizard drawer (iframe data entry) — same modal Manual Journal launches on lease-related account selection">＋ Add lease</button>
+          </div>
+        </div>
+        <input id="lcSearch" placeholder="Search lease / lessor…" class="w-full border rounded px-2 py-1.5 text-sm mb-2 bg-white">
+        <div id="lcStatusChips" class="flex gap-1 mb-2 flex-wrap"></div>
+        <div id="lcLeaseList" class="flex flex-col gap-1 max-h-[520px] overflow-auto pr-1"></div>
+        <div class="mt-2 pt-2 border-t">
+          <button id="lcRegExport" class="w-full px-2 py-1.5 rounded border text-xs bg-white">⬇ Export register CSV</button>
+        </div>
+      </aside>
+
+      <main class="border rounded-xl p-4 bg-white min-w-0">
+        <div id="lcWsEmpty" class="text-center text-slate-500 text-sm py-16">
+          Select a lease from the register to open its workspace.
+        </div>
+        <div id="lcWs" class="hidden">
+          <div class="flex flex-wrap items-start gap-3 mb-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h4 id="lcWsTitle" class="font-bold text-[15px] truncate"></h4>
+                <span id="lcWsBadges" class="flex gap-1 flex-wrap"></span>
+              </div>
+              <div id="lcWsSub" class="text-xs text-slate-500 mt-0.5"></div>
+            </div>
+            <div class="ml-auto flex items-center gap-2 flex-wrap">
+              <button id="lcOpenRegister" class="px-2 py-1.5 rounded border text-xs bg-white" title="Opens the existing IFRS 16 register modal for this lease">Open register modal</button>
+              <button id="lcRecordPayment" class="px-3 py-1.5 rounded text-xs text-white" style="background:#00284F">💳 Record payment</button>
+            </div>
+          </div>
+          <div id="lcTabs" class="flex gap-1 border-b mb-3 overflow-x-auto pb-1"></div>
+          <div id="lcWsMsg" class="text-xs hidden mb-2"></div>
+          <div id="lcPanel" class="min-h-[300px]"></div>
+        </div>
+      </main>
+    </div>`;
+  }
+
+  /* ── painters ────────────────────────────────────────────────── */
+  function computeKpis() {
+    const cur = LC.monthly.map(meRow);
+    const unpaid = cur.filter((x) => !x.isPaid);
+    const unposted = cur.filter((x) => !x.isPosted);
+    return {
+      total: LC.leases.length,
+      dueTotal: unpaid.reduce((s, x) => s + Number(x.due || 0), 0),
+      dueCount: unpaid.length,
+      paidCount: cur.length - unpaid.length,
+      meCount: cur.length,
+      unpostedCount: unposted.length,
+      unpostedPnl: unposted.reduce((s, x) => s + x.interest + x.depreciation, 0),
+      liab: LC.leases.reduce((s, l) => s + Number(l.opening_lease_liability ?? l.opening_liability ?? 0), 0),
+      rou: LC.leases.reduce((s, l) => s + Number(l.opening_rou_asset ?? l.rou_asset ?? 0), 0),
+    };
+  }
+
+  function paintKpis() {
+    const el = $("lcKpis");
+    if (!el) return;
+    const k = computeKpis();
+    const cards = [
+      ["Active leases", k.total, "register", "leases in the register"],
+      ["Monthly due", money(k.dueTotal), "monthend", `${k.dueCount} of ${k.meCount} unpaid`],
+      ["Paid this period", k.meCount ? `${k.paidCount}/${k.meCount}` : "—", "monthend", "cash paid"],
+      ["Unposted IFRS 16", k.unpostedCount, "monthend", k.unpostedCount ? `${money(k.unpostedPnl)} P&L` : "all posted"],
+      ["Lease liability", money(k.liab), "schedule", "opening balance"],
+      ["ROU assets", money(k.rou), "schedule", "opening balance"],
+    ];
+    el.innerHTML = cards.map(([label, value, tab, sub]) => `
+      <button data-lc-kpi="${tab}" class="text-left border rounded-xl p-3 bg-white hover:border-slate-400 transition-colors">
+        <div class="text-[11px] text-slate-500">${esc(label)}</div>
+        <div class="text-[15px] font-bold text-[#00284F] mt-0.5 truncate">${esc(value)}</div>
+        <div class="text-[10px] text-slate-400 mt-0.5">${esc(sub)}</div>
+      </button>`).join("");
+  }
+
+  function filteredLeases() {
+    const q = LC.q.trim().toLowerCase();
+    return LC.leases.filter((l) => {
+      const hay = `${nameOf(l)} ${lessorOf(l)}`.toLowerCase();
+      if (q && !hay.includes(q)) return false;
+      if (LC.status !== "all") {
+        const s = statusOf(l);
+        if (LC.status === "active" && s !== "active") return false;
+        if (LC.status === "ended" && s === "active") return false;
+      }
+      return true;
+    });
+  }
+
+  function paintRegister() {
+    const countEl = $("lcRegCount");
+    if (countEl) countEl.textContent = LC.loading.leases ? "…" : `${LC.leases.length}`;
+    const chipsEl = $("lcStatusChips");
+    if (chipsEl) {
+      const defs = [["all", "All"], ["active", "Active"], ["ended", "Ended"]];
+      chipsEl.innerHTML = defs.map(([v, label]) => `
+        <button data-lc-status="${v}" class="px-2 py-0.5 rounded-full border text-[11px] ${LC.status === v ? "bg-[#00284F] text-white border-[#00284F]" : "bg-white text-slate-600 border-slate-200"}">${label}</button>`).join("");
+    }
+    const listEl = $("lcLeaseList");
+    if (!listEl) return;
+    const rows = filteredLeases();
+    if (!rows.length) {
+      listEl.innerHTML = `<div class="text-xs text-slate-500 px-1 py-3">${LC.loading.leases ? "Loading leases…" : "No leases match."}</div>`;
+      return;
+    }
+    listEl.innerHTML = rows.map((l) => {
+      const id = leaseIdOf(l);
+      const sel = Number(id) === Number(LC.leaseId);
+      const st = statusOf(l);
+      return `
+      <button class="text-left w-full border rounded-lg px-3 py-2 transition-colors ${sel ? "border-[#00284F] bg-slate-50" : "border-slate-200 bg-white hover:border-slate-400"}" data-lc-lease="${esc(id)}">
+        <div class="flex items-center justify-between gap-2">
+          <div class="text-[13px] font-medium truncate">${esc(nameOf(l))}</div>
+          ${chipHtml(st, st === "active" ? "green" : "slate")}
+        </div>
+        <div class="flex items-center justify-between gap-2 text-[11px] text-slate-500 mt-0.5">
+          <div class="truncate">${esc(lessorOf(l))}</div>
+          <div class="whitespace-nowrap">${money(l.payment_amount ?? l.monthly_payment)}/mo</div>
+        </div>
+      </button>`;
+    }).join("");
+  }
+
+  function paintWorkspace() {
+    const empty = $("lcWsEmpty");
+    const ws = $("lcWs");
+    if (!empty || !ws) return;
+    if (!LC.leaseId) {
+      empty.classList.remove("hidden");
+      ws.classList.add("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+    ws.classList.remove("hidden");
+
+    const l = LC.lease || LC.leases.find((x) => leaseIdOf(x) === Number(LC.leaseId)) || {};
+    const title = $("lcWsTitle");
+    if (title) title.textContent = nameOf(l);
+    const badges = $("lcWsBadges");
+    if (badges) {
+      const st = statusOf(l);
+      badges.innerHTML = chipHtml(st, st === "active" ? "green" : "slate") +
+        (l.annual_rate ? chipHtml(String(l.annual_rate), "slate") : "") +
+        (l.currency ? chipHtml(String(l.currency), "slate") : "");
+    }
+    const sub = $("lcWsSub");
+    if (sub) {
+      const bits = [lessorOf(l), iso(l.start_date) && `${fmtDateSafe(l.start_date)} → ${fmtDateSafe(l.end_date)}`,
+        l.payment_amount && `${money(l.payment_amount)} / ${l.payment_frequency || "Monthly"}`, l.payment_timing].filter(Boolean);
+      sub.textContent = bits.join(" · ");
+    }
+    paintTabs(); paintPanel();
+  }
+
+
+
+  function fmtDateSafe(v) {
+      if (v === null || v === undefined || String(v).trim() === "") {
+          return "—";
+      }
+
+      const d = new Date(v);
+
+      if (Number.isNaN(d.getTime())) {
+          return "—";
+      }
+
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const year = d.getUTCFullYear();
+
+      return `${day}/${month}/${year}`;
+  }
+
+  function paintTabs() {
+    const el = $("lcTabs");
+    if (!el) return;
+    el.innerHTML = LC_TABS.map(([v, label]) => `
+      <button data-lc-tab="${v}" class="px-3 py-1.5 rounded-t-md text-xs whitespace-nowrap border border-b-0 ${LC.tab === v ? "bg-[#00284F] text-white border-[#00284F] font-semibold" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}">${label}</button>`).join("");
+  }
+
+  function paintPanel() {
+    if (LC.tab === "overview") return paintOverview();
+    if (LC.tab === "schedule") return paintSchedule();
+    if (LC.tab === "payments") return paintPayments();
+    if (LC.tab === "monthend") return paintMonthEnd();
+    if (LC.tab === "mods") return paintMods();
+    if (LC.tab === "terms") return paintTerms();
+  }
+
+  /* ── Overview ────────────────────────────────────────────────── */
+  function paintOverview() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "overview") return;
+    const l = LC.lease || {};
+    const id = LC.leaseId;
+    const row = currentDueRow(id);
+    const postOk = canPost();
+
+    const meta = [
+      ["Lessor", lessorOf(l)],
+      ["Commencement", fmtDateSafe(l.start_date)],
+      ["End date", fmtDateSafe(l.end_date)],
+      ["Payment", l.payment_amount ? `${money(l.payment_amount)}` : "—"],
+      ["Frequency", l.payment_frequency || "Monthly"],
+      ["Timing", l.payment_timing || "—"],
+      ["Discount rate", l.annual_rate || l.discount_rate || "—"],
+      ["VAT rate", l.vat_rate ?? "—"],
+      ["Currency", l.currency || "—"],
+      ["Lease ID", id ? `#${id}` : "—"],
+    ];
+
+    const snapshot = row ? `
+      <div class="border rounded-xl overflow-hidden">
+        <div class="px-3 py-2 bg-slate-50 border-b text-[13px] font-semibold">Current period snapshot</div>
+        <div class="p-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <div><div class="text-[11px] text-slate-500">Period</div><div class="font-semibold">P${esc(row.periodNo)}${row.r.period_end ? ` · ${fmtDateSafe(row.r.period_end)}` : ""}</div></div>
+          <div><div class="text-[11px] text-slate-500">Payment due</div><div class="font-semibold tabular-nums">${money(row.due)}</div></div>
+          <div><div class="text-[11px] text-slate-500">Interest / Depreciation</div><div class="font-semibold tabular-nums">${money(row.interest)} / ${money(row.depreciation)}</div></div>
+          <div><div class="text-[11px] text-slate-500">Status</div><div class="flex gap-1 mt-0.5">${chipHtml(row.isPaid ? "paid" : "due", row.isPaid ? "green" : "red")} ${chipHtml(row.isPosted ? "posted" : "pending", row.isPosted ? "green" : "amber")}</div></div>
+        </div>
+        <div class="px-3 pb-3 flex gap-2 flex-wrap">
+          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row.r.schedule_id ?? "")}" data-lc-due="${esc(row.due)}" data-lc-date="${esc(defaultLeasePaymentDate(row, l))}"
+            class="px-3 py-1.5 rounded text-xs text-white" style="background:#00C8C8"
+            ${row.isPaid || !postOk ? "disabled" : ""} title="${postOk ? "Opens the lease payment modal (prefilled)" : "Requires can_post_journals"}">💳 Pay this period</button>
+          <button data-lc-post-row="${esc(id)}" data-lc-period="${esc(row.periodNo)}"
+            class="px-3 py-1.5 rounded text-xs ${row.isPosted || !postOk ? "bg-slate-300 text-white cursor-not-allowed" : "bg-[#00284F] text-white"}"
+            ${row.isPosted || !postOk ? "disabled" : ""} title="Loads the IFRS 16 month-end journal (interest + depreciation) into the Manual Journal form">📅 Post IFRS 16</button>
+          <span class="text-[11px] text-slate-400 self-center">Post IFRS 16 → Manual Journal (Dr Depreciation · Dr Interest · Cr Accum. ROU · Cr Lease liability)</span>
+        </div>
+      </div>` : `<div class="border rounded-xl p-3 text-xs text-slate-500">No current-period row (load Month-End or adjust the as-of date).</div>`;
+
+    panel.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+        <div class="border rounded-xl overflow-hidden">
+          <div class="px-3 py-2 bg-slate-50 border-b text-[13px] font-semibold">Contract metadata</div>
+          <div class="p-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+            ${meta.map(([k2, v]) => `<div><div class="text-[11px] text-slate-500">${esc(k2)}</div><div class="font-medium truncate">${esc(v)}</div></div>`).join("")}
+          </div>
+        </div>
+        <div class="border rounded-xl overflow-hidden">
+          <div class="px-3 py-2 bg-slate-50 border-b text-[13px] font-semibold">Opening recognition (day 1)</div>
+          <div class="p-3 grid grid-cols-2 gap-3 text-sm">
+            <div class="border rounded-lg p-3"><div class="text-[11px] text-slate-500">Lease liability</div><div class="text-[15px] font-bold text-[#00284F] mt-1">${money(l.opening_lease_liability ?? l.opening_liability)}</div></div>
+            <div class="border rounded-lg p-3"><div class="text-[11px] text-slate-500">ROU asset</div><div class="text-[15px] font-bold text-[#00284F] mt-1">${money(l.opening_rou_asset ?? l.rou_asset)}</div></div>
+          </div>
+        </div>
+      </div>
+      ${snapshot}`;
+  }
+
+  function defaultLeasePaymentDate(row, lease) {
+    const timing = String(
+      row?.r?.payment_timing ||
+      lease?.payment_timing ||
+      "arrears"
+    ).trim().toLowerCase();
+
+    const rawDate = timing === "advance"
+      ? row?.r?.period_start
+      : row?.r?.period_end;
+
+    if (!rawDate) return today();
+
+    const value = String(rawDate).trim();
+
+    // Already an ISO date or ISO datetime: preserve the calendar date.
+    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+
+    // Handle DD/MM/YYYY explicitly.
+    const localMatch = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (localMatch) {
+      return `${localMatch[3]}-${localMatch[2]}-${localMatch[1]}`;
+    }
+
+    // Avoid silently passing an unrecognised date to the modal.
+    console.warn("Unrecognised lease payment date:", rawDate);
+    return today();
+  }
+
+  /* ── Schedule ────────────────────────────────────────────────── */
+  function paintSchedule() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "schedule") return;
+    const rows = LC.schedule.map(schedFields);
+    panel.innerHTML = `
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="text-[13px] font-semibold">IFRS 16 amortisation schedule${LC.loading.detail ? " · loading…" : ""}</div>
+      </div>
+      <div class="border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-[860px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 whitespace-nowrap">P</th>
+                <th class="text-left p-2 whitespace-nowrap">Period</th>
+                <th class="text-right p-2 whitespace-nowrap">Payment</th>
+                <th class="text-right p-2 whitespace-nowrap">Interest</th>
+                <th class="text-right p-2 whitespace-nowrap">Principal</th>
+                <th class="text-right p-2 whitespace-nowrap">Depreciation</th>
+                <th class="text-right p-2 whitespace-nowrap">Closing liability</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length ? rows.map((s) => `
+                <tr class="border-t">
+                  <td class="p-2 text-center">${esc(s.no)}</td>
+                  <td class="p-2 whitespace-nowrap">${esc(fmtDateSafe(s.start))} → ${esc(fmtDateSafe(s.end))}</td>
+                  <td class="p-2 text-right tabular-nums">${money(s.payment)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(s.interest)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(s.principal)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(s.depreciation)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(s.closingLiab)}</td>
+                </tr>`).join("") : `<tr><td colspan="7" class="p-3 text-xs text-slate-500">${LC.loading.detail ? "Loading schedule…" : "No schedule rows."}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  /* ── Payments ────────────────────────────────────────────────── */
+  function paintPayments() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "payments") return;
+    const rows = LC.payments.map(payFields);
+    const id = LC.leaseId;
+    const row = currentDueRow(id);
+    panel.innerHTML = `
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="text-[13px] font-semibold">Payment history${LC.loading.detail ? " · loading…" : ""}</div>
+        <div class="flex gap-2">
+          <button id="lcPayExport" class="px-2 py-1.5 rounded border text-xs bg-white">⬇ Export payments CSV</button>
+          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row?.r.schedule_id ?? "")}" data-lc-due="${esc(row && !row.isPaid ? row.due : "")}" data-lc-date="${esc(defaultLeasePaymentDate(row, LC.lease))}"
+            class="px-3 py-1.5 rounded text-xs text-white" style="background:#00C8C8" ${canPost() ? "" : "disabled"} title="${canPost() ? "Opens the lease payment modal" : "Requires can_post_journals"}">💳 Record payment</button>
+        </div>
+      </div>
+      <div class="border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-[760px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 whitespace-nowrap">Date</th>
+                <th class="text-left p-2 whitespace-nowrap">Reference</th>
+                <th class="text-left p-2 whitespace-nowrap">Description</th>
+                <th class="text-right p-2 whitespace-nowrap">Gross</th>
+                <th class="text-right p-2 whitespace-nowrap">Interest</th>
+                <th class="text-right p-2 whitespace-nowrap">Principal</th>
+                <th class="text-center p-2 whitespace-nowrap">Journal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length ? rows.map((p) => `
+                <tr class="border-t">
+                  <td class="p-2 whitespace-nowrap">${esc(fmtDateSafe(p.date))}</td>
+                  <td class="p-2">${esc(p.ref)}</td>
+                  <td class="p-2 text-slate-600">${esc(p.desc)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(p.gross)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(p.interest)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(p.principal)}</td>
+                  <td class="p-2 text-center">${p.journal ? chipHtml(`J${p.journal}`, "slate") : "—"}</td>
+                </tr>`).join("") : `<tr><td colspan="7" class="p-3 text-xs text-slate-500">${LC.loading.detail ? "Loading payments…" : "No payments recorded yet."}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      `;
+
+    const ex = panel.querySelector("#lcPayExport");
+    ex?.addEventListener("click", () => {
+      const c = cid();
+      if (!c) return;
+      try { downloadUrl(`${REP().leasePaymentsExport(c)}?lease_id=${encodeURIComponent(id)}`); } catch (_) {}
+    });
+  }
+
+  /* ── Month-End (all leases) ──────────────────────────────────── */
+  function paintMonthEnd() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "monthend") return;
+    const q = LC.qME.trim().toLowerCase();
+    const all = LC.monthly.map(meRow);
+    const rows = !q ? all : all.filter((x) => `${x.r.lease_name || ""} ${x.r.lessor_name || ""}`.toLowerCase().includes(q));
+    const postOk = canPost();
+
+    panel.innerHTML = `
+      <div class="flex flex-wrap items-end justify-between gap-2 mb-2">
+        <div class="text-[13px] font-semibold">Month-End — IFRS 16 postings for all leases</div>
+        <div class="flex items-end gap-2 flex-wrap">
+          <div><label class="text-[11px] text-slate-500 block">As of</label><input id="lcMeAsOf" type="date" value="${esc(LC.asOf)}" class="border rounded px-2 py-1 text-sm bg-white"></div>
+          <div><label class="text-[11px] text-slate-500 block">Search</label><input id="lcMeSearch" value="${esc(LC.qME)}" placeholder="lease / lessor" class="border rounded px-2 py-1 text-sm bg-white w-[180px]"></div>
+          <button id="lcMeExport" class="px-2 py-1.5 rounded border text-xs bg-white">⬇ Export CSV</button>
+        </div>
+      </div>
+      <div class="border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-[980px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 whitespace-nowrap">Lease</th>
+                <th class="text-left p-2 whitespace-nowrap">Lessor</th>
+                <th class="text-center p-2 whitespace-nowrap">Period</th>
+                <th class="text-right p-2 whitespace-nowrap">Due</th>
+                <th class="text-right p-2 whitespace-nowrap">Interest</th>
+                <th class="text-right p-2 whitespace-nowrap">Depreciation</th>
+                <th class="text-right p-2 whitespace-nowrap">Total IFRS</th>
+                <th class="text-center p-2 whitespace-nowrap">Payment</th>
+                <th class="text-center p-2 whitespace-nowrap">IFRS 16</th>
+                <th class="text-right p-2 whitespace-nowrap">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length ? rows.map((x) => `
+                <tr class="border-t ${(x.isPaid && x.isPosted) ? "bg-slate-100 text-slate-400" : ""}">
+                  <td class="p-2"><div class="font-medium cursor-pointer hover:underline" data-lc-lease="${esc(x.leaseId)}">${esc(x.r.lease_name || `Lease ${x.leaseId}`)}</div><div class="text-[10px] text-slate-500">ID: ${esc(x.leaseId)}</div></td>
+                  <td class="p-2">${esc(x.r.lessor_name || "")}</td>
+                  <td class="p-2 text-center">${esc(x.periodNo)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(x.due)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(x.interest)}</td>
+                  <td class="p-2 text-right tabular-nums">${money(x.depreciation)}</td>
+                  <td class="p-2 text-right tabular-nums font-semibold">${money(x.interest + x.depreciation)}</td>
+                  <td class="p-2 text-center">${x.isPaid ? chipHtml("paid", "green") : chipHtml("due", "red")}</td>
+                  <td class="p-2 text-center">${x.isPosted ? chipHtml("posted", "green") : chipHtml("pending", "amber")}</td>
+                  <td class="p-2 text-right whitespace-nowrap">
+                    <button data-lc-pay-row="${esc(x.leaseId)}" data-lc-schedule="${esc(x.r.schedule_id ?? "")}" data-lc-due="${esc(x.due)}" data-lc-date="${esc(defaultLeasePaymentDate(x, LC.leases.find((l) => leaseIdOf(l) === Number(x.leaseId))))}"
+                      class="px-2 py-1 rounded border text-xs ${x.isPaid || !postOk ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"}"
+                      ${x.isPaid || !postOk ? "disabled" : ""} title="${postOk ? "Opens the payment modal prefilled from the due row" : "Requires can_post_journals"}">Pay</button>
+                    <button data-lc-post-row="${esc(x.leaseId)}" data-lc-period="${esc(x.periodNo)}"
+                      class="px-2 py-1 rounded text-xs ${x.isPosted || !postOk ? "bg-slate-300 text-white cursor-not-allowed" : "bg-[#00284F] text-white"}"
+                      ${x.isPosted || !postOk ? "disabled" : ""} title="Load IFRS 16 month-end journal into Manual Journal">Post IFRS 16</button>
+                  </td>
+                </tr>`).join("") : `<tr><td colspan="10" class="p-3 text-xs text-slate-500">${LC.loading.monthly ? "Loading month-end rows…" : `Nothing due${LC.asOf ? ` for ${esc(fmtDateSafe(LC.asOf))}` : ""}.`}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="text-[11px] text-slate-400 mt-2">Pay opens the payment modal prefilled from the due row (schedule + amount + period date). <b>Post IFRS 16</b> loads the IFRS 16 month-end journal (Dr Depreciation · Dr Interest · Cr Accum. ROU · Cr Lease liability) into the <b>Manual Journal</b> form, ref <code>LEASE-&lt;id&gt;-P&lt;no&gt;</code> — same hand-off as the Monthly Posting screen.</div>`;
+
+    panel.querySelector("#lcMeAsOf")?.addEventListener("change", async (e) => {
+      LC.asOf = (e.target.value || "").trim();
+      await loadMonthly();
+    });
+    panel.querySelector("#lcMeSearch")?.addEventListener("input", debounce((e) => {
+      LC.qME = e.target.value || "";
+      paintMonthEnd();
+    }, 200));
+    panel.querySelector("#lcMeExport")?.addEventListener("click", () => {
+      const c = cid();
+      if (!c) return;
+      const qs = new URLSearchParams();
+      if (LC.asOf) qs.set("as_of", LC.asOf);
+      if (LC.qME) qs.set("q", LC.qME);
+      qs.set("format", "csv");
+      try { downloadUrl(`${REP().leaseMonthlyDueExport(c)}?${qs.toString()}`); } catch (_) {}
+    });
+  }
+
+  /* ── Modifications / Terminations ───────────────────────────── */
+  function paintMods() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "mods") return;
+    const rows = LC.mods;
+    panel.innerHTML = `
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="text-[13px] font-semibold">Modifications${LC.loading.detail ? " · loading…" : ""}</div>
+        <button class="px-2 py-1.5 rounded border text-xs bg-white" data-lc-open-register="${esc(LC.leaseId)}" data-lc-register-tab="mods">Open in register modal</button>
+      </div>
+      <div class="border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-[720px] w-full text-sm">
+            <thead class="bg-slate-50 border-b"><tr>
+              <th class="text-left p-2 whitespace-nowrap">Date</th><th class="text-left p-2 whitespace-nowrap">Change</th>
+              <th class="text-center p-2 whitespace-nowrap">Status</th><th class="text-right p-2 whitespace-nowrap">Liability adj.</th>
+              <th class="text-left p-2 whitespace-nowrap">Notes</th>
+            </tr></thead>
+            <tbody>
+              ${rows.length ? rows.map((m) => `
+                <tr class="border-t">
+                  <td class="p-2 whitespace-nowrap">${esc(fmtDateSafe(m.modification_date || m.effective_date || m.date))}</td>
+                  <td class="p-2">${esc(m.change_type || m.change || m.description || "")}</td>
+                  <td class="p-2 text-center">${chipHtml(m.status || "—", String(m.status || "").toLowerCase() === "posted" ? "green" : "amber")}</td>
+                  <td class="p-2 text-right tabular-nums">${money(m.liability_adjustment ?? m.adjustment ?? 0)}</td>
+                  <td class="p-2 text-slate-600">${esc(m.notes || "")}</td>
+                </tr>`).join("") : `<tr><td colspan="5" class="p-3 text-xs text-slate-500">${LC.loading.detail ? "Loading…" : "No modifications."}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function paintTerms() {
+    const panel = $("lcPanel");
+    if (!panel || LC.tab !== "terms") return;
+    const rows = LC.terms;
+    panel.innerHTML = `
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="text-[13px] font-semibold">Terminations${LC.loading.detail ? " · loading…" : ""}</div>
+        <button class="px-2 py-1.5 rounded border text-xs bg-white" data-lc-open-register="${esc(LC.leaseId)}" data-lc-register-tab="terms">Open in register modal</button>
+      </div>
+      <div class="border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-[720px] w-full text-sm">
+            <thead class="bg-slate-50 border-b"><tr>
+              <th class="text-left p-2 whitespace-nowrap">Date</th><th class="text-left p-2 whitespace-nowrap">Type</th>
+              <th class="text-center p-2 whitespace-nowrap">Status</th><th class="text-right p-2 whitespace-nowrap">Settlement</th>
+              <th class="text-left p-2 whitespace-nowrap">Notes</th>
+            </tr></thead>
+            <tbody>
+              ${rows.length ? rows.map((t) => `
+                <tr class="border-t">
+                  <td class="p-2 whitespace-nowrap">${esc(fmtDateSafe(t.termination_date || t.date || t.effective_date))}</td>
+                  <td class="p-2">${esc(t.termination_type || t.type || t.description || "")}</td>
+                  <td class="p-2 text-center">${chipHtml(t.status || "—", String(t.status || "").toLowerCase() === "posted" ? "green" : "amber")}</td>
+                  <td class="p-2 text-right tabular-nums">${money(t.settlement_amount ?? t.amount ?? 0)}</td>
+                  <td class="p-2 text-slate-600">${esc(t.notes || "")}</td>
+                </tr>`).join("") : `<tr><td colspan="5" class="p-3 text-xs text-slate-500">${LC.loading.detail ? "Loading…" : "No terminations."}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  /* ── events ──────────────────────────────────────────────────── */
+  function bindShell(mount) {
+    /* delegated clicks — onclick property assignment is idempotent */
+    mount.onclick = async (e) => {
+      const t = e.target.closest?.("[data-lc-lease],[data-lc-kpi],[data-lc-tab],[data-lc-status],[data-lc-pay-row],[data-lc-post-row],[data-lc-open-register]");
+      if (!t || !mount.contains(t)) return;
+
+      if (t.hasAttribute("data-lc-lease") && !t.hasAttribute("data-lc-pay-row")) {
+        return void selectLease(t.getAttribute("data-lc-lease"));
+      }
+      if (t.hasAttribute("data-lc-kpi")) return void setTab(t.getAttribute("data-lc-kpi"));
+      if (t.hasAttribute("data-lc-tab")) return void setTab(t.getAttribute("data-lc-tab"));
+      if (t.hasAttribute("data-lc-status")) { LC.status = t.getAttribute("data-lc-status"); return void paintRegister(); }
+
+      if (t.hasAttribute("data-lc-pay-row")) {
+        if (t.disabled) return;
+        return void payModal({
+          leaseId: t.getAttribute("data-lc-pay-row"),
+          scheduleId: t.getAttribute("data-lc-schedule") || null,
+          amount: t.getAttribute("data-lc-due") || "",
+          date: t.getAttribute("data-lc-date") || "",
+        });
+      }
+
+      if (t.hasAttribute("data-lc-post-row")) {
+        if (t.disabled) return;
+        postToManualJournal(t.getAttribute("data-lc-post-row"), t.getAttribute("data-lc-period"), $("lcWsMsg"));
+        return;
+      }
+
+      if (t.hasAttribute("data-lc-open-register")) {
+        const id = Number(t.getAttribute("data-lc-open-register") || 0);
+        const tab = t.getAttribute("data-lc-register-tab") || "overview";
+        if (id) window.openLeaseRegisterModal?.(id, { tab });
+        return;
+      }
+    };
+
+    $("lcSearch")?.addEventListener("input", debounce((e) => { LC.q = e.target.value || ""; paintRegister(); }, 200));
+    $("lcAddLease")?.addEventListener("click", () => {
+      window.openLeaseWizard?.({
+        source: "lease-center",
+        mode: "inception",
+        leaseRole: "lessee",
+        accountCode: "",
+        accountName: "",
+      });
+    });
+    $("lcRegExport")?.addEventListener("click", () => {
+      const c = cid();
+      if (!c) return;
+      try { downloadUrl(REP().leaseRegisterExport(c)); } catch (_) {}
+    });
+    $("lcRefresh")?.addEventListener("click", refreshAll);
+    $("lcOpenRegister")?.addEventListener("click", () => {
+      if (LC.leaseId) window.openLeaseRegisterModal?.(LC.leaseId, { tab: "overview" });
+    });
+    $("lcRecordPayment")?.addEventListener("click", () => {
+      const row = currentDueRow(LC.leaseId);
+
+      payModal({
+        leaseId: LC.leaseId,
+        scheduleId: row?.r.schedule_id || null,
+        amount: row && !row.isPaid ? row.due : "",
+        date: defaultLeasePaymentDate(row, LC.lease),
+      });
+    });
+  }
+
+  /* refresh register when the Lease Wizard drawer reports a change */
+  window.addEventListener("message", (event) => {
+    const d = event.data || {};
+    if (d.type !== "lease_wizard_close" && d.type !== "lease_wizard_created") return;
+    const screen = document.getElementById("screen-leases");
+    if (screen?.classList.contains("active") && $("leasesMount")) {
+      loadLeases();
+    }
+  });
+
+  /* ── boot (called by renderLeaseScreen → tab "center") ───────── */
+  window.renderLeaseCenterView = async function renderLeaseCenterView(mount) {
+    if (!mount) return;
+    mount.innerHTML = shellHTML();
+    bindShell(mount);
+    paintKpis(); paintRegister(); paintWorkspace();
+
+    const prev = Number(window.LEASE_UI?.state?.leaseId || window.__ACTIVE_LEASE_ID || 0);
+    await Promise.all([loadLeases(), loadMonthly()]);
+
+    const ids = LC.leases.map(leaseIdOf).filter(Boolean);
+    const id = prev && ids.includes(prev) ? prev : ids[0] || null;
+    if (id) await selectLease(id);
+  };
+
+  console.log("[LeaseCenter] module ready — route lease-center, view renderLeaseCenterView");
+})();
