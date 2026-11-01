@@ -30199,19 +30199,52 @@ function bindReportsScreen() {
   }
 
   function buildPeriodParams(periodKey) {
+    // Custom dates must come from the actual date inputs.
+    if (periodKey === "custom") {
+      const from =
+        document.getElementById("stmtFromDate")?.value || "";
+
+      const to =
+        document.getElementById("stmtToDate")?.value || "";
+
+      if (!from || !to) {
+        return {
+          params: {},
+          label: "Custom period range",
+        };
+      }
+
+      if (from > to) {
+        throw new Error("From date cannot be after To date.");
+      }
+
+      return {
+        params: {
+          from,
+          to,
+          as_of: to,
+        },
+        label: `${from} → ${to}`,
+      };
+    }
+
+    // Existing behaviour for all other presets remains unchanged.
     const pr = computePeriodRange(periodKey);
 
-    // If computePeriodRange returns calendar dates (month/quarter) → use from/to
     if (pr && pr.from && pr.to) {
       return {
-        params: { from: pr.from, to: pr.to },
+        params: {
+          from: pr.from,
+          to: pr.to,
+        },
         label: pr.label || periodKey,
       };
     }
 
-    // Otherwise → backend decides FY/YTD using preset
     return {
-      params: { preset: pr?.preset || periodKey },
+      params: {
+        preset: pr?.preset || periodKey,
+      },
       label: pr?.label || periodKey,
     };
   }
