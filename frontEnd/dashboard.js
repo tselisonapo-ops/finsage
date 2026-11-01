@@ -25900,6 +25900,13 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
         account?.name || account?.account_name || ""
       ).trim();
 
+      console.log("[LEASE NUDGE] account received", {
+        account,
+        code: account?.code,
+        role: account?.role,
+        cf_bucket: account?.cf_bucket
+      });
+
       const leaseRole = getLeaseRoleFromAccount(account);
       const isLessor = leaseRole === "lessor";
 
@@ -25923,7 +25930,10 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
           journal_date: postingDate,
         },
       };
-
+      console.log(
+        "[LEASE NUDGE] pending context",
+        window.__LEASE_WIZARD_PENDING_CONTEXT__
+      );
       setPostingContextDate(postingDate, {
         source: "journal-module-nudge",
         module_key: moduleKey,
