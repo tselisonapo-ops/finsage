@@ -58357,6 +58357,10 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS last_corrected_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS last_correction_reason TEXT NULL;
 
+        ALTER TABLE {schema}.lessor_leases
+            ADD COLUMN IF NOT EXISTS underlying_asset_account_code TEXT,
+            ADD COLUMN IF NOT EXISTS interest_rate_implicit NUMERIC;
+
         DO $fk_lessor_commencement_journal$
         BEGIN
             IF NOT EXISTS (
@@ -58684,6 +58688,15 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_lessor_schedule_recognition_journal_idx
         ON {schema}.lessor_lease_schedule(recognition_journal_id);
+
+        -- Required by save_lessor_accounting_schedule() ON CONFLICT
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            {schema}_uq_lessor_schedule_lease_version_period
+        ON {schema}.lessor_lease_schedule (
+            lessor_lease_id,
+            version_no,
+            period_no
+        );
 
         CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_adjustments (
             id SERIAL PRIMARY KEY,
@@ -80287,6 +80300,7 @@ class DatabaseService:
             "offset": int(offset),
         }
 
+
     def resolve_lessor_posting_accounts(
         self,
         company_id: int,
@@ -80294,48 +80308,39 @@ class DatabaseService:
         *,
         cur=None,
     ) -> dict:
-        schema = self.company_schema(company_id)
         values = values or {}
 
-        rows = self.fetch_all(
-            f"""
-            SELECT
-                code,
-                name,
-                role,
-                section,
-                category,
-                subcategory,
-                standard
-            FROM {schema}.coa
-            ORDER BY code
-            """,
-            (),
-            cur=cur,
-        ) or []
+        def pick(field, *roles):
+            """
+            Resolve a lessor posting account.
 
-        by_role = {}
+            Explicit account configuration takes precedence.
+            Otherwise, use the generic COA role resolver.
+            """
+            explicit_code = str(values.get(field) or "").strip()
 
-        for row in rows:
-            role = str(row.get("role") or "").strip().lower()
-            code = str(row.get("code") or "").strip()
-
-            if role and code and role not in by_role:
-                by_role[role] = code
-
-        def pick(field: str, *roles: str) -> str | None:
-            explicit = str(values.get(field) or "").strip()
-
-            if explicit:
-                return explicit
+            if explicit_code:
+                return explicit_code
 
             for role in roles:
-                code = by_role.get(role.strip().lower())
+                resolved = self.ensure_coa_role_for_posting(
+                    company_id,
+                    role,
+                    cur=cur,
+                    required=False,
+                )
 
-                if code:
-                    return code
+                if resolved:
+                    code = str(resolved.get("code") or "").strip()
+
+                    if code:
+                        return code
 
             return None
+
+        # ---------------------------------------------------------
+        # Security deposit accounts
+        # ---------------------------------------------------------
 
         deposit_current = pick(
             "security_deposit_current_account_code",
@@ -80358,17 +80363,25 @@ class DatabaseService:
 
             if is_current is False:
                 deposit_account = deposit_noncurrent
+
             elif is_current is True:
                 deposit_account = deposit_current
+
             else:
                 deposit_account = (
                     deposit_noncurrent
-                    if values.get("security_deposit_refund_date")
-                    and values.get("end_date")
-                    and str(values["security_deposit_refund_date"])
-                    > str(values["end_date"])
+                    if (
+                        values.get("security_deposit_refund_date")
+                        and values.get("end_date")
+                        and str(values["security_deposit_refund_date"])
+                        > str(values["end_date"])
+                    )
                     else deposit_current or deposit_noncurrent
                 )
+
+        # ---------------------------------------------------------
+        # Resolved lessor posting accounts
+        # ---------------------------------------------------------
 
         return {
             "revenue_account_code": pick(
@@ -80417,8 +80430,11 @@ class DatabaseService:
             ),
 
             "security_deposit_current_account_code": deposit_current,
+
             "security_deposit_noncurrent_account_code": deposit_noncurrent,
+
             "security_deposit_account_code": deposit_account,
+
             "deposit_liability_account_code": deposit_account,
 
             "disposal_gain_account_code": pick(

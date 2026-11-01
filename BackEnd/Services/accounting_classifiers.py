@@ -1845,6 +1845,15 @@ def _coa_role_from_text(
 
             return "lessor_security_deposit_current"
 
+    # IFRS 16 disposal gain account
+    # Only classify this account when its COA standard is IFRS 16.
+    if (
+        is_income
+        and (standard or "").strip().upper() == "IFRS 16"
+        and has_any("gain on disposal of assets")
+    ):
+        return "lessor_disposal_gain"
+    
     if (
         "income" in sec
         or "revenue" in sec
