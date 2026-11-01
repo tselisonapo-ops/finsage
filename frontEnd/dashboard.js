@@ -34012,7 +34012,11 @@ function renderIFRS16DisclosureHTML(d) {
 
   const paymentsGross = liab.payments_gross_period ?? liab.payments_gross ?? 0;
   const paymentsVat = liab.vat_on_payments_period ?? liab.vat_on_payments ?? 0;
-
+  // Derive net payments from the posted schedule movements.
+  // Net payments = interest accretion + principal reduction.
+  const interestAccretion = Number(rec.interest_accretion) || 0;
+  const principalReduction = Number(rec.principal_reduction) || 0;
+  const netLeasePayments = interestAccretion + principalReduction;
   const currentPortion =
     liab.undiscounted_principal_current ?? liab.current_portion_as_of ?? 0;
 
@@ -34070,13 +34074,15 @@ function renderIFRS16DisclosureHTML(d) {
         </div>
 
         <div class="border rounded-lg p-3">
+        <div class="border rounded-lg p-3">
           <div class="font-semibold mb-2">Liability reconciliation</div>
           <div class="text-xs space-y-1">
             <div class="flex justify-between gap-3"><span>Opening</span><b>${fmtMoney(rec.opening_liability ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Additions – new leases</span><b>${fmtMoney(rec.additions_new_leases ?? 0)}</b></div>
             <div class="flex justify-between gap-3"><span>Interest accretion</span><b>${fmtMoney(rec.interest_accretion ?? 0)}</b></div>
-            <div class="flex justify-between gap-3"><span>Principal reduction</span><b>${fmtMoney(rec.principal_reduction ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Net lease payments (excluding VAT)</span><b>(${fmtMoney(netLeasePayments)})</b></div>
             <div class="flex justify-between gap-3"><span>Remeasurements</span><b>${fmtMoney(rec.remeasurements_modifications ?? 0)}</b></div>
-            <div class="flex justify-between gap-3"><span>Derecognitions</span><b>${fmtMoney(rec.derecognitions_terminations ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Derecognitions</span><b>(${fmtMoney(rec.derecognitions_terminations ?? 0)})</b></div>
             <div class="flex justify-between gap-3 border-t pt-2 mt-2"><span><b>Closing</b></span><b>${fmtMoney(rec.closing_liability ?? 0)}</b></div>
           </div>
         </div>
