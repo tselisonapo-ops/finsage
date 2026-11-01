@@ -26008,6 +26008,14 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
 
     const leaseRole = getLeaseRoleFromAccount(account) || "lessee";
 
+    console.log("[LEASE ROUTING CHECK]", {
+      account,
+      accountCode: account?.code,
+      accountRole: account?.role,
+      cfBucket: account?.cf_bucket,
+      resolvedLeaseRole: getLeaseRoleFromAccount(account)
+    });
+
     return await window.openLeaseWizard?.({
       mode: leaseRole === "lessor" ? "inception" : "existing",
       leaseRole,
