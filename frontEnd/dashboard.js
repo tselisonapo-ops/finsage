@@ -14261,7 +14261,16 @@ function openLeaseWizard(ctx = {}) {
     ""
   ).trim();
 
-  const isLessor = ["BS_CA_1710", "BS_NCA_1720"].includes(accountCode);
+  const leaseRole =
+    ctx.leaseRole ||
+    getLeaseRoleFromAccount({
+      ...ctx,
+      code: accountCode,
+      account_name: accountName,
+    }) ||
+    "lessee";
+
+  const isLessor = leaseRole === "lessor";
 
   const payload = {
     type: "lease_wizard_context",
@@ -14277,7 +14286,7 @@ function openLeaseWizard(ctx = {}) {
     source: ctx.source || "journal",
     ctx: {
       mode: ctx.mode || (isLessor ? "inception" : "existing"),
-      leaseRole: ctx.leaseRole || (isLessor ? "lessor" : "lessee"),
+      leaseRole,
       accountCode,
       accountName,
       defaults: {
@@ -24658,6 +24667,49 @@ function detectSubledgerType(acct) {
   return null;
 }
 
+
+function getLeaseRoleFromAccount(account = {}) {
+  // 1. Account role has highest priority
+  const role = String(
+    account.role ||
+    account.account_role ||
+    ""
+  ).trim().toLowerCase();
+
+  if (role.includes("lessor")) return "lessor";
+  if (role.includes("lessee")) return "lessee";
+
+  // 2. Cash-flow bucket is the fallback
+  const bucket = String(
+    account.cf_bucket ||
+    account.cfBucket ||
+    ""
+  ).trim().toLowerCase();
+
+  if (bucket === "lease_receivable") return "lessor";
+
+  if (
+    bucket === "rou_asset" ||
+    bucket === "lease_rou_accum_depr" ||
+    bucket.includes("lease_liability")
+  ) {
+    return "lessee";
+  }
+
+  // 3. Legacy account-code fallback
+  const code = String(
+    account.code ||
+    account.account_code ||
+    ""
+  ).trim().toUpperCase();
+
+  if (["BS_CA_1710", "BS_NCA_1720"].includes(code)) {
+    return "lessor";
+  }
+
+  return null;
+}
+
 // Optional: future “module hints” (SOFT only)
 function detectFutureModuleHint(acct) {
   if (!acct) return null;
@@ -25848,14 +25900,12 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
         account?.name || account?.account_name || ""
       ).trim();
 
-      const isLessor = [
-        "BS_CA_1710",
-        "BS_NCA_1720",
-      ].includes(accountCode);
+      const leaseRole = getLeaseRoleFromAccount(account);
+      const isLessor = leaseRole === "lessor";
 
       window.__LEASE_WIZARD_PENDING_CONTEXT__ = {
         mode: isLessor ? "inception" : "existing",
-        leaseRole: isLessor ? "lessor" : "lessee",
+        leaseRole: leaseRole || "lessee",
         accountCode,
         accountName,
         defaults: {
@@ -25956,8 +26006,11 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
       return null;
     }
 
+    const leaseRole = getLeaseRoleFromAccount(account) || "lessee";
+
     return await window.openLeaseWizard?.({
-      mode: "existing",
+      mode: leaseRole === "lessor" ? "inception" : "existing",
+      leaseRole,
       accountCode: account?.code || "",
       accountName: account?.name || "",
       defaults: {
@@ -39458,74 +39511,74 @@ function closeQuickModal() {
     }
   }
 
-async function saveLessor() {
-  const cid = cidOrThrow();
-  const lessorId = currentLessorId;
-  if (!lessorId) return;
+  async function saveLessor() {
+    const cid = cidOrThrow();
+    const lessorId = currentLessorId;
+    if (!lessorId) return;
 
-  showMsg(els.dMsg, "");
+    showMsg(els.dMsg, "");
 
-  const payload = {
-    name: (els.dName?.value || "").trim(),
-    reg_no: (els.dReg?.value || "").trim() || null,
-    vat_no: (els.dVat?.value || "").trim() || null,
-    email: (els.dEmail?.value || "").trim() || null,
-    phone: (els.dPhone?.value || "").trim() || null,
-    address: (els.dAddress?.value || "").trim() || null,
-    is_related_party: !!els.dRelated?.checked,
-    active: !!els.dActive?.checked,
-  };
+    const payload = {
+      name: (els.dName?.value || "").trim(),
+      reg_no: (els.dReg?.value || "").trim() || null,
+      vat_no: (els.dVat?.value || "").trim() || null,
+      email: (els.dEmail?.value || "").trim() || null,
+      phone: (els.dPhone?.value || "").trim() || null,
+      address: (els.dAddress?.value || "").trim() || null,
+      is_related_party: !!els.dRelated?.checked,
+      active: !!els.dActive?.checked,
+    };
 
-  if (!payload.name) return showMsg(els.dMsg, "Name is required.");
+    if (!payload.name) return showMsg(els.dMsg, "Name is required.");
 
-  // disable button to prevent double-save
-  const btn = els.dSave;
-  const prevText = btn?.textContent;
-  if (btn) {
-    btn.disabled = true;
-    btn.classList.add("opacity-60", "pointer-events-none");
-    btn.textContent = "Saving...";
-  }
-
-  try {
-    const updated = await window.apiFetch(ENDPOINTS.lessors.detail(cid, lessorId), {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-
-    // ✅ DO NOT DELETE after save
-    await refreshLessors();
-
-    // keep drawer values in sync with returned truth (if backend returns full row)
-    if (updated && typeof updated === "object") {
-      els.dTitle.textContent = updated.name || payload.name;
-      els.dSub.textContent = `ID ${updated.id ?? lessorId} • Created ${
-        updated.created_at ? String(updated.created_at) : "—"
-      }`;
-
-      els.dName.value = updated.name ?? payload.name;
-      els.dReg.value = updated.reg_no ?? "";
-      els.dVat.value = updated.vat_no ?? "";
-      els.dEmail.value = updated.email ?? "";
-      els.dPhone.value = updated.phone ?? "";
-      els.dAddress.value = updated.address ?? "";
-      els.dRelated.checked = !!updated.is_related_party;
-      els.dActive.checked = (updated.active !== false);
-    } else {
-      els.dTitle.textContent = payload.name;
-    }
-
-    showMsg(els.dMsg, "Saved.", "ok");
-  } catch (e) {
-    showMsg(els.dMsg, e?.message || "Failed to save lessor.");
-  } finally {
+    // disable button to prevent double-save
+    const btn = els.dSave;
+    const prevText = btn?.textContent;
     if (btn) {
-      btn.disabled = false;
-      btn.classList.remove("opacity-60", "pointer-events-none");
-      btn.textContent = prevText || "Save";
+      btn.disabled = true;
+      btn.classList.add("opacity-60", "pointer-events-none");
+      btn.textContent = "Saving...";
+    }
+
+    try {
+      const updated = await window.apiFetch(ENDPOINTS.lessors.detail(cid, lessorId), {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+
+      // ✅ DO NOT DELETE after save
+      await refreshLessors();
+
+      // keep drawer values in sync with returned truth (if backend returns full row)
+      if (updated && typeof updated === "object") {
+        els.dTitle.textContent = updated.name || payload.name;
+        els.dSub.textContent = `ID ${updated.id ?? lessorId} • Created ${
+          updated.created_at ? String(updated.created_at) : "—"
+        }`;
+
+        els.dName.value = updated.name ?? payload.name;
+        els.dReg.value = updated.reg_no ?? "";
+        els.dVat.value = updated.vat_no ?? "";
+        els.dEmail.value = updated.email ?? "";
+        els.dPhone.value = updated.phone ?? "";
+        els.dAddress.value = updated.address ?? "";
+        els.dRelated.checked = !!updated.is_related_party;
+        els.dActive.checked = (updated.active !== false);
+      } else {
+        els.dTitle.textContent = payload.name;
+      }
+
+      showMsg(els.dMsg, "Saved.", "ok");
+    } catch (e) {
+      showMsg(els.dMsg, e?.message || "Failed to save lessor.");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove("opacity-60", "pointer-events-none");
+        btn.textContent = prevText || "Save";
+      }
     }
   }
-}
 
   async function deleteLessor() {
     const cid = cidOrThrow();
