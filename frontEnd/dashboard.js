@@ -34254,6 +34254,7 @@ function setActiveStmtTypeSilent(t) {
 }
 
 
+
 function bindGenerateNotesBtnReportsScreen() {
   const btn = document.getElementById("generateNotesBtn");
   if (!btn || btn.dataset.bound === "1") return;
@@ -34272,43 +34273,15 @@ function bindGenerateNotesBtnReportsScreen() {
       document.getElementById("statementPreset")?.value ||
       "this_year";
 
-    // Use the exact period currently selected in the Statement Viewer.
-    const savedPeriod = window._stmtPeriod || {};
-
-    let period;
-
-    if (
-      periodKey === "custom" &&
-      savedPeriod.from &&
-      savedPeriod.to
-    ) {
-      period = {
-        from: savedPeriod.from,
-        to: savedPeriod.to,
-        as_of: savedPeriod.as_of || savedPeriod.to,
-      };
-    } else if (
-      savedPeriod.preset === periodKey &&
-      (savedPeriod.from || savedPeriod.to || savedPeriod.preset)
-    ) {
-      period = {
-        preset: savedPeriod.preset,
-        ...(savedPeriod.from ? { from: savedPeriod.from } : {}),
-        ...(savedPeriod.to ? { to: savedPeriod.to } : {}),
-        ...(savedPeriod.as_of ? { as_of: savedPeriod.as_of } : {}),
-      };
-    } else {
-      period = buildPeriodParams(periodKey);
-    }
+    // Read the current dates, not the previously saved statement period.
+    const period = buildPeriodParams(periodKey);
 
     console.log("[NOTES] Selected period:", {
       periodKey,
-      savedPeriod,
-      requestPeriod: period,
+      period,
+      dateFrom: document.getElementById("stmtFromDate")?.value,
+      dateTo: document.getElementById("stmtToDate")?.value,
     });
-
-    console.log("NOTES periodKey:", periodKey);
-    console.log("NOTES period:", period);
 
     try {
       btn.disabled = true;
@@ -34323,6 +34296,7 @@ function bindGenerateNotesBtnReportsScreen() {
       });
 
     } catch (e) {
+      console.error("[NOTES] Generation failed:", e);
       alert(e?.message || `Failed to generate ${reg?.label || "notes"}.`);
     } finally {
       btn.disabled = false;
@@ -34331,6 +34305,7 @@ function bindGenerateNotesBtnReportsScreen() {
 
   btn.dataset.bound = "1";
 }
+
 
 function getCurrentStmtPeriodForNotes() {
   const p = window._stmtPeriod || {};
