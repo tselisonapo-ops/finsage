@@ -14314,6 +14314,13 @@ function openLeaseWizard(ctx = {}) {
     if (!frame.contentWindow) return;
 
     frame.contentWindow.postMessage(payload, origin);
+    console.log("[LEASE HOST] FINAL ROUTING CHECK", {
+      mode: payload.ctx?.mode,
+      leaseRole: payload.ctx?.leaseRole,
+      accountCode: payload.ctx?.accountCode,
+      accountName: payload.ctx?.accountName,
+      iframeUrl: frame.src,
+    });
     console.log("[LEASE HOST] context sent", payload);
   };
 
