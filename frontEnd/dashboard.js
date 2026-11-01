@@ -26012,25 +26012,27 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
 
   if (moduleKey === "lease") {
     if (!journalDate) {
-      window.showToast?.("Select or enter a journal date first for existing lease opening balances.", "error");
+      toast("Please select a journal date first.", "error");
       return null;
     }
 
-    const leaseRole = getLeaseRoleFromAccount(account) || "lessee";
-
-    console.log("[LEASE ROUTING CHECK]", {
-      account,
-      accountCode: account?.code,
-      accountRole: account?.role,
-      cfBucket: account?.cf_bucket,
-      resolvedLeaseRole: getLeaseRoleFromAccount(account)
-    });
+    const leaseRole =
+      getLeaseRoleFromAccount(account) || "lessee";
 
     return await window.openLeaseWizard?.({
       mode: leaseRole === "lessor" ? "inception" : "existing",
       leaseRole,
-      accountCode: account?.code || "",
-      accountName: account?.name || "",
+
+      accountCode:
+        account?.code ||
+        account?.account_code ||
+        "",
+
+      accountName:
+        account?.name ||
+        account?.account_name ||
+        "",
+
       defaults: {
         goLiveDate: journalDate,
         openingAsAt: journalDate,
@@ -26040,9 +26042,18 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
         journalSide: side,
         moduleKey,
       },
+
       meta: {
-        account_code: account?.code || "",
-        account_name: account?.name || "",
+        account_code:
+          account?.code ||
+          account?.account_code ||
+          "",
+
+        account_name:
+          account?.name ||
+          account?.account_name ||
+          "",
+
         journal_side: side || "",
         journal_ref: journalRef || "",
         journal_date: journalDate,
