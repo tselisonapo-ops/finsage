@@ -34074,7 +34074,6 @@ function renderIFRS16DisclosureHTML(d) {
         </div>
 
         <div class="border rounded-lg p-3">
-        <div class="border rounded-lg p-3">
           <div class="font-semibold mb-2">Liability reconciliation</div>
           <div class="text-xs space-y-1">
             <div class="flex justify-between gap-3"><span>Opening</span><b>${fmtMoney(rec.opening_liability ?? 0)}</b></div>
