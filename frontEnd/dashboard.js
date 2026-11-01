@@ -25262,11 +25262,33 @@ function getJournalGuardMessage(hint, acct) {
   }
 
   if (hint === "lease") {
+    const leaseRole =
+      getLeaseRoleFromAccount(acct) || "lessee";
+
+    const isLessor = leaseRole === "lessor";
+
+    const body = isLessor
+      ? `${name} is usually managed through the Lessor Lease workflow.\n\n` +
+        `If you continue in Journal, the following may need to be maintained manually:\n\n` +
+        `• Net investment in finance leases and lease receivable schedules\n` +
+        `• Finance income recognition using the effective interest method\n` +
+        `• Lease payment allocation between finance income and principal recovery\n` +
+        `• Impairment assessment and expected credit losses\n` +
+        `• Unguaranteed residual value monitoring\n` +
+        `• Current/non-current lease receivable classification\n` +
+        `• IFRS 16 lessor disclosures`
+      : `${name} is usually managed through the Lessee Lease workflow.\n\n` +
+        `If you continue in Journal, the following may need to be maintained manually:\n\n` +
+        `• Lease liability schedules and subsequent measurement\n` +
+        `• Interest expense recognition and unwinding\n` +
+        `• Right-of-use (ROU) asset depreciation\n` +
+        `• Lease modifications and remeasurements\n` +
+        `• Current/non-current lease liability classification\n` +
+        `• IFRS 16 lessee disclosures`;
+
     return {
       title: "Use Lease Wizard instead?",
-      body:
-        `${name} is usually managed through the Lease module.\n\n` +
-        `If you continue in Journal, lease schedules, interest unwind, ROU amortisation, remeasurements, and lease disclosures will need to be handled manually.`,
+      body,
       continueLabel: "Continue in Journal",
       moduleLabel: "Open Lease Wizard",
       screen: "ifrs16-lease-wizard",
