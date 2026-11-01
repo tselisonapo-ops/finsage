@@ -20135,23 +20135,58 @@ async function resolveLedgerRange(companyId, periodKey) {
   };
 }
 
-function buildPeriodParams(periodKey, extra = {}) {
-  const r = computePeriodRange(periodKey);
 
-  const params = { ...extra };
+function buildPeriodParams(periodKey) {
+  // Custom dates must come from the actual date inputs.
+  if (periodKey === "custom") {
+    const from =
+      document.getElementById("stmtFromDate")?.value || "";
 
-  if (r.from && r.to) {
-    params.from = r.from;
-    params.to = r.to;
-  } else {
-    params.preset = r.preset || periodKey;
+    const to =
+      document.getElementById("stmtToDate")?.value || "";
+
+    if (!from || !to) {
+      return {
+        params: {},
+        label: "Custom period range",
+      };
+    }
+
+    if (from > to) {
+      throw new Error("From date cannot be after To date.");
+    }
+
+    return {
+      params: {
+        from,
+        to,
+        as_of: to,
+      },
+      label: `${from} → ${to}`,
+    };
   }
 
-  // useful for UI
-  params.__label = r.label || periodKey;
+  // Existing behaviour for all other presets remains unchanged.
+  const pr = computePeriodRange(periodKey);
 
-  return params;
+  if (pr && pr.from && pr.to) {
+    return {
+      params: {
+        from: pr.from,
+        to: pr.to,
+      },
+      label: pr.label || periodKey,
+    };
+  }
+
+  return {
+    params: {
+      preset: pr?.preset || periodKey,
+    },
+    label: pr?.label || periodKey,
+  };
 }
+
 
 async function renderDashboardKPIs(periodKey = "this_month") {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
@@ -34204,7 +34239,40 @@ function bindGenerateNotesBtnReportsScreen() {
       document.getElementById("statementPreset")?.value ||
       "this_year";
 
-    const period = buildPeriodParams(periodKey);
+    // Use the exact period currently selected in the Statement Viewer.
+    const savedPeriod = window._stmtPeriod || {};
+
+    let period;
+
+    if (
+      periodKey === "custom" &&
+      savedPeriod.from &&
+      savedPeriod.to
+    ) {
+      period = {
+        from: savedPeriod.from,
+        to: savedPeriod.to,
+        as_of: savedPeriod.as_of || savedPeriod.to,
+      };
+    } else if (
+      savedPeriod.preset === periodKey &&
+      (savedPeriod.from || savedPeriod.to || savedPeriod.preset)
+    ) {
+      period = {
+        preset: savedPeriod.preset,
+        ...(savedPeriod.from ? { from: savedPeriod.from } : {}),
+        ...(savedPeriod.to ? { to: savedPeriod.to } : {}),
+        ...(savedPeriod.as_of ? { as_of: savedPeriod.as_of } : {}),
+      };
+    } else {
+      period = buildPeriodParams(periodKey);
+    }
+
+    console.log("[NOTES] Selected period:", {
+      periodKey,
+      savedPeriod,
+      requestPeriod: period,
+    });
 
     console.log("NOTES periodKey:", periodKey);
     console.log("NOTES period:", period);
