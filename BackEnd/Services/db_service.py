@@ -80980,9 +80980,14 @@ class DatabaseService:
                         "opening or closing net investment."
                     )
 
-                row["principal_recovery"] = self._money_decimal(
-                    self._decimal(opening)
-                    - self._decimal(closing)
+                from decimal import Decimal, ROUND_HALF_UP
+
+                row["principal_recovery"] = (
+                    Decimal(str(opening))
+                    - Decimal(str(closing))
+                ).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
                 )
 
                 normalised_rows.append(row)
