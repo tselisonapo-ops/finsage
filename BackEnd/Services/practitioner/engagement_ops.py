@@ -631,7 +631,14 @@ def engagement_posting_activity_collection_route(cid: int, engagement_id: int):
             return deny
 
         if request.method == "GET":
+            q = (request.args.get("q") or "").strip()
+            date_from = request.args.get("date_from")
+            date_to = request.args.get("date_to")
+            limit_val = _parse_limit(request.args.get("limit"), 200)
+            offset_val = _parse_offset(request.args.get("offset"), 0)
+
             with db_service._conn_cursor() as (conn, cur):
+                # First try the tracking table
                 rows = db_service.list_engagement_posting_activity(
                     cur,
                     company_id,
@@ -641,13 +648,145 @@ def engagement_posting_activity_collection_route(cid: int, engagement_id: int):
                     status=(request.args.get("status") or "").strip().lower(),
                     prepared_by_user_id=_parse_int(request.args.get("prepared_by_user_id")),
                     reviewer_user_id=_parse_int(request.args.get("reviewer_user_id")),
-                    date_from=request.args.get("date_from"),
-                    date_to=request.args.get("date_to"),
-                    q=(request.args.get("q") or "").strip(),
+                    date_from=date_from,
+                    date_to=date_to,
+                    q=q,
                     active_only=_parse_bool(request.args.get("active_only"), True),
-                    limit=_parse_limit(request.args.get("limit"), 200),
-                    offset=_parse_offset(request.args.get("offset"), 0),
+                    limit=limit_val,
+                    offset=offset_val,
                 )
+
+                # FALLBACK: If tracking table is empty, look up the
+                # engagement's target_company_id and query ACTUAL financial
+                # data (journal entries, invoices, bills) from the target
+                # company's schema.
+                if not rows:
+                    firm_schema = f"company_{int(company_id)}"
+                    cur.execute(f"""
+                        SELECT e.target_company_id, e.engagement_name,
+                               e.engagement_code, c.name AS customer_name
+                        FROM {firm_schema}.engagements e
+                        LEFT JOIN {firm_schema}.customers c ON c.id = e.customer_id
+                        WHERE e.company_id = %s AND e.id = %s AND e.is_active = TRUE
+                        LIMIT 1
+                    """, (int(company_id), int(engagement_id)))
+                    eng_row = cur.fetchone()
+                    target_cid = eng_row.get("target_company_id") if eng_row else None
+
+                    if target_cid:
+                        target_schema = f"company_{int(target_cid)}"
+                        all_rows = []
+
+                        # Query journal entries
+                        try:
+                            j_sql = f"""
+                                SELECT j.id, j.date AS posting_date, j.ref AS reference_no,
+                                       j.description, j.gross_amount AS amount, j.currency,
+                                       j.posted_by_user_id AS prepared_by_user_id,
+                                       NULL AS reviewer_user_id, 'posted' AS status,
+                                       'journal_entry' AS event_type, 'journal' AS module_name,
+                                       'journal' AS source_table, j.id AS source_id, j.created_at
+                                FROM {target_schema}.journal j
+                                WHERE COALESCE(j.reversal_of_journal_id, 0) = 0
+                            """
+                            j_params = []
+                            if date_from:
+                                j_sql += " AND j.date >= %s"; j_params.append(date_from)
+                            if date_to:
+                                j_sql += " AND j.date <= %s"; j_params.append(date_to)
+                            if q:
+                                j_sql += " AND (LOWER(COALESCE(j.ref, '')) LIKE LOWER(%s) OR LOWER(COALESCE(j.description, '')) LIKE LOWER(%s))"
+                                j_params.extend([f"%{q}%", f"%{q}%"])
+                            j_sql += " ORDER BY j.date DESC, j.id DESC LIMIT %s OFFSET %s"
+                            j_params.extend([limit_val, offset_val])
+                            cur.execute(j_sql, j_params)
+                            all_rows.extend(cur.fetchall())
+                        except Exception:
+                            pass
+
+                        # Query invoices
+                        try:
+                            i_sql = f"""
+                                SELECT i.id, i.invoice_date AS posting_date, i.number AS reference_no,
+                                       COALESCE(i.notes, 'Invoice') AS description,
+                                       i.total_amount AS amount, i.currency,
+                                       i.created_by_user_id AS prepared_by_user_id,
+                                       NULL AS reviewer_user_id, COALESCE(i.status, 'draft') AS status,
+                                       'invoice' AS event_type, 'accounts_receivable' AS module_name,
+                                       'invoices' AS source_table, i.id AS source_id, i.created_at
+                                FROM {target_schema}.invoices i WHERE 1=1
+                            """
+                            i_params = []
+                            if date_from:
+                                i_sql += " AND i.invoice_date >= %s"; i_params.append(date_from)
+                            if date_to:
+                                i_sql += " AND i.invoice_date <= %s"; i_params.append(date_to)
+                            if q:
+                                i_sql += " AND (LOWER(COALESCE(i.number, '')) LIKE LOWER(%s) OR LOWER(COALESCE(i.notes, '')) LIKE LOWER(%s))"
+                                i_params.extend([f"%{q}%", f"%{q}%"])
+                            i_sql += " ORDER BY i.invoice_date DESC, i.id DESC LIMIT %s OFFSET %s"
+                            i_params.extend([limit_val, offset_val])
+                            cur.execute(i_sql, i_params)
+                            all_rows.extend(cur.fetchall())
+                        except Exception:
+                            pass
+
+                        # Query bills
+                        try:
+                            b_sql = f"""
+                                SELECT b.id, b.bill_date AS posting_date, b.number AS reference_no,
+                                       COALESCE(b.notes, 'Bill') AS description,
+                                       b.total_amount AS amount, b.currency,
+                                       b.created_by_user_id AS prepared_by_user_id,
+                                       NULL AS reviewer_user_id, COALESCE(b.status, 'draft') AS status,
+                                       'bill' AS event_type, 'accounts_payable' AS module_name,
+                                       'bills' AS source_table, b.id AS source_id, b.created_at
+                                FROM {target_schema}.bills b WHERE 1=1
+                            """
+                            b_params = []
+                            if date_from:
+                                b_sql += " AND b.bill_date >= %s"; b_params.append(date_from)
+                            if date_to:
+                                b_sql += " AND b.bill_date <= %s"; b_params.append(date_to)
+                            if q:
+                                b_sql += " AND (LOWER(COALESCE(b.number, '')) LIKE LOWER(%s) OR LOWER(COALESCE(b.notes, '')) LIKE LOWER(%s))"
+                                b_params.extend([f"%{q}%", f"%{q}%"])
+                            b_sql += " ORDER BY b.bill_date DESC, b.id DESC LIMIT %s OFFSET %s"
+                            b_params.extend([limit_val, offset_val])
+                            cur.execute(b_sql, b_params)
+                            all_rows.extend(cur.fetchall())
+                        except Exception:
+                            pass
+
+                        # Sort all rows by posting_date DESC
+                        all_rows.sort(
+                            key=lambda r: str(r.get("posting_date") or r.get("created_at") or ""),
+                            reverse=True,
+                        )
+
+                        # Format rows for response
+                        rows = []
+                        for r in all_rows:
+                            pd = r.get("posting_date")
+                            rows.append({
+                                "id": r.get("id"),
+                                "posting_date": pd.isoformat() if hasattr(pd, "isoformat") else (str(pd) if pd else None),
+                                "reference_no": r.get("reference_no"),
+                                "description": r.get("description"),
+                                "amount": float(r.get("amount") or 0),
+                                "currency": r.get("currency"),
+                                "prepared_by_user_id": r.get("prepared_by_user_id"),
+                                "prepared_by_user_name": f"User {r['prepared_by_user_id']}" if r.get("prepared_by_user_id") else None,
+                                "reviewer_user_id": r.get("reviewer_user_id"),
+                                "reviewer_user_name": None,
+                                "status": r.get("status"),
+                                "event_type": r.get("event_type"),
+                                "module_name": r.get("module_name"),
+                                "source_table": r.get("source_table"),
+                                "source_id": r.get("source_id"),
+                                "is_active": True,
+                            })
+
             return _json_ok({"rows": rows})
 
         # allow manual creation only if you want it

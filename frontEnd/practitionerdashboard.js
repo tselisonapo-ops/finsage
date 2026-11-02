@@ -21574,8 +21574,250 @@ function safePrettyJson(value) {
   }
 }
 
-function renderSettingsScreen(me, screen) {
-  console.log("Settings screen:", screen);
+async function renderSettingsScreen(me, screen) {
+  if (!me) return;
+
+  if (screen === PR_NAV.settings || screen === PR_NAV.settingsOverview) {
+    // Settings overview
+    const badge = document.getElementById("prOverviewPasswordBadge");
+    const badgeText = document.getElementById("prOverviewPasswordText");
+    const lastLoginEl = document.getElementById("prOverviewLastLogin");
+    const lastActivityEl = document.getElementById("prOverviewLastActivity");
+
+    if (badge && badgeText) {
+      const days = prGetPasswordAgeDays(me);
+      if (days >= 90 || me.force_password_change) {
+        badge.className = "inline-flex items-center gap-2 rounded-full px-3 py-1 bg-red-50 text-red-700 text-xs font-semibold mb-3";
+        badgeText.textContent = `Password expired (${days} days)`;
+      } else if (days >= 80) {
+        badge.className = "inline-flex items-center gap-2 rounded-full px-3 py-1 bg-amber-50 text-amber-700 text-xs font-semibold mb-3";
+        badgeText.textContent = `Expiring soon (${90 - days} days left)`;
+      } else {
+        badge.className = "inline-flex items-center gap-2 rounded-full px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold mb-3";
+        badgeText.textContent = `Healthy (${days} days old)`;
+      }
+    }
+
+    if (lastLoginEl) {
+      lastLoginEl.textContent = me.last_login_at ? new Date(me.last_login_at).toLocaleString() : "—";
+    }
+    if (lastActivityEl) {
+      lastActivityEl.textContent = me.last_activity_at ? new Date(me.last_activity_at).toLocaleString() : "—";
+    }
+
+    // Wire overview navigation buttons
+    const gotoSettings = document.getElementById("prOverviewGotoSettings");
+    if (gotoSettings && !gotoSettings.dataset.bound) {
+      gotoSettings.dataset.bound = "1";
+      gotoSettings.addEventListener("click", () => switchPractitionerScreen(PR_NAV.settings, me));
+    }
+    const gotoUsers = document.getElementById("prOverviewGotoUsers");
+    if (gotoUsers && !gotoUsers.dataset.bound) {
+      gotoUsers.dataset.bound = "1";
+      gotoUsers.addEventListener("click", () => switchPractitionerScreen(PR_NAV.users, me));
+    }
+    const gotoRoles = document.getElementById("prOverviewGotoRoles");
+    if (gotoRoles && !gotoRoles.dataset.bound) {
+      gotoRoles.dataset.bound = "1";
+      gotoRoles.addEventListener("click", () => switchPractitionerScreen(PR_NAV.rolesPermissions, me));
+    }
+    const gotoFirm = document.getElementById("prOverviewGotoFirm");
+    if (gotoFirm && !gotoFirm.dataset.bound) {
+      gotoFirm.dataset.bound = "1";
+      gotoFirm.addEventListener("click", () => switchPractitionerScreen(PR_NAV.firmPreferences, me));
+    }
+  }
+
+  if (screen === PR_NAV.settings) {
+    prHydrateSettingsScreen(me);
+  }
+
+  if (screen === PR_NAV.users) {
+    await prRenderUsersScreen(me);
+  }
+
+  if (screen === PR_NAV.rolesPermissions) {
+    prRenderRolesScreen(me);
+  }
+
+  if (screen === PR_NAV.firmPreferences) {
+    prRenderFirmPreferences(me);
+  }
+}
+
+// ============================================================
+// USERS SCREEN
+// ============================================================
+async function prRenderUsersScreen(me) {
+  const tbody = document.getElementById("prUsersTableBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = '<tr><td colspan="6" class="text-center text-slate-500 py-6">Loading users...</td></tr>';
+
+  try {
+    const users = await prEnsureUsersCache(me);
+    if (!users.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-slate-500 py-6">No users found.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = users.map(u => {
+      const fullName = [u.first_name, u.last_name].filter(Boolean).join(" ").trim() || u.email || "Unknown";
+      const role = humanizeRole(u.role || u.user_role || "viewer");
+      const scope = String(u.access_scope || "core").toLowerCase();
+      const scopeLabel = scope === "assignment" ? "Engagement" : "Core / Internal";
+      const isActive = u.is_active !== false && u.user_is_active !== false;
+      const joined = u.joined_at ? new Date(u.joined_at).toLocaleDateString() : "—";
+
+      return `<tr class="border-t border-slate-100">
+        <td class="py-3 px-4 font-medium text-slate-800">${escHtml(fullName)}</td>
+        <td class="py-3 px-4 text-slate-600">${escHtml(u.email || "—")}</td>
+        <td class="py-3 px-4"><span class="badge badge-brand">${escHtml(role)}</span></td>
+        <td class="py-3 px-4 text-slate-600">${escHtml(scopeLabel)}</td>
+        <td class="py-3 px-4">${isActive ? '<span class="badge badge-ok">Active</span>' : '<span class="badge badge-slate">Inactive</span>'}</td>
+        <td class="py-3 px-4 text-slate-500">${escHtml(joined)}</td>
+      </tr>`;
+    }).join("");
+  } catch (err) {
+    console.error("prRenderUsersScreen failed:", err);
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center text-red-500 py-6">${escHtml(err.message || "Failed to load users")}</td></tr>`;
+  }
+
+  // Wire refresh button
+  const refreshBtn = document.getElementById("prUsersRefreshBtn");
+  if (refreshBtn && !refreshBtn.dataset.bound) {
+    refreshBtn.dataset.bound = "1";
+    refreshBtn.addEventListener("click", async () => {
+      PR_USERS_CACHE = [];
+      await prRenderUsersScreen(me);
+    });
+  }
+
+  // Wire invite form
+  const inviteForm = document.getElementById("prInviteUserForm");
+  if (inviteForm && !inviteForm.dataset.bound) {
+    inviteForm.dataset.bound = "1";
+    inviteForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("prInviteEmail")?.value?.trim()?.toLowerCase() || "";
+      const role = document.getElementById("prInviteRole")?.value || "";
+      const msg = document.getElementById("prInviteMsg");
+
+      if (!email || !role) {
+        if (msg) { msg.textContent = "Email and role are required."; msg.className = "mt-2 text-xs text-red-600"; }
+        return;
+      }
+
+      try {
+        const res = await apiFetch(ENDPOINTS.invites, {
+          method: "POST",
+          body: JSON.stringify({
+            email, role,
+            access_scope: "assignment",
+            companyId: me.company_id,
+            company_id: me.company_id,
+            note: "Invited from practitioner settings",
+          }),
+        });
+
+        if (msg) {
+          msg.textContent = `Invite sent to ${email}.`;
+          msg.className = "mt-2 text-xs text-emerald-600";
+        }
+        inviteForm.reset();
+        PR_USERS_CACHE = [];
+        await prRenderUsersScreen(me);
+      } catch (err) {
+        if (msg) {
+          msg.textContent = err.message || "Failed to send invite.";
+          msg.className = "mt-2 text-xs text-red-600";
+        }
+      }
+    });
+  }
+}
+
+function escHtml(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ============================================================
+// ROLES & PERMISSIONS SCREEN
+// ============================================================
+function prRenderRolesScreen(me) {
+  const tbody = document.getElementById("prRolesTableBody");
+  if (!tbody) return;
+
+  const roles = [
+    { label: "Audit Partner", dashboards: "Both", posting: false, review: true, approval: true, signoff: true, desc: "Final sign-off, deliverable approval, risk oversight" },
+    { label: "Engagement Partner", dashboards: "Both", posting: false, review: true, approval: true, signoff: true, desc: "Engagement ownership, partner-level sign-off" },
+    { label: "Quality Control Reviewer", dashboards: "Both", posting: false, review: true, approval: true, signoff: false, desc: "Independent QC review before partner sign-off" },
+    { label: "Audit Manager", dashboards: "Both", posting: false, review: true, approval: true, signoff: false, desc: "Engagement management, review queue, team capacity" },
+    { label: "Client Service Manager", dashboards: "Both", posting: false, review: true, approval: true, signoff: false, desc: "Client relationship, portfolio management" },
+    { label: "Senior Associate", dashboards: "Practitioner", posting: true, review: true, approval: false, signoff: false, desc: "Senior prep, review of staff work, WP clearance" },
+    { label: "Reviewer", dashboards: "Practitioner", posting: true, review: true, approval: false, signoff: false, desc: "Review of prepared items, return for rework" },
+    { label: "FS Compiler", dashboards: "Practitioner", posting: true, review: false, approval: false, signoff: false, desc: "Financial statement compilation, WP preparation" },
+    { label: "Bookkeeper", dashboards: "Practitioner", posting: true, review: false, approval: false, signoff: false, desc: "Day-to-day bookkeeping, data entry, receipts" },
+    { label: "Audit Staff", dashboards: "Practitioner", posting: true, review: false, approval: false, signoff: false, desc: "Field work, testing, working paper preparation" },
+    { label: "Tax Preparer", dashboards: "Practitioner", posting: true, review: false, approval: false, signoff: false, desc: "Tax computation, return preparation" },
+    { label: "Viewer", dashboards: "Both", posting: false, review: false, approval: false, signoff: false, desc: "Read-only access to dashboards and reports" },
+  ];
+
+  const checkIcon = (ok) => ok
+    ? '<span class="text-emerald-600 font-bold">✓</span>'
+    : '<span class="text-slate-300">—</span>';
+
+  tbody.innerHTML = roles.map(r => `
+    <tr class="border-t border-slate-100">
+      <td class="py-3 px-4 font-medium text-slate-800">${escHtml(r.label)}</td>
+      <td class="py-3 px-4 text-slate-600">${escHtml(r.dashboards)}</td>
+      <td class="py-3 px-4 text-center">${checkIcon(r.posting)}</td>
+      <td class="py-3 px-4 text-center">${checkIcon(r.review)}</td>
+      <td class="py-3 px-4 text-center">${checkIcon(r.approval)}</td>
+      <td class="py-3 px-4 text-center">${checkIcon(r.signoff)}</td>
+      <td class="py-3 px-4 text-xs text-slate-500">${escHtml(r.desc)}</td>
+    </tr>
+  `).join("");
+}
+
+// ============================================================
+// FIRM PREFERENCES SCREEN
+// ============================================================
+function prRenderFirmPreferences(me) {
+  const setText = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val || "—";
+  };
+
+  setText("prFirmName", me?.company_name || localStorage.getItem("companyName"));
+  setText("prFirmEmail", me?.email);
+  setText("prFirmCountry", me?.country || "—");
+  setText("prFirmCurrency", me?.currency || "—");
+
+  // Load preferences from localStorage
+  const autoExpand = document.getElementById("prPrefAutoExpand");
+  const myQueue = document.getElementById("prPrefMyQueue");
+  const compact = document.getElementById("prPrefCompact");
+
+  if (autoExpand) {
+    autoExpand.checked = localStorage.getItem("pr_pref_auto_expand") !== "false";
+    autoExpand.addEventListener("change", () => {
+      localStorage.setItem("pr_pref_auto_expand", String(autoExpand.checked));
+    });
+  }
+  if (myQueue) {
+    myQueue.checked = localStorage.getItem("pr_pref_my_queue") === "true";
+    myQueue.addEventListener("change", () => {
+      localStorage.setItem("pr_pref_my_queue", String(myQueue.checked));
+    });
+  }
+  if (compact) {
+    compact.checked = localStorage.getItem("pr_pref_compact") === "true";
+    compact.addEventListener("change", () => {
+      localStorage.setItem("pr_pref_compact", String(compact.checked));
+      document.body.classList.toggle("pr-compact-tables", compact.checked);
+    });
+  }
 }
 
 

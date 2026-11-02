@@ -80954,6 +80954,41 @@ class DatabaseService:
     ) -> list[dict]:
         schema = f"company_{int(company_id)}"
 
+
+        # ---------------------------------------------------------
+        # NORMALISE FINANCE LEASE PRINCIPAL RECOVERY
+        # ---------------------------------------------------------
+        # Principal recovery must equal the reduction in net
+        # investment, independently of the cash payment amount.
+        #
+        # This is a shared safeguard for all companies and all
+        # schedule-generation routes using this save function.
+        # ---------------------------------------------------------
+        if str(classification or "").strip().lower() == "finance":
+            normalised_rows = []
+
+            for source_row in rows:
+                row = dict(source_row)
+
+                opening = row.get("opening_net_investment")
+                closing = row.get("closing_net_investment")
+
+                if opening is None or closing is None:
+                    raise ValueError(
+                        "Finance lease schedule period "
+                        f"{row.get('period_no')} has a missing "
+                        "opening or closing net investment."
+                    )
+
+                row["principal_recovery"] = self._money_decimal(
+                    self._decimal(opening)
+                    - self._decimal(closing)
+                )
+
+                normalised_rows.append(row)
+
+            rows = normalised_rows
+
         existing=self.fetch_all(
             f"""
             SELECT
