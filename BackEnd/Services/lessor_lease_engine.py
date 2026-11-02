@@ -1235,24 +1235,29 @@ class LessorLeaseEngine:
             + pv_unguaranteed_residual
         )
 
-        pv_lease_payments = (
-            target_net_investment
-            - pv_residual_values
-            - capitalised_initial_direct_costs
-        )
+        # Use the actual contractual payment, excluding VAT
+        # where billing_amount is VAT-inclusive.
+        payment = self._net_lease_payment(data)
 
-        payment = self._solve_periodic_payment(
-            target_net_investment=
-                target_net_investment,
-            residual_value=total_residual,
+        # Initial net investment is the present value of the
+        # contractual net payments plus the residual values.
+        opening = self._finance_present_value(
+            payment=payment,
             period_count=period_count,
             periodic_rate=periodic_rate,
             timing=timing,
+            residual_value=total_residual,
+        )
+        initial_net_investment = opening
+        # Show the actual PV of payments separately from residuals.
+        pv_lease_payments = self._money_decimal(
+            opening - pv_residual_values
         )
 
-
-        opening = self._money_decimal(
-            target_net_investment
+        # A supplied implicit rate should reconcile this amount
+        # to fair value plus qualifying initial direct costs.
+        implicit_rate_difference = self._money_decimal(
+            opening - target_net_investment
         )
 
         rows = []
@@ -1261,105 +1266,38 @@ class LessorLeaseEngine:
             last_period = period_no == period_count
 
             if timing == "advance":
-                if last_period:
-                    expected_closing = self._money_decimal(
-                        total_residual
+                cash_payment = payment
+
+                if cash_payment > opening:
+                    raise ValueError(
+                        f"Advance payment exceeds the opening "
+                        f"net investment in period {period_no}."
                     )
 
-                    # The final payment occurs before the final
-                    # period's finance income is earned.
-                    if periodic_rate == 0:
-                        cash_payment = self._money_decimal(
-                            opening - expected_closing
-                        )
-                    else:
-                        cash_payment = self._money_decimal(
-                            opening
-                            - (
-                                expected_closing
-                                / (Decimal("1") + periodic_rate)
-                            )
-                        )
+                remaining_after_payment = self._money_decimal(
+                    opening - cash_payment
+                )
 
-                    if cash_payment < 0:
-                        raise ValueError(
-                            "Final advance payment would be negative. "
-                            "Review the residual value and lease terms."
-                        )
+                finance_income = self._money_decimal(
+                    remaining_after_payment * periodic_rate
+                )
 
-                    remaining_after_payment = (
-                        self._money_decimal(
-                            opening - cash_payment
-                        )
-                    )
+                principal = cash_payment
 
-                    finance_income = self._money_decimal(
-                        remaining_after_payment * periodic_rate
-                    )
-
-                    principal = cash_payment
-                    closing = self._money_decimal(
-                        remaining_after_payment + finance_income
-                    )
-                else:
-                    cash_payment = payment
-
-                    if cash_payment > opening:
-                        raise ValueError(
-                            f"Advance payment exceeds the opening "
-                            f"net investment in period {period_no}."
-                        )
-
-                    remaining_after_payment = (
-                        self._money_decimal(
-                            opening - cash_payment
-                        )
-                    )
-
-                    finance_income = self._money_decimal(
-                        remaining_after_payment * periodic_rate
-                    )
-
-                    principal = cash_payment
-
-                    closing = self._money_decimal(
-                        remaining_after_payment + finance_income
-                    )
+                closing = self._money_decimal(
+                    remaining_after_payment + finance_income
+                )
 
             else:
                 finance_income = self._money_decimal(
                     opening * periodic_rate
                 )
 
-                if last_period:
-                    expected_closing = self._money_decimal(
-                        total_residual
-                    )
+                cash_payment = payment
 
-                    # The arrears payment is made after finance
-                    # income has accrued for the period.
-                    cash_payment = self._money_decimal(
-                        opening
-                        + finance_income
-                        - expected_closing
-                    )
-
-                    if cash_payment < 0:
-                        raise ValueError(
-                            "Final arrears payment would be negative. "
-                            "Review the residual value and lease terms."
-                        )
-
-                    closing = expected_closing
-
-                else:
-                    cash_payment = payment
-
-                    closing = self._money_decimal(
-                        opening
-                        + finance_income
-                        - cash_payment
-                    )
+                closing = self._money_decimal(
+                    opening + finance_income - cash_payment
+                )
 
                 principal = self._money_decimal(
                     cash_payment - finance_income
@@ -1445,7 +1383,7 @@ class LessorLeaseEngine:
 
         unearned_finance_income = (
             gross_investment
-            - target_net_investment
+            - initial_net_investment
         )
 
         return {
@@ -1469,9 +1407,11 @@ class LessorLeaseEngine:
             ),
 
             "initial_net_investment": float(
-                self._money_decimal(
-                    target_net_investment
-                )
+                self._money_decimal(initial_net_investment)
+            ),
+
+            "implicit_rate_reconciliation_difference": float(
+                implicit_rate_difference
             ),
 
             "pv_lease_payments": float(
@@ -1960,9 +1900,12 @@ class LessorLeaseEngine:
             # Principal recovery is the actual reduction in
             # the lessor's net investment, not necessarily
             # the full cash payment.
-            principal = self._money_decimal(
-                opening - closing
-            )
+            if timing == "advance":
+                principal = self._money_decimal(cash_payment)
+            else:
+                principal = self._money_decimal(
+                    cash_payment - finance_income
+                )
 
             if principal < 0:
                 raise ValueError(

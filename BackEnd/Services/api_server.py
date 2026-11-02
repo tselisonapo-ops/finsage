@@ -1,4 +1,4 @@
-﻿print("[BOOT] api_server.py import started")
+print("[BOOT] api_server.py import started")
 
 # ────────────────────────────────────────────────────────────────
 # Load environment FIRST (before ANY BackEnd.Services imports)
@@ -6978,6 +6978,118 @@ def api_get_company(company_id: int):
     company["work_unit_label"] = profile.get("work_unit_label") or "Project / Job"
 
     return jsonify(company), 200
+
+
+# ============================================================
+# Practitioner: lookup of a PROVISIONED CLIENT company's basic
+# details (currency, country, name, etc).
+#
+# The existing /api/companies/<id> route is gated to the JWT
+# user's own company, so practitioners cannot use it to read
+# their provisioned clients. This route verifies that the firm
+# (cid) actually owns an engagement whose target_company_id
+# matches the requested target_company_id, then returns just
+# the public-facing details of that provisioned company.
+# ============================================================
+@app.route(
+    "/api/companies/<int:cid>/provisioned-clients/<int:target_company_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_get_provisioned_client_company(cid: int, target_company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        current_user = getattr(g, "current_user", None) or {}
+        firm_company_id = int(current_user.get("company_id") or 0)
+
+        # Auth: cid must match the JWT user's own (firm) company_id.
+        if firm_company_id != int(cid):
+            return jsonify({"error": "Not authorised for this firm."}), 403
+
+        # Ownership check: the firm must have an active engagement whose
+        # target_company_id matches the requested target_company_id.
+        firm_schema = f"company_{int(cid)}"
+        try:
+            eng_check = db_service.fetch_one(
+                f"""
+                SELECT e.id AS engagement_id,
+                       e.engagement_name,
+                       e.engagement_code,
+                       e.customer_id,
+                       c.name AS customer_name,
+                       e.status AS engagement_status
+                FROM {firm_schema}.engagements e
+                LEFT JOIN {firm_schema}.customers c ON c.id = e.customer_id
+                WHERE e.company_id = %s
+                  AND e.target_company_id = %s
+                  AND e.is_active = TRUE
+                LIMIT 1
+                """,
+                (int(cid), int(target_company_id)),
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Engagement-ownership check failed for firm=%s target=%s",
+                cid, target_company_id,
+            )
+            return jsonify({"error": "Engagement lookup failed."}), 500
+
+        if not eng_check:
+            return jsonify({
+                "error": "No active engagement provisions this company."
+            }), 404
+
+        # Pull the provisioned company's basic details.
+        tgt = db_service.fetch_one(
+            """
+            SELECT
+                c.id,
+                c.name,
+                c.client_code,
+                c.industry,
+                c.sub_industry,
+                c.country,
+                c.currency,
+                c.fin_year_start,
+                c.company_reg_date,
+                c.company_reg_no,
+                c.tin,
+                c.vat,
+                c.company_email,
+                c.is_active,
+                c.created_at
+            FROM public.companies c
+            WHERE c.id = %s
+            LIMIT 1
+            """,
+            (int(target_company_id),),
+        )
+
+        if not tgt:
+            return jsonify({"error": "Provisioned company not found."}), 404
+
+        # Attach the engagement context so the frontend can confirm
+        # which engagement this provisioned company belongs to.
+        tgt["engagement_id"]     = eng_check.get("engagement_id")
+        tgt["engagement_name"]   = eng_check.get("engagement_name")
+        tgt["engagement_code"]   = eng_check.get("engagement_code")
+        tgt["customer_id"]       = eng_check.get("customer_id")
+        tgt["customer_name"]     = eng_check.get("customer_name")
+        tgt["engagement_status"] = eng_check.get("engagement_status")
+        # Convenience aliases for the frontend
+        tgt["currency_code"]     = tgt.get("currency") or "USD"
+
+        return jsonify(tgt), 200
+
+    except Exception:
+        current_app.logger.exception(
+            "api_get_provisioned_client_company failed (firm=%s target=%s)",
+            cid, target_company_id,
+        )
+        return jsonify({"error": "Internal server error"}), 500
+
 
 @app.route("/api/companies/<int:company_id>/users/<int:user_id>/role", methods=["PATCH", "OPTIONS"])
 @require_auth

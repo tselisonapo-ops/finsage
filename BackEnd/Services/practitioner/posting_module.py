@@ -108,6 +108,126 @@ def _resolve_engagement_target_company(cur, firm_company_id, engagement_id):
 
 
 # ============================================================
+# HELPER: Map module_name to a SQL fragment + params that filters
+# journal_lines / coa rows down to ONLY the accounts that belong to
+# that subledger. Returns ("(LOWER(a.section) = %s AND ...)", [params]).
+# Returns ("", []) for modules that don't filter by account (payments
+# and receipts filter by journal.source instead, handled by the caller).
+# ============================================================
+def _build_module_account_filter(module_name):
+    """Return (sql_fragment, params) restricting COA rows to this module."""
+    m = (module_name or "").strip().lower()
+
+    if m == "revenue":
+        # P&L revenue / sales / income / adjustments accounts only.
+        return (
+            """(
+                LOWER(COALESCE(a.section, '')) = 'profit or loss'
+                AND (
+                    LOWER(COALESCE(a.category, '')) IN
+                        ('revenue','sales revenue','other income',
+                         'other operating income','adjustments','finance income',
+                         'income')
+                    OR LOWER(COALESCE(a.code_family, '')) LIKE 'pl_rev%'
+                    OR LOWER(COALESCE(a.name, '')) ~
+                        '(revenue|sales|income|service|royalt|fee earned|turnover)'
+                )
+            )""",
+            [],
+        )
+
+    if m == "inventory":
+        return (
+            """(
+                LOWER(COALESCE(a.category, '')) IN ('inventory','current assets')
+                AND (
+                    LOWER(COALESCE(a.name, '')) ~
+                        '(inventory|stock|raw material|work in progress|wip|finished goods)'
+                    OR LOWER(COALESCE(a.name, '')) ~
+                        '(grni|goods received not invoiced)'
+                    OR LOWER(COALESCE(a.name, '')) ~
+                        '(purchase price variance|ppv)'
+                    OR LOWER(COALESCE(a.name, '')) ~
+                        '(supplier advances|vendor prepayments|prepayment to supplier)'
+                    OR LOWER(COALESCE(a.subcategory, '')) = 'inventory'
+                )
+            )""",
+            [],
+        )
+
+    if m in ("ppe", "fixed_assets"):
+        return (
+            """(
+                LOWER(COALESCE(a.category, '')) IN
+                    ('non-current assets','accumulated depreciation',
+                     'depreciation & amortization','fixed assets')
+                AND (
+                    LOWER(COALESCE(a.name, '')) ~
+                        '(asset|depreciation|property|ppe|plant|equipment|vehicle|'
+                        'building|furniture|fixture|land|machinery|computer)'
+                )
+                AND LOWER(COALESCE(a.name, '')) NOT LIKE '%right-of-use%'
+                AND LOWER(COALESCE(a.name, '')) NOT LIKE '%rou asset%'
+                AND LOWER(COALESCE(a.subcategory, '')) <> 'lease'
+            )""",
+            [],
+        )
+
+    if m == "loans":
+        return (
+            """(
+                LOWER(COALESCE(a.name, '')) ~ '(loan|borrowing|mortgage|debenture|note payable)'
+                OR LOWER(COALESCE(a.category, '')) LIKE '%loan%'
+                OR LOWER(COALESCE(a.subcategory, '')) LIKE '%loan%'
+            )
+            AND LOWER(COALESCE(a.name, '')) NOT LIKE '%lease%'
+            """,
+            [],
+        )
+
+    if m == "leases":
+        return (
+            """(
+                LOWER(COALESCE(a.name, '')) LIKE '%lease%'
+                OR LOWER(COALESCE(a.name, '')) LIKE '%right-of-use%'
+                OR LOWER(COALESCE(a.name, '')) LIKE '%rou asset%'
+                OR LOWER(COALESCE(a.subcategory, '')) = 'lease'
+                OR LOWER(COALESCE(a.category, '')) LIKE '%lease%'
+            )""",
+            [],
+        )
+
+    if m == "vat":
+        return (
+            """(
+                LOWER(COALESCE(a.name, '')) ~ '(vat|sales tax|gst|input tax|output tax|hst|value added tax)'
+                OR LOWER(COALESCE(a.subcategory, '')) = 'vat'
+                OR LOWER(COALESCE(a.subcategory, '')) = 'sales tax'
+            )
+            AND LOWER(COALESCE(a.name, '')) NOT LIKE '%income tax%'
+            AND LOWER(COALESCE(a.name, '')) NOT LIKE '%withholding%'
+            AND LOWER(COALESCE(a.name, '')) NOT LIKE '%payroll tax%'
+            """,
+            [],
+        )
+
+    if m in ("cashbook", "banking"):
+        return (
+            """(
+                LOWER(COALESCE(a.category, '')) IN ('cash & equivalents','cash and equivalents','cash','bank')
+                OR LOWER(COALESCE(a.name, '')) ~ '(cash|bank|petty cash)'
+                OR LOWER(COALESCE(a.cf_bucket, '')) IN ('cash','bank','cash and equivalents')
+                OR COALESCE(a.is_cash_equiv, FALSE) = TRUE
+            )""",
+            [],
+        )
+
+    # payments & receipts filter by journal.source, not account.
+    # Return empty filter — caller adds the source IN (...) clause.
+    return ("", [])
+
+
+# ============================================================
 # HELPER: Map module_name to the actual table + query in the
 # target company's schema.
 # ============================================================
@@ -290,50 +410,83 @@ def _query_target_company_postings(
         params.extend([limit, offset])
 
     else:
-        # For other modules (revenue, inventory, loans, leases, ppe, vat,
-        # cashbook, payments, receipts) — query the engagement_posting_activity
-        # table in the target company's schema as a fallback, and also try
-        # querying the journal table filtered by source/module.
+        # ---------------------------------------------------------------
+        # Module-aware filtering for subledgers (revenue, inventory, ppe,
+        # loans, leases, vat, cashbook, banking, payments, receipts).
+        #
+        # We JOIN journal -> journal_lines -> coa ON account_code = code
+        # and restrict to journals whose lines touch accounts that belong
+        # to the requested subledger. We also honour journal.source for
+        # payments / receipts which are event-driven, not account-driven.
+        # ---------------------------------------------------------------
+        module_filter_sql, module_filter_params = _build_module_account_filter(
+            module_name
+        )
 
-        # Try engagement_posting_activity in the target schema first
+        source_filter_sql = ""
+        if module_name == "payments":
+            source_filter_sql = (
+                " AND LOWER(COALESCE(j.source, '')) IN "
+                "('payment','bill_payment','vendor_payment','ap_payment','cash_payment')"
+            )
+        elif module_name == "receipts":
+            source_filter_sql = (
+                " AND LOWER(COALESCE(j.source, '')) IN "
+                "('receipt','invoice_receipt','customer_receipt','ar_receipt','cash_receipt')"
+            )
+
         try:
             if count_only:
                 sql = f"""
-                    SELECT COUNT(*) AS total_rows
-                    FROM {target_schema}.engagement_posting_activity
-                    WHERE module_name = %s
-                    AND is_active = TRUE
+                    SELECT COUNT(DISTINCT j.id) AS total_rows
+                    FROM {target_schema}.journal j
                 """
-                cur.execute(sql, [module_name])
+                join_clause = ""
+                where_extra = ""
+                count_params = []
+
+                if module_filter_sql:
+                    join_clause = (
+                        f" JOIN {target_schema}.journal_lines jl "
+                        f" ON jl.journal_id = j.id "
+                        f" LEFT JOIN {target_schema}.coa a "
+                        f" ON a.code = jl.account_code "
+                    )
+                    where_extra = " AND (" + module_filter_sql + ")"
+                    count_params = list(module_filter_params)
+
+                sql += join_clause
+                sql += (
+                    " WHERE COALESCE(j.reversal_of_journal_id, 0) = 0"
+                    + source_filter_sql
+                    + where_extra
+                )
+                if date_from:
+                    sql += " AND j.date >= %s"
+                    count_params.append(date_from)
+                if date_to:
+                    sql += " AND j.date <= %s"
+                    count_params.append(date_to)
+                if q:
+                    sql += (
+                        " AND (LOWER(COALESCE(j.ref, '')) LIKE LOWER(%s) "
+                        " OR LOWER(COALESCE(j.description, '')) LIKE LOWER(%s))"
+                    )
+                    count_params.extend([f"%{q}%", f"%{q}%"])
+
+                cur.execute(sql, count_params)
                 row = cur.fetchone()
-                count = int(row["total_rows"]) if row else 0
-
-                # Also count journal entries that match this module
-                if count == 0:
-                    sql2 = f"""
-                        SELECT COUNT(*) AS total_rows
-                        FROM {target_schema}.journal
-                        WHERE COALESCE(reversal_of_journal_id, 0) = 0
-                    """
-                    if date_from:
-                        sql2 += f" AND date >= %s"
-                    if date_to:
-                        sql2 += f" AND date <= %s"
-                    cur.execute(sql2, [p for p in [date_from, date_to] if p])
-                    row2 = cur.fetchone()
-                    count = int(row2["total_rows"]) if row2 else 0
-
-                return {"total_rows": count}
+                return {"total_rows": int(row["total_rows"]) if row else 0}
 
             sql = f"""
-                SELECT
+                SELECT DISTINCT
                     j.id,
                     j.date AS posting_date,
                     j.ref AS reference_no,
                     j.description,
                     j.gross_amount AS amount,
                     j.currency,
-                    NULL::INTEGER AS prepared_by_user_id,
+                    j.posted_by_user_id AS prepared_by_user_id,
                     NULL AS reviewer_user_id,
                     'posted' AS status,
                     %s AS event_type,
@@ -342,34 +495,77 @@ def _query_target_company_postings(
                     %s AS module_name,
                     j.created_at
                 FROM {target_schema}.journal j
-                WHERE COALESCE(j.reversal_of_journal_id, 0) = 0
             """
-            extra_params = [module_name, module_name]
+            row_params = [module_name, module_name]
 
+            join_clause = ""
+            where_extra = ""
+            if module_filter_sql:
+                join_clause = (
+                    f" JOIN {target_schema}.journal_lines jl "
+                    f" ON jl.journal_id = j.id "
+                    f" LEFT JOIN {target_schema}.coa a "
+                    f" ON a.code = jl.account_code "
+                )
+                where_extra = " AND (" + module_filter_sql + ")"
+                row_params.extend(module_filter_params)
+
+            sql += join_clause
+            sql += (
+                " WHERE COALESCE(j.reversal_of_journal_id, 0) = 0"
+                + source_filter_sql
+                + where_extra
+            )
             if date_from:
-                sql += f" AND j.date >= %s"
-                extra_params.append(date_from)
+                sql += " AND j.date >= %s"
+                row_params.append(date_from)
             if date_to:
-                sql += f" AND j.date <= %s"
-                extra_params.append(date_to)
+                sql += " AND j.date <= %s"
+                row_params.append(date_to)
             if q:
-                sql += f" AND (LOWER(COALESCE(j.ref, '')) LIKE LOWER(%s) OR LOWER(COALESCE(j.description, '')) LIKE LOWER(%s))"
-                extra_params.extend([f"%{q}%", f"%{q}%"])
+                sql += (
+                    " AND (LOWER(COALESCE(j.ref, '')) LIKE LOWER(%s) "
+                    " OR LOWER(COALESCE(j.description, '')) LIKE LOWER(%s))"
+                )
+                row_params.extend([f"%{q}%", f"%{q}%"])
 
-            sql += f" ORDER BY j.date DESC, j.id DESC LIMIT %s OFFSET %s"
-            extra_params.extend([limit, offset])
+            sql += " ORDER BY j.date DESC, j.id DESC LIMIT %s OFFSET %s"
+            row_params.extend([limit, offset])
 
-            cur.execute(sql, extra_params)
+            cur.execute(sql, row_params)
             return cur.fetchall()
 
         except Exception:
-            # Table doesn't exist in target schema — return empty
+            # coa/journal_lines table missing or query failed — empty result
             if count_only:
                 return {"total_rows": 0}
             return []
 
     cur.execute(sql, params)
     return cur.fetchall()
+
+
+# ============================================================
+# HELPER: Look up a company's base currency from public.companies
+# ============================================================
+def _lookup_company_currency(cur, company_id):
+    """Return the company's currency code (e.g. 'ZAR', 'USD') or None."""
+    try:
+        cur.execute(
+            """
+            SELECT currency
+            FROM public.companies
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (int(company_id),),
+        )
+        row = cur.fetchone()
+        if row and row.get("currency"):
+            return row["currency"]
+    except Exception:
+        pass
+    return None
 
 
 # ============================================================
@@ -442,24 +638,57 @@ def _build_summary_from_actual_data(
         row = cur.fetchone() or {}
 
     else:
-        # Generic: count journal entries
+        # Module-aware summary: count only journals whose lines touch accounts
+        # that belong to this subledger.
+        module_filter_sql, module_filter_params = _build_module_account_filter(
+            module_name
+        )
+        source_filter_sql = ""
+        if module_name == "payments":
+            source_filter_sql = (
+                " AND LOWER(COALESCE(j.source, '')) IN "
+                "('payment','bill_payment','vendor_payment','ap_payment','cash_payment')"
+            )
+        elif module_name == "receipts":
+            source_filter_sql = (
+                " AND LOWER(COALESCE(j.source, '')) IN "
+                "('receipt','invoice_receipt','customer_receipt','ar_receipt','cash_receipt')"
+            )
+
         try:
+            join_clause = ""
+            where_extra = ""
+            sum_params = list(module_filter_params)
+            if module_filter_sql:
+                join_clause = (
+                    f" JOIN {target_schema}.journal_lines jl "
+                    f" ON jl.journal_id = j.id "
+                    f" LEFT JOIN {target_schema}.coa a "
+                    f" ON a.code = jl.account_code "
+                )
+                where_extra = " AND (" + module_filter_sql + ")"
+
             sql = f"""
                 SELECT
-                    COUNT(*) AS total_items,
+                    COUNT(DISTINCT j.id) AS total_items,
                     0 AS draft_count,
                     0 AS review_count,
                     0 AS approved_count,
-                    COUNT(*) AS posted_count,
+                    COUNT(DISTINCT j.id) AS posted_count,
                     0 AS returned_or_rejected_count,
-                    COUNT(*) FILTER (WHERE date = CURRENT_DATE) AS activity_today_count,
-                    MAX(date) AS last_activity_date,
-                    COALESCE(SUM(gross_amount), 0) AS total_amount,
-                    COALESCE(SUM(gross_amount), 0) AS posted_amount
-                FROM {target_schema}.journal
-                WHERE COALESCE(reversal_of_journal_id, 0) = 0
+                    COUNT(DISTINCT j.id) FILTER (WHERE j.date = CURRENT_DATE) AS activity_today_count,
+                    MAX(j.date) AS last_activity_date,
+                    COALESCE(SUM(DISTINCT j.gross_amount), 0) AS total_amount,
+                    COALESCE(SUM(DISTINCT j.gross_amount), 0) AS posted_amount
+                FROM {target_schema}.journal j
             """
-            cur.execute(sql)
+            sql += join_clause
+            sql += (
+                " WHERE COALESCE(j.reversal_of_journal_id, 0) = 0"
+                + source_filter_sql
+                + where_extra
+            )
+            cur.execute(sql, sum_params)
             row = cur.fetchone() or {}
         except Exception:
             row = {
@@ -491,6 +720,7 @@ def _build_summary_from_actual_data(
         "total_amount": float(row.get("total_amount") or 0),
         "posted_amount": float(row.get("posted_amount") or 0),
         "module_name": module_name,
+        "currency_code": _lookup_company_currency(cur, target_company_id),
     }
 
 
@@ -573,8 +803,83 @@ def _build_filter_options_from_actual_data(
             ]
 
         else:
-            statuses = ["posted"]
-            event_types = [module_name]
+            # Module-aware filter options — pull real statuses / event types
+            # from the journals that actually belong to this subledger.
+            module_filter_sql, module_filter_params = _build_module_account_filter(
+                module_name
+            )
+            source_filter_sql = ""
+            if module_name == "payments":
+                source_filter_sql = (
+                    " AND LOWER(COALESCE(j.source, '')) IN "
+                    "('payment','bill_payment','vendor_payment','ap_payment','cash_payment')"
+                )
+            elif module_name == "receipts":
+                source_filter_sql = (
+                    " AND LOWER(COALESCE(j.source, '')) IN "
+                    "('receipt','invoice_receipt','customer_receipt','ar_receipt','cash_receipt')"
+                )
+
+            try:
+                join_clause = ""
+                where_extra = ""
+                opt_params = list(module_filter_params)
+                if module_filter_sql:
+                    join_clause = (
+                        f" JOIN {target_schema}.journal_lines jl "
+                        f" ON jl.journal_id = j.id "
+                        f" LEFT JOIN {target_schema}.coa a "
+                        f" ON a.code = jl.account_code "
+                    )
+                    where_extra = " AND (" + module_filter_sql + ")"
+
+                cur.execute(f"""
+                    SELECT DISTINCT 'posted' AS status
+                    FROM {target_schema}.journal j
+                    {join_clause}
+                    WHERE COALESCE(j.reversal_of_journal_id, 0) = 0
+                    {source_filter_sql}
+                    {where_extra}
+                    LIMIT 20
+                """, opt_params)
+                statuses = [
+                    r["status"] for r in cur.fetchall() if r.get("status")
+                ] or ["posted"]
+
+                # event types: distinct journal.source values for this module
+                cur.execute(f"""
+                    SELECT DISTINCT COALESCE(j.source, 'journal_entry') AS evt
+                    FROM {target_schema}.journal j
+                    {join_clause}
+                    WHERE COALESCE(j.reversal_of_journal_id, 0) = 0
+                    {source_filter_sql}
+                    {where_extra}
+                    ORDER BY evt
+                    LIMIT 30
+                """, opt_params)
+                event_types = [
+                    r["evt"] for r in cur.fetchall() if r.get("evt")
+                ] or [module_name]
+
+                cur.execute(f"""
+                    SELECT DISTINCT j.posted_by_user_id AS user_id
+                    FROM {target_schema}.journal j
+                    {join_clause}
+                    WHERE j.posted_by_user_id IS NOT NULL
+                      AND COALESCE(j.reversal_of_journal_id, 0) = 0
+                      {source_filter_sql}
+                      {where_extra}
+                    LIMIT 50
+                """, opt_params)
+                prepared_by_users = [
+                    {"user_id": r["user_id"], "user_name": f"User {r['user_id']}"}
+                    for r in cur.fetchall()
+                    if r.get("user_id")
+                ]
+            except Exception:
+                statuses = ["posted"]
+                event_types = [module_name]
+                prepared_by_users = []
 
     except Exception:
         pass
