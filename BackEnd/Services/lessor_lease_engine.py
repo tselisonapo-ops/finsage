@@ -1235,9 +1235,63 @@ class LessorLeaseEngine:
             + pv_unguaranteed_residual
         )
 
-        # Use the actual contractual payment, excluding VAT
-        # where billing_amount is VAT-inclusive.
-        payment = self._net_lease_payment(data)
+
+        # Use the supplied contractual payment where one exists.
+        # Otherwise calculate the net periodic payment from the
+        # target net investment and the implicit interest rate.
+        supplied_billing_amount = self._decimal(
+            data.get("billing_amount")
+            or data.get("lease_payment")
+        )
+
+        payment_calculated = supplied_billing_amount <= 0
+
+        if payment_calculated:
+            payment = self._solve_periodic_payment(
+                target_net_investment=target_net_investment,
+                residual_value=total_residual,
+                period_count=period_count,
+                periodic_rate=periodic_rate,
+                timing=timing,
+            )
+        else:
+            payment = self._net_lease_payment(data)
+
+        # The solver returns the net rental payment.
+        # Convert it to the amount stored in billing_amount,
+        # according to the selected billing basis.
+        billing_basis = str(
+            data.get("billing_basis") or "gross"
+        ).strip().lower()
+
+        if billing_basis not in {"gross", "net"}:
+            raise ValueError(
+                "billing_basis must be gross or net"
+            )
+
+        vat_rate = self._decimal(data.get("vat_rate"))
+
+        if vat_rate > 1:
+            vat_rate /= Decimal("100")
+
+        if vat_rate < 0:
+            raise ValueError("vat_rate cannot be negative")
+
+        if payment_calculated:
+            calculated_billing_amount = (
+                self._money_decimal(
+                    payment * (
+                        Decimal("1") + vat_rate
+                    )
+                )
+                if billing_basis == "gross"
+                else self._money_decimal(payment)
+            )
+        else:
+            # Preserve the amount already supplied by the user.
+            calculated_billing_amount = (
+                self._money_decimal(supplied_billing_amount)
+            )
 
         # Initial net investment is the present value of the
         # contractual net payments plus the residual values.
@@ -1393,6 +1447,15 @@ class LessorLeaseEngine:
             "periodic_payment": float(
                 self._money_decimal(payment)
             ),
+
+            # Amount to persist in the lease's billing_amount field.
+            "billing_amount": float(
+                calculated_billing_amount
+            ),
+
+            "payment_calculated": payment_calculated,
+
+            "billing_basis": billing_basis,
 
             "target_net_investment": float(
                 self._money_decimal(
@@ -1769,7 +1832,7 @@ class LessorLeaseEngine:
             periodic_rate=periodic_rate,
             timing=timing,
             residual_value=residual,
-        ) + direct_costs
+        )
 
         explicit = self._decimal(
             lease.get("initial_net_investment")

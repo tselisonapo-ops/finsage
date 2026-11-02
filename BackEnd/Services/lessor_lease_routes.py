@@ -321,11 +321,14 @@ def _lessor_payload(data: dict) -> dict:
     if not customer_id:
         raise ValueError("customer_id is required")
 
-    amount = round(float(data.get("billing_amount") or 0.0), 2)
+    amount = round(
+        float(data.get("billing_amount") or 0.0),
+        2,
+    )
 
-    if amount <= 0:
-        raise ValueError("billing_amount must be greater than zero")
-
+    if amount < 0:
+        raise ValueError("billing_amount cannot be negative")
+    
     frequency = (data.get("billing_frequency") or "monthly").lower()
 
     if frequency not in {
@@ -725,6 +728,15 @@ def lessor_leases(company_id: int):
         preview=lessor_lease_engine.preview_lessor_terms(payload)
         classification_data=preview.get("classification") or {}
         terms=preview.get("terms") or {}
+        # Persist the payment calculated by the finance lease engine.
+        # This must happen before creating the lease and generating
+        # its billing schedule.
+        calculated_billing_amount = terms.get("billing_amount")
+
+        if calculated_billing_amount is not None:
+            payload["billing_amount"] = float(
+                calculated_billing_amount
+            )
         classification=str(classification_data.get("classification") or payload.get("lease_classification") or "operating").lower()
 
         payload.update({
