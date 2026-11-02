@@ -70533,16 +70533,45 @@ class DatabaseService:
                     ),
                 )
 
-                # 3. Deactivate future billing schedule
+                # 3. Check for posted or paid bills before reversing commencement
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*) AS bill_count
+                    FROM {schema}.lessor_lease_bills
+                    WHERE company_id = %s
+                    AND lessor_lease_id = %s
+                    AND status IN ('posted', 'paid')
+                    """,
+                    (
+                        int(company_id),
+                        lessor_lease_id,
+                    ),
+                )
+
+                bill_check = cur.fetchone()
+                posted_bill_count = (
+                    int(bill_check["bill_count"])
+                    if isinstance(bill_check, dict)
+                    else int(bill_check[0])
+                )
+
+                if posted_bill_count:
+                    raise ValueError(
+                        f"LESSOR_LEASE_HAS_POSTED_BILLS|"
+                        f"lease_id={lessor_lease_id}|"
+                        f"bill_count={posted_bill_count}"
+                    )
+
+                # Void outstanding draft bills
                 cur.execute(
                     f"""
                     UPDATE {schema}.lessor_lease_bills
                     SET
-                        is_active = FALSE,
+                        status = 'void',
                         updated_at = NOW()
                     WHERE company_id = %s
                     AND lessor_lease_id = %s
-                    AND is_active = TRUE
+                    AND status = 'draft'
                     """,
                     (
                         int(company_id),

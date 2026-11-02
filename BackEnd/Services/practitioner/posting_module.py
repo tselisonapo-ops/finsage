@@ -344,7 +344,12 @@ def _query_target_company_postings(
                 i.id,
                 i.invoice_date AS posting_date,
                 i.number AS reference_no,
-                COALESCE(i.notes, i.customer_name, 'Invoice') AS description,
+                COALESCE(
+                    NULLIF(BTRIM(i.notes), ''),
+                    NULLIF(BTRIM(c.name), ''),
+                    NULLIF(BTRIM(i.number), ''),
+                    'Invoice'
+                ) AS description,
                 i.total_amount AS amount,
                 i.currency,
                 i.created_by_user_id AS prepared_by_user_id,
@@ -355,7 +360,10 @@ def _query_target_company_postings(
                 i.id AS source_id,
                 NULL AS module_name,
                 i.created_at
-            FROM {target_schema}.{base_table} i
+            FROM {target_schema}.invoices i
+            LEFT JOIN {target_schema}.customers c
+                ON c.id = i.customer_id
+            AND c.company_id = i.company_id
             WHERE {where_sql}
             ORDER BY i.invoice_date DESC, i.id DESC
             LIMIT %s OFFSET %s
@@ -391,10 +399,15 @@ def _query_target_company_postings(
                 b.id,
                 b.bill_date AS posting_date,
                 b.number AS reference_no,
-                COALESCE(b.notes, b.vendor_name, 'Bill') AS description,
+                COALESCE(
+                    NULLIF(BTRIM(b.notes), ''),
+                    NULLIF(BTRIM(v.name), ''),
+                    NULLIF(BTRIM(b.number), ''),
+                    'Bill'
+                ) AS description,
                 b.total_amount AS amount,
                 b.currency,
-                b.created_by_user_id AS prepared_by_user_id,
+                NULL::INTEGER AS prepared_by_user_id,
                 NULL AS reviewer_user_id,
                 COALESCE(b.status, 'draft') AS status,
                 'bill' AS event_type,
@@ -402,7 +415,10 @@ def _query_target_company_postings(
                 b.id AS source_id,
                 NULL AS module_name,
                 b.created_at
-            FROM {target_schema}.{base_table} b
+            FROM {target_schema}.bills b
+            LEFT JOIN {target_schema}.vendors v
+                ON v.id = b.vendor_id
+            AND v.company_id = b.company_id
             WHERE {where_sql}
             ORDER BY b.bill_date DESC, b.id DESC
             LIMIT %s OFFSET %s
@@ -486,7 +502,7 @@ def _query_target_company_postings(
                     j.description,
                     j.gross_amount AS amount,
                     j.currency,
-                    j.posted_by_user_id AS prepared_by_user_id,
+                    NULL::INTEGER AS prepared_by_user_id,
                     NULL AS reviewer_user_id,
                     'posted' AS status,
                     %s AS event_type,
