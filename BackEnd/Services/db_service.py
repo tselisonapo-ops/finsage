@@ -70536,7 +70536,7 @@ class DatabaseService:
                 # 3. Deactivate future billing schedule
                 cur.execute(
                     f"""
-                    UPDATE {schema}.lessor_lease_billing_schedule
+                    UPDATE {schema}.lessor_lease_bills
                     SET
                         is_active = FALSE,
                         updated_at = NOW()
