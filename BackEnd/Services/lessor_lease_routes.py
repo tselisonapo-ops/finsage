@@ -126,7 +126,11 @@ def _assert_asset_available_for_lessor_lease(
         FROM {schema}.lessor_leases
         WHERE company_id=%s
           AND asset_id=%s
-          AND COALESCE(status, '') NOT IN ('cancelled', 'terminated')
+          AND LOWER(COALESCE(status, '')) NOT IN (
+              'cancelled',
+              'terminated',
+              'reversed'
+          )
           AND (%s::int IS NULL OR id<>%s::int)
         ORDER BY id DESC
         LIMIT 1
