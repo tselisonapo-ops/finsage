@@ -38382,9 +38382,6 @@ class DatabaseService:
             CONSTRAINT {schema}_payroll_runs_journal_fk
                 FOREIGN KEY (posted_journal_id) REFERENCES {schema}.journal(id) ON DELETE SET NULL,
 
-            CONSTRAINT {schema}_payroll_runs_uniq
-                UNIQUE(company_id, pay_calendar_id),
-
             CONSTRAINT {schema}_payroll_runs_status_ck
                 CHECK (status IN ('draft','calculated','approved','posted','reversed'))
         );
@@ -38405,6 +38402,29 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ,
             ADD COLUMN IF NOT EXISTS reversed_by_user_id BIGINT,
             ADD COLUMN IF NOT EXISTS reversal_reason TEXT;
+
+        ALTER TABLE {schema}.payroll_runs
+            ADD COLUMN IF NOT EXISTS version_no INT NOT NULL DEFAULT 1,
+            ADD COLUMN IF NOT EXISTS supersedes_run_id INT,
+            ADD COLUMN IF NOT EXISTS is_current_version BOOLEAN NOT NULL DEFAULT TRUE,
+            ADD COLUMN IF NOT EXISTS correction_reason TEXT,
+            ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS corrected_by_user_id BIGINT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_payroll_runs_uniq
+            ON {schema}.payroll_runs(company_id, pay_calendar_id)
+            WHERE supersedes_run_id IS NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_payroll_runs_current_uniq
+            ON {schema}.payroll_runs(company_id, pay_calendar_id)
+            WHERE is_current_version = TRUE;
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_runs_family_idx
+            ON {schema}.payroll_runs(
+                company_id,
+                COALESCE(supersedes_run_id, id),
+                version_no
+            );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_run_employees (
             id SERIAL PRIMARY KEY,
@@ -40140,7 +40160,6 @@ class DatabaseService:
             reversed_at TIMESTAMPTZ,
             created_by_user_id BIGINT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT uq_payroll_dc_run UNIQUE(company_id,reporting_date),
             CONSTRAINT chk_payroll_dc_run_dates CHECK(period_end>=period_start),
             CONSTRAINT chk_payroll_dc_run_status CHECK(
                 status IN('draft','calculated','approved','posted','reversed')
@@ -40166,6 +40185,12 @@ class DatabaseService:
                 company_id,payroll_run_id
             )
             WHERE payroll_run_id IS NOT NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_dc_run_active
+            ON {schema}.payroll_defined_contribution_runs(
+                company_id,reporting_date
+            )
+            WHERE status NOT IN ('reversed');
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_defined_contribution_run_lines(
             id BIGSERIAL PRIMARY KEY,
@@ -58318,6 +58343,7 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS purchase_option_expected BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS initial_direct_costs NUMERIC(18,2) NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS security_deposit_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS security_deposit_received BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS security_deposit_account_code TEXT NULL,
         ADD COLUMN IF NOT EXISTS commencement_date DATE NULL,
         ADD COLUMN IF NOT EXISTS useful_life_months INT NULL,
@@ -58358,9 +58384,21 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS last_correction_reason TEXT NULL;
 
         ALTER TABLE {schema}.lessor_leases
-            ADD COLUMN IF NOT EXISTS underlying_asset_account_code TEXT,
-            ADD COLUMN IF NOT EXISTS interest_rate_implicit NUMERIC;
+        ADD COLUMN IF NOT EXISTS underlying_asset_account_code TEXT,
+        ADD COLUMN IF NOT EXISTS interest_rate_implicit NUMERIC;
 
+        ALTER TABLE {schema}.lessor_leases
+        ADD COLUMN IF NOT EXISTS security_deposit_arrangement TEXT,
+        ADD COLUMN IF NOT EXISTS security_deposit_interest_bearing BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS security_deposit_separate_account BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS security_deposit_discount_deferred BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS security_deposit_discount_rate NUMERIC(18,8);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_asset_active_idx
+            ON {schema}.lessor_leases(company_id, asset_id)
+            WHERE asset_id IS NOT NULL
+              AND status NOT IN ('reversed','cancelled');
+              
         DO $fk_lessor_commencement_journal$
         BEGIN
             IF NOT EXISTS (
@@ -70497,43 +70535,10 @@ class DatabaseService:
                 lessor_lease_id = int(source_id)
 
                 # --------------------------------------------------
-                # 1. Reverse lessor lease master state
+                # 1. GUARD: posted or paid bills block the reversal.
+                #    Runs BEFORE any mutation so a rejected reversal
+                #    can never leave a half-reversed lease behind.
                 # --------------------------------------------------
-                cur.execute(
-                    f"""
-                    UPDATE {schema}.lessor_leases
-                    SET
-                        status = 'reversed',
-                        updated_at = NOW()
-                    WHERE company_id = %s
-                    AND id = %s
-                    """,
-                    (
-                        int(company_id),
-                        lessor_lease_id,
-                    ),
-                )
-
-                # --------------------------------------------------
-                # 2. Deactivate accounting schedule
-                # --------------------------------------------------
-                cur.execute(
-                    f"""
-                    UPDATE {schema}.lessor_lease_schedule
-                    SET
-                        is_active = FALSE,
-                        updated_at = NOW()
-                    WHERE company_id = %s
-                    AND lessor_lease_id = %s
-                    AND is_active = TRUE
-                    """,
-                    (
-                        int(company_id),
-                        lessor_lease_id,
-                    ),
-                )
-
-                # 3. Check for posted or paid bills before reversing commencement
                 cur.execute(
                     f"""
                     SELECT COUNT(*) AS bill_count
@@ -70562,7 +70567,49 @@ class DatabaseService:
                         f"bill_count={posted_bill_count}"
                     )
 
-                # Void outstanding draft bills
+                # --------------------------------------------------
+                # 2. Reverse lessor lease master state.
+                #    ONLY status + updated_at are touched — contract
+                #    data, dates, journal references and every other
+                #    historical column keep their values.
+                # --------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.lessor_leases
+                    SET
+                        status = 'reversed',
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                    AND id = %s
+                    """,
+                    (
+                        int(company_id),
+                        lessor_lease_id,
+                    ),
+                )
+
+                # --------------------------------------------------
+                # 3. Deactivate accounting schedule
+                # --------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.lessor_lease_schedule
+                    SET
+                        is_active = FALSE,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                    AND lessor_lease_id = %s
+                    AND is_active = TRUE
+                    """,
+                    (
+                        int(company_id),
+                        lessor_lease_id,
+                    ),
+                )
+
+                # --------------------------------------------------
+                # 4. Void outstanding draft bills
+                # --------------------------------------------------
                 cur.execute(
                     f"""
                     UPDATE {schema}.lessor_lease_bills
@@ -70577,6 +70624,20 @@ class DatabaseService:
                         int(company_id),
                         lessor_lease_id,
                     ),
+                )
+
+                # --------------------------------------------------
+                # 5. Release the underlying asset.
+                #    A reversed lease must no longer reserve it. The
+                #    lease row itself is NOT modified (history kept);
+                #    the asset is only released when no OTHER live
+                #    lease still references it, and disposed /
+                #    held-for-sale assets are never resurrected.
+                # --------------------------------------------------
+                self._lessor_release_underlying_asset(
+                    company_id,
+                    lessor_lease_id,
+                    cur=cur,
                 )
 
             elif source == "lease_payment":
@@ -70773,7 +70834,7 @@ class DatabaseService:
                             reversed_at=NOW()
                         WHERE company_id=%s
                           AND payroll_run_id=%s
-                          AND status='posted'
+                          AND status<>'reversed'
                     """,(
                         int(reversal_journal_id),
                         int(company_id),
@@ -79832,336 +79893,602 @@ class DatabaseService:
             "items": posted,
         }
 
+
     def build_lessor_day_one_journal(
-        self,
-        company_id: int,
-        lessor_lease_id: int,
-        *,
-        cur=None,
-    ) -> dict | None:
-        lease = self.get_lessor_lease(
-            company_id,
-            lessor_lease_id,
-            cur=cur,
-        )
-
-        if not lease:
-            raise ValueError("Lessor lease not found")
-
-        resolved_accounts = (
-            self.resolve_lessor_posting_accounts(
+            self,
+            company_id: int,
+            lessor_lease_id: int,
+            *,
+            cur=None,
+        ) -> dict | None:
+            lease = self.get_lessor_lease(
                 company_id,
-                lease,
+                lessor_lease_id,
                 cur=cur,
             )
-        )
 
-        for key, value in resolved_accounts.items():
-            if not lease.get(key) and value:
-                lease[key] = value
+            if not lease:
+                raise ValueError("Lessor lease not found")
 
-        classification = (
-            lease.get("lease_classification") or ""
-        ).strip().lower()
-
-        if classification not in {"operating", "finance"}:
-            raise ValueError(
-                "Lease must be classified before commencement"
+            resolved_accounts = (
+                self.resolve_lessor_posting_accounts(
+                    company_id,
+                    lease,
+                    cur=cur,
+                )
             )
 
-        # Operating lessor leases retain the underlying asset.
-        # Rental income is recognised through the periodic schedule.
-        if classification == "operating":
-            return None
+            for key, value in resolved_accounts.items():
+                if not lease.get(key) and value:
+                    lease[key] = value
 
-        schedule = self.list_lessor_accounting_schedule(
-            company_id,
-            lessor_lease_id,
-            cur=cur,
-        )
+            classification = (
+                lease.get("lease_classification") or ""
+            ).strip().lower()
 
-        if not schedule:
-            raise ValueError(
-                "Generate the lessor accounting schedule before commencement"
+            if classification not in {"operating", "finance"}:
+                raise ValueError(
+                    "Lease must be classified before commencement"
+                )
+
+            lines = []
+
+            # ---------------------------------------------------------
+            # IFRS 16 LESSOR FINANCE LEASE COMMENCEMENT
+            # Operating leases retain the underlying asset.
+            # ---------------------------------------------------------
+
+            if classification == "finance":
+                schedule = self.list_lessor_accounting_schedule(
+                    company_id,
+                    lessor_lease_id,
+                    cur=cur,
+                )
+
+                if not schedule:
+                    raise ValueError(
+                        "Generate the lessor accounting schedule before commencement"
+                    )
+
+                first = schedule[0]
+
+                net_investment = round(float(
+                    first.get("opening_net_investment")
+                    or lease.get("net_investment")
+                    or 0
+                ), 2)
+
+                if net_investment <= 0:
+                    raise ValueError(
+                        "Opening net investment must be greater than zero"
+                    )
+
+                current_portion = round(float(
+                    first.get("current_portion") or 0
+                ), 2)
+
+                noncurrent_portion = round(float(
+                    first.get("noncurrent_portion") or 0
+                ), 2)
+
+                if current_portion + noncurrent_portion == 0:
+                    noncurrent_portion = net_investment
+
+                difference = round(
+                    net_investment -
+                    current_portion -
+                    noncurrent_portion,
+                    2,
+                )
+
+                noncurrent_portion = round(
+                    noncurrent_portion + difference,
+                    2,
+                )
+
+                carrying_amount = round(float(
+                    lease.get("carrying_amount")
+                    or lease.get("underlying_asset_carrying_amount")
+                    or 0
+                ), 2)
+
+                if carrying_amount <= 0:
+                    raise ValueError(
+                        "Underlying asset carrying_amount is required"
+                    )
+
+                current_code = (
+                    lease.get("net_investment_current_account_code")
+                    or ""
+                ).strip()
+
+                noncurrent_code = (
+                    lease.get("net_investment_noncurrent_account_code")
+                    or ""
+                ).strip()
+
+                asset_code = (
+                    lease.get("underlying_asset_account_code")
+                    or lease.get("asset_account_code")
+                    or ""
+                ).strip()
+
+                gain_code = (
+                    lease.get("disposal_gain_account_code")
+                    or ""
+                ).strip()
+
+                loss_code = (
+                    lease.get("disposal_loss_account_code")
+                    or ""
+                ).strip()
+
+                if current_portion > 0 and not current_code:
+                    raise ValueError(
+                        "net_investment_current_account_code is required"
+                    )
+
+                if noncurrent_portion > 0 and not noncurrent_code:
+                    raise ValueError(
+                        "net_investment_noncurrent_account_code is required"
+                    )
+
+                if not asset_code:
+                    raise ValueError(
+                        "underlying_asset_account_code is required"
+                    )
+
+                gain_loss = round(
+                    net_investment - carrying_amount,
+                    2,
+                )
+
+                if gain_loss > 0 and not gain_code:
+                    raise ValueError(
+                        "disposal_gain_account_code is required"
+                    )
+
+                if gain_loss < 0 and not loss_code:
+                    raise ValueError(
+                        "disposal_loss_account_code is required"
+                    )
+
+                if current_portion > 0:
+                    lines.append({
+                        "account_code": current_code,
+                        "debit": current_portion,
+                        "credit": 0.0,
+                        "memo": (
+                            "Current portion of net investment "
+                            "in finance lease"
+                        ),
+                    })
+
+                if noncurrent_portion > 0:
+                    lines.append({
+                        "account_code": noncurrent_code,
+                        "debit": noncurrent_portion,
+                        "credit": 0.0,
+                        "memo": (
+                            "Non-current portion of net investment "
+                            "in finance lease"
+                        ),
+                    })
+
+                if gain_loss < 0:
+                    lines.append({
+                        "account_code": loss_code,
+                        "debit": abs(gain_loss),
+                        "credit": 0.0,
+                        "memo": (
+                            "Loss on finance lease commencement"
+                        ),
+                    })
+
+                lines.append({
+                    "account_code": asset_code,
+                    "debit": 0.0,
+                    "credit": carrying_amount,
+                    "memo": (
+                        "Derecognition of underlying asset "
+                        "under finance lease"
+                    ),
+                })
+
+                if gain_loss > 0:
+                    lines.append({
+                        "account_code": gain_code,
+                        "debit": 0.0,
+                        "credit": gain_loss,
+                        "memo": (
+                            "Gain on finance lease commencement"
+                        ),
+                    })
+
+            # ---------------------------------------------------------
+            # IFRS 16 LESSOR SECURITY DEPOSIT RECEIPT
+            # ---------------------------------------------------------
+
+            deposit_amount = round(float(
+                lease.get("security_deposit_amount") or 0
+            ), 2)
+
+            deposit_received = self._bool(
+                lease.get("security_deposit_received")
             )
 
-        first = schedule[0]
+            if deposit_amount < 0:
+                raise ValueError(
+                    "Security deposit cannot be negative"
+                )
 
-        net_investment = round(float(
-            first.get("opening_net_investment")
-            or lease.get("net_investment")
-            or 0
-        ), 2)
+            if deposit_received and deposit_amount > 0:
+                deposit_preview = (
+                    self.preview_security_deposit_terms(lease)
+                )
 
-        if net_investment <= 0:
-            raise ValueError(
-                "Opening net investment must be greater than zero"
+                if deposit_preview.get(
+                    "non_refundable_consideration_review_required"
+                ):
+                    raise ValueError(
+                        "The received non-refundable deposit requires "
+                        "a separate consideration and revenue assessment "
+                        "before automatic Day 1 posting."
+                    )
+
+                if deposit_preview.get("discount_deferred"):
+                    raise ValueError(
+                        "The discounted security deposit cannot be "
+                        "automatically posted yet. The accounting treatment "
+                        "for the difference between cash received and the "
+                        "initial deposit liability must first be configured."
+                    )
+
+                deposit_liability = round(float(
+                    deposit_preview.get("initial_liability") or 0
+                ), 2)
+
+                if deposit_liability <= 0:
+                    raise ValueError(
+                        "Received refundable deposit must have a positive "
+                        "initial liability"
+                    )
+
+                # Resolve the actual bank account.
+                bank_account_id = lease.get("bank_account_id")
+
+                bank_account = None
+
+                if bank_account_id:
+                    schema = self.company_schema(company_id)
+
+                    bank_account = self.fetch_one(
+                        f"""
+                        SELECT
+                            id,
+                            ledger_account_code,
+                            is_active
+                        FROM {schema}.company_bank_accounts
+                        WHERE id = %s
+                        AND company_id = %s
+                        LIMIT 1
+                        """,
+                        (
+                            int(bank_account_id),
+                            int(company_id),
+                        ),
+                        cur=cur,
+                    )
+
+                    if not bank_account:
+                        raise ValueError(
+                            "The selected security deposit bank account "
+                            "does not exist for this company."
+                        )
+
+                    if not bank_account.get("is_active"):
+                        raise ValueError(
+                            "The selected security deposit bank account "
+                            "is inactive."
+                        )
+
+                else:
+                    if self._bool(
+                        lease.get("security_deposit_separate_account")
+                    ):
+                        raise ValueError(
+                            "Select a bank account for the separately held "
+                            "security deposit before posting."
+                        )
+
+                    schema = self.company_schema(company_id)
+
+                    bank_account = self.fetch_one(
+                        f"""
+                        SELECT
+                            id,
+                            ledger_account_code,
+                            is_active
+                        FROM {schema}.company_bank_accounts
+                        WHERE company_id = %s
+                        AND is_active = TRUE
+                        AND is_default_receipts = TRUE
+                        ORDER BY id
+                        LIMIT 1
+                        """,
+                        (int(company_id),),
+                        cur=cur,
+                    )
+
+                if bank_account:
+                    if not bank_account.get("ledger_account_code"):
+                        raise ValueError(
+                            "The selected bank account has no ledger "
+                            "account code configured."
+                        )
+
+                    bank_code = str(
+                        bank_account["ledger_account_code"]
+                    ).strip()
+
+                else:
+                    # Legacy fallback for leases storing only the
+                    # bank ledger account code.
+                    bank_code = str(
+                        lease.get("bank_account_code") or ""
+                    ).strip()
+
+                if not bank_code:
+                    raise ValueError(
+                        "No valid bank account is available for the "
+                        "security deposit receipt. Configure a default "
+                        "receipts account or select one on the lease."
+                    )
+
+                # Confirm that the resolved bank ledger account is
+                # an active posting account in this company's COA.
+                bank_coa = self.fetch_one(
+                    f"""
+                    SELECT code
+                    FROM {self.company_schema(company_id)}.coa
+                    WHERE code = %s
+                    AND posting = TRUE
+                    LIMIT 1
+                    """,
+                    (bank_code,),
+                    cur=cur,
+                )
+
+                if not bank_coa:
+                    raise ValueError(
+                        f"Bank ledger account {bank_code} is not a "
+                        "valid posting account in the company COA."
+                    )
+
+                deposit_code = str(
+                    lease.get("security_deposit_account_code")
+                    or lease.get("deposit_liability_account_code")
+                    or ""
+                ).strip()
+
+                if not deposit_code:
+                    raise ValueError(
+                        "A current or non-current refundable lease "
+                        "security deposit liability account is required."
+                    )
+
+                deposit_coa = self.fetch_one(
+                    f"""
+                    SELECT code
+                    FROM {self.company_schema(company_id)}.coa
+                    WHERE code = %s
+                    AND posting = TRUE
+                    LIMIT 1
+                    """,
+                    (deposit_code,),
+                    cur=cur,
+                )
+
+                if not deposit_coa:
+                    raise ValueError(
+                        f"Security deposit liability account "
+                        f"{deposit_code} is not a valid posting account."
+                    )
+
+                lines.append({
+                    "account_code": bank_code,
+                    "debit": deposit_amount,
+                    "credit": 0.0,
+                    "memo": (
+                        "Receipt of refundable lease security deposit"
+                    ),
+                })
+
+                lines.append({
+                    "account_code": deposit_code,
+                    "debit": 0.0,
+                    "credit": deposit_liability,
+                    "memo": (
+                        "Initial recognition of refundable lease "
+                        "security deposit liability"
+                    ),
+                })
+
+                if round(deposit_amount - deposit_liability, 2) != 0:
+                    raise ValueError(
+                        "The security deposit cash receipt and initial "
+                        "liability do not match. Additional accounting "
+                        "treatment is required before posting."
+                    )
+
+            # ---------------------------------------------------------
+            # FINAL JOURNAL VALIDATION
+            # ---------------------------------------------------------
+
+            if not lines:
+                return None
+
+            commencement_date = (
+                lease.get("commencement_date")
+                or lease.get("start_date")
             )
 
-        current_portion = round(float(
-            first.get("current_portion") or 0
-        ), 2)
+            if not commencement_date:
+                raise ValueError(
+                    "commencement_date is required"
+                )
 
-        noncurrent_portion = round(float(
-            first.get("noncurrent_portion") or 0
-        ), 2)
-
-        if current_portion + noncurrent_portion == 0:
-            noncurrent_portion = net_investment
-
-        difference = round(
-            net_investment -
-            current_portion -
-            noncurrent_portion,
-            2,
-        )
-
-        noncurrent_portion = round(
-            noncurrent_portion + difference,
-            2,
-        )
-
-        carrying_amount = round(float(
-            lease.get("carrying_amount")
-            or lease.get("underlying_asset_carrying_amount")
-            or 0
-        ), 2)
-
-        if carrying_amount <= 0:
-            raise ValueError(
-                "Underlying asset carrying_amount is required"
+            total_debit = round(
+                sum(float(x.get("debit") or 0) for x in lines),
+                2,
             )
 
-        current_code = (
-            lease.get("net_investment_current_account_code")
-            or ""
-        ).strip()
-
-        noncurrent_code = (
-            lease.get("net_investment_noncurrent_account_code")
-            or ""
-        ).strip()
-
-        asset_code = (
-            lease.get("underlying_asset_account_code")
-            or lease.get("asset_account_code")
-            or ""
-        ).strip()
-
-        gain_code = (
-            lease.get("disposal_gain_account_code")
-            or ""
-        ).strip()
-
-        loss_code = (
-            lease.get("disposal_loss_account_code")
-            or ""
-        ).strip()
-
-        if current_portion > 0 and not current_code:
-            raise ValueError(
-                "net_investment_current_account_code is required"
+            total_credit = round(
+                sum(float(x.get("credit") or 0) for x in lines),
+                2,
             )
 
-        if noncurrent_portion > 0 and not noncurrent_code:
-            raise ValueError(
-                "net_investment_noncurrent_account_code is required"
-            )
+            if total_debit != total_credit:
+                raise ValueError(
+                    f"Unbalanced lessor Day 1 journal: "
+                    f"debits={total_debit:.2f}, "
+                    f"credits={total_credit:.2f}"
+                )
 
-        if not asset_code:
-            raise ValueError(
-                "underlying_asset_account_code is required"
-            )
+            description_parts = []
 
-        gain_loss = round(
-            net_investment - carrying_amount,
-            2,
-        )
+            if classification == "finance":
+                description_parts.append(
+                    "Finance lease commencement"
+                )
 
-        if gain_loss > 0 and not gain_code:
-            raise ValueError(
-                "disposal_gain_account_code is required"
-            )
+            if deposit_received and deposit_amount > 0:
+                description_parts.append(
+                    "security deposit receipt"
+                )
 
-        if gain_loss < 0 and not loss_code:
-            raise ValueError(
-                "disposal_loss_account_code is required"
-            )
-
-        lines = []
-
-        if current_portion > 0:
-            lines.append({
-                "account_code": current_code,
-                "debit": current_portion,
-                "credit": 0.0,
-                "memo": (
-                    "Current portion of net investment "
-                    "in finance lease"
+            return {
+                "date": str(commencement_date)[:10],
+                "ref": f"LESSOR-COMMENCE-{lessor_lease_id}",
+                "description": (
+                    f"{' and '.join(description_parts)}: "
+                    f"{lease.get('contract_name') or lessor_lease_id}"
                 ),
-            })
-
-        if noncurrent_portion > 0:
-            lines.append({
-                "account_code": noncurrent_code,
-                "debit": noncurrent_portion,
-                "credit": 0.0,
-                "memo": (
-                    "Non-current portion of net investment "
-                    "in finance lease"
+                "source": "lessor_lease_commencement",
+                "source_id": int(lessor_lease_id),
+                "module_name": "ifrs16_lessor",
+                "currency": (
+                    lease.get("currency")
+                    or self.company_currency(company_id)
                 ),
-            })
-
-        if gain_loss < 0:
-            lines.append({
-                "account_code": loss_code,
-                "debit": abs(gain_loss),
-                "credit": 0.0,
-                "memo": (
-                    "Loss on finance lease commencement"
-                ),
-            })
-
-        lines.append({
-            "account_code": asset_code,
-            "debit": 0.0,
-            "credit": carrying_amount,
-            "memo": (
-                "Derecognition of underlying asset "
-                "under finance lease"
-            ),
-        })
-
-        if gain_loss > 0:
-            lines.append({
-                "account_code": gain_code,
-                "debit": 0.0,
-                "credit": gain_loss,
-                "memo": (
-                    "Gain on finance lease commencement"
-                ),
-            })
-
-        commencement_date = (
-            lease.get("commencement_date")
-            or lease.get("start_date")
-        )
-
-        total_debit = round(sum(float(x.get("debit") or 0) for x in lines), 2)
-        total_credit = round(sum(float(x.get("credit") or 0) for x in lines), 2)
-
-        if total_debit != total_credit:
-            raise ValueError(
-                f"Unbalanced lessor Day 1 journal: debits={total_debit:.2f}, credits={total_credit:.2f}"
-            )
-        return {
-
-            "date": str(commencement_date)[:10],
-            "ref": f"LESSOR-COMMENCE-{lessor_lease_id}",
-            "description": (
-                f"Finance lease commencement: "
-                f"{lease.get('contract_name') or lessor_lease_id}"
-            ),
-            "source": "lessor_lease_commencement",
-            "source_id": int(lessor_lease_id),
-            "module_name": "ifrs16_lessor",
-            "currency": (
-                lease.get("currency")
-                or self.company_currency(company_id)
-            ),
-            "lines": lines,
-            "total_debit": total_debit,
-            "total_credit": total_credit,
-        }
+                "lines": lines,
+                "total_debit": total_debit,
+                "total_credit": total_credit,
+            }
 
 
     def post_lessor_day_one_journal(
-        self,
-        company_id: int,
-        lessor_lease_id: int,
-        *,
-        commencement_date=None,
-        user_id: int | None = None,
-    ) -> dict:
-        with self._conn_cursor() as (conn, cur):
-            try:
-                lease = self.get_lessor_lease(
-                    company_id,
-                    lessor_lease_id,
-                    cur=cur,
-                )
-
-                if not lease:
-                    raise ValueError("Lessor lease not found")
-
-                if lease.get("commencement_journal_id"):
-                    raise ValueError(
-                        "Lessor lease has already been commenced"
-                    )
-
-                actual_date = (
-                    commencement_date
-                    or lease.get("commencement_date")
-                    or lease.get("start_date")
-                )
-
-                if not actual_date:
-                    raise ValueError(
-                        "commencement_date is required"
-                    )
-
-                journal = self.build_lessor_day_one_journal(
-                    company_id,
-                    lessor_lease_id,
-                    cur=cur,
-                )
-
-                journal_id = None
-
-                if journal:
-                    journal["date"] = str(actual_date)[:10]
-
-                    journal_id = self.post_journal(
+            self,
+            company_id: int,
+            lessor_lease_id: int,
+            *,
+            commencement_date=None,
+            user_id: int | None = None,
+        ) -> dict:
+            with self._conn_cursor() as (conn, cur):
+                try:
+                    lease = self.get_lessor_lease(
                         company_id,
-                        journal,
+                        lessor_lease_id,
                         cur=cur,
-                        conn=conn,
                     )
 
-                updated = self.commence_lessor_lease(
-                    company_id,
-                    lessor_lease_id,
-                    commencement_date=actual_date,
-                    journal_id=journal_id,
-                    user_id=user_id,
-                    cur=cur,
-                )
+                    if not lease:
+                        raise ValueError("Lessor lease not found")
 
-                if not updated:
-                    raise ValueError(
-                        "Lease could not be commenced from its current status"
+                    if lease.get("commencement_journal_id"):
+                        raise ValueError(
+                            "Lessor lease has already been commenced"
+                        )
+
+                    actual_date = (
+                        commencement_date
+                        or lease.get("commencement_date")
+                        or lease.get("start_date")
                     )
 
-                conn.commit()
+                    if not actual_date:
+                        raise ValueError(
+                            "commencement_date is required"
+                        )
 
-                return {
-                    "lease": updated,
-                    "journal_id": journal_id,
-                    "journal": journal,
-                    "classification": (
-                        updated.get("lease_classification")
-                    ),
-                    "message": (
-                        "Operating lease commenced without "
-                        "a day-one journal"
-                        if journal is None
-                        else "Finance lease commencement journal posted"
-                    ),
-                }
+                    journal = self.build_lessor_day_one_journal(
+                        company_id,
+                        lessor_lease_id,
+                        cur=cur,
+                    )
 
-            except Exception:
-                conn.rollback()
-                raise
+                    journal_id = None
+
+                    if journal:
+                        journal["date"] = str(actual_date)[:10]
+
+                        if user_id:
+                            journal.update({
+                                "prepared_by_user_id": user_id,
+                                "created_by_user_id": user_id,
+                                "updated_by_user_id": user_id,
+                            })
+
+                        journal_id = self.post_journal(
+                            company_id,
+                            journal,
+                            cur=cur,
+                            conn=conn,
+                        )
+
+                    updated = self.commence_lessor_lease(
+                        company_id,
+                        lessor_lease_id,
+                        commencement_date=actual_date,
+                        journal_id=journal_id,
+                        user_id=user_id,
+                        cur=cur,
+                    )
+
+                    if not updated:
+                        raise ValueError(
+                            "Lease could not be commenced from its current status"
+                        )
+
+                    conn.commit()
+
+                    classification = (
+                        updated.get("lease_classification") or ""
+                    ).strip().lower()
+
+                    if journal_id:
+                        message = (
+                            "Lessor Day 1 journal posted successfully"
+                        )
+                    else:
+                        message = (
+                            "Operating lease commenced without a "
+                            "Day 1 journal because no deposit receipt "
+                            "was required"
+                        )
+
+                    return {
+                        "lease": updated,
+                        "journal_id": journal_id,
+                        "journal": journal,
+                        "classification": classification,
+                        "message": message,
+                    }
+
+                except Exception:
+                    conn.rollback()
+                    raise
 
     def get_lessor_lease(
         self,
@@ -80618,6 +80945,24 @@ class DatabaseService:
             "security_deposit_amount": (
                 payload.get("security_deposit_amount") or 0
             ),
+            "security_deposit_arrangement": (
+                payload.get("security_deposit_arrangement")
+            ),
+            "security_deposit_interest_bearing": bool(
+                payload.get("security_deposit_interest_bearing")
+            ),
+            "security_deposit_received": bool(
+                payload.get("security_deposit_received")
+            ),
+            "security_deposit_separate_account": bool(
+                payload.get("security_deposit_separate_account")
+            ),
+            "security_deposit_discount_deferred": bool(
+                payload.get("security_deposit_discount_deferred")
+            ),
+            "security_deposit_discount_rate": (
+                payload.get("security_deposit_discount_rate")
+            ),
             "commencement_date": payload.get("commencement_date"),
             "useful_life_months": payload.get("useful_life_months"),
             "economic_life_months": (
@@ -80786,6 +81131,12 @@ class DatabaseService:
                 initial_direct_cost_expense_account_code,
                 initial_direct_cost_asset_account_code,
                 security_deposit_amount,
+                security_deposit_arrangement,
+                security_deposit_interest_bearing,
+                security_deposit_received,
+                security_deposit_separate_account,
+                security_deposit_discount_deferred,
+                security_deposit_discount_rate,
                 commencement_date,
                 useful_life_months,
                 economic_life_months,
@@ -80852,6 +81203,12 @@ class DatabaseService:
                 %(initial_direct_cost_expense_account_code)s,
                 %(initial_direct_cost_asset_account_code)s,
                 %(security_deposit_amount)s,
+                %(security_deposit_arrangement)s,
+                %(security_deposit_interest_bearing)s,
+                %(security_deposit_received)s,
+                %(security_deposit_separate_account)s,
+                %(security_deposit_discount_deferred)s,
+                %(security_deposit_discount_rate)s,
                 %(commencement_date)s,
                 %(useful_life_months)s,
                 %(economic_life_months)s,
@@ -82639,6 +82996,92 @@ class DatabaseService:
             cur=cur,
         )
 
+    def _lessor_release_underlying_asset(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        *,
+        cur=None,
+    ) -> bool:
+        """
+        Release the underlying asset of a just-reversed lessor lease.
+
+        The lease row itself is NOT modified (history preserved). The asset
+        is only touched when NO other non-reversed lease still references
+        it, and it is never resurrected from disposed/held_for_sale.
+
+        Returns True when the asset row was released.
+        """
+        schema = self.company_schema(company_id)
+
+        released = self.fetch_one(
+            f"""
+            UPDATE {schema}.assets a
+            SET updated_at = NOW()
+            FROM {schema}.lessor_leases ll
+            WHERE ll.company_id = a.company_id
+              AND ll.id = %s
+              AND a.id = ll.asset_id
+              AND COALESCE(a.status,'active')
+                  NOT IN ('disposed','held_for_sale')
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM {schema}.lessor_leases other
+                    WHERE other.company_id = a.company_id
+                      AND other.asset_id  = a.id
+                      AND other.id       <> ll.id
+                      AND other.status NOT IN ('reversed','cancelled')
+              )
+            RETURNING a.id;
+            """,
+            (int(lessor_lease_id),),
+            cur=cur,
+        )
+
+        return bool(released)
+
+    def assert_lessor_asset_available(
+        self,
+        company_id: int,
+        asset_id: int,
+        *,
+        exclude_lease_id: int | None = None,
+    ) -> None:
+        """
+        CHANGE C (optional hardening) — call this from whatever endpoint
+        creates/commences a lessor lease (e.g. just before
+        create_lessor_lease) to make double-booking impossible server-side.
+
+        Raises ValueError when the asset is still held by a live lease.
+        Reversed and cancelled leases do NOT hold an asset.
+        """
+        if not asset_id:
+            return
+
+        schema = self.company_schema(company_id)
+
+        holder = self.fetch_one(f"""
+            SELECT id, contract_no, status
+            FROM {schema}.lessor_leases
+            WHERE company_id=%s
+              AND asset_id=%s
+              AND status NOT IN ('reversed','cancelled')
+              AND id <> COALESCE(%s, 0)
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(asset_id),
+            int(exclude_lease_id) if exclude_lease_id else 0,
+        ))
+
+        if holder:
+            raise ValueError(
+                f"ASSET_ALREADY_ON_LEASE|asset_id={int(asset_id)}|"
+                f"lease_id={holder['id']}|"
+                f"contract_no={holder.get('contract_no')}|"
+                f"lease_status={holder.get('status')}"
+            )
+            
     def list_lessor_schedule_versions(
         self,
         company_id: int,
@@ -173619,25 +174062,53 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         self,
         company_id: int,
         pay_calendar_id: int,
+        *,
+        allow_replacement: bool = False,
+        correction_reason: str | None = None,
+        user_id: int | None = None,
     ) -> dict:
+        """
+        Create (or return) the payroll run for a pay calendar.
+
+        Versioning rules:
+          * No run for the calendar            -> create version 1 (as before).
+          * Run exists and is NOT reversed     -> return it (already_existed).
+          * Run exists and IS reversed:
+              - allow_replacement=False (default)
+                    -> return the reversed run unchanged, plus
+                       replacement_required=True so old callers keep working.
+              - allow_replacement=True  -> create a NEW version row in
+                    payroll_runs for the same calendar, linked to the
+                    original via supersedes_run_id. The reversed version is
+                    never modified, cleared or re-posted.
+        """
         company_id = int(company_id)
         pay_calendar_id = int(pay_calendar_id)
 
         schema = self.company_schema(company_id)
 
+        # Current version for this calendar (is_current_version is unique
+        # per calendar while TRUE — see company_36_payroll_runs_current_uniq).
         existing = self.fetch_one(f"""
             SELECT *
             FROM {schema}.payroll_runs
             WHERE company_id=%s
             AND pay_calendar_id=%s
+            AND is_current_version=TRUE
+            ORDER BY id DESC
             LIMIT 1;
         """, (
             company_id,
             pay_calendar_id,
         ))
 
-        if existing:
+        if existing and existing.get("status") != "reversed":
             existing["already_existed"] = True
+            return existing
+
+        if existing and not allow_replacement:
+            existing["already_existed"] = True
+            existing["replacement_required"] = True
             return existing
 
         cal = self.fetch_one(f"""
@@ -173654,6 +174125,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not cal:
             raise ValueError("Pay calendar not found")
 
+        if existing:
+            return self._payroll_create_replacement_version(
+                company_id=company_id,
+                existing=existing,
+                correction_reason=correction_reason,
+                user_id=user_id,
+            )
+
+        # ---- original path: first version for this calendar ----------------
         return self.fetch_one(f"""
             INSERT INTO {schema}.payroll_runs (
                 company_id,
@@ -173680,6 +174160,222 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             cal["period_end"],
             cal["payment_date"],
         ))
+
+    def _payroll_create_replacement_version(
+        self,
+        company_id: int,
+        existing: dict,
+        *,
+        correction_reason: str | None,
+        user_id: int | None,
+    ) -> dict:
+        """
+        Create version N+1 for a pay period whose current version is reversed.
+
+        Atomic: flips the old version's is_current_version flag and inserts
+        the new row in one transaction, so the partial unique index
+        (company_id, pay_calendar_id) WHERE is_current_version is never
+        violated, even under concurrency.
+        """
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        reason = str(correction_reason or "").strip()
+
+        if not reason:
+            raise ValueError(
+                "A correction reason is required to create a "
+                "replacement payroll version"
+            )
+
+        if existing.get("status") != "reversed":
+            raise ValueError(
+                "Only a reversed payroll run can be replaced"
+            )
+
+        root_run_id = int(
+            existing.get("supersedes_run_id") or existing["id"]
+        )
+
+        with self._conn_cursor() as (conn, cur):
+            nxt = self.fetch_one(f"""
+                SELECT COALESCE(MAX(r.version_no),1)+1
+                       AS next_version_no
+                FROM {schema}.payroll_runs r
+                WHERE r.company_id=%s
+                AND COALESCE(r.supersedes_run_id,r.id)=%s;
+            """, (company_id, root_run_id), cur=cur)
+
+            next_version_no = int(
+                (nxt or {}).get("next_version_no") or 2
+            )
+
+            # 1) Demote the reversed version FIRST (unique-index safety).
+            cur.execute(f"""
+                UPDATE {schema}.payroll_runs
+                SET is_current_version=FALSE
+                WHERE company_id=%s
+                AND id=%s;
+            """, (company_id, int(existing["id"])))
+
+            # 2) Insert the replacement version, inheriting the period
+            #    straight from the reversed row. Fresh journal/approval
+            #    columns all take their defaults (NULL / draft).
+            new_run = self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_runs (
+                    company_id,
+                    pay_calendar_id,
+                    run_no,
+                    period_start,
+                    period_end,
+                    payment_date,
+                    status,
+                    version_no,
+                    supersedes_run_id,
+                    is_current_version,
+                    correction_reason,
+                    corrected_at,
+                    corrected_by_user_id
+                )
+                SELECT
+                    company_id,
+                    pay_calendar_id,
+                    'PAY-' || company_id || '-'
+                        || to_char(period_end::date,'YYYYMM')
+                        || '-V' || %s,
+                    period_start,
+                    period_end,
+                    payment_date,
+                    'draft',
+                    %s,
+                    %s,
+                    TRUE,
+                    %s,
+                    NOW(),
+                    %s
+                FROM {schema}.payroll_runs
+                WHERE company_id=%s
+                AND id=%s
+                RETURNING *;
+            """, (
+                next_version_no,
+                next_version_no,
+                int(existing["id"]),
+                reason,
+                user_id,
+                company_id,
+                int(existing["id"]),
+            ), cur=cur)
+
+            if not new_run:
+                raise ValueError(
+                    "Replacement payroll version creation failed"
+                )
+
+            # 3) Audit on BOTH runs so the trail connects them.
+            self.payroll_run_audit_add(
+                company_id,
+                int(new_run["id"]),
+                "create_replacement",
+                from_status=None,
+                to_status="draft",
+                message=(
+                    f"Replacement version {next_version_no} created "
+                    f"for reversed run {existing.get('run_no')}: "
+                    f"{reason}"
+                ),
+                metadata={
+                    "supersedes_run_id": int(existing["id"]),
+                    "root_run_id": root_run_id,
+                    "version_no": next_version_no,
+                    "correction_reason": reason,
+                },
+                user_id=user_id,
+            )
+
+            self.payroll_run_audit_add(
+                company_id,
+                int(existing["id"]),
+                "superseded_by",
+                from_status="reversed",
+                to_status="reversed",
+                message=(
+                    f"Superseded by replacement version "
+                    f"{next_version_no} (run {new_run['id']})"
+                ),
+                metadata={
+                    "replacement_run_id": int(new_run["id"]),
+                    "version_no": next_version_no,
+                    "correction_reason": reason,
+                },
+                user_id=user_id,
+            )
+
+            return new_run
+
+    def payroll_run_versions(
+        self,
+        company_id: int,
+        payroll_run_id: int,
+    ) -> dict:
+        """
+        Version history for one payroll period (any version id in the
+        chain resolves to the same family).
+        """
+        company_id = int(company_id)
+        payroll_run_id = int(payroll_run_id)
+        schema = self.company_schema(company_id)
+
+        anchor = self.fetch_one(f"""
+            SELECT id, supersedes_run_id
+            FROM {schema}.payroll_runs
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """, (company_id, payroll_run_id))
+
+        if not anchor:
+            raise ValueError("Payroll run not found")
+
+        root_run_id = int(
+            anchor.get("supersedes_run_id") or anchor["id"]
+        )
+
+        versions = self.fetch_all(f"""
+            SELECT
+                r.id          AS payroll_run_id,
+                r.version_no,
+                r.run_no,
+                r.status,
+                r.gross_pay,
+                r.net_pay,
+                r.posted_journal_id,
+                r.reversal_journal_id,
+                r.posted_at,
+                r.reversed_at,
+                r.reversal_reason,
+                r.supersedes_run_id,
+                r.is_current_version,
+                r.correction_reason,
+                r.created_at
+            FROM {schema}.payroll_runs r
+            WHERE r.company_id=%s
+            AND COALESCE(r.supersedes_run_id, r.id)=%s
+            ORDER BY r.version_no, r.id;
+        """, (company_id, root_run_id))
+
+        return {
+            "root_run_id": root_run_id,
+            "versions": versions,
+            "current_run_id": next(
+                (
+                    v["payroll_run_id"]
+                    for v in versions
+                    if v.get("is_current_version")
+                ),
+                None,
+            ),
+        }
+
 
     def payroll_defined_contribution_lines(
         self,company_id:int,employee_id:int,period_start,period_end,
@@ -175455,10 +176151,22 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not run:
             raise ValueError("Payroll run not found")
 
-        if run["status"] in("posted","reversed"):
+        if run["status"]=="posted":
             raise ValueError(
-                f"{run['status'].title()} payroll "
-                "cannot be recalculated"
+                "Posted payroll cannot be recalculated"
+            )
+
+        if run["status"]=="reversed":
+            raise ValueError(
+                "A reversed payroll run is immutable — "
+                "create a replacement version for this "
+                "pay period instead of recalculating it"
+            )
+
+        if not run.get("is_current_version",True):
+            raise ValueError(
+                "This payroll version has been superseded — "
+                "only the current version can be recalculated"
             )
 
         employees=self.fetch_all(f"""
@@ -175483,7 +176191,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ))
 
         return run,employees
-
 
     def _payroll_clear_run_results(
         self,
@@ -176843,6 +177550,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 f"{calculated} employee(s)"
             ),
             metadata={
+                "version_no":int(run.get("version_no") or 1),
                 "calculated_employee_count":calculated,
                 "skipped_employee_count":len(skipped),
                 "gross":str(totals["gross"]),
@@ -177142,18 +177850,70 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         run["employees"] = employees
         run["lines"] = lines
 
+        # ---- version metadata (versioning patch) ----
+        run["version"] = {
+            "version_no": int(run.get("version_no") or 1),
+            "supersedes_run_id": run.get("supersedes_run_id"),
+            "is_current_version": bool(
+                run.get("is_current_version", True)
+            ),
+            "correction_reason": run.get("correction_reason"),
+        }
+
+        root_run_id = (
+            run.get("supersedes_run_id") or run["id"]
+        )
+
+        run["versions"] = self.fetch_all(f"""
+            SELECT
+                r.id          AS payroll_run_id,
+                r.version_no,
+                r.run_no,
+                r.status,
+                r.posted_journal_id,
+                r.reversal_journal_id,
+                r.posted_at,
+                r.reversed_at,
+                r.reversal_reason,
+                r.supersedes_run_id,
+                r.is_current_version,
+                r.correction_reason,
+                r.created_at
+            FROM {schema}.payroll_runs r
+            WHERE r.company_id=%s
+            AND COALESCE(r.supersedes_run_id,r.id)=%s
+            ORDER BY r.version_no, r.id;
+        """, (company_id, root_run_id))
+
         return run
 
-    def payroll_runs_list(self, company_id: int):
+    def payroll_runs_list(
+        self,
+        company_id: int,
+        *,
+        include_superseded: bool = False,
+    ):
         schema = self.company_schema(company_id)
+
+        version_filter = (
+            "" if include_superseded
+            else "AND r.is_current_version=TRUE"
+        )
+
         return self.fetch_all(f"""
             SELECT r.*, c.frequency
             FROM {schema}.payroll_runs r
-            JOIN {schema}.payroll_pay_calendars c ON c.id = r.pay_calendar_id
+            JOIN {schema}.payroll_pay_calendars c
+              ON c.id = r.pay_calendar_id
+             AND c.company_id = r.company_id
             WHERE r.company_id=%s
-            ORDER BY r.period_start DESC, r.id DESC;
+            {version_filter}
+            ORDER BY
+                r.period_start DESC,
+                COALESCE(r.supersedes_run_id, r.id) DESC,
+                r.version_no ASC,
+                r.id DESC;
         """, (int(company_id),))
-
 
     def payroll_run_for_filing_month(
         self,
@@ -182427,12 +183187,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not run:
             raise ValueError("Payroll run not found")
 
-        if run["status"] in("posted","reversed"):
+        if run["status"]=="posted":
             raise ValueError(
-                "Posted or reversed payroll cannot "
-                "be returned to draft"
+                "Posted payroll cannot be recalculated"
             )
 
+        if run["status"]=="reversed":
+            raise ValueError(
+                "A reversed payroll run is immutable — "
+                "create a replacement version for this "
+                "pay period instead of recalculating it"
+            )
+
+        if not run.get("is_current_version",True):
+            raise ValueError(
+                "This payroll version has been superseded — "
+                "only the current version can be recalculated"
+            )
+        
         if run["status"] not in(
             "calculated",
             "approved",
@@ -183593,11 +184365,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         self.execute_sql(f"""
             UPDATE {schema}.payroll_defined_contribution_runs
-            SET status='reversed'
+            SET
+                status='reversed',
+                reversal_journal_id=%s,
+                reversed_at=NOW()
             WHERE company_id=%s
             AND payroll_run_id=%s
-            AND status='posted';
+            AND status NOT IN ('reversed');
         """,(
+            int(journal_id),
             company_id,
             payroll_run_id,
         ))

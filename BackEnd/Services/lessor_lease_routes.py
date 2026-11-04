@@ -579,8 +579,30 @@ def _lessor_payload(data: dict) -> dict:
         ).strip() or None,
         "currency": (data.get("currency") or "").strip() or None,
         "payment_terms_days": int(data.get("payment_terms_days") or 0),
-        "security_deposit_amount": float(
-            data.get("security_deposit_amount") or 0.0
+        "security_deposit_amount": _number(
+            data.get("security_deposit_amount"),
+            "security_deposit_amount",
+            minimum=0,
+        ),
+        "security_deposit_arrangement": str(
+            data.get("security_deposit_arrangement") or ""
+        ).strip().lower() or None,
+        "security_deposit_interest_bearing": _bool(
+            data.get("security_deposit_interest_bearing")
+        ),
+        "security_deposit_received": _bool(
+            data.get("security_deposit_received")
+        ),
+        "security_deposit_separate_account": _bool(
+            data.get("security_deposit_separate_account")
+        ),
+        "security_deposit_discount_deferred": _bool(
+            data.get("security_deposit_discount_deferred")
+        ),
+        "security_deposit_discount_rate": _number(
+            data.get("security_deposit_discount_rate"),
+            "security_deposit_discount_rate",
+            minimum=0,
         ),
         "security_deposit_account_code": (
             data.get("security_deposit_account_code") or ""
@@ -848,7 +870,11 @@ def lessor_leases(company_id: int):
             "accounting_schedule_count":len(saved_schedule),
             "commencement_journal_id":journal_id,
             "commencement_journal":journal,
-            "message":"Finance lease created and Day 1 journal posted" if journal_id else "Operating lease created and commenced",
+            "message": (
+                "Lessor lease created and Day 1 journal posted"
+                if journal_id
+                else "Operating lease created and commenced without a Day 1 journal"
+            ),
         }),201
 
     except ValueError as e:
@@ -1127,6 +1153,38 @@ def preview_lessor_terms(
                         "manufacturer_dealer_lessor"
                     )
                 ),
+
+            "security_deposit_amount": _number(
+                raw.get("security_deposit_amount"),
+                "security_deposit_amount",
+                minimum=0,
+            ),
+
+            "security_deposit_arrangement": str(
+                raw.get("security_deposit_arrangement") or ""
+            ).strip().lower() or None,
+
+            "security_deposit_interest_bearing": _bool(
+                raw.get("security_deposit_interest_bearing")
+            ),
+
+            "security_deposit_interest_bearing": _bool(
+                raw.get("security_deposit_interest_bearing")
+            ),
+
+            "security_deposit_separate_account": _bool(
+                raw.get("security_deposit_separate_account")
+            ),
+
+            "security_deposit_discount_deferred": _bool(
+                raw.get("security_deposit_discount_deferred")
+            ),
+
+            "security_deposit_discount_rate": _number(
+                raw.get("security_deposit_discount_rate"),
+                "security_deposit_discount_rate",
+                minimum=0,
+            ),
         })
 
         result = (

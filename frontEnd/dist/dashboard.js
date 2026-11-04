@@ -1,4 +1,4 @@
-﻿(function hardTraceRedirects() {
+(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -1011,6 +1011,12 @@ const ENDPOINTS = {
 
   companies: `${API_BASE}/api/companies`,
   company: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}`,
+
+  // Practitioner: lookup of a provisioned client company's basic
+  // details (currency, country, name, etc). Used to format totals
+  // on posting-module screens with the correct client currency.
+  provisionedClient: (firmCompanyId, targetCompanyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(firmCompanyId)}/provisioned-clients/${encodeURIComponent(targetCompanyId)}`,
 
   yearEndClose: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/year-end-close`,
@@ -14261,16 +14267,7 @@ function openLeaseWizard(ctx = {}) {
     ""
   ).trim();
 
-  const leaseRole =
-    ctx.leaseRole ||
-    getLeaseRoleFromAccount({
-      ...ctx,
-      code: accountCode,
-      account_name: accountName,
-    }) ||
-    "lessee";
-
-  const isLessor = leaseRole === "lessor";
+  const isLessor = ["BS_CA_1710", "BS_NCA_1720"].includes(accountCode);
 
   const payload = {
     type: "lease_wizard_context",
@@ -14286,7 +14283,7 @@ function openLeaseWizard(ctx = {}) {
     source: ctx.source || "journal",
     ctx: {
       mode: ctx.mode || (isLessor ? "inception" : "existing"),
-      leaseRole,
+      leaseRole: ctx.leaseRole || (isLessor ? "lessor" : "lessee"),
       accountCode,
       accountName,
       defaults: {
@@ -14314,13 +14311,6 @@ function openLeaseWizard(ctx = {}) {
     if (!frame.contentWindow) return;
 
     frame.contentWindow.postMessage(payload, origin);
-    console.log("[LEASE HOST] FINAL ROUTING CHECK", {
-      mode: payload.ctx?.mode,
-      leaseRole: payload.ctx?.leaseRole,
-      accountCode: payload.ctx?.accountCode,
-      accountName: payload.ctx?.accountName,
-      iframeUrl: frame.src,
-    });
     console.log("[LEASE HOST] context sent", payload);
   };
 
@@ -20151,58 +20141,23 @@ async function resolveLedgerRange(companyId, periodKey) {
   };
 }
 
+function buildPeriodParams(periodKey, extra = {}) {
+  const r = computePeriodRange(periodKey);
 
-function buildPeriodParams(periodKey) {
-  // Custom dates must come from the actual date inputs.
-  if (periodKey === "custom") {
-    const from =
-      document.getElementById("stmtFromDate")?.value || "";
+  const params = { ...extra };
 
-    const to =
-      document.getElementById("stmtToDate")?.value || "";
-
-    if (!from || !to) {
-      return {
-        params: {},
-        label: "Custom period range",
-      };
-    }
-
-    if (from > to) {
-      throw new Error("From date cannot be after To date.");
-    }
-
-    return {
-      params: {
-        from,
-        to,
-        as_of: to,
-      },
-      label: `${from} → ${to}`,
-    };
+  if (r.from && r.to) {
+    params.from = r.from;
+    params.to = r.to;
+  } else {
+    params.preset = r.preset || periodKey;
   }
 
-  // Existing behaviour for all other presets remains unchanged.
-  const pr = computePeriodRange(periodKey);
+  // useful for UI
+  params.__label = r.label || periodKey;
 
-  if (pr && pr.from && pr.to) {
-    return {
-      params: {
-        from: pr.from,
-        to: pr.to,
-      },
-      label: pr.label || periodKey,
-    };
-  }
-
-  return {
-    params: {
-      preset: pr?.preset || periodKey,
-    },
-    label: pr?.label || periodKey,
-  };
+  return params;
 }
-
 
 async function renderDashboardKPIs(periodKey = "this_month") {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
@@ -23425,19 +23380,6 @@ async function postJournalBatch() {
   };
 
   // ------------------------------------------------------------
-  // Validate IFRS 16 schedule association
-  // ------------------------------------------------------------
-  if (
-    payload.source === "lease_monthly" &&
-    (
-      !Number.isInteger(Number(payload.source_id)) ||
-      Number(payload.source_id) <= 0
-    )
-  ) {
-    alert("IFRS 16 posting is missing a valid lease schedule ID.");
-    return;
-  }
-  // ------------------------------------------------------------
   // START POSTING
   // ------------------------------------------------------------
   setPostingState(
@@ -23519,13 +23461,10 @@ async function postJournalBatch() {
     // ----------------------------------------------------------
     JRNL_LINES.length = 0;
 
-    // Clear IFRS 16 source metadata after successful posting
-    window.__JRNL_SOURCE = "";
-    window.__JRNL_SOURCE_ID = null;
-
     renderJournalTable();
     recalcJournalSummary();
     clearJournalForm();
+
     // ----------------------------------------------------------
     // Restore button
     // ----------------------------------------------------------
@@ -24529,7 +24468,6 @@ function loadJournalIntoLines(det, { mode = "replace" } = {}) {
 
   console.log("[JRNL] Loaded journal into lines:", det.id, window.JRNL_LINES);
 }
-window.loadJournalIntoLines = loadJournalIntoLines;
 
 // ============================
 // Journal: search by ref (loads into lines table)
@@ -24560,8 +24498,8 @@ async function runJournalSearchByRef() {
   const det = await apiFetch(ENDPOINTS.journal.detail(cid, hit.id), { method: "GET" });
 
   // 3) Load into the circled table area (JRNL_LINES + renderJournalTable)
-  if (typeof window.loadJournalIntoLines === "function") {
-      window.loadJournalIntoLines(det, { mode: "append" });
+  if (typeof loadJournalIntoLines === "function") {
+    loadJournalIntoLines(det, { mode: "append" });
   } else {
     // fallback if you don't have loadJournalIntoLines:
     window.JRNL_LINES = Array.isArray(det?.lines) ? det.lines.map((ln, i) => ({
@@ -24671,49 +24609,6 @@ function detectSubledgerType(acct) {
 
   if (arHit) return "ar";
   if (apHit) return "ap";
-  return null;
-}
-
-
-function getLeaseRoleFromAccount(account = {}) {
-  // 1. Account role has highest priority
-  const role = String(
-    account.role ||
-    account.account_role ||
-    ""
-  ).trim().toLowerCase();
-
-  if (role.includes("lessor")) return "lessor";
-  if (role.includes("lessee")) return "lessee";
-
-  // 2. Cash-flow bucket is the fallback
-  const bucket = String(
-    account.cf_bucket ||
-    account.cfBucket ||
-    ""
-  ).trim().toLowerCase();
-
-  if (bucket === "lease_receivable") return "lessor";
-
-  if (
-    bucket === "rou_asset" ||
-    bucket === "lease_rou_accum_depr" ||
-    bucket.includes("lease_liability")
-  ) {
-    return "lessee";
-  }
-
-  // 3. Legacy account-code fallback
-  const code = String(
-    account.code ||
-    account.account_code ||
-    ""
-  ).trim().toUpperCase();
-
-  if (["BS_CA_1710", "BS_NCA_1720"].includes(code)) {
-    return "lessor";
-  }
-
   return null;
 }
 
@@ -25269,33 +25164,11 @@ function getJournalGuardMessage(hint, acct) {
   }
 
   if (hint === "lease") {
-    const leaseRole =
-      getLeaseRoleFromAccount(acct) || "lessee";
-
-    const isLessor = leaseRole === "lessor";
-
-    const body = isLessor
-      ? `${name} is usually managed through the Lessor Lease workflow.\n\n` +
-        `If you continue in Journal, the following may need to be maintained manually:\n\n` +
-        `• Net investment in finance leases and lease receivable schedules\n` +
-        `• Finance income recognition using the effective interest method\n` +
-        `• Lease payment allocation between finance income and principal recovery\n` +
-        `• Impairment assessment and expected credit losses\n` +
-        `• Unguaranteed residual value monitoring\n` +
-        `• Current/non-current lease receivable classification\n` +
-        `• IFRS 16 lessor disclosures`
-      : `${name} is usually managed through the Lessee Lease workflow.\n\n` +
-        `If you continue in Journal, the following may need to be maintained manually:\n\n` +
-        `• Lease liability schedules and subsequent measurement\n` +
-        `• Interest expense recognition and unwinding\n` +
-        `• Right-of-use (ROU) asset depreciation\n` +
-        `• Lease modifications and remeasurements\n` +
-        `• Current/non-current lease liability classification\n` +
-        `• IFRS 16 lessee disclosures`;
-
     return {
       title: "Use Lease Wizard instead?",
-      body,
+      body:
+        `${name} is usually managed through the Lease module.\n\n` +
+        `If you continue in Journal, lease schedules, interest unwind, ROU amortisation, remeasurements, and lease disclosures will need to be handled manually.`,
       continueLabel: "Continue in Journal",
       moduleLabel: "Open Lease Wizard",
       screen: "ifrs16-lease-wizard",
@@ -25929,19 +25802,14 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
         account?.name || account?.account_name || ""
       ).trim();
 
-      console.log("[LEASE NUDGE] account received", {
-        account,
-        code: account?.code,
-        role: account?.role,
-        cf_bucket: account?.cf_bucket
-      });
-
-      const leaseRole = getLeaseRoleFromAccount(account);
-      const isLessor = leaseRole === "lessor";
+      const isLessor = [
+        "BS_CA_1710",
+        "BS_NCA_1720",
+      ].includes(accountCode);
 
       window.__LEASE_WIZARD_PENDING_CONTEXT__ = {
         mode: isLessor ? "inception" : "existing",
-        leaseRole: leaseRole || "lessee",
+        leaseRole: isLessor ? "lessor" : "lessee",
         accountCode,
         accountName,
         defaults: {
@@ -25959,10 +25827,7 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
           journal_date: postingDate,
         },
       };
-      console.log(
-        "[LEASE NUDGE] pending context",
-        window.__LEASE_WIZARD_PENDING_CONTEXT__
-      );
+
       setPostingContextDate(postingDate, {
         source: "journal-module-nudge",
         module_key: moduleKey,
@@ -26041,27 +25906,14 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
 
   if (moduleKey === "lease") {
     if (!journalDate) {
-      toast("Please select a journal date first.", "error");
+      window.showToast?.("Select or enter a journal date first for existing lease opening balances.", "error");
       return null;
     }
 
-    const leaseRole =
-      getLeaseRoleFromAccount(account) || "lessee";
-
     return await window.openLeaseWizard?.({
-      mode: leaseRole === "lessor" ? "inception" : "existing",
-      leaseRole,
-
-      accountCode:
-        account?.code ||
-        account?.account_code ||
-        "",
-
-      accountName:
-        account?.name ||
-        account?.account_name ||
-        "",
-
+      mode: "existing",
+      accountCode: account?.code || "",
+      accountName: account?.name || "",
       defaults: {
         goLiveDate: journalDate,
         openingAsAt: journalDate,
@@ -26071,18 +25923,9 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
         journalSide: side,
         moduleKey,
       },
-
       meta: {
-        account_code:
-          account?.code ||
-          account?.account_code ||
-          "",
-
-        account_name:
-          account?.name ||
-          account?.account_name ||
-          "",
-
+        account_code: account?.code || "",
+        account_name: account?.name || "",
         journal_side: side || "",
         journal_ref: journalRef || "",
         journal_date: journalDate,
@@ -30310,52 +30153,19 @@ function bindReportsScreen() {
   }
 
   function buildPeriodParams(periodKey) {
-    // Custom dates must come from the actual date inputs.
-    if (periodKey === "custom") {
-      const from =
-        document.getElementById("stmtFromDate")?.value || "";
-
-      const to =
-        document.getElementById("stmtToDate")?.value || "";
-
-      if (!from || !to) {
-        return {
-          params: {},
-          label: "Custom period range",
-        };
-      }
-
-      if (from > to) {
-        throw new Error("From date cannot be after To date.");
-      }
-
-      return {
-        params: {
-          from,
-          to,
-          as_of: to,
-        },
-        label: `${from} → ${to}`,
-      };
-    }
-
-    // Existing behaviour for all other presets remains unchanged.
     const pr = computePeriodRange(periodKey);
 
+    // If computePeriodRange returns calendar dates (month/quarter) → use from/to
     if (pr && pr.from && pr.to) {
       return {
-        params: {
-          from: pr.from,
-          to: pr.to,
-        },
+        params: { from: pr.from, to: pr.to },
         label: pr.label || periodKey,
       };
     }
 
+    // Otherwise → backend decides FY/YTD using preset
     return {
-      params: {
-        preset: pr?.preset || periodKey,
-      },
+      params: { preset: pr?.preset || periodKey },
       label: pr?.label || periodKey,
     };
   }
@@ -34123,11 +33933,7 @@ function renderIFRS16DisclosureHTML(d) {
 
   const paymentsGross = liab.payments_gross_period ?? liab.payments_gross ?? 0;
   const paymentsVat = liab.vat_on_payments_period ?? liab.vat_on_payments ?? 0;
-  // Derive net payments from the posted schedule movements.
-  // Net payments = interest accretion + principal reduction.
-  const interestAccretion = Number(rec.interest_accretion) || 0;
-  const principalReduction = Number(rec.principal_reduction) || 0;
-  const netLeasePayments = interestAccretion + principalReduction;
+
   const currentPortion =
     liab.undiscounted_principal_current ?? liab.current_portion_as_of ?? 0;
 
@@ -34188,11 +33994,10 @@ function renderIFRS16DisclosureHTML(d) {
           <div class="font-semibold mb-2">Liability reconciliation</div>
           <div class="text-xs space-y-1">
             <div class="flex justify-between gap-3"><span>Opening</span><b>${fmtMoney(rec.opening_liability ?? 0)}</b></div>
-            <div class="flex justify-between gap-3"><span>Additions – new leases</span><b>${fmtMoney(rec.additions_new_leases ?? 0)}</b></div>
             <div class="flex justify-between gap-3"><span>Interest accretion</span><b>${fmtMoney(rec.interest_accretion ?? 0)}</b></div>
-            <div class="flex justify-between gap-3"><span>Net lease payments (excluding VAT)</span><b>(${fmtMoney(netLeasePayments)})</b></div>
+            <div class="flex justify-between gap-3"><span>Principal reduction</span><b>${fmtMoney(rec.principal_reduction ?? 0)}</b></div>
             <div class="flex justify-between gap-3"><span>Remeasurements</span><b>${fmtMoney(rec.remeasurements_modifications ?? 0)}</b></div>
-            <div class="flex justify-between gap-3"><span>Derecognitions</span><b>(${fmtMoney(rec.derecognitions_terminations ?? 0)})</b></div>
+            <div class="flex justify-between gap-3"><span>Derecognitions</span><b>${fmtMoney(rec.derecognitions_terminations ?? 0)}</b></div>
             <div class="flex justify-between gap-3 border-t pt-2 mt-2"><span><b>Closing</b></span><b>${fmtMoney(rec.closing_liability ?? 0)}</b></div>
           </div>
         </div>
@@ -34370,7 +34175,6 @@ function setActiveStmtTypeSilent(t) {
 }
 
 
-
 function bindGenerateNotesBtnReportsScreen() {
   const btn = document.getElementById("generateNotesBtn");
   if (!btn || btn.dataset.bound === "1") return;
@@ -34389,15 +34193,10 @@ function bindGenerateNotesBtnReportsScreen() {
       document.getElementById("statementPreset")?.value ||
       "this_year";
 
-    // Read the current dates, not the previously saved statement period.
     const period = buildPeriodParams(periodKey);
 
-    console.log("[NOTES] Selected period:", {
-      periodKey,
-      period,
-      dateFrom: document.getElementById("stmtFromDate")?.value,
-      dateTo: document.getElementById("stmtToDate")?.value,
-    });
+    console.log("NOTES periodKey:", periodKey);
+    console.log("NOTES period:", period);
 
     try {
       btn.disabled = true;
@@ -34412,7 +34211,6 @@ function bindGenerateNotesBtnReportsScreen() {
       });
 
     } catch (e) {
-      console.error("[NOTES] Generation failed:", e);
       alert(e?.message || `Failed to generate ${reg?.label || "notes"}.`);
     } finally {
       btn.disabled = false;
@@ -34421,7 +34219,6 @@ function bindGenerateNotesBtnReportsScreen() {
 
   btn.dataset.bound = "1";
 }
-
 
 function getCurrentStmtPeriodForNotes() {
   const p = window._stmtPeriod || {};
@@ -39232,8 +39029,6 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
               date: String(r.period_end || "").slice(0, 10),
               ref: `LEASE-${leaseId}-P${periodNo}`,
               description: `IFRS 16 monthly posting – ${(r.lease_name || `Lease ${leaseId}`)} – P${periodNo}`,
-              source: "lease_monthly",
-              source_id: Number(r.schedule_id || r.id || 0),
               lines: lines.map(ln => ({
                 account_code: ln.account_code,
                 debit: Number(ln.debit) || 0,
@@ -39569,74 +39364,74 @@ function closeQuickModal() {
     }
   }
 
-  async function saveLessor() {
-    const cid = cidOrThrow();
-    const lessorId = currentLessorId;
-    if (!lessorId) return;
+async function saveLessor() {
+  const cid = cidOrThrow();
+  const lessorId = currentLessorId;
+  if (!lessorId) return;
 
-    showMsg(els.dMsg, "");
+  showMsg(els.dMsg, "");
 
-    const payload = {
-      name: (els.dName?.value || "").trim(),
-      reg_no: (els.dReg?.value || "").trim() || null,
-      vat_no: (els.dVat?.value || "").trim() || null,
-      email: (els.dEmail?.value || "").trim() || null,
-      phone: (els.dPhone?.value || "").trim() || null,
-      address: (els.dAddress?.value || "").trim() || null,
-      is_related_party: !!els.dRelated?.checked,
-      active: !!els.dActive?.checked,
-    };
+  const payload = {
+    name: (els.dName?.value || "").trim(),
+    reg_no: (els.dReg?.value || "").trim() || null,
+    vat_no: (els.dVat?.value || "").trim() || null,
+    email: (els.dEmail?.value || "").trim() || null,
+    phone: (els.dPhone?.value || "").trim() || null,
+    address: (els.dAddress?.value || "").trim() || null,
+    is_related_party: !!els.dRelated?.checked,
+    active: !!els.dActive?.checked,
+  };
 
-    if (!payload.name) return showMsg(els.dMsg, "Name is required.");
+  if (!payload.name) return showMsg(els.dMsg, "Name is required.");
 
-    // disable button to prevent double-save
-    const btn = els.dSave;
-    const prevText = btn?.textContent;
-    if (btn) {
-      btn.disabled = true;
-      btn.classList.add("opacity-60", "pointer-events-none");
-      btn.textContent = "Saving...";
+  // disable button to prevent double-save
+  const btn = els.dSave;
+  const prevText = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add("opacity-60", "pointer-events-none");
+    btn.textContent = "Saving...";
+  }
+
+  try {
+    const updated = await window.apiFetch(ENDPOINTS.lessors.detail(cid, lessorId), {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+
+    // ✅ DO NOT DELETE after save
+    await refreshLessors();
+
+    // keep drawer values in sync with returned truth (if backend returns full row)
+    if (updated && typeof updated === "object") {
+      els.dTitle.textContent = updated.name || payload.name;
+      els.dSub.textContent = `ID ${updated.id ?? lessorId} • Created ${
+        updated.created_at ? String(updated.created_at) : "—"
+      }`;
+
+      els.dName.value = updated.name ?? payload.name;
+      els.dReg.value = updated.reg_no ?? "";
+      els.dVat.value = updated.vat_no ?? "";
+      els.dEmail.value = updated.email ?? "";
+      els.dPhone.value = updated.phone ?? "";
+      els.dAddress.value = updated.address ?? "";
+      els.dRelated.checked = !!updated.is_related_party;
+      els.dActive.checked = (updated.active !== false);
+    } else {
+      els.dTitle.textContent = payload.name;
     }
 
-    try {
-      const updated = await window.apiFetch(ENDPOINTS.lessors.detail(cid, lessorId), {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
-
-      // ✅ DO NOT DELETE after save
-      await refreshLessors();
-
-      // keep drawer values in sync with returned truth (if backend returns full row)
-      if (updated && typeof updated === "object") {
-        els.dTitle.textContent = updated.name || payload.name;
-        els.dSub.textContent = `ID ${updated.id ?? lessorId} • Created ${
-          updated.created_at ? String(updated.created_at) : "—"
-        }`;
-
-        els.dName.value = updated.name ?? payload.name;
-        els.dReg.value = updated.reg_no ?? "";
-        els.dVat.value = updated.vat_no ?? "";
-        els.dEmail.value = updated.email ?? "";
-        els.dPhone.value = updated.phone ?? "";
-        els.dAddress.value = updated.address ?? "";
-        els.dRelated.checked = !!updated.is_related_party;
-        els.dActive.checked = (updated.active !== false);
-      } else {
-        els.dTitle.textContent = payload.name;
-      }
-
-      showMsg(els.dMsg, "Saved.", "ok");
-    } catch (e) {
-      showMsg(els.dMsg, e?.message || "Failed to save lessor.");
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.classList.remove("opacity-60", "pointer-events-none");
-        btn.textContent = prevText || "Save";
-      }
+    showMsg(els.dMsg, "Saved.", "ok");
+  } catch (e) {
+    showMsg(els.dMsg, e?.message || "Failed to save lessor.");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("opacity-60", "pointer-events-none");
+      btn.textContent = prevText || "Save";
     }
   }
+}
 
   async function deleteLessor() {
     const cid = cidOrThrow();
@@ -41184,8 +40979,6 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
             date: String(r.period_end || "").slice(0, 10),
             ref: `LEASE-${leaseId}-P${periodNo}`,
             description: `IFRS 16 monthly posting – ${r.lease_name || `Lease ${leaseId}`} – P${periodNo}`,
-            source: "lease_monthly",
-            source_id: Number(r.schedule_id || r.id || 0),
             lines: r.preview_journal_lines.map(ln => ({
               account_code: ln.account_code,
               debit: Number(ln.debit) || 0,
@@ -161710,8 +161503,6 @@ if (document.readyState === "loading") {
       date: iso(row.r.period_end),
       ref: `LEASE-${row.leaseId}-P${row.periodNo}`,
       description: `IFRS 16 monthly posting – ${row.r.lease_name || `Lease ${row.leaseId}`} – P${row.periodNo}`,
-      source: "lease_monthly",
-      source_id: Number(row.r.schedule_id || row.r.id || 0),
       lines: lines.map((ln) => ({
         account_code: ln.account_code,
         debit: Number(ln.debit) || 0,
@@ -161981,7 +161772,7 @@ if (document.readyState === "loading") {
           <div><div class="text-[11px] text-slate-500">Status</div><div class="flex gap-1 mt-0.5">${chipHtml(row.isPaid ? "paid" : "due", row.isPaid ? "green" : "red")} ${chipHtml(row.isPosted ? "posted" : "pending", row.isPosted ? "green" : "amber")}</div></div>
         </div>
         <div class="px-3 pb-3 flex gap-2 flex-wrap">
-          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row.r.schedule_id ?? "")}" data-lc-due="${esc(row.due)}" data-lc-date="${esc(defaultLeasePaymentDate(row, l))}"
+          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row.r.schedule_id ?? "")}" data-lc-due="${esc(row.due)}" data-lc-date="${esc(iso(row.r.period_start) || today())}"
             class="px-3 py-1.5 rounded text-xs text-white" style="background:#00C8C8"
             ${row.isPaid || !postOk ? "disabled" : ""} title="${postOk ? "Opens the lease payment modal (prefilled)" : "Requires can_post_journals"}">💳 Pay this period</button>
           <button data-lc-post-row="${esc(id)}" data-lc-period="${esc(row.periodNo)}"
@@ -162008,36 +161799,6 @@ if (document.readyState === "loading") {
         </div>
       </div>
       ${snapshot}`;
-  }
-
-  function defaultLeasePaymentDate(row, lease) {
-    const timing = String(
-      row?.r?.payment_timing ||
-      lease?.payment_timing ||
-      "arrears"
-    ).trim().toLowerCase();
-
-    const rawDate = timing === "advance"
-      ? row?.r?.period_start
-      : row?.r?.period_end;
-
-    if (!rawDate) return today();
-
-    const value = String(rawDate).trim();
-
-    // Already an ISO date or ISO datetime: preserve the calendar date.
-    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-
-    // Handle DD/MM/YYYY explicitly.
-    const localMatch = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (localMatch) {
-      return `${localMatch[3]}-${localMatch[2]}-${localMatch[1]}`;
-    }
-
-    // Avoid silently passing an unrecognised date to the modal.
-    console.warn("Unrecognised lease payment date:", rawDate);
-    return today();
   }
 
   /* ── Schedule ────────────────────────────────────────────────── */
@@ -162092,7 +161853,7 @@ if (document.readyState === "loading") {
         <div class="text-[13px] font-semibold">Payment history${LC.loading.detail ? " · loading…" : ""}</div>
         <div class="flex gap-2">
           <button id="lcPayExport" class="px-2 py-1.5 rounded border text-xs bg-white">⬇ Export payments CSV</button>
-          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row?.r.schedule_id ?? "")}" data-lc-due="${esc(row && !row.isPaid ? row.due : "")}" data-lc-date="${esc(defaultLeasePaymentDate(row, LC.lease))}"
+          <button data-lc-pay-row="${esc(id)}" data-lc-schedule="${esc(row?.r.schedule_id ?? "")}" data-lc-due="${esc(row && !row.isPaid ? row.due : "")}" data-lc-date="${esc(iso(row?.r.period_start) || today())}"
             class="px-3 py-1.5 rounded text-xs text-white" style="background:#00C8C8" ${canPost() ? "" : "disabled"} title="${canPost() ? "Opens the lease payment modal" : "Requires can_post_journals"}">💳 Record payment</button>
         </div>
       </div>
@@ -162183,7 +161944,7 @@ if (document.readyState === "loading") {
                   <td class="p-2 text-center">${x.isPaid ? chipHtml("paid", "green") : chipHtml("due", "red")}</td>
                   <td class="p-2 text-center">${x.isPosted ? chipHtml("posted", "green") : chipHtml("pending", "amber")}</td>
                   <td class="p-2 text-right whitespace-nowrap">
-                    <button data-lc-pay-row="${esc(x.leaseId)}" data-lc-schedule="${esc(x.r.schedule_id ?? "")}" data-lc-due="${esc(x.due)}" data-lc-date="${esc(defaultLeasePaymentDate(x, LC.leases.find((l) => leaseIdOf(l) === Number(x.leaseId))))}"
+                    <button data-lc-pay-row="${esc(x.leaseId)}" data-lc-schedule="${esc(x.r.schedule_id ?? "")}" data-lc-due="${esc(x.due)}" data-lc-date="${esc(iso(x.r.period_start) || today())}"
                       class="px-2 py-1 rounded border text-xs ${x.isPaid || !postOk ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"}"
                       ${x.isPaid || !postOk ? "disabled" : ""} title="${postOk ? "Opens the payment modal prefilled from the due row" : "Requires can_post_journals"}">Pay</button>
                     <button data-lc-post-row="${esc(x.leaseId)}" data-lc-period="${esc(x.periodNo)}"
@@ -162340,12 +162101,11 @@ if (document.readyState === "loading") {
     });
     $("lcRecordPayment")?.addEventListener("click", () => {
       const row = currentDueRow(LC.leaseId);
-
       payModal({
         leaseId: LC.leaseId,
         scheduleId: row?.r.schedule_id || null,
         amount: row && !row.isPaid ? row.due : "",
-        date: defaultLeasePaymentDate(row, LC.lease),
+        date: iso(row?.r.period_start) || today(),
       });
     });
   }

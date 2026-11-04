@@ -59,8 +59,20 @@ export type LessorLeasePayload = {
   currency?: string | null;
 
   security_deposit_amount: number;
+  security_deposit_discount_rate?: number;
   security_deposit_account_code?: string | null;
 
+  security_deposit_arrangement:
+    | ""
+    | "fully_refundable"
+    | "rent_offset"
+    | "refundable_less_deductions"
+    | "non_refundable";
+
+  security_deposit_interest_bearing: boolean;
+  security_deposit_separate_account: boolean;
+  security_deposit_discount_deferred: boolean;
+  security_deposit_received?: boolean;
   revenue_account_code?: string | null;
   vat_output_account_code?: string | null;
   ar_account_code?: string | null;

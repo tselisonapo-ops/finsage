@@ -654,9 +654,28 @@ def api_payroll_runs(company_id: int):
         if not body.get("pay_calendar_id"):
             return jsonify({"ok": False, "error": "pay_calendar_id is required"}), 400
 
+        create_replacement = bool(body.get("create_replacement"))
+        correction_reason = str(
+            body.get("correction_reason")
+            or body.get("reason")
+            or ""
+        ).strip() or None
+
+        if create_replacement and not correction_reason:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    "correction_reason is required when "
+                    "create_replacement is true"
+                ),
+            }), 400
+
         out = db_service.payroll_run_create(
             company_id,
             int(body["pay_calendar_id"]),
+            allow_replacement=create_replacement,
+            correction_reason=correction_reason,
+            user_id=_jwt_user_id(),
         )
 
         return jsonify({
@@ -665,11 +684,43 @@ def api_payroll_runs(company_id: int):
             "already_existed": bool(
                 out.get("already_existed")
             ),
+            "replacement_required": bool(
+                out.get("replacement_required")
+            ),
         }), 200 if out.get("already_existed") else 201
     except Exception as e:
         current_app.logger.exception("payroll_run_create failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/versions",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_payroll_run_versions(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        out = db_service.payroll_run_versions(
+            int(company_id),
+            int(run_id),
+        )
+        return jsonify({"ok": True, "data": out}), 200
+
+    except Exception as e:
+        current_app.logger.exception("payroll_run_versions failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
 
 @payroll_bp.route("/api/companies/<int:company_id>/payroll/runs/<int:run_id>", methods=["GET", "OPTIONS"])
 @require_auth

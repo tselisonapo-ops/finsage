@@ -730,6 +730,12 @@ class LessorLeaseEngine:
             self.classify_and_validate(data)
         )
 
+        security_deposit = (
+            self.preview_security_deposit_terms(
+                data
+            )
+        )
+
         resolved = classification[
             "classification"
         ]
@@ -744,6 +750,7 @@ class LessorLeaseEngine:
             return {
                 "classification": classification,
                 "terms": terms,
+                "security_deposit": security_deposit,
             }
 
         terms = self.preview_finance_lease_terms(
@@ -782,8 +789,250 @@ class LessorLeaseEngine:
         return {
             "classification": classification,
             "terms": terms,
+            "security_deposit": security_deposit,
         }
 
+    def preview_security_deposit_terms(
+        self,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        amount = self._money_decimal(
+            self._decimal(
+                data.get("security_deposit_amount")
+            )
+        )
+
+        arrangement = str(
+            data.get(
+                "security_deposit_arrangement"
+            ) or ""
+        ).strip().lower()
+
+        interest_bearing = self._bool(
+            data.get(
+                "security_deposit_interest_bearing"
+            )
+        )
+
+        separate_account = self._bool(
+            data.get(
+                "security_deposit_separate_account"
+            )
+        )
+
+        received = self._bool(
+            data.get(
+                "security_deposit_received"
+            )
+        )
+
+        discount_deferred = self._bool(
+            data.get(
+                "security_deposit_discount_deferred"
+            )
+        )
+
+        valid_arrangements = {
+            "fully_refundable",
+            "rent_offset",
+            "refundable_less_deductions",
+            "non_refundable",
+        }
+
+        refundable_arrangements = {
+            "fully_refundable",
+            "refundable_less_deductions",
+        }
+
+        if amount < 0:
+            raise ValueError(
+                "Security deposit cannot be negative."
+            )
+
+        if amount == 0:
+            return {
+                "amount": 0.0,
+                "arrangement": arrangement,
+                "received": False,
+                "interest_bearing": interest_bearing,
+                "separate_account": separate_account,
+                "discount_deferred": False,
+                "discount_rate": 0.0,
+                "initial_liability": 0.0,
+                "discount_amount": 0.0,
+                "closing_liability": 0.0,
+                "schedule": [],
+            }
+
+        if arrangement not in valid_arrangements:
+            raise ValueError(
+                "Select a valid security deposit arrangement."
+            )
+
+        if (
+            discount_deferred
+            and interest_bearing
+        ):
+            raise ValueError(
+                "An interest-bearing deposit cannot be "
+                "treated as an interest-free deferred deposit."
+            )
+
+        if (
+            discount_deferred
+            and arrangement not in refundable_arrangements
+        ):
+            raise ValueError(
+                "Discounting is only available for refundable "
+                "interest-free deposits."
+            )
+
+        discount_rate = Decimal("0")
+
+        if discount_deferred:
+            discount_rate = self._annual_rate(
+                data.get(
+                    "security_deposit_discount_rate"
+                )
+            )
+
+            if discount_rate <= 0:
+                raise ValueError(
+                    "A positive annual discount rate is required "
+                    "for a deferred refundable deposit."
+                )
+
+        if arrangement == "non_refundable":
+            return {
+                "amount": float(amount),
+                "arrangement": arrangement,
+                "received": received,
+                "interest_bearing": interest_bearing,
+                "separate_account": separate_account,
+                "discount_deferred": False,
+                "discount_rate": 0.0,
+                "initial_liability": 0.0,
+                "discount_amount": 0.0,
+                "closing_liability": 0.0,
+                "schedule": [],
+                "non_refundable_consideration_review_required": True,
+            }
+
+        initial_liability = amount
+        discount_amount = Decimal("0")
+        schedule = []
+
+        if discount_deferred:
+            frequency = str(
+                data.get("billing_frequency")
+                or "monthly"
+            ).strip().lower()
+
+            period_count = (
+                self._preview_period_count(data)
+            )
+
+            periods_per_year = (
+                self._periods_per_year(
+                    frequency
+                )
+            )
+
+            periodic_rate = (
+                discount_rate
+                / Decimal(periods_per_year)
+            )
+
+            discount_factor = (
+                Decimal("1")
+                + periodic_rate
+            ) ** Decimal(period_count)
+
+            initial_liability = (
+                self._money_decimal(
+                    amount / discount_factor
+                )
+            )
+
+            discount_amount = (
+                self._money_decimal(
+                    amount - initial_liability
+                )
+            )
+
+            opening = initial_liability
+
+            for period_no in range(
+                1,
+                period_count + 1,
+            ):
+                last_period = (
+                    period_no == period_count
+                )
+
+                if last_period:
+                    finance_cost = (
+                        self._money_decimal(
+                            amount - opening
+                        )
+                    )
+
+                    closing = amount
+
+                else:
+                    finance_cost = (
+                        self._money_decimal(
+                            opening * periodic_rate
+                        )
+                    )
+
+                    closing = (
+                        self._money_decimal(
+                            opening + finance_cost
+                        )
+                    )
+
+                schedule.append({
+                    "period_no": period_no,
+
+                    "opening_liability": float(
+                        opening
+                    ),
+
+                    "finance_cost": float(
+                        finance_cost
+                    ),
+
+                    "closing_liability": float(
+                        closing
+                    ),
+                })
+
+                opening = closing
+
+        return {
+            "amount": float(amount),
+            "arrangement": arrangement,
+            "received": received,
+            "interest_bearing": interest_bearing,
+            "separate_account": separate_account,
+            "discount_deferred": discount_deferred,
+            "discount_rate": float(discount_rate),
+            "initial_liability": float(
+                initial_liability
+            ),
+            "discount_amount": float(
+                discount_amount
+            ),
+            "closing_liability": float(
+                amount
+            ),
+            "schedule": schedule,
+            "interest_rate_required": (
+                interest_bearing
+            ),
+        }
+    
     def preview_operating_lease_terms(
         self,
         data: Dict[str, Any],
@@ -1336,7 +1585,7 @@ class LessorLeaseEngine:
                     remaining_after_payment * periodic_rate
                 )
 
-                principal = cash_payment
+                principal = cash_payment - finance_income
 
                 closing = self._money_decimal(
                     remaining_after_payment + finance_income
@@ -1892,7 +2141,7 @@ class LessorLeaseEngine:
                         remaining_after_payment * periodic_rate
                     )
 
-                    principal = cash_payment
+                    principal = cash_payment - finance_income
                     closing = expected_closing
 
                 else:

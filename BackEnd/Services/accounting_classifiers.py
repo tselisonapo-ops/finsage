@@ -1805,6 +1805,11 @@ def _coa_role_from_text(
                 "refundable lease deposits - non current",
                 "non-current refundable lease deposits",
                 "non current refundable lease deposits",
+                "refundable lease security deposits - non-current",
+                "refundable lease security deposits - non current",
+                "refundable lease security deposits non-current",
+                "non-current refundable lease security deposits",
+                "non current refundable lease security deposits",
             )
             or (
                 has_any(
@@ -1830,6 +1835,9 @@ def _coa_role_from_text(
             "refundable security deposits received from lessees",
             "rental security deposit",
             "tenant deposit liability",
+            "refundable lease security deposits - current",
+            "refundable lease security deposits current",
+            "current refundable lease security deposits",
         ):
             return "lessor_security_deposit_current"
 

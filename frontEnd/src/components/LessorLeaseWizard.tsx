@@ -296,6 +296,12 @@ const LessorLeaseWizard: React.FC<Props> = ({
       currency: "",
 
       security_deposit_amount: 0,
+      security_deposit_received: false,
+      security_deposit_discount_rate: 0,
+      security_deposit_arrangement: "",
+      security_deposit_interest_bearing: false,
+      security_deposit_separate_account: false,
+      security_deposit_discount_deferred: false,
       security_deposit_account_code: null,
 
       revenue_account_code:
@@ -855,10 +861,25 @@ useEffect(() => {
   ) {
     const { name, value } = event.target;
 
-    setForm((current) => ({
-      ...current,
-      [name]: value,
-    }));
+    setForm((current) => {
+      const next = {
+        ...current,
+        [name]: value,
+      };
+
+      if (
+        name === "security_deposit_arrangement" &&
+        ![
+          "fully_refundable",
+          "refundable_less_deductions",
+        ].includes(value)
+      ) {
+        next.security_deposit_discount_deferred =
+          false;
+      }
+
+      return next;
+    });
   }
 
   function updateNumber(
@@ -880,6 +901,13 @@ useEffect(() => {
     setForm((current) => ({
       ...current,
       [name]: checked,
+
+      ...(name === "security_deposit_interest_bearing" &&
+      checked
+        ? {
+            security_deposit_discount_deferred: false,
+          }
+        : {}),
     }));
   }
 
@@ -1022,11 +1050,33 @@ useEffect(() => {
     }
 
     if (
-      form.lease_classification ===
-        "operating" &&
-      Number(form.billing_amount || 0) <= 0
+      Number(form.security_deposit_amount || 0) < 0
     ) {
-      return "Contractual rental must be greater than zero for an operating lease.";
+      return "Security deposit cannot be negative.";
+    }
+
+    if (
+      Number(form.security_deposit_amount || 0) > 0 &&
+      !form.security_deposit_arrangement
+    ) {
+      return "Select the contractual security deposit arrangement.";
+    }
+
+    if (
+      form.security_deposit_discount_deferred &&
+      form.security_deposit_interest_bearing
+    ) {
+      return "An interest-bearing deposit cannot be treated as an interest-free deferred deposit.";
+    }
+
+    if (
+      form.security_deposit_discount_deferred &&
+      ![
+        "fully_refundable",
+        "refundable_less_deductions",
+      ].includes(form.security_deposit_arrangement)
+    ) {
+      return "Discounting is only available for refundable, interest-free deposits.";
     }
 
     return null;
@@ -1329,6 +1379,12 @@ useEffect(() => {
       end_date: "",
       billing_amount: 0,
       security_deposit_amount: 0,
+      security_deposit_received: false,
+      security_deposit_account_code: null,
+      security_deposit_arrangement: "",
+      security_deposit_interest_bearing: false,
+      security_deposit_separate_account: false,
+      security_deposit_discount_deferred: false,
       notes: "",
     }));
   }
@@ -1877,193 +1933,7 @@ useEffect(() => {
             )}
           </div>
         </div>
-
-        <aside className="lessor-checklist">
-          <div className="lessor-checklist-title">
-            Classification indicators
-          </div>
-
-          <label
-            className={
-              "lessor-choice-card " +
-              (
-                manufacturerDealerConfirmed
-                  ? "is-selected"
-                  : ""
-              )
-            }
-          >
-            <input
-              type="checkbox"
-              checked={
-                manufacturerDealerConfirmed
-              }
-              disabled={loadingCompanyProfile}
-              onChange={(event) => {
-                const confirmed =
-                  event.target.checked;
-
-                setManufacturerDealerConfirmed(
-                  confirmed
-                );
-
-                setForm((current) => ({
-                  ...current,
-                  manufacturer_dealer_lessor:
-                    confirmed,
-                }));
-              }}
-            />
-
-            <span className="lessor-choice-content">
-              <strong>
-                Manufacturer or dealer lessor
-              </strong>
-
-              <small>
-                The leased asset is inventory normally
-                manufactured or sold by the company.
-              </small>
-
-              {loadingCompanyProfile ? (
-                <em>
-                  Checking company industry…
-                </em>
-              ) : manufacturerDealerSuggested ? (
-                <em>
-                  Suggested because the company industry is{" "}
-                  {companyProfile?.industry ||
-                    "Car Dealership or Manufacturing"}.
-                </em>
-              ) : null}
-            </span>
-          </label>
-
-          <label
-            className={
-              "lessor-choice-card " +
-              (
-                form.ownership_transfers
-                  ? "is-selected"
-                  : ""
-              )
-            }
-          >
-            <input
-              type="checkbox"
-              name="ownership_transfers"
-              checked={Boolean(
-                form.ownership_transfers
-              )}
-              onChange={updateCheckbox}
-            />
-
-            <span className="lessor-choice-content">
-              <strong>
-                Ownership transfer
-              </strong>
-
-              <small>
-                Ownership transfers to the lessee
-                by the end of the lease.
-              </small>
-            </span>
-          </label>
-
-          <label
-            className={
-              "lessor-choice-card " +
-              (
-                form.purchase_option_reasonably_certain
-                  ? "is-selected"
-                  : ""
-              )
-            }
-          >
-            <input
-              type="checkbox"
-              name="purchase_option_reasonably_certain"
-              checked={Boolean(
-                form.purchase_option_reasonably_certain
-              )}
-              onChange={updateCheckbox}
-            />
-
-            <span className="lessor-choice-content">
-              <strong>
-                Purchase option
-              </strong>
-
-              <small>
-                The lessee is reasonably certain
-                to exercise the purchase option.
-              </small>
-            </span>
-          </label>
-
-          <label
-            className={
-              "lessor-choice-card " +
-              (
-                form.specialised_asset
-                  ? "is-selected"
-                  : ""
-              )
-            }
-          >
-            <input
-              type="checkbox"
-              name="specialised_asset"
-              checked={Boolean(
-                form.specialised_asset
-              )}
-              onChange={updateCheckbox}
-            />
-
-            <span className="lessor-choice-content">
-              <strong>
-                Specialised asset
-              </strong>
-
-              <small>
-                The asset has no readily available
-                alternative use without major changes.
-              </small>
-            </span>
-          </label>
-
-          <label
-            className={
-              "lessor-choice-card " +
-              (
-                form.classification_override
-                  ? "is-selected"
-                  : ""
-              )
-            }
-          >
-            <input
-              type="checkbox"
-              name="classification_override"
-              checked={Boolean(
-                form.classification_override
-              )}
-              onChange={updateCheckbox}
-            />
-
-            <span className="lessor-choice-content">
-              <strong>
-                Override calculated classification
-              </strong>
-
-              <small>
-                Use only when documented facts support
-                a different classification.
-              </small>
-            </span>
-          </label>
-        </aside>
-        </div>
+      </div>
 
       {error && (
         <div className="error">
@@ -3533,17 +3403,155 @@ useEffect(() => {
         </div>
 
         <div className="field-row">
-          <label>Security deposit</label>
+          <label>Security deposit amount</label>
 
           <input
             type="number"
             name="security_deposit_amount"
-            value={
-              form.security_deposit_amount
-            }
+            value={form.security_deposit_amount}
             onChange={updateNumber}
+            min="0"
             step="0.01"
           />
+
+          <small className="field-help">
+            Enter the contractual security deposit amount,
+            whether or not it has been received.
+          </small>
+        </div>
+
+        <div className="field-row">
+          <label>Deposit receipt confirmation</label>
+
+          <label className="lessor-deposit-option">
+            <input
+              type="checkbox"
+              name="security_deposit_received"
+              checked={Boolean(
+                form.security_deposit_received
+              )}
+              onChange={updateCheckbox}
+              disabled={
+                Number(form.security_deposit_amount || 0) <= 0
+              }
+            />
+
+            <span>
+              Security deposit has actually been received
+            </span>
+          </label>
+
+          <small className="field-help">
+            Select this only if the money has been received
+            by the commencement date. When selected, FinSage
+            will include the deposit receipt in the day-one
+            journal. Otherwise, no deposit receipt journal
+            entry will be posted at commencement.
+          </small>
+        </div>
+
+        <div className="field-row field-span-2">
+          <label>Deposit arrangement</label>
+
+          <select
+            name="security_deposit_arrangement"
+            value={form.security_deposit_arrangement || ""}
+            onChange={updateText}
+          >
+            <option value="">
+              Select contractual arrangement...
+            </option>
+
+            <option value="fully_refundable">
+              Fully refundable at the end of the lease
+            </option>
+
+            <option value="rent_offset">
+              Applied against future or final rental payments
+            </option>
+
+            <option value="refundable_less_deductions">
+              Refundable subject to contractual deductions
+            </option>
+
+            <option value="non_refundable">
+              Non-refundable deposit
+            </option>
+          </select>
+
+          <small className="field-help">
+            Select the arrangement specified in the lease
+            agreement. These options are alternatives, so
+            only one can be selected.
+          </small>
+        </div>
+
+        <div className="field-row field-span-2">
+          <label>Additional deposit treatment</label>
+
+          <div className="lessor-deposit-options">
+            <label className="lessor-deposit-option">
+              <input
+                type="checkbox"
+                name="security_deposit_interest_bearing"
+                checked={Boolean(
+                  form.security_deposit_interest_bearing
+                )}
+                onChange={updateCheckbox}
+              />
+
+              <span>
+                Deposit earns interest payable to the lessee
+              </span>
+            </label>
+
+            <label className="lessor-deposit-option">
+              <input
+                type="checkbox"
+                name="security_deposit_separate_account"
+                checked={Boolean(
+                  form.security_deposit_separate_account
+                )}
+                onChange={updateCheckbox}
+              />
+
+              <span>
+                Deposit is held in a separate savings account
+              </span>
+            </label>
+
+            <label className="lessor-deposit-option">
+              <input
+                type="checkbox"
+                name="security_deposit_discount_deferred"
+                checked={Boolean(
+                  form.security_deposit_discount_deferred
+                )}
+                onChange={updateCheckbox}
+                disabled={
+                  form.security_deposit_interest_bearing ||
+                  ![
+                    "fully_refundable",
+                    "refundable_less_deductions",
+                  ].includes(
+                    form.security_deposit_arrangement
+                  )
+                }
+              />
+
+              <span>
+                Discount the deferred, interest-free refundable
+                deposit
+              </span>
+            </label>
+          </div>
+
+          <small className="field-help">
+            Discounting is available here only for refundable,
+            interest-free deposits. It should not be applied
+            automatically to rental advances or non-refundable
+            amounts.
+          </small>
         </div>
 
         <div className="field-row field-span-2">

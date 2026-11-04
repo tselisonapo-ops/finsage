@@ -9020,37 +9020,244 @@ window.safeRedirect = function (url, mode = "href") {
 
       <!-- SETTINGS: OVERVIEW -->
       <section id="screen-settings-overview" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Settings Overview</div>
-          <div class="panel-subtitle mt-1">General settings, firm controls, and preferences</div>
-          <div class="mt-4 text-sm text-slate-600">Settings Overview placeholder.</div>
+        <div class="space-y-6">
+          <div class="card p-6">
+            <div class="panel-title">Settings Overview</div>
+            <div class="panel-subtitle mt-1">General settings, firm controls, and preferences</div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="card p-5">
+              <h3 class="font-semibold text-slate-900 mb-2">Account & Security</h3>
+              <p class="text-sm text-slate-500 mb-3">Manage your password, email address, and view login activity.</p>
+              <div id="prOverviewPasswordBadge" class="inline-flex items-center gap-2 rounded-full px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold mb-3">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span id="prOverviewPasswordText">Checking...</span>
+              </div>
+              <div class="text-xs text-slate-400 space-y-1">
+                <div class="flex justify-between"><span>Last login</span><span id="prOverviewLastLogin" class="font-medium text-slate-600">—</span></div>
+                <div class="flex justify-between"><span>Last activity</span><span id="prOverviewLastActivity" class="font-medium text-slate-600">—</span></div>
+              </div>
+              <button type="button" id="prOverviewGotoSettings" class="mt-3 inline-flex items-center px-3 py-2 rounded-lg border text-sm font-medium text-[var(--brand)] hover:bg-slate-50">
+                Go to account settings
+              </button>
+            </div>
+
+            <div class="card p-5">
+              <h3 class="font-semibold text-slate-900 mb-2">Users & Team</h3>
+              <p class="text-sm text-slate-500 mb-3">View team members, their roles, and engagement assignments.</p>
+              <button type="button" id="prOverviewGotoUsers" class="inline-flex items-center px-3 py-2 rounded-lg border text-sm font-medium text-[var(--brand)] hover:bg-slate-50">
+                Manage users
+              </button>
+            </div>
+
+            <div class="card p-5">
+              <h3 class="font-semibold text-slate-900 mb-2">Roles & Permissions</h3>
+              <p class="text-sm text-slate-500 mb-3">Understand the practitioner role hierarchy and access rules.</p>
+              <button type="button" id="prOverviewGotoRoles" class="inline-flex items-center px-3 py-2 rounded-lg border text-sm font-medium text-[var(--brand)] hover:bg-slate-50">
+                View roles
+              </button>
+            </div>
+
+            <div class="card p-5">
+              <h3 class="font-semibold text-slate-900 mb-2">Firm Preferences</h3>
+              <p class="text-sm text-slate-500 mb-3">Practice defaults, engagement numbering, and workspace display.</p>
+              <button type="button" id="prOverviewGotoFirm" class="inline-flex items-center px-3 py-2 rounded-lg border text-sm font-medium text-[var(--brand)] hover:bg-slate-50">
+                Configure preferences
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
       <!-- SETTINGS: USERS -->
       <section id="screen-users" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Users</div>
-          <div class="panel-subtitle mt-1">Manage users, roles, and client access</div>
-          <div class="mt-4 text-sm text-slate-600">Users screen placeholder.</div>
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="panel-title">Users</div>
+                <div class="panel-subtitle mt-1">Manage users, roles, and client access</div>
+              </div>
+              <button type="button" id="prUsersRefreshBtn" class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="overflow-x-auto">
+              <table class="data-table w-full">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Access Scope</th>
+                    <th>Status</th>
+                    <th>Joined</th>
+                  </tr>
+                </thead>
+                <tbody id="prUsersTableBody">
+                  <tr><td colspan="6" class="text-center text-slate-500 py-6">Loading users...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card p-6">
+            <h3 class="font-semibold text-slate-900 mb-3">Invite New User</h3>
+            <p class="text-sm text-slate-500 mb-4">Send an invitation to a new team member. They will receive an email with a link to set up their account.</p>
+            <form id="prInviteUserForm" class="grid grid-cols-1 md:grid-cols-3 gap-3" novalidate>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Email</label>
+                <input type="email" id="prInviteEmail" placeholder="colleague@firm.com" class="input" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Role</label>
+                <select id="prInviteRole" class="input">
+                  <option value="">Select role...</option>
+                  <option value="audit_staff">Audit Staff</option>
+                  <option value="senior_associate">Senior Associate</option>
+                  <option value="audit_manager">Audit Manager</option>
+                  <option value="client_service_manager">Client Service Manager</option>
+                  <option value="audit_partner">Audit Partner</option>
+                  <option value="engagement_partner">Engagement Partner</option>
+                  <option value="quality_control_reviewer">Quality Control Reviewer</option>
+                  <option value="fs_compiler">Financial Statement Compiler</option>
+                  <option value="reviewer">Reviewer</option>
+                  <option value="bookkeeper">Bookkeeper</option>
+                </select>
+              </div>
+              <div class="flex items-end">
+                <button type="submit" class="btn btn-primary w-full">Send invite</button>
+              </div>
+            </form>
+            <p id="prInviteMsg" class="mt-2 text-xs text-slate-500"></p>
+          </div>
         </div>
       </section>
 
       <!-- SETTINGS: ROLES -->
       <section id="screen-roles-permissions" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Roles & Permissions</div>
-          <div class="panel-subtitle mt-1">Control posting, review, sign-off, and access rules</div>
-          <div class="mt-4 text-sm text-slate-600">Roles & Permissions placeholder.</div>
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="panel-title">Roles &amp; Permissions</div>
+            <div class="panel-subtitle mt-1">Control posting, review, sign-off, and access rules</div>
+          </div>
+
+          <div class="card p-4">
+            <div class="overflow-x-auto">
+              <table class="data-table w-full">
+                <thead>
+                  <tr>
+                    <th>Role</th>
+                    <th>Dashboard Access</th>
+                    <th>Posting</th>
+                    <th>Review</th>
+                    <th>Approval</th>
+                    <th>Sign-off</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody id="prRolesTableBody">
+                  <tr><td colspan="7" class="text-center text-slate-500 py-4">Loading roles...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card p-6">
+            <h3 class="font-semibold text-slate-900 mb-3">Role Hierarchy</h3>
+            <div class="space-y-2 text-sm text-slate-600">
+              <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-red-400"></span> <strong>Partner / Engagement Partner</strong> — Full sign-off authority, final deliverable approval, risk & independence oversight</div>
+              <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-orange-400"></span> <strong>Quality Control Reviewer</strong> — Independent review before partner sign-off, override log oversight</div>
+              <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-amber-400"></span> <strong>Audit Manager / Client Service Manager</strong> — Engagement management, review queue, team capacity, portfolio review</div>
+              <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-blue-400"></span> <strong>Senior Associate / Reviewer</strong> — Senior preparation, review of staff work, working paper clearance</div>
+              <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-teal-400"></span> <strong>Audit Staff / Bookkeeper / FS Compiler</strong> — Day-to-day posting, working paper preparation, deliverable tracking</div>
+              <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-slate-400"></span> <strong>Viewer</strong> — Read-only access to dashboards and reports</div>
+            </div>
+          </div>
         </div>
       </section>
 
       <!-- SETTINGS: FIRM PREFS -->
       <section id="screen-firm-preferences" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Firm Preferences</div>
-          <div class="panel-subtitle mt-1">Practice defaults, engagement settings, and workspace preferences</div>
-          <div class="mt-4 text-sm text-slate-600">Firm Preferences placeholder.</div>
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="panel-title">Firm Preferences</div>
+            <div class="panel-subtitle mt-1">Practice defaults, engagement settings, and workspace preferences</div>
+          </div>
+
+          <div class="card p-6">
+            <h3 class="font-semibold text-slate-900 mb-4">Firm Profile</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Firm name</label>
+                <div id="prFirmName" class="font-medium text-slate-800">—</div>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Firm email</label>
+                <div id="prFirmEmail" class="font-medium text-slate-800">—</div>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Country</label>
+                <div id="prFirmCountry" class="font-medium text-slate-800">—</div>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Currency</label>
+                <div id="prFirmCurrency" class="font-medium text-slate-800">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-6">
+            <h3 class="font-semibold text-slate-900 mb-4">Workspace Preferences</h3>
+            <div class="space-y-3">
+              <label class="flex items-center justify-between p-3 rounded-xl border border-slate-200">
+                <div>
+                  <div class="text-sm font-medium text-slate-700">Context rail auto-expand</div>
+                  <div class="text-xs text-slate-400">Automatically expand the engagement context bar on the dashboard</div>
+                </div>
+                <input type="checkbox" id="prPrefAutoExpand" class="h-5 w-5 accent-teal-600" checked />
+              </label>
+
+              <label class="flex items-center justify-between p-3 rounded-xl border border-slate-200">
+                <div>
+                  <div class="text-sm font-medium text-slate-700">Show only my queue items by default</div>
+                  <div class="text-xs text-slate-400">Filter the review queue and action center to items assigned to you</div>
+                </div>
+                <input type="checkbox" id="prPrefMyQueue" class="h-5 w-5 accent-teal-600" />
+              </label>
+
+              <label class="flex items-center justify-between p-3 rounded-xl border border-slate-200">
+                <div>
+                  <div class="text-sm font-medium text-slate-700">Compact table density</div>
+                  <div class="text-xs text-slate-400">Reduce row padding in data tables for more visible rows</div>
+                </div>
+                <input type="checkbox" id="prPrefCompact" class="h-5 w-5 accent-teal-600" />
+              </label>
+            </div>
+          </div>
+
+          <div class="card p-6">
+            <h3 class="font-semibold text-slate-900 mb-4">Password Policy</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div class="rounded-xl border border-slate-200 p-3">
+                <div class="text-xs text-slate-400 mb-1">Expiry period</div>
+                <div class="font-semibold text-slate-700">90 days</div>
+              </div>
+              <div class="rounded-xl border border-slate-200 p-3">
+                <div class="text-xs text-slate-400 mb-1">Warning window</div>
+                <div class="font-semibold text-slate-700">10 days (80-89)</div>
+              </div>
+              <div class="rounded-xl border border-slate-200 p-3">
+                <div class="text-xs text-slate-400 mb-1">Minimum length</div>
+                <div class="font-semibold text-slate-700">8 characters</div>
+              </div>
+            </div>
+            <p class="mt-3 text-xs text-slate-400">Users are forced to change their password on the next sign-in after expiry. An OTP is sent to their email to authorize the change.</p>
+          </div>
         </div>
       </section>
     </main>
