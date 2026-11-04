@@ -14267,7 +14267,25 @@ function openLeaseWizard(ctx = {}) {
     ""
   ).trim();
 
-  const isLessor = ["BS_CA_1710", "BS_NCA_1720"].includes(accountCode);
+  // Resolve the lease role using the shared resolver so that
+  // openLeaseWizard(), redirectToModule() and openModuleNudgeModal()
+  // all use the same logic (role → cf_bucket → legacy code).
+  //
+  // Priority:
+  //   1. Explicit ctx.leaseRole from the caller (highest).
+  //   2. Account metadata via getLeaseRoleFromAccount().
+  //   3. Default to "lessee" to preserve prior behaviour for
+  //      accounts that don't carry lease-role metadata.
+  const leaseRole =
+    ctx.leaseRole ||
+    getLeaseRoleFromAccount?.({
+      ...ctx,
+      code: accountCode,
+      account_name: accountName,
+    }) ||
+    "lessee";
+
+  const isLessor = leaseRole === "lessor";
 
   const payload = {
     type: "lease_wizard_context",
@@ -14283,7 +14301,7 @@ function openLeaseWizard(ctx = {}) {
     source: ctx.source || "journal",
     ctx: {
       mode: ctx.mode || (isLessor ? "inception" : "existing"),
-      leaseRole: ctx.leaseRole || (isLessor ? "lessor" : "lessee"),
+      leaseRole,
       accountCode,
       accountName,
       defaults: {
@@ -24612,6 +24630,75 @@ function detectSubledgerType(acct) {
   return null;
 }
 
+// -----------------------------------------------------------
+// LEASE ROLE RESOLVER (single source of truth for lessor/lessee)
+// -----------------------------------------------------------
+// Resolves the IFRS 16 lease role for an account using the
+// following priority order:
+//   1. Account role (e.g. "lessor_net_investment_current")
+//   2. cf_bucket (e.g. "lease_receivable" vs "rou_asset")
+//   3. Legacy account-code fallback (BS_CA_1710 / BS_NCA_1720)
+//
+// Returns "lessor", "lessee", or null if it cannot be resolved.
+//
+// Use this everywhere the wizard role is decided so that
+// journal-guard routing, the module nudge modal, and the
+// wizard iframe all agree on which workflow to launch.
+// -----------------------------------------------------------
+function getLeaseRoleFromAccount(account = {}) {
+  if (!account) return null;
+
+  // 1. Account role has highest priority.
+  //    Covers values like "lessor_net_investment_current",
+  //    "lessor_net_investment_noncurrent", "lessee_rou_asset", etc.
+  const role = String(
+    account.role ||
+    account.account_role ||
+    account.accountRole ||
+    ""
+  ).trim().toLowerCase();
+
+  if (role.includes("lessor")) return "lessor";
+  if (role.includes("lessee")) return "lessee";
+
+  // 2. Cash-flow bucket is the fallback.
+  //    "lease_receivable" → lessor side.
+  //    "rou_asset", "lease_rou_accum_depr", "lease_liability*" → lessee side.
+  const bucket = String(
+    account.cf_bucket ||
+    account.cfBucket ||
+    account.cash_flow_bucket ||
+    ""
+  ).trim().toLowerCase();
+
+  if (bucket === "lease_receivable") return "lessor";
+
+  if (
+    bucket === "rou_asset" ||
+    bucket === "lease_rou_accum_depr" ||
+    bucket.includes("lease_liability")
+  ) {
+    return "lessee";
+  }
+
+  // 3. Legacy account-code fallback.
+  //    Keep this last so that companies with a different code
+  //    for the same accounting role still route correctly.
+  const code = String(
+    account.code ||
+    account.account_code ||
+    account.accountCode ||
+    ""
+  ).trim().toUpperCase();
+
+  if (["BS_CA_1710", "BS_NCA_1720"].includes(code)) {
+    return "lessor";
+  }
+
+  return null;
+}
+window.getLeaseRoleFromAccount = getLeaseRoleFromAccount;
+
 // Optional: future “module hints” (SOFT only)
 function detectFutureModuleHint(acct) {
   if (!acct) return null;
@@ -25387,10 +25474,21 @@ async function redirectJournalGuardToModule({ hint, acct, side }) {
   if (hint === "lease") {
     await window.switchScreen?.("ifrs16-lease-wizard");
 
+    // Resolve the lease role from the account's metadata so the
+    // correct wizard side (lessor vs lessee) is launched here
+    // too — this function is the alternate redirect path used
+    // by some legacy callers.
+    const leaseRole =
+      getLeaseRoleFromAccount?.(acct) ||
+      "lessee";
+
     window.openLeaseWizard?.({
       side,
       account: acct,
       accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+      leaseRole,
+      mode: leaseRole === "lessor" ? "inception" : "existing",
       standard: "IFRS 16",
       cf_bucket: acct?.cf_bucket || "",
       cf_section: acct?.cf_section || "",
@@ -25690,15 +25788,181 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     moduleLabel: "Open Workflow",
   };
 
+  // Pre-fill the date picker with the current journal date (if any),
+  // falling back to today so the field is never empty.
+  const initialDate =
+    getPreferredJournalDate?.() ||
+    meta?.date ||
+    "";
+
+  // Resolve the IFRS 16 lease role from the account's metadata
+  // (role → cf_bucket → legacy code) so the correct wizard opens.
+  // Defaults to "lessee" if neither the resolver nor the caller
+  // explicitly sets one — preserving prior behaviour for non-lease
+  // accounts that happen to pass through this modal.
+  const leaseRole =
+    getLeaseRoleFromAccount?.(account) ||
+    (moduleKey === "lease" ? "lessee" : null);
+
   return new Promise((resolve) => {
     let modal = document.getElementById("moduleNudgeModal");
 
     if (!modal) {
       modal = document.createElement("div");
       modal.id = "moduleNudgeModal";
-      modal.className = "modal hidden";
+      modal.className = "modal hidden fs-nudge-modal";
       modal.setAttribute("aria-hidden", "true");
       modal.style.display = "flex";
+
+      // ───────────────────────────────────────────────────────────
+      // CSS for the warning modal.
+      // Scoped under #moduleNudgeModal so it never leaks into other
+      // modals. Inline <style> travels with the modal element so the
+      // styling works regardless of which dashboard screen triggers it.
+      // ───────────────────────────────────────────────────────────
+      const styleEl = document.createElement("style");
+      styleEl.id = "moduleNudgeModalStyles";
+      styleEl.textContent = `
+        #moduleNudgeModal .modal-dialog {
+          max-width: 560px;
+          width: calc(100% - 32px);
+          margin: auto;
+          animation: fsNudgePop 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        #moduleNudgeModal .modal-card {
+          border: 1px solid #fcd34d;
+          border-radius: 14px;
+          box-shadow: 0 18px 50px -12px rgba(180, 83, 9, 0.35);
+          background: #fffdf7;
+          overflow: hidden;
+        }
+        #moduleNudgeModal .modal-header {
+          background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+          border-bottom: 1px solid #fcd34d;
+          padding: 16px 20px;
+          align-items: flex-start;
+        }
+        #moduleNudgeModal .modal-header h3 {
+          margin: 0 0 4px 0;
+          font-size: 16px;
+          font-weight: 700;
+          color: #92400e;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        #moduleNudgeModal .modal-header h3::before {
+          content: "⚠";
+          font-size: 18px;
+          line-height: 1;
+        }
+        #moduleNudgeModal .modal-header .muted {
+          color: #b45309;
+          font-size: 12px;
+          margin: 0;
+        }
+        #moduleNudgeModal .modal-body {
+          padding: 18px 20px 4px 20px;
+        }
+        #moduleNudgeModal .modal-body #moduleNudgeBody {
+          color: #4b3613;
+          font-size: 13px;
+          line-height: 1.55;
+        }
+        #moduleNudgeModal .fs-nudge-date-wrap {
+          margin-top: 14px;
+          padding: 12px 14px;
+          background: #fffbeb;
+          border: 1px dashed #f59e0b;
+          border-radius: 10px;
+        }
+        #moduleNudgeModal .fs-nudge-date-label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #92400e;
+          margin-bottom: 6px;
+        }
+        #moduleNudgeModal .fs-nudge-date-label::before {
+          content: "📅";
+        }
+        #moduleNudgeModal .fs-nudge-date-input {
+          width: 100%;
+          padding: 8px 10px;
+          border: 1px solid #fcd34d;
+          border-radius: 8px;
+          background: #ffffff;
+          font-size: 13px;
+          color: #4b3613;
+          box-sizing: border-box;
+        }
+        #moduleNudgeModal .fs-nudge-date-input:focus {
+          outline: none;
+          border-color: #f59e0b;
+          box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+        }
+        #moduleNudgeModal .fs-nudge-role-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 10px;
+          padding: 4px 10px;
+          border-radius: 999px;
+          background: #ede9fe;
+          color: #5b21b6;
+          font-size: 11px;
+          font-weight: 600;
+          border: 1px solid #c4b5fd;
+        }
+        #moduleNudgeModal .modal-footer {
+          padding: 14px 20px 18px 20px;
+          gap: 8px;
+          border-top: 1px solid #fde68a;
+          background: #fffdf7;
+        }
+        #moduleNudgeModal .modal-footer .btn {
+          font-size: 13px;
+          font-weight: 600;
+          border-radius: 8px;
+          padding: 8px 14px;
+        }
+        #moduleNudgeModal #moduleNudgeClose,
+        #moduleNudgeModal #moduleNudgeCancel {
+          background: #ffffff;
+          color: #92400e;
+          border: 1px solid #fcd34d;
+        }
+        #moduleNudgeModal #moduleNudgeClose:hover,
+        #moduleNudgeModal #moduleNudgeCancel:hover {
+          background: #fef3c7;
+        }
+        #moduleNudgeModal #moduleNudgeJournal {
+          background: #ffffff;
+          color: #78350f;
+          border: 1px solid #d6d3d1;
+        }
+        #moduleNudgeModal #moduleNudgeJournal:hover {
+          background: #fafaf9;
+        }
+        #moduleNudgeModal #moduleNudgeModule {
+          background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+          color: #ffffff;
+          border: 1px solid #b45309;
+          box-shadow: 0 4px 12px -2px rgba(217, 119, 6, 0.45);
+        }
+        #moduleNudgeModal #moduleNudgeModule:hover {
+          filter: brightness(1.05);
+        }
+        @keyframes fsNudgePop {
+          0%   { transform: scale(0.96) translateY(6px); opacity: 0; }
+          100% { transform: scale(1) translateY(0);    opacity: 1; }
+        }
+      `;
+      if (!document.getElementById("moduleNudgeModalStyles")) {
+        document.head.appendChild(styleEl);
+      }
 
       modal.innerHTML = `
         <div class="modal-backdrop" id="moduleNudgeBackdrop"></div>
@@ -25719,6 +25983,19 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
               <div class="detail-section">
                 <p id="moduleNudgeBody" style="white-space: pre-line; margin: 0;"></p>
               </div>
+
+              <div class="fs-nudge-date-wrap">
+                <label class="fs-nudge-date-label" for="moduleNudgeDateInput">
+                  Posting / journal date
+                </label>
+                <input
+                  type="date"
+                  id="moduleNudgeDateInput"
+                  class="fs-nudge-date-input"
+                  autocomplete="off"
+                />
+                <div id="moduleNudgeRoleChipWrap"></div>
+              </div>
             </div>
 
             <div class="modal-footer">
@@ -25736,6 +26013,8 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     const titleEl = modal.querySelector("#moduleNudgeTitle");
     const subtitleEl = modal.querySelector("#moduleNudgeSubtitle");
     const bodyEl = modal.querySelector("#moduleNudgeBody");
+    const dateInput = modal.querySelector("#moduleNudgeDateInput");
+    const roleChipWrap = modal.querySelector("#moduleNudgeRoleChipWrap");
     const btnClose = modal.querySelector("#moduleNudgeClose");
     const btnCancel = modal.querySelector("#moduleNudgeCancel");
     const btnJournal = modal.querySelector("#moduleNudgeJournal");
@@ -25747,6 +26026,26 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     bodyEl.textContent = msg.body || "";
     btnJournal.textContent = msg.continueLabel || "Continue in Journal";
     btnModule.textContent = msg.moduleLabel || "Open Workflow";
+
+    // Always seed the date picker — never leave it empty.
+    // Today is used as the ultimate fallback so the workflow
+    // always receives a usable date.
+    const today = new Date().toISOString().slice(0, 10);
+    dateInput.value = initialDate || today;
+
+    // Show the resolved lease role as a chip when this modal is
+    // handling an IFRS 16 account, so the user can confirm the
+    // wizard side before launching it.
+    if (roleChipWrap) {
+      roleChipWrap.innerHTML = "";
+      if (moduleKey === "lease" && leaseRole) {
+        const chip = document.createElement("span");
+        chip.className = "fs-nudge-role-chip";
+        chip.textContent =
+          leaseRole === "lessor" ? "Lessor wizard" : "Lessee wizard";
+        roleChipWrap.appendChild(chip);
+      }
+    }
 
     const cleanup = () => {
       if (modal.contains(document.activeElement)) {
@@ -25787,11 +26086,15 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     };
 
     btnModule.onclick = async () => {
-      let postingDate = getPreferredJournalDate();
+      // Read the date directly from the embedded picker — no
+      // second modal needed. If the user somehow clears it,
+      // fall back to today so the workflow never stalls.
+      let postingDate = String(dateInput?.value || "").trim();
 
       if (!postingDate) {
-        postingDate = await requirePostingDateModal("");
-        if (!postingDate) return;
+        dateInput?.focus();
+        window.showToast?.("Please pick a posting date first.", "error");
+        return;
       }
 
       const accountCode = String(
@@ -25802,14 +26105,17 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
         account?.name || account?.account_name || ""
       ).trim();
 
-      const isLessor = [
-        "BS_CA_1710",
-        "BS_NCA_1720",
-      ].includes(accountCode);
+      // Use the role resolved at the top of this function —
+      // it is authoritative because it inspects account.role,
+      // cf_bucket, and the legacy code in that order.
+      const resolvedLeaseRole =
+        leaseRole ||
+        getLeaseRoleFromAccount?.(account) ||
+        "lessee";
 
       window.__LEASE_WIZARD_PENDING_CONTEXT__ = {
-        mode: isLessor ? "inception" : "existing",
-        leaseRole: isLessor ? "lessor" : "lessee",
+        mode: resolvedLeaseRole === "lessor" ? "inception" : "existing",
+        leaseRole: resolvedLeaseRole,
         accountCode,
         accountName,
         defaults: {
@@ -25910,8 +26216,23 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
       return null;
     }
 
+    // Resolve the lease role from the account's metadata (role →
+    // cf_bucket → legacy code) so a Lease Receivable account
+    // opens the lessor wizard, and a ROU / Lease Liability
+    // account opens the lessee wizard.
+    const leaseRole =
+      getLeaseRoleFromAccount?.(account) ||
+      "lessee";
+
+    // Lessor inception creates a brand-new lease receivable;
+    // lessee existing-lease opening balances are loaded against
+    // an already-recognised ROU/Liability arrangement.
+    const leaseMode =
+      leaseRole === "lessor" ? "inception" : "existing";
+
     return await window.openLeaseWizard?.({
-      mode: "existing",
+      mode: leaseMode,
+      leaseRole,
       accountCode: account?.code || "",
       accountName: account?.name || "",
       defaults: {
