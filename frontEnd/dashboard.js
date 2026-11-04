@@ -25251,15 +25251,45 @@ function getJournalGuardMessage(hint, acct) {
   }
 
   if (hint === "lease") {
+    // Differentiate the warning copy depending on which side
+    // of the lease the selected account sits on.
+    //
+    // getLeaseRoleFromAccount() inspects acct.role first, then
+    // acct.cf_bucket, then the legacy account code — so a
+    // "Lease Receivable - Current" account (role:
+    // lessor_net_investment_current, cf_bucket: lease_receivable)
+    // resolves to "lessor", and a ROU asset / lease liability
+    // account resolves to "lessee".
+    //
+    // Without this branch the modal used to show lessee-only
+    // wording ("ROU amortisation, interest unwind") even when
+    // the user had picked a lessor (lease receivable) account.
+    const leaseRole =
+      getLeaseRoleFromAccount?.(acct) ||
+      "lessee";
+
+    if (leaseRole === "lessor") {
+      return {
+        title: "Use Lessor Lease Wizard instead?",
+        body:
+          `${name} is a lessor account and is usually managed through the Lessor Lease Wizard.\n\n` +
+          `If you continue in Journal, the net investment in the lease, the lease receipts schedule, interest income recognition, unguaranteed residual values, manufacturer / dealer profit, and lessor disclosures will need to be handled manually.`,
+        continueLabel: "Continue in Journal",
+        moduleLabel: "Open Lessor Wizard",
+        screen: "ifrs16-lease-wizard",
+        reasonPrefix: "lease_lessor",
+      };
+    }
+
     return {
-      title: "Use Lease Wizard instead?",
+      title: "Use Lessee Lease Wizard instead?",
       body:
-        `${name} is usually managed through the Lease module.\n\n` +
-        `If you continue in Journal, lease schedules, interest unwind, ROU amortisation, remeasurements, and lease disclosures will need to be handled manually.`,
+        `${name} is a lessee account and is usually managed through the Lessee Lease Wizard.\n\n` +
+        `If you continue in Journal, the right-of-use asset, lease liability, interest unwind, ROU amortisation, remeasurements, and lessee disclosures will need to be handled manually.`,
       continueLabel: "Continue in Journal",
-      moduleLabel: "Open Lease Wizard",
+      moduleLabel: "Open Lessee Wizard",
       screen: "ifrs16-lease-wizard",
-      reasonPrefix: "lease",
+      reasonPrefix: "lease_lessee",
     };
   }
 
