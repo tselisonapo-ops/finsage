@@ -1,4 +1,4 @@
-(function hardTraceRedirects() {
+﻿(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -73044,6 +73044,45 @@ async function saveEditModal() {
     showPayrollStatus("Payroll run created.", "success");
   }
 
+  async function createReplacementPayrollRun() {
+    const companyId = cid();
+    const current = payrollState.currentRun;
+
+    if (!current) throw new Error("Open a payroll run first.");
+    if (String(current.status || "").toLowerCase() !== "reversed") {
+      throw new Error("Only a reversed run can be re-run as a new version.");
+    }
+
+    const calendarId = Number(current.pay_calendar_id || 0);
+    if (!calendarId) {
+      throw new Error("Reversed run is missing pay_calendar_id.");
+    }
+
+    const reason = prompt(
+      "Why are you creating a replacement payroll run for this period?\n" +
+      "(Stored on the new version for audit.)",
+      ""
+    );
+    if (!reason || !reason.trim()) return; // cancelled
+
+    const res = await apiFetch(ENDPOINTS.payroll.runs(companyId), {
+      method: "POST",
+      body: JSON.stringify({
+        pay_calendar_id: calendarId,
+        create_replacement: true,
+        correction_reason: reason.trim(),
+      }),
+    });
+
+    const newRun = res?.data;
+    if (!newRun?.id) {
+      throw new Error(res?.error || "Replacement run was not created.");
+    }
+
+    await loadPayrollRuns();      // refresh list — new draft shows, reversed one hides
+    await openPayrollRun(Number(newRun.id));  // opens the fresh draft → all normal buttons reappear
+  }
+
   function switchPayrollRunTab(tab){
     document
       .querySelectorAll("[data-payroll-run-tab]")
@@ -73820,6 +73859,9 @@ async function saveEditModal() {
       !validation.ready_to_post
     );
 
+    setButton("payrollCreateReplacementRunBtn",  isReversed, false);
+    setButton("payrollCreateReplacementRunOverviewBtn", isReversed, false);
+
     let message="";
 
     if(isDraft){
@@ -73851,6 +73893,10 @@ async function saveEditModal() {
         `Payroll was reversed through journal #`+
         `${run.reversal_journal_id||"—"}.`
       );
+    } else if (isReversed) {
+      message =
+        `Payroll was reversed through journal #${run.reversal_journal_id || "—"}. ` +
+        `Click "Re-run payroll (new version)" to create a fresh draft for this period.`;
     }
 
     setTxt(
@@ -92458,6 +92504,9 @@ function renderPayrollPayeRunClearing(
           reverseSelectedPayrollRun
         )
       );
+
+    $("payrollCreateReplacementRunBtn")
+      ?.addEventListener("click", runPayrollAction(createReplacementPayrollRun));
 
     $("payrollRefreshPayslipsBtn")
       ?.addEventListener(
