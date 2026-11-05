@@ -92500,6 +92500,8 @@ function renderPayrollPayeRunClearing(
         )
       );
 
+    console.log('Overview button:', document.getElementById('payrollCreateReplacementRunOverviewBtn'));
+    console.log('Posting button :', document.getElementById('payrollCreateReplacementRunBtn'));
     $("payrollCreateReplacementRunBtn")
       ?.addEventListener("click", runPayrollAction(createReplacementPayrollRun));
 
@@ -92510,6 +92512,9 @@ function renderPayrollPayeRunClearing(
           loadPayrollRunPayslips
         )
       );
+
+    $("payrollCreateReplacementRunOverviewBtn")
+      ?.addEventListener("click", runPayrollAction(createReplacementPayrollRun));
 
     $("payrollPayslipSearch")
       ?.addEventListener(
