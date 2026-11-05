@@ -73888,12 +73888,7 @@ async function saveEditModal() {
         `Payroll was posted to journal #`+
         `${run.posted_journal_id||"—"}.`
       );
-    }else if(isReversed){
-      message=(
-        `Payroll was reversed through journal #`+
-        `${run.reversal_journal_id||"—"}.`
-      );
-    } else if (isReversed) {
+    }else if (isReversed) {
       message =
         `Payroll was reversed through journal #${run.reversal_journal_id || "—"}. ` +
         `Click "Re-run payroll (new version)" to create a fresh draft for this period.`;
