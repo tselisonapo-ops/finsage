@@ -2986,7 +2986,7 @@ class DatabaseService:
             last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             last_ip INET,
             user_agent TEXT,
-            UNIQUE (user_id, device_id)
+            UNIQUE (user_id, product, device_id)
         );
 
         CREATE INDEX IF NOT EXISTS auth_trusted_devices_user_idx
@@ -94339,7 +94339,7 @@ class DatabaseService:
                 )
                 VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 RETURNING id
                 """,
@@ -94358,6 +94358,7 @@ class DatabaseService:
                     production_unit,
                     location,
                     batch_no,
+                    "planned",
                     notes,
                     created_by_user_id,
                     created_by_user_id,
