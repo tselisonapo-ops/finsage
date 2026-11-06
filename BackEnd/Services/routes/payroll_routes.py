@@ -354,6 +354,52 @@ def api_payroll_employee(company_id: int, employee_id: int):
         current_app.logger.exception("api_payroll_employee failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "employees/<int:employee_id>/profile",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_payroll_employee_profile(company_id: int, employee_id: int):
+    """Consolidated employee profile - one call returns everything
+    the standalone Employee Profile view needs: contracts, tax
+    profiles, bank accounts, benefits, leave requests, leave
+    balances, loans, pay setup, recurring items and the last 12
+    payslips (payroll_run_employees joined to payroll_runs).
+    """
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        out = db_service.payroll_employee_profile_get(
+            int(company_id),
+            int(employee_id),
+        )
+
+        if not out:
+            return jsonify({
+                "ok": False,
+                "error": "Payroll employee not found",
+            }), 404
+
+        return jsonify({"ok": True, "data": out}), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "payroll_employee_profile_get failed"
+        )
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
 @payroll_bp.route("/api/companies/<int:company_id>/payroll/employees/<int:employee_id>/contracts", methods=["POST", "OPTIONS"])
 @require_auth
 def api_payroll_contract_create(company_id: int, employee_id: int):

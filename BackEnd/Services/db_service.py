@@ -173308,6 +173308,201 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return emp
 
+    def payroll_employee_profile_get(
+        self,
+        company_id: int,
+        employee_id: int,
+    ):
+        """
+        Consolidated payroll employee profile.
+
+        Returns EVERYTHING about an employee needed for the
+        standalone "Employee Profile" view:
+
+          * employee  (base row + department_name + position_title
+                       + employment_start_date)
+          * contracts
+          * tax_profiles
+          * bank_accounts
+          * benefits
+          * leave_requests
+          * leave_balances  (NEW - not returned by payroll_employee_get)
+          * loans
+          * pay_setup      (full object: items, benefit plan
+                            memberships, contract, tax_profile,
+                            inherited_from_contract)
+          * recurring_earnings
+          * recurring_deductions
+          * recurring_contributions
+          * recent_payslips (last 12 payroll_run_employees rows
+                              joined to payroll_runs)
+        """
+        company_id = int(company_id)
+        employee_id = int(employee_id)
+        schema = self.company_schema(company_id)
+
+        # 1. Base employee + the lists already collected by
+        #    payroll_employee_get (contracts, tax_profiles,
+        #    bank_accounts, benefits, leave_requests, loans).
+        emp = self.payroll_employee_get(company_id, employee_id)
+        if not emp:
+            return None
+
+        # 2. Enrich the base row with department_name,
+        #    position_title and earliest employment_start_date
+        #    (mirrors the projection used by payroll_employees_list
+        #    so the profile header stays consistent with the list).
+        enriched = self.fetch_one(
+            f"""
+            SELECT
+                e.*,
+                d.name AS department_name,
+                p.title AS position_title,
+                contract.employment_start_date
+            FROM {schema}.payroll_employees e
+            LEFT JOIN {schema}.payroll_departments d
+                ON d.id = e.department_id
+            LEFT JOIN {schema}.payroll_positions p
+                ON p.id = e.position_id
+            LEFT JOIN LATERAL (
+                SELECT MIN(c.effective_from)::date
+                       AS employment_start_date
+                FROM {schema}.payroll_employee_contracts c
+                WHERE c.company_id = e.company_id
+                  AND c.employee_id = e.id
+            ) contract ON TRUE
+            WHERE e.company_id = %s
+              AND e.id = %s
+            LIMIT 1;
+            """,
+            (company_id, employee_id),
+        )
+
+        if enriched:
+            for k, v in enriched.items():
+                # Do not overwrite the sub-arrays already attached
+                # by payroll_employee_get - only fill missing keys
+                # (department_name, position_title,
+                #  employment_start_date).
+                if k not in emp:
+                    emp[k] = v
+
+        # 3. Leave balances (NEW - payroll_employee_get only
+        #    returns leave_requests, not balances).
+        emp["leave_balances"] = self.fetch_all(
+            f"""
+            SELECT
+                lb.*,
+                lt.code AS leave_code,
+                lt.name AS leave_name,
+                lt.is_paid AS leave_is_paid
+            FROM {schema}.payroll_employee_leave_balances lb
+            LEFT JOIN {schema}.payroll_leave_types lt
+                ON lt.id = lb.leave_type_id
+            WHERE lb.company_id = %s
+              AND lb.employee_id = %s
+            ORDER BY lb.as_of_date DESC, lb.id DESC;
+            """,
+            (company_id, employee_id),
+        )
+
+        # 4. Pay setup (full object: items, benefit plan
+        #    memberships, contract, tax_profile, etc.).
+        #    Defensive try/except so a broken pay-setup never
+        #    hides the rest of the profile.
+        try:
+            emp["pay_setup"] = self.payroll_employee_pay_setup_get(
+                company_id,
+                employee_id,
+            )
+        except Exception:
+            emp["pay_setup"] = None
+
+        # 5. Recent payslips / payroll run history
+        #    (payroll_run_employees joined to payroll_runs).
+        emp["recent_payslips"] = self.fetch_all(
+            f"""
+            SELECT
+                pre.id,
+                pre.payroll_run_id,
+                pre.basic_pay,
+                pre.gross_pay,
+                pre.total_deductions,
+                pre.employer_contributions,
+                pre.net_pay,
+                pre.status,
+                pre.eligible_from,
+                pre.eligible_to,
+                pre.scheduled_days,
+                pre.eligible_days,
+                pr.run_no,
+                pr.period_start,
+                pr.period_end,
+                pr.payment_date,
+                pr.status AS run_status
+            FROM {schema}.payroll_run_employees pre
+            JOIN {schema}.payroll_runs pr
+                ON pr.id = pre.payroll_run_id
+            WHERE pre.company_id = %s
+              AND pre.employee_id = %s
+            ORDER BY pr.period_end DESC NULLS LAST,
+                     pr.id DESC,
+                     pre.id DESC
+            LIMIT 12;
+            """,
+            (company_id, employee_id),
+        )
+
+        # 6. Active recurring earnings / deductions / contributions.
+        #    These drive the per-period payroll calculation and are
+        #    useful to surface on the profile so the user can see
+        #    what is currently being applied each run.
+        emp["recurring_earnings"] = self.fetch_all(
+            f"""
+            SELECT re.*, et.code AS earning_code,
+                   et.name AS earning_name
+            FROM {schema}.payroll_employee_recurring_earnings re
+            LEFT JOIN {schema}.payroll_earning_types et
+                ON et.id = re.earning_type_id
+            WHERE re.company_id = %s
+              AND re.employee_id = %s
+              AND COALESCE(re.is_active, TRUE) = TRUE
+            ORDER BY re.effective_from DESC, re.id DESC;
+            """,
+            (company_id, employee_id),
+        )
+
+        emp["recurring_deductions"] = self.fetch_all(
+            f"""
+            SELECT rd.*, dt.code AS deduction_code,
+                   dt.name AS deduction_name
+            FROM {schema}.payroll_employee_recurring_deductions rd
+            LEFT JOIN {schema}.payroll_deduction_types dt
+                ON dt.id = rd.deduction_type_id
+            WHERE rd.company_id = %s
+              AND rd.employee_id = %s
+              AND COALESCE(rd.is_active, TRUE) = TRUE
+            ORDER BY rd.effective_from DESC, rd.id DESC;
+            """,
+            (company_id, employee_id),
+        )
+
+        emp["recurring_contributions"] = self.fetch_all(
+            f"""
+            SELECT rc.*, ct.code AS contribution_code,
+                   ct.name AS contribution_name
+            FROM {schema}.payroll_employee_recurring_contributions rc
+            LEFT JOIN {schema}.payroll_employer_contribution_types ct
+                ON ct.id = rc.contribution_type_id
+            WHERE rc.company_id = %s
+              AND rc.employee_id = %s
+              AND COALESCE(rc.is_active, TRUE) = TRUE
+            ORDER BY rc.effective_from DESC, rc.id DESC;
+            """,
+            (company_id, employee_id),
+        )
+
+        return emp
 
     def payroll_employee_create(
         self,

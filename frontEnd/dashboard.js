@@ -2441,6 +2441,13 @@ const ENDPOINTS = {
     employee: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}`,
 
+    // GET /api/companies/<cid>/payroll/employees/<employeeId>/profile
+    // Consolidated employee profile - returns contracts, tax profiles,
+    // bank accounts, benefits, leave requests, leave balances, loans,
+    // pay setup, recurring items and recent payslips in one call.
+    employeeProfile: (companyId, employeeId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/profile`,
+
     contracts: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/contracts`,
 
@@ -74583,18 +74590,32 @@ async function saveEditModal() {
   // (used by Recent Employees list + Employees table row clicks)
   // ──────────────────────────────────────────────────────────
 
-  function openEmployeeOverviewDetail(employeeId){
-    const emp=(payrollState.employees||[]).find(
-      e=>String(e.id)===String(employeeId)
-    );
+  // ──────────────────────────────────────────────────────────
+  // Standalone employee overview detail
+  // (used by Recent Employees list + Employees table row clicks)
+  //
+  // v2 — fetches the consolidated /profile endpoint so we can
+  // render EVERY section: contracts, tax profiles, bank accounts,
+  // benefits, leave requests, leave balances, loans, pay setup,
+  // recurring earnings/deductions/contributions and the last 12
+  // payslips. Falls back to the cached bootstrap record if the
+  // fetch fails so the panel never goes blank.
+  // ──────────────────────────────────────────────────────────
 
-    if(!emp){
-      console.warn("[EmployeeOverview] employee not found:",employeeId);
+  async function openEmployeeOverviewDetail(employeeId){
+    const empId=Number(employeeId);
+    if(!empId){
+      console.warn("[EmployeeOverview] no employeeId");
       return;
     }
 
-    // Remember which employee is open (used by the Edit button)
-    payrollState.overviewDetailEmployeeId=emp.id;
+    // Optimistic header from the cached list so the panel appears
+    // instantly while the full profile loads.
+    let emp=(payrollState.employees||[]).find(
+      e=>String(e.id)===String(empId)
+    )||{id:empId};
+
+    payrollState.overviewDetailEmployeeId=empId;
 
     const listCard=$("payrollEmployeeListCard");
     const detailEl=$("payrollEmployeeOverviewDetail");
@@ -74602,82 +74623,559 @@ async function saveEditModal() {
     if(listCard) listCard.classList.add("hidden");
     if(detailEl) detailEl.classList.remove("hidden");
 
-    // Header
+    // Show a loading skeleton in the body while we fetch.
+    paintHeader(emp);
+    paintKpis(emp);
+    paintLoading();
+
+    detailEl?.scrollIntoView({behavior:"smooth",block:"start"});
+
+    // Fetch the consolidated profile.
+    let profile=null;
+    try{
+      const cid=getActiveCompanyId?.()||window.CURRENT_COMPANY_ID;
+      if(cid){
+        const res=await apiFetch(
+          ENDPOINTS.payroll.employeeProfile(cid,empId),
+          {method:"GET"}
+        );
+        if(res&&res.ok&&res.data){
+          profile=res.data;
+          // Keep the cached list in sync with the fresh fetch.
+          const idx=(payrollState.employees||[]).findIndex(
+            e=>String(e.id)===String(empId)
+          );
+          if(idx>=0) payrollState.employees[idx]=profile;
+          else payrollState.employees=[...(payrollState.employees||[]),profile];
+          emp=profile;
+        }
+      }
+    }catch(err){
+      console.warn("[EmployeeOverview] profile fetch failed, using cached data:",err);
+    }
+
+    paintHeader(emp);
+    paintKpis(emp);
+    paintProfileBody(emp);
+    paintContracts(emp);
+    paintTaxProfiles(emp);
+    paintBankAccounts(emp);
+    paintBenefits(emp);
+    paintLeaveRequests(emp);
+    paintLeaveBalances(emp);
+    paintLoans(emp);
+    paintPaySetup(emp);
+    paintRecurringItems(emp);
+    paintRecentPayslips(emp);
+
+    // Scroll again after content settles.
+    detailEl?.scrollIntoView({behavior:"smooth",block:"start"});
+  }
+
+  // ── Small render helpers (scoped to this file) ─────────────
+
+  function paintHeader(emp){
     const name=`${emp.first_name||""} ${emp.last_name||""}`.trim()||"Employee";
     const sub=[
       emp.employee_no&&(`# ${emp.employee_no}`),
       cap(emp.employment_status||"active")
     ].filter(Boolean).join(" · ");
-
     setTxt("payrollEmployeeOverviewName",name);
     setTxt("payrollEmployeeOverviewSub",sub||"—");
+  }
 
-    // KPIs (employee-profile summary)
+  function paintKpis(emp){
     const kpiEl=$("payrollEmployeeOverviewKpis");
-    if(kpiEl){
-      const contract=(emp.contracts||[])[0]||{};
-      const basic=round2(contract.basic_salary||emp.basic_salary||0);
-      const hours=Number(contract.normal_hours_per_month||0)||0;
-      const dept=emp.department_name||"—";
-      const pos=emp.position_title||"—";
+    if(!kpiEl) return;
+    const contract=(emp.contracts||[])[0]||{};
+    const paySetup=emp.pay_setup||{};
+    const basic=round2(
+      paySetup.fixed_basic_amount||
+      contract.basic_salary||
+      emp.basic_salary||0
+    );
+    const hours=Number(
+      paySetup.standard_quantity||
+      contract.normal_hours_per_month||0
+    )||0;
+    const dept=emp.department_name||"—";
+    const pos=emp.position_title||"—";
+    const payBasis=cap(paySetup.pay_basis||contract.salary_type||"monthly");
 
-      kpiEl.innerHTML=`
-        <div>
-          <span>Department</span>
-          <strong>${esc(dept)}</strong>
-        </div>
-        <div>
-          <span>Position</span>
-          <strong>${esc(pos)}</strong>
-        </div>
-        <div>
-          <span>Basic Salary</span>
-          <strong>${money(basic)}</strong>
-        </div>
-        <div>
-          <span>Hours / Month</span>
-          <strong>${hours}</strong>
-        </div>
-      `;
-    }
+    kpiEl.innerHTML=`
+      <div><span>Department</span><strong>${esc(dept)}</strong></div>
+      <div><span>Position</span><strong>${esc(pos)}</strong></div>
+      <div><span>Basic Salary</span><strong>${money(basic)}</strong></div>
+      <div><span>Pay Basis</span><strong>${esc(payBasis)}</strong></div>
+      <div><span>Hours / Month</span><strong>${hours}</strong></div>
+      <div><span>Bank</span><strong>${esc((emp.bank_accounts||[]).find(b=>b.is_primary)?.bank_name||(emp.bank_accounts||[])[0]?.bank_name||"—")}</strong></div>
+    `;
+  }
 
-    // Profile body
+  function paintLoading(){
     const bodyEl=$("payrollEmployeeOverviewBody");
     if(bodyEl){
-      const contract=(emp.contracts||[])[0]||{};
-      const bank=(emp.bank_accounts||[])[0]||{};
-      const tax=(emp.tax_profiles||[])[0]||{};
+      bodyEl.innerHTML=`<div class="payroll-muted" style="padding:24px;text-align:center;">Loading full profile…</div>`;
+    }
+    ["payrollEmployeeOverviewContracts","payrollEmployeeOverviewTaxProfiles","payrollEmployeeOverviewBankAccounts","payrollEmployeeOverviewBenefits","payrollEmployeeOverviewLeave","payrollEmployeeOverviewLeaveBalances","payrollEmployeeOverviewLoans","payrollEmployeeOverviewPaySetup","payrollEmployeeOverviewRecurring","payrollEmployeeOverviewPayslips"].forEach(id=>{
+      const el=$(id);
+      if(el) el.innerHTML=`<div class="payroll-muted" style="padding:12px;">Loading…</div>`;
+    });
+  }
 
-      const kv=(label,value)=>`
-        <div class="payroll-run-info-card" style="margin-bottom:12px;">
-          <h4>${esc(label)}</h4>
-          <div>${value?esc(value):"—"}</div>
-        </div>
-      `;
+  function kv(label,value){
+    return `
+      <div class="payroll-run-info-card" style="margin-bottom:12px;">
+        <h4>${esc(label)}</h4>
+        <div>${value!==undefined&&value!==null&&String(value).trim()!==""?esc(String(value)):"—"}</div>
+      </div>
+    `;
+  }
 
-      bodyEl.innerHTML=`
-        <div class="payroll-run-overview-grid">
-          ${kv("Employee Number",emp.employee_no)}
-          ${kv("Email",emp.email)}
-          ${kv("Phone",emp.phone)}
-          ${kv("ID Number",emp.id_number)}
-          ${kv("Passport Number",emp.passport_number)}
-          ${kv("Tax Number",emp.tax_number||tax.tax_number)}
-          ${kv("Employment Status",cap(emp.employment_status||"active"))}
-          ${kv("Start Date",fmtDdMmYyyy(emp.start_date||emp.employment_start_date))}
-          ${kv("Contract Type",cap(contract.contract_type||"permanent"))}
-          ${kv("Salary Type",cap(contract.salary_type||"monthly"))}
-          ${kv("Hourly Rate",contract.hourly_rate?money(contract.hourly_rate):"")}
-          ${kv("Bank",bank.bank_name)}
-          ${kv("Bank Account",bank.account_number?`${bank.account_name||""} · ${bank.account_number}`:"")}
-          ${kv("Branch Code",bank.branch_code)}
-          ${kv("Account Type",cap(bank.account_type))}
-        </div>
-      `;
+  function emptyRow(text){
+    return `<div class="payroll-muted" style="padding:12px;">${esc(text||"No records.")}</div>`;
+  }
+
+  function paintProfileBody(emp){
+    const bodyEl=$("payrollEmployeeOverviewBody");
+    if(!bodyEl) return;
+    const contract=(emp.contracts||[])[0]||{};
+    const bank=(emp.bank_accounts||[]).find(b=>b.is_primary)||(emp.bank_accounts||[])[0]||{};
+    const tax=(emp.tax_profiles||[])[0]||{};
+
+    bodyEl.innerHTML=`
+      <div class="payroll-run-overview-grid">
+        ${kv("Employee Number",emp.employee_no)}
+        ${kv("Email",emp.email)}
+        ${kv("Phone",emp.phone)}
+        ${kv("ID Number",emp.id_number)}
+        ${kv("Passport Number",emp.passport_number)}
+        ${kv("Tax Number",emp.tax_number||tax.tax_number)}
+        ${kv("Employment Status",cap(emp.employment_status||"active"))}
+        ${kv("Start Date",fmtDdMmYyyy(emp.start_date||emp.employment_start_date))}
+        ${kv("Termination Date",emp.termination_date?fmtDdMmYyyy(emp.termination_date):"")}
+        ${kv("Contract Type",cap(contract.contract_type||"permanent"))}
+        ${kv("Salary Type",cap(contract.salary_type||"monthly"))}
+        ${kv("Basic Salary",contract.basic_salary?money(contract.basic_salary):"")}
+        ${kv("Hourly Rate",contract.hourly_rate?money(contract.hourly_rate):"")}
+        ${kv("Normal Hours / Month",contract.normal_hours_per_month||"")}
+        ${kv("Contract Period",contractPeriod(contract))}
+        ${kv("Bank",bank.bank_name)}
+        ${kv("Bank Account",bank.account_number?`${bank.account_name||""} · ${bank.account_number}`:"")}
+        ${kv("Branch Code",bank.branch_code)}
+        ${kv("Account Type",cap(bank.account_type))}
+      </div>
+    `;
+  }
+
+  function contractPeriod(c){
+    if(!c) return "";
+    const from=c.effective_from?fmtDdMmYyyy(c.effective_from):"—";
+    const to=c.effective_to?fmtDdMmYyyy(c.effective_to):(c.is_active?"Active":"—");
+    return `${from} → ${to}`;
+  }
+
+  function paintContracts(emp){
+    const el=$("payrollEmployeeOverviewContracts");
+    if(!el) return;
+    const rows=(emp.contracts||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No contracts recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Type</th><th>Salary Type</th><th>Basic</th><th>Rate</th>
+            <th>Hours/Mo</th><th>From</th><th>To</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(c=>`
+              <tr>
+                <td>${esc(cap(c.contract_type||""))}</td>
+                <td>${esc(cap(c.salary_type||""))}</td>
+                <td class="num">${c.basic_salary?money(c.basic_salary):"—"}</td>
+                <td class="num">${c.hourly_rate?money(c.hourly_rate):"—"}</td>
+                <td class="num">${c.normal_hours_per_month||"—"}</td>
+                <td>${c.effective_from?fmtDdMmYyyy(c.effective_from):"—"}</td>
+                <td>${c.effective_to?fmtDdMmYyyy(c.effective_to):(c.is_active?"Active":"—")}</td>
+                <td>${c.is_active?'<span class="payroll-pill payroll-status-posted">Active</span>':'<span class="payroll-pill">Inactive</span>'}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintTaxProfiles(emp){
+    const el=$("payrollEmployeeOverviewTaxProfiles");
+    if(!el) return;
+    const rows=(emp.tax_profiles||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No tax profiles recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Tax Number</th><th>Authority</th><th>Residency</th>
+            <th>Method</th><th>PAYE Exempt</th><th>DOB</th>
+            <th>Medical Members</th><th>Directive #</th>
+            <th>Directive Rate</th><th>From</th><th>To</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(t=>`
+              <tr>
+                <td>${esc(t.tax_number||"—")}</td>
+                <td>${esc(t.tax_authority_id||"—")}</td>
+                <td>${esc(cap(t.residency_status||""))}</td>
+                <td>${esc(cap(t.tax_calculation_method||"standard"))}</td>
+                <td>${t.paye_exempt?"Yes":"No"}</td>
+                <td>${t.date_of_birth?fmtDdMmYyyy(t.date_of_birth):"—"}</td>
+                <td>${t.medical_scheme_members||"—"}</td>
+                <td>${esc(t.directive_number||"—")}</td>
+                <td class="num">${t.directive_rate?`${t.directive_rate}%`:"—"}</td>
+                <td>${t.effective_from?fmtDdMmYyyy(t.effective_from):"—"}</td>
+                <td>${t.effective_to?fmtDdMmYyyy(t.effective_to):(t.effective_from?"Open":"—")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintBankAccounts(emp){
+    const el=$("payrollEmployeeOverviewBankAccounts");
+    if(!el) return;
+    const rows=(emp.bank_accounts||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No bank accounts recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Bank</th><th>Account Name</th><th>Account Number</th>
+            <th>Branch Code</th><th>Type</th><th>Primary</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(b=>`
+              <tr>
+                <td>${esc(b.bank_name||"—")}</td>
+                <td>${esc(b.account_name||"—")}</td>
+                <td>${esc(b.account_number||"—")}</td>
+                <td>${esc(b.branch_code||"—")}</td>
+                <td>${esc(cap(b.account_type||""))}</td>
+                <td>${b.is_primary?'<span class="payroll-pill payroll-status-posted">Primary</span>':"No"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintBenefits(emp){
+    const el=$("payrollEmployeeOverviewBenefits");
+    if(!el) return;
+    const rows=(emp.benefits||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No benefits recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Benefit</th><th>Code</th><th>Category</th>
+            <th>Calc Method</th><th>Employee Amt</th><th>Employer Amt</th>
+            <th>Employee %</th><th>Employer %</th><th>Provider</th>
+            <th>Policy #</th><th>From</th><th>To</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(b=>`
+              <tr>
+                <td>${esc(b.benefit_name||"—")}</td>
+                <td>${esc(b.benefit_code||"—")}</td>
+                <td>${esc(cap(b.benefit_category||""))}</td>
+                <td>${esc(cap(b.calc_method||""))}</td>
+                <td class="num">${b.employee_amount?money(b.employee_amount):"—"}</td>
+                <td class="num">${b.employer_amount?money(b.employer_amount):"—"}</td>
+                <td class="num">${b.employee_percent?`${b.employee_percent}%`:"—"}</td>
+                <td class="num">${b.employer_percent?`${b.employer_percent}%`:"—"}</td>
+                <td>${esc(b.provider_name||"—")}</td>
+                <td>${esc(b.policy_number||"—")}</td>
+                <td>${b.effective_from?fmtDdMmYyyy(b.effective_from):"—"}</td>
+                <td>${b.effective_to?fmtDdMmYyyy(b.effective_to):(b.is_active?"Active":"—")}</td>
+                <td>${b.is_active?'<span class="payroll-pill payroll-status-posted">Active</span>':'<span class="payroll-pill">Inactive</span>'}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintLeaveRequests(emp){
+    const el=$("payrollEmployeeOverviewLeave");
+    if(!el) return;
+    const rows=(emp.leave_requests||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No leave requests recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Type</th><th>From</th><th>To</th><th>Days</th>
+            <th>Status</th><th>Reason</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(l=>`
+              <tr>
+                <td>${esc(l.leave_name||l.leave_code||"—")}</td>
+                <td>${l.date_from?fmtDdMmYyyy(l.date_from):"—"}</td>
+                <td>${l.date_to?fmtDdMmYyyy(l.date_to):"—"}</td>
+                <td class="num">${l.days||"—"}</td>
+                <td>${esc(cap(l.status||""))}</td>
+                <td>${esc(l.reason||"—")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintLeaveBalances(emp){
+    const el=$("payrollEmployeeOverviewLeaveBalances");
+    if(!el) return;
+    const rows=(emp.leave_balances||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No leave balances recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Leave Type</th><th>As Of</th><th>Opening</th>
+            <th>Accrued</th><th>Taken</th><th>Forfeited</th>
+            <th>Adjusted</th><th>Closing</th><th>Daily Rate</th>
+            <th>Closing Provision</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(lb=>`
+              <tr>
+                <td>${esc(lb.leave_name||lb.leave_code||"—")}</td>
+                <td>${lb.as_of_date?fmtDdMmYyyy(lb.as_of_date):"—"}</td>
+                <td class="num">${lb.opening_days||0}</td>
+                <td class="num">${lb.accrued_days||0}</td>
+                <td class="num">${lb.taken_days||0}</td>
+                <td class="num">${lb.forfeited_days||0}</td>
+                <td class="num">${lb.adjusted_days||0}</td>
+                <td class="num"><strong>${lb.closing_days||0}</strong></td>
+                <td class="num">${lb.daily_rate?money(lb.daily_rate):"—"}</td>
+                <td class="num">${lb.closing_provision?money(lb.closing_provision):"—"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintLoans(emp){
+    const el=$("payrollEmployeeOverviewLoans");
+    if(!el) return;
+    const rows=(emp.loans||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No loans recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Loan #</th><th>Principal</th><th>Balance</th>
+            <th>Repayment</th><th>Start Date</th><th>Status</th>
+            <th>Notes</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(l=>`
+              <tr>
+                <td>${esc(l.loan_no||"—")}</td>
+                <td class="num">${l.principal_amount?money(l.principal_amount):"—"}</td>
+                <td class="num">${l.balance_amount?money(l.balance_amount):"—"}</td>
+                <td class="num">${l.repayment_amount?money(l.repayment_amount):"—"}</td>
+                <td>${l.start_date?fmtDdMmYyyy(l.start_date):"—"}</td>
+                <td>${esc(cap(l.status||""))}</td>
+                <td>${esc(l.notes||"—")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintPaySetup(emp){
+    const el=$("payrollEmployeeOverviewPaySetup");
+    if(!el) return;
+    const ps=emp.pay_setup;
+    if(!ps){
+      el.innerHTML=emptyRow("No pay setup configured for this employee.");
+      return;
     }
 
-    // Scroll the detail into view
-    detailEl?.scrollIntoView({behavior:"smooth",block:"start"});
+    const summary=`
+      <div class="payroll-run-overview-grid">
+        ${kv("Pay Basis",cap(ps.pay_basis||""))}
+        ${kv("Fixed Basic Amount",ps.fixed_basic_amount?money(ps.fixed_basic_amount):"")}
+        ${kv("Standard Quantity",ps.standard_quantity||"—")}
+        ${kv("Rate",ps.rate?money(ps.rate):"—")}
+        ${kv("Tax Treatment",cap(ps.tax_treatment||""))}
+        ${kv("Manual PAYE Amount",ps.manual_paye_amount?money(ps.manual_paye_amount):"")}
+        ${kv("Proration Method",cap(ps.proration_method||"").replace(/_/g," "))}
+        ${kv("Hours / Day",ps.hours_per_day||"—")}
+        ${kv("Attendance Required",ps.attendance_required?"Yes":"No")}
+        ${kv("Effective From",ps.effective_from?fmtDdMmYyyy(ps.effective_from):"—")}
+        ${kv("Effective To",ps.effective_to?fmtDdMmYyyy(ps.effective_to):(ps.is_active?"Active":"—"))}
+        ${kv("Inherited From Contract",ps.inherited_from_contract?"Yes":"No")}
+      </div>
+    `;
+
+    const items=(ps.items||[]);
+    const itemsHtml=items.length?`
+      <div class="payroll-table-wrap" style="margin-top:16px;">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Type</th><th>Name</th><th>Calc Method</th>
+            <th>Amount</th><th>Percentage</th><th>Quantity</th>
+            <th>Rate</th><th>Calculated</th><th>Source</th>
+            <th>From</th><th>To</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${items.map(it=>`
+              <tr>
+                <td>${esc(cap(it.item_type||""))}</td>
+                <td>${esc(it.name||it.earning_name||it.deduction_name||it.contribution_name||"—")}</td>
+                <td>${esc(cap(it.calculation_method||"").replace(/_/g," "))}</td>
+                <td class="num">${it.amount?money(it.amount):"—"}</td>
+                <td class="num">${it.percentage?`${it.percentage}%`:"—"}</td>
+                <td class="num">${it.quantity||"—"}</td>
+                <td class="num">${it.rate?money(it.rate):"—"}</td>
+                <td class="num">${it.calculated_amount?money(it.calculated_amount):"—"}</td>
+                <td>${esc(cap(it.source_type||"").replace(/_/g," "))}</td>
+                <td>${it.effective_from?fmtDdMmYyyy(it.effective_from):"—"}</td>
+                <td>${it.effective_to?fmtDdMmYyyy(it.effective_to):(it.is_active?"Active":"—")}</td>
+                <td>${it.is_active?'<span class="payroll-pill payroll-status-posted">Active</span>':'<span class="payroll-pill">Inactive</span>'}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `:emptyRow("No pay setup items (earnings, deductions, contributions).");
+
+    const members=(ps.benefit_plan_memberships||[]);
+    const membersHtml=members.length?`
+      <div style="margin-top:16px;">
+        <h4 style="margin:0 0 8px;font-size:13px;color:#082f57;">Benefit Plan Memberships</h4>
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead><tr>
+              <th>Plan</th><th>Plan Type</th><th>From</th><th>To</th>
+              <th>Employee Contribution</th><th>Employer Contribution</th>
+              <th>Status</th>
+            </tr></thead>
+            <tbody>
+              ${members.map(m=>`
+                <tr>
+                  <td>${esc(m.plan_name||"—")}</td>
+                  <td>${esc(cap(m.plan_type||"").replace(/_/g," "))}</td>
+                  <td>${m.effective_from?fmtDdMmYyyy(m.effective_from):"—"}</td>
+                  <td>${m.effective_to?fmtDdMmYyyy(m.effective_to):(m.is_active?"Active":"—")}</td>
+                  <td class="num">${m.employee_contribution?money(m.employee_contribution):"—"}</td>
+                  <td class="num">${m.employer_contribution?money(m.employer_contribution):"—"}</td>
+                  <td>${m.is_active?'<span class="payroll-pill payroll-status-posted">Active</span>':'<span class="payroll-pill">Inactive</span>'}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `:"";
+
+    el.innerHTML=summary+itemsHtml+membersHtml;
+  }
+
+  function paintRecurringItems(emp){
+    const el=$("payrollEmployeeOverviewRecurring");
+    if(!el) return;
+
+    const earnings=(emp.recurring_earnings||[]);
+    const deductions=(emp.recurring_deductions||[]);
+    const contributions=(emp.recurring_contributions||[]);
+
+    if(!earnings.length&&!deductions.length&&!contributions.length){
+      el.innerHTML=emptyRow("No recurring earnings, deductions or contributions.");
+      return;
+    }
+
+    const table=(title,rows)=>rows.length?`
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 8px;font-size:13px;color:#082f57;">${esc(title)}</h4>
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead><tr>
+              <th>Name</th><th>Code</th><th>Calc</th>
+              <th>Amount</th><th>%</th><th>From</th><th>To</th><th>Status</th>
+            </tr></thead>
+            <tbody>
+              ${rows.map(r=>`
+                <tr>
+                  <td>${esc(r.name||r.earning_name||r.deduction_name||r.contribution_name||"—")}</td>
+                  <td>${esc(r.code||r.earning_code||r.deduction_code||r.contribution_code||"—")}</td>
+                  <td>${esc(cap(r.calc_method||"").replace(/_/g," "))}</td>
+                  <td class="num">${r.amount?money(r.amount):"—"}</td>
+                  <td class="num">${r.percentage?`${r.percentage}%`:"—"}</td>
+                  <td>${r.effective_from?fmtDdMmYyyy(r.effective_from):"—"}</td>
+                  <td>${r.effective_to?fmtDdMmYyyy(r.effective_to):(r.is_active?"Active":"—")}</td>
+                  <td>${r.is_active?'<span class="payroll-pill payroll-status-posted">Active</span>':'<span class="payroll-pill">Inactive</span>'}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `:"";
+
+    el.innerHTML=
+      table("Recurring Earnings",earnings)+
+      table("Recurring Deductions",deductions)+
+      table("Recurring Contributions",contributions);
+  }
+
+  function paintRecentPayslips(emp){
+    const el=$("payrollEmployeeOverviewPayslips");
+    if(!el) return;
+    const rows=(emp.recent_payslips||[]);
+    if(!rows.length){
+      el.innerHTML=emptyRow("No payroll runs yet for this employee.");
+      return;
+    }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Run #</th><th>Period</th><th>Payment Date</th>
+            <th>Basic</th><th>Gross</th><th>Deductions</th>
+            <th>Contributions</th><th>Net Pay</th><th>Days</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(p=>`
+              <tr>
+                <td>${esc(p.run_no||p.payroll_run_id||"—")}</td>
+                <td>${p.period_start&&p.period_end?`${fmtDdMmYyyy(p.period_start)} → ${fmtDdMmYyyy(p.period_end)}`:"—"}</td>
+                <td>${p.payment_date?fmtDdMmYyyy(p.payment_date):"—"}</td>
+                <td class="num">${p.basic_pay?money(p.basic_pay):"—"}</td>
+                <td class="num">${p.gross_pay?money(p.gross_pay):"—"}</td>
+                <td class="num">${p.total_deductions?money(p.total_deductions):"—"}</td>
+                <td class="num">${p.employer_contributions?money(p.employer_contributions):"—"}</td>
+                <td class="num"><strong>${p.net_pay?money(p.net_pay):"—"}</strong></td>
+                <td class="num">${p.eligible_days||p.scheduled_days||"—"}</td>
+                <td>${esc(cap(p.status||p.run_status||""))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
   }
 
   function closeEmployeeOverviewDetail(){
