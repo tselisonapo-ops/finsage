@@ -135477,8 +135477,24 @@ async function openManufacturingOrderDetail(orderId) {
         </div>
 
 
-        <!-- PRODUCTION STAGES -->
-        <div class="mt-6 border rounded-lg" id="mfgProductionStages">
+        <!-- PRODUCTION STAGES TOGGLE (optional) -->
+        <div class="mt-6 border rounded-lg">
+          <label class="flex items-start gap-3 px-4 py-3 cursor-pointer select-none">
+            <input type="checkbox" data-mfg-stages-toggle class="mt-0.5 scale-110">
+            <div>
+              <div class="font-semibold">Track production stages &amp; timers (optional)</div>
+              <div class="text-xs text-slate-500 mt-1">
+                Tick this only if you want to track actual stage durations
+                against configured standards and monitor machinery
+                efficiency. Leave unticked to skip — the rest of the
+                production order is unaffected.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <!-- PRODUCTION STAGES (hidden until the toggle above is ticked) -->
+        <div class="mt-6 border rounded-lg hidden" id="mfgProductionStages">
           <div class="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3">
             <div>
               <div class="font-semibold">Production Stages & Timers</div>
@@ -135503,14 +135519,16 @@ async function openManufacturingOrderDetail(orderId) {
                 <span class="block text-slate-600 mb-1">Stage Name</span>
                 <input data-mfg-standard-name
                   class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="e.g. Mixing">
+                  placeholder="e.g. Mixing"
+                  autocomplete="off">
               </label>
 
               <label class="text-xs">
-                <span class="block text-slate-600 mb-1">Stage Code</span>
+                <span class="block text-slate-600 mb-1">Stage Code <span class="text-slate-400 font-normal">(auto)</span></span>
                 <input data-mfg-standard-code
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="e.g. MIXING">
+                  readonly
+                  class="w-full border rounded px-2 py-2 text-sm bg-slate-50 cursor-not-allowed text-slate-600"
+                  placeholder="MX-001">
               </label>
 
               <label class="text-xs">
@@ -135526,10 +135544,21 @@ async function openManufacturingOrderDetail(orderId) {
               </label>
 
               <label class="text-xs">
-                <span class="block text-slate-600 mb-1">Default Equipment</span>
-                <input data-mfg-standard-equipment
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="e.g. Mixer 1">
+                <span class="block text-slate-600 mb-1">Default Machine / Asset</span>
+                <select data-mfg-standard-equipment
+                  class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- None / Manual --</option>
+                  ${
+                    (Array.isArray(availableAssets) ? availableAssets : []).map(a => `
+                      <option
+                        value="${esc(a.asset_name || "")}"
+                        data-asset-id="${esc(a.id)}"
+                        data-asset-code="${esc(a.asset_code || "")}">
+                        ${esc(a.asset_code || "")}${a.asset_code ? " - " : ""}${esc(a.asset_name || "")}
+                      </option>
+                    `).join("")
+                  }
+                </select>
               </label>
             </div>
 
@@ -135543,6 +135572,7 @@ async function openManufacturingOrderDetail(orderId) {
             <p class="text-xs text-slate-500 mt-2">
               Standards saved here apply to this BOM. Configure each stage once,
               then apply the standards to production orders using this BOM.
+              The stage code is generated automatically from the stage name.
             </p>
           </div>
 

@@ -1,4 +1,4 @@
-﻿print("[BOOT] api_server.py import started")
+print("[BOOT] api_server.py import started")
 
 # ────────────────────────────────────────────────────────────────
 # Load environment FIRST (before ANY BackEnd.Services imports)
@@ -15748,6 +15748,24 @@ def get_manufacturing_bom(cid: int, bom_id: int):
             effective_from=payload.get("effective_from"),
             effective_to=payload.get("effective_to"),
             is_default=payload.get("is_default"),
+            # ===========================================================
+            # FIX: previously the PATCH (edit) endpoint silently dropped
+            # material lines, labour, other direct costs, overheads and
+            # utilities (water & electricity) when a BOM was edited — so
+            # anything you saved while creating a BOM was wiped the
+            # moment you opened the modal again and hit Save. The
+            # underlying db_service.update_manufacturing_bom() already
+            # accepts and persists these (it calls
+            # replace_manufacturing_bom_lines / _utilities / etc. when
+            # they are not None). We now forward the same payload keys
+            # that the POST (create) endpoint forwards, mirroring the
+            # behaviour users already rely on when creating a BOM.
+            # ===========================================================
+            lines=payload.get("lines"),
+            labour=payload.get("labour"),
+            direct_costs=payload.get("direct_costs"),
+            overheads=payload.get("overheads"),
+            utilities=payload.get("utilities"),
             updated_by_user_id=int(user.get("id") or 0) or None,
         )
 

@@ -16775,7 +16775,15 @@ body{
   flex:0 0 auto;margin-top:6px;
 }
 
-/* ═══ 4. WORK QUEUE + REPORTS GRID ═══ */
+/* ═══ 3b. WORK QUEUE + REPORTS (equal halves) — ROW 1 ═══ */
+.ckp-grid-wq-reports{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:18px}
+
+/* ═══ 3c. BRIEF FINANCIAL ANALYSIS + ACTION REQUIRED + NAVIGATE — ROW 2 ═══ */
+.ckp-grid-analysis{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:18px;align-items:start}
+/* When the Navigate rail lives inside row 2 it must NOT be sticky */
+.ckp-grid-analysis .ckp-rail{position:static;top:auto}
+
+/* ═══ 4. WORK QUEUE + REPORTS GRID (legacy — kept for reference) ═══ */
 .ckp-grid-2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;margin-bottom:18px}
 
 .ckp-wq{display:flex;flex-direction:column;gap:8px}
@@ -16908,6 +16916,8 @@ body{
   .ckp-rail-list .ckp-rail-arrow{display:none}
   .ckp-rail-divider{display:none}
   .ckp-grid-2{grid-template-columns:1fr}
+  .ckp-grid-wq-reports{grid-template-columns:1fr}
+  .ckp-grid-analysis{grid-template-columns:1fr}
   .ckp-grid-3{grid-template-columns:1fr 1fr}
 }
 @media (max-width:900px){
@@ -17056,10 +17066,144 @@ body{
     </div>
   </div>
 
-  <!-- ═══ MAIN: command rail + hero + side ═══ -->
-  <div class="ckp-main">
+  <!-- ═══ ROW 1: WORK QUEUE + REPORTS & ANALYSIS (each half screen) ═══ -->
+  <div class="ckp-grid-wq-reports">
 
-    <!-- Left command rail -->
+    <!-- Work Queue card (moved here from the old right-side column) -->
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>
+          Work Queue
+        </h4>
+        <span class="ckp-pill ckp-pill--ok">5 items</span>
+      </div>
+      <div class="ckp-card-body">
+        <div id="cc-workqueue" class="ckp-wq">
+          <div style="font-size:11px;color:var(--ckp-muted)">Loading accounting checks...</div>
+        </div>
+
+        <div class="ckp-quick-actions">
+          <button data-nav="ar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            New Invoice
+          </button>
+          <button data-nav="ap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+            Enter Bill
+          </button>
+          <button data-nav="journal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            Journal
+          </button>
+          <button data-action="recordTransfer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
+            Transfer
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reports & Analysis card (moved here from the old ckp-grid-2 left column) -->
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+          Reports &amp; Analysis
+        </h4>
+        <div style="display:flex;gap:6px">
+          <button data-action="openPnL" class="ckp-quick" style="height:30px;padding:0 10px;font-size:11px">P&amp;L</button>
+          <button data-action="openBS" class="ckp-quick" style="height:30px;padding:0 10px;font-size:11px">Balance Sheet</button>
+          <button data-action="openCF" class="ckp-quick" style="height:30px;padding:0 10px;font-size:11px">Cash Flow</button>
+          <button data-nav="reports" class="ckp-quick ckp-quick--primary" style="height:30px;padding:0 10px;font-size:11px">Open Reports</button>
+        </div>
+      </div>
+      <div class="ckp-card-body">
+        <div class="ckp-stmts">
+          <div class="ckp-stmt">
+            <div class="ckp-stmt-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>Profit &amp; Loss</div>
+            <div id="pnlMini" class="ckp-stmt-body"></div>
+          </div>
+          <div class="ckp-stmt">
+            <div class="ckp-stmt-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/></svg>Balance Sheet</div>
+            <div id="bsMini" class="ckp-stmt-body"></div>
+          </div>
+          <div class="ckp-stmt">
+            <div class="ckp-stmt-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>Cash Flow</div>
+            <div id="cfMini" class="ckp-stmt-body"></div>
+          </div>
+        </div>
+
+        <div class="ckp-insights">
+          <div class="ckp-insights-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+            <span>Top Insights</span>
+          </div>
+          <ul id="insights">
+            <li>No financial insights available yet.</li>
+            <li>Upload or enter transactions to generate insights.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ ROW 2: BRIEF FINANCIAL ANALYSIS + ACTION REQUIRED + NAVIGATE ═══ -->
+  <div class="ckp-grid-analysis">
+
+    <!-- Brief Financial Analysis (hero chart) -->
+    <div class="ckp-hero">
+      <div class="ckp-hero-head">
+        <div class="ckp-hero-title">
+          <span class="ckp-hero-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg></span>
+          <div>
+            <h3 id="analysisChartTitle">Analysis Trends</h3>
+            <p id="analysisChartSubtitle">Cash trend for selected period</p>
+          </div>
+        </div>
+
+        <div id="analysisWidgetTabs" class="ckp-seg">
+          <button type="button" data-analysis-view="cash" class="active">Cash</button>
+          <button type="button" data-analysis-view="revexp">Rev vs Exp</button>
+          <button type="button" data-analysis-view="profit">Profit</button>
+          <button type="button" data-analysis-view="margin">Margin</button>
+          <button type="button" data-analysis-view="analysis">Analysis</button>
+        </div>
+      </div>
+
+      <div class="ckp-hero-progress">
+        <div id="analysisProgress" style="width:0%;height:100%;background:linear-gradient(90deg,var(--ckp-teal),var(--ckp-violet));transition:width 1.2s ease"></div>
+      </div>
+
+      <div id="analysisChartWrap" class="ckp-chart-wrap">
+        <canvas id="cashChart"></canvas>
+      </div>
+
+      <div id="analysisCarouselDots" class="ckp-carousel-dots">
+        <button class="active"></button><button></button><button></button><button></button>
+      </div>
+
+      <div id="analysisTextPanel" class="hidden" style="padding:0 16px 14px;font-size:12px;color:var(--ckp-muted)"></div>
+    </div>
+
+    <!-- Action Required card -->
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          Action Required
+        </h4>
+        <span class="ckp-pill">3 urgent</span>
+      </div>
+      <div class="ckp-card-body">
+        <ul id="actionsList" class="ckp-actions">
+          <li class="ckp-sev--blue">Loading actions...</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Navigate rail -->
     <aside class="ckp-rail">
       <div class="ckp-rail-title">Navigate</div>
       <ul class="ckp-rail-list">
@@ -17107,180 +17251,6 @@ body{
         <div><span>Current</span><span>$0</span></div>
       </div>
     </aside>
-
-    <!-- Hero chart -->
-    <div class="ckp-hero">
-      <div class="ckp-hero-head">
-        <div class="ckp-hero-title">
-          <span class="ckp-hero-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg></span>
-          <div>
-            <h3 id="analysisChartTitle">Analysis Trends</h3>
-            <p id="analysisChartSubtitle">Cash trend for selected period</p>
-          </div>
-        </div>
-
-        <div id="analysisWidgetTabs" class="ckp-seg">
-          <button type="button" data-analysis-view="cash" class="active">Cash</button>
-          <button type="button" data-analysis-view="revexp">Rev vs Exp</button>
-          <button type="button" data-analysis-view="profit">Profit</button>
-          <button type="button" data-analysis-view="margin">Margin</button>
-          <button type="button" data-analysis-view="analysis">Analysis</button>
-        </div>
-      </div>
-
-      <div class="ckp-hero-progress">
-        <div id="analysisProgress" style="width:0%;height:100%;background:linear-gradient(90deg,var(--ckp-teal),var(--ckp-violet));transition:width 1.2s ease"></div>
-      </div>
-
-      <div id="analysisChartWrap" class="ckp-chart-wrap">
-        <canvas id="cashChart"></canvas>
-      </div>
-
-      <div id="analysisCarouselDots" class="ckp-carousel-dots">
-        <button class="active"></button><button></button><button></button><button></button>
-      </div>
-
-      <div id="analysisTextPanel" class="hidden" style="padding:0 16px 14px;font-size:12px;color:var(--ckp-muted)"></div>
-    </div>
-
-    <!-- Right side: Action Required + Work Queue summary -->
-    <div class="ckp-side">
-
-      <div class="ckp-card">
-        <div class="ckp-card-head">
-          <h4>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-            Action Required
-          </h4>
-          <span class="ckp-pill">3 urgent</span>
-        </div>
-        <div class="ckp-card-body">
-          <ul id="actionsList" class="ckp-actions">
-            <li class="ckp-sev--red">No pending tasks.</li>
-            <li class="ckp-sev--blue">Completed actions will appear here.</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="ckp-card">
-        <div class="ckp-card-head">
-          <h4>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>
-            Work Queue
-          </h4>
-          <span class="ckp-pill ckp-pill--ok">5 items</span>
-        </div>
-        <div class="ckp-card-body">
-          <div id="cc-workqueue" class="ckp-wq">
-            <div style="font-size:11px;color:var(--ckp-muted)">Loading accounting checks...</div>
-          </div>
-
-          <div class="ckp-quick-actions">
-            <button data-nav="ar">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-              New Invoice
-            </button>
-            <button data-nav="ap">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-              Enter Bill
-            </button>
-            <button data-nav="journal">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-              Journal
-            </button>
-            <button data-action="recordTransfer">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
-              Transfer
-            </button>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- ═══ REPORTS & STATEMENTS ═══ -->
-  <div class="ckp-grid-2">
-
-    <div class="ckp-card">
-      <div class="ckp-card-head">
-        <h4>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
-          Reports &amp; Analysis
-        </h4>
-        <div style="display:flex;gap:6px">
-          <button data-action="openPnL" class="ckp-quick" style="height:30px;padding:0 10px;font-size:11px">P&amp;L</button>
-          <button data-action="openBS" class="ckp-quick" style="height:30px;padding:0 10px;font-size:11px">Balance Sheet</button>
-          <button data-action="openCF" class="ckp-quick" style="height:30px;padding:0 10px;font-size:11px">Cash Flow</button>
-          <button data-nav="reports" class="ckp-quick ckp-quick--primary" style="height:30px;padding:0 10px;font-size:11px">Open Reports</button>
-        </div>
-      </div>
-      <div class="ckp-card-body">
-        <div class="ckp-stmts">
-          <div class="ckp-stmt">
-            <div class="ckp-stmt-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>Profit &amp; Loss</div>
-            <div id="pnlMini" class="ckp-stmt-body"></div>
-          </div>
-          <div class="ckp-stmt">
-            <div class="ckp-stmt-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/></svg>Balance Sheet</div>
-            <div id="bsMini" class="ckp-stmt-body"></div>
-          </div>
-          <div class="ckp-stmt">
-            <div class="ckp-stmt-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>Cash Flow</div>
-            <div id="cfMini" class="ckp-stmt-body"></div>
-          </div>
-        </div>
-
-        <div class="ckp-insights">
-          <div class="ckp-insights-head">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
-            <span>Top Insights</span>
-          </div>
-          <ul id="insights">
-            <li>No financial insights available yet.</li>
-            <li>Upload or enter transactions to generate insights.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    <!-- Quick links card (no aging here anymore — moved to left rail) -->
-    <div class="ckp-card">
-      <div class="ckp-card-head">
-        <h4>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
-          Quick Actions
-        </h4>
-      </div>
-      <div class="ckp-card-body">
-        <div class="ckp-quick-actions" style="margin:0;padding:0;border:0">
-          <button data-nav="coa">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
-            Chart of Accounts
-          </button>
-          <button data-nav="ledger">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
-            General Ledger
-          </button>
-          <button data-nav="trial">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/></svg>
-            Trial Balance
-          </button>
-          <button data-nav="company">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M10 6h4"/><path d="M10 10h4"/></svg>
-            Company &amp; Setup
-          </button>
-          <button data-nav="fixedassets">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>
-            Fixed Assets
-          </button>
-          <button data-nav="inventory">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
-            Inventory
-          </button>
-        </div>
-      </div>
-    </div>
 
   </div>
 
@@ -17418,7 +17388,6 @@ body{
 
 </section>
 </div>
-
 
         <!-- Sign In -->
         <section id="screen-sign-in" class="screen">
@@ -40835,9 +40804,100 @@ body{
       } catch (e) { standards = []; }
       renderStages(pg, stages);
       renderStandards(pg, standards);
+      /* refresh the auto-generated code now that standards have reloaded */
+      regenerateStageCode(pg, standards);
     }
 
     await loadAll();
+
+    /* ───────────────────────────────────────────────────────────
+       TOGGLE: show / hide the entire Production Stages block.
+       The block ships hidden by default so users are not forced
+       into stage tracking unless they actively opt in.
+       ─────────────────────────────────────────────────────────── */
+    var toggleEl = pg.querySelector("[data-mfg-stages-toggle]");
+    var stagesBlock = pg.querySelector("#mfgProductionStages");
+    if (toggleEl && stagesBlock && !toggleEl.hasAttribute(BRIDGE_ATTR)) {
+      toggleEl.setAttribute(BRIDGE_ATTR, "1");
+      var syncToggle = function () {
+        if (toggleEl.checked) {
+          stagesBlock.classList.remove("hidden");
+        } else {
+          stagesBlock.classList.add("hidden");
+        }
+      };
+      toggleEl.addEventListener("change", syncToggle);
+      syncToggle();
+    }
+
+    /* ───────────────────────────────────────────────────────────
+       AUTO-CODE: derive the stage code from the stage name.
+       "Mixing"   -> "MX-001"
+       "Baking"   -> "BK-001"
+       "Cooling"  -> "CL-001"
+       "Packaging"-> "PK-001"
+
+       Algorithm:
+         1. Uppercase the stage name.
+         2. Drop vowels (A, E, I, O, U) and any non-letter chars.
+         3. Take the first two remaining consonants -> prefix.
+            Pad with "X" when fewer than two consonants are present
+            (e.g. "B" -> "BX").
+         4. Append "-NNN" where NNN is the next sequence for that
+            prefix, derived from already-loaded standards starting
+            with the same prefix. Defaults to 001.
+
+       The code field is read-only — the user types the stage
+       name, the code fills itself in.
+       ─────────────────────────────────────────────────────────── */
+    function derivePrefix(rawName) {
+      var n = String(rawName || "").toUpperCase().replace(/[^A-Z]/g, "");
+      var consonants = n.replace(/[AEIOU]/g, "");
+      var prefix = consonants.slice(0, 2);
+      while (prefix.length < 2) { prefix += "X"; }
+      return prefix;
+    }
+
+    function nextSequenceForPrefix(prefix, list) {
+      var max = 0;
+      (list || []).forEach(function (s) {
+        var code = String(s.stage_code || s.code || "").toUpperCase();
+        if (code.indexOf(prefix + "-") !== 0) return;
+        var tail = code.slice(prefix.length + 1);
+        var m = /^\d+$/.exec(tail);
+        if (m) {
+          var n = parseInt(tail, 10);
+          if (n > max) max = n;
+        }
+      });
+      return max + 1;
+    }
+
+    function regenerateStageCode(scopeEl, list) {
+      var nameEl = scopeEl.querySelector("[data-mfg-standard-name], [data-mfg-stage-name]");
+      var codeEl = scopeEl.querySelector("[data-mfg-standard-code], [data-mfg-stage-code]");
+      if (!nameEl || !codeEl) return;
+      var name = nameEl.value || "";
+      if (!String(name).trim()) {
+        codeEl.value = "";
+        return;
+      }
+      var prefix = derivePrefix(name);
+      var seq = nextSequenceForPrefix(prefix, list || standards);
+      var padded = ("00" + seq).slice(-3);
+      codeEl.value = prefix + "-" + padded;
+    }
+
+    var stageNameInput = pg.querySelector("[data-mfg-standard-name], [data-mfg-stage-name]");
+    if (stageNameInput && !stageNameInput.hasAttribute("data-cat3b-coded")) {
+      stageNameInput.setAttribute("data-cat3b-coded", "1");
+      stageNameInput.addEventListener("input", function () {
+        regenerateStageCode(pg, standards);
+      });
+      stageNameInput.addEventListener("blur", function () {
+        regenerateStageCode(pg, standards);
+      });
+    }
 
     /* wire static header buttons (dead in production — see header note) */
     var applyBtn = pg.querySelector("[data-mfg-apply-stage-standards]");
@@ -40858,12 +40918,29 @@ body{
       saveStdBtn.setAttribute(BRIDGE_ATTR, "1");
       saveStdBtn.addEventListener("click", async function () {
         var v = function (sel) { var el = pg.querySelector(sel); return el ? el.value.trim() : ""; };
-        var name = v("[data-mfg-stage-name]");
-        var code = v("[data-mfg-stage-code]").toUpperCase().replace(/[^A-Z0-9_-]/g, "_");
+        /* FIX: previously read stage name/code from [data-mfg-stage-name] /
+           [data-mfg-stage-code], but the modal template ships
+           [data-mfg-standard-name] / [data-mfg-standard-code]. The mismatch
+           meant the save always failed with "Enter both a stage name and
+           stage code." Read from the standard-* selectors first and fall
+           back to the legacy stage-* selectors for safety. */
+        var name = v("[data-mfg-standard-name]") || v("[data-mfg-stage-name]");
+        /* Stage code is auto-generated from the stage name and is rendered
+           read-only. Re-derive it here so the value is always current even
+           if the input event hasn't fired yet (e.g. user pasted the name). */
+        regenerateStageCode(pg, standards);
+        var code = (v("[data-mfg-standard-code]") || v("[data-mfg-stage-code]") || "")
+          .toUpperCase().replace(/[^A-Z0-9_-]/g, "_");
         var seq = Number(v("[data-mfg-standard-sequence]") || v("[data-mfg-stage-sequence]") || 1);
         var mins = Number(v("[data-mfg-standard-minutes]") || v("[data-mfg-stage-minutes]") || 45);
-        var equip = v("[data-mfg-standard-equipment]") || v("[data-mfg-stage-equipment]") || "";
-        if (!name || !code) { alert("Enter both a stage name and stage code."); return; }
+        /* Default equipment is now an asset <select>. Its value is the
+           selected asset's name (matches the backend equipment_name field).
+           The selected <option> also carries data-asset-id and
+           data-asset-code for future machinery-efficiency tracking. */
+        var equipSel = pg.querySelector("[data-mfg-standard-equipment], [data-mfg-stage-equipment]");
+        var equip = equipSel ? equipSel.value.trim() : "";
+        if (!name) { alert("Enter a stage name first."); return; }
+        if (!code) { alert("Could not generate a stage code. Type a stage name first."); return; }
         if (!Number.isFinite(mins) || mins < 1) { alert("Standard minutes must be at least 1."); return; }
         try {
           await fetchJson3b(EP.stageStandards(cid), {
@@ -40874,6 +40951,7 @@ body{
           var seqEl = pg.querySelector("[data-mfg-standard-sequence], [data-mfg-stage-sequence]"); if (seqEl) seqEl.value = "1";
           var minEl = pg.querySelector("[data-mfg-standard-minutes], [data-mfg-stage-minutes]"); if (minEl) minEl.value = "45";
           var eqEl = pg.querySelector("[data-mfg-standard-equipment], [data-mfg-stage-equipment]"); if (eqEl) eqEl.value = "";
+          var codeElReset = pg.querySelector("[data-mfg-standard-code], [data-mfg-stage-code]"); if (codeElReset) codeElReset.value = "";
           var msg = pg.querySelector("[data-mfg-stage-message]");
           if (msg) msg.textContent = "Stage standard saved.";
           await loadAll();
