@@ -74342,7 +74342,7 @@ async function saveEditModal() {
 
           <tbody>
             ${items.map(item=>`
-              <tr>
+              <tr class="payroll-employee-row" data-employee-id="${esc(String(item.employee_id||item.id||""))}" style="cursor:pointer;">
 
                 <td class="payroll-employee-cell">
                   <strong>
@@ -74432,6 +74432,141 @@ async function saveEditModal() {
         </table>
       </div>
     `;
+
+    // Wire row clicks
+    el.querySelectorAll(".payroll-employee-row").forEach(row=>{
+      row.addEventListener("click",()=>{
+        const empId=row.dataset.employeeId;
+        if(empId) openEmployeeDetail(empId);
+      });
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Employee detail view
+  // ──────────────────────────────────────────────────────────
+
+  function openEmployeeDetail(employeeId){
+    const run=payrollState.selectedRun;
+    if(!run||!run.employees)return;
+
+    const emp=(run.employees||[]).find(
+      e=>String(e.employee_id||e.id)===String(employeeId)
+    );
+
+    if(!emp)return;
+
+    const listEl=$("payrollRunEmployeesList");
+    const detailEl=$("payrollRunEmployeeDetail");
+
+    if(listEl) listEl.classList.add("hidden");
+    if(detailEl) detailEl.classList.remove("hidden");
+
+    // Name + number
+    const nameEl=$("payrollEmployeeDetailName");
+    if(nameEl){
+      nameEl.textContent=`${emp.first_name||""} ${emp.last_name||""}`.trim()||"Employee";
+    }
+
+    const noEl=$("payrollEmployeeDetailNo");
+    if(noEl){
+      noEl.textContent=`${emp.employee_no||"—"} · ${cap(emp.calculation_status||emp.status||"calculated")}`;
+    }
+
+    // KPIs
+    const kpiEl=$("payrollEmployeeDetailKpis");
+    if(kpiEl){
+      const basic=round2(emp.basic_pay);
+      const gross=round2(emp.gross_pay);
+      const deductions=round2(emp.total_deductions);
+      const net=round2(emp.net_pay);
+
+      kpiEl.innerHTML=`
+        <div>
+          <span>Basic Pay</span>
+          <strong>${money(basic)}</strong>
+        </div>
+        <div>
+          <span>Gross Pay</span>
+          <strong>${money(gross)}</strong>
+        </div>
+        <div>
+          <span>Total Deductions</span>
+          <strong>${money(deductions)}</strong>
+        </div>
+        <div>
+          <span>Net Pay</span>
+          <strong>${money(net)}</strong>
+        </div>
+      `;
+    }
+
+    // Pay lines breakdown
+    const linesEl=$("payrollEmployeeDetailLines");
+    if(linesEl){
+      const lines=emp.lines||[];
+
+      if(!lines.length){
+        linesEl.innerHTML=`<p class="payroll-muted">No pay lines available.</p>`;
+      } else {
+        // Group lines by type
+        const earnings=lines.filter(l=>l.line_type==="earning");
+        const deductions=lines.filter(l=>l.line_type==="deduction");
+        const taxes=lines.filter(l=>l.line_type==="tax");
+        const employer=lines.filter(l=>l.line_type==="employer_contribution");
+
+        const renderGroup=(title,rows)=>{
+          if(!rows.length)return"";
+          return `
+            <tr class="payroll-employee-detail-group-row">
+              <td colspan="4" style="font-weight:700;text-transform:uppercase;font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;">
+                ${esc(title)}
+              </td>
+            </tr>
+            ${rows.map(l=>`
+              <tr>
+                <td>${esc(l.code||"—")}</td>
+                <td>${esc(l.description||"—")}</td>
+                <td class="num">${money(l.amount)}</td>
+                <td>${esc(cap(l.line_type||""))}</td>
+              </tr>
+            `).join("")}
+          `;
+        };
+
+        linesEl.innerHTML=`
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Description</th>
+                <th class="num">Amount</th>
+                <th>Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${renderGroup("Earnings",earnings)}
+              ${renderGroup("Deductions",deductions)}
+              ${renderGroup("Tax",taxes)}
+              ${renderGroup("Employer Contributions",employer)}
+            </tbody>
+          </table>
+        `;
+      }
+    }
+  }
+
+  function closeEmployeeDetail(){
+    const listEl=$("payrollRunEmployeesList");
+    const detailEl=$("payrollRunEmployeeDetail");
+
+    if(detailEl) detailEl.classList.add("hidden");
+    if(listEl) listEl.classList.remove("hidden");
+  }
+
+  // Helper: round to 2 decimal places
+  function round2(v){
+    return Math.round((parseFloat(v)||0)*100)/100;
   }
 
   async function loadPayrollRunAttendance(){
@@ -92607,6 +92742,10 @@ function renderPayrollPayeRunClearing(
 
     $("payrollCreateReplacementRunOverviewBtn")
       ?.addEventListener("click", runPayrollAction(createReplacementPayrollRun));
+
+    // Employee detail back button
+    $("payrollEmployeeBackBtn")
+      ?.addEventListener("click", closeEmployeeDetail);
 
     $("payrollPayslipSearch")
       ?.addEventListener(

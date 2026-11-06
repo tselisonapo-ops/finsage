@@ -7521,6 +7521,20 @@ body.payroll-modal-open{
   overflow:hidden;
 }
 
+/* Employee row hover + detail view */
+.payroll-employee-row:hover td{
+  background:rgba(0,200,200,.06)!important;
+}
+
+.payroll-employee-detail-group-row td{
+  font-weight:700;
+  text-transform:uppercase;
+  font-size:11px;
+  color:#64748b;
+  padding:10px 12px;
+  background:#f8fafc;
+}
+
 .payroll-compact-table {
   width: max-content !important;
   min-width: 100%;
@@ -32005,6 +32019,35 @@ label:has(#projectTeamUserSearch) {
                 </div>
 
                 <div id="payrollRunEmployeesList"></div>
+
+                <!-- Employee detail view (hidden by default) -->
+                <div id="payrollRunEmployeeDetail" class="hidden">
+                  <div class="payroll-section-navigation">
+                    <button type="button" id="payrollEmployeeBackBtn" class="payroll-back-btn">
+                      ← Back to Employees
+                    </button>
+                    <div>
+                      <h3 id="payrollEmployeeDetailName">—</h3>
+                      <p class="payroll-muted" id="payrollEmployeeDetailNo">—</p>
+                    </div>
+                  </div>
+
+                  <!-- Summary KPIs -->
+                  <div class="payroll-run-kpis" id="payrollEmployeeDetailKpis"></div>
+
+                  <!-- Pay lines breakdown -->
+                  <div class="payroll-card" style="margin-top:20px;">
+                    <div class="payroll-card-head">
+                      <div>
+                        <h3>Pay Breakdown</h3>
+                        <p class="payroll-muted">Earnings, deductions and employer contributions for this employee.</p>
+                      </div>
+                    </div>
+                    <div class="payroll-table-wrap">
+                      <div id="payrollEmployeeDetailLines"></div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div
@@ -38724,7 +38767,7 @@ label:has(#projectTeamUserSearch) {
 
     loadScript("/dist/assets/hostMount.js?v=20261101a", { module: true });
 
-    loadScript("/dashboard.js?v=20261106d");
+    loadScript("/dashboard.js?v=20261106b");
 
     loadScript("/receipt-journal.js?v=20261018a");
     /* ==================================================================
