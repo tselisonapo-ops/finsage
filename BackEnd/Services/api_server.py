@@ -16006,8 +16006,9 @@ def manufacturing_orders(cid: int):
         )
 
         for field in ("planned_start_time", "planned_finish_time"):
-            if isinstance(order.get(field), time):
-                order[field] = order[field].strftime("%H:%M:%S")
+            value = order.get(field)
+            if value is not None and hasattr(value, "strftime"):
+                order[field] = value.strftime("%H:%M:%S")
 
         return jsonify({
             "ok": True,
