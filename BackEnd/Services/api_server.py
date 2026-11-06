@@ -16303,6 +16303,8 @@ def manufacturing_order(cid: int, order_id: int):
                     "error": "Manufacturing order not found",
                 }), 404
 
+            order = _serialize_manufacturing_order_times(order)
+
             return jsonify({
                 "ok": True,
                 "order": order,
@@ -16324,9 +16326,12 @@ def manufacturing_order(cid: int, order_id: int):
             manufacturing_order_id=int(order_id),
         )
 
+        order = order or result
+        order = _serialize_manufacturing_order_times(order)
+
         return jsonify({
             "ok": True,
-            "order": order or result,
+            "order": order,
         }), 200
 
     except ValueError as e:
