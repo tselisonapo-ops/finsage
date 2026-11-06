@@ -1,4 +1,4 @@
-print("[BOOT] api_server.py import started")
+﻿print("[BOOT] api_server.py import started")
 
 # ────────────────────────────────────────────────────────────────
 # Load environment FIRST (before ANY BackEnd.Services imports)
@@ -16004,6 +16004,10 @@ def manufacturing_orders(cid: int):
             company_id=company_id,
             manufacturing_order_id=order_id,
         )
+
+        for field in ("planned_start_time", "planned_finish_time"):
+            if isinstance(order.get(field), time):
+                order[field] = order[field].strftime("%H:%M:%S")
 
         return jsonify({
             "ok": True,
