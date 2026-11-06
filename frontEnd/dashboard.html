@@ -1534,6 +1534,23 @@ html, body {
     }
   }
 
+  /* ── Production Order modal: guaranteed scroll ──
+     The modal is built dynamically by openManufacturingOrderModal()
+     in dashboard.js. It uses a flex overlay; when the BOM review
+     panel expands the content can exceed the viewport. These rules
+     ensure the overlay itself scrolls and the inner card never
+     grows past the viewport, regardless of Tailwind arbitrary-value
+     class generation. */
+  #mfgOrderModal{
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+  #mfgOrderModal > div{
+    max-height:94vh !important;
+    overflow:auto !important;
+    -webkit-overflow-scrolling:touch;
+  }
+
   /* FinSage motion system */
   :root {
     --fs-ease: cubic-bezier(.2,.8,.2,1);
@@ -16431,25 +16448,255 @@ label:has(#projectTeamUserSearch) {
       <div id="screensHost" class="w-full px-4 pt-1 pb-6 space-y-2 min-h-[calc(100vh-57px)]">
 
         <!-- Dashboard -->
-        <section id="screen-dashboard" class="screen active">
+        <style id="dcc3-css">
+/* ════════════════════════════════════════════════════════════
+   COMMAND CENTER v3 — redesigned dashboard (visual layer only)
+   Every JS-owned ID / data-nav / data-action / data-analysis-view
+   preserved. The cc-kpi-value pulse class is kept on KPI values
+   so the existing MutationObserver animation still fires.
+   ════════════════════════════════════════════════════════════ */
+
+#screen-dashboard{
+  background:
+    radial-gradient(900px 320px at 110% -8%, rgba(0,200,200,.07), transparent 62%),
+    radial-gradient(700px 280px at -10% 108%, rgba(0,84,128,.06), transparent 60%),
+    #f6f9fc;
+  padding:22px 26px 50px;
+  animation:dcc3In .35s ease-out;
+}
+@keyframes dcc3In{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes dcc3Rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── 1. Sticky command bar ── */
+.dcc3-cmdbar{
+  position:sticky;top:0;z-index:30;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:rgba(255,255,255,.93);backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  border:1px solid #e2e8f0;border-radius:14px;
+  padding:10px 14px;margin-bottom:18px;
+  box-shadow:0 6px 22px rgba(2,12,27,.06);
+}
+.dcc3-cmdbar-left{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 auto}
+.dcc3-greet-ico{
+  width:38px;height:38px;border-radius:11px;flex:0 0 auto;
+  background:linear-gradient(135deg,#00284F,#013a66 55%,#00526e);
+  color:#7ee7e7;display:inline-flex;align-items:center;justify-content:center;
+  box-shadow:0 6px 16px -4px rgba(0,40,79,.4);
+}
+.dcc3-greet-ico svg{width:19px;height:19px}
+.dcc3-greet-text{min-width:0}
+.dcc3-greet-text .cc-eyebrow{margin:0 0 2px}
+.dcc3-greet-text h1{
+  margin:0;color:#0f172a;font-size:21px;font-weight:800;
+  letter-spacing:-.022em;line-height:1.12;
+}
+.dcc3-greet-text .cc-sub{margin:2px 0 0;font-size:12.5px;color:#64748b}
+
+.dcc3-cmdbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.dcc3-quick{
+  display:inline-flex;align-items:center;gap:7px;
+  height:38px;padding:0 14px;border-radius:10px;
+  background:#fff;border:1px solid rgba(15,23,42,.13);
+  font-size:12.5px;font-weight:600;color:#334155;cursor:pointer;
+  transition:transform .15s ease,border-color .15s ease,background .15s ease,color .15s ease,box-shadow .15s ease;
+  white-space:nowrap;
+}
+.dcc3-quick svg{width:14px;height:14px;color:#94a3b8;transition:color .15s}
+.dcc3-quick:hover{
+  border-color:rgba(0,200,200,.55);color:#00284f;background:#f0fbfb;
+  transform:translateY(-1px);box-shadow:0 8px 16px -6px rgba(0,200,200,.35);
+}
+.dcc3-quick:hover svg{color:#00a8a8}
+.dcc3-quick--solid{
+  background:linear-gradient(135deg,#0b3a63,#00284F);color:#fff;
+  border-color:transparent;box-shadow:0 8px 16px -6px rgba(0,40,79,.5);
+}
+.dcc3-quick--solid svg{color:#7ee7e7}
+.dcc3-quick--solid:hover{
+  filter:brightness(1.1);color:#fff;
+  background:linear-gradient(135deg,#0e4575,#003158);
+}
+
+/* ── 2. Hero KPI band (3 large gradient cards) ── */
+.dcc3-herokpis{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:14px;
+}
+.dcc3-herokpi{
+  position:relative;overflow:hidden;
+  border-radius:18px;padding:22px 24px 20px;
+  background:linear-gradient(135deg,#00284F 0%,#013a66 55%,#00526e 100%);
+  color:#fff;
+  box-shadow:0 18px 40px -16px rgba(0,40,79,.45);
+  animation:dcc3Rise .45s ease both;animation-delay:calc(var(--i,0)*60ms + 40ms);
+  transition:transform .2s ease,box-shadow .2s ease;
+}
+.dcc3-herokpi:hover{transform:translateY(-3px);box-shadow:0 24px 50px -18px rgba(0,40,79,.55)}
+.dcc3-herokpi::before{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(420px 180px at 90% -30%, rgba(0,229,229,.22), transparent 62%),
+    radial-gradient(360px 160px at -8% 130%, rgba(0,200,200,.14), transparent 58%);
+}
+.dcc3-herokpi > *{position:relative;z-index:1}
+.dcc3-herokpi--profit{background:linear-gradient(135deg,#064e3b 0%,#065f46 55%,#047857 100%)}
+.dcc3-herokpi--profit::before{
+  background:
+    radial-gradient(420px 180px at 90% -30%, rgba(110,231,183,.22), transparent 62%),
+    radial-gradient(360px 160px at -8% 130%, rgba(16,185,129,.14), transparent 58%);
+}
+.dcc3-herokpi--vat{background:linear-gradient(135deg,#312e81 0%,#3730a3 55%,#4338ca 100%)}
+.dcc3-herokpi--vat::before{
+  background:
+    radial-gradient(420px 180px at 90% -30%, rgba(167,139,250,.22), transparent 62%),
+    radial-gradient(360px 160px at -8% 130%, rgba(99,102,241,.14), transparent 58%);
+}
+.dcc3-herokpi-top{display:flex;align-items:center;gap:11px;margin-bottom:16px}
+.dcc3-herokpi-ico{
+  width:38px;height:38px;border-radius:11px;flex:0 0 auto;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);
+  display:inline-flex;align-items:center;justify-content:center;color:#7ee7e7;
+}
+.dcc3-herokpi-ico svg{width:18px;height:18px}
+.dcc3-herokpi-label{
+  font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:rgba(255,255,255,.78);
+}
+.dcc3-herokpi-value{
+  font-size:34px;font-weight:800;letter-spacing:-.025em;line-height:1;color:#fff;
+  font-variant-numeric:tabular-nums;
+}
+.dcc3-herokpi-value.is-updated,
+#screen-dashboard .cc-kpi-value.is-updated{animation:kpiPulse .6s ease}
+.dcc3-herokpi-foot{
+  margin-top:11px;font-size:11.5px;color:rgba(255,255,255,.68);font-weight:500;
+  display:flex;align-items:center;gap:6px;
+}
+.dcc3-herokpi-foot::before{
+  content:"";width:5px;height:5px;border-radius:99px;background:rgba(0,229,229,.7);
+  box-shadow:0 0 8px rgba(0,229,229,.5);
+}
+.dcc3-herokpi-glyph{
+  position:absolute;right:-30px;bottom:-30px;
+  font-size:160px;line-height:1;font-weight:900;color:rgba(255,255,255,.04);
+  pointer-events:none;user-select:none;
+}
+
+/* ── 3. Working capital strip ── */
+.dcc3-wcstrip{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px;
+}
+.dcc3-wc{
+  position:relative;background:#fff;border:1px solid #e2e8f0;border-radius:14px;
+  padding:15px 16px;display:flex;align-items:center;gap:14px;
+  box-shadow:0 1px 3px rgba(15,23,42,.05);
+  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+  animation:dcc3Rise .45s ease both;animation-delay:calc(var(--i,0)*60ms + 220ms);
+}
+.dcc3-wc:hover{transform:translateY(-2px);border-color:rgba(0,200,200,.4);box-shadow:0 12px 26px -16px rgba(0,40,79,.3)}
+.dcc3-wc-ico{
+  width:40px;height:40px;border-radius:11px;flex:0 0 auto;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+.dcc3-wc-ico svg{width:18px;height:18px}
+.dcc3-wc--ar .dcc3-wc-ico{background:rgba(2,132,199,.12);color:#0369a1}
+.dcc3-wc--ap .dcc3-wc-ico{background:rgba(217,119,6,.12);color:#b45309}
+.dcc3-wc--net .dcc3-wc-ico{background:rgba(0,200,200,.14);color:#0e7490}
+.dcc3-wc-body{min-width:0;flex:1 1 auto}
+.dcc3-wc-label{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#64748b;margin-bottom:4px}
+.dcc3-wc-val{font-size:19px;font-weight:800;color:#0f172a;font-variant-numeric:tabular-nums;letter-spacing:-.015em}
+.dcc3-wc--net .dcc3-wc-val{color:#0e7490}
+.dcc3-wc-foot{font-size:10.5px;color:#94a3b8;margin-top:2px}
+
+/* ── 4. Main grid (trends + right rail) ── */
+.dcc3-main{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:14px;margin-bottom:20px}
+.dcc3-rail{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+/* ── 5. Statements mini-row ── */
+.dcc3-stmts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.dcc3-minitile{
+  background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;
+  box-shadow:0 1px 3px rgba(15,23,42,.05);
+  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+}
+.dcc3-minitile:hover{transform:translateY(-2px);border-color:rgba(0,200,200,.35);box-shadow:0 12px 28px -18px rgba(0,40,79,.3)}
+.dcc3-minitile .cc-mini-head{padding:10px 14px;background:#f8fafc;border-bottom:1px solid #eef2f6;display:flex;align-items:center;gap:6px}
+.dcc3-minitile .cc-mini-head svg{color:#00a8a8}
+.dcc3-minitile .cc-mini-body{padding:12px 14px;font-size:12px;color:#64748b;min-height:80px;line-height:1.5}
+
+/* ── 6. Quick action grid (in work queue card) ── */
+.dcc3-actiongrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+
+/* ── 7. Insights panel ── */
+.dcc3-insights{
+  background:linear-gradient(180deg,#fff,#fbfdfe);
+  border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;
+}
+.dcc3-insights .cc-insights li{padding:6px 0 6px 18px}
+
+/* ── 8. Operations + Compliance rows ── */
+.dcc3-row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:20px}
+.dcc3-row3:last-child{margin-bottom:0}
+
+/* ── 9. Card accent refinement ── */
+#screen-dashboard .cc-card::before{
+  background:linear-gradient(90deg,var(--fs-teal),rgba(0,200,200,0) 70%);
+}
+
+/* Action Required tinted border */
+#screen-dashboard .dcc3-action-card{border-left:3px solid #f59e0b}
+
+/* ── 10. Responsive ── */
+@media (max-width:1279px){
+  .dcc3-herokpis{grid-template-columns:1fr}
+  .dcc3-herokpi{padding:18px 20px}
+  .dcc3-herokpi-value{font-size:28px}
+  .dcc3-main{grid-template-columns:1fr}
+  .dcc3-stmts{grid-template-columns:1fr}
+  .dcc3-row3,.dcc3-wcstrip{grid-template-columns:1fr}
+}
+@media (max-width:768px){
+  #screen-dashboard{padding:16px 14px 36px}
+  .dcc3-cmdbar{flex-direction:column;align-items:stretch;padding:12px}
+  .dcc3-cmdbar-left{flex-direction:row;align-items:center;gap:10px}
+  .dcc3-greet-text h1{font-size:18px}
+  .dcc3-cmdbar-right{width:100%}
+  .dcc3-quick{flex:1 1 auto;justify-content:center}
+  .dcc3-actiongrid{grid-template-columns:1fr}
+  .dcc3-herokpi-value{font-size:24px}
+  .dcc3-wc-val{font-size:17px}
+}
+@media (prefers-reduced-motion:reduce){
+  #screen-dashboard *,#screen-dashboard *::before,#screen-dashboard *::after{
+    animation:none !important;transition:none !important;
+  }
+}
+</style>
+
+<section id="screen-dashboard" class="screen active">
 
           <div class="cc-glow" aria-hidden="true"></div>
 
-          <!-- ═══ Screen intro ═══ -->
-          <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
-            <div>
-              <div class="cc-eyebrow">Command Center</div>
-              <h2 class="cc-h1">Financial Overview</h2>
-              <p class="cc-sub">Live position across cash, working capital, performance and compliance.</p>
+          <!-- ═══ Sticky command bar ═══ -->
+          <div class="dcc3-cmdbar">
+            <div class="dcc3-cmdbar-left">
+              <div class="dcc3-greet-ico" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+              </div>
+              <div class="dcc3-greet-text">
+                <div class="cc-eyebrow">Command Center</div>
+                <h1 class="dcc3-h1">Financial Overview</h1>
+                <p class="cc-sub">Live position across cash, working capital, performance and compliance.</p>
+              </div>
             </div>
 
-            <div class="flex items-center gap-3 flex-wrap">
+            <div class="dcc3-cmdbar-right">
               <div class="cc-datechip" id="ccDateChip" title="Today">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M3 10h18"/></svg>
                 <span id="ccDateText">—</span>
               </div>
 
-                            <div class="uf uf--dash" id="fsPeriodUf">
+              <div class="uf uf--dash" id="fsPeriodUf">
                 <div class="uf-field">
                   <span class="uf-cap">Period</span>
                   <select id="fsPeriodFilter">
@@ -16465,7 +16712,6 @@ label:has(#projectTeamUserSearch) {
                   </select>
                 </div>
 
-                <!-- Custom range — revealed by micro-script when Period = Custom -->
                 <div class="uf-custom uf-hidden" id="fsCustomRange">
                   <input id="fsFromDate" type="date" class="uf-date" aria-label="From date" />
                   <span class="uf-to">to</span>
@@ -16474,73 +16720,237 @@ label:has(#projectTeamUserSearch) {
 
                 <span class="uf-label" id="ccPeriodLabel" title="Active period">—</span>
               </div>
+
+              <button data-nav="journal" type="button" class="dcc3-quick">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                Journal
+              </button>
+              <button data-nav="ar" type="button" class="dcc3-quick">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                Invoice
+              </button>
+              <button data-nav="ap" type="button" class="dcc3-quick dcc3-quick--solid">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                Enter Bill
+              </button>
             </div>
           </div>
 
-          <!-- ═══ KPI strip ═══ -->
-          <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-5">
+          <!-- ═══ Hero KPI band ═══ -->
+          <div class="dcc3-herokpis">
 
-            <div class="cc-kpi cc-kpi--cash" style="--i:0">
-              <div class="cc-kpi-top">
-                <span class="cc-kpi-ico">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+            <div class="dcc3-herokpi" style="--i:0">
+              <span class="dcc3-herokpi-glyph">$</span>
+              <div class="dcc3-herokpi-top">
+                <span class="dcc3-herokpi-ico">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
                 </span>
-                <span class="cc-kpi-label">Cash on Hand</span>
+                <span class="dcc3-herokpi-label">Cash on Hand</span>
               </div>
-              <div id="kpiCash" class="cc-kpi-value">USD 0.00</div>
-              <div class="cc-kpi-foot">All bank &amp; cash accounts</div>
+              <div id="kpiCash" class="cc-kpi-value dcc3-herokpi-value">USD 0.00</div>
+              <div class="dcc3-herokpi-foot">All bank &amp; cash accounts</div>
             </div>
 
-            <div class="cc-kpi cc-kpi--ar" style="--i:1">
-              <div class="cc-kpi-top">
-                <span class="cc-kpi-ico">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+            <div class="dcc3-herokpi dcc3-herokpi--profit" style="--i:1">
+              <span class="dcc3-herokpi-glyph">↑</span>
+              <div class="dcc3-herokpi-top">
+                <span class="dcc3-herokpi-ico">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
                 </span>
-                <span class="cc-kpi-label">AR Outstanding</span>
+                <span class="dcc3-herokpi-label">Net Profit</span>
               </div>
-              <div id="kpiAR" class="cc-kpi-value">USD 0.00</div>
-              <div class="cc-kpi-foot">Customer balances due</div>
+              <div id="kpiNP" class="cc-kpi-value dcc3-herokpi-value">USD 0.00</div>
+              <div class="dcc3-herokpi-foot">Revenue less expenses</div>
             </div>
 
-            <div class="cc-kpi cc-kpi--ap" style="--i:2">
-              <div class="cc-kpi-top">
-                <span class="cc-kpi-ico">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
+            <div class="dcc3-herokpi dcc3-herokpi--vat" style="--i:2">
+              <span class="dcc3-herokpi-glyph">%</span>
+              <div class="dcc3-herokpi-top">
+                <span class="dcc3-herokpi-ico">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><circle cx="9.5" cy="9.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="14.5" cy="14.5" r="1.2" fill="currentColor" stroke="none"/></svg>
                 </span>
-                <span class="cc-kpi-label">AP Outstanding</span>
+                <span class="dcc3-herokpi-label">VAT Position</span>
               </div>
-              <div id="kpiAP" class="cc-kpi-value">USD 0.00</div>
-              <div class="cc-kpi-foot">Supplier balances owed</div>
-            </div>
-
-            <div class="cc-kpi cc-kpi--np" style="--i:3">
-              <div class="cc-kpi-top">
-                <span class="cc-kpi-ico">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
-                </span>
-                <span class="cc-kpi-label">Net Profit</span>
-              </div>
-              <div id="kpiNP" class="cc-kpi-value">USD 0.00</div>
-              <div class="cc-kpi-foot">Revenue less expenses</div>
-            </div>
-
-            <div class="cc-kpi cc-kpi--vat" style="--i:4">
-              <div class="cc-kpi-top">
-                <span class="cc-kpi-ico">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><circle cx="9.5" cy="9.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="14.5" cy="14.5" r="1.2" fill="currentColor" stroke="none"/></svg>
-                </span>
-                <span class="cc-kpi-label">VAT Position</span>
-              </div>
-              <div id="kpiVAT" class="cc-kpi-value">USD 0.00</div>
-              <div class="cc-kpi-foot">Net VAT for current period</div>
+              <div id="kpiVAT" class="cc-kpi-value dcc3-herokpi-value">USD 0.00</div>
+              <div class="dcc3-herokpi-foot">Net VAT for current period</div>
             </div>
           </div>
 
-          <!-- ═══ Row 1: Work queue + Reports & Analysis ═══ -->
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-5">
+          <!-- ═══ Working capital strip ═══ -->
+          <div class="dcc3-wcstrip">
+            <div class="dcc3-wc dcc3-wc--ar" style="--i:0">
+              <span class="dcc3-wc-ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+              </span>
+              <div class="dcc3-wc-body">
+                <div class="dcc3-wc-label">AR Outstanding</div>
+                <div id="kpiAR" class="cc-kpi-value dcc3-wc-val">USD 0.00</div>
+                <div class="dcc3-wc-foot">Customer balances due</div>
+              </div>
+            </div>
+
+            <div class="dcc3-wc dcc3-wc--ap" style="--i:1">
+              <span class="dcc3-wc-ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
+              </span>
+              <div class="dcc3-wc-body">
+                <div class="dcc3-wc-label">AP Outstanding</div>
+                <div id="kpiAP" class="cc-kpi-value dcc3-wc-val">USD 0.00</div>
+                <div class="dcc3-wc-foot">Supplier balances owed</div>
+              </div>
+            </div>
+
+            <div class="dcc3-wc dcc3-wc--net" style="--i:2">
+              <span class="dcc3-wc-ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
+              </span>
+              <div class="dcc3-wc-body">
+                <div class="dcc3-wc-label">Net Working Capital</div>
+                <div id="dcc3WorkingCapital" class="cc-kpi-value dcc3-wc-val">USD 0.00</div>
+                <div class="dcc3-wc-foot">Receivables less payables</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ Main grid: Trends (left, 2fr) + Right rail (1fr) ═══ -->
+          <div class="dcc3-main">
+
+            <!-- Analysis Trends -->
+            <div class="cc-card" style="--i:3">
+              <div class="cc-card-head">
+                <div class="cc-card-title">
+                  <span class="cc-ico">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>
+                  </span>
+                  <div class="cc-title-text">
+                    <h3 id="analysisChartTitle">Analysis Trends</h3>
+                    <p id="analysisChartSubtitle">Cash trend for selected period</p>
+                  </div>
+                </div>
+
+                <div id="analysisWidgetTabs" class="cc-seg">
+                  <button type="button" data-analysis-view="cash">Cash</button>
+                  <button type="button" data-analysis-view="revexp">Rev vs Exp</button>
+                  <button type="button" data-analysis-view="profit">Profit</button>
+                  <button type="button" data-analysis-view="margin">Margin</button>
+                  <button type="button" data-analysis-view="analysis">Analysis</button>
+                </div>
+              </div>
+
+              <div class="h-[3px] rounded-full bg-slate-100 overflow-hidden mb-3">
+                <div id="analysisProgress" class="h-full" style="width:0%"></div>
+              </div>
+
+              <div id="analysisChartWrap" class="chart-wrap">
+                <canvas id="cashChart"></canvas>
+              </div>
+
+              <div id="analysisCarouselDots" class="flex justify-center gap-1 mt-3"></div>
+
+              <div id="analysisTextPanel" class="hidden text-sm text-slate-600 space-y-2 mt-1"></div>
+            </div>
+
+            <!-- Right rail: Action Required + Quick Links/Aging -->
+            <div class="dcc3-rail">
+
+              <!-- Action Required -->
+              <div class="cc-card dcc3-action-card" style="--i:4">
+                <div class="cc-card-head">
+                  <div class="cc-card-title">
+                    <span class="cc-ico cc-ico--amber">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                    </span>
+                    <div class="cc-title-text">
+                      <h3>Action Required</h3>
+                      <p>Attention items from your books</p>
+                    </div>
+                  </div>
+                </div>
+
+                <ul id="actionsList" class="text-sm text-slate-500">
+                  <li>No pending tasks.</li>
+                  <li>Completed actions will appear here.</li>
+                </ul>
+              </div>
+
+              <!-- Quick Links + Aging -->
+              <div class="cc-card flex flex-col" style="--i:5">
+                <div class="cc-card-head">
+                  <div class="cc-card-title">
+                    <span class="cc-ico">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
+                    </span>
+                    <div class="cc-title-text">
+                      <h3>Quick Links</h3>
+                      <p>Jump to core modules</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex flex-col gap-1 -mx-1">
+                  <button data-nav="coa" class="cc-qlink">
+                    <span class="cc-qlink-ico">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+                    </span>
+                    Chart of Accounts
+                    <span class="cc-qlink-arrow">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                    </span>
+                  </button>
+
+                  <button data-nav="ledger" data-label="General Ledger" class="cc-qlink">
+                    <span class="cc-qlink-ico">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+                    </span>
+                    General Ledger
+                    <span class="cc-qlink-arrow">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                    </span>
+                  </button>
+
+                  <button data-nav="trial" class="cc-qlink">
+                    <span class="cc-qlink-ico">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
+                    </span>
+                    Trial Balance
+                    <span class="cc-qlink-arrow">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                    </span>
+                  </button>
+
+                  <button data-nav="company" class="cc-qlink">
+                    <span class="cc-qlink-ico">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+                    </span>
+                    Company &amp; Setup
+                    <span class="cc-qlink-arrow">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                    </span>
+                  </button>
+                </div>
+
+                <div class="my-4 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
+
+                <div>
+                  <div class="cc-aging-label">Accounts Receivable</div>
+                  <div id="agingAR" class="space-y-1 text-xs text-slate-500">
+                    <div>No receivables yet.</div>
+                  </div>
+
+                  <div class="cc-aging-label">Accounts Payable</div>
+                  <div id="agingAP" class="space-y-1 text-xs text-slate-500">
+                    <div>No payables yet.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ Work Queue + Reports &amp; Analysis ═══ -->
+          <div class="dcc3-main">
 
             <!-- Accounting Work Queue -->
-            <div class="cc-card" style="--i:5">
+            <div class="cc-card" style="--i:6">
               <div class="cc-card-head">
                 <div class="cc-card-title">
                   <span class="cc-ico">
@@ -16561,7 +16971,7 @@ label:has(#projectTeamUserSearch) {
                 <div class="text-xs text-slate-400">Loading accounting checks...</div>
               </div>
 
-              <div class="mt-4 pt-3 border-t border-slate-100 flex gap-2 flex-wrap">
+              <div class="dcc3-actiongrid mt-4 pt-3 border-t border-slate-100">
                 <button data-nav="ar" class="cc-btn">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                   New Invoice
@@ -16582,7 +16992,7 @@ label:has(#projectTeamUserSearch) {
             </div>
 
             <!-- Reports & Analysis -->
-            <div class="cc-card md:col-span-2 xl:col-span-2" style="--i:6">
+            <div class="cc-card" style="--i:7">
               <div class="cc-card-head">
                 <div class="cc-card-title">
                   <span class="cc-ico">
@@ -16617,8 +17027,8 @@ label:has(#projectTeamUserSearch) {
               </div>
 
               <!-- Mini statements -->
-              <div class="grid md:grid-cols-3 gap-3">
-                <div class="cc-mini">
+              <div class="dcc3-stmts">
+                <div class="dcc3-minitile">
                   <div class="cc-mini-head">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
                     Profit &amp; Loss
@@ -16626,7 +17036,7 @@ label:has(#projectTeamUserSearch) {
                   <div id="pnlMini" class="cc-mini-body"></div>
                 </div>
 
-                <div class="cc-mini">
+                <div class="dcc3-minitile">
                   <div class="cc-mini-head">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
                     Balance Sheet
@@ -16634,7 +17044,7 @@ label:has(#projectTeamUserSearch) {
                   <div id="bsMini" class="cc-mini-body"></div>
                 </div>
 
-                <div class="cc-mini">
+                <div class="dcc3-minitile">
                   <div class="cc-mini-head">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>
                     Cash Flow
@@ -16644,7 +17054,7 @@ label:has(#projectTeamUserSearch) {
               </div>
 
               <!-- Top insights -->
-              <div class="cc-insights mt-4 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+              <div class="dcc3-insights mt-4">
                 <div class="flex items-center gap-2 mb-1">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[var(--fs-teal)]" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
                   <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-slate-500">Top Insights</span>
@@ -16657,141 +17067,11 @@ label:has(#projectTeamUserSearch) {
             </div>
           </div>
 
-          <!-- ═══ Row 2: Analysis trends + Action required + Quick links ═══ -->
-          <div class="grid grid-cols-1 xl:grid-cols-4 gap-4 mb-5">
-
-            <!-- Analysis Trends -->
-            <div class="cc-card xl:col-span-2" style="--i:7">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3 id="analysisChartTitle">Analysis Trends</h3>
-                    <p id="analysisChartSubtitle">Cash trend for selected period</p>
-                  </div>
-                </div>
-
-                <div id="analysisWidgetTabs" class="cc-seg">
-                  <button type="button" data-analysis-view="cash">Cash</button>
-                  <button type="button" data-analysis-view="revexp">Rev vs Exp</button>
-                  <button type="button" data-analysis-view="profit">Profit</button>
-                  <button type="button" data-analysis-view="margin">Margin</button>
-                  <button type="button" data-analysis-view="analysis">Analysis</button>
-                </div>
-              </div>
-
-              <div class="h-[3px] rounded-full bg-slate-100 overflow-hidden mb-3">
-                <div id="analysisProgress" class="h-full" style="width:0%"></div>
-              </div>
-
-              <div id="analysisChartWrap" class="chart-wrap">
-                <canvas id="cashChart"></canvas>
-              </div>
-
-              <div id="analysisCarouselDots" class="flex justify-center gap-1 mt-3"></div>
-
-              <div id="analysisTextPanel" class="hidden text-sm text-slate-600 space-y-2 mt-1"></div>
-            </div>
-
-            <!-- Action Required -->
-            <div class="cc-card" style="--i:8">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico cc-ico--amber">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3>Action Required</h3>
-                    <p>Attention items from your books</p>
-                  </div>
-                </div>
-              </div>
-
-              <ul id="actionsList" class="text-sm text-slate-500">
-                <li>No pending tasks.</li>
-                <li>Completed actions will appear here.</li>
-              </ul>
-            </div>
-
-            <!-- Quick Links + AR & AP Aging -->
-            <div class="cc-card flex flex-col" style="--i:9">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3>Quick Links</h3>
-                    <p>Jump to core modules</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="flex flex-col gap-1 -mx-1">
-                <button data-nav="coa" class="cc-qlink">
-                  <span class="cc-qlink-ico">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
-                  </span>
-                  Chart of Accounts
-                  <span class="cc-qlink-arrow">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                  </span>
-                </button>
-
-                <button data-nav="ledger" data-label="General Ledger" class="cc-qlink">
-                  <span class="cc-qlink-ico">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
-                  </span>
-                  General Ledger
-                  <span class="cc-qlink-arrow">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                  </span>
-                </button>
-
-                <button data-nav="trial" class="cc-qlink">
-                  <span class="cc-qlink-ico">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
-                  </span>
-                  Trial Balance
-                  <span class="cc-qlink-arrow">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                  </span>
-                </button>
-
-                <button data-nav="company" class="cc-qlink">
-                  <span class="cc-qlink-ico">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
-                  </span>
-                  Company &amp; Setup
-                  <span class="cc-qlink-arrow">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                  </span>
-                </button>
-              </div>
-
-              <div class="my-4 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
-
-              <div>
-                <div class="cc-aging-label">Accounts Receivable</div>
-                <div id="agingAR" class="space-y-1 text-xs text-slate-500">
-                  <div>No receivables yet.</div>
-                </div>
-
-                <div class="cc-aging-label">Accounts Payable</div>
-                <div id="agingAP" class="space-y-1 text-xs text-slate-500">
-                  <div>No payables yet.</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- ═══ Row 3: Month-End + Fixed Assets + Inventory ═══ -->
-          <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-5">
+          <!-- ═══ Operations row: Month-End + Fixed Assets + Inventory ═══ -->
+          <div class="dcc3-row3">
 
             <!-- Month-End Close -->
-            <div class="cc-card" style="--i:10">
+            <div class="cc-card" style="--i:8">
               <div class="cc-card-head">
                 <div class="cc-card-title">
                   <span class="cc-ico">
@@ -16819,7 +17099,7 @@ label:has(#projectTeamUserSearch) {
             </div>
 
             <!-- Fixed Assets Snapshot -->
-            <div class="cc-card" style="--i:11">
+            <div class="cc-card" style="--i:9">
               <div class="cc-card-head">
                 <div class="cc-card-title">
                   <span class="cc-ico">
@@ -16846,7 +17126,7 @@ label:has(#projectTeamUserSearch) {
             </div>
 
             <!-- Inventory Snapshot -->
-            <div class="cc-card" style="--i:12">
+            <div class="cc-card" style="--i:10">
               <div class="cc-card-head">
                 <div class="cc-card-title">
                   <span class="cc-ico">
@@ -16873,11 +17153,11 @@ label:has(#projectTeamUserSearch) {
             </div>
           </div>
 
-          <!-- ═══ Row 4: Tax & Compliance + Setup Checklist + Health ═══ -->
-          <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <!-- ═══ Compliance row: Tax + Setup + Health ═══ -->
+          <div class="dcc3-row3">
 
             <!-- Tax & Compliance -->
-            <div class="cc-card" style="--i:13">
+            <div class="cc-card" style="--i:11">
               <div class="cc-card-head">
                 <div class="cc-card-title">
                   <span class="cc-ico cc-ico--teal">
@@ -16896,7 +17176,7 @@ label:has(#projectTeamUserSearch) {
             </div>
 
             <!-- Setup Checklist -->
-            <div class="cc-card" style="--i:14">
+            <div class="cc-card" style="--i:12">
               <div class="cc-card-head">
                 <div class="cc-card-title">
                   <span class="cc-ico">
@@ -16919,7 +17199,7 @@ label:has(#projectTeamUserSearch) {
             </div>
 
             <!-- Health & Compliance -->
-            <div class="cc-card" style="--i:15">
+            <div class="cc-card" style="--i:13">
               <div class="cc-card-head">
                 <div class="cc-card-title">
                   <span class="cc-ico">
@@ -16940,6 +17220,43 @@ label:has(#projectTeamUserSearch) {
               </div>
             </div>
           </div>
+
+          <!-- ═══ Working-capital reactive script ═══
+               Pure presentation helper: derives Net Working Capital
+               from kpiAR and kpiAP. Does NOT change any data type or
+               touch any backend value. -->
+          <script>
+          (function(){
+            "use strict";
+            function numFrom(el){
+              if(!el) return 0;
+              var t = String(el.textContent || "").replace(/[^0-9.\-]/g,"");
+              var n = parseFloat(t);
+              return Number.isFinite(n) ? n : 0;
+            }
+            function paintWC(){
+              var ar = numFrom(document.getElementById("kpiAR"));
+              var ap = numFrom(document.getElementById("kpiAP"));
+              var net = ar - ap;
+              var el = document.getElementById("dcc3WorkingCapital");
+              if(!el) return;
+              var cur = (window.CURRENT_CURRENCY || "USD");
+              var sign = net < 0 ? "-" : "";
+              try{
+                el.textContent = sign + cur + " " + Math.abs(net).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+              }catch(e){
+                el.textContent = sign + Math.abs(net).toFixed(2) + " " + cur;
+              }
+            }
+            paintWC();
+            if("MutationObserver" in window){
+              ["kpiAR","kpiAP"].forEach(function(id){
+                var el = document.getElementById(id);
+                if(el) new MutationObserver(paintWC).observe(el,{childList:true,characterData:true,subtree:true});
+              });
+            }
+          })();
+          </script>
         </section>
 
         <script>

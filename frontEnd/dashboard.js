@@ -133738,10 +133738,10 @@ async function openManufacturingOrderModal() {
   modal.id = "mfgOrderModal";
 
   modal.className =
-    "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
+    "fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto";
 
   modal.innerHTML = `
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[94vh] overflow-auto">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl overflow-auto my-auto" style="max-height:94vh;">
 
       <div class="flex items-center justify-between border-b px-4 py-3">
 
