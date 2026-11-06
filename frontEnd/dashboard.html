@@ -167,6 +167,10 @@
 
   .screen { display: none; }
   .screen.active { display: block; width: 100%; }
+  /* Safety: ensure non-active screens are NEVER visible, even if another
+     CSS rule or inline style tries to show them. This prevents target
+     screens from appearing to render "inside" the dashboard. */
+  .screen:not(.active) { display: none !important; }
 
   .pill{
     padding:.35rem .6rem;
@@ -16779,9 +16783,12 @@ body{
 .ckp-grid-wq-reports{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:18px}
 
 /* ═══ 3c. BRIEF FINANCIAL ANALYSIS + ACTION REQUIRED + NAVIGATE — ROW 2 ═══ */
-.ckp-grid-analysis{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:18px;align-items:start}
+.ckp-grid-analysis{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:18px;align-items:stretch}
 /* When the Navigate rail lives inside row 2 it must NOT be sticky */
 .ckp-grid-analysis .ckp-rail{position:static;top:auto}
+/* Hero card stretches to match the tallest neighbour; chart fills the gap */
+.ckp-grid-analysis .ckp-hero{display:flex;flex-direction:column}
+.ckp-grid-analysis .ckp-hero .ckp-chart-wrap{flex:1;min-height:300px;height:auto}
 
 /* ═══ 4. WORK QUEUE + REPORTS GRID (legacy — kept for reference) ═══ */
 .ckp-grid-2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;margin-bottom:18px}
@@ -17207,11 +17214,6 @@ body{
     <aside class="ckp-rail">
       <div class="ckp-rail-title">Navigate</div>
       <ul class="ckp-rail-list">
-        <li><button data-nav="coa">
-          <span class="ckp-rail-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>
-          <span>Chart of Accounts</span>
-          <span class="ckp-rail-arrow">›</span>
-        </button></li>
         <li><button data-nav="ledger">
           <span class="ckp-rail-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></span>
           <span>General Ledger</span>
@@ -17230,11 +17232,6 @@ body{
         <li><button data-nav="fixedassets">
           <span class="ckp-rail-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M10 6h4"/><path d="M10 10h4"/></svg></span>
           <span>Fixed Assets</span>
-          <span class="ckp-rail-arrow">›</span>
-        </button></li>
-        <li><button data-nav="inventory">
-          <span class="ckp-rail-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg></span>
-          <span>Inventory</span>
           <span class="ckp-rail-arrow">›</span>
         </button></li>
       </ul>
@@ -17382,6 +17379,33 @@ body{
         var el = document.getElementById(id);
         if(el) obs.observe(el,{ childList:true, characterData:true, subtree:true });
       });
+    }
+  })();
+  </script>
+
+  <!-- ═══ NAV FIX: add "company" to SCREEN_POLICY so the Navigate rail's
+       "Company & Setup" button works. Without this, canOpenScreen("company")
+       returns false and the user sees "This screen is not enabled yet."
+       instead of the Company & Setup screen. ═══ -->
+  <script>
+  (function(){
+    "use strict";
+    function patchScreenPolicy(){
+      if(typeof SCREEN_POLICY === "undefined" || !SCREEN_POLICY) return false;
+      if(!SCREEN_POLICY["company"]){
+        SCREEN_POLICY["company"] = {
+          auth: "private",
+          minRole: "assistant",
+          permission: "can_manage_company_setup"
+        };
+      }
+      return true;
+    }
+    if(!patchScreenPolicy()){
+      var tries = 0;
+      var iv = setInterval(function(){
+        if(patchScreenPolicy() || ++tries > 50){ clearInterval(iv); }
+      }, 100);
     }
   })();
   </script>
