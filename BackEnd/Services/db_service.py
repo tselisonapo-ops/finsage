@@ -174291,6 +174291,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "correction_reason": reason,
                 },
                 user_id=user_id,
+                cur=cur,
             )
 
             self.payroll_run_audit_add(
@@ -174309,6 +174310,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "correction_reason": reason,
                 },
                 user_id=user_id,
+                cur=cur,
             )
 
             return new_run
@@ -182886,6 +182888,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         message=None,
         metadata=None,
         user_id=None,
+        cur=None,
     )->dict:
         schema=self.company_schema(company_id)
 
@@ -182913,7 +182916,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             message,
             json.dumps(metadata or {}),
             user_id,
-        ))
+        ),cur=cur)
 
 
     def payroll_run_audit_history(
