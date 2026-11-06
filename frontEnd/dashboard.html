@@ -31672,7 +31672,7 @@ label:has(#projectTeamUserSearch) {
                 <p class="payroll-muted">Manage employee profiles and payroll records.</p>
               </div>
             </div>
-            <div class="payroll-card">
+            <div class="payroll-card" id="payrollEmployeeListCard">
               <div class="payroll-card-head">
                 <h3>Employees</h3>
                 <button id="payrollNewEmployeeBtn" class="payroll-primary small">+ New Employee</button>
@@ -31695,6 +31695,40 @@ label:has(#projectTeamUserSearch) {
               </div>
 
               <div id="payrollEmployeesList"></div>
+            </div>
+
+            <!-- Standalone employee detail view (hidden by default).
+                 Shown when an employee row is clicked from the Recent
+                 Employees list or the Employees table. Has a back button
+                 to return to the list and an Edit button that opens the
+                 employee editor modal. -->
+            <div id="payrollEmployeeOverviewDetail" class="hidden">
+              <div class="payroll-section-navigation">
+                <button type="button" id="payrollEmployeeOverviewBackBtn" class="payroll-back-btn">
+                  ← Back to Employees
+                </button>
+                <div>
+                  <h3 id="payrollEmployeeOverviewName">—</h3>
+                  <p class="payroll-muted" id="payrollEmployeeOverviewSub">—</p>
+                </div>
+                <button type="button" id="payrollEmployeeOverviewEditBtn" class="payroll-primary small">
+                  ✎ Edit Employee
+                </button>
+              </div>
+
+              <!-- Summary KPIs -->
+              <div class="payroll-run-kpis" id="payrollEmployeeOverviewKpis"></div>
+
+              <!-- Profile details -->
+              <div class="payroll-card" style="margin-top:20px;">
+                <div class="payroll-card-head">
+                  <div>
+                    <h3>Employee Profile</h3>
+                    <p class="payroll-muted">Personal, employment and payroll details.</p>
+                  </div>
+                </div>
+                <div id="payrollEmployeeOverviewBody"></div>
+              </div>
             </div>
           </div>
 
@@ -38767,7 +38801,7 @@ label:has(#projectTeamUserSearch) {
 
     loadScript("/dist/assets/hostMount.js?v=20261101a", { module: true });
 
-    loadScript("/dashboard.js?v=20261106e");
+    loadScript("/dashboard.js?v=20261106f");
 
     loadScript("/receipt-journal.js?v=20261018a");
     /* ==================================================================

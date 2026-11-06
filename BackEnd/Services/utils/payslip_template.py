@@ -127,6 +127,25 @@ def _money(value, currency: str = "LSL") -> str:
     return f"{currency} {amount_str}"
 
 
+def _fmt_plain(value) -> str:
+    """Format a numeric value as a plain grouped string (no currency prefix).
+
+    Used inside the line-item tables (EARNINGS / DEDUCTIONS / TAXES / etc.)
+    where the currency is already shown in the run header, so repeating
+    'LSL ' on every line wastes horizontal space and causes wrapping.
+    """
+    if value is None:
+        return "0.00"
+    if isinstance(value, Decimal):
+        return f"{value:,.2f}"
+    if isinstance(value, (int, float)):
+        return f"{Decimal(str(value)):,.2f}"
+    try:
+        return f"{Decimal(str(value)):,.2f}"
+    except Exception:
+        return "0.00"
+
+
 def _safe_str(value) -> str:
     if value is None:
         return ""
@@ -256,9 +275,9 @@ def _build_styles() -> dict:
             "doc_title",
             parent=base["Title"],
             fontName="Helvetica-Bold",
-            fontSize=20,
+            fontSize=16,
             textColor=BRAND_PRIMARY,
-            leading=24,
+            leading=19,
             alignment=TA_CENTER,
             spaceAfter=2,
         ),
@@ -458,7 +477,7 @@ def _header_block(
     ]
     system_banner = Table(
         [[system_lines[0]], [system_lines[1]]],
-        colWidths=[55 * mm],
+        colWidths=[45 * mm],
         rowHeights=[14, 10],
     )
     system_banner.setStyle(TableStyle([
@@ -554,7 +573,7 @@ def _header_block(
             styles["doc_subtitle"],
         )],
     ]
-    right_table = Table(right_block, colWidths=[CONTENT_WIDTH * 0.40])
+    right_table = Table(right_block, colWidths=[CONTENT_WIDTH * 0.30])
     right_table.setStyle(TableStyle([
         ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -565,11 +584,13 @@ def _header_block(
     ]))
 
     # ---- Assemble header row -----------------------------------------
-    # Widths: logo (20mm) + system banner (55mm) + company (~remaining) + run info
-    # Total = CONTENT_WIDTH
-    logo_w = 22 * mm
-    banner_w = 55 * mm
-    right_w = CONTENT_WIDTH * 0.40
+    # Widths (must sum to CONTENT_WIDTH ≈ 186mm):
+    #   logo (18mm) + system banner (45mm) + company (~75mm) + run info (48mm)
+    # The company column is the widest so the company name, registration,
+    # address and contact can sit on their own lines without mid-word wraps.
+    logo_w = 18 * mm
+    banner_w = 45 * mm
+    right_w = CONTENT_WIDTH * 0.30
     company_w = CONTENT_WIDTH - logo_w - banner_w - right_w
 
     data = [[logo_cell, system_banner, company_cell, right_table]]
@@ -758,35 +779,64 @@ def _single_line_items_block(
     styles: dict,
     show_tax_flag: bool = False,
 ) -> Table:
-    """A single self-contained table: header row + items + totals row.
+    """A single self-contained table with three logical bands:
 
-    The last data row is styled as a TOTAL row showing the sum of all amounts.
+        Row 0  → Title bar spanning all columns (e.g. "EARNINGS")
+        Row 1  → Column headers (Description | Qty | Rate | Amount [ | Tax ])
+        Row 2+ → Data rows
+        Last  → TOTAL row
+
+    Putting the title in its own SPANned row (instead of squashing it
+    into the narrow first data column) is what stops the title from
+    wrapping as "EAR / NIN / GS".
     """
     total_amount = sum(
         (_decimal(it.get("amount")) for it in items), Decimal("0")
     )
-    header = [
-        Paragraph(title, styles["section_header"]),
+
+    # ---- Row 0: title bar (spans everything) -------------------------
+    title_row = [Paragraph(title, styles["section_header"])]
+    # placeholders for the remaining columns; SPAN merges them into row 0
+    n_data_cols = 4 + (1 if show_tax_flag else 0)
+    title_row += [""] * (n_data_cols - 1)
+
+    # ---- Row 1: column headers --------------------------------------
+    col_header_row = [
         Paragraph("Description", styles["section_header"]),
         Paragraph("Qty", styles["section_header"]),
         Paragraph("Rate", styles["section_header"]),
         Paragraph("Amount", styles["section_header"]),
     ]
     if show_tax_flag:
-        header.append(Paragraph("Tax", styles["section_header"]))
+        col_header_row.append(Paragraph("Tax", styles["section_header"]))
 
-    data = [header]
+    data = [title_row, col_header_row]
+
+    # ---- Data rows --------------------------------------------------
     if not items:
-        empty_row = ["-"] * len(header)
+        empty_row = ["-"] * n_data_cols
         data.append(empty_row)
     else:
         for it in items:
+            # Description column shows "code · description" so the code
+            # is visible without dedicating a tiny column to it.
+            code = _safe_str(it.get("code")).strip()
+            desc = _safe_str(it.get("description")).strip() or "-"
+
+            if code and code != desc:
+                desc_text = f"<b>{code}</b> &ndash; {desc}"
+            else:
+                desc_text = desc
+
             row = [
-                Paragraph(_safe_str(it.get("code")) or "-", styles["cell"]),
-                Paragraph(_safe_str(it.get("description")) or "-", styles["cell"]),
+                Paragraph(desc_text, styles["cell"]),
                 Paragraph(_safe_str(it.get("quantity")) or "-", styles["cell_right"]),
                 Paragraph(_safe_str(it.get("rate")) or "-", styles["cell_right"]),
-                Paragraph(_money(it.get("amount"), currency), styles["cell_bold_right"]),
+                # Amount shown WITHOUT currency prefix inside line-item tables
+                # (currency is already stated in the run header). This keeps the
+                # Amount column narrow enough to fit values like "1,000.00"
+                # without wrapping or clipping.
+                Paragraph(_fmt_plain(it.get("amount")), styles["cell_bold_right"]),
             ]
             if show_tax_flag:
                 row.append(Paragraph(
@@ -794,53 +844,96 @@ def _single_line_items_block(
                 ))
             data.append(row)
 
-    # total row at the bottom
-    total_row = ["", Paragraph("TOTAL", styles["cell_bold"]), "", "",
-                 Paragraph(_money(total_amount, currency), styles["cell_bold_right"])]
+    # ---- Total row --------------------------------------------------
+    total_row = [
+        Paragraph("TOTAL", styles["cell_bold"]),
+        "",
+        "",
+        # Same convention: no currency prefix inside line-item tables.
+        Paragraph(_fmt_plain(total_amount), styles["cell_bold_right"]),
+    ]
     if show_tax_flag:
         total_row.insert(-1, "")
     data.append(total_row)
 
-    # column widths — must fit exactly inside half-content-width wrapper column
+    # ---- Column widths ---------------------------------------------
+    # Must fit exactly inside the half-content-width wrapper column.
+    # half ≈ 93mm. Layout: Description (flex ~51mm) | Qty (10mm) | Rate (14mm) | Amount (18mm) [ | Tax (8mm) ]
+    # Amount is wide enough for values like "1,234,567.89" without currency prefix.
+    # Rate at 14mm fits "1000.00" (7 chars) on one line.
+    # Qty at 10mm fits "1.00" / "21.00" without clipping.
     half = CONTENT_WIDTH / 2 - 2
+
     if show_tax_flag:
-        fixed = 10 * mm + 10 * mm + 10 * mm + 14 * mm + 8 * mm
+        fixed = 10 * mm + 14 * mm + 18 * mm + 8 * mm
         base_widths = [
-            10 * mm,
-            half - fixed,
-            10 * mm,
-            10 * mm,
-            14 * mm,
-            8 * mm,
+            half - fixed,   # Description (flex)
+            10 * mm,        # Qty
+            14 * mm,        # Rate
+            18 * mm,        # Amount
+            8 * mm,         # Tax
         ]
     else:
-        fixed = 10 * mm + 10 * mm + 12 * mm + 16 * mm
+        fixed = 10 * mm + 14 * mm + 18 * mm
         base_widths = [
-            10 * mm,
-            half - fixed,
-            10 * mm,
-            12 * mm,
-            16 * mm,
+            half - fixed,   # Description (flex)
+            10 * mm,        # Qty
+            14 * mm,        # Rate
+            18 * mm,        # Amount
         ]
 
-    # Build explicit row heights: header is taller, data rows compact, total row taller.
-    n_data_rows = len(data) - 2  # exclude header (idx 0) and total row (idx -1)
-    row_heights = [16] + [14] * n_data_rows + [16]
+    # ---- Row heights ------------------------------------------------
+    # Let ReportLab auto-size data rows so descriptions that wrap to
+    # 2 lines (e.g. "Pension Contribution (7%)") get the height they
+    # need instead of overflowing into the next row. Only the title
+    # bar and column header row get a fixed minimum height.
+    n_data_rows = len(data) - 3  # exclude title(0) + col-header(1) + total(-1)
+    if n_data_rows < 0:
+        n_data_rows = 0
+    row_heights = [14, 13] + [None] * n_data_rows + [14]
 
     tbl = Table(data, colWidths=base_widths, rowHeights=row_heights)
+
+    # ---- Style ------------------------------------------------------
     style_cmds = [
+        # Title bar (row 0) — navy background, spans all columns
+        ("SPAN", (0, 0), (-1, 0)),
         ("BACKGROUND", (0, 0), (-1, 0), BRAND_HEADER_BG),
+        ("ALIGN", (0, 0), (-1, 0), "LEFT"),
+        ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, 0), 6),
+        ("TOPPADDING", (0, 0), (-1, 0), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 3),
+
+        # Column header row (row 1) — soft subheader background
+        ("BACKGROUND", (0, 1), (-1, 1), BRAND_SUBHEADER_BG),
+
+        # All cells
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 1),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 1), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 2),
+        ("LEFTPADDING", (0, 1), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 1), (-1, -1), 4),
+
+        # Right-align numeric columns (Qty, Rate, Amount)
+        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+        # Left-align description column
+        ("ALIGN", (0, 1), (0, -1), "LEFT"),
+
+        # Grid + box
         ("BOX", (0, 0), (-1, -1), 0.5, BRAND_BORDER),
-        ("INNERGRID", (0, 0), (-1, -1), 0.25, BRAND_BORDER),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, BRAND_SOFT]),
-        # last row = total row, distinct background
+        ("INNERGRID", (0, 1), (-1, -1), 0.25, BRAND_BORDER),
+
+        # Zebra striping on data rows only (between col-header and total)
+        ("ROWBACKGROUNDS", (0, 2), (-1, -2), [colors.white, BRAND_SOFT]),
+
+        # Total row — distinct background + line above
         ("BACKGROUND", (0, -1), (-1, -1), BRAND_SUBHEADER_BG),
         ("LINEABOVE", (0, -1), (-1, -1), 0.6, BRAND_PRIMARY),
+        # Span the TOTAL label across Qty + Rate so the Amount stays right-aligned
+        ("SPAN", (0, -1), (2, -1)),
+        ("ALIGN", (0, -1), (2, -1), "LEFT"),
+        ("LEFTPADDING", (0, -1), (2, -1), 6),
     ]
     tbl.setStyle(TableStyle(style_cmds))
     return tbl
@@ -911,7 +1004,9 @@ def _totals_block(payload: dict, styles: dict) -> Table:
         val_style.alignment = TA_LEFT
         return [
             Paragraph(label, styles["cell_bold"]),
-            Paragraph(_money(value, currency), val_style),
+            # No currency prefix here either — currency is in the run header.
+            # This keeps the values column narrow and the numbers aligned.
+            Paragraph(_fmt_plain(value), val_style),
         ]
 
     left_rows = [
@@ -950,11 +1045,13 @@ def _totals_block(payload: dict, styles: dict) -> Table:
 
     data = [[
         Paragraph("PAY SUMMARY", styles["section_header"]),
-        Paragraph("PAY SUMMARY (cont.)", styles["section_header"]),
+        "",
     ], [left_tbl, right_tbl]]
 
     tbl = Table(data, colWidths=[half, half])
     tbl.setStyle(TableStyle([
+        # Single spanning title bar across both columns
+        ("SPAN", (0, 0), (-1, 0)),
         ("BACKGROUND", (0, 0), (-1, 0), BRAND_HEADER_BG),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING", (0, 0), (-1, 0), 3),

@@ -72693,7 +72693,21 @@ async function saveEditModal() {
 
     el.querySelectorAll("[data-payroll-employee-id]").forEach(row => {
       row.addEventListener("click", async () => {
-        await openPayrollEmployee(Number(row.dataset.payrollEmployeeId));
+        const empId = Number(row.dataset.payrollEmployeeId);
+        if (!empId) return;
+
+        // The Recent Employees list lives on the overview tab.
+        // Switch to the Employees tab (where the standalone detail
+        // panel lives) and open the detail view for this employee.
+        if (typeof switchPayrollTab === "function") {
+          switchPayrollTab("employees", { scroll: false });
+        }
+
+        if (typeof openEmployeeOverviewDetail === "function") {
+          openEmployeeOverviewDetail(empId);
+        } else {
+          await openPayrollEmployee(empId);
+        }
       });
     });
   }
@@ -74562,6 +74576,118 @@ async function saveEditModal() {
 
     if(detailEl) detailEl.classList.add("hidden");
     if(listEl) listEl.classList.remove("hidden");
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Standalone employee overview detail
+  // (used by Recent Employees list + Employees table row clicks)
+  // ──────────────────────────────────────────────────────────
+
+  function openEmployeeOverviewDetail(employeeId){
+    const emp=(payrollState.employees||[]).find(
+      e=>String(e.id)===String(employeeId)
+    );
+
+    if(!emp){
+      console.warn("[EmployeeOverview] employee not found:",employeeId);
+      return;
+    }
+
+    // Remember which employee is open (used by the Edit button)
+    payrollState.overviewDetailEmployeeId=emp.id;
+
+    const listCard=$("payrollEmployeeListCard");
+    const detailEl=$("payrollEmployeeOverviewDetail");
+
+    if(listCard) listCard.classList.add("hidden");
+    if(detailEl) detailEl.classList.remove("hidden");
+
+    // Header
+    const name=`${emp.first_name||""} ${emp.last_name||""}`.trim()||"Employee";
+    const sub=[
+      emp.employee_no&&(`# ${emp.employee_no}`),
+      cap(emp.employment_status||"active")
+    ].filter(Boolean).join(" · ");
+
+    setTxt("payrollEmployeeOverviewName",name);
+    setTxt("payrollEmployeeOverviewSub",sub||"—");
+
+    // KPIs (employee-profile summary)
+    const kpiEl=$("payrollEmployeeOverviewKpis");
+    if(kpiEl){
+      const contract=(emp.contracts||[])[0]||{};
+      const basic=round2(contract.basic_salary||emp.basic_salary||0);
+      const hours=Number(contract.normal_hours_per_month||0)||0;
+      const dept=emp.department_name||"—";
+      const pos=emp.position_title||"—";
+
+      kpiEl.innerHTML=`
+        <div>
+          <span>Department</span>
+          <strong>${esc(dept)}</strong>
+        </div>
+        <div>
+          <span>Position</span>
+          <strong>${esc(pos)}</strong>
+        </div>
+        <div>
+          <span>Basic Salary</span>
+          <strong>${money(basic)}</strong>
+        </div>
+        <div>
+          <span>Hours / Month</span>
+          <strong>${hours}</strong>
+        </div>
+      `;
+    }
+
+    // Profile body
+    const bodyEl=$("payrollEmployeeOverviewBody");
+    if(bodyEl){
+      const contract=(emp.contracts||[])[0]||{};
+      const bank=(emp.bank_accounts||[])[0]||{};
+      const tax=(emp.tax_profiles||[])[0]||{};
+
+      const kv=(label,value)=>`
+        <div class="payroll-run-info-card" style="margin-bottom:12px;">
+          <h4>${esc(label)}</h4>
+          <div>${value?esc(value):"—"}</div>
+        </div>
+      `;
+
+      bodyEl.innerHTML=`
+        <div class="payroll-run-overview-grid">
+          ${kv("Employee Number",emp.employee_no)}
+          ${kv("Email",emp.email)}
+          ${kv("Phone",emp.phone)}
+          ${kv("ID Number",emp.id_number)}
+          ${kv("Passport Number",emp.passport_number)}
+          ${kv("Tax Number",emp.tax_number||tax.tax_number)}
+          ${kv("Employment Status",cap(emp.employment_status||"active"))}
+          ${kv("Start Date",fmtDdMmYyyy(emp.start_date||emp.employment_start_date))}
+          ${kv("Contract Type",cap(contract.contract_type||"permanent"))}
+          ${kv("Salary Type",cap(contract.salary_type||"monthly"))}
+          ${kv("Hourly Rate",contract.hourly_rate?money(contract.hourly_rate):"")}
+          ${kv("Bank",bank.bank_name)}
+          ${kv("Bank Account",bank.account_number?`${bank.account_name||""} · ${bank.account_number}`:"")}
+          ${kv("Branch Code",bank.branch_code)}
+          ${kv("Account Type",cap(bank.account_type))}
+        </div>
+      `;
+    }
+
+    // Scroll the detail into view
+    detailEl?.scrollIntoView({behavior:"smooth",block:"start"});
+  }
+
+  function closeEmployeeOverviewDetail(){
+    const listCard=$("payrollEmployeeListCard");
+    const detailEl=$("payrollEmployeeOverviewDetail");
+
+    if(detailEl) detailEl.classList.add("hidden");
+    if(listCard) listCard.classList.remove("hidden");
+
+    payrollState.overviewDetailEmployeeId=null;
   }
 
   // Helper: round to 2 decimal places
@@ -83885,7 +84011,16 @@ async function saveEditModal() {
 
     el.querySelectorAll("[data-payroll-employee-id]").forEach(row => {
       row.addEventListener("click", async () => {
-        await openPayrollEmployee(Number(row.dataset.payrollEmployeeId));
+        const empId = Number(row.dataset.payrollEmployeeId);
+        if (!empId) return;
+
+        // Open the standalone employee overview detail (with back
+        // button + Edit button) instead of the editor modal.
+        if (typeof openEmployeeOverviewDetail === "function") {
+          openEmployeeOverviewDetail(empId);
+        } else {
+          await openPayrollEmployee(empId);
+        }
       });
     });
   }
@@ -83948,6 +84083,11 @@ async function saveEditModal() {
     );
 
     if(tab==="employees"){
+      // Reset the standalone employee detail panel so the list is
+      // shown by default whenever the Employees tab is (re)opened
+      // (except when we explicitly opened the detail from the
+      // Recent Employees list — handled by openEmployeeOverviewDetail).
+      closeEmployeeOverviewDetail?.();
       renderPayrollEmployees();
 
       loadPayrollCalendars().catch(error =>
@@ -92743,9 +92883,21 @@ function renderPayrollPayeRunClearing(
     $("payrollCreateReplacementRunOverviewBtn")
       ?.addEventListener("click", runPayrollAction(createReplacementPayrollRun));
 
-    // Employee detail back button
+    // Employee detail back button (run-detail employee view)
     $("payrollEmployeeBackBtn")
       ?.addEventListener("click", closeEmployeeDetail);
+
+    // Standalone employee overview detail — back + edit buttons
+    $("payrollEmployeeOverviewBackBtn")
+      ?.addEventListener("click", () => closeEmployeeOverviewDetail?.());
+
+    $("payrollEmployeeOverviewEditBtn")
+      ?.addEventListener("click", async () => {
+        const empId = payrollState.overviewDetailEmployeeId;
+        if (!empId) return;
+        // Open the employee editor modal (loads full record + fills form)
+        await openPayrollEmployee(Number(empId));
+      });
 
     $("payrollPayslipSearch")
       ?.addEventListener(
