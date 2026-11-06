@@ -16448,857 +16448,1263 @@ label:has(#projectTeamUserSearch) {
       <div id="screensHost" class="w-full px-4 pt-1 pb-6 space-y-2 min-h-[calc(100vh-57px)]">
 
         <!-- Dashboard -->
-        <style id="dcc3-css">
-/* ════════════════════════════════════════════════════════════
-   COMMAND CENTER v3 — redesigned dashboard (visual layer only)
-   Every JS-owned ID / data-nav / data-action / data-analysis-view
-   preserved. The cc-kpi-value pulse class is kept on KPI values
-   so the existing MutationObserver animation still fires.
-   ════════════════════════════════════════════════════════════ */
+        <style id="ckp-css">
+:root{
+  --ckp-bg:#f6f8fb;
+  --ckp-surface:#ffffff;
+  --ckp-surface-2:#f8fafc;
+  --ckp-line:#e2e8f0;
+  --ckp-line-2:#cbd5e1;
+  --ckp-text:#00284F;
+  --ckp-muted:#64748b;
+  --ckp-muted-2:#94a3b8;
+  --ckp-teal:#00C8C8;
+  --ckp-teal-dim:#0e7490;
+  --ckp-green:#059669;
+  --ckp-amber:#d97706;
+  --ckp-rose:#e11d48;
+  --ckp-violet:#7c3aed;
+  --ckp-navy:#00284F;
+}
 
-#screen-dashboard{
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--ckp-bg);
+  color:var(--ckp-text);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:14px;
+  -webkit-font-smoothing:auto;
+  overflow-x:hidden;
+}
+
+/* Ambient grid backdrop */
+.ckp-backdrop{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
   background:
-    radial-gradient(900px 320px at 110% -8%, rgba(0,200,200,.07), transparent 62%),
-    radial-gradient(700px 280px at -10% 108%, rgba(0,84,128,.06), transparent 60%),
-    #f6f9fc;
-  padding:22px 26px 50px;
-  animation:dcc3In .35s ease-out;
+    radial-gradient(900px 480px at 12% -10%, rgba(0,200,200,.10), transparent 60%),
+    radial-gradient(820px 420px at 95% 8%, rgba(0,40,79,.05), transparent 60%),
+    radial-gradient(700px 360px at 50% 110%, rgba(0,200,200,.06), transparent 60%),
+    linear-gradient(180deg,#f6f8fb 0%,#eef2f7 100%);
 }
-@keyframes dcc3In{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-@keyframes dcc3Rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.ckp-backdrop::after{
+  content:"";position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(100,116,139,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100,116,139,.05) 1px, transparent 1px);
+  background-size:48px 48px;
+  mask-image:radial-gradient(ellipse 80% 60% at 50% 40%, #000 30%, transparent 80%);
+}
 
-/* ── 1. Sticky command bar ── */
-.dcc3-cmdbar{
-  position:sticky;top:0;z-index:30;
-  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
-  background:rgba(255,255,255,.93);backdrop-filter:blur(10px);
-  -webkit-backdrop-filter:blur(10px);
-  border:1px solid #e2e8f0;border-radius:14px;
-  padding:10px 14px;margin-bottom:18px;
-  box-shadow:0 6px 22px rgba(2,12,27,.06);
-}
-.dcc3-cmdbar-left{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 auto}
-.dcc3-greet-ico{
-  width:38px;height:38px;border-radius:11px;flex:0 0 auto;
-  background:linear-gradient(135deg,#00284F,#013a66 55%,#00526e);
-  color:#7ee7e7;display:inline-flex;align-items:center;justify-content:center;
-  box-shadow:0 6px 16px -4px rgba(0,40,79,.4);
-}
-.dcc3-greet-ico svg{width:19px;height:19px}
-.dcc3-greet-text{min-width:0}
-.dcc3-greet-text .cc-eyebrow{margin:0 0 2px}
-.dcc3-greet-text h1{
-  margin:0;color:#0f172a;font-size:21px;font-weight:800;
-  letter-spacing:-.022em;line-height:1.12;
-}
-.dcc3-greet-text .cc-sub{margin:2px 0 0;font-size:12.5px;color:#64748b}
+.ckp-shell{position:relative;z-index:1;max-width:1760px;margin:0 auto;padding:18px 22px 60px}
 
-.dcc3-cmdbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.dcc3-quick{
-  display:inline-flex;align-items:center;gap:7px;
+/* ═══ 1. TOP BAR ═══ */
+.ckp-topbar{
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:14px 18px;margin-bottom:18px;
+  background:rgba(255,255,255,.82);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border:1px solid var(--ckp-line);
+  border-radius:16px;
+  box-shadow:0 4px 24px rgba(0,40,79,.06),inset 0 1px 0 rgba(255,255,255,.6);
+}
+.ckp-brand{display:flex;align-items:center;gap:12px;min-width:0}
+.ckp-logo{
+  width:42px;height:42px;border-radius:11px;flex:0 0 auto;
+  background:linear-gradient(135deg,#00284F,#00C8C8 60%,#67e8f9);
+  display:inline-flex;align-items:center;justify-content:center;
+  color:#062231;font-weight:900;font-size:18px;letter-spacing:-.04em;
+  box-shadow:0 8px 20px -4px rgba(0,40,79,.4),inset 0 1px 0 rgba(255,255,255,.3);
+}
+.ckp-brand-text{min-width:0}
+.ckp-brand-text .ckp-eyebrow{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ckp-teal);
+  margin:0 0 2px;
+}
+.ckp-brand-text .ckp-eyebrow::before{
+  content:"";width:14px;height:2px;border-radius:2px;background:var(--ckp-teal);
+}
+.ckp-brand-text h1{
+  margin:0;font-size:19px;font-weight:800;letter-spacing:-.02em;line-height:1.1;color:var(--ckp-navy);
+}
+.ckp-brand-text .ckp-sub{margin:1px 0 0;font-size:11.5px;color:var(--ckp-muted)}
+
+.ckp-topbar-spacer{flex:1 1 auto;min-width:8px}
+
+.ckp-chip{
+  display:inline-flex;align-items:center;gap:8px;
   height:38px;padding:0 14px;border-radius:10px;
-  background:#fff;border:1px solid rgba(15,23,42,.13);
-  font-size:12.5px;font-weight:600;color:#334155;cursor:pointer;
-  transition:transform .15s ease,border-color .15s ease,background .15s ease,color .15s ease,box-shadow .15s ease;
-  white-space:nowrap;
+  background:#fff;border:1px solid var(--ckp-line-2);
+  font-size:12.5px;font-weight:600;color:var(--ckp-text);
 }
-.dcc3-quick svg{width:14px;height:14px;color:#94a3b8;transition:color .15s}
-.dcc3-quick:hover{
-  border-color:rgba(0,200,200,.55);color:#00284f;background:#f0fbfb;
-  transform:translateY(-1px);box-shadow:0 8px 16px -6px rgba(0,200,200,.35);
+.ckp-chip svg{width:14px;height:14px;color:var(--ckp-teal)}
+
+.ckp-period{
+  display:inline-flex;align-items:center;gap:8px;height:38px;
+  padding:0 6px 0 14px;border-radius:10px;
+  background:linear-gradient(135deg,#00284F,#00526e);
+  border:1px solid rgba(0,200,200,.35);
+  box-shadow:0 4px 14px rgba(0,40,79,.2);
 }
-.dcc3-quick:hover svg{color:#00a8a8}
-.dcc3-quick--solid{
-  background:linear-gradient(135deg,#0b3a63,#00284F);color:#fff;
-  border-color:transparent;box-shadow:0 8px 16px -6px rgba(0,40,79,.5);
-}
-.dcc3-quick--solid svg{color:#7ee7e7}
-.dcc3-quick--solid:hover{
-  filter:brightness(1.1);color:#fff;
-  background:linear-gradient(135deg,#0e4575,#003158);
+.ckp-period-label{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.72)}
+.ckp-period select{
+  background:#fff;color:#0f172a;border:none;border-radius:7px;
+  padding:7px 28px 7px 10px;font-size:12.5px;font-weight:600;cursor:pointer;outline:none;
+  appearance:none;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23475569' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;
 }
 
-/* ── 2. Hero KPI band (3 large gradient cards) ── */
-.dcc3-herokpis{
-  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:14px;
+.ckp-quick{
+  display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 14px;
+  border-radius:10px;border:1px solid var(--ckp-line-2);
+  background:#fff;color:var(--ckp-text);
+  font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;
+  transition:all .15s ease;
 }
-.dcc3-herokpi{
+.ckp-quick svg{width:14px;height:14px;color:var(--ckp-muted);transition:color .15s}
+.ckp-quick:hover{border-color:var(--ckp-teal);background:rgba(0,200,200,.08);color:var(--ckp-navy);transform:translateY(-1px)}
+.ckp-quick:hover svg{color:var(--ckp-teal)}
+.ckp-quick--primary{
+  background:linear-gradient(135deg,#0ea5b9,#00C8C8);color:#062231;border-color:transparent;font-weight:700;
+  box-shadow:0 6px 16px -4px rgba(0,200,200,.45);
+}
+.ckp-quick--primary svg{color:#062231}
+.ckp-quick--primary:hover{filter:brightness(1.08);color:#062231}
+
+/* ═══ 2. KPI METER STRIP (vertical gauges) ═══ */
+.ckp-meters{
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:18px;
+}
+.ckp-meter{
   position:relative;overflow:hidden;
-  border-radius:18px;padding:22px 24px 20px;
-  background:linear-gradient(135deg,#00284F 0%,#013a66 55%,#00526e 100%);
-  color:#fff;
-  box-shadow:0 18px 40px -16px rgba(0,40,79,.45);
-  animation:dcc3Rise .45s ease both;animation-delay:calc(var(--i,0)*60ms + 40ms);
-  transition:transform .2s ease,box-shadow .2s ease;
+  background:#fff;
+  border:1px solid var(--ckp-line);border-radius:14px;
+  padding:16px 16px 14px;
+  box-shadow:0 1px 3px rgba(0,40,79,.04);
+  transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
 }
-.dcc3-herokpi:hover{transform:translateY(-3px);box-shadow:0 24px 50px -18px rgba(0,40,79,.55)}
-.dcc3-herokpi::before{
-  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
-  background:
-    radial-gradient(420px 180px at 90% -30%, rgba(0,229,229,.22), transparent 62%),
-    radial-gradient(360px 160px at -8% 130%, rgba(0,200,200,.14), transparent 58%);
+.ckp-meter:hover{transform:translateY(-2px);border-color:rgba(0,200,200,.4);box-shadow:0 12px 28px -14px rgba(0,40,79,.18)}
+.ckp-meter::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0;background:linear-gradient(90deg,var(--meter-accent,var(--ckp-teal)),transparent 70%);opacity:.85}
+.ckp-meter--cash{--meter-accent:#00C8C8}
+.ckp-meter--ar{--meter-accent:#0284c7}
+.ckp-meter--ap{--meter-accent:#d97706}
+.ckp-meter--np{--meter-accent:#059669}
+.ckp-meter--vat{--meter-accent:#7c3aed}
+.ckp-meter-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.ckp-meter-label{
+  font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ckp-muted);
 }
-.dcc3-herokpi > *{position:relative;z-index:1}
-.dcc3-herokpi--profit{background:linear-gradient(135deg,#064e3b 0%,#065f46 55%,#047857 100%)}
-.dcc3-herokpi--profit::before{
-  background:
-    radial-gradient(420px 180px at 90% -30%, rgba(110,231,183,.22), transparent 62%),
-    radial-gradient(360px 160px at -8% 130%, rgba(16,185,129,.14), transparent 58%);
-}
-.dcc3-herokpi--vat{background:linear-gradient(135deg,#312e81 0%,#3730a3 55%,#4338ca 100%)}
-.dcc3-herokpi--vat::before{
-  background:
-    radial-gradient(420px 180px at 90% -30%, rgba(167,139,250,.22), transparent 62%),
-    radial-gradient(360px 160px at -8% 130%, rgba(99,102,241,.14), transparent 58%);
-}
-.dcc3-herokpi-top{display:flex;align-items:center;gap:11px;margin-bottom:16px}
-.dcc3-herokpi-ico{
-  width:38px;height:38px;border-radius:11px;flex:0 0 auto;
-  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);
-  display:inline-flex;align-items:center;justify-content:center;color:#7ee7e7;
-}
-.dcc3-herokpi-ico svg{width:18px;height:18px}
-.dcc3-herokpi-label{
-  font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
-  color:rgba(255,255,255,.78);
-}
-.dcc3-herokpi-value{
-  font-size:34px;font-weight:800;letter-spacing:-.025em;line-height:1;color:#fff;
-  font-variant-numeric:tabular-nums;
-}
-.dcc3-herokpi-value.is-updated,
-#screen-dashboard .cc-kpi-value.is-updated{animation:kpiPulse .6s ease}
-.dcc3-herokpi-foot{
-  margin-top:11px;font-size:11.5px;color:rgba(255,255,255,.68);font-weight:500;
-  display:flex;align-items:center;gap:6px;
-}
-.dcc3-herokpi-foot::before{
-  content:"";width:5px;height:5px;border-radius:99px;background:rgba(0,229,229,.7);
-  box-shadow:0 0 8px rgba(0,229,229,.5);
-}
-.dcc3-herokpi-glyph{
-  position:absolute;right:-30px;bottom:-30px;
-  font-size:160px;line-height:1;font-weight:900;color:rgba(255,255,255,.04);
-  pointer-events:none;user-select:none;
-}
-
-/* ── 3. Working capital strip ── */
-.dcc3-wcstrip{
-  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px;
-}
-.dcc3-wc{
-  position:relative;background:#fff;border:1px solid #e2e8f0;border-radius:14px;
-  padding:15px 16px;display:flex;align-items:center;gap:14px;
-  box-shadow:0 1px 3px rgba(15,23,42,.05);
-  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
-  animation:dcc3Rise .45s ease both;animation-delay:calc(var(--i,0)*60ms + 220ms);
-}
-.dcc3-wc:hover{transform:translateY(-2px);border-color:rgba(0,200,200,.4);box-shadow:0 12px 26px -16px rgba(0,40,79,.3)}
-.dcc3-wc-ico{
-  width:40px;height:40px;border-radius:11px;flex:0 0 auto;
+.ckp-meter-ico{
+  width:24px;height:24px;border-radius:7px;flex:0 0 auto;
   display:inline-flex;align-items:center;justify-content:center;
 }
-.dcc3-wc-ico svg{width:18px;height:18px}
-.dcc3-wc--ar .dcc3-wc-ico{background:rgba(2,132,199,.12);color:#0369a1}
-.dcc3-wc--ap .dcc3-wc-ico{background:rgba(217,119,6,.12);color:#b45309}
-.dcc3-wc--net .dcc3-wc-ico{background:rgba(0,200,200,.14);color:#0e7490}
-.dcc3-wc-body{min-width:0;flex:1 1 auto}
-.dcc3-wc-label{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#64748b;margin-bottom:4px}
-.dcc3-wc-val{font-size:19px;font-weight:800;color:#0f172a;font-variant-numeric:tabular-nums;letter-spacing:-.015em}
-.dcc3-wc--net .dcc3-wc-val{color:#0e7490}
-.dcc3-wc-foot{font-size:10.5px;color:#94a3b8;margin-top:2px}
+.ckp-meter-ico svg{width:13px;height:13px}
+.ckp-meter--cash .ckp-meter-ico{background:rgba(34,211,238,.16);color:var(--ckp-teal)}
+.ckp-meter--ar   .ckp-meter-ico{background:rgba(56,189,248,.16);color:#38bdf8}
+.ckp-meter--ap   .ckp-meter-ico{background:rgba(251,191,36,.16);color:var(--ckp-amber)}
+.ckp-meter--np   .ckp-meter-ico{background:rgba(52,211,153,.16);color:var(--ckp-green)}
+.ckp-meter--vat  .ckp-meter-ico{background:rgba(167,139,250,.16);color:var(--ckp-violet)}
 
-/* ── 4. Main grid (trends + right rail) ── */
-.dcc3-main{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:14px;margin-bottom:20px}
-.dcc3-rail{display:flex;flex-direction:column;gap:14px;min-width:0}
-
-/* ── 5. Statements mini-row ── */
-.dcc3-stmts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.dcc3-minitile{
-  background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;
-  box-shadow:0 1px 3px rgba(15,23,42,.05);
-  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+.ckp-meter-value{
+  font-size:24px;font-weight:800;letter-spacing:-.025em;line-height:1;color:var(--ckp-navy);
+  font-variant-numeric:tabular-nums;
 }
-.dcc3-minitile:hover{transform:translateY(-2px);border-color:rgba(0,200,200,.35);box-shadow:0 12px 28px -18px rgba(0,40,79,.3)}
-.dcc3-minitile .cc-mini-head{padding:10px 14px;background:#f8fafc;border-bottom:1px solid #eef2f6;display:flex;align-items:center;gap:6px}
-.dcc3-minitile .cc-mini-head svg{color:#00a8a8}
-.dcc3-minitile .cc-mini-body{padding:12px 14px;font-size:12px;color:#64748b;min-height:80px;line-height:1.5}
+.ckp-meter-value.is-updated,
+#screen-dashboard .cc-kpi-value.is-updated{animation:ckpPulse .6s ease}
+@keyframes ckpPulse{0%{opacity:.4;transform:translateY(3px)}100%{opacity:1;transform:translateY(0)}}
 
-/* ── 6. Quick action grid (in work queue card) ── */
-.dcc3-actiongrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-
-/* ── 7. Insights panel ── */
-.dcc3-insights{
-  background:linear-gradient(180deg,#fff,#fbfdfe);
-  border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;
+/* the vertical gauge bar (NEW — wasn't in v1) */
+.ckp-gauge{
+  position:relative;height:6px;border-radius:99px;
+  background:rgba(100,116,139,.15);overflow:hidden;margin-top:12px;
 }
-.dcc3-insights .cc-insights li{padding:6px 0 6px 18px}
+.ckp-gauge i{
+  position:absolute;left:0;top:0;bottom:0;border-radius:99px;
+  transition:width 1s cubic-bezier(.22,1,.36,1);
+}
+.ckp-meter--cash .ckp-gauge i{background:linear-gradient(90deg,#0ea5b9,#00C8C8)}
+.ckp-meter--ar   .ckp-gauge i{background:linear-gradient(90deg,#0369a1,#38bdf8)}
+.ckp-meter--ap   .ckp-gauge i{background:linear-gradient(90deg,#d97706,#fbbf24)}
+.ckp-meter--np   .ckp-gauge i{background:linear-gradient(90deg,#059669,#34d399)}
+.ckp-meter--vat  .ckp-gauge i{background:linear-gradient(90deg,#7c3aed,#a78bfa)}
 
-/* ── 8. Operations + Compliance rows ── */
-.dcc3-row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:20px}
-.dcc3-row3:last-child{margin-bottom:0}
+.ckp-meter-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:6px;
+  margin-top:8px;font-size:10.5px;color:var(--ckp-muted-2);
+}
+.ckp-trend{
+  display:inline-flex;align-items:center;gap:3px;font-weight:700;
+  padding:2px 6px;border-radius:5px;font-size:10px;
+}
+.ckp-trend--up{background:rgba(5,150,105,.12);color:var(--ckp-green)}
+.ckp-trend--down{background:rgba(225,29,72,.10);color:var(--ckp-rose)}
+.ckp-trend--flat{background:rgba(100,116,139,.12);color:var(--ckp-muted)}
 
-/* ── 9. Card accent refinement ── */
-#screen-dashboard .cc-card::before{
-  background:linear-gradient(90deg,var(--fs-teal),rgba(0,200,200,0) 70%);
+/* ═══ 3. MAIN GRID: command rail + hero + right column ═══ */
+.ckp-main{
+  display:grid;
+  grid-template-columns:200px minmax(0,1fr) 360px;
+  gap:16px;margin-bottom:18px;align-items:start;
 }
 
-/* Action Required tinted border */
-#screen-dashboard .dcc3-action-card{border-left:3px solid #f59e0b}
+/* ── Left command rail ── */
+.ckp-rail{
+  background:#fff;
+  border:1px solid var(--ckp-line);border-radius:14px;padding:14px;
+  position:sticky;top:18px;
+  box-shadow:0 1px 3px rgba(0,40,79,.04);
+}
+.ckp-rail-title{
+  font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ckp-muted);
+  margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid var(--ckp-line);
+}
+.ckp-rail-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.ckp-rail-list button{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  padding:9px 10px;border-radius:9px;border:1px solid transparent;background:transparent;
+  color:var(--ckp-text);font-size:12.5px;font-weight:600;cursor:pointer;
+  transition:all .14s ease;
+}
+.ckp-rail-list button:hover{background:rgba(0,200,200,.08);border-color:rgba(0,200,200,.3);transform:translateX(2px);color:var(--ckp-navy)}
+.ckp-rail-list .ckp-rail-ico{
+  width:26px;height:26px;border-radius:7px;flex:0 0 auto;
+  background:#f8fafc;color:var(--ckp-muted);
+  display:inline-flex;align-items:center;justify-content:center;
+  transition:all .14s;
+}
+.ckp-rail-list .ckp-rail-ico svg{width:13px;height:13px}
+.ckp-rail-list button:hover .ckp-rail-ico{background:rgba(0,200,200,.16);color:var(--ckp-teal)}
+.ckp-rail-list .ckp-rail-arrow{margin-left:auto;color:var(--ckp-muted-2);font-size:11px}
 
-/* ── 10. Responsive ── */
-@media (max-width:1279px){
-  .dcc3-herokpis{grid-template-columns:1fr}
-  .dcc3-herokpi{padding:18px 20px}
-  .dcc3-herokpi-value{font-size:28px}
-  .dcc3-main{grid-template-columns:1fr}
-  .dcc3-stmts{grid-template-columns:1fr}
-  .dcc3-row3,.dcc3-wcstrip{grid-template-columns:1fr}
+.ckp-rail-divider{height:1px;background:var(--ckp-line);margin:12px -14px}
+
+/* ── Hero center ── */
+.ckp-hero{
+  background:#fff;
+  border:1px solid var(--ckp-line);border-radius:14px;
+  overflow:hidden;
+  box-shadow:0 1px 3px rgba(0,40,79,.04);
 }
-@media (max-width:768px){
-  #screen-dashboard{padding:16px 14px 36px}
-  .dcc3-cmdbar{flex-direction:column;align-items:stretch;padding:12px}
-  .dcc3-cmdbar-left{flex-direction:row;align-items:center;gap:10px}
-  .dcc3-greet-text h1{font-size:18px}
-  .dcc3-cmdbar-right{width:100%}
-  .dcc3-quick{flex:1 1 auto;justify-content:center}
-  .dcc3-actiongrid{grid-template-columns:1fr}
-  .dcc3-herokpi-value{font-size:24px}
-  .dcc3-wc-val{font-size:17px}
+.ckp-hero-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  padding:14px 16px;border-bottom:1px solid var(--ckp-line);
 }
+.ckp-hero-title{display:flex;align-items:center;gap:10px;min-width:0}
+.ckp-hero-ico{
+  width:34px;height:34px;border-radius:9px;flex:0 0 auto;
+  background:linear-gradient(135deg,rgba(0,200,200,.14),rgba(0,40,79,.06));
+  color:var(--ckp-navy);display:inline-flex;align-items:center;justify-content:center;
+}
+.ckp-hero-ico svg{width:16px;height:16px}
+.ckp-hero-title h3{margin:0;font-size:15px;font-weight:700;color:var(--ckp-navy);letter-spacing:-.01em}
+.ckp-hero-title p{margin:1px 0 0;font-size:11.5px;color:var(--ckp-muted)}
+
+.ckp-seg{
+  display:inline-flex;gap:2px;padding:3px;border-radius:9px;
+  background:#f1f5f9;border:1px solid var(--ckp-line);
+}
+.ckp-seg button{
+  padding:6px 11px;border-radius:6px;border:none;background:transparent;
+  font-size:11.5px;font-weight:600;color:var(--ckp-muted);cursor:pointer;
+  transition:all .14s ease;white-space:nowrap;
+}
+.ckp-seg button:hover{color:var(--ckp-navy);background:rgba(255,255,255,.85)}
+.ckp-seg button.active{background:linear-gradient(135deg,#00284F,#00C8C8);color:#fff;box-shadow:0 3px 10px -2px rgba(0,200,200,.4)}
+
+.ckp-hero-progress{
+  height:3px;background:rgba(100,116,139,.12);overflow:hidden;
+}
+.ckp-hero-progress i{
+  display:block;height:100%;width:0%;
+  background:linear-gradient(90deg,#00C8C8,#7c3aed);
+  transition:width 1.2s cubic-bezier(.22,1,.36,1);
+  box-shadow:0 0 10px rgba(0,200,200,.3);
+}
+
+.ckp-chart-wrap{
+  padding:14px 16px;height:340px;position:relative;
+}
+.ckp-chart-wrap canvas{max-height:100%}
+
+.ckp-carousel-dots{display:flex;justify-content:center;gap:6px;padding:0 16px 12px}
+.ckp-carousel-dots button{
+  width:18px;height:4px;border-radius:99px;border:none;cursor:pointer;
+  background:rgba(100,116,139,.25);transition:all .2s ease;
+}
+.ckp-carousel-dots button.active{background:var(--ckp-teal);width:28px}
+
+/* ── Right column: action items ── */
+.ckp-side{display:flex;flex-direction:column;gap:16px}
+
+.ckp-card{
+  background:#fff;
+  border:1px solid var(--ckp-line);border-radius:14px;
+  overflow:hidden;
+  box-shadow:0 1px 3px rgba(0,40,79,.04);
+}
+.ckp-card-head{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 14px;border-bottom:1px solid var(--ckp-line);
+}
+.ckp-card-head h4{margin:0;font-size:13px;font-weight:700;color:var(--ckp-navy);letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.ckp-card-head .ckp-pill{
+  font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;
+  background:rgba(217,119,6,.12);color:var(--ckp-amber);border:1px solid rgba(217,119,6,.3);
+}
+.ckp-card-head .ckp-pill--ok{background:rgba(5,150,105,.12);color:var(--ckp-green);border-color:rgba(5,150,105,.3)}
+.ckp-card-body{padding:12px 14px}
+
+/* Action list (preserved #actionsList) */
+.ckp-actions{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ckp-actions li{
+  display:flex;align-items:flex-start;gap:9px;
+  padding:9px 10px;border-radius:9px;
+  background:#f8fafc;border:1px solid var(--ckp-line);
+  border-left:3px solid;font-size:12px;line-height:1.4;color:var(--ckp-text);
+  transition:all .14s ease;
+}
+.ckp-actions li:hover{background:rgba(0,200,200,.06);transform:translateX(2px);border-color:rgba(0,200,200,.3)}
+.ckp-actions li.ckp-sev--red{border-left-color:var(--ckp-rose)}
+.ckp-actions li.ckp-sev--amber{border-left-color:var(--ckp-amber)}
+.ckp-actions li.ckp-sev--blue{border-left-color:#38bdf8}
+.ckp-actions li.ckp-sev--green{border-left-color:var(--ckp-green)}
+.ckp-actions li::before{
+  content:"";width:6px;height:6px;border-radius:50%;background:currentColor;
+  flex:0 0 auto;margin-top:6px;
+}
+
+/* ═══ 4. WORK QUEUE + REPORTS GRID ═══ */
+.ckp-grid-2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;margin-bottom:18px}
+
+.ckp-wq{display:flex;flex-direction:column;gap:8px}
+.ckp-wq-item{
+  display:flex;align-items:center;gap:12px;
+  padding:11px 12px;border-radius:11px;
+  background:#f8fafc;border:1px solid var(--ckp-line);
+  border-left:3px solid;font-size:12.5px;color:var(--ckp-text);
+  cursor:pointer;transition:all .14s ease;width:100%;text-align:left;
+}
+.ckp-wq-item:hover{background:rgba(0,200,200,.06);border-color:rgba(0,200,200,.3);transform:translateX(2px)}
+.ckp-wq-item.ckp-tone--amber{border-left-color:var(--ckp-amber)}
+.ckp-wq-item.ckp-tone--info{border-left-color:#38bdf8}
+.ckp-wq-item.ckp-tone--red{border-left-color:var(--ckp-rose)}
+.ckp-wq-item.ckp-tone--green{border-left-color:var(--ckp-green)}
+.ckp-wq-ico{
+  width:32px;height:32px;border-radius:8px;flex:0 0 auto;
+  background:#fff;border:1px solid var(--ckp-line);display:inline-flex;align-items:center;justify-content:center;font-size:15px;
+}
+.ckp-wq-text{flex:1 1 auto;min-width:0}
+.ckp-wq-text strong{display:block;font-weight:700;color:var(--ckp-navy);font-size:12.5px}
+.ckp-wq-text span{display:block;color:var(--ckp-muted);font-size:10.5px;margin-top:1px}
+.ckp-wq-meta{text-align:right;flex:0 0 auto}
+.ckp-wq-meta strong{display:block;font-weight:800;color:var(--ckp-navy);font-size:13px;font-variant-numeric:tabular-nums}
+.ckp-wq-meta span{display:block;color:var(--ckp-muted);font-size:10px;margin-top:1px}
+
+.ckp-quick-actions{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--ckp-line)}
+.ckp-quick-actions button{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:9px;border-radius:9px;border:1px solid var(--ckp-line-2);
+  background:#fff;color:var(--ckp-text);
+  font-size:11.5px;font-weight:600;cursor:pointer;transition:all .14s ease;
+}
+.ckp-quick-actions button:hover{border-color:var(--ckp-teal);background:rgba(0,200,200,.08);color:var(--ckp-navy);transform:translateY(-1px)}
+.ckp-quick-actions button svg{width:13px;height:13px;color:var(--ckp-teal)}
+
+/* Mini statements (preserved #pnlMini/#bsMini/#cfMini) */
+.ckp-stmts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.ckp-stmt{
+  background:#f8fafc;border:1px solid var(--ckp-line);border-radius:10px;
+  overflow:hidden;
+}
+.ckp-stmt-head{
+  display:flex;align-items:center;gap:6px;
+  padding:8px 10px;background:#f1f5f9;border-bottom:1px solid var(--ckp-line);
+  font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ckp-muted);
+}
+.ckp-stmt-head svg{width:11px;height:11px;color:var(--ckp-teal)}
+.ckp-stmt-body{padding:10px;font-size:11.5px;color:var(--ckp-muted);line-height:1.5;min-height:90px}
+.ckp-stmt-body .flex{display:flex;justify-content:space-between;gap:8px;padding:3px 0}
+.ckp-stmt-body strong{color:var(--ckp-navy);font-variant-numeric:tabular-nums}
+.ckp-stmt-body .text-emerald-600{color:var(--ckp-green) !important}
+.ckp-stmt-body .text-red-600{color:var(--ckp-rose) !important}
+.ckp-stmt-body .text-amber-700{color:var(--ckp-amber) !important}
+
+/* Insights (preserved #insights) */
+.ckp-insights{
+  background:linear-gradient(135deg,rgba(0,200,200,.06),rgba(0,40,79,.03));
+  border:1px solid var(--ckp-line-2);border-radius:10px;padding:11px 12px;margin-top:12px;
+}
+.ckp-insights-head{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.ckp-insights-head svg{width:11px;height:11px;color:var(--ckp-teal)}
+.ckp-insights-head span{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ckp-muted)}
+.ckp-insights ul{list-style:none;margin:0;padding:0}
+.ckp-insights li{
+  position:relative;padding:5px 0 5px 14px;font-size:11.5px;color:var(--ckp-text);line-height:1.45;
+  border-bottom:1px dashed rgba(126,143,171,.18);
+}
+.ckp-insights li:last-child{border-bottom:none}
+.ckp-insights li::before{
+  content:"";position:absolute;left:0;top:11px;width:5px;height:5px;border-radius:50%;
+  background:linear-gradient(135deg,#00C8C8,#7c3aed);
+}
+.ckp-insights strong{color:var(--ckp-teal);font-weight:700}
+
+/* ═══ 5. STATUS GRID (3x2 — month-end / assets / inventory / tax / setup / health) ═══ */
+.ckp-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+
+/* KV rows (preserved IDs) */
+.ckp-kv{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:7px 0;border-bottom:1px dashed rgba(100,116,139,.18);font-size:12px;color:var(--ckp-muted)}
+.ckp-kv:last-child{border-bottom:none}
+.ckp-kv-val{color:var(--ckp-navy);font-weight:700;font-variant-numeric:tabular-nums}
+.ckp-kv-val.ckp-pos{color:var(--ckp-green)}
+.ckp-kv-val.ckp-neg{color:var(--ckp-rose)}
+.ckp-kv-val.ckp-warn{color:var(--ckp-amber)}
+
+/* progress bar (preserved #closeProgress) */
+.ckp-progress{height:6px;border-radius:99px;background:rgba(100,116,139,.15);overflow:hidden;margin-bottom:10px}
+.ckp-progress i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#0ea5b9,#00C8C8);box-shadow:0 0 8px rgba(0,200,200,.3);transition:width 1s ease}
+
+/* checklist (preserved #closeChecklist/#setupChecklist) */
+.ckp-checklist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.ckp-checklist li{font-size:12px;color:var(--ckp-text);padding:5px 0 5px 4px;display:flex;align-items:center;gap:8px}
+.ckp-checklist li::before{content:"";width:14px;height:14px;border-radius:4px;flex:0 0 auto;border:1.5px solid var(--ckp-muted);background:#fff}
+.ckp-checklist li.done{color:var(--ckp-green)}
+.ckp-checklist li.done::before{content:"✓";display:inline-flex;align-items:center;justify-content:center;background:var(--ckp-green);border-color:var(--ckp-green);color:#062231;font-size:10px;font-weight:900}
+
+/* aging mini-tables (preserved #agingAR/#agingAP) */
+.ckp-aging{display:flex;flex-direction:column;gap:3px}
+.ckp-aging > div{display:flex;justify-content:space-between;font-size:11px;color:var(--ckp-muted);padding:3px 0}
+.ckp-aging > div span:last-child{color:var(--ckp-navy);font-variant-numeric:tabular-nums}
+.ckp-aging .text-amber-700{color:var(--ckp-amber) !important}
+.ckp-aging .text-red-700{color:var(--ckp-rose) !important}
+.ckp-aging .text-red-700.font-semibold{color:var(--ckp-rose) !important;font-weight:700}
+
+/* Tax card body (preserved #taxComplianceCard) */
+.ckp-card-body .flex{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ckp-card-body .border-b{border-bottom:1px solid var(--ckp-line)}
+.ckp-card-body .py-1\.5{padding:6px 0}
+.ckp-card-body .text-slate-600{color:var(--ckp-muted) !important}
+.ckp-card-body .text-amber-700{color:var(--ckp-amber) !important}
+.ckp-card-body .text-emerald-600{color:var(--ckp-green) !important}
+.ckp-card-body .pill{font-size:10px;padding:2px 8px;border-radius:99px;background:rgba(251,191,36,.14);color:var(--ckp-amber);border:1px solid rgba(251,191,36,.3)}
+
+/* ═══ 6. DEMO BANNER ═══ */
+.ckp-demo-banner{
+  background:linear-gradient(90deg,#00284F,#00C8C8 50%,#7c3aed);
+  color:#fff;font-size:12px;font-weight:700;padding:8px 16px;text-align:center;letter-spacing:.02em;
+}
+
+/* click feedback for nav buttons in demo */
+[data-nav],[data-action],[data-workqueue-screen]{cursor:pointer}
+
+/* ═══ 7. RESPONSIVE ═══ */
+@media (max-width:1280px){
+  .ckp-main{grid-template-columns:1fr}
+  .ckp-rail{position:static}
+  .ckp-rail-list{flex-direction:row;flex-wrap:wrap}
+  .ckp-rail-list button{flex:1 1 auto;min-width:140px}
+  .ckp-rail-list .ckp-rail-arrow{display:none}
+  .ckp-rail-divider{display:none}
+  .ckp-grid-2{grid-template-columns:1fr}
+  .ckp-grid-3{grid-template-columns:1fr 1fr}
+}
+@media (max-width:900px){
+  .ckp-meters{grid-template-columns:repeat(2,1fr)}
+  .ckp-stmts{grid-template-columns:1fr}
+  .ckp-grid-3{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  .ckp-shell{padding:12px}
+  .ckp-topbar{flex-direction:column;align-items:stretch}
+  .ckp-topbar-spacer{display:none}
+  .ckp-period,.ckp-quick{width:100%;justify-content:center}
+  .ckp-meters{grid-template-columns:1fr}
+  .ckp-quick-actions{grid-template-columns:1fr}
+}
+
 @media (prefers-reduced-motion:reduce){
-  #screen-dashboard *,#screen-dashboard *::before,#screen-dashboard *::after{
-    animation:none !important;transition:none !important;
-  }
+  *,*::before,*::after{animation:none !important;transition:none !important}
 }
 </style>
 
 <section id="screen-dashboard" class="screen active">
 
-          <div class="cc-glow" aria-hidden="true"></div>
+  <!-- ═══ TOP BAR ═══ -->
+  <div class="ckp-topbar">
+    <div class="ckp-brand">
+      <div class="ckp-logo">F</div>
+      <div class="ckp-brand-text">
+        <div class="ckp-eyebrow">Command Center · Cockpit v2</div>
+        <h1>Financial Overview</h1>
+        <p class="ckp-sub">Live position across cash, working capital, performance and compliance.</p>
+      </div>
+    </div>
 
-          <!-- ═══ Sticky command bar ═══ -->
-          <div class="dcc3-cmdbar">
-            <div class="dcc3-cmdbar-left">
-              <div class="dcc3-greet-ico" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-              </div>
-              <div class="dcc3-greet-text">
-                <div class="cc-eyebrow">Command Center</div>
-                <h1 class="dcc3-h1">Financial Overview</h1>
-                <p class="cc-sub">Live position across cash, working capital, performance and compliance.</p>
-              </div>
-            </div>
+    <div class="ckp-topbar-spacer"></div>
 
-            <div class="dcc3-cmdbar-right">
-              <div class="cc-datechip" id="ccDateChip" title="Today">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M3 10h18"/></svg>
-                <span id="ccDateText">—</span>
-              </div>
+    <div class="ckp-chip" id="ccDateChip" title="Today">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M3 10h18"/></svg>
+      <span id="ccDateText">—</span>
+    </div>
 
-              <div class="uf uf--dash" id="fsPeriodUf">
-                <div class="uf-field">
-                  <span class="uf-cap">Period</span>
-                  <select id="fsPeriodFilter">
-                    <option value="this_month">This month</option>
-                    <option value="prev_month">Previous month</option>
-                    <option value="this_quarter">This quarter</option>
-                    <option value="prev_quarter">Previous quarter</option>
-                    <option value="last_2_quarters">Last 2 quarters</option>
-                    <option value="ytd">Financial year to date</option>
-                    <option value="this_year">This financial year</option>
-                    <option value="prev_year">Previous financial year</option>
-                    <option value="custom">Custom period range</option>
-                  </select>
-                </div>
+    <div class="uf uf--dash" id="fsPeriodUf" style="display:contents">
+      <div class="ckp-period">
+        <span class="ckp-period-label">Period</span>
+        <select id="fsPeriodFilter">
+          <option value="this_month">This month</option>
+          <option value="prev_month">Previous month</option>
+          <option value="this_quarter">This quarter</option>
+          <option value="prev_quarter">Previous quarter</option>
+          <option value="last_2_quarters">Last 2 quarters</option>
+          <option value="ytd">Financial year to date</option>
+          <option value="this_year">This financial year</option>
+          <option value="prev_year">Previous financial year</option>
+          <option value="custom">Custom period range</option>
+        </select>
+      </div>
 
-                <div class="uf-custom uf-hidden" id="fsCustomRange">
-                  <input id="fsFromDate" type="date" class="uf-date" aria-label="From date" />
-                  <span class="uf-to">to</span>
-                  <input id="fsToDate" type="date" class="uf-date" aria-label="To date" />
-                </div>
+      <div class="uf-custom uf-hidden" id="fsCustomRange" style="display:none">
+        <input id="fsFromDate" type="date" aria-label="From date" />
+        <input id="fsToDate" type="date" aria-label="To date" />
+      </div>
 
-                <span class="uf-label" id="ccPeriodLabel" title="Active period">—</span>
-              </div>
+      <span class="ckp-chip" id="ccPeriodLabel" title="Active period">—</span>
+    </div>
 
-              <button data-nav="journal" type="button" class="dcc3-quick">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                Journal
-              </button>
-              <button data-nav="ar" type="button" class="dcc3-quick">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                Invoice
-              </button>
-              <button data-nav="ap" type="button" class="dcc3-quick dcc3-quick--solid">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-                Enter Bill
-              </button>
-            </div>
+    <button type="button" class="ckp-quick" data-nav="journal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+      Journal
+    </button>
+    <button type="button" class="ckp-quick" data-nav="ar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+      Invoice
+    </button>
+    <button type="button" class="ckp-quick ckp-quick--primary" data-nav="ap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+      Enter Bill
+    </button>
+  </div>
+
+  <!-- ═══ KPI METER STRIP ═══ -->
+  <div class="ckp-meters">
+
+    <div class="ckp-meter ckp-meter--cash">
+      <div class="ckp-meter-top">
+        <span class="ckp-meter-label">Cash on Hand</span>
+        <span class="ckp-meter-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg></span>
+      </div>
+      <div id="kpiCash" class="cc-kpi-value ckp-meter-value">USD 0.00</div>
+      <div class="ckp-gauge"><i style="width:0%"></i></div>
+      <div class="ckp-meter-foot">
+        <span>All bank &amp; cash</span>
+        <span class="ckp-trend ckp-trend--up">▲ 8.4%</span>
+      </div>
+    </div>
+
+    <div class="ckp-meter ckp-meter--ar">
+      <div class="ckp-meter-top">
+        <span class="ckp-meter-label">AR Outstanding</span>
+        <span class="ckp-meter-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
+      </div>
+      <div id="kpiAR" class="cc-kpi-value ckp-meter-value">USD 0.00</div>
+      <div class="ckp-gauge"><i style="width:0%"></i></div>
+      <div class="ckp-meter-foot">
+        <span>Customer balances</span>
+        <span class="ckp-trend ckp-trend--down">▼ 3.1%</span>
+      </div>
+    </div>
+
+    <div class="ckp-meter ckp-meter--ap">
+      <div class="ckp-meter-top">
+        <span class="ckp-meter-label">AP Outstanding</span>
+        <span class="ckp-meter-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></span>
+      </div>
+      <div id="kpiAP" class="cc-kpi-value ckp-meter-value">USD 0.00</div>
+      <div class="ckp-gauge"><i style="width:0%"></i></div>
+      <div class="ckp-meter-foot">
+        <span>Supplier balances</span>
+        <span class="ckp-trend ckp-trend--flat">— 0.5%</span>
+      </div>
+    </div>
+
+    <div class="ckp-meter ckp-meter--np">
+      <div class="ckp-meter-top">
+        <span class="ckp-meter-label">Net Profit</span>
+        <span class="ckp-meter-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>
+      </div>
+      <div id="kpiNP" class="cc-kpi-value ckp-meter-value">USD 0.00</div>
+      <div class="ckp-gauge"><i style="width:0%"></i></div>
+      <div class="ckp-meter-foot">
+        <span>Revenue − expenses</span>
+        <span class="ckp-trend ckp-trend--up">▲ 14.2%</span>
+      </div>
+    </div>
+
+    <div class="ckp-meter ckp-meter--vat">
+      <div class="ckp-meter-top">
+        <span class="ckp-meter-label">VAT Position</span>
+        <span class="ckp-meter-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><circle cx="9.5" cy="9.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="14.5" cy="14.5" r="1.2" fill="currentColor" stroke="none"/></svg></span>
+      </div>
+      <div id="kpiVAT" class="cc-kpi-value ckp-meter-value">USD 0.00</div>
+      <div class="ckp-gauge"><i style="width:0%"></i></div>
+      <div class="ckp-meter-foot">
+        <span>Refund due</span>
+        <span class="ckp-trend ckp-trend--up">▲ refund</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ MAIN: command rail + hero + side ═══ -->
+  <div class="ckp-main">
+
+    <!-- Left command rail -->
+    <aside class="ckp-rail">
+      <div class="ckp-rail-title">Navigate</div>
+      <ul class="ckp-rail-list">
+        <li><button data-nav="coa">
+          <span class="ckp-rail-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>
+          <span>Chart of Accounts</span>
+          <span class="ckp-rail-arrow">›</span>
+        </button></li>
+        <li><button data-nav="ledger">
+          <span class="ckp-rail-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></span>
+          <span>General Ledger</span>
+          <span class="ckp-rail-arrow">›</span>
+        </button></li>
+        <li><button data-nav="trial">
+          <span class="ckp-rail-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/></svg></span>
+          <span>Trial Balance</span>
+          <span class="ckp-rail-arrow">›</span>
+        </button></li>
+        <li><button data-nav="company">
+          <span class="ckp-rail-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg></span>
+          <span>Company &amp; Setup</span>
+          <span class="ckp-rail-arrow">›</span>
+        </button></li>
+        <li><button data-nav="fixedassets">
+          <span class="ckp-rail-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M10 6h4"/><path d="M10 10h4"/></svg></span>
+          <span>Fixed Assets</span>
+          <span class="ckp-rail-arrow">›</span>
+        </button></li>
+        <li><button data-nav="inventory">
+          <span class="ckp-rail-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg></span>
+          <span>Inventory</span>
+          <span class="ckp-rail-arrow">›</span>
+        </button></li>
+      </ul>
+
+      <div class="ckp-rail-divider"></div>
+
+      <div class="ckp-rail-title">Aging</div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ckp-muted-2);margin-bottom:6px">Receivables</div>
+      <div id="agingAR" class="ckp-aging">
+        <div><span>Current</span><span>$0</span></div>
+      </div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ckp-muted-2);margin:12px 0 6px">Payables</div>
+      <div id="agingAP" class="ckp-aging">
+        <div><span>Current</span><span>$0</span></div>
+      </div>
+    </aside>
+
+    <!-- Hero chart -->
+    <div class="ckp-hero">
+      <div class="ckp-hero-head">
+        <div class="ckp-hero-title">
+          <span class="ckp-hero-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg></span>
+          <div>
+            <h3 id="analysisChartTitle">Analysis Trends</h3>
+            <p id="analysisChartSubtitle">Cash trend for selected period</p>
+          </div>
+        </div>
+
+        <div id="analysisWidgetTabs" class="ckp-seg">
+          <button type="button" data-analysis-view="cash" class="active">Cash</button>
+          <button type="button" data-analysis-view="revexp">Rev vs Exp</button>
+          <button type="button" data-analysis-view="profit">Profit</button>
+          <button type="button" data-analysis-view="margin">Margin</button>
+          <button type="button" data-analysis-view="analysis">Analysis</button>
+        </div>
+      </div>
+
+      <div class="ckp-hero-progress">
+        <div id="analysisProgress" style="width:0%;height:100%;background:linear-gradient(90deg,var(--ckp-teal),var(--ckp-violet));transition:width 1.2s ease"></div>
+      </div>
+
+      <div id="analysisChartWrap" class="ckp-chart-wrap">
+        <canvas id="cashChart"></canvas>
+      </div>
+
+      <div id="analysisCarouselDots" class="ckp-carousel-dots">
+        <button class="active"></button><button></button><button></button><button></button>
+      </div>
+
+      <div id="analysisTextPanel" class="hidden" style="padding:0 16px 14px;font-size:12px;color:var(--ckp-muted)"></div>
+    </div>
+
+    <!-- Right side: Action Required + Work Queue summary -->
+    <div class="ckp-side">
+
+      <div class="ckp-card">
+        <div class="ckp-card-head">
+          <h4>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            Action Required
+          </h4>
+          <span class="ckp-pill">3 urgent</span>
+        </div>
+        <div class="ckp-card-body">
+          <ul id="actionsList" class="ckp-actions">
+            <li class="ckp-sev--red">No pending tasks.</li>
+            <li class="ckp-sev--blue">Completed actions will appear here.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="ckp-card">
+        <div class="ckp-card-head">
+          <h4>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>
+            Work Queue
+          </h4>
+          <span class="ckp-pill ckp-pill--ok">5 items</span>
+        </div>
+        <div class="ckp-card-body">
+          <div id="cc-workqueue" class="ckp-wq">
+            <div style="font-size:11px;color:var(--ckp-muted)">Loading accounting checks...</div>
           </div>
 
-          <!-- ═══ Hero KPI band ═══ -->
-          <div class="dcc3-herokpis">
-
-            <div class="dcc3-herokpi" style="--i:0">
-              <span class="dcc3-herokpi-glyph">$</span>
-              <div class="dcc3-herokpi-top">
-                <span class="dcc3-herokpi-ico">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
-                </span>
-                <span class="dcc3-herokpi-label">Cash on Hand</span>
-              </div>
-              <div id="kpiCash" class="cc-kpi-value dcc3-herokpi-value">USD 0.00</div>
-              <div class="dcc3-herokpi-foot">All bank &amp; cash accounts</div>
-            </div>
-
-            <div class="dcc3-herokpi dcc3-herokpi--profit" style="--i:1">
-              <span class="dcc3-herokpi-glyph">↑</span>
-              <div class="dcc3-herokpi-top">
-                <span class="dcc3-herokpi-ico">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
-                </span>
-                <span class="dcc3-herokpi-label">Net Profit</span>
-              </div>
-              <div id="kpiNP" class="cc-kpi-value dcc3-herokpi-value">USD 0.00</div>
-              <div class="dcc3-herokpi-foot">Revenue less expenses</div>
-            </div>
-
-            <div class="dcc3-herokpi dcc3-herokpi--vat" style="--i:2">
-              <span class="dcc3-herokpi-glyph">%</span>
-              <div class="dcc3-herokpi-top">
-                <span class="dcc3-herokpi-ico">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><circle cx="9.5" cy="9.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="14.5" cy="14.5" r="1.2" fill="currentColor" stroke="none"/></svg>
-                </span>
-                <span class="dcc3-herokpi-label">VAT Position</span>
-              </div>
-              <div id="kpiVAT" class="cc-kpi-value dcc3-herokpi-value">USD 0.00</div>
-              <div class="dcc3-herokpi-foot">Net VAT for current period</div>
-            </div>
+          <div class="ckp-quick-actions">
+            <button data-nav="ar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              New Invoice
+            </button>
+            <button data-nav="ap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+              Enter Bill
+            </button>
+            <button data-nav="journal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+              Journal
+            </button>
+            <button data-action="recordTransfer">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
+              Transfer
+            </button>
           </div>
+        </div>
+      </div>
 
-          <!-- ═══ Working capital strip ═══ -->
-          <div class="dcc3-wcstrip">
-            <div class="dcc3-wc dcc3-wc--ar" style="--i:0">
-              <span class="dcc3-wc-ico">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-              </span>
-              <div class="dcc3-wc-body">
-                <div class="dcc3-wc-label">AR Outstanding</div>
-                <div id="kpiAR" class="cc-kpi-value dcc3-wc-val">USD 0.00</div>
-                <div class="dcc3-wc-foot">Customer balances due</div>
-              </div>
-            </div>
+    </div>
+  </div>
 
-            <div class="dcc3-wc dcc3-wc--ap" style="--i:1">
-              <span class="dcc3-wc-ico">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
-              </span>
-              <div class="dcc3-wc-body">
-                <div class="dcc3-wc-label">AP Outstanding</div>
-                <div id="kpiAP" class="cc-kpi-value dcc3-wc-val">USD 0.00</div>
-                <div class="dcc3-wc-foot">Supplier balances owed</div>
-              </div>
-            </div>
+  <!-- ═══ REPORTS & STATEMENTS ═══ -->
+  <div class="ckp-grid-2">
 
-            <div class="dcc3-wc dcc3-wc--net" style="--i:2">
-              <span class="dcc3-wc-ico">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
-              </span>
-              <div class="dcc3-wc-body">
-                <div class="dcc3-wc-label">Net Working Capital</div>
-                <div id="dcc3WorkingCapital" class="cc-kpi-value dcc3-wc-val">USD 0.00</div>
-                <div class="dcc3-wc-foot">Receivables less payables</div>
-              </div>
-            </div>
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+          Reports &amp; Analysis
+        </h4>
+        <div style="display:flex;gap:6px">
+          <button data-action="openPnL" class="ckp-quick" style="height:30px;padding:0 10px;font-size:11px">P&amp;L</button>
+          <button data-action="openBS" class="ckp-quick" style="height:30px;padding:0 10px;font-size:11px">Balance Sheet</button>
+          <button data-action="openCF" class="ckp-quick" style="height:30px;padding:0 10px;font-size:11px">Cash Flow</button>
+          <button data-nav="reports" class="ckp-quick ckp-quick--primary" style="height:30px;padding:0 10px;font-size:11px">Open Reports</button>
+        </div>
+      </div>
+      <div class="ckp-card-body">
+        <div class="ckp-stmts">
+          <div class="ckp-stmt">
+            <div class="ckp-stmt-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>Profit &amp; Loss</div>
+            <div id="pnlMini" class="ckp-stmt-body"></div>
           </div>
-
-          <!-- ═══ Main grid: Trends (left, 2fr) + Right rail (1fr) ═══ -->
-          <div class="dcc3-main">
-
-            <!-- Analysis Trends -->
-            <div class="cc-card" style="--i:3">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3 id="analysisChartTitle">Analysis Trends</h3>
-                    <p id="analysisChartSubtitle">Cash trend for selected period</p>
-                  </div>
-                </div>
-
-                <div id="analysisWidgetTabs" class="cc-seg">
-                  <button type="button" data-analysis-view="cash">Cash</button>
-                  <button type="button" data-analysis-view="revexp">Rev vs Exp</button>
-                  <button type="button" data-analysis-view="profit">Profit</button>
-                  <button type="button" data-analysis-view="margin">Margin</button>
-                  <button type="button" data-analysis-view="analysis">Analysis</button>
-                </div>
-              </div>
-
-              <div class="h-[3px] rounded-full bg-slate-100 overflow-hidden mb-3">
-                <div id="analysisProgress" class="h-full" style="width:0%"></div>
-              </div>
-
-              <div id="analysisChartWrap" class="chart-wrap">
-                <canvas id="cashChart"></canvas>
-              </div>
-
-              <div id="analysisCarouselDots" class="flex justify-center gap-1 mt-3"></div>
-
-              <div id="analysisTextPanel" class="hidden text-sm text-slate-600 space-y-2 mt-1"></div>
-            </div>
-
-            <!-- Right rail: Action Required + Quick Links/Aging -->
-            <div class="dcc3-rail">
-
-              <!-- Action Required -->
-              <div class="cc-card dcc3-action-card" style="--i:4">
-                <div class="cc-card-head">
-                  <div class="cc-card-title">
-                    <span class="cc-ico cc-ico--amber">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-                    </span>
-                    <div class="cc-title-text">
-                      <h3>Action Required</h3>
-                      <p>Attention items from your books</p>
-                    </div>
-                  </div>
-                </div>
-
-                <ul id="actionsList" class="text-sm text-slate-500">
-                  <li>No pending tasks.</li>
-                  <li>Completed actions will appear here.</li>
-                </ul>
-              </div>
-
-              <!-- Quick Links + Aging -->
-              <div class="cc-card flex flex-col" style="--i:5">
-                <div class="cc-card-head">
-                  <div class="cc-card-title">
-                    <span class="cc-ico">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
-                    </span>
-                    <div class="cc-title-text">
-                      <h3>Quick Links</h3>
-                      <p>Jump to core modules</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="flex flex-col gap-1 -mx-1">
-                  <button data-nav="coa" class="cc-qlink">
-                    <span class="cc-qlink-ico">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
-                    </span>
-                    Chart of Accounts
-                    <span class="cc-qlink-arrow">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                    </span>
-                  </button>
-
-                  <button data-nav="ledger" data-label="General Ledger" class="cc-qlink">
-                    <span class="cc-qlink-ico">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
-                    </span>
-                    General Ledger
-                    <span class="cc-qlink-arrow">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                    </span>
-                  </button>
-
-                  <button data-nav="trial" class="cc-qlink">
-                    <span class="cc-qlink-ico">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
-                    </span>
-                    Trial Balance
-                    <span class="cc-qlink-arrow">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                    </span>
-                  </button>
-
-                  <button data-nav="company" class="cc-qlink">
-                    <span class="cc-qlink-ico">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
-                    </span>
-                    Company &amp; Setup
-                    <span class="cc-qlink-arrow">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                    </span>
-                  </button>
-                </div>
-
-                <div class="my-4 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
-
-                <div>
-                  <div class="cc-aging-label">Accounts Receivable</div>
-                  <div id="agingAR" class="space-y-1 text-xs text-slate-500">
-                    <div>No receivables yet.</div>
-                  </div>
-
-                  <div class="cc-aging-label">Accounts Payable</div>
-                  <div id="agingAP" class="space-y-1 text-xs text-slate-500">
-                    <div>No payables yet.</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div class="ckp-stmt">
+            <div class="ckp-stmt-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/></svg>Balance Sheet</div>
+            <div id="bsMini" class="ckp-stmt-body"></div>
           </div>
-
-          <!-- ═══ Work Queue + Reports &amp; Analysis ═══ -->
-          <div class="dcc3-main">
-
-            <!-- Accounting Work Queue -->
-            <div class="cc-card" style="--i:6">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3>Accounting Work Queue</h3>
-                    <p>Items needing posting, billing or review</p>
-                  </div>
-                </div>
-                <button data-nav="ledger" class="cc-btn">
-                  Open Ledger
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                </button>
-              </div>
-
-              <div id="cc-workqueue" class="space-y-2">
-                <div class="text-xs text-slate-400">Loading accounting checks...</div>
-              </div>
-
-              <div class="dcc3-actiongrid mt-4 pt-3 border-t border-slate-100">
-                <button data-nav="ar" class="cc-btn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                  New Invoice
-                </button>
-                <button data-nav="ap" class="cc-btn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-                  Enter Bill
-                </button>
-                <button data-nav="journal" class="cc-btn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                  Manual Journal
-                </button>
-                <button data-action="recordTransfer" class="cc-btn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
-                  Transfer
-                </button>
-              </div>
-            </div>
-
-            <!-- Reports & Analysis -->
-            <div class="cc-card" style="--i:7">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3>Reports &amp; Analysis</h3>
-                    <p>Statements, performance and period insights</p>
-                  </div>
-                </div>
-                <button data-nav="reports" class="cc-btn cc-btn--solid">
-                  Open Reports
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                </button>
-              </div>
-
-              <!-- Quick statement openers -->
-              <div class="flex items-center gap-2 flex-wrap mb-3">
-                <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-slate-400 mr-1">Quick open</span>
-                <button data-action="openPnL" class="cc-btn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-                  P&amp;L
-                </button>
-                <button data-action="openBS" class="cc-btn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
-                  Balance Sheet
-                </button>
-                <button data-action="openCF" class="cc-btn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>
-                  Cash Flow
-                </button>
-              </div>
-
-              <!-- Mini statements -->
-              <div class="dcc3-stmts">
-                <div class="dcc3-minitile">
-                  <div class="cc-mini-head">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-                    Profit &amp; Loss
-                  </div>
-                  <div id="pnlMini" class="cc-mini-body"></div>
-                </div>
-
-                <div class="dcc3-minitile">
-                  <div class="cc-mini-head">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
-                    Balance Sheet
-                  </div>
-                  <div id="bsMini" class="cc-mini-body"></div>
-                </div>
-
-                <div class="dcc3-minitile">
-                  <div class="cc-mini-head">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>
-                    Cash Flow
-                  </div>
-                  <div id="cfMini" class="cc-mini-body"></div>
-                </div>
-              </div>
-
-              <!-- Top insights -->
-              <div class="dcc3-insights mt-4">
-                <div class="flex items-center gap-2 mb-1">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[var(--fs-teal)]" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
-                  <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-slate-500">Top Insights</span>
-                </div>
-                <ul id="insights">
-                  <li>No financial insights available yet.</li>
-                  <li>Upload or enter transactions to generate insights.</li>
-                </ul>
-              </div>
-            </div>
+          <div class="ckp-stmt">
+            <div class="ckp-stmt-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>Cash Flow</div>
+            <div id="cfMini" class="ckp-stmt-body"></div>
           </div>
+        </div>
 
-          <!-- ═══ Operations row: Month-End + Fixed Assets + Inventory ═══ -->
-          <div class="dcc3-row3">
-
-            <!-- Month-End Close -->
-            <div class="cc-card" style="--i:8">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3>Month-End Close</h3>
-                    <p>Period checklist &amp; progress</p>
-                  </div>
-                </div>
-                <span id="closeStatusTag" class="pill text-xs">In Progress</span>
-              </div>
-
-              <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-3">
-                <div id="closeProgress" class="h-full rounded-full bg-[var(--fs-teal)]" style="width:40%"></div>
-              </div>
-
-              <ul id="closeChecklist" class="text-sm space-y-1">
-                <li>☐ Bank accounts reconciled</li>
-                <li>☐ All invoices &amp; bills captured</li>
-                <li>☐ Depreciation posted</li>
-                <li>☐ P&amp;L &amp; Balance Sheet reviewed</li>
-                <li>☐ Period locked</li>
-              </ul>
-            </div>
-
-            <!-- Fixed Assets Snapshot -->
-            <div class="cc-card" style="--i:9">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3>Fixed Assets Snapshot</h3>
-                    <p>Register valuation overview</p>
-                  </div>
-                </div>
-                <button data-nav="fixedassets" class="cc-btn">Open Register</button>
-              </div>
-
-              <div>
-                <div class="cc-kv"><span>Book Value</span><span id="faBookValue" class="cc-kv-val">USD 0.00</span></div>
-                <div class="cc-kv"><span>Accum. Depreciation</span><span id="faDep" class="cc-kv-val">USD 0.00</span></div>
-                <div class="cc-kv"><span>Net Carrying Amount</span><span id="faNet" class="cc-kv-val">USD 0.00</span></div>
-              </div>
-
-              <div class="mt-3 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 text-xs text-slate-500 flex items-center justify-between gap-3">
-                <span>Assets needing depreciation this period</span>
-                <span id="faPending" class="font-bold text-[var(--fs-navy)]">0</span>
-              </div>
-            </div>
-
-            <!-- Inventory Snapshot -->
-            <div class="cc-card" style="--i:10">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3>Inventory Snapshot</h3>
-                    <p>Stock value &amp; movement health</p>
-                  </div>
-                </div>
-                <button data-nav="inventory" class="cc-btn">Open Inventory</button>
-              </div>
-
-              <div>
-                <div class="cc-kv"><span>Inventory Value</span><span id="invValue" class="cc-kv-val">USD 0.00</span></div>
-                <div class="cc-kv"><span>SKUs</span><span id="invSkus" class="cc-kv-val">0</span></div>
-                <div class="cc-kv"><span>Estimated Days of Stock</span><span id="invDays" class="cc-kv-val">0</span></div>
-              </div>
-
-              <div class="mt-3 rounded-lg bg-amber-50/70 border border-amber-100 px-3 py-2 text-xs text-amber-700 flex items-center justify-between gap-3">
-                <span>Low stock alerts</span>
-                <span id="invAlerts" class="font-bold">0</span>
-              </div>
-            </div>
+        <div class="ckp-insights">
+          <div class="ckp-insights-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+            <span>Top Insights</span>
           </div>
+          <ul id="insights">
+            <li>No financial insights available yet.</li>
+            <li>Upload or enter transactions to generate insights.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
 
-          <!-- ═══ Compliance row: Tax + Setup + Health ═══ -->
-          <div class="dcc3-row3">
+    <!-- Quick links card (no aging here anymore — moved to left rail) -->
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
+          Quick Actions
+        </h4>
+      </div>
+      <div class="ckp-card-body">
+        <div class="ckp-quick-actions" style="margin:0;padding:0;border:0">
+          <button data-nav="coa">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+            Chart of Accounts
+          </button>
+          <button data-nav="ledger">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+            General Ledger
+          </button>
+          <button data-nav="trial">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/></svg>
+            Trial Balance
+          </button>
+          <button data-nav="company">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M10 6h4"/><path d="M10 10h4"/></svg>
+            Company &amp; Setup
+          </button>
+          <button data-nav="fixedassets">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>
+            Fixed Assets
+          </button>
+          <button data-nav="inventory">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+            Inventory
+          </button>
+        </div>
+      </div>
+    </div>
 
-            <!-- Tax & Compliance -->
-            <div class="cc-card" style="--i:11">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico cc-ico--teal">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3>Tax &amp; Compliance</h3>
-                    <p>VAT position &amp; filing status</p>
-                  </div>
-                </div>
-              </div>
+  </div>
 
-              <div id="taxComplianceCard" class="text-sm space-y-1">
-                <div class="text-xs text-slate-500">Loading VAT compliance...</div>
-              </div>
-            </div>
+  <!-- ═══ STATUS GRID 3x2 ═══ -->
+  <div class="ckp-grid-3">
 
-            <!-- Setup Checklist -->
-            <div class="cc-card" style="--i:12">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3>Setup Checklist</h3>
-                    <p>Get the best out of FinSage</p>
-                  </div>
-                </div>
-              </div>
+    <!-- Month-End Close -->
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+          Month-End Close
+        </h4>
+        <span id="closeStatusTag" class="ckp-pill">In Progress</span>
+      </div>
+      <div class="ckp-card-body">
+        <div class="ckp-progress"><div id="closeProgress" style="width:0%;height:100%;background:linear-gradient(90deg,#0ea5b9,var(--ckp-teal));transition:width 1s ease"></div></div>
+        <ul id="closeChecklist" class="ckp-checklist">
+          <li>☐ Bank accounts reconciled</li>
+          <li>☐ All invoices &amp; bills captured</li>
+          <li>☐ Depreciation posted</li>
+          <li>☐ P&amp;L &amp; Balance Sheet reviewed</li>
+          <li>☐ Period locked</li>
+        </ul>
+      </div>
+    </div>
 
-              <ul id="setupChecklist" class="text-sm space-y-1">
-                <li>☐ Complete company profile</li>
-                <li>☐ Review/import Chart of Accounts</li>
-                <li>☐ Configure bank feeds / integrations</li>
-                <li>☐ Select industry profile</li>
-                <li>☐ Configure roles &amp; permissions</li>
-              </ul>
-            </div>
+    <!-- Fixed Assets Snapshot -->
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M10 6h4"/><path d="M10 10h4"/></svg>
+          Fixed Assets
+        </h4>
+        <button data-nav="fixedassets" class="ckp-quick" style="height:28px;padding:0 10px;font-size:11px">Open</button>
+      </div>
+      <div class="ckp-card-body">
+        <div class="ckp-kv"><span>Book Value</span><span id="faBookValue" class="ckp-kv-val">USD 0.00</span></div>
+        <div class="ckp-kv"><span>Accum. Depreciation</span><span id="faDep" class="ckp-kv-val ckp-neg">USD 0.00</span></div>
+        <div class="ckp-kv"><span>Net Carrying Amount</span><span id="faNet" class="ckp-kv-val ckp-pos">USD 0.00</span></div>
+        <div class="ckp-kv"><span>Pending depreciation</span><span id="faPending" class="ckp-kv-val ckp-warn">0</span></div>
+      </div>
+    </div>
 
-            <!-- Health & Compliance -->
-            <div class="cc-card" style="--i:13">
-              <div class="cc-card-head">
-                <div class="cc-card-title">
-                  <span class="cc-ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></svg>
-                  </span>
-                  <div class="cc-title-text">
-                    <h3>Health &amp; Compliance</h3>
-                    <p>System &amp; data integrity</p>
-                  </div>
-                </div>
-              </div>
+    <!-- Inventory Snapshot -->
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+          Inventory
+        </h4>
+        <button data-nav="inventory" class="ckp-quick" style="height:28px;padding:0 10px;font-size:11px">Open</button>
+      </div>
+      <div class="ckp-card-body">
+        <div class="ckp-kv"><span>Inventory Value</span><span id="invValue" class="ckp-kv-val">USD 0.00</span></div>
+        <div class="ckp-kv"><span>SKUs</span><span id="invSkus" class="ckp-kv-val">0</span></div>
+        <div class="ckp-kv"><span>Days of Stock</span><span id="invDays" class="ckp-kv-val">0</span></div>
+        <div class="ckp-kv"><span>Low stock alerts</span><span id="invAlerts" class="ckp-kv-val ckp-warn">0</span></div>
+      </div>
+    </div>
 
-              <div>
-                <div class="cc-kv"><span>VAT Return Status</span><span id="hcVatStatus" class="cc-kv-val">Not prepared</span></div>
-                <div class="cc-kv"><span>Bank Feed Status</span><span id="hcBankStatus" class="cc-kv-val">OK</span></div>
-                <div class="cc-kv"><span>Last Backup/Export</span><span id="hcBackup" class="cc-kv-val">—</span></div>
-                <div class="cc-kv"><span>Suspense Balance</span><span id="hcSuspense" class="cc-kv-val">USD 0.00</span></div>
-              </div>
-            </div>
-          </div>
+    <!-- Tax & Compliance -->
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+          Tax &amp; Compliance
+        </h4>
+      </div>
+      <div class="ckp-card-body">
+        <div id="taxComplianceCard">
+          <div class="text-xs text-slate-500">Loading VAT compliance...</div>
+        </div>
+      </div>
+    </div>
 
-          <!-- ═══ Working-capital reactive script ═══
-               Pure presentation helper: derives Net Working Capital
-               from kpiAR and kpiAP. Does NOT change any data type or
-               touch any backend value. -->
-          <script>
-          (function(){
-            "use strict";
-            function numFrom(el){
-              if(!el) return 0;
-              var t = String(el.textContent || "").replace(/[^0-9.\-]/g,"");
-              var n = parseFloat(t);
-              return Number.isFinite(n) ? n : 0;
+    <!-- Setup Checklist -->
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          Setup Checklist
+        </h4>
+      </div>
+      <div class="ckp-card-body">
+        <ul id="setupChecklist" class="ckp-checklist">
+          <li>☐ Complete company profile</li>
+          <li>☐ Review/import Chart of Accounts</li>
+          <li>☐ Configure bank feeds / integrations</li>
+          <li>☐ Select industry profile</li>
+          <li>☐ Configure roles &amp; permissions</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Health & Compliance -->
+    <div class="ckp-card">
+      <div class="ckp-card-head">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></svg>
+          Health &amp; Compliance
+        </h4>
+      </div>
+      <div class="ckp-card-body">
+        <div class="ckp-kv"><span>VAT Return Status</span><span id="hcVatStatus" class="ckp-kv-val ckp-warn">Not prepared</span></div>
+        <div class="ckp-kv"><span>Bank Feed Status</span><span id="hcBankStatus" class="ckp-kv-val ckp-pos">OK</span></div>
+        <div class="ckp-kv"><span>Last Backup/Export</span><span id="hcBackup" class="ckp-kv-val">—</span></div>
+        <div class="ckp-kv"><span>Suspense Balance</span><span id="hcSuspense" class="ckp-kv-val">USD 0.00</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ KPI pulse observer (kept from production) ═══ -->
+  <script>
+  (function(){
+    "use strict";
+    if("MutationObserver" in window){
+      var obs = new MutationObserver(function(entries){
+        entries.forEach(function(en){
+          var el = en.target;
+          if(!el || el.nodeType !== 1) return;
+          el.classList.remove("is-updated");
+          void el.offsetWidth;
+          el.classList.add("is-updated");
+        });
+      });
+      ["kpiCash","kpiAR","kpiAP","kpiNP","kpiVAT"].forEach(function(id){
+        var el = document.getElementById(id);
+        if(el) obs.observe(el,{ childList:true, characterData:true, subtree:true });
+      });
+    }
+  })();
+  </script>
+
+</section>
+</div>
+
+<!-- ═══ MOCK DATA (drives every preserved ID) ═══ -->
+<script>
+(function(){
+  "use strict";
+  window.CURRENT_CURRENCY = "USD";
+
+  function money(n){
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style:"currency", currency:"USD",
+        minimumFractionDigits:2, maximumFractionDigits:2
+      }).format(n);
+    } catch(e){ return "$" + n.toFixed(2); }
+  }
+
+  // period + date
+  var ccDate = document.getElementById("ccDateText");
+  if (ccDate) ccDate.textContent = new Date().toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short",year:"numeric"});
+  var periodLabel = document.getElementById("ccPeriodLabel");
+  if (periodLabel) periodLabel.textContent = "FY 2026 · YTD";
+
+  // KPIs
+  var kpis = {
+    kpiCash: money(487230.55),
+    kpiNP:   money(192840.18),
+    kpiVAT:  money(14820.42),
+    kpiAR:   money(126540.00),
+    kpiAP:   money(89320.75)
+  };
+  Object.keys(kpis).forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.textContent = kpis[id];
+  });
+
+  // KPI gauges (the new vertical bars)
+  var gaugeWidths = {
+    "ckp-meter--cash": 78,
+    "ckp-meter--ar":   62,
+    "ckp-meter--ap":   48,
+    "ckp-meter--np":   71,
+    "ckp-meter--vat":  35
+  };
+  setTimeout(function(){
+    Object.keys(gaugeWidths).forEach(function(cls){
+      var card = document.querySelector("." + cls);
+      if (card) {
+        var i = card.querySelector(".ckp-gauge i");
+        if (i) i.style.width = gaugeWidths[cls] + "%";
+      }
+    });
+  }, 300);
+
+  // analysis progress
+  var ap = document.getElementById("analysisProgress");
+  if (ap) { ap.style.width = "100%"; }
+
+  // work queue
+  var wq = document.getElementById("cc-workqueue");
+  if (wq) {
+    var items = [
+      { type:"Lease payments due", count:3, amount:money(22500), tone:"amber", icon:"🏢", screen:"leases", hint:"3 lease periods due this month" },
+      { type:"Invoices awaiting posting", count:7, amount:money(84200), tone:"info", icon:"🧾", screen:"ar", hint:"Draft invoices ready to post" },
+      { type:"Bills pending approval", count:4, amount:money(31800), tone:"amber", icon:"📦", screen:"ap", hint:"Awaiting manager approval" },
+      { type:"Revenue recognised, not billed", count:2, amount:money(15600), tone:"info", icon:"📊", screen:"revenue", hint:"Recognition runs without invoices" },
+      { type:"GRNI awaiting bill", count:1, amount:money(9450), tone:"red", icon:"🏭", screen:"ap", hint:"Goods received, no supplier bill" }
+    ];
+    wq.innerHTML = items.map(function(it){
+      return ''
+        + '<button type="button" class="ckp-wq-item ckp-tone--' + it.tone + '" data-workqueue-screen="' + it.screen + '">'
+        +   '<span class="ckp-wq-ico">' + it.icon + '</span>'
+        +   '<span class="ckp-wq-text"><strong>' + it.type + '</strong><span>' + it.hint + '</span></span>'
+        +   '<span class="ckp-wq-meta"><strong>' + it.count + '</strong><span>' + it.amount + '</span></span>'
+        + '</button>';
+    }).join("");
+  }
+
+  // mini statements
+  var pnl = document.getElementById("pnlMini");
+  if (pnl) pnl.innerHTML = ''
+    + '<div class="flex"><span>Revenue</span><strong>$1.24M</strong></div>'
+    + '<div class="flex"><span>COGS</span><strong>($487K)</strong></div>'
+    + '<div class="flex"><span>Gross Profit</span><strong>$753K</strong></div>'
+    + '<div class="flex"><span>Opex</span><strong>($560K)</strong></div>'
+    + '<div class="flex" style="border-top:1px solid var(--ckp-line);padding-top:5px;margin-top:3px"><span style="font-weight:700;color:#fff">Net Profit</span><strong style="color:var(--ckp-green)">$193K</strong></div>';
+
+  var bs = document.getElementById("bsMini");
+  if (bs) bs.innerHTML = ''
+    + '<div class="flex"><span>Total Assets</span><strong>$1.82M</strong></div>'
+    + '<div class="flex"><span>Total Liabilities</span><strong>($742K)</strong></div>'
+    + '<div class="flex" style="border-top:1px solid var(--ckp-line);padding-top:5px;margin-top:3px"><span style="font-weight:700;color:#fff">Equity</span><strong style="color:var(--ckp-teal)">$1.08M</strong></div>'
+    + '<div style="font-size:10px;color:var(--ckp-muted-2);margin-top:6px">✓ Balanced</div>';
+
+  var cf = document.getElementById("cfMini");
+  if (cf) cf.innerHTML = ''
+    + '<div class="flex"><span>Operating</span><strong class="text-emerald-600">+$210K</strong></div>'
+    + '<div class="flex"><span>Investing</span><strong class="text-red-600">−$95K</strong></div>'
+    + '<div class="flex"><span>Financing</span><strong class="text-red-600">−$40K</strong></div>'
+    + '<div class="flex" style="border-top:1px solid var(--ckp-line);padding-top:5px;margin-top:3px"><span style="font-weight:700;color:#fff">Net Change</span><strong style="color:var(--ckp-green)">+$75K</strong></div>';
+
+  // insights
+  var ins = document.getElementById("insights");
+  if (ins) ins.innerHTML = ''
+    + '<li>Revenue increased by <strong>14.2%</strong> this period.</li>'
+    + '<li>Net margin is healthy at <strong>15.5%</strong>.</li>'
+    + '<li><strong>$42,300</strong> is overdue beyond 90 days — follow up.</li>'
+    + '<li>VAT refund of <strong>$14,820</strong> due for current period.</li>';
+
+  // action required
+  var act = document.getElementById("actionsList");
+  if (act) act.innerHTML = ''
+    + '<li class="ckp-sev--red">Overdue receivables of $42,300 require follow-up.</li>'
+    + '<li class="ckp-sev--amber">Outstanding payables of $18,200 may require settlement.</li>'
+    + '<li class="ckp-sev--amber">VAT refund of $14,820 is due.</li>'
+    + '<li class="ckp-sev--blue">Bank reconciliation pending for 2 accounts.</li>';
+
+  // aging
+  var agingAR = document.getElementById("agingAR");
+  if (agingAR) agingAR.innerHTML = ''
+    + '<div><span>Current</span><span>$84,340</span></div>'
+    + '<div><span>1–30</span><span>$28,200</span></div>'
+    + '<div><span>31–60</span><span>$9,800</span></div>'
+    + '<div class="text-amber-700"><span>61–90</span><span>$4,200</span></div>'
+    + '<div class="text-red-700 font-semibold"><span>90+</span><span>$42,300</span></div>';
+
+  var agingAP = document.getElementById("agingAP");
+  if (agingAP) agingAP.innerHTML = ''
+    + '<div><span>Current</span><span>$61,220</span></div>'
+    + '<div><span>1–30</span><span>$18,400</span></div>'
+    + '<div><span>31–60</span><span>$6,100</span></div>'
+    + '<div class="text-amber-700"><span>61–90</span><span>$2,800</span></div>'
+    + '<div class="text-red-700"><span>90+</span><span>$800</span></div>';
+
+  // month-end
+  var closeStatus = document.getElementById("closeStatusTag");
+  if (closeStatus) closeStatus.textContent = "In Progress";
+  var closeProgress = document.getElementById("closeProgress");
+  if (closeProgress) setTimeout(function(){ closeProgress.style.width = "60%"; }, 400);
+  var closeList = document.getElementById("closeChecklist");
+  if (closeList) closeList.innerHTML = ''
+    + '<li class="done">Bank accounts reconciled</li>'
+    + '<li class="done">All invoices &amp; bills captured</li>'
+    + '<li>Depreciation posted</li>'
+    + '<li>P&amp;L &amp; Balance Sheet reviewed</li>'
+    + '<li>Period locked</li>';
+
+  // fixed assets
+  var fa = { faBookValue: money(1820000), faDep: money(740000), faNet: money(1080000), faPending: "3" };
+  Object.keys(fa).forEach(function(id){ var el = document.getElementById(id); if (el) el.textContent = fa[id]; });
+
+  // inventory
+  var inv = { invValue: money(324800), invSkus: "147", invDays: "23", invAlerts: "5" };
+  Object.keys(inv).forEach(function(id){ var el = document.getElementById(id); if (el) el.textContent = inv[id]; });
+
+  // tax compliance
+  var tax = document.getElementById("taxComplianceCard");
+  if (tax) tax.innerHTML = ''
+    + '<div class="flex border-b" style="padding:6px 0">'
+    +   '<span class="text-slate-600">Current period VAT</span>'
+    +   '<strong class="text-amber-700">Refund $14,820</strong>'
+    + '</div>'
+    + '<div class="flex border-b" style="padding:6px 0">'
+    +   '<span class="text-slate-600">Filing due</span>'
+    +   '<strong>25 Jan 2026</strong>'
+    + '</div>'
+    + '<div class="flex border-b" style="padding:6px 0">'
+    +   '<span class="text-slate-600">Last filing</span>'
+    +   '<strong class="text-emerald-600">Submitted ✓</strong>'
+    + '</div>'
+    + '<div class="flex" style="padding:6px 0">'
+    +   '<span class="text-slate-600">Status</span>'
+    +   '<span class="pill">Action needed</span>'
+    + '</div>';
+
+  // setup checklist
+  var setup = document.getElementById("setupChecklist");
+  if (setup) setup.innerHTML = ''
+    + '<li class="done">Complete company profile</li>'
+    + '<li class="done">Review/import Chart of Accounts</li>'
+    + '<li class="done">Configure bank feeds / integrations</li>'
+    + '<li>Select industry profile</li>'
+    + '<li>Configure roles &amp; permissions</li>';
+
+  // health
+  var hc = {
+    hcVatStatus: "Action needed",
+    hcBankStatus: "2 OK · 1 stale",
+    hcBackup: "2 hrs ago",
+    hcSuspense: money(0)
+  };
+  Object.keys(hc).forEach(function(id){ var el = document.getElementById(id); if (el) el.textContent = hc[id]; });
+
+  // chart
+  if (window.Chart) {
+    var ctx = document.getElementById("cashChart");
+    if (ctx) {
+      // dark-mode chart theme
+      Chart.defaults.color = "#64748b";
+      Chart.defaults.borderColor = "rgba(100,116,139,.08)";
+      new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: ["Jul","Aug","Sep","Oct","Nov","Dec","Jan"],
+          datasets: [
+            {
+              label: "Cash on Hand",
+              data: [312000, 348000, 401000, 388000, 425000, 461000, 487230],
+              borderColor: "#00C8C8",
+              backgroundColor: function(ctx){
+                var chart = ctx.chart;
+                var {ctx:c, chartArea} = chart;
+                if (!chartArea) return "rgba(34,211,238,.1)";
+                var g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                g.addColorStop(0, "rgba(0,200,200,.30)");
+                g.addColorStop(1, "rgba(0,200,200,0)");
+                return g;
+              },
+              fill: true, tension: 0.35, borderWidth: 2.5,
+              pointBackgroundColor: "#00C8C8",
+              pointBorderColor: "#fff",
+              pointBorderWidth: 2,
+              pointRadius: 4, pointHoverRadius: 6
+            },
+            {
+              label: "Net Profit (period)",
+              data: [92000, 104000, 138000, 121000, 156000, 178000, 192840],
+              borderColor: "#059669",
+              backgroundColor: "rgba(52,211,153,.05)",
+              fill: false, tension: 0.35, borderWidth: 2,
+              borderDash: [6,4],
+              pointBackgroundColor: "#059669",
+              pointRadius: 3, pointHoverRadius: 5
             }
-            function paintWC(){
-              var ar = numFrom(document.getElementById("kpiAR"));
-              var ap = numFrom(document.getElementById("kpiAP"));
-              var net = ar - ap;
-              var el = document.getElementById("dcc3WorkingCapital");
-              if(!el) return;
-              var cur = (window.CURRENT_CURRENCY || "USD");
-              var sign = net < 0 ? "-" : "";
-              try{
-                el.textContent = sign + cur + " " + Math.abs(net).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-              }catch(e){
-                el.textContent = sign + Math.abs(net).toFixed(2) + " " + cur;
-              }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { display: true, position: "bottom", labels: { boxWidth: 10, boxHeight: 10, padding: 12, font: { size: 11 } } },
+            tooltip: {
+              backgroundColor: "#00284F",
+              borderColor: "#00C8C8", borderWidth: 1,
+              titleColor: "#fff", bodyColor: "#e6edf7",
+              padding: 10, cornerRadius: 8,
+              callbacks: { label: function(c){ return c.dataset.label + ": " + money(c.parsed.y); } }
             }
-            paintWC();
-            if("MutationObserver" in window){
-              ["kpiAR","kpiAP"].forEach(function(id){
-                var el = document.getElementById(id);
-                if(el) new MutationObserver(paintWC).observe(el,{childList:true,characterData:true,subtree:true});
-              });
-            }
-          })();
-          </script>
-        </section>
-
-        <script>
-        /* Command Center v2 — lightweight UI enhancements.
-           Does NOT touch data logic: only a live date chip and a
-           pulse animation when dashboard.js refreshes KPI values. */
-        (function(){
-          "use strict";
-
-          // 1) Live date chip
-          var chipText = document.getElementById("ccDateText");
-          function paintDate(){
-            if(!chipText) return;
-            try{
-              chipText.textContent = new Date().toLocaleDateString(undefined,{
-                weekday:"short", day:"numeric", month:"short", year:"numeric"
-              });
-            }catch(e){
-              chipText.textContent = new Date().toDateString();
-            }
+          },
+          scales: {
+            y: {
+              ticks: { callback: function(v){ return "$" + (v/1000).toFixed(0) + "k"; }, font: { size: 10 } },
+              grid: { color: "rgba(100,116,139,.08)" }
+            },
+            x: { ticks: { font: { size: 10 } }, grid: { display: false } }
           }
-          paintDate();
-          setInterval(paintDate, 60000);
+        }
+      });
+    }
+  }
 
-          // 2) Pulse KPI values whenever they are updated
-          if("MutationObserver" in window){
-            var obs = new MutationObserver(function(entries){
-              entries.forEach(function(en){
-                var el = en.target;
-                if(!el || el.nodeType !== 1) return;
-                el.classList.remove("is-updated");
-                void el.offsetWidth; /* restart animation */
-                el.classList.add("is-updated");
-              });
-            });
-            ["kpiCash","kpiAR","kpiAP","kpiNP","kpiVAT"].forEach(function(id){
-              var el = document.getElementById(id);
-              if(el) obs.observe(el,{ childList:true, characterData:true, subtree:true });
-            });
-          }
-        })();
-        </script>
+  // segment tab switching (visual only)
+  var segs = document.querySelectorAll("#analysisWidgetTabs button");
+  segs.forEach(function(b){
+    b.addEventListener("click", function(){
+      segs.forEach(function(x){ x.classList.remove("active"); });
+      b.classList.add("active");
+    });
+  });
+
+  // carousel dots
+  var dots = document.querySelectorAll("#analysisCarouselDots button");
+  dots.forEach(function(d,i){
+    d.addEventListener("click", function(){
+      dots.forEach(function(x){ x.classList.remove("active"); });
+      d.classList.add("active");
+    });
+  });
+
+  // demo KPI pulse every 6s
+  setInterval(function(){
+    var ids = ["kpiCash","kpiAR","kpiAP","kpiNP","kpiVAT"];
+    var pick = ids[Math.floor(Math.random()*ids.length)];
+    var el = document.getElementById(pick);
+    if (el) { el.classList.remove("is-updated"); void el.offsetWidth; el.classList.add("is-updated"); }
+  }, 6000);
+})();
+</script>
 
         <!-- Sign In -->
         <section id="screen-sign-in" class="screen">
