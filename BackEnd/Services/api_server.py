@@ -2030,6 +2030,18 @@ def _first_contact_email(inv: dict) -> str | None:
                     return e
     return None
 
+def _serialize_manufacturing_order_times(order):
+    if not isinstance(order, dict):
+        return order
+
+    for field in ("planned_start_time", "planned_finish_time"):
+        value = order.get(field)
+
+        if value is not None and hasattr(value, "strftime"):
+            order[field] = value.strftime("%H:%M:%S")
+
+    return order
+
 def record_invoice_revenue_billing_and_allocation(
     *,
     company_id: int,
@@ -15944,9 +15956,14 @@ def manufacturing_orders(cid: int):
                 date_to=date_to,
             )
 
+            orders = [
+                _serialize_manufacturing_order_times(order)
+                for order in (orders or [])
+            ]
+
             return jsonify({
                 "ok": True,
-                "orders": orders or [],
+                "orders": orders,
             }), 200
 
         payload = request.get_json(silent=True) or {}
