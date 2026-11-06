@@ -73044,6 +73044,97 @@ async function saveEditModal() {
     showPayrollStatus("Payroll run created.", "success");
   }
 
+  let _replacementReasonResolver=null;
+
+  function bindReplacementReasonModal(){
+    const modal=$("payrollReplacementModal");
+    if(!modal||modal.dataset.bound==="1")return;
+    modal.dataset.bound="1";
+
+    const ta=$("payrollReplacementReason");
+    const errEl=$("payrollReplacementError");
+    const confirmBtn=$("payrollReplacementConfirmBtn");
+
+    const close=(resolveWith)=>{
+      modal.classList.add("hidden");
+      document.body.classList.remove("payroll-modal-open");
+      if(ta) ta.value="";
+      if(errEl){
+        errEl.textContent="";
+        errEl.classList.add("hidden");
+      }
+      if(_replacementReasonResolver){
+        const r=_replacementReasonResolver;
+        _replacementReasonResolver=null;
+        r(resolveWith);
+      }
+    };
+
+    modal.querySelectorAll("[data-close-replacement-modal]")
+      .forEach(btn=>{
+        btn.addEventListener("click",()=>close(null));
+      });
+
+    modal.addEventListener("click",(e)=>{
+      if(e.target===modal) close(null);
+    });
+
+    document.addEventListener("keydown",(e)=>{
+      if(e.key==="Escape"&&!modal.classList.contains("hidden")){
+        close(null);
+      }
+    });
+
+    confirmBtn?.addEventListener("click",()=>{
+      const v=String(ta?.value||"").trim();
+      if(!v){
+        if(errEl){
+          errEl.textContent="Please enter a reason before continuing.";
+          errEl.classList.remove("hidden");
+        }
+        ta?.focus();
+        return;
+      }
+      close(v);
+    });
+
+    ta?.addEventListener("input",()=>{
+      if(!errEl?.classList.contains("hidden")){
+        errEl.textContent="";
+        errEl.classList.add("hidden");
+      }
+    });
+
+    ta?.addEventListener("keydown",(e)=>{
+      if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){
+        e.preventDefault();
+        confirmBtn?.click();
+      }
+    });
+  }
+
+  function promptReplacementReason(){
+    bindReplacementReasonModal();
+
+    const modal=$("payrollReplacementModal");
+    const ta=$("payrollReplacementReason");
+    const errEl=$("payrollReplacementError");
+
+    if(errEl){
+      errEl.textContent="";
+      errEl.classList.add("hidden");
+    }
+    if(ta) ta.value="";
+
+    modal?.classList.remove("hidden");
+    document.body.classList.add("payroll-modal-open");
+    setTimeout(()=>ta?.focus(),50);
+
+    return new Promise((resolve)=>{
+      _replacementReasonResolver=resolve;
+    });
+  }
+
   async function createReplacementPayrollRun() {
     const companyId = cid();
     const current = payrollState.selectedRun;
@@ -73058,19 +73149,15 @@ async function saveEditModal() {
       throw new Error("Reversed run is missing pay_calendar_id.");
     }
 
-    const reason = prompt(
-      "Why are you creating a replacement payroll run for this period?\n" +
-      "(Stored on the new version for audit.)",
-      ""
-    );
-    if (!reason || !reason.trim()) return; // cancelled
+    const reason = await promptReplacementReason();
+    if (!reason) return; // cancelled
 
     const res = await apiFetch(ENDPOINTS.payroll.runs(companyId), {
       method: "POST",
       body: JSON.stringify({
         pay_calendar_id: calendarId,
         create_replacement: true,
-        correction_reason: reason.trim(),
+        correction_reason: reason,
       }),
     });
 
