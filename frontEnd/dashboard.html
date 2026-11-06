@@ -7505,6 +7505,19 @@ body.payroll-modal-open{
   overflow-y: hidden;
 }
 
+.payroll-table-wrap--scroll-y {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.payroll-table-wrap--scroll-y thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+}
+
+
 .payroll-compact-table {
   width: max-content !important;
   min-width: 100%;

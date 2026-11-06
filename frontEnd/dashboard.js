@@ -1,4 +1,4 @@
-﻿(function hardTraceRedirects() {
+(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -73046,7 +73046,7 @@ async function saveEditModal() {
 
   async function createReplacementPayrollRun() {
     const companyId = cid();
-    const current = payrollState.currentRun;
+    const current = payrollState.selectedRun;
 
     if (!current) throw new Error("Open a payroll run first.");
     if (String(current.status || "").toLowerCase() !== "reversed") {
@@ -74009,7 +74009,7 @@ async function saveEditModal() {
         </div>
       `}
 
-      <div class="payroll-table-wrap">
+      <div class="payroll-table-wrap${items.length>=6?' payroll-table-wrap--scroll-y':''}">
         <table class="payroll-preview-table">
           <thead>
             <tr>
@@ -74036,9 +74036,9 @@ async function saveEditModal() {
                   `:""}
                 </td>
                 <td>
-                  ${esc(String(x.eligible_from||"—"))}
+                  ${esc(fmtDdMmYyyy(x.eligible_from))}
                   –
-                  ${esc(String(x.eligible_to||"—"))}
+                  ${esc(fmtDdMmYyyy(x.eligible_to))}
                 </td>
                 <td>
                   ${esc(payrollProrationLabel(
@@ -74164,6 +74164,19 @@ async function saveEditModal() {
     });
   }
 
+  function fmtDdMmYyyy(value){
+    if(!value) return "—";
+    const s=String(value).trim();
+    const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+    const d=new Date(s);
+    if(isNaN(d.getTime())) return s.length>25? s.slice(0,25)+"…": s;
+    const dd=String(d.getDate()).padStart(2,"0");
+    const mm=String(d.getMonth()+1).padStart(2,"0");
+    const yyyy=d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
   function renderPayrollRunEmployees(run){
     const el = $("payrollRunEmployeesList");
     if(!el)return;
@@ -74221,7 +74234,7 @@ async function saveEditModal() {
     };
 
     el.innerHTML = `
-      <div class="payroll-table-wrap">
+      <div class="payroll-table-wrap${items.length>=6?' payroll-table-wrap--scroll-y':''}">
         <table class="payroll-preview-table payroll-compact-table">
 
           <thead>
@@ -74268,17 +74281,9 @@ async function saveEditModal() {
 
                 <td>
                   <div>
-                    ${esc(
-                      String(
-                        item.eligible_from || "—"
-                      ).slice(0,10)
-                    )}
+                    ${esc(fmtDdMmYyyy(item.eligible_from))}
                     –
-                    ${esc(
-                      String(
-                        item.eligible_to || "—"
-                      ).slice(0,10)
-                    )}
+                    ${esc(fmtDdMmYyyy(item.eligible_to))}
                   </div>
 
                   <div class="payroll-muted">
