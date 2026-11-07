@@ -1097,7 +1097,8 @@ html, body {
   .cc-kpi--vat {--kpi-accent:#4338ca;--kpi-soft:rgba(79,70,229,.12)}
 
   /* Pulse when dashboard.js refreshes a value */
-  .cc-kpi-value.is-updated{animation:kpiPulse .6s ease}
+  .cc-kpi-value.is-updated,
+  [data-kpi-trend].is-updated{animation:kpiPulse .6s ease}
   @keyframes kpiPulse{
     0%{opacity:.3;transform:translateY(3px)}
     100%{opacity:1;transform:translateY(0)}
@@ -17109,7 +17110,7 @@ body{
       <div class="ckp-gauge"><i style="width:0%"></i></div>
       <div class="ckp-meter-foot">
         <span>All bank &amp; cash</span>
-        <span class="ckp-trend ckp-trend--up">▲ 8.4%</span>
+        <span class="ckp-trend ckp-trend--flat" data-kpi-trend="cash">—</span>
       </div>
     </div>
 
@@ -17122,7 +17123,7 @@ body{
       <div class="ckp-gauge"><i style="width:0%"></i></div>
       <div class="ckp-meter-foot">
         <span>Customer balances</span>
-        <span class="ckp-trend ckp-trend--down">▼ 3.1%</span>
+        <span class="ckp-trend ckp-trend--flat" data-kpi-trend="ar">—</span>
       </div>
     </div>
 
@@ -17135,7 +17136,7 @@ body{
       <div class="ckp-gauge"><i style="width:0%"></i></div>
       <div class="ckp-meter-foot">
         <span>Supplier balances</span>
-        <span class="ckp-trend ckp-trend--flat">— 0.5%</span>
+        <span class="ckp-trend ckp-trend--flat" data-kpi-trend="ap">—</span>
       </div>
     </div>
 
@@ -17148,7 +17149,7 @@ body{
       <div class="ckp-gauge"><i style="width:0%"></i></div>
       <div class="ckp-meter-foot">
         <span>Revenue − expenses</span>
-        <span class="ckp-trend ckp-trend--up">▲ 14.2%</span>
+        <span class="ckp-trend ckp-trend--flat" data-kpi-trend="np">—</span>
       </div>
     </div>
 
@@ -17161,7 +17162,7 @@ body{
       <div class="ckp-gauge"><i style="width:0%"></i></div>
       <div class="ckp-meter-foot">
         <span>Refund due</span>
-        <span class="ckp-trend ckp-trend--up">▲ refund</span>
+        <span class="ckp-trend ckp-trend--flat" data-kpi-trend="vat">—</span>
       </div>
     </div>
   </div>
@@ -17176,7 +17177,7 @@ body{
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>
           Work Queue
         </h4>
-        <span class="ckp-pill ckp-pill--ok">5 items</span>
+        <span class="ckp-pill ckp-pill--ok" data-kpi-pill="workqueue">—</span>
       </div>
       <div class="ckp-card-body">
         <div id="cc-workqueue" class="ckp-wq">
@@ -17294,7 +17295,7 @@ body{
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ckp-amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
           Action Required
         </h4>
-        <span class="ckp-pill">3 urgent</span>
+        <span class="ckp-pill" data-kpi-pill="actions">—</span>
       </div>
       <div class="ckp-card-body">
         <ul id="actionsList" class="ckp-actions">
@@ -17468,8 +17469,17 @@ body{
           el.classList.add("is-updated");
         });
       });
+
+      // Value cells (cash / AR / AP / NP / VAT)
       ["kpiCash","kpiAR","kpiAP","kpiNP","kpiVAT"].forEach(function(id){
         var el = document.getElementById(id);
+        if(el) obs.observe(el,{ childList:true, characterData:true, subtree:true });
+      });
+
+      // Trend pills (▲ +12.3% etc) — pulse them too when the
+      // period-over-period delta is recomputed.
+      ["cash","ar","ap","np","vat"].forEach(function(metric){
+        var el = document.querySelector('[data-kpi-trend="'+metric+'"]');
         if(el) obs.observe(el,{ childList:true, characterData:true, subtree:true });
       });
     }

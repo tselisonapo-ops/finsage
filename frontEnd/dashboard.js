@@ -10686,8 +10686,16 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
     window.CURRENT_COMPANY_ID ||
     window.CURRENT_COMPANY?.id;
 
+  // The Work Queue header pill ("N items") — keep it in sync with the
+  // real count, no more hardcoded "5 items".
+  const workqueuePill = document.querySelector('[data-kpi-pill="workqueue"]');
+
   if (!cid) {
     host.innerHTML = `<div class="text-xs text-slate-400">No company selected.</div>`;
+    if (workqueuePill) {
+      workqueuePill.textContent = "—";
+      workqueuePill.classList.remove("ckp-pill--ok");
+    }
     return;
   }
 
@@ -10703,6 +10711,16 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
     );
 
     const items = normaliseWorkQueueItems(data);
+
+    // Real count for the header pill.
+    if (workqueuePill) {
+      const n = items.length;
+      workqueuePill.textContent = n === 0
+        ? "0 items"
+        : `${n} item${n === 1 ? "" : "s"}`;
+      // Empty queue is the "good" state — keep the green ok tone.
+      workqueuePill.classList.toggle("ckp-pill--ok", n === 0);
+    }
 
     if (!items.length) {
       host.innerHTML = `
@@ -10765,6 +10783,10 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
         Could not load accounting work queue.
       </div>
     `;
+    if (workqueuePill) {
+      workqueuePill.textContent = "—";
+      workqueuePill.classList.remove("ckp-pill--ok");
+    }
   }
 }
 
@@ -11771,6 +11793,10 @@ async function renderActionRequired(periodKey = "this_month") {
   const host = document.getElementById("actionsList");
   if (!host) return;
 
+  // The "Action Required" header pill — was hardcoded "3 urgent".
+  // Now it tracks the actual count of red+amber items below.
+  const actionsPill = document.querySelector('[data-kpi-pill="actions"]');
+
   try {
     const snap = await getDashboardData(periodKey);
 
@@ -11842,6 +11868,16 @@ async function renderActionRequired(periodKey = "this_month") {
       });
     }
 
+    // Update the header pill with the real urgent count.
+    if (actionsPill) {
+      const urgent = items.filter(i => i.tone === "red" || i.tone === "amber").length;
+      actionsPill.textContent = urgent === 0
+        ? "All clear"
+        : `${urgent} urgent`;
+      // Empty state -> green "ok" tone; urgent > 0 -> amber tone.
+      actionsPill.classList.toggle("ckp-pill--ok", urgent === 0);
+    }
+
     // ✅ No issues
     if (items.length === 0) {
       host.innerHTML = `
@@ -11872,6 +11908,10 @@ async function renderActionRequired(periodKey = "this_month") {
         Unable to load actions at the moment.
       </li>
     `;
+    if (actionsPill) {
+      actionsPill.textContent = "—";
+      actionsPill.classList.remove("ckp-pill--ok");
+    }
   }
 }
 
@@ -20199,11 +20239,62 @@ async function renderDashboardKPIs(periodKey = "this_month") {
     const vatFrom = vatPeriod?.start ? fmtLocalDate(vatPeriod.start) : null;
     const vatTo = vatPeriod?.end ? fmtLocalDate(vatPeriod.end) : null;
 
-    const [tbMiniRes, pnlMiniRes, vatSummaryRes] = await Promise.allSettled([
+    // ── Compute the previous-period comparator key ───────────────────────
+    // For period-over-period trend we need the matching prior window.
+    // Returns null when no clean comparator exists (e.g. prev_year itself,
+    // or a custom range) — in that case we show "—" rather than fake a %.
+    const previousPeriodKey = (function computePreviousPeriodKey(key) {
+      const map = {
+        this_month:        "prev_month",
+        this_quarter:      "prev_quarter",
+        last_2_quarters:   "prev_quarter",
+        ytd:               "prev_year",
+        this_year:         "prev_year",
+      };
+      return map[key] || null;
+    })(periodKey);
+
+    // ── Fetch the current + previous period data in parallel ────────────
+    // (previous period is fetched with allSettled so a single failure
+    //  doesn't take down the whole KPI strip)
+    const [tbMiniRes, pnlMiniRes, vatSummaryRes,
+           prevTbMiniRes, prevPnlMiniRes, prevVatSummaryRes] = await Promise.allSettled([
       apiFetch(ENDPOINTS.trialBalanceMini(cid, { preset: periodKey })),
       apiFetch(ENDPOINTS.pnlMini(cid, null, null, { preset: periodKey })),
       (typeof ENDPOINTS.vatSummary === "function" && vatFrom && vatTo)
         ? apiFetch(ENDPOINTS.vatSummary(cid, vatFrom, vatTo))
+        : Promise.resolve(null),
+
+      previousPeriodKey
+        ? apiFetch(ENDPOINTS.trialBalanceMini(cid, { preset: previousPeriodKey }))
+        : Promise.resolve(null),
+      previousPeriodKey
+        ? apiFetch(ENDPOINTS.pnlMini(cid, null, null, { preset: previousPeriodKey }))
+        : Promise.resolve(null),
+      (previousPeriodKey && typeof ENDPOINTS.vatSummary === "function" && vatFrom && vatTo)
+        // The VAT summary endpoint is keyed by from/to, not preset, so for
+        // the prior VAT comparator we shift the VAT period back by one cycle.
+        ? (async () => {
+            const prevVat = (function shiftVatPeriod(start, end, freq) {
+              if (!start || !end || !freq) return null;
+              const stepMonths = {
+                monthly: 1, bi_monthly: 2, "bi-monthly": 2,
+                quarterly: 3, semi_annual: 6, "semi-annual": 6, half_year: 6,
+                annual: 12,
+              }[String(freq).toLowerCase()] || 2;
+              const ps = new Date(start);
+              const pe = new Date(end);
+              ps.setMonth(ps.getMonth() - stepMonths);
+              pe.setMonth(pe.getMonth() - stepMonths);
+              return { start: ps, end: pe };
+            })(vatPeriod?.start, vatPeriod?.end, vatCfg?.frequency);
+            if (!prevVat?.start || !prevVat?.end) return null;
+            return apiFetch(ENDPOINTS.vatSummary(
+              cid,
+              fmtLocalDate(prevVat.start),
+              fmtLocalDate(prevVat.end)
+            ));
+          })()
         : Promise.resolve(null),
     ]);
 
@@ -20221,10 +20312,17 @@ async function renderDashboardKPIs(periodKey = "this_month") {
     const pnlMini = pnlMiniRes.status === "fulfilled" ? pnlMiniRes.value : { rows: [] };
     const vatSummary = vatSummaryRes.status === "fulfilled" ? vatSummaryRes.value : null;
 
+    const prevTbMini = prevTbMiniRes.status === "fulfilled" ? prevTbMiniRes.value : { rows: [] };
+    const prevPnlMini = prevPnlMiniRes.status === "fulfilled" ? prevPnlMiniRes.value : { rows: [] };
+    const prevVatSummary = prevVatSummaryRes.status === "fulfilled" ? prevVatSummaryRes.value : null;
+
     const tbRows = Array.isArray(tbMini?.rows) ? tbMini.rows : [];
     const pnlRows = Array.isArray(pnlMini?.rows) ? pnlMini.rows : [];
+    const prevTbRows = Array.isArray(prevTbMini?.rows) ? prevTbMini.rows : [];
+    const prevPnlRows = Array.isArray(prevPnlMini?.rows) ? prevPnlMini.rows : [];
 
-    const cash = tbRows
+    // ── Extractors (same logic for current + previous) ──────────────────
+    const extractCash = (rows) => rows
       .filter(r => /cash|bank|overdraft/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
       .reduce((sum, r) => {
         const raw = r.closing_balance_raw ?? r.closing_balance;
@@ -20232,7 +20330,7 @@ async function renderDashboardKPIs(periodKey = "this_month") {
         return sum + Number(r.debit ?? 0) - Number(r.credit ?? 0);
       }, 0);
 
-    const ar = tbRows
+    const extractAR = (rows) => rows
       .filter(r => /receivable|debtor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
       .reduce((sum, r) => {
         const raw = r.closing_balance_raw ?? r.closing_balance;
@@ -20240,16 +20338,13 @@ async function renderDashboardKPIs(periodKey = "this_month") {
         return sum + Number(r.debit ?? 0) - Number(r.credit ?? 0);
       }, 0);
 
-    const ap = tbRows
+    const extractAP = (rows) => rows
       .filter(r => {
         const txt = `${r.name || ""} ${r.category || ""} ${r.section || ""}`.toLowerCase();
-
         const isTradePayable =
           /accounts payable|trade payable|supplier payable|vendor payable|creditors/.test(txt);
-
         const excludeNonBills =
           /loan payable|vat payable|vat output|vat input|paye|withholding|lease liability|deferred income|tax payable|income tax|provision|accrual|borrowings|bank overdraft/.test(txt);
-
         return isTradePayable && !excludeNonBills;
       })
       .reduce((sum, r) => {
@@ -20257,22 +20352,47 @@ async function renderDashboardKPIs(periodKey = "this_month") {
         return sum + Math.abs(Number(raw || 0));
       }, 0);
 
-    const np = pnlRows
+    const extractNP = (rows) => rows
       .filter(r => /net profit|profit for the year|profit for period|net income|net loss|loss for the period/i.test(String(r.label || r.name || "")))
       .reduce((sum, r) => sum + Number(r.amount ?? r.value ?? 0), 0);
 
-    const vat = Number(
-      vatSummary?.net_vat ??
-      vatSummary?.vat_payable ??
-      vatSummary?.amount ??
+    const extractVat = (vat) => Number(
+      vat?.net_vat ??
+      vat?.vat_payable ??
+      vat?.amount ??
       0
     );
+
+    const cash   = extractCash(tbRows);
+    const ar     = extractAR(tbRows);
+    const ap     = extractAP(tbRows);
+    const np     = extractNP(pnlRows);
+    const vat    = extractVat(vatSummary);
+
+    const prevCash = extractCash(prevTbRows);
+    const prevAR   = extractAR(prevTbRows);
+    const prevAP   = extractAP(prevTbRows);
+    const prevNP   = extractNP(prevPnlRows);
+    const prevVat  = extractVat(prevVatSummary);
 
     document.getElementById("kpiCash").textContent = money(cash);
     document.getElementById("kpiAR").textContent = money(ar);
     document.getElementById("kpiAP").textContent = money(ap);
     document.getElementById("kpiNP").textContent = money(np);
     document.getElementById("kpiVAT").textContent = money(vat);
+
+    // ── Trend deltas vs. previous period ────────────────────────────────
+    // applyKpiTrend("cash", current, previous)
+    //   - Computes (current - previous) / |previous| * 100
+    //   - Picks arrow + colour class based on direction AND magnitude
+    //   - For VAT specifically: when the sign flips between refund (-) and
+    //     payable (+) the percentage is meaningless, so we show "▲ flip"
+    //     or "▼ flip" instead of a number.
+    applyKpiTrend("cash", cash, prevCash, { hasComparator: !!previousPeriodKey });
+    applyKpiTrend("ar",   ar,   prevAR,   { hasComparator: !!previousPeriodKey });
+    applyKpiTrend("ap",   ap,   prevAP,   { hasComparator: !!previousPeriodKey });
+    applyKpiTrend("np",   np,   prevNP,   { hasComparator: !!previousPeriodKey });
+    applyKpiTrend("vat", vat, prevVat, { hasComparator: !!previousPeriodKey, signFlip: true });
   } catch (e) {
     console.error("renderDashboardKPIs error:", e);
 
@@ -20281,9 +20401,98 @@ async function renderDashboardKPIs(periodKey = "this_month") {
     document.getElementById("kpiAP").textContent = money(0);
     document.getElementById("kpiNP").textContent = money(0);
     document.getElementById("kpiVAT").textContent = money(0);
+
+    // Reset all trend pills to a neutral dash on failure.
+    ["cash", "ar", "ap", "np", "vat"].forEach(k =>
+      applyKpiTrend(k, 0, 0, { hasComparator: false })
+    );
   }
 }
 window.renderDashboardKPIs = renderDashboardKPIs;
+
+/**
+ * Apply a real period-over-period trend pill to a KPI meter.
+ *
+ * @param {string} metric   One of: cash, ar, ap, np, vat
+ * @param {number} current  Current-period value
+ * @param {number} previous Previous-period value (may be null/NaN if no
+ *                          comparator is available — in which case we
+ *                          render a neutral "—" pill)
+ * @param {object} opts     { hasComparator, signFlip }
+ *   - hasComparator: false → show "—" with no percentage
+ *   - signFlip:      true  → if current and previous have opposite signs
+ *                          (e.g. VAT flipping from refund to payable),
+ *                          show "▲ flip" / "▼ flip" instead of a misleading
+ *                          percentage
+ */
+function applyKpiTrend(metric, current, previous, opts = {}) {
+  const el = document.querySelector(`[data-kpi-trend="${metric}"]`);
+  if (!el) return;
+
+  const hasComparator = opts.hasComparator !== false;
+  const cur = Number(current) || 0;
+  const prev = Number(previous);
+
+  // No comparator period available — show neutral dash.
+  if (!hasComparator || !Number.isFinite(prev)) {
+    el.className = "ckp-trend ckp-trend--flat";
+    el.textContent = "—";
+    el.title = "No prior period available for comparison.";
+    return;
+  }
+
+  // Sign flip (e.g. VAT moving from refund → payable) → percentage is
+  // misleading; show a directional "flip" pill instead.
+  if (opts.signFlip && cur !== 0 && prev !== 0 && Math.sign(cur) !== Math.sign(prev)) {
+    // For VAT specifically: positive = payable (worse), negative = refund (better).
+    const isUp = cur > 0; // moved to payable
+    el.className = `ckp-trend ${isUp ? "ckp-trend--down" : "ckp-trend--up"}`;
+    el.textContent = isUp ? "▲ flip → payable" : "▼ flip → refund";
+    el.title = `VAT moved from ${prev < 0 ? "refund" : "payable"} (${money(prev)}) to ${cur < 0 ? "refund" : "payable"} (${money(cur)}).`;
+    return;
+  }
+
+  const absPrev = Math.abs(prev);
+  if (absPrev < 0.005) {
+    // Previous was zero / essentially zero — a percentage is meaningless.
+    // Show "▲ new" if something appeared, "—" if both zero.
+    if (Math.abs(cur) < 0.005) {
+      el.className = "ckp-trend ckp-trend--flat";
+      el.textContent = "—";
+      el.title = "No movement this period or last.";
+    } else {
+      el.className = "ckp-trend ckp-trend--up";
+      el.textContent = "▲ new";
+      el.title = `New this period (${money(cur)}). No prior-period balance to compare.`;
+    }
+    return;
+  }
+
+  const delta = cur - prev;
+  const pct = (delta / absPrev) * 100;
+  const rounded = Math.abs(pct) < 0.05 ? 0 : Math.round(pct * 10) / 10;
+
+  // Threshold: anything within ±0.5% is "flat".
+  let cls, arrow;
+  if (rounded > 0.5) {
+    cls = "ckp-trend--up";
+    arrow = "▲";
+  } else if (rounded < -0.5) {
+    cls = "ckp-trend--down";
+    arrow = "▼";
+  } else {
+    cls = "ckp-trend--flat";
+    arrow = "—";
+  }
+
+  // Build the absolute + percentage tooltip so the user can hover to see
+  // the underlying money delta (not just the % figure).
+  const sign = rounded > 0 ? "+" : "";
+  el.className = `ckp-trend ${cls}`;
+  el.textContent = `${arrow} ${sign}${rounded}%`;
+  el.title = `${money(cur)} vs ${money(prev)} previous period (${sign}${money(delta)} / ${sign}${rounded}%)`;
+}
+window.applyKpiTrend = applyKpiTrend;
 
 // ==============================
 // VAT account discovery
