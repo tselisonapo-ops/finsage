@@ -100046,6 +100046,7 @@ class DatabaseService:
                 "labour": [],
                 "direct_costs": [],
                 "overhead": [],
+                "utilities": [],
             }
 
             # 1. LABOUR
@@ -100207,6 +100208,79 @@ class DatabaseService:
                         item["asset_depreciation_id"] = int(item["asset_depreciation_id"])
 
                     result["overhead"].append(item)
+
+            # 4. UTILITIES
+            c.execute(
+                f"""
+                SELECT
+                    u.id,
+                    u.company_id,
+                    u.manufacturing_order_id,
+                    u.bom_utility_id,
+                    u.method,
+                    u.utility_type,
+                    u.description,
+                    u.cost,
+                    u.quantity,
+                    u.rate,
+                    u.unit,
+                    u.monthly_amount,
+                    u.allocation_pct,
+                    u.batches_per_month,
+                    u.asset_id,
+                    u.effective_kw,
+                    u.hours,
+                    u.kwh_rate,
+                    u.source,
+                    u.source_id,
+                    u.memo,
+                    u.created_by_user_id,
+                    u.updated_by_user_id,
+                    u.created_at,
+                    u.updated_at
+                FROM {schema}.manufacturing_order_utilities u
+                WHERE u.company_id = %s
+                AND u.manufacturing_order_id = %s
+                ORDER BY u.id
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                ),
+            )
+
+            rows = c.fetchall()
+            columns = [d[0] for d in c.description]
+
+            if rows:
+                for row in rows:
+                    item = (
+                        dict(row)
+                        if isinstance(row, dict)
+                        else dict(zip(columns, row))
+                    )
+
+                    for key in (
+                        "cost",
+                        "quantity",
+                        "rate",
+                        "monthly_amount",
+                        "allocation_pct",
+                        "batches_per_month",
+                        "effective_kw",
+                        "hours",
+                        "kwh_rate",
+                    ):
+                        if item.get(key) is not None:
+                            item[key] = float(item[key])
+
+                    if item.get("asset_id") is not None:
+                        item["asset_id"] = int(item["asset_id"])
+
+                    if item.get("bom_utility_id") is not None:
+                        item["bom_utility_id"] = int(item["bom_utility_id"])
+
+                    result["utilities"].append(item)
 
             return result
 
@@ -100782,6 +100856,440 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _delete(cur2)
         
+    # ================================================================
+    # MANUFACTURING ORDER UTILITIES — CRUD
+    # Mirrors create_manufacturing_order_overhead / labour / direct_cost.
+    # The table manufacturing_order_utilities already exists and is
+    # populated when an order is created from a BOM (see
+    # copy_bom_utilities_to_manufacturing_order). These methods allow
+    # the user to add / edit / delete utility lines directly on the
+    # production order detail screen.
+    # ================================================================
+
+    def create_manufacturing_order_utility(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        method=None,
+        utility_type=None,
+        description=None,
+        cost=None,
+        quantity=None,
+        rate=None,
+        unit=None,
+        monthly_amount=None,
+        allocation_pct=None,
+        batches_per_month=None,
+        asset_id=None,
+        effective_kw=None,
+        hours=None,
+        kwh_rate=None,
+        source=None,
+        source_id=None,
+        memo=None,
+        created_by_user_id=None,
+        cur=None,
+    ) -> int:
+        """
+        Insert a new utility line on a manufacturing order.
+
+        Cost is always required (>= 0). If the caller does not pass an
+        explicit cost, it is derived from the method + numeric inputs:
+            water-direct   / elec-direct  : quantity * rate
+            water-allocation: monthly_amount * allocation_pct / batches_per_month
+            elec-machine    : effective_kw * hours * kwh_rate
+        """
+        schema = self.company_schema(company_id)
+
+        def _dec(v):
+            return Decimal(str(v)) if v is not None and v != "" else None
+
+        cost_dec = _dec(cost)
+        quantity_dec = _dec(quantity)
+        rate_dec = _dec(rate)
+        monthly_dec = _dec(monthly_amount)
+        allocation_dec = _dec(allocation_pct)
+        batches_dec = _dec(batches_per_month)
+        effective_kw_dec = _dec(effective_kw)
+        hours_dec = _dec(hours)
+        kwh_rate_dec = _dec(kwh_rate)
+
+        method_norm = str(method or "water-direct").strip().lower() or "water-direct"
+
+        # Derive utility_type from method when not supplied
+        if not utility_type:
+            utility_type = (
+                "electricity"
+                if method_norm.startswith("elec")
+                else "water"
+            )
+
+        utility_type = str(utility_type).strip().lower()
+
+        if utility_type not in ("water", "electricity"):
+            raise ValueError(
+                "utility_type must be 'water' or 'electricity'"
+            )
+
+        # Derive cost when not supplied
+        if cost_dec is None:
+            if method_norm in ("water-direct", "elec-direct"):
+                if quantity_dec is not None and rate_dec is not None:
+                    cost_dec = _money(quantity_dec * rate_dec)
+            elif method_norm == "water-allocation":
+                if (
+                    monthly_dec is not None
+                    and allocation_dec is not None
+                    and batches_dec is not None
+                    and batches_dec > 0
+                ):
+                    cost_dec = _money(
+                        (monthly_dec * allocation_dec / Decimal("100"))
+                        / batches_dec
+                    )
+            elif method_norm == "elec-machine":
+                if (
+                    effective_kw_dec is not None
+                    and hours_dec is not None
+                    and kwh_rate_dec is not None
+                ):
+                    cost_dec = _money(
+                        effective_kw_dec * hours_dec * kwh_rate_dec
+                    )
+
+        if cost_dec is None or cost_dec < 0:
+            raise ValueError(
+                "Utility cost is required and cannot be negative. "
+                "Provide a cost or the inputs needed to calculate it."
+            )
+
+        def _create(c):
+            c.execute(
+                f"""
+                INSERT INTO {schema}.manufacturing_order_utilities (
+                    company_id,
+                    manufacturing_order_id,
+                    method,
+                    utility_type,
+                    description,
+                    cost,
+                    quantity,
+                    rate,
+                    unit,
+                    monthly_amount,
+                    allocation_pct,
+                    batches_per_month,
+                    asset_id,
+                    effective_kw,
+                    hours,
+                    kwh_rate,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s
+                )
+                RETURNING id
+                """,
+                (
+                    company_id,
+                    int(manufacturing_order_id),
+                    method_norm,
+                    utility_type,
+                    description,
+                    cost_dec,
+                    quantity_dec,
+                    rate_dec,
+                    unit,
+                    monthly_dec,
+                    allocation_dec,
+                    batches_dec,
+                    int(asset_id) if asset_id is not None else None,
+                    effective_kw_dec,
+                    hours_dec,
+                    kwh_rate_dec,
+                    source,
+                    source_id,
+                    memo,
+                    created_by_user_id,
+                    created_by_user_id,
+                ),
+            )
+
+            row = c.fetchone()
+
+            if isinstance(row, dict):
+                return int(row["id"])
+
+            return int(row[0])
+
+        if cur is not None:
+            return _create(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _create(cur2)
+
+    def update_manufacturing_order_utility(
+        self,
+        company_id: int,
+        utility_id: int,
+        *,
+        method=None,
+        utility_type=None,
+        description=None,
+        cost=None,
+        quantity=None,
+        rate=None,
+        unit=None,
+        monthly_amount=None,
+        allocation_pct=None,
+        batches_per_month=None,
+        asset_id=None,
+        effective_kw=None,
+        hours=None,
+        kwh_rate=None,
+        memo=None,
+        updated_by_user_id=None,
+    ) -> bool:
+        """
+        Update an existing manufacturing order utility line.
+
+        Only supplied fields are updated; NULL fields are ignored so the
+        caller can PATCH a single value. `cost` is always recalculated
+        from the method inputs when not explicitly supplied.
+        """
+        schema = self.company_schema(company_id)
+
+        def _dec(v):
+            return Decimal(str(v)) if v is not None and v != "" else None
+
+        cost_dec = _dec(cost)
+        quantity_dec = _dec(quantity)
+        rate_dec = _dec(rate)
+        monthly_dec = _dec(monthly_amount)
+        allocation_dec = _dec(allocation_pct)
+        batches_dec = _dec(batches_per_month)
+        effective_kw_dec = _dec(effective_kw)
+        hours_dec = _dec(hours)
+        kwh_rate_dec = _dec(kwh_rate)
+
+        def _update(c):
+            # Lock + fetch existing row so we can merge with the incoming
+            # patch values for cost recalculation.
+            c.execute(
+                f"""
+                SELECT u.*, mo.status
+                FROM {schema}.manufacturing_order_utilities u
+                JOIN {schema}.manufacturing_orders mo
+                    ON mo.id = u.manufacturing_order_id
+                    AND mo.company_id = u.company_id
+                WHERE u.company_id = %s AND u.id = %s
+                FOR UPDATE OF u
+                """,
+                (company_id, int(utility_id)),
+            )
+            row = c.fetchone()
+            if not row:
+                raise ValueError("Utility record not found")
+
+            existing = (
+                row if isinstance(row, dict)
+                else dict(zip([d[0] for d in c.description], row))
+            )
+
+            status = str(existing.get("status") or "").lower()
+            if status in ("completed", "cancelled"):
+                raise ValueError(
+                    f"Cannot update utilities on a {status} production order"
+                )
+
+            # Merge patch with existing values
+            merged_method = (
+                str(method or "").strip().lower()
+                if method
+                else str(existing.get("method") or "water-direct")
+            ) or "water-direct"
+
+            merged_utility_type = (
+                str(utility_type or "").strip().lower()
+                if utility_type
+                else str(existing.get("utility_type") or "")
+            )
+
+            if not merged_utility_type:
+                merged_utility_type = (
+                    "electricity"
+                    if merged_method.startswith("elec")
+                    else "water"
+                )
+
+            if merged_utility_type not in ("water", "electricity"):
+                raise ValueError(
+                    "utility_type must be 'water' or 'electricity'"
+                )
+
+            merged_quantity = (
+                quantity_dec
+                if quantity_dec is not None
+                else _dec(existing.get("quantity"))
+            )
+            merged_rate = (
+                rate_dec
+                if rate_dec is not None
+                else _dec(existing.get("rate"))
+            )
+            merged_monthly = (
+                monthly_dec
+                if monthly_dec is not None
+                else _dec(existing.get("monthly_amount"))
+            )
+            merged_allocation = (
+                allocation_dec
+                if allocation_dec is not None
+                else _dec(existing.get("allocation_pct"))
+            )
+            merged_batches = (
+                batches_dec
+                if batches_dec is not None
+                else _dec(existing.get("batches_per_month"))
+            )
+            merged_effective_kw = (
+                effective_kw_dec
+                if effective_kw_dec is not None
+                else _dec(existing.get("effective_kw"))
+            )
+            merged_hours = (
+                hours_dec
+                if hours_dec is not None
+                else _dec(existing.get("hours"))
+            )
+            merged_kwh_rate = (
+                kwh_rate_dec
+                if kwh_rate_dec is not None
+                else _dec(existing.get("kwh_rate"))
+            )
+
+            # Recalculate cost when not explicitly supplied
+            if cost_dec is None:
+                if merged_method in ("water-direct", "elec-direct"):
+                    if merged_quantity is not None and merged_rate is not None:
+                        cost_dec = _money(merged_quantity * merged_rate)
+                elif merged_method == "water-allocation":
+                    if (
+                        merged_monthly is not None
+                        and merged_allocation is not None
+                        and merged_batches is not None
+                        and merged_batches > 0
+                    ):
+                        cost_dec = _money(
+                            (merged_monthly * merged_allocation / Decimal("100"))
+                            / merged_batches
+                        )
+                elif merged_method == "elec-machine":
+                    if (
+                        merged_effective_kw is not None
+                        and merged_hours is not None
+                        and merged_kwh_rate is not None
+                    ):
+                        cost_dec = _money(
+                            merged_effective_kw
+                            * merged_hours
+                            * merged_kwh_rate
+                        )
+
+            if cost_dec is None or cost_dec < 0:
+                raise ValueError(
+                    "Utility cost is required and cannot be negative."
+                )
+
+            c.execute(
+                f"""
+                UPDATE {schema}.manufacturing_order_utilities
+                SET
+                    method = %s,
+                    utility_type = %s,
+                    description = %s,
+                    cost = %s,
+                    quantity = %s,
+                    rate = %s,
+                    unit = %s,
+                    monthly_amount = %s,
+                    allocation_pct = %s,
+                    batches_per_month = %s,
+                    asset_id = %s,
+                    effective_kw = %s,
+                    hours = %s,
+                    kwh_rate = %s,
+                    memo = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s
+                """,
+                (
+                    merged_method,
+                    merged_utility_type,
+                    description if description is not None else existing.get("description"),
+                    cost_dec,
+                    merged_quantity,
+                    merged_rate,
+                    unit if unit is not None else existing.get("unit"),
+                    merged_monthly,
+                    merged_allocation,
+                    merged_batches,
+                    int(asset_id) if asset_id is not None else (
+                        int(existing["asset_id"]) if existing.get("asset_id") is not None else None
+                    ),
+                    merged_effective_kw,
+                    merged_hours,
+                    merged_kwh_rate,
+                    memo if memo is not None else existing.get("memo"),
+                    updated_by_user_id,
+                    company_id,
+                    int(utility_id),
+                ),
+            )
+
+            return c.rowcount > 0
+
+        with self._conn_cursor() as (conn, cur):
+            return _update(cur)
+
+    def delete_manufacturing_order_utility(
+        self,
+        company_id: int,
+        utility_id: int,
+        cur=None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        def _delete(c):
+            c.execute(
+                f"""
+                DELETE FROM {schema}.manufacturing_order_utilities
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    company_id,
+                    int(utility_id),
+                ),
+            )
+
+            return c.rowcount > 0
+
+        if cur is not None:
+            return _delete(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _delete(cur2)
+
     def get_manufacturing_order_dispatches(
         self,
         company_id: int,

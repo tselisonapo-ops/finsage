@@ -1,4 +1,4 @@
-﻿print("[BOOT] api_server.py import started")
+print("[BOOT] api_server.py import started")
 
 # ────────────────────────────────────────────────────────────────
 # Load environment FIRST (before ANY BackEnd.Services imports)
@@ -16993,6 +16993,183 @@ def delete_manufacturing_order_overhead(
     except Exception as e:
         current_app.logger.exception(
             "delete_manufacturing_order_overhead failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+
+# ================================================================
+# MANUFACTURING ORDER UTILITIES — POST / PUT / DELETE
+# Mirrors the overhead routes above. The GET list is already served
+# by GET /manufacturing/orders/<order_id> (order.utilities) and by
+# GET .../management-costs (management_costs.utilities).
+# ================================================================
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/utilities",
+    methods=["POST"]
+)
+@require_auth
+def create_manufacturing_order_utility(
+    cid: int,
+    order_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        raw_asset_id = payload.get("asset_id")
+        asset_id = int(raw_asset_id) if raw_asset_id not in (None, "", 0, "0") else None
+
+        utility_id = db_service.create_manufacturing_order_utility(
+            company_id=company_id,
+            manufacturing_order_id=int(order_id),
+            method=payload.get("method"),
+            utility_type=payload.get("utility_type"),
+            description=payload.get("description"),
+            cost=payload.get("cost"),
+            quantity=payload.get("quantity"),
+            rate=payload.get("rate"),
+            unit=payload.get("unit"),
+            monthly_amount=payload.get("monthly_amount"),
+            allocation_pct=payload.get("allocation_pct"),
+            batches_per_month=payload.get("batches_per_month"),
+            asset_id=asset_id,
+            effective_kw=payload.get("effective_kw"),
+            hours=payload.get("hours"),
+            kwh_rate=payload.get("kwh_rate"),
+            source=payload.get("source"),
+            source_id=payload.get("source_id"),
+            memo=payload.get("memo"),
+            created_by_user_id=int(user.get("id") or 0) or None,
+        )
+
+        return jsonify({
+            "ok": True,
+            "id": utility_id,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "create_manufacturing_order_utility failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/utilities/<int:utility_id>",
+    methods=["PUT", "PATCH"]
+)
+@require_auth
+def update_manufacturing_order_utility(
+    cid: int,
+    order_id: int,
+    utility_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        raw_asset_id = payload.get("asset_id")
+        asset_id = int(raw_asset_id) if raw_asset_id not in (None, "", 0, "0") else None
+
+        updated = db_service.update_manufacturing_order_utility(
+            company_id=company_id,
+            utility_id=int(utility_id),
+            method=payload.get("method"),
+            utility_type=payload.get("utility_type"),
+            description=payload.get("description"),
+            cost=payload.get("cost"),
+            quantity=payload.get("quantity"),
+            rate=payload.get("rate"),
+            unit=payload.get("unit"),
+            monthly_amount=payload.get("monthly_amount"),
+            allocation_pct=payload.get("allocation_pct"),
+            batches_per_month=payload.get("batches_per_month"),
+            asset_id=asset_id,
+            effective_kw=payload.get("effective_kw"),
+            hours=payload.get("hours"),
+            kwh_rate=payload.get("kwh_rate"),
+            memo=payload.get("memo"),
+            updated_by_user_id=int(user.get("id") or 0) or None,
+        )
+
+        if not updated:
+            return jsonify({
+                "error": "Utility record not found",
+            }), 404
+
+        return jsonify({"ok": True}), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "update_manufacturing_order_utility failed"
+        )
+        return jsonify({
+            "error": str(e),
+        }), 500
+
+
+@app.route(
+    "/api/companies/<int:cid>/manufacturing/orders/<int:order_id>/utilities/<int:utility_id>",
+    methods=["DELETE"]
+)
+@require_auth
+def delete_manufacturing_order_utility(
+    cid: int,
+    order_id: int,
+    utility_id: int,
+):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        deleted = db_service.delete_manufacturing_order_utility(
+            company_id=company_id,
+            utility_id=int(utility_id),
+        )
+
+        if not deleted:
+            return jsonify({
+                "error": "Utility record not found",
+            }), 404
+
+        return jsonify({"ok": True}), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "delete_manufacturing_order_utility failed"
         )
         return jsonify({
             "error": str(e),
