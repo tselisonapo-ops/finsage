@@ -1,4 +1,4 @@
-print("[BOOT] api_server.py import started")
+﻿print("[BOOT] api_server.py import started")
 
 # ────────────────────────────────────────────────────────────────
 # Load environment FIRST (before ANY BackEnd.Services imports)
@@ -5578,7 +5578,7 @@ def api_create_invite():
         product_access=product_access,
     )
 
-    invite_link=f"{FRONTEND_BASE}/ops/accept-invite?token={token}"
+    invite_link = f"{FRONTEND_BASE}/app/accept-invite?token={token}"
     access_scope_label = "internal access" if access_scope == "core" else "assignment access"
 
     subject = f"You've been invited to {company_name} on FinSage"
