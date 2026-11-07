@@ -218,20 +218,18 @@
         }
 
         // Save JWT token just like normal signin
-        if (data.token) {
-          localStorage.setItem("fs_user_token", data.token);
-          localStorage.setItem("authToken", data.token);
-          if (data.email) {
-            localStorage.setItem("userEmail", data.email);
-          }
-        }
+        // Invitation successfully accepted.
+        // Do not automatically authenticate the user.
+        // The user must sign in normally.
 
-        statusEl.textContent = "Account created! Redirecting to dashboard…";
+        statusEl.textContent =
+          "Your account has been created successfully! Redirecting to sign in...";
+
         statusEl.classList.add("ok");
 
         setTimeout(() => {
-          window.location.href = "dashboard.html";
-        }, 1200);
+          window.location.replace("/app/");
+        }, 1800);
       } catch (err) {
         statusEl.textContent = "Network error. Please try again.";
         statusEl.classList.add("error");
