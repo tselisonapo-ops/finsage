@@ -1,4 +1,4 @@
-(function hardTraceRedirects() {
+﻿(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -133782,11 +133782,13 @@ function _mfgReviewCostRows(rows, type) {
   `;
 }
 
+
 function _mfgRenderBomReview() {
   const panel = document.getElementById("mfgOrderBomReview");
   if (!panel) return;
 
   const bom = _mfgOrderSelectedBom;
+
   if (!bom) {
     panel.classList.add("hidden");
     return;
@@ -133794,20 +133796,41 @@ function _mfgRenderBomReview() {
 
   panel.classList.remove("hidden");
 
-  const quantityInput = document.getElementById("mfgOrderQty");
-  const plannedQty = Math.max(0, _mfgReviewNumber(quantityInput?.value));
-  const batchQty = _mfgReviewNumber(bom.batch_qty);
+  const quantityInput =
+    document.getElementById("mfgOrderQty");
+
+  const plannedQty = Math.max(
+    0,
+    _mfgReviewNumber(quantityInput?.value)
+  );
+
+  const batchQty =
+    _mfgReviewNumber(bom.batch_qty);
+
   const yieldPercent = bom.yield_percent == null
     ? 100
     : _mfgReviewNumber(bom.yield_percent);
 
-  const effectiveBatchQty = batchQty * yieldPercent / 100;
-  const factor = effectiveBatchQty > 0 ? plannedQty / effectiveBatchQty : 0;
+  // batch_qty already represents finished output.
+  // Do not apply yield a second time.
+  const factor = batchQty > 0
+    ? plannedQty / batchQty
+    : 0;
 
   const summary = bom.cost_summary || {};
-  const total = _mfgReviewNumber(summary.total ?? bom.standard_total_cost);
-  const unitCost = _mfgReviewNumber(summary.unit_cost ?? bom.standard_unit_cost);
-  const sellingPrice = _mfgReviewNumber(summary.selling_price ?? bom.selling_price);
+
+  const total = _mfgReviewNumber(
+    summary.total ?? bom.standard_total_cost
+  );
+
+  const unitCost = _mfgReviewNumber(
+    summary.unit_cost ?? bom.standard_unit_cost
+  );
+
+  const sellingPrice = _mfgReviewNumber(
+    summary.selling_price ?? bom.selling_price
+  );
+
   const margin = _mfgReviewNumber(
     summary.margin_per_unit ?? (sellingPrice - unitCost)
   );
@@ -133828,31 +133851,65 @@ function _mfgRenderBomReview() {
     _mfgReviewCard("Standard margin / unit", _mfgReviewMoney(margin))
   ].join("");
 
-  const materials = Array.isArray(bom.lines) ? bom.lines : [];
-  document.getElementById("mfgReviewMaterials").innerHTML = materials.length
-    ? materials.map(line => {
-        const bomLineQty = _mfgReviewNumber(line.quantity);
-        const scrap = _mfgReviewNumber(line.scrap_percent);
-        const estimatedQty = bomLineQty * factor * (1 + scrap / 100);
-        const unitCostValue = _mfgReviewNumber(line.unit_cost);
-        const estimatedCost = estimatedQty * unitCostValue;
+  // MATERIALS
+  const materials = Array.isArray(bom.lines)
+    ? bom.lines
+    : [];
 
-        return `
-          <tr>
-            <td class="p-2 border">
-              <div class="font-medium">${_mfgReviewText(line.item_name || line.sku || `Item ${line.item_id ?? ""}`)}</div>
-              <div class="text-xs text-gray-500">${_mfgReviewText(line.sku || "")}${line.is_optional ? " · Optional" : ""}</div>
-            </td>
-            <td class="p-2 border">${_mfgReviewQty(bomLineQty)}</td>
-            <td class="p-2 border">${_mfgReviewText(line.unit || "")}</td>
-            <td class="p-2 border text-right">${_mfgReviewMoney(unitCostValue)}</td>
-            <td class="p-2 border text-right">${_mfgReviewQty(estimatedQty)}</td>
-            <td class="p-2 border text-right">${_mfgReviewMoney(estimatedCost)}</td>
-          </tr>
-        `;
-      }).join("")
-    : '<tr><td colspan="6" class="p-3 text-gray-500">No material lines recorded for this BOM.</td></tr>';
+  document.getElementById("mfgReviewMaterials").innerHTML =
+    materials.length
+      ? materials.map(line => {
+          const bomLineQty =
+            _mfgReviewNumber(line.quantity);
 
+          const scrap =
+            _mfgReviewNumber(line.scrap_percent);
+
+          const estimatedQty =
+            bomLineQty * factor * (1 + scrap / 100);
+
+          const unitCostValue =
+            _mfgReviewNumber(line.unit_cost);
+
+          const estimatedCost =
+            estimatedQty * unitCostValue;
+
+          return `
+            <tr>
+              <td class="p-2 border">
+                <div class="font-medium">
+                  ${_mfgReviewText(line.item_name || line.sku || `Item ${line.item_id ?? ""}`)}
+                </div>
+                <div class="text-xs text-gray-500">
+                  ${_mfgReviewText(line.sku || "")}${line.is_optional ? " · Optional" : ""}
+                </div>
+              </td>
+
+              <td class="p-2 border">
+                ${_mfgReviewQty(bomLineQty)}
+              </td>
+
+              <td class="p-2 border">
+                ${_mfgReviewText(line.unit || "")}
+              </td>
+
+              <td class="p-2 border text-right">
+                ${_mfgReviewMoney(unitCostValue)}
+              </td>
+
+              <td class="p-2 border text-right">
+                ${_mfgReviewQty(estimatedQty)}
+              </td>
+
+              <td class="p-2 border text-right">
+                ${_mfgReviewMoney(estimatedCost)}
+              </td>
+            </tr>
+          `;
+        }).join("")
+      : '<tr><td colspan="6" class="p-3 text-gray-500">No material lines recorded for this BOM.</td></tr>';
+
+  // LABOUR, DIRECT COSTS AND OVERHEADS
   document.getElementById("mfgReviewLabour").innerHTML =
     _mfgReviewCostRows(bom.labour, "labour");
 
@@ -133862,9 +133919,99 @@ function _mfgRenderBomReview() {
   document.getElementById("mfgReviewOverheads").innerHTML =
     _mfgReviewCostRows(bom.overheads, "overhead");
 
+  // UTILITIES — display the values returned by the selected BOM.
+  // Do not scale quantities or costs using the planned production quantity.
+  const utilities = Array.isArray(bom.utilities)
+    ? bom.utilities
+    : [];
+
+  const utilitiesEl =
+    document.getElementById("mfgReviewUtilities");
+
+  if (utilitiesEl) {
+    if (!utilities.length) {
+      utilitiesEl.innerHTML = `
+        <div class="border rounded-lg p-3 text-gray-500">
+          No utilities recorded for this BOM.
+        </div>
+      `;
+    } else {
+      const utilityTotal = utilities.reduce(
+        (sum, utility) =>
+          sum + _mfgReviewNumber(utility.cost),
+        0
+      );
+
+      utilitiesEl.innerHTML = `
+        <div class="overflow-x-auto border rounded-lg">
+          <table class="min-w-full text-sm border-collapse">
+            <thead>
+              <tr class="bg-gray-50 text-left">
+                <th class="p-2 border">Utility</th>
+                <th class="p-2 border">Method</th>
+                <th class="p-2 border text-right">Quantity</th>
+                <th class="p-2 border">Unit</th>
+                <th class="p-2 border text-right">Rate</th>
+                <th class="p-2 border text-right">Cost</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${utilities.map(utility => `
+                <tr>
+                  <td class="p-2 border">
+                    <div class="font-medium capitalize">
+                      ${_mfgReviewText(utility.utility_type || "Utility")}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      ${_mfgReviewText(utility.description || "")}
+                    </div>
+                  </td>
+
+                  <td class="p-2 border">
+                    ${_mfgReviewText(utility.method || "—")}
+                  </td>
+
+                  <td class="p-2 border text-right">
+                    ${_mfgReviewQty(utility.quantity)}
+                  </td>
+
+                  <td class="p-2 border">
+                    ${_mfgReviewText(utility.unit || "")}
+                  </td>
+
+                  <td class="p-2 border text-right">
+                    ${_mfgReviewMoney(utility.rate)}
+                  </td>
+
+                  <td class="p-2 border text-right">
+                    ${_mfgReviewMoney(utility.cost)}
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+
+            <tfoot>
+              <tr class="bg-gray-50 font-semibold">
+                <td colspan="5" class="p-3 border text-right">
+                  Total BOM utility cost
+                </td>
+
+                <td class="p-3 border text-right">
+                  ${_mfgReviewMoney(utilityTotal)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+    }
+  }
+
   document.getElementById("mfgReviewNote").textContent =
-    `Quantity estimate is based on ${_mfgReviewQty(plannedQty)} planned ${bom.batch_unit || "units"} and ${_mfgReviewQty(yieldPercent)}% BOM yield. Material estimates include each line's scrap percentage. Labour and other costs are shown from the BOM standard-cost records; actual production costs may differ.`;
+    `Quantity estimate is based on ${_mfgReviewQty(plannedQty)} planned ${bom.batch_unit || "units"}. BOM yield is ${_mfgReviewQty(yieldPercent)}% and is informational; it is not applied again to the finished batch quantity. Material estimates include each line's scrap percentage. Labour and other costs are shown from the BOM standard-cost records; actual production costs may differ.`;
 }
+
 
 async function _mfgLoadSelectedBomReview() {
   const select = document.getElementById("mfgOrderBom");
@@ -133882,53 +134029,92 @@ async function _mfgLoadSelectedBomReview() {
   }
 
   panel.classList.remove("hidden");
-  document.getElementById("mfgReviewTitle").textContent = "Loading BOM details…";
+
+  document.getElementById("mfgReviewTitle").textContent =
+    "Loading BOM details…";
+
   document.getElementById("mfgReviewSubtitle").textContent = "";
   document.getElementById("mfgReviewCostSummary").innerHTML = "";
+
   document.getElementById("mfgReviewMaterials").innerHTML =
     '<tr><td colspan="6" class="p-3 text-gray-500">Loading materials…</td></tr>';
+
   document.getElementById("mfgReviewLabour").textContent = "Loading…";
   document.getElementById("mfgReviewDirectCosts").textContent = "Loading…";
   document.getElementById("mfgReviewOverheads").textContent = "Loading…";
 
+  const utilitiesEl =
+    document.getElementById("mfgReviewUtilities");
+
+  if (utilitiesEl) {
+    utilitiesEl.innerHTML =
+      '<p class="text-gray-400">Loading utilities…</p>';
+  }
+
   try {
-    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-    const response = await apiFetch(ENDPOINTS.manufacturing.bom(cid, bomId));
+    const cid =
+      getActiveCompanyId?.() ||
+      window.CURRENT_COMPANY_ID;
+
+    const response = await apiFetch(
+      ENDPOINTS.manufacturing.bom(cid, bomId)
+    );
+
     if (requestId !== _mfgOrderBomRequest) return;
 
     const bom = response?.bom;
+
     if (!response?.ok || !bom) {
-      throw new Error(response?.error || "Could not load BOM details.");
+      throw new Error(
+        response?.error || "Could not load BOM details."
+      );
     }
 
     _mfgOrderSelectedBom = bom;
 
-    // Default planned output to one finished batch.
-    // Keep the field editable after this initial value is set.
-    const quantityInput = document.getElementById("mfgOrderQty");
-    const finishedBatchQty = Number(bom.batch_qty);
+    // Default planned output to one finished BOM batch.
+    const quantityInput =
+      document.getElementById("mfgOrderQty");
+
+    const finishedBatchQty =
+      Number(bom.batch_qty);
 
     if (
       quantityInput &&
       Number.isFinite(finishedBatchQty) &&
       finishedBatchQty > 0
     ) {
-      quantityInput.value = String(Math.round(finishedBatchQty));
+      quantityInput.value =
+        String(Math.round(finishedBatchQty));
     }
 
     _mfgRenderBomReview();
+
   } catch (error) {
     if (requestId !== _mfgOrderBomRequest) return;
+
     panel.classList.remove("hidden");
-    document.getElementById("mfgReviewTitle").textContent = "Unable to load BOM";
+
+    document.getElementById("mfgReviewTitle").textContent =
+      "Unable to load BOM";
+
     document.getElementById("mfgReviewMaterials").innerHTML =
       `<tr><td colspan="6" class="p-3 text-red-600">${_mfgReviewText(error?.message || "Could not load BOM details.")}</td></tr>`;
+
+    if (utilitiesEl) {
+      utilitiesEl.innerHTML =
+        `<p class="text-red-600">${_mfgReviewText(error?.message || "Could not load utilities.")}</p>`;
+    }
+
     if (message) {
-      message.textContent = error?.message || "Could not load BOM details.";
+      message.textContent =
+        error?.message || "Could not load BOM details.";
+
       message.classList.remove("hidden");
     }
   }
 }
+
 
 async function openManufacturingOrderModal() {
   const cid =
@@ -134034,6 +134220,21 @@ async function openManufacturingOrderModal() {
             </div>
           </div>
 
+          <div>
+            <h4 class="font-semibold text-gray-800 mb-2">
+              Utilities
+            </h4>
+
+            <div
+              id="mfgReviewUtilities"
+              class="text-sm text-gray-600">
+
+              <p class="text-gray-400">
+                Select a BOM to review its utilities.
+              </p>
+
+            </div>
+          </div>
           <p id="mfgReviewNote" class="text-xs text-gray-500"></p>
         </div>
 
