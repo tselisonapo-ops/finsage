@@ -54641,6 +54641,68 @@ class DatabaseService:
         ON {schema}.manufacturing_order_direct_costs(company_id, manufacturing_order_id);
 
 
+        CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_utilities (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            manufacturing_order_id INT NOT NULL
+                REFERENCES {schema}.manufacturing_orders(id)
+                ON DELETE CASCADE,
+
+            -- Source BOM utility record; retained as a reference only.
+            bom_utility_id INT NULL
+                REFERENCES {schema}.manufacturing_bom_utilities(id)
+                ON DELETE SET NULL,
+
+            method TEXT NOT NULL DEFAULT 'water-direct',
+            utility_type TEXT NOT NULL DEFAULT 'water',
+
+            description TEXT NULL,
+
+            -- Cost allocated to this manufacturing order.
+            cost NUMERIC(18,6) NOT NULL DEFAULT 0,
+
+            quantity NUMERIC(18,6) NULL,
+            rate NUMERIC(18,8) NULL,
+            unit TEXT NULL,
+
+            monthly_amount NUMERIC(18,6) NULL,
+            allocation_pct NUMERIC(9,4) NULL,
+            batches_per_month NUMERIC(18,6) NULL,
+
+            asset_id INT NULL,
+            effective_kw NUMERIC(18,6) NULL,
+            hours NUMERIC(18,6) NULL,
+            kwh_rate NUMERIC(18,8) NULL,
+
+            source TEXT NULL,
+            source_id INT NULL,
+            memo TEXT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CHECK (cost >= 0),
+            CHECK (utility_type IN ('water', 'electricity'))
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_manufacturing_order_utilities_company_mo_idx
+        ON {schema}.manufacturing_order_utilities(
+            company_id,
+            manufacturing_order_id
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_manufacturing_order_utilities_bom_idx
+        ON {schema}.manufacturing_order_utilities(
+            company_id,
+            bom_utility_id
+        );
+
         CREATE TABLE IF NOT EXISTS {schema}.manufacturing_order_overhead (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -92016,6 +92078,229 @@ class DatabaseService:
         with self._conn_cursor() as (conn, cur2):
             return _run(cur2)
         
+
+    def copy_bom_utilities_to_manufacturing_order(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        user_id=None,
+        cur=None,
+    ) -> dict:
+        """
+        Snapshots BOM utilities onto a manufacturing order,
+        scaled by planned_qty / BOM batch_qty.
+
+        Manual and bom_edited rows are preserved.
+        Only draft orders can be synchronized.
+        """
+        schema = self.company_schema(company_id)
+        Q6 = Decimal("0.000001")
+
+        def _row(c, row):
+            if isinstance(row, dict):
+                return row
+            cols = [d[0] for d in c.description]
+            return dict(zip(cols, row))
+
+        def _run(c):
+            c.execute(
+                f"""
+                SELECT id, mo_no, bom_id, planned_qty, status
+                FROM {schema}.manufacturing_orders
+                WHERE company_id = %s AND id = %s
+                FOR UPDATE
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+            r = c.fetchone()
+
+            if not r:
+                raise ValueError(
+                    f"Manufacturing order not found: {manufacturing_order_id}"
+                )
+
+            mo = _row(c, r)
+            mo_id = int(mo["id"])
+            bom_id = int(mo["bom_id"])
+            mo_no = mo["mo_no"]
+
+            if str(mo.get("status") or "").strip().lower() != "draft":
+                raise ValueError(
+                    f"Utilities can only be synced while order "
+                    f"{mo_no} is draft"
+                )
+
+            c.execute(
+                f"""
+                SELECT batch_qty
+                FROM {schema}.manufacturing_boms
+                WHERE company_id = %s AND id = %s
+                """,
+                (company_id, bom_id),
+            )
+            b = c.fetchone()
+
+            if not b:
+                raise ValueError(f"BOM not found: {bom_id}")
+
+            batch_qty = Decimal(str(_row(c, b)["batch_qty"] or 0))
+
+            if batch_qty <= 0:
+                raise ValueError("BOM batch quantity must be greater than zero")
+
+            c.execute(
+                f"""
+                SELECT DISTINCT source_id
+                FROM {schema}.manufacturing_order_utilities
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                AND source = 'bom_edited'
+                AND source_id IS NOT NULL
+                """,
+                (company_id, mo_id),
+            )
+
+            edited_ids = {
+                int(x["source_id"] if isinstance(x, dict) else x[0])
+                for x in (c.fetchall() or [])
+            }
+
+            c.execute(
+                f"""
+                DELETE FROM {schema}.manufacturing_order_utilities
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                AND source = 'bom'
+                """,
+                (company_id, mo_id),
+            )
+
+            planned_qty = Decimal(str(mo.get("planned_qty") or 0))
+
+            totals = {
+                "water": Decimal("0"),
+                "electricity": Decimal("0"),
+                "total": Decimal("0"),
+            }
+            count = 0
+
+            if planned_qty <= 0:
+                return {
+                    "ok": True,
+                    "mo_no": mo_no,
+                    "scaled": False,
+                    "utility_cost": 0.0,
+                    "rows": 0,
+                }
+
+            scale = planned_qty / batch_qty
+
+            c.execute(
+                f"""
+                SELECT
+                    id, method, utility_type, description, cost,
+                    quantity, rate, unit,
+                    monthly_amount, allocation_pct, batches_per_month,
+                    asset_id, effective_kw, hours, kwh_rate
+                FROM {schema}.manufacturing_bom_utilities
+                WHERE company_id = %s AND bom_id = %s
+                ORDER BY id
+                """,
+                (company_id, bom_id),
+            )
+
+            for br in (c.fetchall() or []):
+                s = _row(c, br)
+                source_id = int(s["id"])
+
+                if source_id in edited_ids:
+                    continue
+
+                utility_type = str(s.get("utility_type") or "water").lower()
+                cost = (
+                    Decimal(str(s.get("cost") or 0)) * scale
+                ).quantize(Q6)
+
+                c.execute(
+                    f"""
+                    INSERT INTO {schema}.manufacturing_order_utilities (
+                        company_id,
+                        manufacturing_order_id,
+                        bom_utility_id,
+                        method,
+                        utility_type,
+                        description,
+                        cost,
+                        quantity,
+                        rate,
+                        unit,
+                        monthly_amount,
+                        allocation_pct,
+                        batches_per_month,
+                        asset_id,
+                        effective_kw,
+                        hours,
+                        kwh_rate,
+                        source,
+                        source_id,
+                        created_by_user_id,
+                        updated_by_user_id
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, 'bom', %s, %s, %s
+                    )
+                    """,
+                    (
+                        company_id,
+                        mo_id,
+                        source_id,
+                        s.get("method"),
+                        utility_type,
+                        s.get("description"),
+                        cost,
+                        (
+                            (Decimal(str(s["quantity"])) * scale).quantize(Q6)
+                            if s.get("quantity") is not None else None
+                        ),
+                        s.get("rate"),
+                        s.get("unit"),
+                        s.get("monthly_amount"),
+                        s.get("allocation_pct"),
+                        s.get("batches_per_month"),
+                        s.get("asset_id"),
+                        s.get("effective_kw"),
+                        s.get("hours"),
+                        s.get("kwh_rate"),
+                        source_id,
+                        user_id,
+                        user_id,
+                    ),
+                )
+
+                totals[utility_type] += cost
+                totals["total"] += cost
+                count += 1
+
+            return {
+                "ok": True,
+                "mo_no": mo_no,
+                "scaled": True,
+                "scale": str(scale),
+                "water_cost": float(totals["water"]),
+                "electricity_cost": float(totals["electricity"]),
+                "utility_cost": float(totals["total"]),
+                "rows": count,
+            }
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
+
     def _bom_edited_source_ids(
         self, cur, schema, company_id, mo_id, table
     ) -> set:
@@ -94569,6 +94854,12 @@ class DatabaseService:
                 cur=c,
             )
 
+            self.copy_bom_utilities_to_manufacturing_order(
+                company_id=company_id,
+                manufacturing_order_id=mo_id,
+                user_id=created_by_user_id,
+                cur=c,
+            )
             return mo_id
 
         if cur is not None:
@@ -95691,6 +95982,13 @@ class DatabaseService:
                 )
             )
 
+            order["utilities"] = (
+                self.get_manufacturing_order_utilities(
+                    company_id=company_id,
+                    manufacturing_order_id=int(manufacturing_order_id),
+                    cur=c,
+                )
+            )
             # NEW: BOM standard cost summary — lets the frontend show the
             # recipe costs and decide which flow to offer (simple mode
             # when the BOM carries costs, legacy manual mode when not).
@@ -99697,6 +99995,43 @@ class DatabaseService:
             }
 
             return response
+
+
+    def get_manufacturing_order_utilities(
+        self,
+        company_id: int,
+        manufacturing_order_id: int,
+        *,
+        cur=None,
+    ) -> list:
+        schema = self.company_schema(company_id)
+
+        def _run(c):
+            c.execute(
+                f"""
+                SELECT *
+                FROM {schema}.manufacturing_order_utilities
+                WHERE company_id = %s
+                AND manufacturing_order_id = %s
+                ORDER BY id
+                """,
+                (company_id, int(manufacturing_order_id)),
+            )
+
+            rows = c.fetchall() or []
+            cols = [d[0] for d in c.description]
+
+            return [
+                dict(row) if isinstance(row, dict)
+                else dict(zip(cols, row))
+                for row in rows
+            ]
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cur2):
+            return _run(cur2)
 
     def get_manufacturing_order_management_costs(
         self,
