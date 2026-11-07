@@ -135478,7 +135478,7 @@ async function openManufacturingOrderDetail(orderId) {
 
 
         <!-- PRODUCTION STAGES TOGGLE (optional) -->
-        <div class="mt-6 border rounded-lg">
+        <div class="mt-6 border rounded-lg mfg-stages-toggle-card">
           <label class="flex items-start gap-3 px-4 py-3 cursor-pointer select-none">
             <input type="checkbox" data-mfg-stages-toggle class="mt-0.5 scale-110">
             <div>
@@ -136895,8 +136895,103 @@ async function openManufacturingOrderDetail(orderId) {
 
 
   /* -------------------------------------------------------
-     PRODUCTION STAGE TIMERS
+     PRODUCTION STAGES TOGGLE (hidden by default)
+     - Default: collapsed. User ticks the checkbox to expand.
+     - Choice is remembered per company in localStorage.
   ------------------------------------------------------- */
+  (function setupMfgStagesToggle() {
+    const toggle = modal.querySelector("[data-mfg-stages-toggle]");
+    const stagesPanel = modal.querySelector("#mfgProductionStages");
+    if (!toggle || !stagesPanel) return;
+
+    const storageKey = `fs_mfg_show_stages_${cid || 0}`;
+
+    // Restore previous preference (default = hidden).
+    let saved = null;
+    try {
+      saved = localStorage.getItem(storageKey);
+    } catch (_) {}
+
+    const initiallyOpen = saved === "1";
+    toggle.checked = initiallyOpen;
+    stagesPanel.classList.toggle("hidden", !initiallyOpen);
+
+    toggle.addEventListener("change", () => {
+      const open = !!toggle.checked;
+      stagesPanel.classList.toggle("hidden", !open);
+      try {
+        localStorage.setItem(storageKey, open ? "1" : "0");
+      } catch (_) {}
+
+      // First time the user expands: lazy-load the standards + stages.
+      if (open && !modal.dataset.mfgStagesLoaded) {
+        modal.dataset.mfgStagesLoaded = "1";
+        loadMfgStageStandards?.();
+        loadMfgStages?.();
+      }
+    });
+
+    // If user previously chose to show stages, lazy-load immediately.
+    if (initiallyOpen) {
+      modal.dataset.mfgStagesLoaded = "1";
+      loadMfgStageStandards?.();
+      loadMfgStages?.();
+    }
+  })();
+
+  /* Auto-generate the Stage Code from the Stage Name as the user types.
+     The code field is readonly in the template — this is what fills it. */
+  (function setupMfgStageCodeAutogen() {
+    const nameInput = modal.querySelector("[data-mfg-standard-name]");
+    const codeInput = modal.querySelector("[data-mfg-standard-code]");
+    if (!nameInput || !codeInput) return;
+
+    let sequenceCounter = 0;
+    const pad = (n, len = 3) => String(n).padStart(len, "0");
+
+    const slugify = (s) =>
+      String(s || "")
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+
+    nameInput.addEventListener("input", () => {
+      const name = nameInput.value;
+      if (!name) {
+        codeInput.value = "";
+        return;
+      }
+      const prefix = slugify(name).slice(0, 12) || "STAGE";
+      sequenceCounter += 1;
+      codeInput.value = `${prefix}-${pad(sequenceCounter)}`;
+    });
+  })();
+
+
+  /* -------------------------------------------------------
+     PRODUCTION STAGE TIMERS (incl. live countdown)
+  ------------------------------------------------------- */
+  // Tracks active setInterval handles so we can clear them on reload / close.
+  window.__mfgStageTimers = window.__mfgStageTimers || {};
+
+  function clearAllMfgStageTimers() {
+    try {
+      Object.keys(window.__mfgStageTimers || {}).forEach((key) => {
+        const t = window.__mfgStageTimers[key];
+        if (t && typeof t.intervalId === "number") {
+          clearInterval(t.intervalId);
+        }
+        delete window.__mfgStageTimers[key];
+      });
+    } catch (_) {}
+  }
+
+  // Clean up timers when the modal is closed.
+  modal.querySelectorAll("[data-close]").forEach(btn => {
+    btn.addEventListener("click", clearAllMfgStageTimers);
+  });
+
   const mfgStageList = modal.querySelector("[data-mfg-stage-list]");
 
   if (mfgStageList) {
@@ -136949,7 +137044,176 @@ async function openManufacturingOrderDetail(orderId) {
       return response;
     };
 
+    // ───────────────────────────────────────────────────────────
+    // STAGE STANDARDS LIST (Configure-a-Stage-Standard card)
+    // ───────────────────────────────────────────────────────────
+    const mfgStageStandardsHost =
+      modal.querySelector("[data-mfg-stage-standards]");
+
+    const loadMfgStageStandards = async () => {
+      if (!mfgStageStandardsHost) return;
+      mfgStageStandardsHost.innerHTML =
+        '<div class="text-sm text-slate-500">Loading stage standards…</div>';
+
+      try {
+        const result = await stageRequest(standardsUrl);
+        const rows = stageRows(result, "standards");
+        if (!rows.length) {
+          mfgStageStandardsHost.innerHTML =
+            '<div class="text-sm text-slate-500">No stage standards configured yet for this BOM.</div>';
+          return;
+        }
+
+        mfgStageStandardsHost.innerHTML = rows
+          .map((row) => {
+            const seq = Number(row.sequence_no || 0);
+            const minutes = Number(row.standard_minutes || 0);
+            const equip =
+              row.equipment_name ||
+              row.equipment ||
+              (row.equipment_asset_id ? `Asset #${row.equipment_asset_id}` : "—");
+            return `
+              <div class="border rounded p-2 text-sm flex flex-wrap items-center gap-3 justify-between">
+                <div class="flex flex-wrap items-center gap-3">
+                  <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-mono">#${stageEscape(seq)}</span>
+                  <div>
+                    <div class="font-medium">${stageEscape(row.stage_name || "Stage")}</div>
+                    <div class="text-[11px] text-slate-500">
+                      ${stageEscape(row.stage_code || "")} · ${minutes} min · Equip: ${stageEscape(equip)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+      } catch (err) {
+        console.error("[manufacturing stages] standards load failed:", err);
+        mfgStageStandardsHost.innerHTML =
+          `<div class="text-sm text-red-600">Could not load stage standards: ${stageEscape(err?.message || String(err))}</div>`;
+      }
+    };
+    window.loadMfgStageStandards = loadMfgStageStandards;
+
+    // ───────────────────────────────────────────────────────────
+    // LIVE COUNTDOWN HELPERS
+    // ───────────────────────────────────────────────────────────
+    // Always clear running intervals before re-rendering, otherwise
+    // every reload of the stage list would leak a setInterval per card.
+    const clearRunningStageTimers = () => {
+      try {
+        Object.keys(window.__mfgStageTimers || {}).forEach((key) => {
+          const t = window.__mfgStageTimers[key];
+          if (t && typeof t.intervalId === "number") {
+            clearInterval(t.intervalId);
+          }
+          delete window.__mfgStageTimers[key];
+        });
+      } catch (_) {}
+    };
+
+    const formatCountdown = (seconds) => {
+      // Negative seconds = "overtime" — prefix with minus sign so the
+      // user can see how far past the standard they've run.
+      const total = Number(seconds) || 0;
+      const negative = total < 0;
+      const abs = Math.abs(total);
+      const h = Math.floor(abs / 3600);
+      const m = Math.floor((abs % 3600) / 60);
+      const s = Math.floor(abs % 60);
+      const mm = String(m).padStart(2, "0");
+      const ss = String(s).padStart(2, "0");
+      const body = h ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+      return (negative ? "-" : "") + body;
+    };
+
+    // Re-render one stage card's elapsed + countdown cells, and toggle
+    // the overdue banner / warning classes when the standard is exceeded.
+    const tickStageCard = (card, opts) => {
+      if (!card) return;
+      const standardSeconds = Number(opts.standardSeconds) || 0;
+      const baseElapsed = Number(opts.baseElapsedSeconds) || 0;
+      const startedAt = Number(opts.startedAtMs) || Date.now();
+      const isRunning = !!opts.running;
+
+      const elapsedEl = card.querySelector("[data-stage-elapsed-display]");
+      const countEl = card.querySelector("[data-stage-countdown-display]");
+      const bannerEl = card.querySelector("[data-stage-overdue-banner]");
+
+      // If paused/completed, we just render the snapshot once and don't tick.
+      const liveElapsed = isRunning
+        ? baseElapsed + Math.floor((Date.now() - startedAt) / 1000)
+        : baseElapsed;
+      const remaining = standardSeconds - liveElapsed;
+
+      if (elapsedEl) {
+        elapsedEl.textContent = stageDuration(liveElapsed);
+      }
+
+      if (countEl) {
+        countEl.textContent = formatCountdown(remaining);
+        countEl.classList.remove(
+          "text-slate-700",
+          "text-amber-700",
+          "text-red-700"
+        );
+        if (standardSeconds <= 0) {
+          // No standard configured → neutral.
+          countEl.textContent = "—";
+          countEl.classList.add("text-slate-700");
+        } else if (remaining > 60) {
+          countEl.classList.add("text-slate-700");
+        } else if (remaining > 0) {
+          // Final minute — amber hint, no warning yet.
+          countEl.classList.add("text-amber-700");
+        } else {
+          // Standard reached / exceeded → red, but the stage keeps running.
+          countEl.classList.add("text-red-700");
+          card.classList.add("mfg-stage-overdue");
+        }
+      }
+
+      // Show / refresh the overdue banner the moment standard time is hit.
+      // We DO NOT stop the timer — the user may legitimately need to let the
+      // machine keep running past its configured standard duration.
+      if (standardSeconds > 0 && remaining <= 0) {
+        if (!bannerEl) {
+          const newBanner = document.createElement("div");
+          newBanner.setAttribute("data-stage-overdue-banner", "");
+          newBanner.className =
+            "mfg-stage-overdue-banner mt-2 px-3 py-2 rounded border border-amber-300 bg-amber-50 text-amber-800 text-xs flex items-start gap-2";
+          const overtimeSec = Math.abs(remaining);
+          newBanner.innerHTML = `
+            <span class="text-base leading-none">⚠</span>
+            <div>
+              <div class="font-semibold">Standard time reached</div>
+              <div class="mt-0.5">
+                The machine may still be running. Overtime:
+                <strong data-stage-overtime>${formatCountdown(-overtimeSec)}</strong>
+                — you can keep going and complete the stage when it's actually done.
+              </div>
+            </div>
+          `;
+          // Insert right after the elapsed/countdown row.
+          const headRow = card.querySelector(".mfg-stage-timer-row");
+          if (headRow && headRow.nextSibling) {
+            headRow.parentNode.insertBefore(newBanner, headRow.nextSibling);
+          } else {
+            card.appendChild(newBanner);
+          }
+        } else {
+          const overtimeEl = bannerEl.querySelector("[data-stage-overtime]");
+          if (overtimeEl) {
+            overtimeEl.textContent = formatCountdown(remaining); // remaining is negative
+          }
+        }
+      }
+    };
+
     const loadMfgStages = async () => {
+      // Stop any previously running tickers before re-rendering.
+      clearRunningStageTimers();
+
       mfgStageList.innerHTML =
         '<div class="text-sm text-slate-500">Loading production stages…</div>';
 
@@ -136968,8 +137232,12 @@ async function openManufacturingOrderDetail(orderId) {
           const status = String(stage.status || "pending").toLowerCase();
           const elapsed = Number(stage.elapsed_seconds || 0);
           const standard = Number(stage.standard_minutes || 45);
+          const standardSeconds = Math.max(0, Math.floor(standard * 60));
           const operator = stage.operator_name || "";
           const equipment = stage.equipment_name || "";
+          const isRunning = status === "running";
+          const remaining = standardSeconds - elapsed;
+          const isAlreadyOverdue = standardSeconds > 0 && remaining <= 0 && (isRunning);
 
           const actions = status === "pending"
             ? [["start", "Start"]]
@@ -136980,15 +137248,13 @@ async function openManufacturingOrderDetail(orderId) {
                 : [];
 
           return `
-            <div class="border rounded-lg p-3 mb-3" data-mfg-stage-card="${stageEscape(id)}">
+            <div class="border rounded-lg p-3 mb-3 ${isAlreadyOverdue ? "mfg-stage-overdue" : ""}"
+                 data-mfg-stage-card="${stageEscape(id)}">
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div class="font-semibold">${stageEscape(stage.stage_name || stage.name || stage.stage_code || "Production Stage")}</div>
                   <div class="text-xs text-slate-500">
                     Status: ${stageEscape(status)} · Standard: ${standard} min
-                  </div>
-                  <div class="text-sm mt-1">
-                    Elapsed: <strong>${stageDuration(elapsed)}</strong>
                   </div>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -137002,6 +137268,36 @@ async function openManufacturingOrderDetail(orderId) {
                   `).join("")}
                 </div>
               </div>
+
+              <div class="mfg-stage-timer-row grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                <div class="text-sm">
+                  <div class="text-[11px] uppercase tracking-wide text-slate-500">Elapsed</div>
+                  <div class="font-semibold text-slate-700 tabular-nums"
+                       data-stage-elapsed-display>${stageDuration(elapsed)}</div>
+                </div>
+                <div class="text-sm">
+                  <div class="text-[11px] uppercase tracking-wide text-slate-500">
+                    Countdown (standard ${standard} min)
+                  </div>
+                  <div class="font-semibold tabular-nums ${remaining > 60 ? "text-slate-700" : remaining > 0 ? "text-amber-700" : "text-red-700"}"
+                       data-stage-countdown-display>${standardSeconds > 0 ? formatCountdown(remaining) : "—"}</div>
+                </div>
+              </div>
+
+              ${isAlreadyOverdue ? `
+                <div class="mfg-stage-overdue-banner mt-2 px-3 py-2 rounded border border-amber-300 bg-amber-50 text-amber-800 text-xs flex items-start gap-2"
+                     data-stage-overdue-banner>
+                  <span class="text-base leading-none">⚠</span>
+                  <div>
+                    <div class="font-semibold">Standard time reached</div>
+                    <div class="mt-0.5">
+                      The machine may still be running. Overtime:
+                      <strong data-stage-overtime>${formatCountdown(remaining)}</strong>
+                      — you can keep going and complete the stage when it's actually done.
+                    </div>
+                  </div>
+                </div>
+              ` : ""}
 
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
                 <label class="text-xs">Operator
@@ -137032,6 +137328,51 @@ async function openManufacturingOrderDetail(orderId) {
             </div>
           `;
         }).join("");
+
+        // Start live tickers for every running stage.
+        stages.forEach((stage) => {
+          const id = stage.id ?? stage.stage_id;
+          const status = String(stage.status || "pending").toLowerCase();
+          if (status !== "running") return;
+
+          const card = mfgStageList.querySelector(
+            `[data-mfg-stage-card="${CSS.escape(String(id))}"]`
+          );
+          if (!card) return;
+
+          const standardSeconds = Math.max(
+            0,
+            Math.floor(Number(stage.standard_minutes || 0) * 60)
+          );
+          const baseElapsed = Number(stage.elapsed_seconds || 0);
+          const startedAtMs = Date.now();
+
+          // Render once immediately so the user sees correct numbers before
+          // the first 1-second tick.
+          tickStageCard(card, {
+            standardSeconds,
+            baseElapsedSeconds: baseElapsed,
+            startedAtMs,
+            running: true,
+          });
+
+          const intervalId = setInterval(() => {
+            // If the card has been replaced (e.g. after a reload), stop ticking.
+            if (!document.body.contains(card)) {
+              clearInterval(intervalId);
+              delete window.__mfgStageTimers[id];
+              return;
+            }
+            tickStageCard(card, {
+              standardSeconds,
+              baseElapsedSeconds: baseElapsed,
+              startedAtMs,
+              running: true,
+            });
+          }, 1000);
+
+          window.__mfgStageTimers[id] = { intervalId, card };
+        });
       } catch (error) {
         console.error("[manufacturing stages] Load failed:", error);
         mfgStageList.innerHTML = `
@@ -137040,6 +137381,7 @@ async function openManufacturingOrderDetail(orderId) {
           </div>`;
       }
     };
+    window.loadMfgStages = loadMfgStages;
 
     modal.querySelector("[data-mfg-apply-stage-standards]")
       ?.addEventListener("click", async () => {
@@ -137060,21 +137402,41 @@ async function openManufacturingOrderDetail(orderId) {
         const field = (selector) =>
           modal.querySelector(selector)?.value?.trim() || "";
 
-        const stageName = field("[data-mfg-stage-name]");
-        const stageCode = field("[data-mfg-stage-code]")
-          .toUpperCase()
-          .replace(/[^A-Z0-9_-]/g, "_");
-        const sequence = Number(field("[data-mfg-stage-sequence]") || 1);
-        const minutes = Number(field("[data-mfg-stage-minutes]") || 45);
-        const equipment = field("[data-mfg-stage-equipment]");
+        // FIX: the template uses data-mfg-standard-* (not data-mfg-stage-*).
+        // The previous handler read from non-existent selectors so saving
+        // silently no-op'd. Read from the correct ones here.
+        const stageName = field("[data-mfg-standard-name]");
+        const stageCode = field("[data-mfg-standard-code]");
+        const sequence = Number(field("[data-mfg-standard-sequence]") || 1);
+        const minutes = Number(field("[data-mfg-standard-minutes]") || 45);
 
-        if (!stageName || !stageCode) {
-          alert("Enter both a stage name and stage code.");
+        // The Default Equipment field is now a <select> populated with
+        // company fixed assets. The option's value is the asset name, and
+        // it carries the asset_id + asset_code in data-* attributes.
+        const equipSelect =
+          modal.querySelector("[data-mfg-standard-equipment]");
+        const equipment = equipSelect?.value?.trim() || "";
+        const selectedOpt = equipSelect?.selectedOptions?.[0];
+        const assetId = selectedOpt?.dataset?.assetId
+          ? Number(selectedOpt.dataset.assetId)
+          : null;
+        const assetCode = selectedOpt?.dataset?.assetCode || "";
+
+        if (!stageName) {
+          alert("Enter a stage name.");
+          modal.querySelector("[data-mfg-standard-name]")?.focus();
+          return;
+        }
+
+        if (!stageCode) {
+          alert("Stage code could not be generated. Type the stage name first.");
+          modal.querySelector("[data-mfg-standard-name]")?.focus();
           return;
         }
 
         if (!Number.isFinite(minutes) || minutes < 1) {
           alert("Standard minutes must be at least 1.");
+          modal.querySelector("[data-mfg-standard-minutes]")?.focus();
           return;
         }
 
@@ -137088,17 +137450,23 @@ async function openManufacturingOrderDetail(orderId) {
               sequence_no: sequence,
               standard_minutes: minutes,
               equipment_name: equipment,
+              // Send the asset id/code too — backend can ignore them if it
+              // doesn't yet persist them, but if it does, the link is saved.
+              equipment_asset_id: assetId,
+              equipment_asset_code: assetCode || null,
               active: true
             })
           });
 
-          modal.querySelector("[data-mfg-stage-name]").value = "";
-          modal.querySelector("[data-mfg-stage-code]").value = "";
-          modal.querySelector("[data-mfg-stage-sequence]").value = "1";
-          modal.querySelector("[data-mfg-stage-minutes]").value = "45";
-          modal.querySelector("[data-mfg-stage-equipment]").value = "";
+          // Reset the form for the next entry.
+          modal.querySelector("[data-mfg-standard-name]").value = "";
+          modal.querySelector("[data-mfg-standard-code]").value = "";
+          modal.querySelector("[data-mfg-standard-sequence]").value = "1";
+          modal.querySelector("[data-mfg-standard-minutes]").value = "45";
+          if (equipSelect) equipSelect.value = "";
 
-          alert("Stage standard saved.");
+          showToast?.("Stage standard saved.", "ok");
+          await loadMfgStageStandards?.();
           await loadMfgStages();
         } catch (error) {
           console.error("[manufacturing stages] Save standard failed:", error);
@@ -137150,7 +137518,12 @@ async function openManufacturingOrderDetail(orderId) {
       }
     });
 
-    loadMfgStages();
+    // NOTE: loadMfgStages() is intentionally NOT called unconditionally here.
+    // The "Production Stages & Timers" section is hidden by default behind
+    // the [data-mfg-stages-toggle] checkbox, and the standards + stages are
+    // lazy-loaded the first time the user expands it (see setupMfgStagesToggle
+    // above). This avoids an unnecessary API round-trip for users who don't
+    // track stage timing.
   }
 }
 // =====================================================

@@ -1555,6 +1555,99 @@ html, body {
     -webkit-overflow-scrolling:touch;
   }
 
+  /* ── Manufacturing order detail: Production Stages & Timers ──
+     The whole panel is hidden by default behind the
+     [data-mfg-stages-toggle] checkbox. These styles polish the
+     toggle row, the countdown cells, and the overdue banner. */
+
+  /* Toggle row sits where the section heading used to be */
+  #mfgProductionStagesToggle,
+  [data-mfg-stages-toggle] {
+    accent-color: #00a8a8;
+  }
+
+  /* The collapsed toggle card itself */
+  .mfg-stages-toggle-card {
+    background: linear-gradient(180deg, #ffffff, #f8fafc);
+    border-color: #e2e8f0;
+  }
+  .mfg-stages-toggle-card:hover {
+    border-color: rgba(0, 168, 168, .45);
+  }
+
+  /* Tabular numerals keep the elapsed / countdown digits from
+     jittering every second. */
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+
+  /* When a stage card exceeds its configured standard time we
+     add .mfg-stage-overdue so the user has a clear visual cue. */
+  .mfg-stage-overdue {
+    border-color: #fbbf24 !important;
+    background: linear-gradient(180deg, #fffdf5, #fffbeb);
+    box-shadow: 0 0 0 1px rgba(251, 191, 36, .35);
+  }
+
+  /* The "Standard time reached" warning banner. The stage is NOT
+     auto-completed when this appears — the user can keep the
+     machine running and complete the stage manually when ready. */
+  .mfg-stage-overdue-banner {
+    animation: mfgStageOverduePulse 1.6s ease-in-out 2;
+  }
+  @keyframes mfgStageOverduePulse {
+    0%   { box-shadow: 0 0 0 0 rgba(251, 191, 36, .55); }
+    70%  { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+  }
+
+  /* The Default Machine / Asset dropdown in the Configure-a-Stage-Standard
+     card; the readonly Stage Code field gets a subtle dashed look so users
+     realise it's auto-filled, not editable. */
+  [data-mfg-standard-equipment] {
+    background-image: linear-gradient(180deg, #ffffff, #fbfdff);
+  }
+  [data-mfg-standard-code] {
+    border-style: dashed !important;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .03em;
+  }
+
+  /* The Standards list cards under "Configured Standards" */
+  [data-mfg-stage-standards] > div {
+    background: #fbfdff;
+    border-color: #e2e8f0;
+    transition: border-color .14s ease, background .14s ease;
+  }
+  [data-mfg-stage-standards] > div:hover {
+    border-color: rgba(0, 168, 168, .45);
+    background: #f0fdfa;
+  }
+
+  /* Apply Stage Standards button — match the FinSage navy/teal accent */
+  [data-mfg-apply-stage-standards] {
+    background: linear-gradient(120deg, #00284f, #013a66) !important;
+    color: #fff !important;
+    border: 0 !important;
+    box-shadow: 0 4px 12px -2px rgba(0, 40, 79, .35);
+    transition: filter .14s ease, transform .14s ease;
+  }
+  [data-mfg-apply-stage-standards]:hover {
+    filter: brightness(1.15);
+    transform: translateY(-1px);
+  }
+
+  /* Save Stage Standard button */
+  [data-mfg-save-stage-standard] {
+    border-color: rgba(0, 168, 168, .55) !important;
+    color: #0e7490 !important;
+    background: #f0fdfa !important;
+    transition: background .14s ease, color .14s ease, transform .14s ease;
+  }
+  [data-mfg-save-stage-standard]:hover {
+    background: #ccfbf1 !important;
+    color: #00284f !important;
+    transform: translateY(-1px);
+  }
+
   /* FinSage motion system */
   :root {
     --fs-ease: cubic-bezier(.2,.8,.2,1);
