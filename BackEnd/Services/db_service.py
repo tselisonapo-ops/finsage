@@ -89359,19 +89359,32 @@ class DatabaseService:
                 (company_id, int(bom_id)),
             )
 
+            utility_cost = _scalar(
+                c,
+                f"""
+                SELECT COALESCE(SUM(COALESCE(cost, 0)), 0) AS total
+                FROM {schema}.manufacturing_bom_utilities
+                WHERE company_id = %s AND bom_id = %s
+                """,
+                (company_id, int(bom_id)),
+            )
+
             Q2 = Decimal("0.01")
             Q6 = Decimal("0.000001")
             material_cost = material_cost.quantize(Q2)
             labour_cost = labour_cost.quantize(Q2)
             direct_cost = direct_cost.quantize(Q2)
             overhead_cost = overhead_cost.quantize(Q2)
+            utility_cost = utility_cost.quantize(Q2)
 
             total_cost = (
-                material_cost + labour_cost + direct_cost + overhead_cost
+                material_cost
+                + labour_cost
+                + direct_cost
+                + overhead_cost
+                + utility_cost
             ).quantize(Q2)
 
-
- 
             # batch_qty is nominal output before the yield allowance.
             # Unit cost must use expected GOOD output after yield loss.
             effective_batch_qty = (
@@ -89392,6 +89405,7 @@ class DatabaseService:
                     standard_labour_cost   = %s,
                     standard_direct_cost   = %s,
                     standard_overhead_cost = %s,
+                    standard_utility_cost  = %s,
                     standard_total_cost    = %s,
                     standard_unit_cost     = %s,
                     updated_at = NOW()
@@ -89399,7 +89413,7 @@ class DatabaseService:
                 """,
                 (
                     material_cost, labour_cost, direct_cost,
-                    overhead_cost, total_cost, unit_cost,
+                    overhead_cost, utility_cost, total_cost, unit_cost,
                     company_id, int(bom_id),
                 ),
             )
@@ -89410,6 +89424,7 @@ class DatabaseService:
                 "labour_cost": float(labour_cost),
                 "direct_cost": float(direct_cost),
                 "overhead_cost": float(overhead_cost),
+                "utility_cost": float(utility_cost),
                 "total_cost": float(total_cost),
                 "unit_cost": float(unit_cost),
                 "yield_percent": float(yield_percent),
@@ -91020,7 +91035,8 @@ class DatabaseService:
                     b.standard_material_cost, 
                     b.standard_labour_cost, 
                     b.standard_direct_cost, 
-                    b.standard_overhead_cost, 
+                    b.standard_overhead_cost,
+                    b.standard_utility_cost,
                     b.standard_total_cost, 
                     b.standard_unit_cost, 
                     b.status, 
@@ -91116,17 +91132,55 @@ class DatabaseService:
                 else:
                     bom[key] = [dict(zip(kcols, r)) for r in krows]
 
+            c.execute(
+                f"""
+                SELECT
+                    id,
+                    bom_id,
+                    method,
+                    utility_type,
+                    description,
+                    cost,
+                    quantity,
+                    rate,
+                    unit,
+                    created_at,
+                    updated_at
+                FROM {schema}.manufacturing_bom_utilities
+                WHERE company_id = %s
+                  AND bom_id = %s
+                ORDER BY id
+                """,
+                (company_id, int(bom_id)),
+            )
+
+            utility_columns = [d[0] for d in c.description]
+            utility_rows = c.fetchall()
+
+            if utility_rows and isinstance(utility_rows[0], dict):
+                bom["utilities"] = [dict(r) for r in utility_rows]
+            else:
+                bom["utilities"] = [
+                    dict(zip(utility_columns, r))
+                    for r in utility_rows
+                ]
+
+            utility_cost = Decimal(str(
+                bom.get("standard_utility_cost") or 0
+            ))
+
             bom["cost_summary"] = {
                 "materials": float(bom.get("standard_material_cost") or 0),
                 "labour": float(bom.get("standard_labour_cost") or 0),
                 "direct_costs": float(bom.get("standard_direct_cost") or 0),
                 "overhead": float(bom.get("standard_overhead_cost") or 0),
+                "utilities": float(utility_cost),
                 "total": float(bom.get("standard_total_cost") or 0),
                 "unit_cost": float(bom.get("standard_unit_cost") or 0),
                 "selling_price": float(bom.get("selling_price") or 0),
                 "margin_per_unit": float(
-                    (Decimal(str(bom.get("selling_price") or 0))
-                    - Decimal(str(bom.get("standard_unit_cost") or 0)))
+                    Decimal(str(bom.get("selling_price") or 0))
+                    - Decimal(str(bom.get("standard_unit_cost") or 0))
                 ),
             }
 
