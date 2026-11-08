@@ -2537,7 +2537,13 @@ class DatabaseService:
             f"{frequency}"
         )
 
-
+    @staticmethod
+    def _positive_int(value: Any) -> int:
+        try:
+            return max(int(value or 0), 0)
+        except (TypeError, ValueError):
+            return 0
+        
     @staticmethod
     def _payroll_safe_month_day(
         year: int,
