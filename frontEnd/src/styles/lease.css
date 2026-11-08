@@ -22,14 +22,14 @@
   align-items: center;
 }
 
-.lease-page-title {
-  font-size: 24px;
-  font-weight: 600;
-}
-
 .lease-page-subtitle {
   font-size: 14px;
   opacity: 0.8;
+}
+
+.lease-page-title {
+  font-size: 24px;
+  font-weight: 600;
 }
 
 .lease-page-badge {
