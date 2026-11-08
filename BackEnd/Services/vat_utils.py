@@ -25,7 +25,7 @@ from flask import (
     make_response,
     current_app 
 )
-from BackEnd.Services.vat_pack_pdf_builder import (
+from BackEnd.Services.vat_pack_pdf_builder_authority_ready import (
     generate_vat_return_pdf,
     generate_vat_supporting_pdf,
 )
