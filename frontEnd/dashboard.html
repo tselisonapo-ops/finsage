@@ -45833,10 +45833,14 @@ window.safeRedirect = function (url, mode = "href") {
 }
 #screen-reports select{font-size:12px;height:34px;}
 
-/* ── statement toolbar tray ── */
+/* ── statement toolbar tray ──
+   Made sticky so it stays visible at the top of the card while the
+   statement content scrolls inside #stmtHost below it. This way the
+   user doesn't have to scroll past the toolbar to see the statement. */
 #screen-reports .stmt-toolbar{
   background:#f8fafc;border:1px solid #e8eef5;border-radius:12px;
   padding:10px 12px;
+  position:sticky;top:0;z-index:15;
 }
 #screen-reports .stmt-custom-range{gap:.4rem;}
 
@@ -45869,19 +45873,21 @@ window.safeRedirect = function (url, mode = "href") {
 }
 
 /* ── statement viewer host ──
-   Extended to reach the very bottom of the screen so users don't have to
-   do a lot of up/down scrolling to view the rendered financial statement.
-   min-height uses calc(100vh - 300px) so it fills the remaining viewport
-   below the toolbar; max-height removed so long statements can grow. */
+   The host now fills the remaining viewport (min-height) AND constrains to
+   it (max-height) so the statement scrolls INSIDE the host below the sticky
+   toolbar — the page itself no longer scrolls up and down. The sticky
+   toolbar above stays visible while the statement content scrolls. */
 #stmtHost{
   background:#fff;border:1px solid #e2e8f0;border-radius:12px;
-  min-height:calc(100vh - 300px);
+  min-height:calc(100vh - 320px);
+  max-height:calc(100vh - 320px);
+  overflow:auto;
 }
 @media (max-width:1279px){
-  #stmtHost{ min-height:calc(100vh - 360px); }
+  #stmtHost{ min-height:calc(100vh - 380px); max-height:calc(100vh - 380px); }
 }
 @media (max-width:768px){
-  #stmtHost{ min-height:calc(100vh - 420px); }
+  #stmtHost{ min-height:calc(100vh - 440px); max-height:calc(100vh - 440px); }
 }
 #stmtHost::-webkit-scrollbar{width:10px;height:10px;}
 #stmtHost::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px;border:2px solid #fff;}

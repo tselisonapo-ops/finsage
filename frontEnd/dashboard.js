@@ -107154,7 +107154,21 @@ async function renderContractPreview(c = {}) {
     }
 
     const latest = await loadLatestRevenueProgressForSelectedObligation();
+    // First render with the latest progress update so method-specific labels
+    // and values show up immediately.
     renderRevenueProgressSummary(selected, latest);
+
+    // Then enrich with the method-aware backend summary (billing position,
+    // computed progress %, etc.).
+    try {
+      const summaryData = await fetchRevenueProgressSummary(state.cid, selected.id);
+      if (summaryData) {
+        renderRevenueProgressSummary(selected, latest, summaryData);
+      }
+    } catch (e) {
+      console.warn("[refreshRevenueProgressUIAsync] fetchRevenueProgressSummary failed", e);
+    }
+
     const saveBtn = $("revSaveProgress");
     if (saveBtn) {
       saveBtn.disabled = false;
@@ -107217,23 +107231,34 @@ async function renderContractPreview(c = {}) {
     }
 
     // Render immediately from the cached obligation (so the card never flashes
-    // empty), then asynchronously enrich it with the method-aware summary
-    // from the backend (which surfaces payload_json fields per method).
-    renderRevenueProgressSummary(selected);
-
+    // empty), then asynchronously load the latest progress update AND the
+    // method-aware summary from the backend. The latest progress update
+    // carries the detailed method-specific payload (e.g. payload_json.milestone
+    // with certified_percent, certified_amount, certificate_ref, etc.) which
+    // the obligation's own payload_json does not have. The backend summary
+    // endpoint merges both sources and is the authoritative source.
     (async () => {
       try {
+        const latest = await loadLatestRevenueProgressForSelectedObligation();
+
+        // First render with the latest progress update so the method-specific
+        // labels AND values show up immediately (even before the backend
+        // summary endpoint is deployed).
+        renderRevenueProgressSummary(selected, latest);
+
+        // Then enrich with the method-aware summary from the backend (which
+        // also surfaces billing position, computed progress %, etc.).
         const summaryData = await fetchRevenueProgressSummary(
           state.cid,
           selected.id
         );
         if (summaryData) {
-          // Re-render with the enriched, method-aware summary so labels and
-          // values match the configured billing / recognition method.
-          renderRevenueProgressSummary(selected, null, summaryData);
+          renderRevenueProgressSummary(selected, latest, summaryData);
         }
       } catch (e) {
-        console.warn("[refreshRevenueProgressUI] fetchRevenueProgressSummary failed", e);
+        console.warn("[refreshRevenueProgressUI] async enrich failed", e);
+        // Fall back to a no-data render so the labels at least show.
+        renderRevenueProgressSummary(selected);
       }
     })();
   }
@@ -107287,6 +107312,15 @@ async function renderContractPreview(c = {}) {
     const timing = String(obligation?.recognition_timing || "over_time").toLowerCase();
     const pj = obligation?.payload_json || {};
 
+    // The detailed method-specific fields (certified_percent, certified_amount,
+    // certificate_ref, approval_date, retention_percent, etc.) live in the
+    // LATEST PROGRESS UPDATE's payload_json, not the obligation's payload_json.
+    // The obligation's payload_json only carries the static setup fields
+    // (milestone_code, milestone_name, retention_percent at setup, etc.).
+    // So we merge both sources: latest progress update payload first, then
+    // obligation payload as fallback.
+    const lpPj = latestProgress?.payload_json || {};
+
     if (timing === "point_in_time") {
       return {
         satisfaction_status: obligation?.satisfaction_status,
@@ -107298,13 +107332,17 @@ async function renderContractPreview(c = {}) {
     }
     if (method === "cost_to_cost") {
       return {
-        expected_total_cost: num(obligation?.expected_total_cost),
-        actual_cost_to_date: num(obligation?.actual_cost_to_date),
-        remaining_cost: Math.max(0, num(obligation?.expected_total_cost) - num(obligation?.actual_cost_to_date)),
+        expected_total_cost: num(latestProgress?.expected_total_cost ?? obligation?.expected_total_cost),
+        actual_cost_to_date: num(latestProgress?.actual_cost_to_date ?? obligation?.actual_cost_to_date),
+        remaining_cost: Math.max(
+          0,
+          num(latestProgress?.expected_total_cost ?? obligation?.expected_total_cost) -
+          num(latestProgress?.actual_cost_to_date ?? obligation?.actual_cost_to_date)
+        ),
       };
     }
     if (method === "units" || method === "units_delivered") {
-      const u = pj.units || {};
+      const u = lpPj.units || pj.units || {};
       return {
         units_total: num(u.total_units ?? pj.units_total),
         units_done: num(u.delivered_units ?? pj.units_done),
@@ -107314,9 +107352,15 @@ async function renderContractPreview(c = {}) {
       };
     }
     if (method === "milestone") {
-      const m = pj.milestone || {};
+      // The detailed milestone fields (certified_percent, certified_amount,
+      // certificate_ref, approval_date, approved_by, retention_percent,
+      // retention_amount, billing_ready, blocked_reason) are written by
+      // record_revenue_progress_update() into latest_progress.payload_json.milestone.
+      // The obligation's payload_json only has the static setup fields
+      // (milestone_code, milestone_name, milestone_allocated_amount).
+      const m = lpPj.milestone || pj.milestone || {};
       return {
-        milestone_code: m.code || pj.milestone_code || pj.linked_billing_milestone_code || obligation?.linked_milestone_code,
+        milestone_code: m.code || pj.milestone_code || pj.linked_billing_milestone_code || obligation?.linked_milestone_code || latestProgress?.milestone_code,
         milestone_description: m.description || pj.milestone_name || obligation?.linked_milestone_description,
         milestone_status: m.status,
         certified_percent: m.certified_percent ?? null,
@@ -107324,14 +107368,15 @@ async function renderContractPreview(c = {}) {
         certificate_ref: m.certificate_ref || null,
         approval_date: m.approval_date || null,
         approved_by: m.approved_by || null,
-        retention_percent: m.retention_percent ?? null,
-        retention_amount: m.retention_amount ?? null,
+        retention_percent: m.retention_percent ?? pj.retention_percent ?? null,
+        retention_amount: m.retention_amount ?? pj.retention_amount ?? null,
         billing_ready: !!m.billing_ready,
+        blocked_reason: m.blocked_reason || null,
         milestone_allocated_amount: num(pj.milestone_allocated_amount),
       };
     }
     if (method === "time_elapsed") {
-      const t = pj.time_elapsed || {};
+      const t = lpPj.time_elapsed || pj.time_elapsed || {};
       return {
         performance_start_date: t.performance_start_date || pj.performance_start_date || null,
         performance_end_date: t.performance_end_date || pj.performance_end_date || null,
@@ -107344,7 +107389,7 @@ async function renderContractPreview(c = {}) {
     }
     if (method === "manual") {
       return {
-        progress_percent: num(obligation?.progress_percent),
+        progress_percent: num(latestProgress?.progress_percent ?? obligation?.progress_percent),
       };
     }
     return {};
