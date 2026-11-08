@@ -77141,6 +77141,29 @@ class DatabaseService:
     def _sch(self, company_id: int) -> str:
         return f"company_{int(company_id)}"
 
+    def _bool(self, value, default=False) -> bool:
+        """Safely convert database values to Python booleans."""
+
+        if value is None:
+            return default
+
+        if isinstance(value, bool):
+            return value
+
+        if isinstance(value, (int, float)):
+            return value != 0
+
+        if isinstance(value, str):
+            value = value.strip().lower()
+
+            if value in {"true", "t", "yes", "y", "1", "on"}:
+                return True
+
+            if value in {"false", "f", "no", "n", "0", "off", ""}:
+                return False
+
+        return default
+
     def build_lease_modification_journal_lines(
         self,
         company_id: int,
