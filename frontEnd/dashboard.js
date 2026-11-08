@@ -4903,12 +4903,6 @@ const ENDPOINTS = {
     orderOverheadItem: (cid, orderId, overheadId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/overhead/${encodeURIComponent(overheadId)}`,
 
-    orderUtilities: (cid, orderId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/utilities`,
-
-    orderUtilityItem: (cid, orderId, utilityId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/orders/${encodeURIComponent(orderId)}/utilities/${encodeURIComponent(utilityId)}`,
-
     history: (cid, qs = "") =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/manufacturing/history${qs ? `?${qs}` : ""}`,
 
@@ -107546,6 +107540,139 @@ async function renderContractPreview(c = {}) {
     };
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // clearRevenueWorkspace()
+  // Wipes ALL workspace tabs / forms / tables / KPIs so a newly
+  // opened contract does NOT carry over the previous contract's
+  // data. Called BEFORE loading the new contract's data.
+  // ═══════════════════════════════════════════════════════════
+  function clearRevenueWorkspace() {
+    // 1. Reset state
+    state.selectedObligation = null;
+    state.contractObligations = [];
+    state.selectedContractBillingPolicy = null;
+
+    // 2. Clear KPI strip
+    const kpiMap = {
+      revKpiTxnPrice:    "—",
+      revKpiRecognized:  "—",
+      revKpiBilled:      "—",
+    };
+    Object.entries(kpiMap).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    });
+    const posEl = document.getElementById("revKpiPosition");
+    if (posEl) {
+      posEl.textContent = "Neutral";
+      posEl.className = "px-2 py-1 rounded bg-slate-100 text-slate-600";
+    }
+
+    // 3. Clear contract preview body
+    const previewBody = document.getElementById("revContractPreviewBody");
+    if (previewBody) previewBody.innerHTML = "";
+
+    // 4. Clear obligations table
+    const oblTable = document.getElementById("revObligationTableBody");
+    if (oblTable) oblTable.innerHTML =
+      `<tr><td class="p-3 text-sm text-slate-400" colspan="6">Loading obligations…</td></tr>`;
+
+    // 5. Clear version list
+    const verList = document.getElementById("revVersionList");
+    if (verList) verList.innerHTML =
+      `<div class="text-xs text-slate-400">Loading versions…</div>`;
+
+    // 6. Clear runs list
+    const runList = document.getElementById("revRunList");
+    if (runList) runList.innerHTML =
+      `<div class="text-xs text-slate-400">Loading runs…</div>`;
+
+    // 7. Clear billing overview
+    const billOv = document.getElementById("revBillingOverview");
+    if (billOv) billOv.innerHTML =
+      `<div class="p-3 text-xs text-slate-400">Loading billing events…</div>`;
+
+    // 8. Clear cash overview
+    const cashOv = document.getElementById("revCashOverview");
+    if (cashOv) cashOv.innerHTML =
+      `<div class="p-3 text-xs text-slate-400">Loading cash events…</div>`;
+
+    // 9. Reset milestone table to a single blank row
+    try { renderMilestoneRows([]); } catch (e) {}
+
+    // 10. Reset obligation form & preview
+    try {
+      hydrateObligationForm({});
+      renderObligationPreview({});
+      renderObligationContractBanner(null);
+      setObligationViewMode("preview");
+    } catch (e) {}
+
+    // 11. Clear progress tracking fields
+    const progressFields = [
+      "revProgressPeriodEnd",
+      "revProgressExpectedCost",
+      "revProgressActualCost",
+      "revProgressPercent",
+      "revProgressMilestoneCode",
+      "revProgressNotes",
+      "revProgressPerformanceStartDate",
+    ];
+    progressFields.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        if (el.tagName === "SELECT") el.selectedIndex = 0;
+        else if (el.type === "checkbox") el.checked = false;
+        else el.value = "";
+      }
+    });
+
+    // 12. Clear billing pane fields
+    const billingFields = [
+      "revBillingDate",
+      "revBillingAmount",
+      "revBillingNotes",
+      "revCashDate",
+      "revCashAmount",
+      "revCashReference",
+      "revCashNotes",
+    ];
+    billingFields.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+
+    // 13. Reset run form fields
+    const runFields = [
+      "revRunId",
+      "revRunReason",
+    ];
+    runFields.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        if (el.tagName === "SELECT") el.selectedIndex = 0;
+        else el.value = "";
+      }
+    });
+
+    // 14. Clear any messages
+    const msgEls = ["revObligationMsg", "revRunMsg", "revBillingMsg"];
+    msgEls.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = ""; el.classList.add("hidden"); }
+    });
+
+    // 15. Reset contract status pill
+    const statusPill = document.getElementById("revContractStatusPill");
+    if (statusPill) statusPill.textContent = "—";
+
+    // 16. Reset tab to "contracts" (the first tab)
+    try { setActiveTab("contracts"); } catch (e) {}
+
+    console.log("[Revenue] workspace cleared for new contract");
+  }
+  window.clearRevenueWorkspace = clearRevenueWorkspace;
+
   function renderContractKpis(c = {}) {
     const txn = num(c.transaction_price);
     const recognized = num(c.recognized_revenue_to_date);
@@ -107712,6 +107839,11 @@ async function renderContractPreview(c = {}) {
 
         const row = state.contracts.find((x) => Number(x.id) === id);
         if (!row) return;
+
+        // ═══ CLEAR PREVIOUS CONTRACT'S WORKSPACE ═══
+        // Wipe ALL tabs / forms / tables / KPIs so the new contract's
+        // workspace does NOT carry over the previous contract's data.
+        clearRevenueWorkspace();
 
         let fullContract = row;
 
@@ -135292,15 +135424,6 @@ const MFG_ORDER_COST_EDIT_SPECS = {
       { key: "rate", label: "Rate", type: "number", step: "0.01" },
       { key: "allocated_amount", label: "Allocated Amount", type: "number", step: "0.01" }
     ]
-  },
-  utilities: {
-    title: "Update Utility",
-    url: (cid, orderId, id) =>
-      `/api/companies/${cid}/manufacturing/orders/${orderId}/utilities/${id}`,
-    fields: [
-      { key: "description", label: "Description", type: "text", full: true },
-      { key: "cost", label: "Cost", type: "number", step: "0.01" }
-    ]
   }
 };
 
@@ -135528,11 +135651,6 @@ async function openManufacturingOrderDetail(orderId) {
       ? managementCosts.overhead
       : [];
 
-  const utilityLines =
-    Array.isArray(managementCosts.utilities)
-      ? managementCosts.utilities
-      : [];
-
   const materials =
     Array.isArray(order?.materials)
       ? order.materials
@@ -135643,12 +135761,6 @@ async function openManufacturingOrderDetail(orderId) {
   const overheadTotal =
     Number(
       productionSummary.manufacturing_overhead ?? 0
-    );
-
-  const utilityTotal =
-    utilityLines.reduce(
-      (sum, u) => sum + Number(u?.cost ?? 0),
-      0
     );
 
   const fullProductionCost =
@@ -136648,196 +136760,6 @@ async function openManufacturingOrderDetail(orderId) {
           </div>
         </div>
 
-        <!-- MANUFACTURING UTILITIES -->
-        <div class="border rounded mt-5">
-          <div class="px-4 py-3 border-b flex items-center justify-between">
-            <div>
-              <div class="font-semibold">Manufacturing Utilities</div>
-              <div class="text-xs text-slate-500">Water, electricity and other utilities consumed by this production order.</div>
-            </div>
-
-            <button
-              type="button"
-              data-add-utility
-              class="px-3 py-1.5 text-sm rounded border hover:bg-slate-50">
-              Add Utility
-            </button>
-          </div>
-
-          <!-- UTILITY FORM -->
-          <div data-utility-form class="hidden px-4 py-3 border-b bg-slate-50">
-            <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
-              <label class="text-xs md:col-span-2">
-                <div class="text-slate-600 mb-1">Method</div>
-                <select data-utility-method class="w-full border rounded px-2 py-2 text-sm bg-white">
-                  <option value="water-direct">Water · Direct</option>
-                  <option value="water-allocation">Water · Compound Allocation</option>
-                  <option value="elec-direct">Electricity · Direct</option>
-                  <option value="elec-machine">Electricity · Machine</option>
-                </select>
-              </label>
-
-              <label class="text-xs md:col-span-2">
-                <div class="text-slate-600 mb-1">Description (optional)</div>
-                <input
-                  type="text"
-                  data-utility-desc
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="e.g. Compound water — bakery share">
-              </label>
-
-              <label class="text-xs">
-                <div class="text-slate-600 mb-1">Unit</div>
-                <input
-                  type="text"
-                  data-utility-unit
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="e.g. L, kWh">
-              </label>
-
-              <label class="text-xs">
-                <div class="text-slate-600 mb-1">Cost (auto-calculated)</div>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  data-utility-cost
-                  class="w-full border rounded px-2 py-2 text-sm bg-slate-50 font-semibold"
-                  placeholder="0.00">
-              </label>
-            </div>
-
-            <!-- Method-specific inputs -->
-            <div data-utility-inputs-direct class="mt-3 grid grid-cols-1 md:grid-cols-6 gap-3">
-              <label class="text-xs md:col-span-3">
-                <div class="text-slate-600 mb-1">Quantity / batch</div>
-                <input type="number" min="0" step="0.0001" data-utility-qty class="w-full border rounded px-2 py-2 text-sm" placeholder="0">
-              </label>
-              <label class="text-xs md:col-span-3">
-                <div class="text-slate-600 mb-1">Rate (per unit)</div>
-                <input type="number" min="0" step="0.0001" data-utility-rate class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
-              </label>
-            </div>
-
-            <div data-utility-inputs-allocation class="hidden mt-3 grid grid-cols-1 md:grid-cols-6 gap-3">
-              <label class="text-xs md:col-span-2">
-                <div class="text-slate-600 mb-1">Monthly bill</div>
-                <input type="number" min="0" step="0.01" data-utility-monthly class="w-full border rounded px-2 py-2 text-sm" placeholder="2200">
-              </label>
-              <label class="text-xs md:col-span-2">
-                <div class="text-slate-600 mb-1">Allocation %</div>
-                <input type="number" min="0" max="100" step="0.01" data-utility-pct class="w-full border rounded px-2 py-2 text-sm" placeholder="35">
-              </label>
-              <label class="text-xs md:col-span-2">
-                <div class="text-slate-600 mb-1">Batches / month</div>
-                <input type="number" min="0" step="1" data-utility-batches class="w-full border rounded px-2 py-2 text-sm" placeholder="150">
-              </label>
-            </div>
-
-            <div data-utility-inputs-machine class="hidden mt-3 grid grid-cols-1 md:grid-cols-6 gap-3">
-              <label class="text-xs md:col-span-2">
-                <div class="text-slate-600 mb-1">Machine / Asset</div>
-                <select data-utility-asset class="w-full border rounded px-2 py-2 text-sm bg-white">
-                  <option value="">-- None / Manual --</option>
-                  ${
-                    availableAssets.map(a => {
-                      const kw = Number(a.effective_kw ?? a.power_kw ?? a.kw ?? a.rated_kw ?? 0) || 0;
-                      return `
-                        <option value="${esc(a.id)}" data-effective-kw="${kw > 0 ? kw.toFixed(2) : ""}">
-                          ${esc(a.asset_code || "")} ${esc(a.asset_name || "")}
-                          ${kw > 0 ? `(${kw} kW)` : ""}
-                        </option>
-                      `;
-                    }).join("")
-                  }
-                </select>
-              </label>
-              <label class="text-xs md:col-span-1">
-                <div class="text-slate-600 mb-1">Run hours / batch</div>
-                <input type="number" min="0" step="0.01" data-utility-hours class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
-              </label>
-              <label class="text-xs md:col-span-1">
-                <div class="text-slate-600 mb-1">Rate (R / kWh)</div>
-                <input type="number" min="0" step="0.01" data-utility-kwh-rate class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
-              </label>
-              <label class="text-xs md:col-span-2">
-                <div class="text-slate-600 mb-1">Effective kW (manual override)</div>
-                <input type="number" min="0" step="0.01" data-utility-effective-kw-manual class="w-full border rounded px-2 py-2 text-sm" placeholder="auto">
-                <div data-utility-effective-kw-info class="text-[10px] text-slate-500 mt-0.5"></div>
-              </label>
-            </div>
-
-            <div class="mt-3 flex items-center justify-between">
-              <div class="text-sm text-slate-600">
-                Calculated Cost: <strong data-utility-amount>LSL 0.00</strong>
-              </div>
-
-              <div class="flex gap-2">
-                <button type="button" data-cancel-utility class="px-3 py-1.5 text-sm rounded border hover:bg-white">Cancel</button>
-                <button type="button" data-save-utility class="px-3 py-1.5 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">Save Utility</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-slate-50">
-                <tr>
-                  <th class="px-3 py-2 text-left">Utility</th>
-                  <th class="px-3 py-2 text-left">Method</th>
-                  <th class="px-3 py-2 text-right">Quantity</th>
-                  <th class="px-3 py-2 text-left">Unit</th>
-                  <th class="px-3 py-2 text-right">Rate</th>
-                  <th class="px-3 py-2 text-right">Cost</th>
-                  <th class="px-3 py-2 text-right">Action</th>
-                </tr>
-              </thead>
-
-              <tbody data-utility-lines>
-                ${
-                  utilityLines.length
-                    ? utilityLines.map(line => `
-                      <tr class="border-b">
-                        <td class="px-3 py-2">
-                          <div class="font-medium capitalize">${esc(line.utility_type || "utility")}</div>
-                          ${line.description ? `<div class="text-xs text-slate-500">${esc(line.description)}</div>` : ""}
-                          ${line.source === "bom" ? `<div class="text-[10px] text-indigo-600 mt-0.5">from BOM</div>` : ""}
-                        </td>
-                        <td class="px-3 py-2 text-xs">${esc(line.method || "—")}</td>
-                        <td class="px-3 py-2 text-right">${line.quantity != null ? Number(line.quantity).toFixed(2) : "—"}</td>
-                        <td class="px-3 py-2">${esc(line.unit || "")}</td>
-                        <td class="px-3 py-2 text-right">${line.rate != null ? fmtMoney(line.rate) : "—"}</td>
-                        <td class="px-3 py-2 text-right font-semibold">${line.cost != null ? fmtMoney(line.cost) : "—"}</td>
-
-                        <td class="px-3 py-2 text-right">
-                          ${
-                            canRecordUsage
-                              ? `<button type="button" class="text-xs text-indigo-600 hover:underline mr-2"
-                                         data-edit-utility="${Number(line.id)}">Update</button>`
-                              : ""
-                          }
-                          <button
-                            type="button"
-                            class="text-xs text-red-600 hover:underline"
-                            data-delete-utility="${Number(line.id)}">
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    `).join("")
-                    : `
-                      <tr data-utility-empty>
-                        <td colspan="7" class="px-3 py-4 text-slate-500">
-                          No utilities have been recorded for this production order.
-                        </td>
-                      </tr>
-                    `
-                }
-              </tbody>
-            </table>
-          </div>
-        </div>
-
         <!-- PRODUCTION COST SUMMARY -->
         <div class="border rounded mt-5">
           <div class="px-4 py-3 border-b">
@@ -136870,11 +136792,6 @@ async function openManufacturingOrderDetail(orderId) {
               <div class="flex justify-between py-2 border-b">
                 <span>Manufacturing Overhead</span>
                 <strong data-summary-overhead>${fmtMoney(overheadTotal)}</strong>
-              </div>
-
-              <div class="flex justify-between py-2 border-b">
-                <span>Utilities</span>
-                <strong data-summary-utilities>${fmtMoney(utilityTotal)}</strong>
               </div>
 
               <div class="flex justify-between py-2 border-b font-semibold">
@@ -136970,7 +136887,6 @@ async function openManufacturingOrderDetail(orderId) {
   const labourById = new Map(labourLines.map(l => [Number(l.id), l]));
   const directById = new Map(directCostLines.map(l => [Number(l.id), l]));
   const overheadById = new Map(overheadLines.map(l => [Number(l.id), l]));
-  const utilityById = new Map(utilityLines.map(l => [Number(l.id), l]));
 
   modal.querySelectorAll("[data-edit-labour]").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -136990,13 +136906,6 @@ async function openManufacturingOrderDetail(orderId) {
     btn.addEventListener("click", () => {
       const line = overheadById.get(Number(btn.dataset.editOverhead));
       if (line) openMfgOrderCostRowEditModal(orderId, "overhead", line);
-    });
-  });
-
-  modal.querySelectorAll("[data-edit-utility]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const line = utilityById.get(Number(btn.dataset.editUtility));
-      if (line) openMfgOrderCostRowEditModal(orderId, "utilities", line);
     });
   });
 
@@ -137523,196 +137432,6 @@ async function openManufacturingOrderDetail(orderId) {
       } catch (err) {
         console.error("Delete manufacturing overhead failed:", err);
         alert(err?.message || "Failed to delete manufacturing overhead.");
-      }
-    });
-  });
-
-  /* -------------------------------------------------------
-     UTILITIES FORM HANDLERS
-  ------------------------------------------------------- */
-  const utilityForm = modal.querySelector("[data-utility-form]");
-  const utilityMethodSelect = modal.querySelector("[data-utility-method]");
-  const utilityDesc = modal.querySelector("[data-utility-desc]");
-  const utilityUnit = modal.querySelector("[data-utility-unit]");
-  const utilityCostInput = modal.querySelector("[data-utility-cost]");
-  const utilityAmount = modal.querySelector("[data-utility-amount]");
-  const utilityQtyInput = modal.querySelector("[data-utility-qty]");
-  const utilityRateInput = modal.querySelector("[data-utility-rate]");
-  const utilityMonthlyInput = modal.querySelector("[data-utility-monthly]");
-  const utilityPctInput = modal.querySelector("[data-utility-pct]");
-  const utilityBatchesInput = modal.querySelector("[data-utility-batches]");
-  const utilityAssetSelect = modal.querySelector("[data-utility-asset]");
-  const utilityHoursInput = modal.querySelector("[data-utility-hours]");
-  const utilityKwhRateInput = modal.querySelector("[data-utility-kwh-rate]");
-  const utilityEffectiveKwManualInput = modal.querySelector("[data-utility-effective-kw-manual]");
-  const utilityEffectiveKwInfo = modal.querySelector("[data-utility-effective-kw-info]");
-
-  const utilityInputsDirect = modal.querySelector("[data-utility-inputs-direct]");
-  const utilityInputsAllocation = modal.querySelector("[data-utility-inputs-allocation]");
-  const utilityInputsMachine = modal.querySelector("[data-utility-inputs-machine]");
-
-  const refreshUtilityInputVisibility = () => {
-    const method = utilityMethodSelect?.value || "water-direct";
-    utilityInputsDirect?.classList.toggle("hidden", method !== "water-direct" && method !== "elec-direct");
-    utilityInputsAllocation?.classList.toggle("hidden", method !== "water-allocation");
-    utilityInputsMachine?.classList.toggle("hidden", method !== "elec-machine");
-  };
-
-  const calculateUtilityCost = () => {
-    const method = utilityMethodSelect?.value || "water-direct";
-    let cost = 0;
-    let effectiveKw = 0;
-
-    if (method === "water-direct" || method === "elec-direct") {
-      const qty = Number(utilityQtyInput?.value || 0);
-      const rate = Number(utilityRateInput?.value || 0);
-      cost = (qty > 0 && rate > 0) ? qty * rate : 0;
-    } else if (method === "water-allocation") {
-      const monthly = Number(utilityMonthlyInput?.value || 0);
-      const pct = Number(utilityPctInput?.value || 0);
-      const batches = Number(utilityBatchesInput?.value || 0);
-      cost = (monthly > 0 && batches > 0) ? (monthly * pct / 100) / batches : 0;
-    } else if (method === "elec-machine") {
-      const opt = utilityAssetSelect?.selectedOptions?.[0];
-      const assetKw = Number(opt?.dataset?.effectiveKw || 0) || 0;
-      const manualKw = Number(utilityEffectiveKwManualInput?.value || 0);
-      effectiveKw = manualKw > 0 ? manualKw : assetKw;
-      const hours = Number(utilityHoursInput?.value || 0);
-      const kwhRate = Number(utilityKwhRateInput?.value || 0);
-      cost = (effectiveKw > 0 && hours > 0 && kwhRate > 0) ? effectiveKw * hours * kwhRate : 0;
-
-      if (utilityEffectiveKwInfo) {
-        if (manualKw > 0) {
-          utilityEffectiveKwInfo.textContent = `Using ${manualKw} kW (manual)`;
-        } else if (assetKw > 0) {
-          utilityEffectiveKwInfo.textContent = `Using ${assetKw} kW (from asset)`;
-        } else {
-          utilityEffectiveKwInfo.textContent = "Enter effective kW manually";
-        }
-      }
-    }
-
-    if (utilityCostInput) utilityCostInput.value = cost > 0 ? cost.toFixed(2) : "";
-    if (utilityAmount) utilityAmount.textContent = fmtMoney(cost);
-  };
-
-  utilityMethodSelect?.addEventListener("change", () => {
-    refreshUtilityInputVisibility();
-    calculateUtilityCost();
-  });
-
-  [
-    utilityQtyInput, utilityRateInput,
-    utilityMonthlyInput, utilityPctInput, utilityBatchesInput,
-    utilityHoursInput, utilityKwhRateInput, utilityEffectiveKwManualInput,
-  ].forEach(el => el?.addEventListener("input", calculateUtilityCost));
-
-  utilityAssetSelect?.addEventListener("change", calculateUtilityCost);
-
-  modal.querySelector("[data-add-utility]")?.addEventListener("click", () => {
-    if (!utilityForm) return;
-    utilityForm.classList.remove("hidden");
-    utilityMethodSelect?.focus();
-    refreshUtilityInputVisibility();
-    calculateUtilityCost();
-  });
-
-  modal.querySelector("[data-cancel-utility]")?.addEventListener("click", () => {
-    utilityForm?.classList.add("hidden");
-    if (utilityMethodSelect) utilityMethodSelect.value = "water-direct";
-    if (utilityDesc) utilityDesc.value = "";
-    if (utilityUnit) utilityUnit.value = "";
-    if (utilityCostInput) utilityCostInput.value = "";
-    if (utilityQtyInput) utilityQtyInput.value = "";
-    if (utilityRateInput) utilityRateInput.value = "";
-    if (utilityMonthlyInput) utilityMonthlyInput.value = "";
-    if (utilityPctInput) utilityPctInput.value = "";
-    if (utilityBatchesInput) utilityBatchesInput.value = "";
-    if (utilityAssetSelect) utilityAssetSelect.value = "";
-    if (utilityHoursInput) utilityHoursInput.value = "";
-    if (utilityKwhRateInput) utilityKwhRateInput.value = "";
-    if (utilityEffectiveKwManualInput) utilityEffectiveKwManualInput.value = "";
-    refreshUtilityInputVisibility();
-    calculateUtilityCost();
-  });
-
-  modal.querySelector("[data-save-utility]")?.addEventListener("click", async () => {
-    const method = String(utilityMethodSelect?.value || "water-direct").trim();
-    const description = String(utilityDesc?.value || "").trim();
-    const unit = String(utilityUnit?.value || "").trim() || null;
-    const cost = Number(utilityCostInput?.value || 0);
-
-    const utility_type =
-      method.startsWith("elec") ? "electricity" : "water";
-
-    // Build payload — only include method-specific fields
-    const payload = {
-      method,
-      utility_type,
-      description: description || null,
-      unit,
-      cost: Number.isFinite(cost) && cost > 0 ? cost : null,
-      source: "manual",
-    };
-
-    if (method === "water-direct" || method === "elec-direct") {
-      payload.quantity = Number(utilityQtyInput?.value || 0) || null;
-      payload.rate = Number(utilityRateInput?.value || 0) || null;
-    } else if (method === "water-allocation") {
-      payload.monthly_amount = Number(utilityMonthlyInput?.value || 0) || null;
-      payload.allocation_pct = Number(utilityPctInput?.value || 0) || null;
-      payload.batches_per_month = Number(utilityBatchesInput?.value || 0) || null;
-    } else if (method === "elec-machine") {
-      const rawAssetId = utilityAssetSelect?.value;
-      payload.asset_id = rawAssetId ? Number(rawAssetId) : null;
-      payload.hours = Number(utilityHoursInput?.value || 0) || null;
-      payload.kwh_rate = Number(utilityKwhRateInput?.value || 0) || null;
-
-      const manualKw = Number(utilityEffectiveKwManualInput?.value || 0);
-      if (manualKw > 0) {
-        payload.effective_kw = manualKw;
-      } else {
-        const opt = utilityAssetSelect?.selectedOptions?.[0];
-        const assetKw = Number(opt?.dataset?.effectiveKw || 0) || 0;
-        if (assetKw > 0) payload.effective_kw = assetKw;
-      }
-    }
-
-    if (!Number.isFinite(cost) || cost <= 0) {
-      alert("Please enter valid inputs so a utility cost can be calculated.");
-      return;
-    }
-
-    try {
-      await apiFetch(ENDPOINTS.manufacturing.orderUtilities(cid, orderId), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      modal.remove();
-      await openManufacturingOrderDetail(orderId);
-    } catch (err) {
-      console.error("Add manufacturing utility failed:", err);
-      alert(err?.message || "Failed to add manufacturing utility.");
-    }
-  });
-
-  modal.querySelectorAll("[data-delete-utility]").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const utilityId = Number(btn.dataset.deleteUtility);
-      if (!utilityId || !confirm("Delete this manufacturing utility?")) return;
-
-      try {
-        await apiFetch(ENDPOINTS.manufacturing.orderUtilityItem(cid, orderId, utilityId), {
-          method: "DELETE",
-          headers: { Accept: "application/json" },
-        });
-        modal.remove();
-        await openManufacturingOrderDetail(orderId);
-      } catch (err) {
-        console.error("Delete manufacturing utility failed:", err);
-        alert(err?.message || "Failed to delete manufacturing utility.");
       }
     });
   });

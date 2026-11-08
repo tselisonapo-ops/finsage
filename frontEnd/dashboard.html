@@ -14574,6 +14574,321 @@ label:has(#projectTeamUserSearch) {
   #rev3ToolsDrawer { width: calc(100vw - 32px); right: 0; }
 }
 </style>
+<style id="rev4-css">
+/* ════════════════════════════════════════════════════════════════
+   REV4 — Contract workspace tab & pane polish (all tabs).
+   Visual layer only. Improves consistency across the 5 workspace
+   tabs (contracts / obligations / billings / progress / runs),
+   the KPI strip, the milestone table, and the billing/cash
+   overview panels.
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Workspace content panes — consistent card treatment ── */
+#screen-revenue.rev2-work #revContentShift > section {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: 0 4px 16px rgba(2, 12, 27, .05);
+  margin-bottom: 10px;
+}
+
+#screen-revenue.rev2-work #revContentShift > section > .rev2-pane-head,
+#screen-revenue.rev2-work #revContentShift > section > div:first-child > h4 {
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #eef2f6;
+}
+
+/* ── 2. KPI strip cards — accent bars + hover ── */
+#screen-revenue.rev2-work #rev3KpiRow > div {
+  background: linear-gradient(180deg, #fff, #fbfdfe);
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 4px 14px rgba(2, 12, 27, .04);
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+#screen-revenue.rev2-work #rev3KpiRow > div:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 200, 200, .35);
+  box-shadow: 0 10px 26px rgba(2, 12, 27, .08);
+}
+#screen-revenue.rev2-work #rev3KpiRow > div > div:last-child {
+  font-size: 22px !important;
+  font-weight: 800;
+  color: var(--fs-navy, #00284f);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+/* ── 3. Step nav tabs — pill style with active accent ── */
+#screen-revenue.rev2-work #rev3Stepnav {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 8px 10px;
+  box-shadow: 0 4px 14px rgba(2, 12, 27, .04);
+}
+#screen-revenue.rev2-work #rev3Stepnav .rev3-sn-tab {
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  background: #f8fafc;
+  color: #64748b;
+  transition: all .15s ease;
+}
+#screen-revenue.rev2-work #rev3Stepnav .rev3-sn-tab:hover {
+  background: #f0fdfa;
+  border-color: rgba(0, 200, 200, .4);
+  color: var(--fs-navy, #00284f);
+  transform: translateY(-1px);
+}
+#screen-revenue.rev2-work #rev3Stepnav .rev3-sn-tab.bg-\[var\(--fs-navy\)\],
+#screen-revenue.rev2-work #rev3Stepnav .rev3-sn-tab.text-white {
+  background: linear-gradient(120deg, #00284f, #00526e) !important;
+  color: #fff !important;
+  border-color: transparent;
+  box-shadow: 0 6px 16px rgba(0, 40, 79, .25);
+}
+
+/* ── 4. Tables inside workspace panes — clean rows ── */
+#screen-revenue.rev2-work #revContentShift table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+#screen-revenue.rev2-work #revContentShift thead th {
+  background: #f6f9fc;
+  color: #5b6b81;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+#screen-revenue.rev2-work #revContentShift tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 13px;
+  color: #334155;
+  vertical-align: middle;
+}
+#screen-revenue.rev2-work #revContentShift tbody tr {
+  transition: background .12s ease;
+}
+#screen-revenue.rev2-work #revContentShift tbody tr:hover {
+  background: #f8fdfd;
+}
+#screen-revenue.rev2-work #revContentShift tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ── 5. Form fields inside workspace panes ── */
+#screen-revenue.rev2-work #revContentShift input:not([type="checkbox"]):not([type="radio"]),
+#screen-revenue.rev2-work #revContentShift select,
+#screen-revenue.rev2-work #revContentShift textarea {
+  border: 1px solid #dbe4ee;
+  border-radius: 9px;
+  padding: 9px 11px;
+  font-size: 13px;
+  color: #0f172a;
+  background: #fff;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+#screen-revenue.rev2-work #revContentShift input:focus,
+#screen-revenue.rev2-work #revContentShift select:focus,
+#screen-revenue.rev2-work #revContentShift textarea:focus {
+  outline: none;
+  border-color: rgba(0, 200, 200, .65);
+  box-shadow: 0 0 0 3px rgba(0, 200, 200, .14);
+}
+#screen-revenue.rev2-work #revContentShift input[type="checkbox"] {
+  accent-color: #00c8c8;
+  width: 16px;
+  height: 16px;
+}
+
+/* ── 6. Milestone table — consistent input sizing ── */
+#screen-revenue.rev2-work #revMilestoneTableBody input,
+#screen-revenue.rev2-work #revMilestoneTableBody select {
+  border: 1px solid #dbe4ee;
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+#screen-revenue.rev2-work #revMilestoneTableBody input:focus,
+#screen-revenue.rev2-work #revMilestoneTableBody select:focus {
+  border-color: rgba(0, 200, 200, .6);
+  box-shadow: 0 0 0 2px rgba(0, 200, 200, .12);
+}
+#screen-revenue.rev2-work #revMilestoneTableBody tr {
+  border-top: 1px solid #f1f5f9;
+}
+
+/* ── 7. Billing & Cash overview panels — card treatment ── */
+#screen-revenue.rev2-work #revBillingOverview,
+#screen-revenue.rev2-work #revCashOverview {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+#screen-revenue.rev2-work #revBillingOverview > div:first-child,
+#screen-revenue.rev2-work #revCashOverview > div:first-child {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #64748b;
+  background: #f6f9fc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* ── 8. Obligation table — row hover + status pills ── */
+#screen-revenue.rev2-work #revObligationTableBody tr:hover {
+  background: #f8fdfd;
+}
+#screen-revenue.rev2-work #revObligationTableBody .pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* ── 9. Contract preview body — clean layout ── */
+#screen-revenue.rev2-work #revContractPreviewBody {
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.6;
+}
+#screen-revenue.rev2-work #revContractPreviewBody > div {
+  padding: 8px 0;
+  border-bottom: 1px dashed #eef2f6;
+}
+#screen-revenue.rev2-work #revContractPreviewBody > div:last-child {
+  border-bottom: 0;
+}
+#screen-revenue.rev2-work #revContractPreviewBody strong {
+  color: var(--fs-navy, #00284f);
+  font-weight: 700;
+}
+
+/* ── 10. Version list — card items ── */
+#screen-revenue.rev2-work #revVersionList > div {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  transition: border-color .15s ease;
+}
+#screen-revenue.rev2-work #revVersionList > div:hover {
+  border-color: rgba(0, 200, 200, .35);
+}
+
+/* ── 11. Runs list — clean entries ── */
+#screen-revenue.rev2-work #revRunList > div {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  transition: border-color .15s ease, transform .15s ease;
+}
+#screen-revenue.rev2-work #revRunList > div:hover {
+  border-color: rgba(0, 200, 200, .35);
+  transform: translateX(2px);
+}
+
+/* ── 12. Contract status pill — consistent tones ── */
+#screen-revenue.rev2-work #revContractStatusPill {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+#screen-revenue.rev2-work #revContractStatusPill[data-status="active"],
+#screen-revenue.rev2-work #revContractStatusPill:empty {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+/* ── 13. Sidebar contract list — polished cards ── */
+#screen-revenue.rev2-work #revContractList .rev-contract-pick {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  background: #fff;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+#screen-revenue.rev2-work #revContractList .rev-contract-pick:hover {
+  border-color: rgba(0, 200, 200, .5);
+  background: #f0fdfa;
+  transform: translateX(2px);
+  box-shadow: 0 6px 16px rgba(2, 12, 27, .06);
+}
+
+/* ── 14. Loading placeholder text inside cleared panes ── */
+#screen-revenue.rev2-work #revObligationTableBody td,
+#screen-revenue.rev2-work #revVersionList > div,
+#screen-revenue.rev2-work #revRunList > div,
+#screen-revenue.rev2-work #revBillingOverview > div,
+#screen-revenue.rev2-work #revCashOverview > div {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* ── 15. Buttons inside workspace panes ── */
+#screen-revenue.rev2-work #revContentShift .btn,
+#screen-revenue.rev2-work #revContentShift .btn-highlight {
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 14px;
+  transition: all .15s ease;
+}
+#screen-revenue.rev2-work #revContentShift .btn:hover {
+  border-color: rgba(0, 200, 200, .5);
+  color: var(--fs-navy, #00284f);
+  background: #f0fdfa;
+}
+#screen-revenue.rev2-work #revContentShift .btn-highlight {
+  background: linear-gradient(120deg, #00bcbc, #00c8c8);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(0, 200, 200, .3);
+}
+#screen-revenue.rev2-work #revContentShift .btn-highlight:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(0, 200, 200, .35);
+}
+
+/* ── 16. Responsive ── */
+@media (max-width: 768px) {
+  #screen-revenue.rev2-work #revContentShift > section {
+    padding: 14px 12px;
+    border-radius: 12px;
+  }
+  #screen-revenue.rev2-work #rev3KpiRow {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  #screen-revenue.rev2-work #rev3Stepnav .rev3-sn-tab {
+    padding: 7px 12px;
+    font-size: 11.5px;
+  }
+}
+</style>
 <style id="pay3-css">
 /* ════════════════════════════════════════════════════════════════
    PAY3 — Payroll screen redesign (visual layer only).
