@@ -172,6 +172,43 @@ def _revenue_contract_ref(self, row: dict) -> str:
 
 def _revenue_run_ref(run_id: int) -> str:
     return f"REV-RUN-{int(run_id)}"
+
+
+# ─────────────────────────────────────────────────────────────
+# Milestone code sanitizer (db_service-side mirror of the helper
+# in revenue_routes.py).
+#
+# Used by DatabaseService.record_revenue_progress_update() to strip
+# any " — Stormwater works certified" display name off milestone_code
+# before doing the contract-milestone lookup. Keeping a copy here means
+# the db_service is safe even when called from places that bypass the
+# Flask route layer (tests, scripts, internal callers).
+#
+# Returns (code, name) where name may be None.
+# ─────────────────────────────────────────────────────────────
+def _split_milestone_code_and_name_service(raw_value):
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return (None, None)
+
+    # Try the most specific multi-char separators first. We deliberately
+    # EXCLUDE the bare hyphen "-" because milestone codes themselves often
+    # contain hyphens (e.g. "MS-002", "POB-002-02"). The frontend only
+    # ever produces the em-dash " — " form, so matching on em-dash /
+    # en-dash variants is sufficient and unambiguous.
+    separators = [" — ", " – ", " —", "— ", "—", " – ", "–"]
+
+    for sep in separators:
+        idx = raw.find(sep)
+        if idx > 0:
+            code = raw[:idx].strip()
+            name = raw[idx + len(sep):].strip()
+            if code:
+                return (code, name or None)
+
+    return (raw, None)
+
+
 # ---------------------------
 # Small numeric helper
 # ---------------------------
@@ -140341,7 +140378,48 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         }
 
     def _validate_obligation_progress_payload(self, data: dict) -> dict:
-        
+        """
+        Validate and normalize the progress-method-specific fields on an
+        obligation payload. Called by add_revenue_obligation() and
+        update_revenue_obligation().
+
+        ═══════════════════════════════════════════════════════════════
+        PER-METHOD REQUIRED VALUES MATRIX
+        ═══════════════════════════════════════════════════════════════
+
+        Each progress method MUST produce / require these values:
+
+        ┌──────────────┬────────────────────┬──────────────────┬──────────────────┬─────────────────────┐
+        │ method       │ expected_total_cost│ actual_cost_to_… │ progress_percent │ method-specific     │
+        ├──────────────┼────────────────────┼──────────────────┼──────────────────┼─────────────────────┤
+        │ cost_to_cost │ REQUIRED > 0       │ set on update    │ computed         │ —                   │
+        │              │ (denominator for   │ (numerator)      │ = act / exp*100  │                     │
+        │              │  % complete)       │                  │                  │                     │
+        ├──────────────┼────────────────────┼──────────────────┼──────────────────┼─────────────────────┤
+        │ units        │ 0 (not used)       │ 0 (not used)     │ computed         │ payload_json.units_ │
+        │              │                    │                  │ = done/total*100 │ total REQUIRED > 0  │
+        ├──────────────┼────────────────────┼──────────────────┼──────────────────┼─────────────────────┤
+        │ milestone    │ 0 (not used)       │ 0 (not used)     │ 0 or 100         │ payload_json.       │
+        │              │                    │                  │ (or certified %) │ milestone_code      │
+        │              │                    │                  │                  │ REQUIRED            │
+        ├──────────────┼────────────────────┼──────────────────┼──────────────────┼─────────────────────┤
+        │ time_elapsed │ 0 (not used)       │ 0 (not used)     │ computed         │ payload_json.       │
+        │              │                    │                  │ = elapsed/total  │ performance_start_  │
+        │              │                    │                  │   _days*100      │ date REQUIRED       │
+        │              │                    │                  │                  │ payload_json.       │
+        │              │                    │                  │                  │ performance_end_    │
+        │              │                    │                  │                  │ date REQUIRED       │
+        ├──────────────┼────────────────────┼──────────────────┼──────────────────┼─────────────────────┤
+        │ manual       │ 0 (not used)       │ 0 (not used)     │ REQUIRED 0-100   │ —                   │
+        └──────────────┴────────────────────┴──────────────────┴──────────────────┴─────────────────────┘
+
+        NOTE: expected_total_cost and actual_cost_to_date are written to
+        the revenue_obligations table, whose columns are NOT NULL DEFAULT 0.
+        So for methods that don't use cost-based progress, we coerce them
+        to 0.0 (never None). The actual cost data (when relevant) is also
+        mirrored into payload_json for analytics without polluting the
+        progress calculation.
+        """
         payload_json = data.get("payload_json") or {}
         if not isinstance(payload_json, dict):
             payload_json = {}
@@ -140352,7 +140430,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payload_json.pop("linked_billing_milestone_code", None)
             payload_json.pop("linked_billing_milestone", None)
             payload_json.pop("milestone_code", None)
-            
+
         timing = str(data.get("recognition_timing") or "point_in_time").strip().lower()
         method = str(data.get("progress_method") or "").strip().lower()
 
@@ -140360,6 +140438,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             data["payload_json"] = payload_json
             return data
 
+        # ─────────────────────────────────────────────────────────
+        # 1) COST TO COST
+        #    Required: expected_total_cost > 0
+        #    Produces: progress_percent (computed on update)
+        # ─────────────────────────────────────────────────────────
         if method == "cost_to_cost":
             expected_total_cost = float(data.get("expected_total_cost") or 0.0)
             if expected_total_cost <= 0:
@@ -140369,6 +140452,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payload_json.pop("units_total", None)
             clear_milestone_link()
 
+        # ─────────────────────────────────────────────────────────
+        # 2) UNITS / UNITS_DELIVERED
+        #    Required: payload_json.units_total > 0
+        #    Produces: progress_percent (computed on update)
+        #    expected_total_cost: NOT used → coerce to 0.0
+        # ─────────────────────────────────────────────────────────
         elif method in {"units", "units_delivered"}:
             units_total = float(payload_json.get("units_total") or payload_json.get("total_units") or 0.0)
             if units_total <= 0:
@@ -140377,13 +140466,34 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if float(data.get("expected_total_cost") or 0.0) < 0:
                 raise ValueError("Expected total cost cannot be negative.")
 
+            # ✅ units method does not use cost columns for progress.
+            # Coerce to 0.0 so the NOT NULL DEFAULT 0 column is happy.
+            data["expected_total_cost"] = 0.0
+            data["actual_cost_to_date"] = 0.0
             data["progress_percent"] = None
             clear_milestone_link()
 
+        # ─────────────────────────────────────────────────────────
+        # 3) MILESTONE
+        #    Required: milestone_code (or obligation_milestones table)
+        #    Produces: progress_percent = 0 (pending) or 100 (achieved)
+        #    expected_total_cost: NOT used → coerce to 0.0
+        # ─────────────────────────────────────────────────────────
         elif method == "milestone":
             milestone_code = str(
                 payload_json.get("milestone_code") or ""
             ).strip()
+
+            # ✅ Sanitize — strip any " — description" display name.
+            if milestone_code:
+                _mc_code, _mc_name = _split_milestone_code_and_name_service(milestone_code)
+                milestone_code = _mc_code or milestone_code
+                payload_json["milestone_code"] = milestone_code
+                if payload_json.get("linked_billing_milestone_code"):
+                    _lc_code, _ = _split_milestone_code_and_name_service(
+                        payload_json["linked_billing_milestone_code"]
+                    )
+                    payload_json["linked_billing_milestone_code"] = _lc_code or payload_json["linked_billing_milestone_code"]
 
             obligation_milestones = (
                 payload_json.get("obligation_milestones") or []
@@ -140404,18 +140514,20 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "Expected milestone cost cannot be negative."
                 )
 
+            # ✅ milestone method does not use cost columns for progress.
+            # Coerce to 0.0 so the NOT NULL DEFAULT 0 column is happy.
+            data["expected_total_cost"] = 0.0
+            data["actual_cost_to_date"] = 0.0
             data["progress_percent"] = 0.0
 
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
 
-            if float(data.get("expected_total_cost") or 0.0) < 0:
-                raise ValueError("Expected milestone cost cannot be negative.")
-
-            data["progress_percent"] = 0.0
-            payload_json.pop("units_done", None)
-            payload_json.pop("units_total", None)
-
+        # ─────────────────────────────────────────────────────────
+        # 4) MANUAL
+        #    Required: progress_percent (0-100), may be set later on update
+        #    expected_total_cost: NOT used → coerce to 0.0
+        # ─────────────────────────────────────────────────────────
         elif method == "manual":
             progress_percent = data.get("progress_percent")
             if progress_percent is not None:
@@ -140423,10 +140535,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 if pct < 0 or pct > 100:
                     raise ValueError("progress_percent must be between 0 and 100.")
 
+            # ✅ manual method does not use cost columns for progress.
+            data["expected_total_cost"] = 0.0
+            data["actual_cost_to_date"] = 0.0
+
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
             clear_milestone_link()
 
+        # ─────────────────────────────────────────────────────────
+        # 5) TIME_ELAPSED
+        #    Required: payload_json.performance_start_date,
+        #              payload_json.performance_end_date
+        #    Produces: progress_percent (computed on update)
+        #    expected_total_cost: NOT used → coerce to 0.0
+        # ─────────────────────────────────────────────────────────
         elif method == "time_elapsed":
             start_date = payload_json.get("performance_start_date")
             end_date = payload_json.get("performance_end_date")
@@ -140444,9 +140567,20 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     raise ValueError(
                         "progress_percent must be between 0 and 100."
                     )
+
+            # ✅ time_elapsed method does not use cost columns for progress.
+            data["expected_total_cost"] = 0.0
+            data["actual_cost_to_date"] = 0.0
+
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
             clear_milestone_link()
+
+        else:
+            raise ValueError(
+                f"Invalid progress_method '{method}'. "
+                "Use cost_to_cost, units, milestone, time_elapsed, or manual."
+            )
 
         data["payload_json"] = payload_json
         return data
@@ -142503,7 +142637,20 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             progress_percent = float(data["progress_percent"]) if data.get("progress_percent") not in (None, "") else None
             units_done = float(data["units_done"]) if data.get("units_done") is not None else None
             units_total = float(data["units_total"]) if data.get("units_total") is not None else None
-            milestone_code = (data.get("milestone_code") or "").strip() or None
+
+            # ✅ Defensive: strip any " — description" display name off
+            # milestone_code. The frontend dropdown option values SHOULD
+            # be bare codes, but legacy/cached JS or manual entry can still
+            # send the combined "MS-002 — Stormwater works certified" form.
+            # Doing it here too means the db_service is safe even if the
+            # route layer's _sanitize_milestone_codes_in_body() is bypassed.
+            _raw_milestone_code = (data.get("milestone_code") or "").strip() or None
+            if _raw_milestone_code:
+                _mc_code, _mc_name = _split_milestone_code_and_name_service(_raw_milestone_code)
+                milestone_code = _mc_code
+            else:
+                milestone_code = None
+
             notes = data.get("notes")
             payload_json = data.get("payload_json") or {}
             if not isinstance(payload_json, dict):
@@ -142570,8 +142717,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     (Decimal(str(recognition_units)) / Decimal(str(units_total))) * Decimal("100")
                 )
 
-                expected_total_cost = None
-                actual_cost_to_date = None
+                # ✅ FIX: units method does NOT use expected_total_cost or
+                # actual_cost_to_date for progress. The revenue_obligations
+                # columns are NOT NULL DEFAULT 0, so write 0.0 (not None).
+                expected_total_cost = 0.0
+                actual_cost_to_date = 0.0
                 milestone_code = None
 
                 payload_json["units"] = {
@@ -142587,8 +142737,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 if progress_percent < 0 or progress_percent > 100:
                     raise ValueError("Progress percent must be between 0 and 100.")
 
-                expected_total_cost = None
-                actual_cost_to_date = None
+                # ✅ FIX: manual method does NOT use expected_total_cost
+                # or actual_cost_to_date for progress. The
+                # revenue_obligations columns are NOT NULL DEFAULT 0, so
+                # write 0.0 (not None) when syncing the obligation row.
+                expected_total_cost = 0.0
+                actual_cost_to_date = 0.0
                 units_done = None
                 units_total = None
                 milestone_code = None
@@ -142611,7 +142765,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     or ""
                 )
 
+                # ✅ Sanitize the resolved milestone_code — any of the
+                # fallback sources above could carry the combined
+                # "MS-002 — Stormwater works certified" display form.
                 milestone_code = str(milestone_code).strip() or None
+                if milestone_code:
+                    _mc_code, _mc_name = _split_milestone_code_and_name_service(milestone_code)
+                    milestone_code = _mc_code or milestone_code
 
                 if not milestone_code:
                     raise ValueError("Milestone code is required for milestone updates.")
@@ -142645,8 +142805,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     progress_percent = (
                         0.0 if status == "pending" else 100.0
                     )
-                expected_total_cost = None
-                actual_cost_to_date = None
+                # ✅ FIX: milestone method does NOT use expected_total_cost
+                # or actual_cost_to_date for progress measurement. The
+                # revenue_obligations columns are NOT NULL DEFAULT 0, so we
+                # must write 0.0 (not None) when syncing the obligation row
+                # below. The actual cost-to-cost data (if any) lives in
+                # payload_json.milestone, not on the obligation's
+                # expected_total_cost / actual_cost_to_date columns.
+                expected_total_cost = 0.0
+                actual_cost_to_date = 0.0
                 units_done = None
                 units_total = None
 
@@ -142749,10 +142916,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     else float(obl.get("expected_total_cost") or 0.0)
                 )
 
+                # ✅ FIX: actual_cost_to_date must never be None — the
+                # revenue_obligations column is NOT NULL DEFAULT 0.
+                # (The COALESCE in the UPDATE below is a backstop, but
+                # setting it explicitly here keeps the in-memory value
+                # consistent with what gets written to the DB.)
                 actual_cost_to_date = (
                     float(data["actual_cost_to_date"])
                     if data.get("actual_cost_to_date") is not None
-                    else None
+                    else 0.0
                 )
 
                 units_done = None
@@ -142864,8 +143036,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 f"""
                 UPDATE {schema}.revenue_obligations
                 SET
-                    expected_total_cost = %s,
-                    actual_cost_to_date = %s,
+                    -- ✅ Defensive: revenue_obligations.expected_total_cost
+                    -- and actual_cost_to_date are NOT NULL DEFAULT 0.
+                    -- COALESCE ensures we never write NULL even if a code
+                    -- path above slipped None through (belt + braces).
+                    expected_total_cost = COALESCE(%s, 0),
+                    actual_cost_to_date = COALESCE(%s, 0),
                     progress_percent = %s,
                     updated_at = NOW()
                 WHERE id=%s

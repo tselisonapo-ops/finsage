@@ -104295,10 +104295,17 @@ function renderPayrollPayeRunClearing(
     if ($("revProgressActualCost")) $("revProgressActualCost").value = num(p.actual_cost_to_date).toFixed(2);
     if ($("revProgressPercent")) $("revProgressPercent").value = p.progress_percent ?? "";
 
-    // ✅ Milestone Name — prefer milestone_name, fall back to milestone_code
-    const msName = p.milestone_name || p.milestone_code ||
-      (p.payload_json?.milestone?.name) || (p.payload_json?.milestone?.code) || "";
-    if ($("revProgressMilestoneCode")) $("revProgressMilestoneCode").value = msName;
+    // ✅ Milestone code — hydrate with the BARE code only.
+    // The dropdown option values are now bare codes, so the input must
+    // hold a bare code for the browser to match it against the datalist.
+    // The human-readable name is shown via the milestone_name field /
+    // payload_json.milestone.name — not jammed into the code input.
+    const msCode =
+      p.milestone_code ||
+      (p.payload_json?.milestone?.code) ||
+      p.milestone_name ||  // last-resort fallback for legacy rows
+      "";
+    if ($("revProgressMilestoneCode")) $("revProgressMilestoneCode").value = msCode;
 
     if ($("revProgressNotes")) $("revProgressNotes").value = p.notes || "";
 
@@ -105395,16 +105402,67 @@ async function renderContractPreview(c = {}) {
 
     const milestones = getSelectedContractMilestones();
 
-    // Build option elements from contract billing milestones
+    // Build option elements from contract billing milestones.
+    //
+    // IMPORTANT: the option `value` MUST be just the milestone code
+    // (e.g. "MS-002"), NOT the combined "MS-002 — Stormwater works certified"
+    // display string. The backend's _contract_milestone_codes() lookup
+    // compares against bare codes only, so a combined value would fail
+    // validation with: "Milestone code '...' is not defined on the contract."
+    //
+    // The visible text the user sees in the dropdown can still be the
+    // friendly "code — description" form; only the submitted value is the
+    // bare code.
     datalist.innerHTML = milestones.map((m) => {
       const code = esc(m.code || "");
       const desc = esc(m.description || "");
       const display = desc ? `${code} — ${desc}` : code;
-      return `<option value="${display}">${display}</option>`;
+      return `<option value="${code}">${display}</option>`;
     }).join("");
 
     console.log("[Revenue] Progress milestone dropdown populated:", milestones.length, "milestones");
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // Milestone code/name splitter.
+  //
+  // Defensive parser used by progressPayloadFromUI() to guarantee that
+  // `milestone_code` sent to the backend is always the bare code
+  // (e.g. "MS-002") even when:
+  //   - the dropdown <option value="..."> somehow carries the combined
+  //     "MS-002 — Stormwater works certified" form (legacy data, manual
+  //     entry, copy-paste, older cached JS, etc.)
+  //   - the user typed the combined string directly into the input
+  //
+  // Returns: { code, name }
+  //   code = the bare milestone code (everything before the first
+  //          " — " / " – " / " - " separator), trimmed
+  //   name = the description part after the separator, or null
+  // ─────────────────────────────────────────────────────────────
+  function splitMilestoneCodeAndName(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return { code: null, name: null };
+
+    // Try the most specific separators first. We deliberately EXCLUDE
+    // the bare hyphen "-" because milestone codes themselves often
+    // contain hyphens (e.g. "MS-002", "POB-002-02"). The frontend only
+    // ever produces the em-dash " — " form, so matching on em-dash /
+    // en-dash variants is sufficient and unambiguous.
+    const separators = [" — ", " – ", " —", "— ", "—", " – ", "–"];
+
+    for (const sep of separators) {
+      const idx = raw.indexOf(sep);
+      if (idx > 0) {
+        const code = raw.slice(0, idx).trim();
+        const name = raw.slice(idx + sep.length).trim();
+        if (code) return { code, name: name || null };
+      }
+    }
+
+    // No separator found — treat the whole string as the code.
+    return { code: raw, name: null };
+  }
+  window.splitMilestoneCodeAndName = splitMilestoneCodeAndName;
 
   // ═══════════════════════════════════════════════════════════
   // RETENTION AUTO-CALC
@@ -107579,15 +107637,23 @@ async function renderContractPreview(c = {}) {
     }
 
     if (updateType === "milestone") {
+      // ✅ Split the dropdown value into bare code + display name.
+      // The <datalist> option value is now the bare code, but the user
+      // may have typed or pasted the combined "MS-002 — Stormwater works
+      // certified" form. splitMilestoneCodeAndName() handles both cases
+      // so the backend always receives a clean `milestone_code`.
       const milestoneValue = $("revProgressMilestoneCode")?.value?.trim() || null;
+      const { code: milestoneCode, name: milestoneName } =
+        splitMilestoneCodeAndName(milestoneValue);
 
-      payload.milestone_code = milestoneValue;
-      // ✅ Also send milestone_name — the display name from the dropdown
-      payload.milestone_name = milestoneValue;
+      payload.milestone_code = milestoneCode;
+      // ✅ Send the human-readable name separately so the backend can
+      // store it for display without polluting the code lookup.
+      payload.milestone_name = milestoneName;
 
       payload.payload_json.milestone = {
-        code: milestoneValue,
-        name: milestoneValue,
+        code: milestoneCode,
+        name: milestoneName,
 
         description:
           $("revProgressMilestoneDescription")?.value?.trim() || null,
