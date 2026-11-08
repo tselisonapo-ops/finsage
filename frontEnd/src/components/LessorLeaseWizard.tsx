@@ -898,17 +898,55 @@ useEffect(() => {
   ) {
     const { name, checked } = event.target;
 
-    setForm((current) => ({
-      ...current,
-      [name]: checked,
+    setForm((current) => {
+      const next: LessorLeasePayload = {
+        ...current,
+        [name]: checked,
+      };
 
-      ...(name === "security_deposit_interest_bearing" &&
-      checked
-        ? {
-            security_deposit_discount_deferred: false,
-          }
-        : {}),
-    }));
+      // An interest-bearing deposit cannot be treated as an
+      // interest-free deferred deposit.
+      if (
+        name === "security_deposit_interest_bearing" &&
+        checked
+      ) {
+        next.security_deposit_discount_deferred = false;
+      }
+
+      // When discounting of a refundable deposit is enabled,
+      // seed the discount rate from the lease's implicit
+      // interest rate (captured in Step 1) if no explicit
+      // rate has been entered yet. The user can still
+      // override the value in the dedicated discount rate
+      // field that appears below.
+      if (
+        name === "security_deposit_discount_deferred" &&
+        checked
+      ) {
+        const currentRate = Number(
+          current.security_deposit_discount_rate || 0
+        );
+
+        if (currentRate <= 0) {
+          const implicitRate = Number(
+            current.interest_rate_implicit || 0
+          );
+
+          next.security_deposit_discount_rate = implicitRate;
+        }
+      }
+
+      // If discounting is turned off, clear any seeded rate
+      // so it does not silently persist on the lease record.
+      if (
+        name === "security_deposit_discount_deferred" &&
+        !checked
+      ) {
+        next.security_deposit_discount_rate = 0;
+      }
+
+      return next;
+    });
   }
 
   function selectAsset(
@@ -1077,6 +1115,13 @@ useEffect(() => {
       ].includes(form.security_deposit_arrangement)
     ) {
       return "Discounting is only available for refundable, interest-free deposits.";
+    }
+
+    if (
+      form.security_deposit_discount_deferred &&
+      Number(form.security_deposit_discount_rate || 0) <= 0
+    ) {
+      return "Enter a positive annual discount rate for the deferred refundable deposit.";
     }
 
     return null;
@@ -1385,6 +1430,7 @@ useEffect(() => {
       security_deposit_interest_bearing: false,
       security_deposit_separate_account: false,
       security_deposit_discount_deferred: false,
+      security_deposit_discount_rate: 0,
       notes: "",
     }));
   }
@@ -3553,6 +3599,34 @@ useEffect(() => {
             amounts.
           </small>
         </div>
+
+        {form.security_deposit_discount_deferred && (
+          <div className="field-row field-span-2 lessor-deposit-rate-row">
+            <label>
+              Deposit discount rate (annual) *
+            </label>
+
+            <input
+              type="number"
+              name="security_deposit_discount_rate"
+              value={form.security_deposit_discount_rate || 0}
+              onChange={updateNumber}
+              min="0"
+              step="0.0001"
+              placeholder="e.g. 0.10 for 10%"
+            />
+
+            <small className="field-help">
+              Enter the annual rate used to discount the refundable
+              deposit to its present value. This is required because
+              the deferred, interest-free deposit is being discounted.
+              A common starting point is the lease's implicit interest
+              rate, which has been pre-filled if you captured one in
+              Step 1; override it here if the deposit should be
+              discounted at a different rate.
+            </small>
+          </div>
+        )}
 
         <div className="field-row field-span-2">
           <label>Notes</label>
