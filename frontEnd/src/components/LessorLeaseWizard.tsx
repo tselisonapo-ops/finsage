@@ -3609,7 +3609,7 @@ useEffect(() => {
             <input
               type="number"
               name="security_deposit_discount_rate"
-              value={form.security_deposit_discount_rate || 0}
+              value={form.security_deposit_discount_rate ?? ""}
               onChange={updateNumber}
               min="0"
               step="0.0001"
