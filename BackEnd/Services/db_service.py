@@ -172,43 +172,6 @@ def _revenue_contract_ref(self, row: dict) -> str:
 
 def _revenue_run_ref(run_id: int) -> str:
     return f"REV-RUN-{int(run_id)}"
-
-
-# ─────────────────────────────────────────────────────────────
-# Milestone code sanitizer (db_service-side mirror of the helper
-# in revenue_routes.py).
-#
-# Used by DatabaseService.record_revenue_progress_update() to strip
-# any " — Stormwater works certified" display name off milestone_code
-# before doing the contract-milestone lookup. Keeping a copy here means
-# the db_service is safe even when called from places that bypass the
-# Flask route layer (tests, scripts, internal callers).
-#
-# Returns (code, name) where name may be None.
-# ─────────────────────────────────────────────────────────────
-def _split_milestone_code_and_name_service(raw_value):
-    raw = str(raw_value or "").strip()
-    if not raw:
-        return (None, None)
-
-    # Try the most specific multi-char separators first. We deliberately
-    # EXCLUDE the bare hyphen "-" because milestone codes themselves often
-    # contain hyphens (e.g. "MS-002", "POB-002-02"). The frontend only
-    # ever produces the em-dash " — " form, so matching on em-dash /
-    # en-dash variants is sufficient and unambiguous.
-    separators = [" — ", " – ", " —", "— ", "—", " – ", "–"]
-
-    for sep in separators:
-        idx = raw.find(sep)
-        if idx > 0:
-            code = raw[:idx].strip()
-            name = raw[idx + len(sep):].strip()
-            if code:
-                return (code, name or None)
-
-    return (raw, None)
-
-
 # ---------------------------
 # Small numeric helper
 # ---------------------------
@@ -140378,48 +140341,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         }
 
     def _validate_obligation_progress_payload(self, data: dict) -> dict:
-        """
-        Validate and normalize the progress-method-specific fields on an
-        obligation payload. Called by add_revenue_obligation() and
-        update_revenue_obligation().
-
-        ═══════════════════════════════════════════════════════════════
-        PER-METHOD REQUIRED VALUES MATRIX
-        ═══════════════════════════════════════════════════════════════
-
-        Each progress method MUST produce / require these values:
-
-        ┌──────────────┬────────────────────┬──────────────────┬──────────────────┬─────────────────────┐
-        │ method       │ expected_total_cost│ actual_cost_to_… │ progress_percent │ method-specific     │
-        ├──────────────┼────────────────────┼──────────────────┼──────────────────┼─────────────────────┤
-        │ cost_to_cost │ REQUIRED > 0       │ set on update    │ computed         │ —                   │
-        │              │ (denominator for   │ (numerator)      │ = act / exp*100  │                     │
-        │              │  % complete)       │                  │                  │                     │
-        ├──────────────┼────────────────────┼──────────────────┼──────────────────┼─────────────────────┤
-        │ units        │ 0 (not used)       │ 0 (not used)     │ computed         │ payload_json.units_ │
-        │              │                    │                  │ = done/total*100 │ total REQUIRED > 0  │
-        ├──────────────┼────────────────────┼──────────────────┼──────────────────┼─────────────────────┤
-        │ milestone    │ 0 (not used)       │ 0 (not used)     │ 0 or 100         │ payload_json.       │
-        │              │                    │                  │ (or certified %) │ milestone_code      │
-        │              │                    │                  │                  │ REQUIRED            │
-        ├──────────────┼────────────────────┼──────────────────┼──────────────────┼─────────────────────┤
-        │ time_elapsed │ 0 (not used)       │ 0 (not used)     │ computed         │ payload_json.       │
-        │              │                    │                  │ = elapsed/total  │ performance_start_  │
-        │              │                    │                  │   _days*100      │ date REQUIRED       │
-        │              │                    │                  │                  │ payload_json.       │
-        │              │                    │                  │                  │ performance_end_    │
-        │              │                    │                  │                  │ date REQUIRED       │
-        ├──────────────┼────────────────────┼──────────────────┼──────────────────┼─────────────────────┤
-        │ manual       │ 0 (not used)       │ 0 (not used)     │ REQUIRED 0-100   │ —                   │
-        └──────────────┴────────────────────┴──────────────────┴──────────────────┴─────────────────────┘
-
-        NOTE: expected_total_cost and actual_cost_to_date are written to
-        the revenue_obligations table, whose columns are NOT NULL DEFAULT 0.
-        So for methods that don't use cost-based progress, we coerce them
-        to 0.0 (never None). The actual cost data (when relevant) is also
-        mirrored into payload_json for analytics without polluting the
-        progress calculation.
-        """
+        
         payload_json = data.get("payload_json") or {}
         if not isinstance(payload_json, dict):
             payload_json = {}
@@ -140430,7 +140352,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payload_json.pop("linked_billing_milestone_code", None)
             payload_json.pop("linked_billing_milestone", None)
             payload_json.pop("milestone_code", None)
-
+            
         timing = str(data.get("recognition_timing") or "point_in_time").strip().lower()
         method = str(data.get("progress_method") or "").strip().lower()
 
@@ -140438,11 +140360,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             data["payload_json"] = payload_json
             return data
 
-        # ─────────────────────────────────────────────────────────
-        # 1) COST TO COST
-        #    Required: expected_total_cost > 0
-        #    Produces: progress_percent (computed on update)
-        # ─────────────────────────────────────────────────────────
         if method == "cost_to_cost":
             expected_total_cost = float(data.get("expected_total_cost") or 0.0)
             if expected_total_cost <= 0:
@@ -140452,12 +140369,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payload_json.pop("units_total", None)
             clear_milestone_link()
 
-        # ─────────────────────────────────────────────────────────
-        # 2) UNITS / UNITS_DELIVERED
-        #    Required: payload_json.units_total > 0
-        #    Produces: progress_percent (computed on update)
-        #    expected_total_cost: NOT used → coerce to 0.0
-        # ─────────────────────────────────────────────────────────
         elif method in {"units", "units_delivered"}:
             units_total = float(payload_json.get("units_total") or payload_json.get("total_units") or 0.0)
             if units_total <= 0:
@@ -140466,34 +140377,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if float(data.get("expected_total_cost") or 0.0) < 0:
                 raise ValueError("Expected total cost cannot be negative.")
 
-            # ✅ units method does not use cost columns for progress.
-            # Coerce to 0.0 so the NOT NULL DEFAULT 0 column is happy.
-            data["expected_total_cost"] = 0.0
-            data["actual_cost_to_date"] = 0.0
             data["progress_percent"] = None
             clear_milestone_link()
 
-        # ─────────────────────────────────────────────────────────
-        # 3) MILESTONE
-        #    Required: milestone_code (or obligation_milestones table)
-        #    Produces: progress_percent = 0 (pending) or 100 (achieved)
-        #    expected_total_cost: NOT used → coerce to 0.0
-        # ─────────────────────────────────────────────────────────
         elif method == "milestone":
             milestone_code = str(
                 payload_json.get("milestone_code") or ""
             ).strip()
-
-            # ✅ Sanitize — strip any " — description" display name.
-            if milestone_code:
-                _mc_code, _mc_name = _split_milestone_code_and_name_service(milestone_code)
-                milestone_code = _mc_code or milestone_code
-                payload_json["milestone_code"] = milestone_code
-                if payload_json.get("linked_billing_milestone_code"):
-                    _lc_code, _ = _split_milestone_code_and_name_service(
-                        payload_json["linked_billing_milestone_code"]
-                    )
-                    payload_json["linked_billing_milestone_code"] = _lc_code or payload_json["linked_billing_milestone_code"]
 
             obligation_milestones = (
                 payload_json.get("obligation_milestones") or []
@@ -140514,20 +140404,18 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "Expected milestone cost cannot be negative."
                 )
 
-            # ✅ milestone method does not use cost columns for progress.
-            # Coerce to 0.0 so the NOT NULL DEFAULT 0 column is happy.
-            data["expected_total_cost"] = 0.0
-            data["actual_cost_to_date"] = 0.0
             data["progress_percent"] = 0.0
 
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
 
-        # ─────────────────────────────────────────────────────────
-        # 4) MANUAL
-        #    Required: progress_percent (0-100), may be set later on update
-        #    expected_total_cost: NOT used → coerce to 0.0
-        # ─────────────────────────────────────────────────────────
+            if float(data.get("expected_total_cost") or 0.0) < 0:
+                raise ValueError("Expected milestone cost cannot be negative.")
+
+            data["progress_percent"] = 0.0
+            payload_json.pop("units_done", None)
+            payload_json.pop("units_total", None)
+
         elif method == "manual":
             progress_percent = data.get("progress_percent")
             if progress_percent is not None:
@@ -140535,21 +140423,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 if pct < 0 or pct > 100:
                     raise ValueError("progress_percent must be between 0 and 100.")
 
-            # ✅ manual method does not use cost columns for progress.
-            data["expected_total_cost"] = 0.0
-            data["actual_cost_to_date"] = 0.0
-
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
             clear_milestone_link()
 
-        # ─────────────────────────────────────────────────────────
-        # 5) TIME_ELAPSED
-        #    Required: payload_json.performance_start_date,
-        #              payload_json.performance_end_date
-        #    Produces: progress_percent (computed on update)
-        #    expected_total_cost: NOT used → coerce to 0.0
-        # ─────────────────────────────────────────────────────────
         elif method == "time_elapsed":
             start_date = payload_json.get("performance_start_date")
             end_date = payload_json.get("performance_end_date")
@@ -140567,20 +140444,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     raise ValueError(
                         "progress_percent must be between 0 and 100."
                     )
-
-            # ✅ time_elapsed method does not use cost columns for progress.
-            data["expected_total_cost"] = 0.0
-            data["actual_cost_to_date"] = 0.0
-
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
             clear_milestone_link()
-
-        else:
-            raise ValueError(
-                f"Invalid progress_method '{method}'. "
-                "Use cost_to_cost, units, milestone, time_elapsed, or manual."
-            )
 
         data["payload_json"] = payload_json
         return data
@@ -142637,20 +142503,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             progress_percent = float(data["progress_percent"]) if data.get("progress_percent") not in (None, "") else None
             units_done = float(data["units_done"]) if data.get("units_done") is not None else None
             units_total = float(data["units_total"]) if data.get("units_total") is not None else None
-
-            # ✅ Defensive: strip any " — description" display name off
-            # milestone_code. The frontend dropdown option values SHOULD
-            # be bare codes, but legacy/cached JS or manual entry can still
-            # send the combined "MS-002 — Stormwater works certified" form.
-            # Doing it here too means the db_service is safe even if the
-            # route layer's _sanitize_milestone_codes_in_body() is bypassed.
-            _raw_milestone_code = (data.get("milestone_code") or "").strip() or None
-            if _raw_milestone_code:
-                _mc_code, _mc_name = _split_milestone_code_and_name_service(_raw_milestone_code)
-                milestone_code = _mc_code
-            else:
-                milestone_code = None
-
+            milestone_code = (data.get("milestone_code") or "").strip() or None
             notes = data.get("notes")
             payload_json = data.get("payload_json") or {}
             if not isinstance(payload_json, dict):
@@ -142717,11 +142570,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     (Decimal(str(recognition_units)) / Decimal(str(units_total))) * Decimal("100")
                 )
 
-                # ✅ FIX: units method does NOT use expected_total_cost or
-                # actual_cost_to_date for progress. The revenue_obligations
-                # columns are NOT NULL DEFAULT 0, so write 0.0 (not None).
-                expected_total_cost = 0.0
-                actual_cost_to_date = 0.0
+                expected_total_cost = None
+                actual_cost_to_date = None
                 milestone_code = None
 
                 payload_json["units"] = {
@@ -142737,12 +142587,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 if progress_percent < 0 or progress_percent > 100:
                     raise ValueError("Progress percent must be between 0 and 100.")
 
-                # ✅ FIX: manual method does NOT use expected_total_cost
-                # or actual_cost_to_date for progress. The
-                # revenue_obligations columns are NOT NULL DEFAULT 0, so
-                # write 0.0 (not None) when syncing the obligation row.
-                expected_total_cost = 0.0
-                actual_cost_to_date = 0.0
+                expected_total_cost = None
+                actual_cost_to_date = None
                 units_done = None
                 units_total = None
                 milestone_code = None
@@ -142765,13 +142611,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     or ""
                 )
 
-                # ✅ Sanitize the resolved milestone_code — any of the
-                # fallback sources above could carry the combined
-                # "MS-002 — Stormwater works certified" display form.
                 milestone_code = str(milestone_code).strip() or None
-                if milestone_code:
-                    _mc_code, _mc_name = _split_milestone_code_and_name_service(milestone_code)
-                    milestone_code = _mc_code or milestone_code
 
                 if not milestone_code:
                     raise ValueError("Milestone code is required for milestone updates.")
@@ -142805,15 +142645,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     progress_percent = (
                         0.0 if status == "pending" else 100.0
                     )
-                # ✅ FIX: milestone method does NOT use expected_total_cost
-                # or actual_cost_to_date for progress measurement. The
-                # revenue_obligations columns are NOT NULL DEFAULT 0, so we
-                # must write 0.0 (not None) when syncing the obligation row
-                # below. The actual cost-to-cost data (if any) lives in
-                # payload_json.milestone, not on the obligation's
-                # expected_total_cost / actual_cost_to_date columns.
-                expected_total_cost = 0.0
-                actual_cost_to_date = 0.0
+                expected_total_cost = None
+                actual_cost_to_date = None
                 units_done = None
                 units_total = None
 
@@ -142916,15 +142749,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     else float(obl.get("expected_total_cost") or 0.0)
                 )
 
-                # ✅ FIX: actual_cost_to_date must never be None — the
-                # revenue_obligations column is NOT NULL DEFAULT 0.
-                # (The COALESCE in the UPDATE below is a backstop, but
-                # setting it explicitly here keeps the in-memory value
-                # consistent with what gets written to the DB.)
                 actual_cost_to_date = (
                     float(data["actual_cost_to_date"])
                     if data.get("actual_cost_to_date") is not None
-                    else 0.0
+                    else None
                 )
 
                 units_done = None
@@ -143036,12 +142864,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 f"""
                 UPDATE {schema}.revenue_obligations
                 SET
-                    -- ✅ Defensive: revenue_obligations.expected_total_cost
-                    -- and actual_cost_to_date are NOT NULL DEFAULT 0.
-                    -- COALESCE ensures we never write NULL even if a code
-                    -- path above slipped None through (belt + braces).
-                    expected_total_cost = COALESCE(%s, 0),
-                    actual_cost_to_date = COALESCE(%s, 0),
+                    expected_total_cost = %s,
+                    actual_cost_to_date = %s,
                     progress_percent = %s,
                     updated_at = NOW()
                 WHERE id=%s
@@ -144186,6 +144010,348 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         row["payload_json"] = payload_json
 
         return row
+
+    def get_revenue_obligation_progress_summary(
+        self,
+        company_id: int,
+        obligation_id: int,
+        cur=None,
+    ) -> dict | None:
+        """
+        Method-aware recognition progress summary for a single revenue
+        obligation.
+
+        The previous summary flow only fully populated values for cost-to-
+        cost obligations (expected_total_cost / actual_cost_to_date). For
+        every other progress method (units, milestone, time_elapsed, manual)
+        and for point_in_time obligations the relevant driver fields live
+        inside `payload_json` and were never surfaced, so the on-screen
+        summary card showed 0 / blank for those methods.
+
+        This function returns a unified summary payload whose labels and
+        fields adapt to the obligation's `progress_method` (cost_to_cost,
+        units, milestone, time_elapsed, manual) or `recognition_timing`
+        (point_in_time). The frontend renders the appropriate block based
+        on the `method` field, so labels and values always match the
+        billing / recognition method that was configured.
+
+        Common fields returned for every method:
+          - allocated_transaction_price
+          - revenue_to_date (cumulative recognized revenue)
+          - remaining_revenue
+          - progress_percent (computed via _obligation_progress_pct)
+          - billed_to_date, remaining_to_bill
+          - billing_method (from the parent contract)
+
+        Method-specific fields are returned under `method_fields` so the
+        frontend can render the right labels for each billing / recognition
+        method (e.g. "Units Total / Units Delivered" for units, "Milestone
+        Code / Certified %" for milestone, "Performance Start / End Date"
+        for time_elapsed, etc.).
+        """
+        obligation = self.get_revenue_obligation(
+            int(company_id),
+            int(obligation_id),
+            cur=cur,
+        )
+        if not obligation:
+            return None
+
+        contract_id = int(obligation.get("contract_id") or 0)
+        contract = None
+        if contract_id:
+            contract = self.get_revenue_contract(
+                int(company_id),
+                contract_id,
+                cur=cur,
+            )
+
+        method = str(
+            obligation.get("progress_method") or "cost_to_cost"
+        ).strip().lower()
+        timing = str(
+            obligation.get("recognition_timing") or "over_time"
+        ).strip().lower()
+
+        payload_json = obligation.get("payload_json") or {}
+        if isinstance(payload_json, str):
+            try:
+                payload_json = json.loads(payload_json or "{}")
+            except Exception:
+                payload_json = {}
+
+        # The most-recently saved progress update carries the authoritative
+        # method-specific payload (e.g. payload_json["milestone"], ["units"]).
+        latest_progress = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {self.company_schema(company_id)}.revenue_progress_updates
+            WHERE obligation_id = %s
+            ORDER BY period_end DESC, created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(obligation_id),),
+            cur=cur,
+        ) or {}
+
+        latest_payload = latest_progress.get("payload_json") or {}
+        if isinstance(latest_payload, str):
+            try:
+                latest_payload = json.loads(latest_payload or "{}")
+            except Exception:
+                latest_payload = {}
+
+        # Common, method-agnostic numbers
+        allocated = _money2(obligation.get("allocated_transaction_price") or 0)
+        revenue_ltd = _money2(obligation.get("revenue_to_date") or 0)
+        progress_pct = self._obligation_progress_pct(obligation, date.today())
+        remaining_revenue = _money2(
+            max(Decimal("0.00"), allocated - revenue_ltd)
+        )
+
+        expected_total_cost = _d(obligation.get("expected_total_cost"))
+        actual_cost_to_date = _d(obligation.get("actual_cost_to_date"))
+        remaining_cost = _money2(
+            max(Decimal("0.00"), expected_total_cost - actual_cost_to_date)
+        )
+
+        # Billing position
+        billed_to_date = Decimal("0.00")
+        remaining_to_bill = Decimal("0.00")
+        if contract:
+            try:
+                billed_stats = self._obligation_billing_validation_stats(
+                    company_id=int(company_id),
+                    contract=contract,
+                    obligation=obligation,
+                    period_end=None,
+                    cur=cur,
+                ) or {}
+                billed_to_date = _money2(billed_stats.get("billed_to_date") or 0)
+                remaining_to_bill = _money2(
+                    max(Decimal("0.00"), allocated - billed_to_date)
+                )
+            except Exception:
+                pass
+
+        # Resolve the method-specific payload block written by
+        # record_revenue_progress_update(). Falls back to the obligation's
+        # own payload_json when no progress update has been saved yet.
+        method_payload = latest_payload.get(method) or payload_json.get(method) or {}
+        if not isinstance(method_payload, dict):
+            method_payload = {}
+
+        # Method label for the frontend header
+        method_label_map = {
+            "cost_to_cost": "Cost-to-cost",
+            "units": "Units delivered",
+            "units_delivered": "Units delivered",
+            "milestone": "Milestone",
+            "time_elapsed": "Time elapsed",
+            "manual": "Manual",
+            "point_in_time": "Point in time",
+        }
+
+        billing_method = str(
+            (contract or {}).get("billing_method") or "milestone"
+        ).strip().lower()
+        billing_label_map = {
+            "milestone": "Milestone billing",
+            "periodic": "Periodic billing",
+            "progress": "Progress billing",
+            "manual": "Manual billing",
+        }
+
+        effective_method = method if timing == "over_time" else "point_in_time"
+
+        summary = {
+            "obligation_id": int(obligation.get("id")),
+            "obligation_code": obligation.get("obligation_code"),
+            "obligation_name": obligation.get("obligation_name"),
+            "contract_id": contract_id,
+            "contract_number": (contract or {}).get("contract_number"),
+            "contract_title": (contract or {}).get("contract_title"),
+            "recognition_timing": timing,
+            "progress_method": method if timing == "over_time" else None,
+            "method": effective_method,
+            "method_label": method_label_map.get(
+                effective_method, effective_method
+            ),
+            "billing_method": billing_method,
+            "billing_label": billing_label_map.get(
+                billing_method, billing_method
+            ),
+            # Common financial summary (always populated)
+            "allocated_transaction_price": float(allocated),
+            "revenue_to_date": float(revenue_ltd),
+            "remaining_revenue": float(remaining_revenue),
+            "progress_percent": float(progress_pct),
+            "expected_total_cost": float(expected_total_cost),
+            "actual_cost_to_date": float(actual_cost_to_date),
+            "remaining_cost": float(remaining_cost),
+            "billed_to_date": float(billed_to_date),
+            "remaining_to_bill": float(remaining_to_bill),
+            # Method-specific fields (populated below)
+            "method_fields": {},
+            # Latest saved progress update (for the "Latest Saved Update" card)
+            "latest_progress": {
+                "id": int(latest_progress.get("id")) if latest_progress.get("id") else None,
+                "period_end": str(latest_progress.get("period_end")) if latest_progress.get("period_end") else None,
+                "update_type": latest_progress.get("update_type"),
+                "milestone_code": latest_progress.get("milestone_code"),
+                "notes": latest_progress.get("notes"),
+                "progress_percent": float(latest_progress.get("progress_percent") or 0) if latest_progress else None,
+                "expected_total_cost": float(latest_progress.get("expected_total_cost") or 0) if latest_progress and latest_progress.get("expected_total_cost") is not None else None,
+                "actual_cost_to_date": float(latest_progress.get("actual_cost_to_date") or 0) if latest_progress and latest_progress.get("actual_cost_to_date") is not None else None,
+                "units_done": float(latest_progress.get("units_done") or 0) if latest_progress and latest_progress.get("units_done") is not None else None,
+                "units_total": float(latest_progress.get("units_total") or 0) if latest_progress and latest_progress.get("units_total") is not None else None,
+            } if latest_progress else None,
+        }
+
+        # ---------------------------------------------------------------
+        # Method-specific fields — these are what the frontend swaps in
+        # to "interchange labels based on project billing method or
+        # recognition progress method".
+        # ---------------------------------------------------------------
+        if timing == "point_in_time":
+            summary["method_fields"] = {
+                "satisfaction_status": obligation.get("satisfaction_status"),
+                "satisfied_at": (
+                    str(obligation.get("satisfied_at"))
+                    if obligation.get("satisfied_at") else None
+                ),
+                "satisfaction_evidence_ref": obligation.get("satisfaction_evidence_ref"),
+                "recognition_trigger": obligation.get("recognition_trigger"),
+                "recognized_at_point_in_time_date": (
+                    str(obligation.get("recognized_at_point_in_time_date"))
+                    if obligation.get("recognized_at_point_in_time_date") else None
+                ),
+                "computed_progress_percent": float(progress_pct),
+            }
+        elif method == "cost_to_cost":
+            summary["method_fields"] = {
+                "expected_total_cost": float(expected_total_cost),
+                "actual_cost_to_date": float(actual_cost_to_date),
+                "remaining_cost": float(remaining_cost),
+                "computed_progress_percent": float(progress_pct),
+            }
+        elif method in {"units", "units_delivered"}:
+            units_total = _d(
+                method_payload.get("total_units")
+                or payload_json.get("units_total")
+            )
+            units_done = _d(
+                method_payload.get("delivered_units")
+                or payload_json.get("units_done")
+            )
+            certified_units_raw = method_payload.get("certified_units")
+            certified_units = (
+                None if certified_units_raw in (None, "")
+                else _d(certified_units_raw)
+            )
+            unit_of_measure = (
+                method_payload.get("unit_of_measure")
+                or payload_json.get("unit_of_measure")
+            )
+            remaining_units = _money2(
+                max(Decimal("0.00"), units_total - units_done)
+            )
+            summary["method_fields"] = {
+                "units_total": float(units_total),
+                "units_done": float(units_done),
+                "certified_units": float(certified_units) if certified_units is not None else None,
+                "unit_of_measure": unit_of_measure,
+                "remaining_units": float(remaining_units),
+                "computed_progress_percent": float(progress_pct),
+            }
+        elif method == "milestone":
+            ms_code = (
+                method_payload.get("code")
+                or payload_json.get("milestone_code")
+                or payload_json.get("linked_billing_milestone_code")
+                or obligation.get("linked_milestone_code")
+            )
+            ms_desc = (
+                method_payload.get("description")
+                or payload_json.get("milestone_name")
+                or obligation.get("linked_milestone_description")
+            )
+            certified_pct_raw = method_payload.get("certified_percent")
+            certified_amt_raw = method_payload.get("certified_amount")
+            ret_pct_raw = method_payload.get("retention_percent")
+            ret_amt_raw = method_payload.get("retention_amount")
+            summary["method_fields"] = {
+                "milestone_code": ms_code,
+                "milestone_description": ms_desc,
+                "milestone_status": method_payload.get("status"),
+                "certified_percent": (
+                    float(certified_pct_raw)
+                    if certified_pct_raw not in (None, "") else None
+                ),
+                "certified_amount": (
+                    float(certified_amt_raw)
+                    if certified_amt_raw not in (None, "") else None
+                ),
+                "certificate_ref": method_payload.get("certificate_ref"),
+                "approval_date": (
+                    str(method_payload.get("approval_date"))
+                    if method_payload.get("approval_date") else None
+                ),
+                "approved_by": method_payload.get("approved_by"),
+                "retention_percent": (
+                    float(ret_pct_raw)
+                    if ret_pct_raw not in (None, "") else None
+                ),
+                "retention_amount": (
+                    float(ret_amt_raw)
+                    if ret_amt_raw not in (None, "") else None
+                ),
+                "billing_ready": bool(method_payload.get("billing_ready")),
+                "blocked_reason": method_payload.get("blocked_reason"),
+                "milestone_allocated_amount": float(
+                    payload_json.get("milestone_allocated_amount") or 0
+                ),
+                "computed_progress_percent": float(progress_pct),
+            }
+        elif method == "time_elapsed":
+            start_date = (
+                method_payload.get("performance_start_date")
+                or payload_json.get("performance_start_date")
+            )
+            end_date = (
+                method_payload.get("performance_end_date")
+                or payload_json.get("performance_end_date")
+            )
+            summary["method_fields"] = {
+                "performance_start_date": (
+                    str(start_date) if start_date else None
+                ),
+                "performance_end_date": (
+                    str(end_date) if end_date else None
+                ),
+                "elapsed_days": int(method_payload.get("elapsed_days") or 0),
+                "total_days": int(method_payload.get("total_days") or 0),
+                "elapsed_percent": float(
+                    method_payload.get("elapsed_percent") or 0
+                ),
+                "basis": method_payload.get("basis") or "calendar_days",
+                "billing_cycle": method_payload.get("billing_cycle"),
+                "computed_progress_percent": float(progress_pct),
+            }
+        elif method == "manual":
+            summary["method_fields"] = {
+                "progress_percent": float(obligation.get("progress_percent") or 0),
+                "computed_progress_percent": float(progress_pct),
+            }
+        else:
+            # Defensive fallback — should not happen because progress_method
+            # is constrained by the schema, but we still return the common
+            # fields so the summary card never renders empty.
+            summary["method_fields"] = {
+                "computed_progress_percent": float(progress_pct),
+            }
+
+        return summary
 
     def create_revenue_recognition_run(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)

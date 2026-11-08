@@ -19581,14 +19581,11 @@ body{
               <span id="rp2TplHint" class="rp2-tpl-hint">IAS 1 presentation &middot; external reporting</span>
             </div>
 
-            <div id="rp3BasisBar" class="mt-2">
-              <span class="rp3-basis-label">Reporting basis</span>
-              <div class="rp3-basis-chips" role="tablist" aria-label="Reporting basis">
-                <button type="button" class="rp3-basis-chip active" data-rp3-basis="external">External reporting</button>
-                <button type="button" class="rp3-basis-chip" data-rp3-basis="management">Management / internal</button>
-              </div>
-              <span id="rp3BasisHint" class="rp2-tpl-hint">Single-column IAS 1 &middot; add comparatives via Compare</span>
-            </div>
+            <!-- Reporting basis toggle (rp3BasisBar) removed per request.
+                 The underlying #stmtBasis select below is kept (hidden) so the
+                 frozen render pipeline still has its element; default stays
+                 "external". The rp3-bridge script no-ops when #rp3BasisBar
+                 is absent. -->
             <div id="rp3ColLegend" class="rp3-col-legend" hidden></div>
 
             <div class="stmt-toolbar mt-2">
@@ -19641,7 +19638,11 @@ body{
                 <option value="npo">NPO (Funds)</option>
               </select>
 
-              <select id="stmtBasis" class="px-3 py-2 border rounded text-xs">
+              <!-- Reporting basis select hidden per request (the visible
+                   "Reporting basis" chips above were removed). The frozen
+                   render pipeline still reads #stmtBasis, so the element is
+                   kept with display:none and defaults to "external". -->
+              <select id="stmtBasis" class="px-3 py-2 border rounded text-xs" style="display:none;">
                 <option value="external" selected>External reporting</option>
                 <option value="management">Management / internal</option>
               </select>
@@ -19685,8 +19686,11 @@ body{
               <button id="exportStmt" class="btn-secondary">Export</button>
             </div>
 
-            <!-- Viewer -->
-            <div id="stmtHost" class="mt-3 text-xs border rounded bg-white p-3 overflow-auto max-h-[70vh]">
+            <!-- Viewer — extends to the bottom of the viewport so the user
+                 does not have to do a lot of up/down scrolling to view the
+                 rendered financial statement. max-h-[70vh] removed; min-height
+                 bumped; the host now stretches to fill the remaining screen. -->
+            <div id="stmtHost" class="mt-3 text-xs border rounded bg-white p-3 overflow-auto">
               <div id="stmtCanvas" class="w-full"></div>
             </div>
           </div>
@@ -45864,10 +45868,20 @@ window.safeRedirect = function (url, mode = "href") {
   font-size:11px;line-height:1.6;
 }
 
-/* ── statement viewer host ── */
+/* ── statement viewer host ──
+   Extended to reach the very bottom of the screen so users don't have to
+   do a lot of up/down scrolling to view the rendered financial statement.
+   min-height uses calc(100vh - 300px) so it fills the remaining viewport
+   below the toolbar; max-height removed so long statements can grow. */
 #stmtHost{
   background:#fff;border:1px solid #e2e8f0;border-radius:12px;
-  min-height:220px;
+  min-height:calc(100vh - 300px);
+}
+@media (max-width:1279px){
+  #stmtHost{ min-height:calc(100vh - 360px); }
+}
+@media (max-width:768px){
+  #stmtHost{ min-height:calc(100vh - 420px); }
 }
 #stmtHost::-webkit-scrollbar{width:10px;height:10px;}
 #stmtHost::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px;border:2px solid #fff;}

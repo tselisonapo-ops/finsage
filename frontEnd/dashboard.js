@@ -5672,6 +5672,12 @@ const ENDPOINTS = {
     billingPosition: (companyId, obligationId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/obligations/${encodeURIComponent(obligationId)}/billing_position`,
 
+    // Method-aware recognition progress summary (returns fields that adapt
+    // to the obligation's progress_method / recognition_timing, so the
+    // summary card can interchange labels per billing / recognition method).
+    progressSummary: (companyId, obligationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/obligations/${encodeURIComponent(obligationId)}/progress_summary`,
+
     cashReceipts: (companyId, contractId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}/cash_receipts`,
 
@@ -107210,31 +107216,248 @@ async function renderContractPreview(c = {}) {
       return;
     }
 
+    // Render immediately from the cached obligation (so the card never flashes
+    // empty), then asynchronously enrich it with the method-aware summary
+    // from the backend (which surfaces payload_json fields per method).
     renderRevenueProgressSummary(selected);
+
+    (async () => {
+      try {
+        const summaryData = await fetchRevenueProgressSummary(
+          state.cid,
+          selected.id
+        );
+        if (summaryData) {
+          // Re-render with the enriched, method-aware summary so labels and
+          // values match the configured billing / recognition method.
+          renderRevenueProgressSummary(selected, null, summaryData);
+        }
+      } catch (e) {
+        console.warn("[refreshRevenueProgressUI] fetchRevenueProgressSummary failed", e);
+      }
+    })();
   }
 
-  function renderRevenueProgressSummary(obligation, latestProgress = null) {
+  /**
+   * Fetch the method-aware recognition progress summary from the backend.
+   *
+   * The endpoint returns a unified payload whose `method_fields` adapt to
+   * the obligation's progress_method (cost_to_cost, units, milestone,
+   * time_elapsed, manual) or recognition_timing (point_in_time). This is
+   * what lets the summary card "interchange labels based on project billing
+   * method or recognition progress method" and show a summary for each
+   * billing method.
+   *
+   * Returns null on any failure so callers can fall back to the obligation-
+   * only rendering.
+   */
+  async function fetchRevenueProgressSummary(companyId, obligationId) {
+    if (!companyId || !obligationId) return null;
+    try {
+      const url = ENDPOINTS?.revenue?.progressSummary
+        ? ENDPOINTS.revenue.progressSummary(companyId, obligationId)
+        : `${API_BASE}/api/companies/${companyId}/revenue/obligations/${obligationId}/progress_summary`;
+      const raw = await apiFetch(url, { method: "GET" });
+      return raw?.data || raw || null;
+    } catch (e) {
+      console.warn("[Revenue] fetchRevenueProgressSummary failed", e);
+      return null;
+    }
+  }
+
+  /**
+   * Helper: build a small KPI tile used in the method-specific summary card.
+   */
+  function _progressKpiTile(label, valueHtml) {
+    return `
+      <div class="rounded-lg border p-2 bg-slate-50">
+        <div class="text-xs text-slate-500">${esc(label)}</div>
+        <div class="font-semibold">${valueHtml}</div>
+      </div>
+    `;
+  }
+
+  /**
+   * Helper: extract method-specific fields from the obligation's payload_json
+   * when the backend method-aware summary is not available. This keeps the
+   * card working even before the new endpoint is deployed.
+   */
+  function _deriveMethodFieldsFromObligation(obligation, latestProgress) {
+    const method = String(obligation?.progress_method || "cost_to_cost").toLowerCase();
+    const timing = String(obligation?.recognition_timing || "over_time").toLowerCase();
+    const pj = obligation?.payload_json || {};
+
+    if (timing === "point_in_time") {
+      return {
+        satisfaction_status: obligation?.satisfaction_status,
+        satisfied_at: obligation?.satisfied_at || null,
+        satisfaction_evidence_ref: obligation?.satisfaction_evidence_ref,
+        recognition_trigger: obligation?.recognition_trigger,
+        recognized_at_point_in_time_date: obligation?.recognized_at_point_in_time_date || null,
+      };
+    }
+    if (method === "cost_to_cost") {
+      return {
+        expected_total_cost: num(obligation?.expected_total_cost),
+        actual_cost_to_date: num(obligation?.actual_cost_to_date),
+        remaining_cost: Math.max(0, num(obligation?.expected_total_cost) - num(obligation?.actual_cost_to_date)),
+      };
+    }
+    if (method === "units" || method === "units_delivered") {
+      const u = pj.units || {};
+      return {
+        units_total: num(u.total_units ?? pj.units_total),
+        units_done: num(u.delivered_units ?? pj.units_done),
+        certified_units: u.certified_units ?? null,
+        unit_of_measure: u.unit_of_measure || pj.unit_of_measure || null,
+        remaining_units: Math.max(0, num(u.total_units ?? pj.units_total) - num(u.delivered_units ?? pj.units_done)),
+      };
+    }
+    if (method === "milestone") {
+      const m = pj.milestone || {};
+      return {
+        milestone_code: m.code || pj.milestone_code || pj.linked_billing_milestone_code || obligation?.linked_milestone_code,
+        milestone_description: m.description || pj.milestone_name || obligation?.linked_milestone_description,
+        milestone_status: m.status,
+        certified_percent: m.certified_percent ?? null,
+        certified_amount: m.certified_amount ?? null,
+        certificate_ref: m.certificate_ref || null,
+        approval_date: m.approval_date || null,
+        approved_by: m.approved_by || null,
+        retention_percent: m.retention_percent ?? null,
+        retention_amount: m.retention_amount ?? null,
+        billing_ready: !!m.billing_ready,
+        milestone_allocated_amount: num(pj.milestone_allocated_amount),
+      };
+    }
+    if (method === "time_elapsed") {
+      const t = pj.time_elapsed || {};
+      return {
+        performance_start_date: t.performance_start_date || pj.performance_start_date || null,
+        performance_end_date: t.performance_end_date || pj.performance_end_date || null,
+        elapsed_days: t.elapsed_days || 0,
+        total_days: t.total_days || 0,
+        elapsed_percent: t.elapsed_percent || 0,
+        basis: t.basis || "calendar_days",
+        billing_cycle: t.billing_cycle || null,
+      };
+    }
+    if (method === "manual") {
+      return {
+        progress_percent: num(obligation?.progress_percent),
+      };
+    }
+    return {};
+  }
+
+  function renderRevenueProgressSummary(obligation, latestProgress = null, summary = null) {
     const el = $("revProgressSummary");
     if (!el) return;
 
-    const allocated = num(obligation?.allocated_transaction_price);
-    const revenueLtd = num(obligation?.revenue_to_date);
-    const expectedCost = num(
-      latestProgress?.expected_total_cost ??
-      obligation?.expected_total_cost
-    );
-    const actualCost = num(
-      latestProgress?.actual_cost_to_date ??
-      obligation?.actual_cost_to_date
-    );
-    const progressPct = num(
-      latestProgress?.progress_percent ??
-      obligation?.progress_percent
-    );
-
+    // Common numbers (prefer the backend method-aware summary when present)
+    const allocated = num(summary?.allocated_transaction_price ?? obligation?.allocated_transaction_price);
+    const revenueLtd = num(summary?.revenue_to_date ?? obligation?.revenue_to_date);
+    const progressPct = num(summary?.progress_percent ?? latestProgress?.progress_percent ?? obligation?.progress_percent);
     const clampedPct = Math.max(0, Math.min(100, progressPct));
     const remainingRevenue = Math.max(0, allocated - revenueLtd);
-    const remainingCost = Math.max(0, expectedCost - actualCost);
+
+    // Method + billing context
+    const timing = String(summary?.recognition_timing ?? obligation?.recognition_timing ?? "over_time").toLowerCase();
+    const method = String(summary?.progress_method ?? obligation?.progress_method ?? "cost_to_cost").toLowerCase();
+    const effectiveMethod = summary?.method || (timing === "point_in_time" ? "point_in_time" : method);
+    const methodLabel = summary?.method_label || effectiveMethod;
+    const billingMethod = String(summary?.billing_method ?? state?.selectedContractBillingPolicy?.billing_method ?? state?.selectedContract?.billing_method ?? "milestone").toLowerCase();
+    const billingLabel = summary?.billing_label || billingMethod;
+
+    // Method-specific fields (prefer backend summary; fall back to payload_json)
+    const mf = summary?.method_fields && Object.keys(summary?.method_fields || {}).length
+      ? summary.method_fields
+      : _deriveMethodFieldsFromObligation(obligation, latestProgress);
+
+    // Common KPIs that always show (Allocated Price, Revenue LTD, Remaining Revenue)
+    const commonKpis = [
+      _progressKpiTile("Allocated Price", money(allocated)),
+      _progressKpiTile("Revenue LTD", money(revenueLtd)),
+      _progressKpiTile("Remaining Revenue", money(remainingRevenue)),
+    ];
+
+    // Method-specific KPIs — these are the labels that "interchange" based on
+    // the project billing method / recognition progress method.
+    let methodKpis = "";
+    let methodHeaderText = "";
+
+    if (effectiveMethod === "point_in_time") {
+      methodHeaderText = "Point-in-time recognition";
+      methodKpis = [
+        _progressKpiTile("Satisfaction Status", esc(mf.satisfaction_status || "—")),
+        _progressKpiTile("Satisfied At", mf.satisfied_at ? esc(String(mf.satisfied_at).slice(0, 10)) : "—"),
+        _progressKpiTile("Recognition Trigger", esc(mf.recognition_trigger || "—")),
+        _progressKpiTile("Evidence Ref", esc(mf.satisfaction_evidence_ref || "—")),
+      ].join("");
+    } else if (method === "cost_to_cost") {
+      methodHeaderText = "Cost-to-cost recognition";
+      const expectedCost = num(mf.expected_total_cost ?? obligation?.expected_total_cost);
+      const actualCost = num(mf.actual_cost_to_date ?? obligation?.actual_cost_to_date);
+      const remainingCost = num(mf.remaining_cost ?? Math.max(0, expectedCost - actualCost));
+      methodKpis = [
+        _progressKpiTile("Expected Total Cost", money(expectedCost)),
+        _progressKpiTile("Actual Cost to Date", money(actualCost)),
+        _progressKpiTile("Remaining Cost", money(remainingCost)),
+      ].join("");
+    } else if (method === "units" || method === "units_delivered") {
+      methodHeaderText = "Units-delivered recognition";
+      methodKpis = [
+        _progressKpiTile("Units Total", num(mf.units_total).toLocaleString()),
+        _progressKpiTile("Units Delivered", num(mf.units_done).toLocaleString()),
+        _progressKpiTile("Certified Units", mf.certified_units != null ? num(mf.certified_units).toLocaleString() : "—"),
+        _progressKpiTile("Unit of Measure", esc(mf.unit_of_measure || "—")),
+        _progressKpiTile("Remaining Units", num(mf.remaining_units).toLocaleString()),
+      ].join("");
+    } else if (method === "milestone") {
+      methodHeaderText = "Milestone recognition";
+      methodKpis = [
+        _progressKpiTile("Milestone Code", esc(mf.milestone_code || "—")),
+        _progressKpiTile("Milestone Description", esc(mf.milestone_description || "—")),
+        _progressKpiTile("Milestone Status", esc(mf.milestone_status || "—")),
+        _progressKpiTile("Certified %", mf.certified_percent != null ? `${num(mf.certified_percent).toFixed(2)}%` : "—"),
+        _progressKpiTile("Certified Amount", mf.certified_amount != null ? money(mf.certified_amount) : "—"),
+        _progressKpiTile("Certificate Ref", esc(mf.certificate_ref || "—")),
+        _progressKpiTile("Approval Date", mf.approval_date ? esc(String(mf.approval_date).slice(0, 10)) : "—"),
+        _progressKpiTile("Approved By", esc(mf.approved_by || "—")),
+        _progressKpiTile("Retention %", mf.retention_percent != null ? `${num(mf.retention_percent).toFixed(2)}%` : "—"),
+        _progressKpiTile("Retention Amount", mf.retention_amount != null ? money(mf.retention_amount) : "—"),
+        _progressKpiTile("Milestone Allocated Amount", money(num(mf.milestone_allocated_amount))),
+      ].join("");
+    } else if (method === "time_elapsed") {
+      methodHeaderText = "Time-elapsed recognition";
+      methodKpis = [
+        _progressKpiTile("Performance Start", mf.performance_start_date ? esc(String(mf.performance_start_date).slice(0, 10)) : "—"),
+        _progressKpiTile("Performance End", mf.performance_end_date ? esc(String(mf.performance_end_date).slice(0, 10)) : "—"),
+        _progressKpiTile("Elapsed Days", num(mf.elapsed_days).toLocaleString()),
+        _progressKpiTile("Total Days", num(mf.total_days).toLocaleString()),
+        _progressKpiTile("Elapsed %", `${num(mf.elapsed_percent).toFixed(2)}%`),
+        _progressKpiTile("Basis", esc(mf.basis || "calendar_days")),
+      ].join("");
+    } else if (method === "manual") {
+      methodHeaderText = "Manual recognition";
+      methodKpis = [
+        _progressKpiTile("Progress %", `${num(mf.progress_percent).toFixed(2)}%`),
+      ].join("");
+    }
+
+    // Billing position (from the method-aware summary when available)
+    const billedToDate = num(summary?.billed_to_date);
+    const remainingToBill = num(summary?.remaining_to_bill);
+    const billingKpis = summary
+      ? [
+          _progressKpiTile("Billed to Date", money(billedToDate)),
+          _progressKpiTile("Remaining to Bill", money(remainingToBill)),
+        ].join("")
+      : "";
+
+    // Latest saved update (prefer the summary's latest_progress, fall back
+    // to the passed-in latestProgress)
+    const lp = summary?.latest_progress || latestProgress;
 
     el.innerHTML = `
       <div class="space-y-3">
@@ -107243,7 +107466,8 @@ async function renderContractPreview(c = {}) {
             ${esc(obligation?.obligation_code || "")} · ${esc(obligation?.obligation_name || "")}
           </div>
           <div class="text-xs text-slate-500">
-            Timing: ${esc(obligation?.recognition_timing || "")}
+            Billing: <strong>${esc(billingLabel)}</strong>
+            · Recognition: <strong>${esc(methodLabel)}</strong>
             ${obligation?.progress_method ? `· Method: ${esc(obligation.progress_method)}` : ""}
           </div>
         </div>
@@ -107261,43 +107485,26 @@ async function renderContractPreview(c = {}) {
           </div>
         </div>
 
+        ${methodHeaderText ? `
+          <div class="text-xs font-semibold text-slate-600 pt-1">${esc(methodHeaderText)}</div>
+        ` : ""}
+
         <div class="grid grid-cols-2 gap-3 text-sm">
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Allocated Price</div>
-            <div class="font-semibold">${money(allocated)}</div>
-          </div>
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Revenue LTD</div>
-            <div class="font-semibold">${money(revenueLtd)}</div>
-          </div>
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Expected Total Cost</div>
-            <div class="font-semibold">${money(expectedCost)}</div>
-          </div>
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Actual Cost to Date</div>
-            <div class="font-semibold">${money(actualCost)}</div>
-          </div>
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Remaining Revenue</div>
-            <div class="font-semibold">${money(remainingRevenue)}</div>
-          </div>
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Remaining Cost</div>
-            <div class="font-semibold">${money(remainingCost)}</div>
-          </div>
+          ${commonKpis.join("")}
+          ${methodKpis}
+          ${billingKpis}
         </div>
 
         ${
-          latestProgress
+          lp
             ? `
             <div class="rounded-lg border p-3 bg-white">
               <div class="text-xs font-semibold text-slate-600 mb-2">Latest Saved Update</div>
               <div class="text-xs text-slate-500 space-y-1">
-                <div>Period End: <strong>${esc(String(latestProgress.period_end || "").slice(0, 10))}</strong></div>
-                <div>Type: <strong>${esc(latestProgress.update_type || "")}</strong></div>
-                <div>Milestone: <strong>${esc(latestProgress.milestone_code || "—")}</strong></div>
-                <div>Notes: <strong>${esc(latestProgress.notes || "—")}</strong></div>
+                <div>Period End: <strong>${esc(String(lp.period_end || "").slice(0, 10))}</strong></div>
+                <div>Type: <strong>${esc(lp.update_type || "")}</strong></div>
+                <div>Milestone: <strong>${esc(lp.milestone_code || "—")}</strong></div>
+                <div>Notes: <strong>${esc(lp.notes || "—")}</strong></div>
               </div>
 
               <div class="mt-3">
@@ -107316,10 +107523,10 @@ async function renderContractPreview(c = {}) {
       </div>
     `;
     const editBtn = $("revEditLatestProgressBtn");
-    if (editBtn && latestProgress) {
+    if (editBtn && lp) {
       editBtn.addEventListener("click", () => {
-        state.progressEditing = latestProgress;
-        hydrateRevenueProgressForm(latestProgress);
+        state.progressEditing = lp;
+        hydrateRevenueProgressForm(lp);
         setRevenueProgressEditMode(true);
         setMsg("Editing latest progress update.");
       });

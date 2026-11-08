@@ -14,101 +14,6 @@ def _jwt_user_id():
     uid = payload.get("user_id") or payload.get("sub")
     return int(uid) if uid is not None else None
 
-
-# ─────────────────────────────────────────────────────────────
-# Milestone code sanitizer.
-#
-# The revenue progress UI historically built <datalist> option values
-# as "MS-002 — Stormwater works certified" (code + em-dash + name).
-# That combined string was then sent to the backend as `milestone_code`,
-# which failed the contract milestone lookup in
-# db_service._contract_milestone_codes() — that lookup compares against
-# BARE codes only (e.g. "MS-002").
-#
-# This helper strips the display name off any milestone code value so
-# the backend always sees a clean code regardless of what the frontend
-# sends. It is called from:
-#   - _normalize_obligation_payload()  (obligation create/update)
-#   - api_record_revenue_progress_update()  (progress update POST)
-#
-# It also returns the extracted name (if any) so callers can store it
-# separately in payload_json.milestone_name.
-# ─────────────────────────────────────────────────────────────
-def _split_milestone_code_and_name(raw_value):
-    """
-    Split a milestone value that may be either a bare code
-    ("MS-002") or a combined "code — name" string into (code, name).
-
-    Returns (code, name) where name may be None.
-    """
-    raw = str(raw_value or "").strip()
-    if not raw:
-        return (None, None)
-
-    # Order matters: try the most specific multi-char separators first.
-    # We deliberately EXCLUDE the bare hyphen "-" because milestone codes
-    # themselves often contain hyphens (e.g. "MS-002", "POB-002-02"). The
-    # frontend only ever produces the em-dash " — " form, so matching on
-    # em-dash / en-dash variants is sufficient and unambiguous.
-    separators = [" — ", " – ", " —", "— ", "—", " – ", "–"]
-
-    for sep in separators:
-        idx = raw.find(sep)
-        if idx > 0:
-            code = raw[:idx].strip()
-            name = raw[idx + len(sep):].strip()
-            if code:
-                return (code, name or None)
-
-    # No separator found — treat the whole string as the bare code.
-    return (raw, None)
-
-
-def _sanitize_milestone_codes_in_body(body: dict) -> dict:
-    """
-    Walk the inbound progress-update / obligation body and strip any
-    display name from milestone_code fields. Mutates a copy and returns
-    it. Safe to call on any body shape.
-    """
-    body = dict(body or {})
-
-    # Top-level milestone_code
-    raw_code = body.get("milestone_code")
-    if raw_code:
-        code, name = _split_milestone_code_and_name(raw_code)
-        body["milestone_code"] = code
-        # If the caller also sent milestone_name as the combined string,
-        # replace it with the stripped name (or fall back to the code).
-        if body.get("milestone_name") in (None, "", raw_code):
-            body["milestone_name"] = name or code
-
-    # payload_json.linked_billing_milestone_code + payload_json.milestone_code
-    pj = body.get("payload_json")
-    if isinstance(pj, dict):
-        pj = dict(pj)
-
-        for key in ("milestone_code", "linked_billing_milestone_code"):
-            raw = pj.get(key)
-            if raw:
-                code, _name = _split_milestone_code_and_name(raw)
-                pj[key] = code
-
-        # payload_json.milestone.code (progress-update nested object)
-        ms = pj.get("milestone")
-        if isinstance(ms, dict):
-            ms = dict(ms)
-            raw = ms.get("code")
-            if raw:
-                code, name = _split_milestone_code_and_name(raw)
-                ms["code"] = code
-                if ms.get("name") in (None, "", raw):
-                    ms["name"] = name or code
-            pj["milestone"] = ms
-
-        body["payload_json"] = pj
-
-    return body
-
 def _apply_engagement_bridge(body: dict, *, user_id=None) -> dict:
     body = dict(body or {})
 
@@ -288,12 +193,7 @@ def _normalize_obligation_payload(body: dict) -> dict:
 
         # 1) COST TO COST
         if method == "cost_to_cost":
-            # ✅ cost_to_cost is the ONLY method that meaningfully uses
-            # expected_total_cost (it is the denominator for % complete).
-            # The column is NOT NULL DEFAULT 0, so coerce None/'' to 0.0
-            # and require a positive value at the db_service validator
-            # (_validate_obligation_progress_payload) for true cost-to-cost.
-            body["expected_total_cost"] = float(body.get("expected_total_cost") or 0.0)
+            # expected_total_cost stays as top-level DB field
             # actual_cost_to_date is captured during progress update, not setup
             body["actual_cost_to_date"] = 0.0
             body["progress_percent"] = None
@@ -314,10 +214,7 @@ def _normalize_obligation_payload(body: dict) -> dict:
                     str(body.get("unit_of_measure") or "").strip() or None
                 )
 
-            # ✅ units method does NOT use expected_total_cost for progress.
-            # The column is NOT NULL DEFAULT 0, so write 0.0 (not None).
-            # Per-unit cost (if needed) lives in payload_json, not here.
-            body["expected_total_cost"] = float(body.get("expected_total_cost") or 0.0)
+            # expected_total_cost may remain top-level for cost analytics
             body["actual_cost_to_date"] = 0.0
             body["progress_percent"] = None
 
@@ -332,30 +229,19 @@ def _normalize_obligation_payload(body: dict) -> dict:
                     body.get("obligation_milestones") or []
                 )
 
-            # ✅ Sanitize milestone_code — strip any " — description"
-            # display name so db_service._contract_milestone_codes()
-            # lookup succeeds (it compares against bare codes only).
-            raw_milestone_code = body.get("milestone_code")
-            if raw_milestone_code is not None:
-                code, name_from_code = _split_milestone_code_and_name(raw_milestone_code)
-                payload_json["milestone_code"] = code
-                payload_json["linked_billing_milestone_code"] = code
+            if body.get("milestone_code") is not None:
+                payload_json["milestone_code"] = (
+                    str(body.get("milestone_code") or "").strip() or None
+                )
+                payload_json["linked_billing_milestone_code"] = payload_json["milestone_code"]
 
-            # Store milestone_name (display name from dropdown).
-            # Prefer an explicitly-supplied milestone_name; otherwise use
-            # the name extracted from the combined code string; otherwise
-            # fall back to the bare code.
+            # Store milestone_name (display name from dropdown)
             if body.get("milestone_name") is not None:
-                supplied_name = str(body.get("milestone_name") or "").strip()
-                # If the supplied name is identical to the raw code (i.e.
-                # the caller jammed the combined value into both fields),
-                # use the extracted name instead.
-                if supplied_name and supplied_name != str(raw_milestone_code or ""):
-                    payload_json["milestone_name"] = supplied_name or None
-                else:
-                    payload_json["milestone_name"] = name_from_code or code
-            elif raw_milestone_code is not None:
-                payload_json["milestone_name"] = name_from_code or code
+                payload_json["milestone_name"] = (
+                    str(body.get("milestone_name") or "").strip() or None
+                )
+            elif body.get("milestone_code") is not None:
+                payload_json["milestone_name"] = payload_json["milestone_code"]
 
             # Store retention for milestone method
             if body.get("retention_percent") is not None:
@@ -373,12 +259,7 @@ def _normalize_obligation_payload(body: dict) -> dict:
                     body.get("milestone_allocated_amount") or 0
                 )
 
-            # ✅ expected_total_cost is NOT a milestone-method value.
-            # The revenue_obligations.expected_total_cost column is
-            # NOT NULL DEFAULT 0, so we must write 0.0 (not None) for
-            # milestone obligations. The actual milestone cost (if any)
-            # is stored in payload_json.milestone_allocated_amount.
-            body["expected_total_cost"] = float(body.get("expected_total_cost") or 0.0)
+            # expected_total_cost may remain top-level as expected milestone cost
             body["actual_cost_to_date"] = 0.0
             body["progress_percent"] = 0.0
 
@@ -396,10 +277,7 @@ def _normalize_obligation_payload(body: dict) -> dict:
             if body.get("performance_end_date") is not None:
                 payload_json["performance_end_date"] = body.get("performance_end_date") or None
 
-            # ✅ time_elapsed does NOT use expected_total_cost for progress
-            # (progress is computed from elapsed days, not cost). The column
-            # is NOT NULL DEFAULT 0, so write 0.0 (not None).
-            body["expected_total_cost"] = float(body.get("expected_total_cost") or 0.0)
+            # expected_total_cost may remain top-level for cost analytics
             body["actual_cost_to_date"] = 0.0
             body["progress_percent"] = None
 
@@ -416,9 +294,6 @@ def _normalize_obligation_payload(body: dict) -> dict:
             else:
                 body["progress_percent"] = None
 
-            # ✅ manual method does NOT use expected_total_cost for progress.
-            # The column is NOT NULL DEFAULT 0, so write 0.0 (not None).
-            body["expected_total_cost"] = float(body.get("expected_total_cost") or 0.0)
             body["actual_cost_to_date"] = 0.0
 
             payload_json.pop("units_total", None)
@@ -1386,13 +1261,6 @@ def api_record_revenue_progress_update(company_id: int, obligation_id: int):
 
     body = _apply_engagement_bridge(body, user_id=user_id)
 
-    # ✅ Sanitize milestone codes BEFORE the db_service call.
-    # This strips any " — Stormwater works certified" display name off
-    # milestone_code so the backend's contract-milestone lookup succeeds.
-    # Fixes: ValueError: Milestone code 'MS-002 — Stormwater works
-    # certified' is not defined on the contract.
-    body = _sanitize_milestone_codes_in_body(body)
-
     # 🔥 ADD HERE (before calling db_service)
     obl = db_service.get_revenue_obligation(company_id, obligation_id)
 
@@ -1616,6 +1484,46 @@ def api_get_revenue_obligation_billing_position(company_id: int, obligation_id: 
         return jsonify({"ok": True, "data": out}), 200
     except Exception as e:
         current_app.logger.exception("get_revenue_obligation_billing_position failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+@revenue_bp.route(
+    "/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>/progress_summary",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_get_revenue_obligation_progress_summary(company_id: int, obligation_id: int):
+    """
+    Method-aware recognition progress summary for a single revenue obligation.
+
+    Returns a unified summary payload whose labels and fields adapt to the
+    obligation's progress_method (cost_to_cost, units, milestone,
+    time_elapsed, manual) or recognition_timing (point_in_time). The frontend
+    renders the appropriate block based on the `method` field, so labels and
+    values always match the billing / recognition method that was configured.
+
+    Previously the on-screen summary only fully populated values for
+    cost-to-cost obligations. This endpoint expands that to return a
+    recognition progress summary for ALL methods.
+    """
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        out = db_service.get_revenue_obligation_progress_summary(
+            company_id=int(company_id),
+            obligation_id=int(obligation_id),
+        )
+        if not out:
+            return jsonify({"ok": False, "error": "Revenue obligation not found"}), 404
+
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("get_revenue_obligation_progress_summary failed")
         return jsonify({"ok": False, "error": str(e)}), 400
     
 @revenue_bp.route("/api/companies/<int:company_id>/revenue/runs/<int:run_id>/reverse", methods=["POST", "OPTIONS"])
