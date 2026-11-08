@@ -2481,7 +2481,63 @@ class DatabaseService:
             )
 
         return rate
-    
+
+    def _preview_period_count(
+        self,
+        data: Dict[str, Any],
+    ) -> int:
+        months = self._positive_int(
+            data.get("lease_term_months")
+        )
+
+        if months <= 0:
+            raise ValueError(
+                "lease_term_months must be "
+                "greater than zero"
+            )
+
+        frequency = (
+            data.get("billing_frequency")
+            or "monthly"
+        ).strip().lower()
+
+        if frequency == "weekly":
+            return max(
+                round(
+                    Decimal(months)
+                    * Decimal("52")
+                    / Decimal("12")
+                ),
+                1,
+            )
+
+        if frequency == "monthly":
+            return months
+
+        if frequency == "quarterly":
+            return max(
+                (
+                    months
+                    + 2
+                ) // 3,
+                1,
+            )
+
+        if frequency == "annually":
+            return max(
+                (
+                    months
+                    + 11
+                ) // 12,
+                1,
+            )
+
+        raise ValueError(
+            f"Unsupported billing frequency: "
+            f"{frequency}"
+        )
+
+
     @staticmethod
     def _payroll_safe_month_day(
         year: int,
