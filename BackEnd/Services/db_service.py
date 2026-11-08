@@ -2465,6 +2465,23 @@ class DatabaseService:
             rounding=ROUND_HALF_UP,
         )
     
+    @classmethod
+    def _annual_rate(
+        cls,
+        value: Any,
+    ) -> Decimal:
+        rate = cls._decimal(value)
+
+        if rate > 1:
+            rate /= Decimal("100")
+
+        if rate < 0:
+            raise ValueError(
+                "discount_rate cannot be negative"
+            )
+
+        return rate
+    
     @staticmethod
     def _payroll_safe_month_day(
         year: int,
