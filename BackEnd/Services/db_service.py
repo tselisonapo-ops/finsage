@@ -2416,6 +2416,25 @@ class DatabaseService:
                     pass
 
     @staticmethod
+    def _decimal(
+        value: Any,
+        default: Decimal = Decimal("0"),
+    ) -> Decimal:
+        if value in (None, ""):
+            return default
+
+        try:
+            return Decimal(
+                str(value).replace(",", "").strip()
+            )
+        except (
+            InvalidOperation,
+            TypeError,
+            ValueError,
+        ):
+            return default
+        
+    @staticmethod
     def _payroll_add_months(value: date, months: int) -> date:
         total = (
             value.year * 12
