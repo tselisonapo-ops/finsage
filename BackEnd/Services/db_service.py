@@ -2543,7 +2543,25 @@ class DatabaseService:
             return max(int(value or 0), 0)
         except (TypeError, ValueError):
             return 0
-        
+
+    @staticmethod
+    def _periods_per_year(
+        frequency: str,
+    ) -> int:
+        values = {
+            "weekly": 52,
+            "monthly": 12,
+            "quarterly": 4,
+            "annually": 1,
+        }
+
+        if frequency not in values:
+            raise ValueError(
+                f"Unsupported frequency: {frequency}"
+            )
+
+        return values[frequency]
+    
     @staticmethod
     def _payroll_safe_month_day(
         year: int,
