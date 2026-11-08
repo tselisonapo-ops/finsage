@@ -105267,14 +105267,15 @@ async function renderContractPreview(c = {}) {
   }
 
   function calculateElapsedProgress() {
+    // ✅ Prefer progress-form fields, fall back to obligation-setup fields
     const start =
-      $("revElapsedStartDate")?.value ||
       $("revProgressPerformanceStartDate")?.value ||
+      $("revElapsedStartDate")?.value ||
       "";
 
     const end =
-      $("revElapsedEndDate")?.value ||
       $("revProgressPerformanceEndDate")?.value ||
+      $("revElapsedEndDate")?.value ||
       "";
 
     const periodEnd =
@@ -105283,7 +105284,9 @@ async function renderContractPreview(c = {}) {
       "";
 
     const basis =
-      $("revElapsedBasis")?.value || "calendar_days";
+      $("revProgressTimeBasis")?.value ||
+      $("revElapsedBasis")?.value ||
+      "calendar_days";
 
     const empty = {
       elapsed_days: null,
@@ -105330,6 +105333,10 @@ async function renderContractPreview(c = {}) {
 
     if ($("revElapsedDays")) $("revElapsedDays").value = elapsedDays;
     if ($("revElapsedPercent")) $("revElapsedPercent").value = elapsedPercent.toFixed(2);
+    // Also write to progress-form fields
+    if ($("revProgressElapsedDays")) $("revProgressElapsedDays").value = elapsedDays;
+    if ($("revProgressTotalDays")) $("revProgressTotalDays").value = totalDays;
+    if ($("revProgressElapsedPercent")) $("revProgressElapsedPercent").value = elapsedPercent.toFixed(2);
 
     if ($("revProgressPercent")) {
       $("revProgressPercent").value = elapsedPercent.toFixed(2);
@@ -105581,24 +105588,29 @@ async function renderContractPreview(c = {}) {
 
     if (type === "time_elapsed") {
       show(timeElapsedWrap, true);
+      showGrid(timeElapsedWrap, true);
 
       const pj = state.selectedObligation?.payload_json || {};
 
-      const start =
-        $("revElapsedStartDate") ||
-        $("revProgressPerformanceStartDate");
+      // Populate performance start/end dates from obligation
+      const startDate = $("revProgressPerformanceStartDate");
+      const endDate = $("revProgressPerformanceEndDate");
 
-      const end =
-        $("revElapsedEndDate") ||
-        $("revProgressPerformanceEndDate");
-
-      if (start) {
-        start.value = toDateInputValue(pj.performance_start_date);
+      if (startDate) {
+        startDate.value = toDateInputValue(pj.performance_start_date);
+      }
+      if (endDate) {
+        endDate.value = toDateInputValue(pj.performance_end_date);
       }
 
-      if (end) {
-        end.value = toDateInputValue(pj.performance_end_date);
-      }
+      // Also bind events on these fields if not already bound
+      [startDate, endDate, $("revProgressTimeBasis"), $("revProgressPeriodEnd")].forEach((el) => {
+        if (el && el.dataset.teBound !== "1") {
+          el.dataset.teBound = "1";
+          el.addEventListener("change", calculateElapsedProgress);
+          el.addEventListener("input", calculateElapsedProgress);
+        }
+      });
 
       calculateElapsedProgress();
 
@@ -107643,45 +107655,22 @@ async function renderContractPreview(c = {}) {
     }
 
     if (updateType === "time_elapsed") {
-      const elapsedProgress = calculateElapsedProgress();
-
-      payload.progress_percent =
-        elapsedProgress?.elapsed_percent == null
-          ? null
-          : elapsedProgress.elapsed_percent;
+      const elapsedResult = calculateElapsedProgress();
 
       payload.payload_json.time_elapsed = {
-        performance_start_date:
-          $("revElapsedStartDate")?.value ||
-          obligationPayload.performance_start_date ||
-          null,
-
-        performance_end_date:
-          $("revElapsedEndDate")?.value ||
-          obligationPayload.performance_end_date ||
-          null,
-
-        period_end:
-          $("revProgressPeriodEnd")?.value || null,
-
-        basis:
-          $("revElapsedBasis")?.value || "calendar_days",
-
-        billing_cycle:
-          $("revElapsedBillingCycle")?.value || null,
-
-        elapsed_days:
-          elapsedProgress?.elapsed_days ?? null,
-
-        total_days:
-          elapsedProgress?.total_days ?? null,
-
-        elapsed_percent:
-          elapsedProgress?.elapsed_percent ?? null,
-
-        notes:
-          $("revElapsedNotes")?.value || "",
+        performance_start_date: $("revProgressPerformanceStartDate")?.value || null,
+        performance_end_date: $("revProgressPerformanceEndDate")?.value || null,
+        period_end: $("revProgressPeriodEnd")?.value || null,
+        basis: $("revProgressTimeBasis")?.value || "calendar_days",
+        elapsed_days: elapsedResult.elapsed_days,
+        total_days: elapsedResult.total_days,
+        elapsed_percent: elapsedResult.elapsed_percent,
       };
+
+      // Also set top-level progress_percent
+      if (elapsedResult.elapsed_percent != null) {
+        payload.progress_percent = elapsedResult.elapsed_percent;
+      }
     }
 
     return payload;
