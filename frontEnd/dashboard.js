@@ -104294,8 +104294,25 @@ function renderPayrollPayeRunClearing(
     if ($("revProgressExpectedCost")) $("revProgressExpectedCost").value = num(p.expected_total_cost).toFixed(2);
     if ($("revProgressActualCost")) $("revProgressActualCost").value = num(p.actual_cost_to_date).toFixed(2);
     if ($("revProgressPercent")) $("revProgressPercent").value = p.progress_percent ?? "";
-    if ($("revProgressMilestoneCode")) $("revProgressMilestoneCode").value = p.milestone_code || "";
+
+    // ✅ Milestone Name — prefer milestone_name, fall back to milestone_code
+    const msName = p.milestone_name || p.milestone_code ||
+      (p.payload_json?.milestone?.name) || (p.payload_json?.milestone?.code) || "";
+    if ($("revProgressMilestoneCode")) $("revProgressMilestoneCode").value = msName;
+
     if ($("revProgressNotes")) $("revProgressNotes").value = p.notes || "";
+
+    // ✅ Retention — populate from top-level or payload_json
+    const msData = p.payload_json?.milestone || {};
+    const retPct = p.retention_percent ?? msData.retention_percent ?? "";
+    const retAmt = p.retention_amount ?? msData.retention_amount ?? "";
+
+    if ($("revProgressRetentionPercent")) $("revProgressRetentionPercent").value = retPct;
+    if ($("revProgressRetentionAmount")) $("revProgressRetentionAmount").value = retAmt;
+
+    // ✅ Populate milestone dropdown + bind retention events
+    populateProgressMilestoneDropdown();
+    bindProgressMilestoneAndRetentionEvents();
 
     toggleRevenueProgressDriverFields();
   }
@@ -105357,6 +105374,121 @@ async function renderContractPreview(c = {}) {
       el.addEventListener("input", calculateElapsedProgress);
     });
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // MILESTONE DROPDOWN for Revenue Progress form
+  // Populates the datalist from the selected contract's billing
+  // milestones (from sheet 32 / contract payload_json).
+  // Also allows free typing — the datalist is a suggestion list,
+  // not a restriction.
+  // ═══════════════════════════════════════════════════════════
+  function populateProgressMilestoneDropdown() {
+    const datalist = document.getElementById("revProgressMilestoneList");
+    if (!datalist) return;
+
+    const milestones = getSelectedContractMilestones();
+
+    // Build option elements from contract billing milestones
+    datalist.innerHTML = milestones.map((m) => {
+      const code = esc(m.code || "");
+      const desc = esc(m.description || "");
+      const display = desc ? `${code} — ${desc}` : code;
+      return `<option value="${display}">${display}</option>`;
+    }).join("");
+
+    console.log("[Revenue] Progress milestone dropdown populated:", milestones.length, "milestones");
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // RETENTION AUTO-CALC
+  // When retention % or certified amount changes, auto-calculate
+  // the retention amount = certified amount × retention %.
+  // ═══════════════════════════════════════════════════════════
+  function calculateRetentionAmount() {
+    const retPctEl = document.getElementById("revProgressRetentionPercent");
+    const retAmtEl = document.getElementById("revProgressRetentionAmount");
+    const certAmtEl = document.getElementById("revProgressCertifiedAmount");
+
+    if (!retPctEl || !retAmtEl) return;
+
+    const retPct = parseFloat(retPctEl.value || 0) || 0;
+    const certAmt = parseFloat(certAmtEl?.value || 0) || 0;
+
+    // Auto-calculate retention amount if not manually overridden
+    if (retPct > 0 && certAmt > 0) {
+      const calcAmt = round2(certAmt * retPct);
+      // Only auto-fill if the field is empty or was previously auto-calculated
+      const currentAmt = parseFloat(retAmtEl.value || 0) || 0;
+      const expectedAmt = round2(certAmt * retPct);
+      if (currentAmt === 0 || Math.abs(currentAmt - expectedAmt) < 0.01) {
+        retAmtEl.value = calcAmt.toFixed(2);
+      }
+    }
+  }
+
+  function round2(v) {
+    return Math.round((parseFloat(v) || 0) * 100) / 100;
+  }
+
+  function bindProgressMilestoneAndRetentionEvents() {
+    // Populate milestone dropdown when milestone field gets focus
+    const milestoneInput = document.getElementById("revProgressMilestoneCode");
+    if (milestoneInput && milestoneInput.dataset.msDropdownBound !== "1") {
+      milestoneInput.dataset.msDropdownBound = "1";
+      milestoneInput.addEventListener("focus", populateProgressMilestoneDropdown);
+    }
+
+    // Retention auto-calc events
+    const retPctEl = document.getElementById("revProgressRetentionPercent");
+    const certAmtEl = document.getElementById("revProgressCertifiedAmount");
+    const retAmtEl = document.getElementById("revProgressRetentionAmount");
+
+    if (retPctEl && retPctEl.dataset.retBound !== "1") {
+      retPctEl.dataset.retBound = "1";
+      retPctEl.addEventListener("input", calculateRetentionAmount);
+      retPctEl.addEventListener("change", calculateRetentionAmount);
+    }
+
+    if (certAmtEl && certAmtEl.dataset.retBound !== "1") {
+      certAmtEl.dataset.retBound = "1";
+      certAmtEl.addEventListener("input", calculateRetentionAmount);
+      certAmtEl.addEventListener("change", calculateRetentionAmount);
+    }
+
+    // Pre-fill retention % from the contract's billing milestones
+    if (retPctEl && !retPctEl.value && state.selectedContract) {
+      const milestones = getSelectedContractMilestones();
+      const contract = state.selectedContract;
+
+      // Try to get retention from the milestone linked to the current obligation
+      const obl = state.selectedObligation;
+      if (obl) {
+        const pj = obl.payload_json || {};
+        const linkedCode = pj.linked_billing_milestone_code || pj.milestone_code;
+        if (linkedCode) {
+          const ms = milestones.find(m => String(m.code) === String(linkedCode));
+          if (ms && ms.retention_percent != null) {
+            retPctEl.value = ms.retention_percent;
+          }
+        }
+      }
+
+      // Fallback: use the first milestone's retention %
+      if (!retPctEl.value && milestones.length > 0 && milestones[0].retention_percent != null) {
+        retPctEl.value = milestones[0].retention_percent;
+      }
+    }
+  }
+
+  // Also populate when contract changes
+  const _origPopulateObligation = populateObligationMilestoneDropdown;
+  populateObligationMilestoneDropdown = function(selectedCode = "") {
+    _origPopulateObligation(selectedCode);
+    // Also refresh the progress milestone dropdown
+    populateProgressMilestoneDropdown();
+    // Bind retention + milestone events
+    bindProgressMilestoneAndRetentionEvents();
+  };
 
   function toggleRevenueProgressDriverFields() {
     const type = String($("revProgressType")?.value || "").trim().toLowerCase();
@@ -107394,10 +107526,31 @@ async function renderContractPreview(c = {}) {
       progress_percent: null,
 
       milestone_code: null,
+      milestone_name: null,
       notes: $("revProgressNotes")?.value || "",
+
+      // ✅ Retention at top level — applies to ALL progress methods
+      retention_percent:
+        $("revProgressRetentionPercent")?.value === ""
+          ? null
+          : num($("revProgressRetentionPercent")?.value),
+
+      retention_amount:
+        $("revProgressRetentionAmount")?.value === ""
+          ? null
+          : num($("revProgressRetentionAmount")?.value),
 
       payload_json: {
         driver: updateType,
+        // ✅ Also include retention in payload_json for the backend
+        retention_percent:
+          $("revProgressRetentionPercent")?.value === ""
+            ? null
+            : num($("revProgressRetentionPercent")?.value),
+        retention_amount:
+          $("revProgressRetentionAmount")?.value === ""
+            ? null
+            : num($("revProgressRetentionAmount")?.value),
       },
     };
 
@@ -107414,12 +107567,15 @@ async function renderContractPreview(c = {}) {
     }
 
     if (updateType === "milestone") {
-      payload.milestone_code =
-        $("revProgressMilestoneCode")?.value?.trim() || null;
+      const milestoneValue = $("revProgressMilestoneCode")?.value?.trim() || null;
+
+      payload.milestone_code = milestoneValue;
+      // ✅ Also send milestone_name — the display name from the dropdown
+      payload.milestone_name = milestoneValue;
 
       payload.payload_json.milestone = {
-        code:
-          $("revProgressMilestoneCode")?.value?.trim() || null,
+        code: milestoneValue,
+        name: milestoneValue,
 
         description:
           $("revProgressMilestoneDescription")?.value?.trim() || null,

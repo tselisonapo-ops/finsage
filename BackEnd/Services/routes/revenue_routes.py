@@ -134,6 +134,12 @@ def _normalize_revenue_contract_body(body: dict) -> dict:
     if body.get("status"):
         body["status"] = str(body.get("status") or "").strip().lower()
 
+    # Store retention at top level for ALL methods (not just milestone)
+    if body.get("retention_percent") is not None:
+        payload_json["retention_percent"] = float(body.get("retention_percent") or 0)
+    if body.get("retention_amount") is not None:
+        payload_json["retention_amount"] = float(body.get("retention_amount") or 0)
+
     body["payload_json"] = payload_json
     return body
 
@@ -228,6 +234,20 @@ def _normalize_obligation_payload(body: dict) -> dict:
                     str(body.get("milestone_code") or "").strip() or None
                 )
                 payload_json["linked_billing_milestone_code"] = payload_json["milestone_code"]
+
+            # Store milestone_name (display name from dropdown)
+            if body.get("milestone_name") is not None:
+                payload_json["milestone_name"] = (
+                    str(body.get("milestone_name") or "").strip() or None
+                )
+            elif body.get("milestone_code") is not None:
+                payload_json["milestone_name"] = payload_json["milestone_code"]
+
+            # Store retention for milestone method
+            if body.get("retention_percent") is not None:
+                payload_json["retention_percent"] = float(body.get("retention_percent") or 0)
+            if body.get("retention_amount") is not None:
+                payload_json["retention_amount"] = float(body.get("retention_amount") or 0)
 
             if body.get("milestone_weight_percent") is not None:
                 payload_json["milestone_weight_percent"] = float(

@@ -24071,12 +24071,16 @@ body{
                       </div>
 
                       <div id="revProgressMilestoneCodeWrap">
-                        <label class="block text-xs text-slate-500 mb-1">Milestone Code</label>
+                        <label class="block text-xs text-slate-500 mb-1">Milestone Name</label>
                         <input
                           id="revProgressMilestoneCode"
                           class="w-full border rounded px-3 py-2 text-sm"
-                          placeholder="Select or enter milestone code"
+                          placeholder="Select or type milestone name"
+                          list="revProgressMilestoneList"
                         >
+                        <datalist id="revProgressMilestoneList">
+                          <!-- Populated dynamically by JS from contract billing milestones -->
+                        </datalist>
                       </div>
                     </div>
 
