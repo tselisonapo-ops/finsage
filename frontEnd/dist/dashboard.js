@@ -2441,6 +2441,13 @@ const ENDPOINTS = {
     employee: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}`,
 
+    // GET /api/companies/<cid>/payroll/employees/<employeeId>/profile
+    // Consolidated employee profile - returns contracts, tax profiles,
+    // bank accounts, benefits, leave requests, leave balances, loans,
+    // pay setup, recurring items and recent payslips in one call.
+    employeeProfile: (companyId, employeeId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/profile`,
+
     contracts: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/contracts`,
 
@@ -5664,6 +5671,12 @@ const ENDPOINTS = {
 
     billingPosition: (companyId, obligationId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/obligations/${encodeURIComponent(obligationId)}/billing_position`,
+
+    // Method-aware recognition progress summary (returns fields that adapt
+    // to the obligation's progress_method / recognition_timing, so the
+    // summary card can interchange labels per billing / recognition method).
+    progressSummary: (companyId, obligationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/obligations/${encodeURIComponent(obligationId)}/progress_summary`,
 
     cashReceipts: (companyId, contractId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}/cash_receipts`,
@@ -10679,8 +10692,16 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
     window.CURRENT_COMPANY_ID ||
     window.CURRENT_COMPANY?.id;
 
+  // The Work Queue header pill ("N items") — keep it in sync with the
+  // real count, no more hardcoded "5 items".
+  const workqueuePill = document.querySelector('[data-kpi-pill="workqueue"]');
+
   if (!cid) {
     host.innerHTML = `<div class="text-xs text-slate-400">No company selected.</div>`;
+    if (workqueuePill) {
+      workqueuePill.textContent = "—";
+      workqueuePill.classList.remove("ckp-pill--ok");
+    }
     return;
   }
 
@@ -10696,6 +10717,16 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
     );
 
     const items = normaliseWorkQueueItems(data);
+
+    // Real count for the header pill.
+    if (workqueuePill) {
+      const n = items.length;
+      workqueuePill.textContent = n === 0
+        ? "0 items"
+        : `${n} item${n === 1 ? "" : "s"}`;
+      // Empty queue is the "good" state — keep the green ok tone.
+      workqueuePill.classList.toggle("ckp-pill--ok", n === 0);
+    }
 
     if (!items.length) {
       host.innerHTML = `
@@ -10758,6 +10789,10 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
         Could not load accounting work queue.
       </div>
     `;
+    if (workqueuePill) {
+      workqueuePill.textContent = "—";
+      workqueuePill.classList.remove("ckp-pill--ok");
+    }
   }
 }
 
@@ -11764,6 +11799,10 @@ async function renderActionRequired(periodKey = "this_month") {
   const host = document.getElementById("actionsList");
   if (!host) return;
 
+  // The "Action Required" header pill — was hardcoded "3 urgent".
+  // Now it tracks the actual count of red+amber items below.
+  const actionsPill = document.querySelector('[data-kpi-pill="actions"]');
+
   try {
     const snap = await getDashboardData(periodKey);
 
@@ -11835,6 +11874,16 @@ async function renderActionRequired(periodKey = "this_month") {
       });
     }
 
+    // Update the header pill with the real urgent count.
+    if (actionsPill) {
+      const urgent = items.filter(i => i.tone === "red" || i.tone === "amber").length;
+      actionsPill.textContent = urgent === 0
+        ? "All clear"
+        : `${urgent} urgent`;
+      // Empty state -> green "ok" tone; urgent > 0 -> amber tone.
+      actionsPill.classList.toggle("ckp-pill--ok", urgent === 0);
+    }
+
     // ✅ No issues
     if (items.length === 0) {
       host.innerHTML = `
@@ -11865,6 +11914,10 @@ async function renderActionRequired(periodKey = "this_month") {
         Unable to load actions at the moment.
       </li>
     `;
+    if (actionsPill) {
+      actionsPill.textContent = "—";
+      actionsPill.classList.remove("ckp-pill--ok");
+    }
   }
 }
 
@@ -14267,7 +14320,25 @@ function openLeaseWizard(ctx = {}) {
     ""
   ).trim();
 
-  const isLessor = ["BS_CA_1710", "BS_NCA_1720"].includes(accountCode);
+  // Resolve the lease role using the shared resolver so that
+  // openLeaseWizard(), redirectToModule() and openModuleNudgeModal()
+  // all use the same logic (role → cf_bucket → legacy code).
+  //
+  // Priority:
+  //   1. Explicit ctx.leaseRole from the caller (highest).
+  //   2. Account metadata via getLeaseRoleFromAccount().
+  //   3. Default to "lessee" to preserve prior behaviour for
+  //      accounts that don't carry lease-role metadata.
+  const leaseRole =
+    ctx.leaseRole ||
+    getLeaseRoleFromAccount?.({
+      ...ctx,
+      code: accountCode,
+      account_name: accountName,
+    }) ||
+    "lessee";
+
+  const isLessor = leaseRole === "lessor";
 
   const payload = {
     type: "lease_wizard_context",
@@ -14283,7 +14354,7 @@ function openLeaseWizard(ctx = {}) {
     source: ctx.source || "journal",
     ctx: {
       mode: ctx.mode || (isLessor ? "inception" : "existing"),
-      leaseRole: ctx.leaseRole || (isLessor ? "lessor" : "lessee"),
+      leaseRole,
       accountCode,
       accountName,
       defaults: {
@@ -20174,11 +20245,62 @@ async function renderDashboardKPIs(periodKey = "this_month") {
     const vatFrom = vatPeriod?.start ? fmtLocalDate(vatPeriod.start) : null;
     const vatTo = vatPeriod?.end ? fmtLocalDate(vatPeriod.end) : null;
 
-    const [tbMiniRes, pnlMiniRes, vatSummaryRes] = await Promise.allSettled([
+    // ── Compute the previous-period comparator key ───────────────────────
+    // For period-over-period trend we need the matching prior window.
+    // Returns null when no clean comparator exists (e.g. prev_year itself,
+    // or a custom range) — in that case we show "—" rather than fake a %.
+    const previousPeriodKey = (function computePreviousPeriodKey(key) {
+      const map = {
+        this_month:        "prev_month",
+        this_quarter:      "prev_quarter",
+        last_2_quarters:   "prev_quarter",
+        ytd:               "prev_year",
+        this_year:         "prev_year",
+      };
+      return map[key] || null;
+    })(periodKey);
+
+    // ── Fetch the current + previous period data in parallel ────────────
+    // (previous period is fetched with allSettled so a single failure
+    //  doesn't take down the whole KPI strip)
+    const [tbMiniRes, pnlMiniRes, vatSummaryRes,
+           prevTbMiniRes, prevPnlMiniRes, prevVatSummaryRes] = await Promise.allSettled([
       apiFetch(ENDPOINTS.trialBalanceMini(cid, { preset: periodKey })),
       apiFetch(ENDPOINTS.pnlMini(cid, null, null, { preset: periodKey })),
       (typeof ENDPOINTS.vatSummary === "function" && vatFrom && vatTo)
         ? apiFetch(ENDPOINTS.vatSummary(cid, vatFrom, vatTo))
+        : Promise.resolve(null),
+
+      previousPeriodKey
+        ? apiFetch(ENDPOINTS.trialBalanceMini(cid, { preset: previousPeriodKey }))
+        : Promise.resolve(null),
+      previousPeriodKey
+        ? apiFetch(ENDPOINTS.pnlMini(cid, null, null, { preset: previousPeriodKey }))
+        : Promise.resolve(null),
+      (previousPeriodKey && typeof ENDPOINTS.vatSummary === "function" && vatFrom && vatTo)
+        // The VAT summary endpoint is keyed by from/to, not preset, so for
+        // the prior VAT comparator we shift the VAT period back by one cycle.
+        ? (async () => {
+            const prevVat = (function shiftVatPeriod(start, end, freq) {
+              if (!start || !end || !freq) return null;
+              const stepMonths = {
+                monthly: 1, bi_monthly: 2, "bi-monthly": 2,
+                quarterly: 3, semi_annual: 6, "semi-annual": 6, half_year: 6,
+                annual: 12,
+              }[String(freq).toLowerCase()] || 2;
+              const ps = new Date(start);
+              const pe = new Date(end);
+              ps.setMonth(ps.getMonth() - stepMonths);
+              pe.setMonth(pe.getMonth() - stepMonths);
+              return { start: ps, end: pe };
+            })(vatPeriod?.start, vatPeriod?.end, vatCfg?.frequency);
+            if (!prevVat?.start || !prevVat?.end) return null;
+            return apiFetch(ENDPOINTS.vatSummary(
+              cid,
+              fmtLocalDate(prevVat.start),
+              fmtLocalDate(prevVat.end)
+            ));
+          })()
         : Promise.resolve(null),
     ]);
 
@@ -20196,10 +20318,17 @@ async function renderDashboardKPIs(periodKey = "this_month") {
     const pnlMini = pnlMiniRes.status === "fulfilled" ? pnlMiniRes.value : { rows: [] };
     const vatSummary = vatSummaryRes.status === "fulfilled" ? vatSummaryRes.value : null;
 
+    const prevTbMini = prevTbMiniRes.status === "fulfilled" ? prevTbMiniRes.value : { rows: [] };
+    const prevPnlMini = prevPnlMiniRes.status === "fulfilled" ? prevPnlMiniRes.value : { rows: [] };
+    const prevVatSummary = prevVatSummaryRes.status === "fulfilled" ? prevVatSummaryRes.value : null;
+
     const tbRows = Array.isArray(tbMini?.rows) ? tbMini.rows : [];
     const pnlRows = Array.isArray(pnlMini?.rows) ? pnlMini.rows : [];
+    const prevTbRows = Array.isArray(prevTbMini?.rows) ? prevTbMini.rows : [];
+    const prevPnlRows = Array.isArray(prevPnlMini?.rows) ? prevPnlMini.rows : [];
 
-    const cash = tbRows
+    // ── Extractors (same logic for current + previous) ──────────────────
+    const extractCash = (rows) => rows
       .filter(r => /cash|bank|overdraft/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
       .reduce((sum, r) => {
         const raw = r.closing_balance_raw ?? r.closing_balance;
@@ -20207,7 +20336,7 @@ async function renderDashboardKPIs(periodKey = "this_month") {
         return sum + Number(r.debit ?? 0) - Number(r.credit ?? 0);
       }, 0);
 
-    const ar = tbRows
+    const extractAR = (rows) => rows
       .filter(r => /receivable|debtor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
       .reduce((sum, r) => {
         const raw = r.closing_balance_raw ?? r.closing_balance;
@@ -20215,16 +20344,13 @@ async function renderDashboardKPIs(periodKey = "this_month") {
         return sum + Number(r.debit ?? 0) - Number(r.credit ?? 0);
       }, 0);
 
-    const ap = tbRows
+    const extractAP = (rows) => rows
       .filter(r => {
         const txt = `${r.name || ""} ${r.category || ""} ${r.section || ""}`.toLowerCase();
-
         const isTradePayable =
           /accounts payable|trade payable|supplier payable|vendor payable|creditors/.test(txt);
-
         const excludeNonBills =
           /loan payable|vat payable|vat output|vat input|paye|withholding|lease liability|deferred income|tax payable|income tax|provision|accrual|borrowings|bank overdraft/.test(txt);
-
         return isTradePayable && !excludeNonBills;
       })
       .reduce((sum, r) => {
@@ -20232,22 +20358,47 @@ async function renderDashboardKPIs(periodKey = "this_month") {
         return sum + Math.abs(Number(raw || 0));
       }, 0);
 
-    const np = pnlRows
+    const extractNP = (rows) => rows
       .filter(r => /net profit|profit for the year|profit for period|net income|net loss|loss for the period/i.test(String(r.label || r.name || "")))
       .reduce((sum, r) => sum + Number(r.amount ?? r.value ?? 0), 0);
 
-    const vat = Number(
-      vatSummary?.net_vat ??
-      vatSummary?.vat_payable ??
-      vatSummary?.amount ??
+    const extractVat = (vat) => Number(
+      vat?.net_vat ??
+      vat?.vat_payable ??
+      vat?.amount ??
       0
     );
+
+    const cash   = extractCash(tbRows);
+    const ar     = extractAR(tbRows);
+    const ap     = extractAP(tbRows);
+    const np     = extractNP(pnlRows);
+    const vat    = extractVat(vatSummary);
+
+    const prevCash = extractCash(prevTbRows);
+    const prevAR   = extractAR(prevTbRows);
+    const prevAP   = extractAP(prevTbRows);
+    const prevNP   = extractNP(prevPnlRows);
+    const prevVat  = extractVat(prevVatSummary);
 
     document.getElementById("kpiCash").textContent = money(cash);
     document.getElementById("kpiAR").textContent = money(ar);
     document.getElementById("kpiAP").textContent = money(ap);
     document.getElementById("kpiNP").textContent = money(np);
     document.getElementById("kpiVAT").textContent = money(vat);
+
+    // ── Trend deltas vs. previous period ────────────────────────────────
+    // applyKpiTrend("cash", current, previous)
+    //   - Computes (current - previous) / |previous| * 100
+    //   - Picks arrow + colour class based on direction AND magnitude
+    //   - For VAT specifically: when the sign flips between refund (-) and
+    //     payable (+) the percentage is meaningless, so we show "▲ flip"
+    //     or "▼ flip" instead of a number.
+    applyKpiTrend("cash", cash, prevCash, { hasComparator: !!previousPeriodKey });
+    applyKpiTrend("ar",   ar,   prevAR,   { hasComparator: !!previousPeriodKey });
+    applyKpiTrend("ap",   ap,   prevAP,   { hasComparator: !!previousPeriodKey });
+    applyKpiTrend("np",   np,   prevNP,   { hasComparator: !!previousPeriodKey });
+    applyKpiTrend("vat", vat, prevVat, { hasComparator: !!previousPeriodKey, signFlip: true });
   } catch (e) {
     console.error("renderDashboardKPIs error:", e);
 
@@ -20256,9 +20407,98 @@ async function renderDashboardKPIs(periodKey = "this_month") {
     document.getElementById("kpiAP").textContent = money(0);
     document.getElementById("kpiNP").textContent = money(0);
     document.getElementById("kpiVAT").textContent = money(0);
+
+    // Reset all trend pills to a neutral dash on failure.
+    ["cash", "ar", "ap", "np", "vat"].forEach(k =>
+      applyKpiTrend(k, 0, 0, { hasComparator: false })
+    );
   }
 }
 window.renderDashboardKPIs = renderDashboardKPIs;
+
+/**
+ * Apply a real period-over-period trend pill to a KPI meter.
+ *
+ * @param {string} metric   One of: cash, ar, ap, np, vat
+ * @param {number} current  Current-period value
+ * @param {number} previous Previous-period value (may be null/NaN if no
+ *                          comparator is available — in which case we
+ *                          render a neutral "—" pill)
+ * @param {object} opts     { hasComparator, signFlip }
+ *   - hasComparator: false → show "—" with no percentage
+ *   - signFlip:      true  → if current and previous have opposite signs
+ *                          (e.g. VAT flipping from refund to payable),
+ *                          show "▲ flip" / "▼ flip" instead of a misleading
+ *                          percentage
+ */
+function applyKpiTrend(metric, current, previous, opts = {}) {
+  const el = document.querySelector(`[data-kpi-trend="${metric}"]`);
+  if (!el) return;
+
+  const hasComparator = opts.hasComparator !== false;
+  const cur = Number(current) || 0;
+  const prev = Number(previous);
+
+  // No comparator period available — show neutral dash.
+  if (!hasComparator || !Number.isFinite(prev)) {
+    el.className = "ckp-trend ckp-trend--flat";
+    el.textContent = "—";
+    el.title = "No prior period available for comparison.";
+    return;
+  }
+
+  // Sign flip (e.g. VAT moving from refund → payable) → percentage is
+  // misleading; show a directional "flip" pill instead.
+  if (opts.signFlip && cur !== 0 && prev !== 0 && Math.sign(cur) !== Math.sign(prev)) {
+    // For VAT specifically: positive = payable (worse), negative = refund (better).
+    const isUp = cur > 0; // moved to payable
+    el.className = `ckp-trend ${isUp ? "ckp-trend--down" : "ckp-trend--up"}`;
+    el.textContent = isUp ? "▲ flip → payable" : "▼ flip → refund";
+    el.title = `VAT moved from ${prev < 0 ? "refund" : "payable"} (${money(prev)}) to ${cur < 0 ? "refund" : "payable"} (${money(cur)}).`;
+    return;
+  }
+
+  const absPrev = Math.abs(prev);
+  if (absPrev < 0.005) {
+    // Previous was zero / essentially zero — a percentage is meaningless.
+    // Show "▲ new" if something appeared, "—" if both zero.
+    if (Math.abs(cur) < 0.005) {
+      el.className = "ckp-trend ckp-trend--flat";
+      el.textContent = "—";
+      el.title = "No movement this period or last.";
+    } else {
+      el.className = "ckp-trend ckp-trend--up";
+      el.textContent = "▲ new";
+      el.title = `New this period (${money(cur)}). No prior-period balance to compare.`;
+    }
+    return;
+  }
+
+  const delta = cur - prev;
+  const pct = (delta / absPrev) * 100;
+  const rounded = Math.abs(pct) < 0.05 ? 0 : Math.round(pct * 10) / 10;
+
+  // Threshold: anything within ±0.5% is "flat".
+  let cls, arrow;
+  if (rounded > 0.5) {
+    cls = "ckp-trend--up";
+    arrow = "▲";
+  } else if (rounded < -0.5) {
+    cls = "ckp-trend--down";
+    arrow = "▼";
+  } else {
+    cls = "ckp-trend--flat";
+    arrow = "—";
+  }
+
+  // Build the absolute + percentage tooltip so the user can hover to see
+  // the underlying money delta (not just the % figure).
+  const sign = rounded > 0 ? "+" : "";
+  el.className = `ckp-trend ${cls}`;
+  el.textContent = `${arrow} ${sign}${rounded}%`;
+  el.title = `${money(cur)} vs ${money(prev)} previous period (${sign}${money(delta)} / ${sign}${rounded}%)`;
+}
+window.applyKpiTrend = applyKpiTrend;
 
 // ==============================
 // VAT account discovery
@@ -24612,6 +24852,75 @@ function detectSubledgerType(acct) {
   return null;
 }
 
+// -----------------------------------------------------------
+// LEASE ROLE RESOLVER (single source of truth for lessor/lessee)
+// -----------------------------------------------------------
+// Resolves the IFRS 16 lease role for an account using the
+// following priority order:
+//   1. Account role (e.g. "lessor_net_investment_current")
+//   2. cf_bucket (e.g. "lease_receivable" vs "rou_asset")
+//   3. Legacy account-code fallback (BS_CA_1710 / BS_NCA_1720)
+//
+// Returns "lessor", "lessee", or null if it cannot be resolved.
+//
+// Use this everywhere the wizard role is decided so that
+// journal-guard routing, the module nudge modal, and the
+// wizard iframe all agree on which workflow to launch.
+// -----------------------------------------------------------
+function getLeaseRoleFromAccount(account = {}) {
+  if (!account) return null;
+
+  // 1. Account role has highest priority.
+  //    Covers values like "lessor_net_investment_current",
+  //    "lessor_net_investment_noncurrent", "lessee_rou_asset", etc.
+  const role = String(
+    account.role ||
+    account.account_role ||
+    account.accountRole ||
+    ""
+  ).trim().toLowerCase();
+
+  if (role.includes("lessor")) return "lessor";
+  if (role.includes("lessee")) return "lessee";
+
+  // 2. Cash-flow bucket is the fallback.
+  //    "lease_receivable" → lessor side.
+  //    "rou_asset", "lease_rou_accum_depr", "lease_liability*" → lessee side.
+  const bucket = String(
+    account.cf_bucket ||
+    account.cfBucket ||
+    account.cash_flow_bucket ||
+    ""
+  ).trim().toLowerCase();
+
+  if (bucket === "lease_receivable") return "lessor";
+
+  if (
+    bucket === "rou_asset" ||
+    bucket === "lease_rou_accum_depr" ||
+    bucket.includes("lease_liability")
+  ) {
+    return "lessee";
+  }
+
+  // 3. Legacy account-code fallback.
+  //    Keep this last so that companies with a different code
+  //    for the same accounting role still route correctly.
+  const code = String(
+    account.code ||
+    account.account_code ||
+    account.accountCode ||
+    ""
+  ).trim().toUpperCase();
+
+  if (["BS_CA_1710", "BS_NCA_1720"].includes(code)) {
+    return "lessor";
+  }
+
+  return null;
+}
+window.getLeaseRoleFromAccount = getLeaseRoleFromAccount;
+
 // Optional: future “module hints” (SOFT only)
 function detectFutureModuleHint(acct) {
   if (!acct) return null;
@@ -25164,15 +25473,45 @@ function getJournalGuardMessage(hint, acct) {
   }
 
   if (hint === "lease") {
+    // Differentiate the warning copy depending on which side
+    // of the lease the selected account sits on.
+    //
+    // getLeaseRoleFromAccount() inspects acct.role first, then
+    // acct.cf_bucket, then the legacy account code — so a
+    // "Lease Receivable - Current" account (role:
+    // lessor_net_investment_current, cf_bucket: lease_receivable)
+    // resolves to "lessor", and a ROU asset / lease liability
+    // account resolves to "lessee".
+    //
+    // Without this branch the modal used to show lessee-only
+    // wording ("ROU amortisation, interest unwind") even when
+    // the user had picked a lessor (lease receivable) account.
+    const leaseRole =
+      getLeaseRoleFromAccount?.(acct) ||
+      "lessee";
+
+    if (leaseRole === "lessor") {
+      return {
+        title: "Use Lessor Lease Wizard instead?",
+        body:
+          `${name} is a lessor account and is usually managed through the Lessor Lease Wizard.\n\n` +
+          `If you continue in Journal, the net investment in the lease, the lease receipts schedule, interest income recognition, unguaranteed residual values, manufacturer / dealer profit, and lessor disclosures will need to be handled manually.`,
+        continueLabel: "Continue in Journal",
+        moduleLabel: "Open Lessor Wizard",
+        screen: "ifrs16-lease-wizard",
+        reasonPrefix: "lease_lessor",
+      };
+    }
+
     return {
-      title: "Use Lease Wizard instead?",
+      title: "Use Lessee Lease Wizard instead?",
       body:
-        `${name} is usually managed through the Lease module.\n\n` +
-        `If you continue in Journal, lease schedules, interest unwind, ROU amortisation, remeasurements, and lease disclosures will need to be handled manually.`,
+        `${name} is a lessee account and is usually managed through the Lessee Lease Wizard.\n\n` +
+        `If you continue in Journal, the right-of-use asset, lease liability, interest unwind, ROU amortisation, remeasurements, and lessee disclosures will need to be handled manually.`,
       continueLabel: "Continue in Journal",
-      moduleLabel: "Open Lease Wizard",
+      moduleLabel: "Open Lessee Wizard",
       screen: "ifrs16-lease-wizard",
-      reasonPrefix: "lease",
+      reasonPrefix: "lease_lessee",
     };
   }
 
@@ -25387,10 +25726,21 @@ async function redirectJournalGuardToModule({ hint, acct, side }) {
   if (hint === "lease") {
     await window.switchScreen?.("ifrs16-lease-wizard");
 
+    // Resolve the lease role from the account's metadata so the
+    // correct wizard side (lessor vs lessee) is launched here
+    // too — this function is the alternate redirect path used
+    // by some legacy callers.
+    const leaseRole =
+      getLeaseRoleFromAccount?.(acct) ||
+      "lessee";
+
     window.openLeaseWizard?.({
       side,
       account: acct,
       accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+      leaseRole,
+      mode: leaseRole === "lessor" ? "inception" : "existing",
       standard: "IFRS 16",
       cf_bucket: acct?.cf_bucket || "",
       cf_section: acct?.cf_section || "",
@@ -25690,15 +26040,181 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     moduleLabel: "Open Workflow",
   };
 
+  // Pre-fill the date picker with the current journal date (if any),
+  // falling back to today so the field is never empty.
+  const initialDate =
+    getPreferredJournalDate?.() ||
+    meta?.date ||
+    "";
+
+  // Resolve the IFRS 16 lease role from the account's metadata
+  // (role → cf_bucket → legacy code) so the correct wizard opens.
+  // Defaults to "lessee" if neither the resolver nor the caller
+  // explicitly sets one — preserving prior behaviour for non-lease
+  // accounts that happen to pass through this modal.
+  const leaseRole =
+    getLeaseRoleFromAccount?.(account) ||
+    (moduleKey === "lease" ? "lessee" : null);
+
   return new Promise((resolve) => {
     let modal = document.getElementById("moduleNudgeModal");
 
     if (!modal) {
       modal = document.createElement("div");
       modal.id = "moduleNudgeModal";
-      modal.className = "modal hidden";
+      modal.className = "modal hidden fs-nudge-modal";
       modal.setAttribute("aria-hidden", "true");
       modal.style.display = "flex";
+
+      // ───────────────────────────────────────────────────────────
+      // CSS for the warning modal.
+      // Scoped under #moduleNudgeModal so it never leaks into other
+      // modals. Inline <style> travels with the modal element so the
+      // styling works regardless of which dashboard screen triggers it.
+      // ───────────────────────────────────────────────────────────
+      const styleEl = document.createElement("style");
+      styleEl.id = "moduleNudgeModalStyles";
+      styleEl.textContent = `
+        #moduleNudgeModal .modal-dialog {
+          max-width: 560px;
+          width: calc(100% - 32px);
+          margin: auto;
+          animation: fsNudgePop 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        #moduleNudgeModal .modal-card {
+          border: 1px solid #fcd34d;
+          border-radius: 14px;
+          box-shadow: 0 18px 50px -12px rgba(180, 83, 9, 0.35);
+          background: #fffdf7;
+          overflow: hidden;
+        }
+        #moduleNudgeModal .modal-header {
+          background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+          border-bottom: 1px solid #fcd34d;
+          padding: 16px 20px;
+          align-items: flex-start;
+        }
+        #moduleNudgeModal .modal-header h3 {
+          margin: 0 0 4px 0;
+          font-size: 16px;
+          font-weight: 700;
+          color: #92400e;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        #moduleNudgeModal .modal-header h3::before {
+          content: "⚠";
+          font-size: 18px;
+          line-height: 1;
+        }
+        #moduleNudgeModal .modal-header .muted {
+          color: #b45309;
+          font-size: 12px;
+          margin: 0;
+        }
+        #moduleNudgeModal .modal-body {
+          padding: 18px 20px 4px 20px;
+        }
+        #moduleNudgeModal .modal-body #moduleNudgeBody {
+          color: #4b3613;
+          font-size: 13px;
+          line-height: 1.55;
+        }
+        #moduleNudgeModal .fs-nudge-date-wrap {
+          margin-top: 14px;
+          padding: 12px 14px;
+          background: #fffbeb;
+          border: 1px dashed #f59e0b;
+          border-radius: 10px;
+        }
+        #moduleNudgeModal .fs-nudge-date-label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #92400e;
+          margin-bottom: 6px;
+        }
+        #moduleNudgeModal .fs-nudge-date-label::before {
+          content: "📅";
+        }
+        #moduleNudgeModal .fs-nudge-date-input {
+          width: 100%;
+          padding: 8px 10px;
+          border: 1px solid #fcd34d;
+          border-radius: 8px;
+          background: #ffffff;
+          font-size: 13px;
+          color: #4b3613;
+          box-sizing: border-box;
+        }
+        #moduleNudgeModal .fs-nudge-date-input:focus {
+          outline: none;
+          border-color: #f59e0b;
+          box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+        }
+        #moduleNudgeModal .fs-nudge-role-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 10px;
+          padding: 4px 10px;
+          border-radius: 999px;
+          background: #ede9fe;
+          color: #5b21b6;
+          font-size: 11px;
+          font-weight: 600;
+          border: 1px solid #c4b5fd;
+        }
+        #moduleNudgeModal .modal-footer {
+          padding: 14px 20px 18px 20px;
+          gap: 8px;
+          border-top: 1px solid #fde68a;
+          background: #fffdf7;
+        }
+        #moduleNudgeModal .modal-footer .btn {
+          font-size: 13px;
+          font-weight: 600;
+          border-radius: 8px;
+          padding: 8px 14px;
+        }
+        #moduleNudgeModal #moduleNudgeClose,
+        #moduleNudgeModal #moduleNudgeCancel {
+          background: #ffffff;
+          color: #92400e;
+          border: 1px solid #fcd34d;
+        }
+        #moduleNudgeModal #moduleNudgeClose:hover,
+        #moduleNudgeModal #moduleNudgeCancel:hover {
+          background: #fef3c7;
+        }
+        #moduleNudgeModal #moduleNudgeJournal {
+          background: #ffffff;
+          color: #78350f;
+          border: 1px solid #d6d3d1;
+        }
+        #moduleNudgeModal #moduleNudgeJournal:hover {
+          background: #fafaf9;
+        }
+        #moduleNudgeModal #moduleNudgeModule {
+          background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+          color: #ffffff;
+          border: 1px solid #b45309;
+          box-shadow: 0 4px 12px -2px rgba(217, 119, 6, 0.45);
+        }
+        #moduleNudgeModal #moduleNudgeModule:hover {
+          filter: brightness(1.05);
+        }
+        @keyframes fsNudgePop {
+          0%   { transform: scale(0.96) translateY(6px); opacity: 0; }
+          100% { transform: scale(1) translateY(0);    opacity: 1; }
+        }
+      `;
+      if (!document.getElementById("moduleNudgeModalStyles")) {
+        document.head.appendChild(styleEl);
+      }
 
       modal.innerHTML = `
         <div class="modal-backdrop" id="moduleNudgeBackdrop"></div>
@@ -25719,6 +26235,19 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
               <div class="detail-section">
                 <p id="moduleNudgeBody" style="white-space: pre-line; margin: 0;"></p>
               </div>
+
+              <div class="fs-nudge-date-wrap">
+                <label class="fs-nudge-date-label" for="moduleNudgeDateInput">
+                  Posting / journal date
+                </label>
+                <input
+                  type="date"
+                  id="moduleNudgeDateInput"
+                  class="fs-nudge-date-input"
+                  autocomplete="off"
+                />
+                <div id="moduleNudgeRoleChipWrap"></div>
+              </div>
             </div>
 
             <div class="modal-footer">
@@ -25736,6 +26265,8 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     const titleEl = modal.querySelector("#moduleNudgeTitle");
     const subtitleEl = modal.querySelector("#moduleNudgeSubtitle");
     const bodyEl = modal.querySelector("#moduleNudgeBody");
+    const dateInput = modal.querySelector("#moduleNudgeDateInput");
+    const roleChipWrap = modal.querySelector("#moduleNudgeRoleChipWrap");
     const btnClose = modal.querySelector("#moduleNudgeClose");
     const btnCancel = modal.querySelector("#moduleNudgeCancel");
     const btnJournal = modal.querySelector("#moduleNudgeJournal");
@@ -25747,6 +26278,26 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     bodyEl.textContent = msg.body || "";
     btnJournal.textContent = msg.continueLabel || "Continue in Journal";
     btnModule.textContent = msg.moduleLabel || "Open Workflow";
+
+    // Always seed the date picker — never leave it empty.
+    // Today is used as the ultimate fallback so the workflow
+    // always receives a usable date.
+    const today = new Date().toISOString().slice(0, 10);
+    dateInput.value = initialDate || today;
+
+    // Show the resolved lease role as a chip when this modal is
+    // handling an IFRS 16 account, so the user can confirm the
+    // wizard side before launching it.
+    if (roleChipWrap) {
+      roleChipWrap.innerHTML = "";
+      if (moduleKey === "lease" && leaseRole) {
+        const chip = document.createElement("span");
+        chip.className = "fs-nudge-role-chip";
+        chip.textContent =
+          leaseRole === "lessor" ? "Lessor wizard" : "Lessee wizard";
+        roleChipWrap.appendChild(chip);
+      }
+    }
 
     const cleanup = () => {
       if (modal.contains(document.activeElement)) {
@@ -25787,11 +26338,15 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     };
 
     btnModule.onclick = async () => {
-      let postingDate = getPreferredJournalDate();
+      // Read the date directly from the embedded picker — no
+      // second modal needed. If the user somehow clears it,
+      // fall back to today so the workflow never stalls.
+      let postingDate = String(dateInput?.value || "").trim();
 
       if (!postingDate) {
-        postingDate = await requirePostingDateModal("");
-        if (!postingDate) return;
+        dateInput?.focus();
+        window.showToast?.("Please pick a posting date first.", "error");
+        return;
       }
 
       const accountCode = String(
@@ -25802,14 +26357,17 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
         account?.name || account?.account_name || ""
       ).trim();
 
-      const isLessor = [
-        "BS_CA_1710",
-        "BS_NCA_1720",
-      ].includes(accountCode);
+      // Use the role resolved at the top of this function —
+      // it is authoritative because it inspects account.role,
+      // cf_bucket, and the legacy code in that order.
+      const resolvedLeaseRole =
+        leaseRole ||
+        getLeaseRoleFromAccount?.(account) ||
+        "lessee";
 
       window.__LEASE_WIZARD_PENDING_CONTEXT__ = {
-        mode: isLessor ? "inception" : "existing",
-        leaseRole: isLessor ? "lessor" : "lessee",
+        mode: resolvedLeaseRole === "lessor" ? "inception" : "existing",
+        leaseRole: resolvedLeaseRole,
         accountCode,
         accountName,
         defaults: {
@@ -25910,8 +26468,23 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
       return null;
     }
 
+    // Resolve the lease role from the account's metadata (role →
+    // cf_bucket → legacy code) so a Lease Receivable account
+    // opens the lessor wizard, and a ROU / Lease Liability
+    // account opens the lessee wizard.
+    const leaseRole =
+      getLeaseRoleFromAccount?.(account) ||
+      "lessee";
+
+    // Lessor inception creates a brand-new lease receivable;
+    // lessee existing-lease opening balances are loaded against
+    // an already-recognised ROU/Liability arrangement.
+    const leaseMode =
+      leaseRole === "lessor" ? "inception" : "existing";
+
     return await window.openLeaseWizard?.({
-      mode: "existing",
+      mode: leaseMode,
+      leaseRole,
       accountCode: account?.code || "",
       accountName: account?.name || "",
       defaults: {
@@ -72342,7 +72915,21 @@ async function saveEditModal() {
 
     el.querySelectorAll("[data-payroll-employee-id]").forEach(row => {
       row.addEventListener("click", async () => {
-        await openPayrollEmployee(Number(row.dataset.payrollEmployeeId));
+        const empId = Number(row.dataset.payrollEmployeeId);
+        if (!empId) return;
+
+        // The Recent Employees list lives on the overview tab.
+        // Switch to the Employees tab (where the standalone detail
+        // panel lives) and open the detail view for this employee.
+        if (typeof switchPayrollTab === "function") {
+          switchPayrollTab("employees", { scroll: false });
+        }
+
+        if (typeof openEmployeeOverviewDetail === "function") {
+          openEmployeeOverviewDetail(empId);
+        } else {
+          await openPayrollEmployee(empId);
+        }
       });
     });
   }
@@ -72691,6 +73278,132 @@ async function saveEditModal() {
 
     switchPayrollTab("runs");
     showPayrollStatus("Payroll run created.", "success");
+  }
+
+  let _replacementReasonResolver=null;
+
+  function bindReplacementReasonModal(){
+    const modal=$("payrollReplacementModal");
+    if(!modal||modal.dataset.bound==="1")return;
+    modal.dataset.bound="1";
+
+    const ta=$("payrollReplacementReason");
+    const errEl=$("payrollReplacementError");
+    const confirmBtn=$("payrollReplacementConfirmBtn");
+
+    const close=(resolveWith)=>{
+      modal.classList.add("hidden");
+      document.body.classList.remove("payroll-modal-open");
+      if(ta) ta.value="";
+      if(errEl){
+        errEl.textContent="";
+        errEl.classList.add("hidden");
+      }
+      if(_replacementReasonResolver){
+        const r=_replacementReasonResolver;
+        _replacementReasonResolver=null;
+        r(resolveWith);
+      }
+    };
+
+    modal.querySelectorAll("[data-close-replacement-modal]")
+      .forEach(btn=>{
+        btn.addEventListener("click",()=>close(null));
+      });
+
+    modal.addEventListener("click",(e)=>{
+      if(e.target===modal) close(null);
+    });
+
+    document.addEventListener("keydown",(e)=>{
+      if(e.key==="Escape"&&!modal.classList.contains("hidden")){
+        close(null);
+      }
+    });
+
+    confirmBtn?.addEventListener("click",()=>{
+      const v=String(ta?.value||"").trim();
+      if(!v){
+        if(errEl){
+          errEl.textContent="Please enter a reason before continuing.";
+          errEl.classList.remove("hidden");
+        }
+        ta?.focus();
+        return;
+      }
+      close(v);
+    });
+
+    ta?.addEventListener("input",()=>{
+      if(!errEl?.classList.contains("hidden")){
+        errEl.textContent="";
+        errEl.classList.add("hidden");
+      }
+    });
+
+    ta?.addEventListener("keydown",(e)=>{
+      if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){
+        e.preventDefault();
+        confirmBtn?.click();
+      }
+    });
+  }
+
+  function promptReplacementReason(){
+    bindReplacementReasonModal();
+
+    const modal=$("payrollReplacementModal");
+    const ta=$("payrollReplacementReason");
+    const errEl=$("payrollReplacementError");
+
+    if(errEl){
+      errEl.textContent="";
+      errEl.classList.add("hidden");
+    }
+    if(ta) ta.value="";
+
+    modal?.classList.remove("hidden");
+    document.body.classList.add("payroll-modal-open");
+    setTimeout(()=>ta?.focus(),50);
+
+    return new Promise((resolve)=>{
+      _replacementReasonResolver=resolve;
+    });
+  }
+
+  async function createReplacementPayrollRun() {
+    const companyId = cid();
+    const current = payrollState.selectedRun;
+
+    if (!current) throw new Error("Open a payroll run first.");
+    if (String(current.status || "").toLowerCase() !== "reversed") {
+      throw new Error("Only a reversed run can be re-run as a new version.");
+    }
+
+    const calendarId = Number(current.pay_calendar_id || 0);
+    if (!calendarId) {
+      throw new Error("Reversed run is missing pay_calendar_id.");
+    }
+
+    const reason = await promptReplacementReason();
+    if (!reason) return; // cancelled
+
+    const res = await apiFetch(ENDPOINTS.payroll.runs(companyId), {
+      method: "POST",
+      body: JSON.stringify({
+        pay_calendar_id: calendarId,
+        create_replacement: true,
+        correction_reason: reason,
+      }),
+    });
+
+    const newRun = res?.data;
+    if (!newRun?.id) {
+      throw new Error(res?.error || "Replacement run was not created.");
+    }
+
+    await loadPayrollRuns();      // refresh list — new draft shows, reversed one hides
+    await openPayrollRun(Number(newRun.id));  // opens the fresh draft → all normal buttons reappear
   }
 
   function switchPayrollRunTab(tab){
@@ -73469,6 +74182,9 @@ async function saveEditModal() {
       !validation.ready_to_post
     );
 
+    setButton("payrollCreateReplacementRunBtn",  isReversed, false);
+    setButton("payrollCreateReplacementRunOverviewBtn", isReversed, false);
+
     let message="";
 
     if(isDraft){
@@ -73495,11 +74211,10 @@ async function saveEditModal() {
         `Payroll was posted to journal #`+
         `${run.posted_journal_id||"—"}.`
       );
-    }else if(isReversed){
-      message=(
-        `Payroll was reversed through journal #`+
-        `${run.reversal_journal_id||"—"}.`
-      );
+    }else if (isReversed) {
+      message =
+        `Payroll was reversed through journal #${run.reversal_journal_id || "—"}. ` +
+        `Click "Re-run payroll (new version)" to create a fresh draft for this period.`;
     }
 
     setTxt(
@@ -73617,7 +74332,7 @@ async function saveEditModal() {
         </div>
       `}
 
-      <div class="payroll-table-wrap">
+      <div class="payroll-table-wrap${items.length>=6?' payroll-table-wrap--scroll-y':''}">
         <table class="payroll-preview-table">
           <thead>
             <tr>
@@ -73644,9 +74359,9 @@ async function saveEditModal() {
                   `:""}
                 </td>
                 <td>
-                  ${esc(String(x.eligible_from||"—"))}
+                  ${esc(fmtDdMmYyyy(x.eligible_from))}
                   –
-                  ${esc(String(x.eligible_to||"—"))}
+                  ${esc(fmtDdMmYyyy(x.eligible_to))}
                 </td>
                 <td>
                   ${esc(payrollProrationLabel(
@@ -73772,6 +74487,19 @@ async function saveEditModal() {
     });
   }
 
+  function fmtDdMmYyyy(value){
+    if(!value) return "—";
+    const s=String(value).trim();
+    const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+    const d=new Date(s);
+    if(isNaN(d.getTime())) return s.length>25? s.slice(0,25)+"…": s;
+    const dd=String(d.getDate()).padStart(2,"0");
+    const mm=String(d.getMonth()+1).padStart(2,"0");
+    const yyyy=d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
   function renderPayrollRunEmployees(run){
     const el = $("payrollRunEmployeesList");
     if(!el)return;
@@ -73829,7 +74557,7 @@ async function saveEditModal() {
     };
 
     el.innerHTML = `
-      <div class="payroll-table-wrap">
+      <div class="payroll-table-wrap${items.length>=6?' payroll-table-wrap--scroll-y':''}">
         <table class="payroll-preview-table payroll-compact-table">
 
           <thead>
@@ -73850,7 +74578,7 @@ async function saveEditModal() {
 
           <tbody>
             ${items.map(item=>`
-              <tr>
+              <tr class="payroll-employee-row" data-employee-id="${esc(String(item.employee_id||item.id||""))}" style="cursor:pointer;">
 
                 <td class="payroll-employee-cell">
                   <strong>
@@ -73876,17 +74604,9 @@ async function saveEditModal() {
 
                 <td>
                   <div>
-                    ${esc(
-                      String(
-                        item.eligible_from || "—"
-                      ).slice(0,10)
-                    )}
+                    ${esc(fmtDdMmYyyy(item.eligible_from))}
                     –
-                    ${esc(
-                      String(
-                        item.eligible_to || "—"
-                      ).slice(0,10)
-                    )}
+                    ${esc(fmtDdMmYyyy(item.eligible_to))}
                   </div>
 
                   <div class="payroll-muted">
@@ -73948,6 +74668,744 @@ async function saveEditModal() {
         </table>
       </div>
     `;
+
+    // Wire row clicks
+    el.querySelectorAll(".payroll-employee-row").forEach(row=>{
+      row.addEventListener("click",()=>{
+        const empId=row.dataset.employeeId;
+        if(empId) openEmployeeDetail(empId);
+      });
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Employee detail view
+  // ──────────────────────────────────────────────────────────
+
+  function openEmployeeDetail(employeeId){
+    const run=payrollState.selectedRun;
+    if(!run||!run.employees)return;
+
+    const emp=(run.employees||[]).find(
+      e=>String(e.employee_id||e.id)===String(employeeId)
+    );
+
+    if(!emp)return;
+
+    const listEl=$("payrollRunEmployeesList");
+    const detailEl=$("payrollRunEmployeeDetail");
+
+    if(listEl) listEl.classList.add("hidden");
+    if(detailEl) detailEl.classList.remove("hidden");
+
+    // Name + number
+    const nameEl=$("payrollEmployeeDetailName");
+    if(nameEl){
+      nameEl.textContent=`${emp.first_name||""} ${emp.last_name||""}`.trim()||"Employee";
+    }
+
+    const noEl=$("payrollEmployeeDetailNo");
+    if(noEl){
+      noEl.textContent=`${emp.employee_no||"—"} · ${cap(emp.calculation_status||emp.status||"calculated")}`;
+    }
+
+    // KPIs
+    const kpiEl=$("payrollEmployeeDetailKpis");
+    if(kpiEl){
+      const basic=round2(emp.basic_pay);
+      const gross=round2(emp.gross_pay);
+      const deductions=round2(emp.total_deductions);
+      const net=round2(emp.net_pay);
+
+      kpiEl.innerHTML=`
+        <div>
+          <span>Basic Pay</span>
+          <strong>${money(basic)}</strong>
+        </div>
+        <div>
+          <span>Gross Pay</span>
+          <strong>${money(gross)}</strong>
+        </div>
+        <div>
+          <span>Total Deductions</span>
+          <strong>${money(deductions)}</strong>
+        </div>
+        <div>
+          <span>Net Pay</span>
+          <strong>${money(net)}</strong>
+        </div>
+      `;
+    }
+
+    // Pay lines breakdown
+    const linesEl=$("payrollEmployeeDetailLines");
+    if(linesEl){
+      const lines=emp.lines||[];
+
+      if(!lines.length){
+        linesEl.innerHTML=`<p class="payroll-muted">No pay lines available.</p>`;
+      } else {
+        // Group lines by type
+        const earnings=lines.filter(l=>l.line_type==="earning");
+        const deductions=lines.filter(l=>l.line_type==="deduction");
+        const taxes=lines.filter(l=>l.line_type==="tax");
+        const employer=lines.filter(l=>l.line_type==="employer_contribution");
+
+        const renderGroup=(title,rows)=>{
+          if(!rows.length)return"";
+          return `
+            <tr class="payroll-employee-detail-group-row">
+              <td colspan="4" style="font-weight:700;text-transform:uppercase;font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;">
+                ${esc(title)}
+              </td>
+            </tr>
+            ${rows.map(l=>`
+              <tr>
+                <td>${esc(l.code||"—")}</td>
+                <td>${esc(l.description||"—")}</td>
+                <td class="num">${money(l.amount)}</td>
+                <td>${esc(cap(l.line_type||""))}</td>
+              </tr>
+            `).join("")}
+          `;
+        };
+
+        linesEl.innerHTML=`
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Description</th>
+                <th class="num">Amount</th>
+                <th>Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${renderGroup("Earnings",earnings)}
+              ${renderGroup("Deductions",deductions)}
+              ${renderGroup("Tax",taxes)}
+              ${renderGroup("Employer Contributions",employer)}
+            </tbody>
+          </table>
+        `;
+      }
+    }
+  }
+
+  function closeEmployeeDetail(){
+    const listEl=$("payrollRunEmployeesList");
+    const detailEl=$("payrollRunEmployeeDetail");
+
+    if(detailEl) detailEl.classList.add("hidden");
+    if(listEl) listEl.classList.remove("hidden");
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Standalone employee overview detail
+  // (used by Recent Employees list + Employees table row clicks)
+  // ──────────────────────────────────────────────────────────
+
+  // ──────────────────────────────────────────────────────────
+  // Standalone employee overview detail
+  // (used by Recent Employees list + Employees table row clicks)
+  //
+  // v2 — fetches the consolidated /profile endpoint so we can
+  // render EVERY section: contracts, tax profiles, bank accounts,
+  // benefits, leave requests, leave balances, loans, pay setup,
+  // recurring earnings/deductions/contributions and the last 12
+  // payslips. Falls back to the cached bootstrap record if the
+  // fetch fails so the panel never goes blank.
+  // ──────────────────────────────────────────────────────────
+
+  async function openEmployeeOverviewDetail(employeeId){
+    const empId=Number(employeeId);
+    if(!empId){
+      console.warn("[EmployeeOverview] no employeeId");
+      return;
+    }
+
+    // Optimistic header from the cached list so the panel appears
+    // instantly while the full profile loads.
+    let emp=(payrollState.employees||[]).find(
+      e=>String(e.id)===String(empId)
+    )||{id:empId};
+
+    payrollState.overviewDetailEmployeeId=empId;
+
+    const listCard=$("payrollEmployeeListCard");
+    const detailEl=$("payrollEmployeeOverviewDetail");
+
+    if(listCard) listCard.classList.add("hidden");
+    if(detailEl) detailEl.classList.remove("hidden");
+
+    // Show a loading skeleton in the body while we fetch.
+    paintHeader(emp);
+    paintKpis(emp);
+    paintLoading();
+
+    detailEl?.scrollIntoView({behavior:"smooth",block:"start"});
+
+    // Fetch the consolidated profile.
+    let profile=null;
+    try{
+      const cid=getActiveCompanyId?.()||window.CURRENT_COMPANY_ID;
+      if(cid){
+        const res=await apiFetch(
+          ENDPOINTS.payroll.employeeProfile(cid,empId),
+          {method:"GET"}
+        );
+        if(res&&res.ok&&res.data){
+          profile=res.data;
+          // Keep the cached list in sync with the fresh fetch.
+          const idx=(payrollState.employees||[]).findIndex(
+            e=>String(e.id)===String(empId)
+          );
+          if(idx>=0) payrollState.employees[idx]=profile;
+          else payrollState.employees=[...(payrollState.employees||[]),profile];
+          emp=profile;
+        }
+      }
+    }catch(err){
+      console.warn("[EmployeeOverview] profile fetch failed, using cached data:",err);
+    }
+
+    paintHeader(emp);
+    paintKpis(emp);
+    paintProfileBody(emp);
+    paintContracts(emp);
+    paintTaxProfiles(emp);
+    paintBankAccounts(emp);
+    paintBenefits(emp);
+    paintLeaveRequests(emp);
+    paintLeaveBalances(emp);
+    paintLoans(emp);
+    paintPaySetup(emp);
+    paintRecurringItems(emp);
+    paintRecentPayslips(emp);
+
+    // Scroll again after content settles.
+    detailEl?.scrollIntoView({behavior:"smooth",block:"start"});
+  }
+
+  // ── Small render helpers (scoped to this file) ─────────────
+
+  function paintHeader(emp){
+    const name=`${emp.first_name||""} ${emp.last_name||""}`.trim()||"Employee";
+    const sub=[
+      emp.employee_no&&(`# ${emp.employee_no}`),
+      cap(emp.employment_status||"active")
+    ].filter(Boolean).join(" · ");
+    setTxt("payrollEmployeeOverviewName",name);
+    setTxt("payrollEmployeeOverviewSub",sub||"—");
+  }
+
+  function paintKpis(emp){
+    const kpiEl=$("payrollEmployeeOverviewKpis");
+    if(!kpiEl) return;
+    const contract=(emp.contracts||[])[0]||{};
+    const paySetup=emp.pay_setup||{};
+    const basic=round2(
+      paySetup.fixed_basic_amount||
+      contract.basic_salary||
+      emp.basic_salary||0
+    );
+    const hours=Number(
+      paySetup.standard_quantity||
+      contract.normal_hours_per_month||0
+    )||0;
+    const dept=emp.department_name||"—";
+    const pos=emp.position_title||"—";
+    const payBasis=cap(paySetup.pay_basis||contract.salary_type||"monthly");
+
+    kpiEl.innerHTML=`
+      <div><span>Department</span><strong>${esc(dept)}</strong></div>
+      <div><span>Position</span><strong>${esc(pos)}</strong></div>
+      <div><span>Basic Salary</span><strong>${money(basic)}</strong></div>
+      <div><span>Pay Basis</span><strong>${esc(payBasis)}</strong></div>
+      <div><span>Hours / Month</span><strong>${hours}</strong></div>
+      <div><span>Bank</span><strong>${esc((emp.bank_accounts||[]).find(b=>b.is_primary)?.bank_name||(emp.bank_accounts||[])[0]?.bank_name||"—")}</strong></div>
+    `;
+  }
+
+  function paintLoading(){
+    const bodyEl=$("payrollEmployeeOverviewBody");
+    if(bodyEl){
+      bodyEl.innerHTML=`<div class="payroll-muted" style="padding:24px;text-align:center;">Loading full profile…</div>`;
+    }
+    ["payrollEmployeeOverviewContracts","payrollEmployeeOverviewTaxProfiles","payrollEmployeeOverviewBankAccounts","payrollEmployeeOverviewBenefits","payrollEmployeeOverviewLeave","payrollEmployeeOverviewLeaveBalances","payrollEmployeeOverviewLoans","payrollEmployeeOverviewPaySetup","payrollEmployeeOverviewRecurring","payrollEmployeeOverviewPayslips"].forEach(id=>{
+      const el=$(id);
+      if(el) el.innerHTML=`<div class="payroll-muted" style="padding:12px;">Loading…</div>`;
+    });
+  }
+
+  function kv(label,value){
+    return `
+      <div class="payroll-run-info-card" style="margin-bottom:12px;">
+        <h4>${esc(label)}</h4>
+        <div>${value!==undefined&&value!==null&&String(value).trim()!==""?esc(String(value)):"—"}</div>
+      </div>
+    `;
+  }
+
+  function emptyRow(text){
+    return `<div class="payroll-muted" style="padding:12px;">${esc(text||"No records.")}</div>`;
+  }
+
+  function paintProfileBody(emp){
+    const bodyEl=$("payrollEmployeeOverviewBody");
+    if(!bodyEl) return;
+    const contract=(emp.contracts||[])[0]||{};
+    const bank=(emp.bank_accounts||[]).find(b=>b.is_primary)||(emp.bank_accounts||[])[0]||{};
+    const tax=(emp.tax_profiles||[])[0]||{};
+
+    bodyEl.innerHTML=`
+      <div class="payroll-run-overview-grid">
+        ${kv("Employee Number",emp.employee_no)}
+        ${kv("Email",emp.email)}
+        ${kv("Phone",emp.phone)}
+        ${kv("ID Number",emp.id_number)}
+        ${kv("Passport Number",emp.passport_number)}
+        ${kv("Tax Number",emp.tax_number||tax.tax_number)}
+        ${kv("Employment Status",cap(emp.employment_status||"active"))}
+        ${kv("Start Date",fmtDdMmYyyy(emp.start_date||emp.employment_start_date))}
+        ${kv("Termination Date",emp.termination_date?fmtDdMmYyyy(emp.termination_date):"")}
+        ${kv("Contract Type",cap(contract.contract_type||"permanent"))}
+        ${kv("Salary Type",cap(contract.salary_type||"monthly"))}
+        ${kv("Basic Salary",contract.basic_salary?money(contract.basic_salary):"")}
+        ${kv("Hourly Rate",contract.hourly_rate?money(contract.hourly_rate):"")}
+        ${kv("Normal Hours / Month",contract.normal_hours_per_month||"")}
+        ${kv("Contract Period",contractPeriod(contract))}
+        ${kv("Bank",bank.bank_name)}
+        ${kv("Bank Account",bank.account_number?`${bank.account_name||""} · ${bank.account_number}`:"")}
+        ${kv("Branch Code",bank.branch_code)}
+        ${kv("Account Type",cap(bank.account_type))}
+      </div>
+    `;
+  }
+
+  function contractPeriod(c){
+    if(!c) return "";
+    const from=c.effective_from?fmtDdMmYyyy(c.effective_from):"—";
+    const to=c.effective_to?fmtDdMmYyyy(c.effective_to):(c.is_active?"Active":"—");
+    return `${from} → ${to}`;
+  }
+
+  function paintContracts(emp){
+    const el=$("payrollEmployeeOverviewContracts");
+    if(!el) return;
+    const rows=(emp.contracts||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No contracts recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Type</th><th>Salary Type</th><th>Basic</th><th>Rate</th>
+            <th>Hours/Mo</th><th>From</th><th>To</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(c=>`
+              <tr>
+                <td>${esc(cap(c.contract_type||""))}</td>
+                <td>${esc(cap(c.salary_type||""))}</td>
+                <td class="num">${c.basic_salary?money(c.basic_salary):"—"}</td>
+                <td class="num">${c.hourly_rate?money(c.hourly_rate):"—"}</td>
+                <td class="num">${c.normal_hours_per_month||"—"}</td>
+                <td>${c.effective_from?fmtDdMmYyyy(c.effective_from):"—"}</td>
+                <td>${c.effective_to?fmtDdMmYyyy(c.effective_to):(c.is_active?"Active":"—")}</td>
+                <td>${c.is_active?'<span class="payroll-pill payroll-status-posted">Active</span>':'<span class="payroll-pill">Inactive</span>'}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintTaxProfiles(emp){
+    const el=$("payrollEmployeeOverviewTaxProfiles");
+    if(!el) return;
+    const rows=(emp.tax_profiles||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No tax profiles recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Tax Number</th><th>Authority</th><th>Residency</th>
+            <th>Method</th><th>PAYE Exempt</th><th>DOB</th>
+            <th>Medical Members</th><th>Directive #</th>
+            <th>Directive Rate</th><th>From</th><th>To</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(t=>`
+              <tr>
+                <td>${esc(t.tax_number||"—")}</td>
+                <td>${esc(t.tax_authority_id||"—")}</td>
+                <td>${esc(cap(t.residency_status||""))}</td>
+                <td>${esc(cap(t.tax_calculation_method||"standard"))}</td>
+                <td>${t.paye_exempt?"Yes":"No"}</td>
+                <td>${t.date_of_birth?fmtDdMmYyyy(t.date_of_birth):"—"}</td>
+                <td>${t.medical_scheme_members||"—"}</td>
+                <td>${esc(t.directive_number||"—")}</td>
+                <td class="num">${t.directive_rate?`${t.directive_rate}%`:"—"}</td>
+                <td>${t.effective_from?fmtDdMmYyyy(t.effective_from):"—"}</td>
+                <td>${t.effective_to?fmtDdMmYyyy(t.effective_to):(t.effective_from?"Open":"—")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintBankAccounts(emp){
+    const el=$("payrollEmployeeOverviewBankAccounts");
+    if(!el) return;
+    const rows=(emp.bank_accounts||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No bank accounts recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Bank</th><th>Account Name</th><th>Account Number</th>
+            <th>Branch Code</th><th>Type</th><th>Primary</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(b=>`
+              <tr>
+                <td>${esc(b.bank_name||"—")}</td>
+                <td>${esc(b.account_name||"—")}</td>
+                <td>${esc(b.account_number||"—")}</td>
+                <td>${esc(b.branch_code||"—")}</td>
+                <td>${esc(cap(b.account_type||""))}</td>
+                <td>${b.is_primary?'<span class="payroll-pill payroll-status-posted">Primary</span>':"No"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintBenefits(emp){
+    const el=$("payrollEmployeeOverviewBenefits");
+    if(!el) return;
+    const rows=(emp.benefits||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No benefits recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Benefit</th><th>Code</th><th>Category</th>
+            <th>Calc Method</th><th>Employee Amt</th><th>Employer Amt</th>
+            <th>Employee %</th><th>Employer %</th><th>Provider</th>
+            <th>Policy #</th><th>From</th><th>To</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(b=>`
+              <tr>
+                <td>${esc(b.benefit_name||"—")}</td>
+                <td>${esc(b.benefit_code||"—")}</td>
+                <td>${esc(cap(b.benefit_category||""))}</td>
+                <td>${esc(cap(b.calc_method||""))}</td>
+                <td class="num">${b.employee_amount?money(b.employee_amount):"—"}</td>
+                <td class="num">${b.employer_amount?money(b.employer_amount):"—"}</td>
+                <td class="num">${b.employee_percent?`${b.employee_percent}%`:"—"}</td>
+                <td class="num">${b.employer_percent?`${b.employer_percent}%`:"—"}</td>
+                <td>${esc(b.provider_name||"—")}</td>
+                <td>${esc(b.policy_number||"—")}</td>
+                <td>${b.effective_from?fmtDdMmYyyy(b.effective_from):"—"}</td>
+                <td>${b.effective_to?fmtDdMmYyyy(b.effective_to):(b.is_active?"Active":"—")}</td>
+                <td>${b.is_active?'<span class="payroll-pill payroll-status-posted">Active</span>':'<span class="payroll-pill">Inactive</span>'}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintLeaveRequests(emp){
+    const el=$("payrollEmployeeOverviewLeave");
+    if(!el) return;
+    const rows=(emp.leave_requests||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No leave requests recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Type</th><th>From</th><th>To</th><th>Days</th>
+            <th>Status</th><th>Reason</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(l=>`
+              <tr>
+                <td>${esc(l.leave_name||l.leave_code||"—")}</td>
+                <td>${l.date_from?fmtDdMmYyyy(l.date_from):"—"}</td>
+                <td>${l.date_to?fmtDdMmYyyy(l.date_to):"—"}</td>
+                <td class="num">${l.days||"—"}</td>
+                <td>${esc(cap(l.status||""))}</td>
+                <td>${esc(l.reason||"—")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintLeaveBalances(emp){
+    const el=$("payrollEmployeeOverviewLeaveBalances");
+    if(!el) return;
+    const rows=(emp.leave_balances||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No leave balances recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Leave Type</th><th>As Of</th><th>Opening</th>
+            <th>Accrued</th><th>Taken</th><th>Forfeited</th>
+            <th>Adjusted</th><th>Closing</th><th>Daily Rate</th>
+            <th>Closing Provision</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(lb=>`
+              <tr>
+                <td>${esc(lb.leave_name||lb.leave_code||"—")}</td>
+                <td>${lb.as_of_date?fmtDdMmYyyy(lb.as_of_date):"—"}</td>
+                <td class="num">${lb.opening_days||0}</td>
+                <td class="num">${lb.accrued_days||0}</td>
+                <td class="num">${lb.taken_days||0}</td>
+                <td class="num">${lb.forfeited_days||0}</td>
+                <td class="num">${lb.adjusted_days||0}</td>
+                <td class="num"><strong>${lb.closing_days||0}</strong></td>
+                <td class="num">${lb.daily_rate?money(lb.daily_rate):"—"}</td>
+                <td class="num">${lb.closing_provision?money(lb.closing_provision):"—"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintLoans(emp){
+    const el=$("payrollEmployeeOverviewLoans");
+    if(!el) return;
+    const rows=(emp.loans||[]);
+    if(!rows.length){ el.innerHTML=emptyRow("No loans recorded."); return; }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Loan #</th><th>Principal</th><th>Balance</th>
+            <th>Repayment</th><th>Start Date</th><th>Status</th>
+            <th>Notes</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(l=>`
+              <tr>
+                <td>${esc(l.loan_no||"—")}</td>
+                <td class="num">${l.principal_amount?money(l.principal_amount):"—"}</td>
+                <td class="num">${l.balance_amount?money(l.balance_amount):"—"}</td>
+                <td class="num">${l.repayment_amount?money(l.repayment_amount):"—"}</td>
+                <td>${l.start_date?fmtDdMmYyyy(l.start_date):"—"}</td>
+                <td>${esc(cap(l.status||""))}</td>
+                <td>${esc(l.notes||"—")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function paintPaySetup(emp){
+    const el=$("payrollEmployeeOverviewPaySetup");
+    if(!el) return;
+    const ps=emp.pay_setup;
+    if(!ps){
+      el.innerHTML=emptyRow("No pay setup configured for this employee.");
+      return;
+    }
+
+    const summary=`
+      <div class="payroll-run-overview-grid">
+        ${kv("Pay Basis",cap(ps.pay_basis||""))}
+        ${kv("Fixed Basic Amount",ps.fixed_basic_amount?money(ps.fixed_basic_amount):"")}
+        ${kv("Standard Quantity",ps.standard_quantity||"—")}
+        ${kv("Rate",ps.rate?money(ps.rate):"—")}
+        ${kv("Tax Treatment",cap(ps.tax_treatment||""))}
+        ${kv("Manual PAYE Amount",ps.manual_paye_amount?money(ps.manual_paye_amount):"")}
+        ${kv("Proration Method",cap(ps.proration_method||"").replace(/_/g," "))}
+        ${kv("Hours / Day",ps.hours_per_day||"—")}
+        ${kv("Attendance Required",ps.attendance_required?"Yes":"No")}
+        ${kv("Effective From",ps.effective_from?fmtDdMmYyyy(ps.effective_from):"—")}
+        ${kv("Effective To",ps.effective_to?fmtDdMmYyyy(ps.effective_to):(ps.is_active?"Active":"—"))}
+        ${kv("Inherited From Contract",ps.inherited_from_contract?"Yes":"No")}
+      </div>
+    `;
+
+    const items=(ps.items||[]);
+    const itemsHtml=items.length?`
+      <div class="payroll-table-wrap" style="margin-top:16px;">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Type</th><th>Name</th><th>Calc Method</th>
+            <th>Amount</th><th>Percentage</th><th>Quantity</th>
+            <th>Rate</th><th>Calculated</th><th>Source</th>
+            <th>From</th><th>To</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${items.map(it=>`
+              <tr>
+                <td>${esc(cap(it.item_type||""))}</td>
+                <td>${esc(it.name||it.earning_name||it.deduction_name||it.contribution_name||"—")}</td>
+                <td>${esc(cap(it.calculation_method||"").replace(/_/g," "))}</td>
+                <td class="num">${it.amount?money(it.amount):"—"}</td>
+                <td class="num">${it.percentage?`${it.percentage}%`:"—"}</td>
+                <td class="num">${it.quantity||"—"}</td>
+                <td class="num">${it.rate?money(it.rate):"—"}</td>
+                <td class="num">${it.calculated_amount?money(it.calculated_amount):"—"}</td>
+                <td>${esc(cap(it.source_type||"").replace(/_/g," "))}</td>
+                <td>${it.effective_from?fmtDdMmYyyy(it.effective_from):"—"}</td>
+                <td>${it.effective_to?fmtDdMmYyyy(it.effective_to):(it.is_active?"Active":"—")}</td>
+                <td>${it.is_active?'<span class="payroll-pill payroll-status-posted">Active</span>':'<span class="payroll-pill">Inactive</span>'}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `:emptyRow("No pay setup items (earnings, deductions, contributions).");
+
+    const members=(ps.benefit_plan_memberships||[]);
+    const membersHtml=members.length?`
+      <div style="margin-top:16px;">
+        <h4 style="margin:0 0 8px;font-size:13px;color:#082f57;">Benefit Plan Memberships</h4>
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead><tr>
+              <th>Plan</th><th>Plan Type</th><th>From</th><th>To</th>
+              <th>Employee Contribution</th><th>Employer Contribution</th>
+              <th>Status</th>
+            </tr></thead>
+            <tbody>
+              ${members.map(m=>`
+                <tr>
+                  <td>${esc(m.plan_name||"—")}</td>
+                  <td>${esc(cap(m.plan_type||"").replace(/_/g," "))}</td>
+                  <td>${m.effective_from?fmtDdMmYyyy(m.effective_from):"—"}</td>
+                  <td>${m.effective_to?fmtDdMmYyyy(m.effective_to):(m.is_active?"Active":"—")}</td>
+                  <td class="num">${m.employee_contribution?money(m.employee_contribution):"—"}</td>
+                  <td class="num">${m.employer_contribution?money(m.employer_contribution):"—"}</td>
+                  <td>${m.is_active?'<span class="payroll-pill payroll-status-posted">Active</span>':'<span class="payroll-pill">Inactive</span>'}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `:"";
+
+    el.innerHTML=summary+itemsHtml+membersHtml;
+  }
+
+  function paintRecurringItems(emp){
+    const el=$("payrollEmployeeOverviewRecurring");
+    if(!el) return;
+
+    const earnings=(emp.recurring_earnings||[]);
+    const deductions=(emp.recurring_deductions||[]);
+    const contributions=(emp.recurring_contributions||[]);
+
+    if(!earnings.length&&!deductions.length&&!contributions.length){
+      el.innerHTML=emptyRow("No recurring earnings, deductions or contributions.");
+      return;
+    }
+
+    const table=(title,rows)=>rows.length?`
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 8px;font-size:13px;color:#082f57;">${esc(title)}</h4>
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead><tr>
+              <th>Name</th><th>Code</th><th>Calc</th>
+              <th>Amount</th><th>%</th><th>From</th><th>To</th><th>Status</th>
+            </tr></thead>
+            <tbody>
+              ${rows.map(r=>`
+                <tr>
+                  <td>${esc(r.name||r.earning_name||r.deduction_name||r.contribution_name||"—")}</td>
+                  <td>${esc(r.code||r.earning_code||r.deduction_code||r.contribution_code||"—")}</td>
+                  <td>${esc(cap(r.calc_method||"").replace(/_/g," "))}</td>
+                  <td class="num">${r.amount?money(r.amount):"—"}</td>
+                  <td class="num">${r.percentage?`${r.percentage}%`:"—"}</td>
+                  <td>${r.effective_from?fmtDdMmYyyy(r.effective_from):"—"}</td>
+                  <td>${r.effective_to?fmtDdMmYyyy(r.effective_to):(r.is_active?"Active":"—")}</td>
+                  <td>${r.is_active?'<span class="payroll-pill payroll-status-posted">Active</span>':'<span class="payroll-pill">Inactive</span>'}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `:"";
+
+    el.innerHTML=
+      table("Recurring Earnings",earnings)+
+      table("Recurring Deductions",deductions)+
+      table("Recurring Contributions",contributions);
+  }
+
+  function paintRecentPayslips(emp){
+    const el=$("payrollEmployeeOverviewPayslips");
+    if(!el) return;
+    const rows=(emp.recent_payslips||[]);
+    if(!rows.length){
+      el.innerHTML=emptyRow("No payroll runs yet for this employee.");
+      return;
+    }
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead><tr>
+            <th>Run #</th><th>Period</th><th>Payment Date</th>
+            <th>Basic</th><th>Gross</th><th>Deductions</th>
+            <th>Contributions</th><th>Net Pay</th><th>Days</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(p=>`
+              <tr>
+                <td>${esc(p.run_no||p.payroll_run_id||"—")}</td>
+                <td>${p.period_start&&p.period_end?`${fmtDdMmYyyy(p.period_start)} → ${fmtDdMmYyyy(p.period_end)}`:"—"}</td>
+                <td>${p.payment_date?fmtDdMmYyyy(p.payment_date):"—"}</td>
+                <td class="num">${p.basic_pay?money(p.basic_pay):"—"}</td>
+                <td class="num">${p.gross_pay?money(p.gross_pay):"—"}</td>
+                <td class="num">${p.total_deductions?money(p.total_deductions):"—"}</td>
+                <td class="num">${p.employer_contributions?money(p.employer_contributions):"—"}</td>
+                <td class="num"><strong>${p.net_pay?money(p.net_pay):"—"}</strong></td>
+                <td class="num">${p.eligible_days||p.scheduled_days||"—"}</td>
+                <td>${esc(cap(p.status||p.run_status||""))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function closeEmployeeOverviewDetail(){
+    const listCard=$("payrollEmployeeListCard");
+    const detailEl=$("payrollEmployeeOverviewDetail");
+
+    if(detailEl) detailEl.classList.add("hidden");
+    if(listCard) listCard.classList.remove("hidden");
+
+    payrollState.overviewDetailEmployeeId=null;
+  }
+
+  // Helper: round to 2 decimal places
+  function round2(v){
+    return Math.round((parseFloat(v)||0)*100)/100;
   }
 
   async function loadPayrollRunAttendance(){
@@ -83266,7 +84724,16 @@ async function saveEditModal() {
 
     el.querySelectorAll("[data-payroll-employee-id]").forEach(row => {
       row.addEventListener("click", async () => {
-        await openPayrollEmployee(Number(row.dataset.payrollEmployeeId));
+        const empId = Number(row.dataset.payrollEmployeeId);
+        if (!empId) return;
+
+        // Open the standalone employee overview detail (with back
+        // button + Edit button) instead of the editor modal.
+        if (typeof openEmployeeOverviewDetail === "function") {
+          openEmployeeOverviewDetail(empId);
+        } else {
+          await openPayrollEmployee(empId);
+        }
       });
     });
   }
@@ -83329,6 +84796,11 @@ async function saveEditModal() {
     );
 
     if(tab==="employees"){
+      // Reset the standalone employee detail panel so the list is
+      // shown by default whenever the Employees tab is (re)opened
+      // (except when we explicitly opened the detail from the
+      // Recent Employees list — handled by openEmployeeOverviewDetail).
+      closeEmployeeOverviewDetail?.();
       renderPayrollEmployees();
 
       loadPayrollCalendars().catch(error =>
@@ -92108,6 +93580,11 @@ function renderPayrollPayeRunClearing(
         )
       );
 
+    console.log('Overview button:', document.getElementById('payrollCreateReplacementRunOverviewBtn'));
+    console.log('Posting button :', document.getElementById('payrollCreateReplacementRunBtn'));
+    $("payrollCreateReplacementRunBtn")
+      ?.addEventListener("click", runPayrollAction(createReplacementPayrollRun));
+
     $("payrollRefreshPayslipsBtn")
       ?.addEventListener(
         "click",
@@ -92115,6 +93592,25 @@ function renderPayrollPayeRunClearing(
           loadPayrollRunPayslips
         )
       );
+
+    $("payrollCreateReplacementRunOverviewBtn")
+      ?.addEventListener("click", runPayrollAction(createReplacementPayrollRun));
+
+    // Employee detail back button (run-detail employee view)
+    $("payrollEmployeeBackBtn")
+      ?.addEventListener("click", closeEmployeeDetail);
+
+    // Standalone employee overview detail — back + edit buttons
+    $("payrollEmployeeOverviewBackBtn")
+      ?.addEventListener("click", () => closeEmployeeOverviewDetail?.());
+
+    $("payrollEmployeeOverviewEditBtn")
+      ?.addEventListener("click", async () => {
+        const empId = payrollState.overviewDetailEmployeeId;
+        if (!empId) return;
+        // Open the employee editor modal (loads full record + fills form)
+        await openPayrollEmployee(Number(empId));
+      });
 
     $("payrollPayslipSearch")
       ?.addEventListener(
@@ -102804,8 +104300,32 @@ function renderPayrollPayeRunClearing(
     if ($("revProgressExpectedCost")) $("revProgressExpectedCost").value = num(p.expected_total_cost).toFixed(2);
     if ($("revProgressActualCost")) $("revProgressActualCost").value = num(p.actual_cost_to_date).toFixed(2);
     if ($("revProgressPercent")) $("revProgressPercent").value = p.progress_percent ?? "";
-    if ($("revProgressMilestoneCode")) $("revProgressMilestoneCode").value = p.milestone_code || "";
+
+    // ✅ Milestone code — hydrate with the BARE code only.
+    // The dropdown option values are now bare codes, so the input must
+    // hold a bare code for the browser to match it against the datalist.
+    // The human-readable name is shown via the milestone_name field /
+    // payload_json.milestone.name — not jammed into the code input.
+    const msCode =
+      p.milestone_code ||
+      (p.payload_json?.milestone?.code) ||
+      p.milestone_name ||  // last-resort fallback for legacy rows
+      "";
+    if ($("revProgressMilestoneCode")) $("revProgressMilestoneCode").value = msCode;
+
     if ($("revProgressNotes")) $("revProgressNotes").value = p.notes || "";
+
+    // ✅ Retention — populate from top-level or payload_json
+    const msData = p.payload_json?.milestone || {};
+    const retPct = p.retention_percent ?? msData.retention_percent ?? "";
+    const retAmt = p.retention_amount ?? msData.retention_amount ?? "";
+
+    if ($("revProgressRetentionPercent")) $("revProgressRetentionPercent").value = retPct;
+    if ($("revProgressRetentionAmount")) $("revProgressRetentionAmount").value = retAmt;
+
+    // ✅ Populate milestone dropdown + bind retention events
+    populateProgressMilestoneDropdown();
+    bindProgressMilestoneAndRetentionEvents();
 
     toggleRevenueProgressDriverFields();
   }
@@ -103760,14 +105280,15 @@ async function renderContractPreview(c = {}) {
   }
 
   function calculateElapsedProgress() {
+    // ✅ Prefer progress-form fields, fall back to obligation-setup fields
     const start =
-      $("revElapsedStartDate")?.value ||
       $("revProgressPerformanceStartDate")?.value ||
+      $("revElapsedStartDate")?.value ||
       "";
 
     const end =
-      $("revElapsedEndDate")?.value ||
       $("revProgressPerformanceEndDate")?.value ||
+      $("revElapsedEndDate")?.value ||
       "";
 
     const periodEnd =
@@ -103776,7 +105297,9 @@ async function renderContractPreview(c = {}) {
       "";
 
     const basis =
-      $("revElapsedBasis")?.value || "calendar_days";
+      $("revProgressTimeBasis")?.value ||
+      $("revElapsedBasis")?.value ||
+      "calendar_days";
 
     const empty = {
       elapsed_days: null,
@@ -103823,6 +105346,10 @@ async function renderContractPreview(c = {}) {
 
     if ($("revElapsedDays")) $("revElapsedDays").value = elapsedDays;
     if ($("revElapsedPercent")) $("revElapsedPercent").value = elapsedPercent.toFixed(2);
+    // Also write to progress-form fields
+    if ($("revProgressElapsedDays")) $("revProgressElapsedDays").value = elapsedDays;
+    if ($("revProgressTotalDays")) $("revProgressTotalDays").value = totalDays;
+    if ($("revProgressElapsedPercent")) $("revProgressElapsedPercent").value = elapsedPercent.toFixed(2);
 
     if ($("revProgressPercent")) {
       $("revProgressPercent").value = elapsedPercent.toFixed(2);
@@ -103867,6 +105394,172 @@ async function renderContractPreview(c = {}) {
       el.addEventListener("input", calculateElapsedProgress);
     });
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // MILESTONE DROPDOWN for Revenue Progress form
+  // Populates the datalist from the selected contract's billing
+  // milestones (from sheet 32 / contract payload_json).
+  // Also allows free typing — the datalist is a suggestion list,
+  // not a restriction.
+  // ═══════════════════════════════════════════════════════════
+  function populateProgressMilestoneDropdown() {
+    const datalist = document.getElementById("revProgressMilestoneList");
+    if (!datalist) return;
+
+    const milestones = getSelectedContractMilestones();
+
+    // Build option elements from contract billing milestones.
+    //
+    // IMPORTANT: the option `value` MUST be just the milestone code
+    // (e.g. "MS-002"), NOT the combined "MS-002 — Stormwater works certified"
+    // display string. The backend's _contract_milestone_codes() lookup
+    // compares against bare codes only, so a combined value would fail
+    // validation with: "Milestone code '...' is not defined on the contract."
+    //
+    // The visible text the user sees in the dropdown can still be the
+    // friendly "code — description" form; only the submitted value is the
+    // bare code.
+    datalist.innerHTML = milestones.map((m) => {
+      const code = esc(m.code || "");
+      const desc = esc(m.description || "");
+      const display = desc ? `${code} — ${desc}` : code;
+      return `<option value="${code}">${display}</option>`;
+    }).join("");
+
+    console.log("[Revenue] Progress milestone dropdown populated:", milestones.length, "milestones");
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Milestone code/name splitter.
+  //
+  // Defensive parser used by progressPayloadFromUI() to guarantee that
+  // `milestone_code` sent to the backend is always the bare code
+  // (e.g. "MS-002") even when:
+  //   - the dropdown <option value="..."> somehow carries the combined
+  //     "MS-002 — Stormwater works certified" form (legacy data, manual
+  //     entry, copy-paste, older cached JS, etc.)
+  //   - the user typed the combined string directly into the input
+  //
+  // Returns: { code, name }
+  //   code = the bare milestone code (everything before the first
+  //          " — " / " – " / " - " separator), trimmed
+  //   name = the description part after the separator, or null
+  // ─────────────────────────────────────────────────────────────
+  function splitMilestoneCodeAndName(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return { code: null, name: null };
+
+    // Try the most specific separators first. We deliberately EXCLUDE
+    // the bare hyphen "-" because milestone codes themselves often
+    // contain hyphens (e.g. "MS-002", "POB-002-02"). The frontend only
+    // ever produces the em-dash " — " form, so matching on em-dash /
+    // en-dash variants is sufficient and unambiguous.
+    const separators = [" — ", " – ", " —", "— ", "—", " – ", "–"];
+
+    for (const sep of separators) {
+      const idx = raw.indexOf(sep);
+      if (idx > 0) {
+        const code = raw.slice(0, idx).trim();
+        const name = raw.slice(idx + sep.length).trim();
+        if (code) return { code, name: name || null };
+      }
+    }
+
+    // No separator found — treat the whole string as the code.
+    return { code: raw, name: null };
+  }
+  window.splitMilestoneCodeAndName = splitMilestoneCodeAndName;
+
+  // ═══════════════════════════════════════════════════════════
+  // RETENTION AUTO-CALC
+  // When retention % or certified amount changes, auto-calculate
+  // the retention amount = certified amount × retention %.
+  // ═══════════════════════════════════════════════════════════
+  function calculateRetentionAmount() {
+    const retPctEl = document.getElementById("revProgressRetentionPercent");
+    const retAmtEl = document.getElementById("revProgressRetentionAmount");
+    const certAmtEl = document.getElementById("revProgressCertifiedAmount");
+
+    if (!retPctEl || !retAmtEl) return;
+
+    const retPct = parseFloat(retPctEl.value || 0) || 0;
+    const certAmt = parseFloat(certAmtEl?.value || 0) || 0;
+
+    // Auto-calculate retention amount if not manually overridden
+    if (retPct > 0 && certAmt > 0) {
+      const calcAmt = round2(certAmt * retPct);
+      // Only auto-fill if the field is empty or was previously auto-calculated
+      const currentAmt = parseFloat(retAmtEl.value || 0) || 0;
+      const expectedAmt = round2(certAmt * retPct);
+      if (currentAmt === 0 || Math.abs(currentAmt - expectedAmt) < 0.01) {
+        retAmtEl.value = calcAmt.toFixed(2);
+      }
+    }
+  }
+
+  function round2(v) {
+    return Math.round((parseFloat(v) || 0) * 100) / 100;
+  }
+
+  function bindProgressMilestoneAndRetentionEvents() {
+    // Populate milestone dropdown when milestone field gets focus
+    const milestoneInput = document.getElementById("revProgressMilestoneCode");
+    if (milestoneInput && milestoneInput.dataset.msDropdownBound !== "1") {
+      milestoneInput.dataset.msDropdownBound = "1";
+      milestoneInput.addEventListener("focus", populateProgressMilestoneDropdown);
+    }
+
+    // Retention auto-calc events
+    const retPctEl = document.getElementById("revProgressRetentionPercent");
+    const certAmtEl = document.getElementById("revProgressCertifiedAmount");
+    const retAmtEl = document.getElementById("revProgressRetentionAmount");
+
+    if (retPctEl && retPctEl.dataset.retBound !== "1") {
+      retPctEl.dataset.retBound = "1";
+      retPctEl.addEventListener("input", calculateRetentionAmount);
+      retPctEl.addEventListener("change", calculateRetentionAmount);
+    }
+
+    if (certAmtEl && certAmtEl.dataset.retBound !== "1") {
+      certAmtEl.dataset.retBound = "1";
+      certAmtEl.addEventListener("input", calculateRetentionAmount);
+      certAmtEl.addEventListener("change", calculateRetentionAmount);
+    }
+
+    // Pre-fill retention % from the contract's billing milestones
+    if (retPctEl && !retPctEl.value && state.selectedContract) {
+      const milestones = getSelectedContractMilestones();
+      const contract = state.selectedContract;
+
+      // Try to get retention from the milestone linked to the current obligation
+      const obl = state.selectedObligation;
+      if (obl) {
+        const pj = obl.payload_json || {};
+        const linkedCode = pj.linked_billing_milestone_code || pj.milestone_code;
+        if (linkedCode) {
+          const ms = milestones.find(m => String(m.code) === String(linkedCode));
+          if (ms && ms.retention_percent != null) {
+            retPctEl.value = ms.retention_percent;
+          }
+        }
+      }
+
+      // Fallback: use the first milestone's retention %
+      if (!retPctEl.value && milestones.length > 0 && milestones[0].retention_percent != null) {
+        retPctEl.value = milestones[0].retention_percent;
+      }
+    }
+  }
+
+  // Also populate when contract changes
+  const _origPopulateObligation = populateObligationMilestoneDropdown;
+  populateObligationMilestoneDropdown = function(selectedCode = "") {
+    _origPopulateObligation(selectedCode);
+    // Also refresh the progress milestone dropdown
+    populateProgressMilestoneDropdown();
+    // Bind retention + milestone events
+    bindProgressMilestoneAndRetentionEvents();
+  };
 
   function toggleRevenueProgressDriverFields() {
     const type = String($("revProgressType")?.value || "").trim().toLowerCase();
@@ -103959,24 +105652,29 @@ async function renderContractPreview(c = {}) {
 
     if (type === "time_elapsed") {
       show(timeElapsedWrap, true);
+      showGrid(timeElapsedWrap, true);
 
       const pj = state.selectedObligation?.payload_json || {};
 
-      const start =
-        $("revElapsedStartDate") ||
-        $("revProgressPerformanceStartDate");
+      // Populate performance start/end dates from obligation
+      const startDate = $("revProgressPerformanceStartDate");
+      const endDate = $("revProgressPerformanceEndDate");
 
-      const end =
-        $("revElapsedEndDate") ||
-        $("revProgressPerformanceEndDate");
-
-      if (start) {
-        start.value = toDateInputValue(pj.performance_start_date);
+      if (startDate) {
+        startDate.value = toDateInputValue(pj.performance_start_date);
+      }
+      if (endDate) {
+        endDate.value = toDateInputValue(pj.performance_end_date);
       }
 
-      if (end) {
-        end.value = toDateInputValue(pj.performance_end_date);
-      }
+      // Also bind events on these fields if not already bound
+      [startDate, endDate, $("revProgressTimeBasis"), $("revProgressPeriodEnd")].forEach((el) => {
+        if (el && el.dataset.teBound !== "1") {
+          el.dataset.teBound = "1";
+          el.addEventListener("change", calculateElapsedProgress);
+          el.addEventListener("input", calculateElapsedProgress);
+        }
+      });
 
       calculateElapsedProgress();
 
@@ -105456,7 +107154,21 @@ async function renderContractPreview(c = {}) {
     }
 
     const latest = await loadLatestRevenueProgressForSelectedObligation();
+    // First render with the latest progress update so method-specific labels
+    // and values show up immediately.
     renderRevenueProgressSummary(selected, latest);
+
+    // Then enrich with the method-aware backend summary (billing position,
+    // computed progress %, etc.).
+    try {
+      const summaryData = await fetchRevenueProgressSummary(state.cid, selected.id);
+      if (summaryData) {
+        renderRevenueProgressSummary(selected, latest, summaryData);
+      }
+    } catch (e) {
+      console.warn("[refreshRevenueProgressUIAsync] fetchRevenueProgressSummary failed", e);
+    }
+
     const saveBtn = $("revSaveProgress");
     if (saveBtn) {
       saveBtn.disabled = false;
@@ -105518,31 +107230,279 @@ async function renderContractPreview(c = {}) {
       return;
     }
 
-    renderRevenueProgressSummary(selected);
+    // Render immediately from the cached obligation (so the card never flashes
+    // empty), then asynchronously load the latest progress update AND the
+    // method-aware summary from the backend. The latest progress update
+    // carries the detailed method-specific payload (e.g. payload_json.milestone
+    // with certified_percent, certified_amount, certificate_ref, etc.) which
+    // the obligation's own payload_json does not have. The backend summary
+    // endpoint merges both sources and is the authoritative source.
+    (async () => {
+      try {
+        const latest = await loadLatestRevenueProgressForSelectedObligation();
+
+        // First render with the latest progress update so the method-specific
+        // labels AND values show up immediately (even before the backend
+        // summary endpoint is deployed).
+        renderRevenueProgressSummary(selected, latest);
+
+        // Then enrich with the method-aware summary from the backend (which
+        // also surfaces billing position, computed progress %, etc.).
+        const summaryData = await fetchRevenueProgressSummary(
+          state.cid,
+          selected.id
+        );
+        if (summaryData) {
+          renderRevenueProgressSummary(selected, latest, summaryData);
+        }
+      } catch (e) {
+        console.warn("[refreshRevenueProgressUI] async enrich failed", e);
+        // Fall back to a no-data render so the labels at least show.
+        renderRevenueProgressSummary(selected);
+      }
+    })();
   }
 
-  function renderRevenueProgressSummary(obligation, latestProgress = null) {
+  /**
+   * Fetch the method-aware recognition progress summary from the backend.
+   *
+   * The endpoint returns a unified payload whose `method_fields` adapt to
+   * the obligation's progress_method (cost_to_cost, units, milestone,
+   * time_elapsed, manual) or recognition_timing (point_in_time). This is
+   * what lets the summary card "interchange labels based on project billing
+   * method or recognition progress method" and show a summary for each
+   * billing method.
+   *
+   * Returns null on any failure so callers can fall back to the obligation-
+   * only rendering.
+   */
+  async function fetchRevenueProgressSummary(companyId, obligationId) {
+    if (!companyId || !obligationId) return null;
+    try {
+      const url = ENDPOINTS?.revenue?.progressSummary
+        ? ENDPOINTS.revenue.progressSummary(companyId, obligationId)
+        : `${API_BASE}/api/companies/${companyId}/revenue/obligations/${obligationId}/progress_summary`;
+      const raw = await apiFetch(url, { method: "GET" });
+      return raw?.data || raw || null;
+    } catch (e) {
+      console.warn("[Revenue] fetchRevenueProgressSummary failed", e);
+      return null;
+    }
+  }
+
+  /**
+   * Helper: build a small KPI tile used in the method-specific summary card.
+   */
+  function _progressKpiTile(label, valueHtml) {
+    return `
+      <div class="rounded-lg border p-2 bg-slate-50">
+        <div class="text-xs text-slate-500">${esc(label)}</div>
+        <div class="font-semibold">${valueHtml}</div>
+      </div>
+    `;
+  }
+
+  /**
+   * Helper: extract method-specific fields from the obligation's payload_json
+   * when the backend method-aware summary is not available. This keeps the
+   * card working even before the new endpoint is deployed.
+   */
+  function _deriveMethodFieldsFromObligation(obligation, latestProgress) {
+    const method = String(obligation?.progress_method || "cost_to_cost").toLowerCase();
+    const timing = String(obligation?.recognition_timing || "over_time").toLowerCase();
+    const pj = obligation?.payload_json || {};
+
+    // The detailed method-specific fields (certified_percent, certified_amount,
+    // certificate_ref, approval_date, retention_percent, etc.) live in the
+    // LATEST PROGRESS UPDATE's payload_json, not the obligation's payload_json.
+    // The obligation's payload_json only carries the static setup fields
+    // (milestone_code, milestone_name, retention_percent at setup, etc.).
+    // So we merge both sources: latest progress update payload first, then
+    // obligation payload as fallback.
+    const lpPj = latestProgress?.payload_json || {};
+
+    if (timing === "point_in_time") {
+      return {
+        satisfaction_status: obligation?.satisfaction_status,
+        satisfied_at: obligation?.satisfied_at || null,
+        satisfaction_evidence_ref: obligation?.satisfaction_evidence_ref,
+        recognition_trigger: obligation?.recognition_trigger,
+        recognized_at_point_in_time_date: obligation?.recognized_at_point_in_time_date || null,
+      };
+    }
+    if (method === "cost_to_cost") {
+      return {
+        expected_total_cost: num(latestProgress?.expected_total_cost ?? obligation?.expected_total_cost),
+        actual_cost_to_date: num(latestProgress?.actual_cost_to_date ?? obligation?.actual_cost_to_date),
+        remaining_cost: Math.max(
+          0,
+          num(latestProgress?.expected_total_cost ?? obligation?.expected_total_cost) -
+          num(latestProgress?.actual_cost_to_date ?? obligation?.actual_cost_to_date)
+        ),
+      };
+    }
+    if (method === "units" || method === "units_delivered") {
+      const u = lpPj.units || pj.units || {};
+      return {
+        units_total: num(u.total_units ?? pj.units_total),
+        units_done: num(u.delivered_units ?? pj.units_done),
+        certified_units: u.certified_units ?? null,
+        unit_of_measure: u.unit_of_measure || pj.unit_of_measure || null,
+        remaining_units: Math.max(0, num(u.total_units ?? pj.units_total) - num(u.delivered_units ?? pj.units_done)),
+      };
+    }
+    if (method === "milestone") {
+      // The detailed milestone fields (certified_percent, certified_amount,
+      // certificate_ref, approval_date, approved_by, retention_percent,
+      // retention_amount, billing_ready, blocked_reason) are written by
+      // record_revenue_progress_update() into latest_progress.payload_json.milestone.
+      // The obligation's payload_json only has the static setup fields
+      // (milestone_code, milestone_name, milestone_allocated_amount).
+      const m = lpPj.milestone || pj.milestone || {};
+      return {
+        milestone_code: m.code || pj.milestone_code || pj.linked_billing_milestone_code || obligation?.linked_milestone_code || latestProgress?.milestone_code,
+        milestone_description: m.description || pj.milestone_name || obligation?.linked_milestone_description,
+        milestone_status: m.status,
+        certified_percent: m.certified_percent ?? null,
+        certified_amount: m.certified_amount ?? null,
+        certificate_ref: m.certificate_ref || null,
+        approval_date: m.approval_date || null,
+        approved_by: m.approved_by || null,
+        retention_percent: m.retention_percent ?? pj.retention_percent ?? null,
+        retention_amount: m.retention_amount ?? pj.retention_amount ?? null,
+        billing_ready: !!m.billing_ready,
+        blocked_reason: m.blocked_reason || null,
+        milestone_allocated_amount: num(pj.milestone_allocated_amount),
+      };
+    }
+    if (method === "time_elapsed") {
+      const t = lpPj.time_elapsed || pj.time_elapsed || {};
+      return {
+        performance_start_date: t.performance_start_date || pj.performance_start_date || null,
+        performance_end_date: t.performance_end_date || pj.performance_end_date || null,
+        elapsed_days: t.elapsed_days || 0,
+        total_days: t.total_days || 0,
+        elapsed_percent: t.elapsed_percent || 0,
+        basis: t.basis || "calendar_days",
+        billing_cycle: t.billing_cycle || null,
+      };
+    }
+    if (method === "manual") {
+      return {
+        progress_percent: num(latestProgress?.progress_percent ?? obligation?.progress_percent),
+      };
+    }
+    return {};
+  }
+
+  function renderRevenueProgressSummary(obligation, latestProgress = null, summary = null) {
     const el = $("revProgressSummary");
     if (!el) return;
 
-    const allocated = num(obligation?.allocated_transaction_price);
-    const revenueLtd = num(obligation?.revenue_to_date);
-    const expectedCost = num(
-      latestProgress?.expected_total_cost ??
-      obligation?.expected_total_cost
-    );
-    const actualCost = num(
-      latestProgress?.actual_cost_to_date ??
-      obligation?.actual_cost_to_date
-    );
-    const progressPct = num(
-      latestProgress?.progress_percent ??
-      obligation?.progress_percent
-    );
-
+    // Common numbers (prefer the backend method-aware summary when present)
+    const allocated = num(summary?.allocated_transaction_price ?? obligation?.allocated_transaction_price);
+    const revenueLtd = num(summary?.revenue_to_date ?? obligation?.revenue_to_date);
+    const progressPct = num(summary?.progress_percent ?? latestProgress?.progress_percent ?? obligation?.progress_percent);
     const clampedPct = Math.max(0, Math.min(100, progressPct));
     const remainingRevenue = Math.max(0, allocated - revenueLtd);
-    const remainingCost = Math.max(0, expectedCost - actualCost);
+
+    // Method + billing context
+    const timing = String(summary?.recognition_timing ?? obligation?.recognition_timing ?? "over_time").toLowerCase();
+    const method = String(summary?.progress_method ?? obligation?.progress_method ?? "cost_to_cost").toLowerCase();
+    const effectiveMethod = summary?.method || (timing === "point_in_time" ? "point_in_time" : method);
+    const methodLabel = summary?.method_label || effectiveMethod;
+    const billingMethod = String(summary?.billing_method ?? state?.selectedContractBillingPolicy?.billing_method ?? state?.selectedContract?.billing_method ?? "milestone").toLowerCase();
+    const billingLabel = summary?.billing_label || billingMethod;
+
+    // Method-specific fields (prefer backend summary; fall back to payload_json)
+    const mf = summary?.method_fields && Object.keys(summary?.method_fields || {}).length
+      ? summary.method_fields
+      : _deriveMethodFieldsFromObligation(obligation, latestProgress);
+
+    // Common KPIs that always show (Allocated Price, Revenue LTD, Remaining Revenue)
+    const commonKpis = [
+      _progressKpiTile("Allocated Price", money(allocated)),
+      _progressKpiTile("Revenue LTD", money(revenueLtd)),
+      _progressKpiTile("Remaining Revenue", money(remainingRevenue)),
+    ];
+
+    // Method-specific KPIs — these are the labels that "interchange" based on
+    // the project billing method / recognition progress method.
+    let methodKpis = "";
+    let methodHeaderText = "";
+
+    if (effectiveMethod === "point_in_time") {
+      methodHeaderText = "Point-in-time recognition";
+      methodKpis = [
+        _progressKpiTile("Satisfaction Status", esc(mf.satisfaction_status || "—")),
+        _progressKpiTile("Satisfied At", mf.satisfied_at ? esc(String(mf.satisfied_at).slice(0, 10)) : "—"),
+        _progressKpiTile("Recognition Trigger", esc(mf.recognition_trigger || "—")),
+        _progressKpiTile("Evidence Ref", esc(mf.satisfaction_evidence_ref || "—")),
+      ].join("");
+    } else if (method === "cost_to_cost") {
+      methodHeaderText = "Cost-to-cost recognition";
+      const expectedCost = num(mf.expected_total_cost ?? obligation?.expected_total_cost);
+      const actualCost = num(mf.actual_cost_to_date ?? obligation?.actual_cost_to_date);
+      const remainingCost = num(mf.remaining_cost ?? Math.max(0, expectedCost - actualCost));
+      methodKpis = [
+        _progressKpiTile("Expected Total Cost", money(expectedCost)),
+        _progressKpiTile("Actual Cost to Date", money(actualCost)),
+        _progressKpiTile("Remaining Cost", money(remainingCost)),
+      ].join("");
+    } else if (method === "units" || method === "units_delivered") {
+      methodHeaderText = "Units-delivered recognition";
+      methodKpis = [
+        _progressKpiTile("Units Total", num(mf.units_total).toLocaleString()),
+        _progressKpiTile("Units Delivered", num(mf.units_done).toLocaleString()),
+        _progressKpiTile("Certified Units", mf.certified_units != null ? num(mf.certified_units).toLocaleString() : "—"),
+        _progressKpiTile("Unit of Measure", esc(mf.unit_of_measure || "—")),
+        _progressKpiTile("Remaining Units", num(mf.remaining_units).toLocaleString()),
+      ].join("");
+    } else if (method === "milestone") {
+      methodHeaderText = "Milestone recognition";
+      methodKpis = [
+        _progressKpiTile("Milestone Code", esc(mf.milestone_code || "—")),
+        _progressKpiTile("Milestone Description", esc(mf.milestone_description || "—")),
+        _progressKpiTile("Milestone Status", esc(mf.milestone_status || "—")),
+        _progressKpiTile("Certified %", mf.certified_percent != null ? `${num(mf.certified_percent).toFixed(2)}%` : "—"),
+        _progressKpiTile("Certified Amount", mf.certified_amount != null ? money(mf.certified_amount) : "—"),
+        _progressKpiTile("Certificate Ref", esc(mf.certificate_ref || "—")),
+        _progressKpiTile("Approval Date", mf.approval_date ? esc(String(mf.approval_date).slice(0, 10)) : "—"),
+        _progressKpiTile("Approved By", esc(mf.approved_by || "—")),
+        _progressKpiTile("Retention %", mf.retention_percent != null ? `${num(mf.retention_percent).toFixed(2)}%` : "—"),
+        _progressKpiTile("Retention Amount", mf.retention_amount != null ? money(mf.retention_amount) : "—"),
+        _progressKpiTile("Milestone Allocated Amount", money(num(mf.milestone_allocated_amount))),
+      ].join("");
+    } else if (method === "time_elapsed") {
+      methodHeaderText = "Time-elapsed recognition";
+      methodKpis = [
+        _progressKpiTile("Performance Start", mf.performance_start_date ? esc(String(mf.performance_start_date).slice(0, 10)) : "—"),
+        _progressKpiTile("Performance End", mf.performance_end_date ? esc(String(mf.performance_end_date).slice(0, 10)) : "—"),
+        _progressKpiTile("Elapsed Days", num(mf.elapsed_days).toLocaleString()),
+        _progressKpiTile("Total Days", num(mf.total_days).toLocaleString()),
+        _progressKpiTile("Elapsed %", `${num(mf.elapsed_percent).toFixed(2)}%`),
+        _progressKpiTile("Basis", esc(mf.basis || "calendar_days")),
+      ].join("");
+    } else if (method === "manual") {
+      methodHeaderText = "Manual recognition";
+      methodKpis = [
+        _progressKpiTile("Progress %", `${num(mf.progress_percent).toFixed(2)}%`),
+      ].join("");
+    }
+
+    // Billing position (from the method-aware summary when available)
+    const billedToDate = num(summary?.billed_to_date);
+    const remainingToBill = num(summary?.remaining_to_bill);
+    const billingKpis = summary
+      ? [
+          _progressKpiTile("Billed to Date", money(billedToDate)),
+          _progressKpiTile("Remaining to Bill", money(remainingToBill)),
+        ].join("")
+      : "";
+
+    // Latest saved update (prefer the summary's latest_progress, fall back
+    // to the passed-in latestProgress)
+    const lp = summary?.latest_progress || latestProgress;
 
     el.innerHTML = `
       <div class="space-y-3">
@@ -105551,7 +107511,8 @@ async function renderContractPreview(c = {}) {
             ${esc(obligation?.obligation_code || "")} · ${esc(obligation?.obligation_name || "")}
           </div>
           <div class="text-xs text-slate-500">
-            Timing: ${esc(obligation?.recognition_timing || "")}
+            Billing: <strong>${esc(billingLabel)}</strong>
+            · Recognition: <strong>${esc(methodLabel)}</strong>
             ${obligation?.progress_method ? `· Method: ${esc(obligation.progress_method)}` : ""}
           </div>
         </div>
@@ -105569,43 +107530,26 @@ async function renderContractPreview(c = {}) {
           </div>
         </div>
 
+        ${methodHeaderText ? `
+          <div class="text-xs font-semibold text-slate-600 pt-1">${esc(methodHeaderText)}</div>
+        ` : ""}
+
         <div class="grid grid-cols-2 gap-3 text-sm">
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Allocated Price</div>
-            <div class="font-semibold">${money(allocated)}</div>
-          </div>
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Revenue LTD</div>
-            <div class="font-semibold">${money(revenueLtd)}</div>
-          </div>
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Expected Total Cost</div>
-            <div class="font-semibold">${money(expectedCost)}</div>
-          </div>
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Actual Cost to Date</div>
-            <div class="font-semibold">${money(actualCost)}</div>
-          </div>
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Remaining Revenue</div>
-            <div class="font-semibold">${money(remainingRevenue)}</div>
-          </div>
-          <div class="rounded-lg border p-2 bg-slate-50">
-            <div class="text-xs text-slate-500">Remaining Cost</div>
-            <div class="font-semibold">${money(remainingCost)}</div>
-          </div>
+          ${commonKpis.join("")}
+          ${methodKpis}
+          ${billingKpis}
         </div>
 
         ${
-          latestProgress
+          lp
             ? `
             <div class="rounded-lg border p-3 bg-white">
               <div class="text-xs font-semibold text-slate-600 mb-2">Latest Saved Update</div>
               <div class="text-xs text-slate-500 space-y-1">
-                <div>Period End: <strong>${esc(String(latestProgress.period_end || "").slice(0, 10))}</strong></div>
-                <div>Type: <strong>${esc(latestProgress.update_type || "")}</strong></div>
-                <div>Milestone: <strong>${esc(latestProgress.milestone_code || "—")}</strong></div>
-                <div>Notes: <strong>${esc(latestProgress.notes || "—")}</strong></div>
+                <div>Period End: <strong>${esc(String(lp.period_end || "").slice(0, 10))}</strong></div>
+                <div>Type: <strong>${esc(lp.update_type || "")}</strong></div>
+                <div>Milestone: <strong>${esc(lp.milestone_code || "—")}</strong></div>
+                <div>Notes: <strong>${esc(lp.notes || "—")}</strong></div>
               </div>
 
               <div class="mt-3">
@@ -105624,10 +107568,10 @@ async function renderContractPreview(c = {}) {
       </div>
     `;
     const editBtn = $("revEditLatestProgressBtn");
-    if (editBtn && latestProgress) {
+    if (editBtn && lp) {
       editBtn.addEventListener("click", () => {
-        state.progressEditing = latestProgress;
-        hydrateRevenueProgressForm(latestProgress);
+        state.progressEditing = lp;
+        hydrateRevenueProgressForm(lp);
         setRevenueProgressEditMode(true);
         setMsg("Editing latest progress update.");
       });
@@ -105904,10 +107848,31 @@ async function renderContractPreview(c = {}) {
       progress_percent: null,
 
       milestone_code: null,
+      milestone_name: null,
       notes: $("revProgressNotes")?.value || "",
+
+      // ✅ Retention at top level — applies to ALL progress methods
+      retention_percent:
+        $("revProgressRetentionPercent")?.value === ""
+          ? null
+          : num($("revProgressRetentionPercent")?.value),
+
+      retention_amount:
+        $("revProgressRetentionAmount")?.value === ""
+          ? null
+          : num($("revProgressRetentionAmount")?.value),
 
       payload_json: {
         driver: updateType,
+        // ✅ Also include retention in payload_json for the backend
+        retention_percent:
+          $("revProgressRetentionPercent")?.value === ""
+            ? null
+            : num($("revProgressRetentionPercent")?.value),
+        retention_amount:
+          $("revProgressRetentionAmount")?.value === ""
+            ? null
+            : num($("revProgressRetentionAmount")?.value),
       },
     };
 
@@ -105924,12 +107889,23 @@ async function renderContractPreview(c = {}) {
     }
 
     if (updateType === "milestone") {
-      payload.milestone_code =
-        $("revProgressMilestoneCode")?.value?.trim() || null;
+      // ✅ Split the dropdown value into bare code + display name.
+      // The <datalist> option value is now the bare code, but the user
+      // may have typed or pasted the combined "MS-002 — Stormwater works
+      // certified" form. splitMilestoneCodeAndName() handles both cases
+      // so the backend always receives a clean `milestone_code`.
+      const milestoneValue = $("revProgressMilestoneCode")?.value?.trim() || null;
+      const { code: milestoneCode, name: milestoneName } =
+        splitMilestoneCodeAndName(milestoneValue);
+
+      payload.milestone_code = milestoneCode;
+      // ✅ Send the human-readable name separately so the backend can
+      // store it for display without polluting the code lookup.
+      payload.milestone_name = milestoneName;
 
       payload.payload_json.milestone = {
-        code:
-          $("revProgressMilestoneCode")?.value?.trim() || null,
+        code: milestoneCode,
+        name: milestoneName,
 
         description:
           $("revProgressMilestoneDescription")?.value?.trim() || null,
@@ -105997,45 +107973,22 @@ async function renderContractPreview(c = {}) {
     }
 
     if (updateType === "time_elapsed") {
-      const elapsedProgress = calculateElapsedProgress();
-
-      payload.progress_percent =
-        elapsedProgress?.elapsed_percent == null
-          ? null
-          : elapsedProgress.elapsed_percent;
+      const elapsedResult = calculateElapsedProgress();
 
       payload.payload_json.time_elapsed = {
-        performance_start_date:
-          $("revElapsedStartDate")?.value ||
-          obligationPayload.performance_start_date ||
-          null,
-
-        performance_end_date:
-          $("revElapsedEndDate")?.value ||
-          obligationPayload.performance_end_date ||
-          null,
-
-        period_end:
-          $("revProgressPeriodEnd")?.value || null,
-
-        basis:
-          $("revElapsedBasis")?.value || "calendar_days",
-
-        billing_cycle:
-          $("revElapsedBillingCycle")?.value || null,
-
-        elapsed_days:
-          elapsedProgress?.elapsed_days ?? null,
-
-        total_days:
-          elapsedProgress?.total_days ?? null,
-
-        elapsed_percent:
-          elapsedProgress?.elapsed_percent ?? null,
-
-        notes:
-          $("revElapsedNotes")?.value || "",
+        performance_start_date: $("revProgressPerformanceStartDate")?.value || null,
+        performance_end_date: $("revProgressPerformanceEndDate")?.value || null,
+        period_end: $("revProgressPeriodEnd")?.value || null,
+        basis: $("revProgressTimeBasis")?.value || "calendar_days",
+        elapsed_days: elapsedResult.elapsed_days,
+        total_days: elapsedResult.total_days,
+        elapsed_percent: elapsedResult.elapsed_percent,
       };
+
+      // Also set top-level progress_percent
+      if (elapsedResult.elapsed_percent != null) {
+        payload.progress_percent = elapsedResult.elapsed_percent;
+      }
     }
 
     return payload;
@@ -106049,6 +108002,139 @@ async function renderContractPreview(c = {}) {
       run_reason: $("revRunReason")?.value || "period_end",
     };
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // clearRevenueWorkspace()
+  // Wipes ALL workspace tabs / forms / tables / KPIs so a newly
+  // opened contract does NOT carry over the previous contract's
+  // data. Called BEFORE loading the new contract's data.
+  // ═══════════════════════════════════════════════════════════
+  function clearRevenueWorkspace() {
+    // 1. Reset state
+    state.selectedObligation = null;
+    state.contractObligations = [];
+    state.selectedContractBillingPolicy = null;
+
+    // 2. Clear KPI strip
+    const kpiMap = {
+      revKpiTxnPrice:    "—",
+      revKpiRecognized:  "—",
+      revKpiBilled:      "—",
+    };
+    Object.entries(kpiMap).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    });
+    const posEl = document.getElementById("revKpiPosition");
+    if (posEl) {
+      posEl.textContent = "Neutral";
+      posEl.className = "px-2 py-1 rounded bg-slate-100 text-slate-600";
+    }
+
+    // 3. Clear contract preview body
+    const previewBody = document.getElementById("revContractPreviewBody");
+    if (previewBody) previewBody.innerHTML = "";
+
+    // 4. Clear obligations table
+    const oblTable = document.getElementById("revObligationTableBody");
+    if (oblTable) oblTable.innerHTML =
+      `<tr><td class="p-3 text-sm text-slate-400" colspan="6">Loading obligations…</td></tr>`;
+
+    // 5. Clear version list
+    const verList = document.getElementById("revVersionList");
+    if (verList) verList.innerHTML =
+      `<div class="text-xs text-slate-400">Loading versions…</div>`;
+
+    // 6. Clear runs list
+    const runList = document.getElementById("revRunList");
+    if (runList) runList.innerHTML =
+      `<div class="text-xs text-slate-400">Loading runs…</div>`;
+
+    // 7. Clear billing overview
+    const billOv = document.getElementById("revBillingOverview");
+    if (billOv) billOv.innerHTML =
+      `<div class="p-3 text-xs text-slate-400">Loading billing events…</div>`;
+
+    // 8. Clear cash overview
+    const cashOv = document.getElementById("revCashOverview");
+    if (cashOv) cashOv.innerHTML =
+      `<div class="p-3 text-xs text-slate-400">Loading cash events…</div>`;
+
+    // 9. Reset milestone table to a single blank row
+    try { renderMilestoneRows([]); } catch (e) {}
+
+    // 10. Reset obligation form & preview
+    try {
+      hydrateObligationForm({});
+      renderObligationPreview({});
+      renderObligationContractBanner(null);
+      setObligationViewMode("preview");
+    } catch (e) {}
+
+    // 11. Clear progress tracking fields
+    const progressFields = [
+      "revProgressPeriodEnd",
+      "revProgressExpectedCost",
+      "revProgressActualCost",
+      "revProgressPercent",
+      "revProgressMilestoneCode",
+      "revProgressNotes",
+      "revProgressPerformanceStartDate",
+    ];
+    progressFields.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        if (el.tagName === "SELECT") el.selectedIndex = 0;
+        else if (el.type === "checkbox") el.checked = false;
+        else el.value = "";
+      }
+    });
+
+    // 12. Clear billing pane fields
+    const billingFields = [
+      "revBillingDate",
+      "revBillingAmount",
+      "revBillingNotes",
+      "revCashDate",
+      "revCashAmount",
+      "revCashReference",
+      "revCashNotes",
+    ];
+    billingFields.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+
+    // 13. Reset run form fields
+    const runFields = [
+      "revRunId",
+      "revRunReason",
+    ];
+    runFields.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        if (el.tagName === "SELECT") el.selectedIndex = 0;
+        else el.value = "";
+      }
+    });
+
+    // 14. Clear any messages
+    const msgEls = ["revObligationMsg", "revRunMsg", "revBillingMsg"];
+    msgEls.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = ""; el.classList.add("hidden"); }
+    });
+
+    // 15. Reset contract status pill
+    const statusPill = document.getElementById("revContractStatusPill");
+    if (statusPill) statusPill.textContent = "—";
+
+    // 16. Reset tab to "contracts" (the first tab)
+    try { setActiveTab("contracts"); } catch (e) {}
+
+    console.log("[Revenue] workspace cleared for new contract");
+  }
+  window.clearRevenueWorkspace = clearRevenueWorkspace;
 
   function renderContractKpis(c = {}) {
     const txn = num(c.transaction_price);
@@ -106216,6 +108302,11 @@ async function renderContractPreview(c = {}) {
 
         const row = state.contracts.find((x) => Number(x.id) === id);
         if (!row) return;
+
+        // ═══ CLEAR PREVIOUS CONTRACT'S WORKSPACE ═══
+        // Wipe ALL tabs / forms / tables / KPIs so the new contract's
+        // workspace does NOT carry over the previous contract's data.
+        clearRevenueWorkspace();
 
         let fullContract = row;
 
@@ -132292,11 +134383,13 @@ function _mfgReviewCostRows(rows, type) {
   `;
 }
 
+
 function _mfgRenderBomReview() {
   const panel = document.getElementById("mfgOrderBomReview");
   if (!panel) return;
 
   const bom = _mfgOrderSelectedBom;
+
   if (!bom) {
     panel.classList.add("hidden");
     return;
@@ -132304,20 +134397,41 @@ function _mfgRenderBomReview() {
 
   panel.classList.remove("hidden");
 
-  const quantityInput = document.getElementById("mfgOrderQty");
-  const plannedQty = Math.max(0, _mfgReviewNumber(quantityInput?.value));
-  const batchQty = _mfgReviewNumber(bom.batch_qty);
+  const quantityInput =
+    document.getElementById("mfgOrderQty");
+
+  const plannedQty = Math.max(
+    0,
+    _mfgReviewNumber(quantityInput?.value)
+  );
+
+  const batchQty =
+    _mfgReviewNumber(bom.batch_qty);
+
   const yieldPercent = bom.yield_percent == null
     ? 100
     : _mfgReviewNumber(bom.yield_percent);
 
-  const effectiveBatchQty = batchQty * yieldPercent / 100;
-  const factor = effectiveBatchQty > 0 ? plannedQty / effectiveBatchQty : 0;
+  // batch_qty already represents finished output.
+  // Do not apply yield a second time.
+  const factor = batchQty > 0
+    ? plannedQty / batchQty
+    : 0;
 
   const summary = bom.cost_summary || {};
-  const total = _mfgReviewNumber(summary.total ?? bom.standard_total_cost);
-  const unitCost = _mfgReviewNumber(summary.unit_cost ?? bom.standard_unit_cost);
-  const sellingPrice = _mfgReviewNumber(summary.selling_price ?? bom.selling_price);
+
+  const total = _mfgReviewNumber(
+    summary.total ?? bom.standard_total_cost
+  );
+
+  const unitCost = _mfgReviewNumber(
+    summary.unit_cost ?? bom.standard_unit_cost
+  );
+
+  const sellingPrice = _mfgReviewNumber(
+    summary.selling_price ?? bom.selling_price
+  );
+
   const margin = _mfgReviewNumber(
     summary.margin_per_unit ?? (sellingPrice - unitCost)
   );
@@ -132338,31 +134452,65 @@ function _mfgRenderBomReview() {
     _mfgReviewCard("Standard margin / unit", _mfgReviewMoney(margin))
   ].join("");
 
-  const materials = Array.isArray(bom.lines) ? bom.lines : [];
-  document.getElementById("mfgReviewMaterials").innerHTML = materials.length
-    ? materials.map(line => {
-        const bomLineQty = _mfgReviewNumber(line.quantity);
-        const scrap = _mfgReviewNumber(line.scrap_percent);
-        const estimatedQty = bomLineQty * factor * (1 + scrap / 100);
-        const unitCostValue = _mfgReviewNumber(line.unit_cost);
-        const estimatedCost = estimatedQty * unitCostValue;
+  // MATERIALS
+  const materials = Array.isArray(bom.lines)
+    ? bom.lines
+    : [];
 
-        return `
-          <tr>
-            <td class="p-2 border">
-              <div class="font-medium">${_mfgReviewText(line.item_name || line.sku || `Item ${line.item_id ?? ""}`)}</div>
-              <div class="text-xs text-gray-500">${_mfgReviewText(line.sku || "")}${line.is_optional ? " · Optional" : ""}</div>
-            </td>
-            <td class="p-2 border">${_mfgReviewQty(bomLineQty)}</td>
-            <td class="p-2 border">${_mfgReviewText(line.unit || "")}</td>
-            <td class="p-2 border text-right">${_mfgReviewMoney(unitCostValue)}</td>
-            <td class="p-2 border text-right">${_mfgReviewQty(estimatedQty)}</td>
-            <td class="p-2 border text-right">${_mfgReviewMoney(estimatedCost)}</td>
-          </tr>
-        `;
-      }).join("")
-    : '<tr><td colspan="6" class="p-3 text-gray-500">No material lines recorded for this BOM.</td></tr>';
+  document.getElementById("mfgReviewMaterials").innerHTML =
+    materials.length
+      ? materials.map(line => {
+          const bomLineQty =
+            _mfgReviewNumber(line.quantity);
 
+          const scrap =
+            _mfgReviewNumber(line.scrap_percent);
+
+          const estimatedQty =
+            bomLineQty * factor * (1 + scrap / 100);
+
+          const unitCostValue =
+            _mfgReviewNumber(line.unit_cost);
+
+          const estimatedCost =
+            estimatedQty * unitCostValue;
+
+          return `
+            <tr>
+              <td class="p-2 border">
+                <div class="font-medium">
+                  ${_mfgReviewText(line.item_name || line.sku || `Item ${line.item_id ?? ""}`)}
+                </div>
+                <div class="text-xs text-gray-500">
+                  ${_mfgReviewText(line.sku || "")}${line.is_optional ? " · Optional" : ""}
+                </div>
+              </td>
+
+              <td class="p-2 border">
+                ${_mfgReviewQty(bomLineQty)}
+              </td>
+
+              <td class="p-2 border">
+                ${_mfgReviewText(line.unit || "")}
+              </td>
+
+              <td class="p-2 border text-right">
+                ${_mfgReviewMoney(unitCostValue)}
+              </td>
+
+              <td class="p-2 border text-right">
+                ${_mfgReviewQty(estimatedQty)}
+              </td>
+
+              <td class="p-2 border text-right">
+                ${_mfgReviewMoney(estimatedCost)}
+              </td>
+            </tr>
+          `;
+        }).join("")
+      : '<tr><td colspan="6" class="p-3 text-gray-500">No material lines recorded for this BOM.</td></tr>';
+
+  // LABOUR, DIRECT COSTS AND OVERHEADS
   document.getElementById("mfgReviewLabour").innerHTML =
     _mfgReviewCostRows(bom.labour, "labour");
 
@@ -132372,9 +134520,99 @@ function _mfgRenderBomReview() {
   document.getElementById("mfgReviewOverheads").innerHTML =
     _mfgReviewCostRows(bom.overheads, "overhead");
 
+  // UTILITIES — display the values returned by the selected BOM.
+  // Do not scale quantities or costs using the planned production quantity.
+  const utilities = Array.isArray(bom.utilities)
+    ? bom.utilities
+    : [];
+
+  const utilitiesEl =
+    document.getElementById("mfgReviewUtilities");
+
+  if (utilitiesEl) {
+    if (!utilities.length) {
+      utilitiesEl.innerHTML = `
+        <div class="border rounded-lg p-3 text-gray-500">
+          No utilities recorded for this BOM.
+        </div>
+      `;
+    } else {
+      const utilityTotal = utilities.reduce(
+        (sum, utility) =>
+          sum + _mfgReviewNumber(utility.cost),
+        0
+      );
+
+      utilitiesEl.innerHTML = `
+        <div class="overflow-x-auto border rounded-lg">
+          <table class="min-w-full text-sm border-collapse">
+            <thead>
+              <tr class="bg-gray-50 text-left">
+                <th class="p-2 border">Utility</th>
+                <th class="p-2 border">Method</th>
+                <th class="p-2 border text-right">Quantity</th>
+                <th class="p-2 border">Unit</th>
+                <th class="p-2 border text-right">Rate</th>
+                <th class="p-2 border text-right">Cost</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${utilities.map(utility => `
+                <tr>
+                  <td class="p-2 border">
+                    <div class="font-medium capitalize">
+                      ${_mfgReviewText(utility.utility_type || "Utility")}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      ${_mfgReviewText(utility.description || "")}
+                    </div>
+                  </td>
+
+                  <td class="p-2 border">
+                    ${_mfgReviewText(utility.method || "—")}
+                  </td>
+
+                  <td class="p-2 border text-right">
+                    ${_mfgReviewQty(utility.quantity)}
+                  </td>
+
+                  <td class="p-2 border">
+                    ${_mfgReviewText(utility.unit || "")}
+                  </td>
+
+                  <td class="p-2 border text-right">
+                    ${_mfgReviewMoney(utility.rate)}
+                  </td>
+
+                  <td class="p-2 border text-right">
+                    ${_mfgReviewMoney(utility.cost)}
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+
+            <tfoot>
+              <tr class="bg-gray-50 font-semibold">
+                <td colspan="5" class="p-3 border text-right">
+                  Total BOM utility cost
+                </td>
+
+                <td class="p-3 border text-right">
+                  ${_mfgReviewMoney(utilityTotal)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+    }
+  }
+
   document.getElementById("mfgReviewNote").textContent =
-    `Quantity estimate is based on ${_mfgReviewQty(plannedQty)} planned ${bom.batch_unit || "units"} and ${_mfgReviewQty(yieldPercent)}% BOM yield. Material estimates include each line's scrap percentage. Labour and other costs are shown from the BOM standard-cost records; actual production costs may differ.`;
+    `Quantity estimate is based on ${_mfgReviewQty(plannedQty)} planned ${bom.batch_unit || "units"}. BOM yield is ${_mfgReviewQty(yieldPercent)}% and is informational; it is not applied again to the finished batch quantity. Material estimates include each line's scrap percentage. Labour and other costs are shown from the BOM standard-cost records; actual production costs may differ.`;
 }
+
 
 async function _mfgLoadSelectedBomReview() {
   const select = document.getElementById("mfgOrderBom");
@@ -132392,53 +134630,92 @@ async function _mfgLoadSelectedBomReview() {
   }
 
   panel.classList.remove("hidden");
-  document.getElementById("mfgReviewTitle").textContent = "Loading BOM details…";
+
+  document.getElementById("mfgReviewTitle").textContent =
+    "Loading BOM details…";
+
   document.getElementById("mfgReviewSubtitle").textContent = "";
   document.getElementById("mfgReviewCostSummary").innerHTML = "";
+
   document.getElementById("mfgReviewMaterials").innerHTML =
     '<tr><td colspan="6" class="p-3 text-gray-500">Loading materials…</td></tr>';
+
   document.getElementById("mfgReviewLabour").textContent = "Loading…";
   document.getElementById("mfgReviewDirectCosts").textContent = "Loading…";
   document.getElementById("mfgReviewOverheads").textContent = "Loading…";
 
+  const utilitiesEl =
+    document.getElementById("mfgReviewUtilities");
+
+  if (utilitiesEl) {
+    utilitiesEl.innerHTML =
+      '<p class="text-gray-400">Loading utilities…</p>';
+  }
+
   try {
-    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-    const response = await apiFetch(ENDPOINTS.manufacturing.bom(cid, bomId));
+    const cid =
+      getActiveCompanyId?.() ||
+      window.CURRENT_COMPANY_ID;
+
+    const response = await apiFetch(
+      ENDPOINTS.manufacturing.bom(cid, bomId)
+    );
+
     if (requestId !== _mfgOrderBomRequest) return;
 
     const bom = response?.bom;
+
     if (!response?.ok || !bom) {
-      throw new Error(response?.error || "Could not load BOM details.");
+      throw new Error(
+        response?.error || "Could not load BOM details."
+      );
     }
 
     _mfgOrderSelectedBom = bom;
 
-    // Default planned output to one finished batch.
-    // Keep the field editable after this initial value is set.
-    const quantityInput = document.getElementById("mfgOrderQty");
-    const finishedBatchQty = Number(bom.batch_qty);
+    // Default planned output to one finished BOM batch.
+    const quantityInput =
+      document.getElementById("mfgOrderQty");
+
+    const finishedBatchQty =
+      Number(bom.batch_qty);
 
     if (
       quantityInput &&
       Number.isFinite(finishedBatchQty) &&
       finishedBatchQty > 0
     ) {
-      quantityInput.value = String(Math.round(finishedBatchQty));
+      quantityInput.value =
+        String(Math.round(finishedBatchQty));
     }
 
     _mfgRenderBomReview();
+
   } catch (error) {
     if (requestId !== _mfgOrderBomRequest) return;
+
     panel.classList.remove("hidden");
-    document.getElementById("mfgReviewTitle").textContent = "Unable to load BOM";
+
+    document.getElementById("mfgReviewTitle").textContent =
+      "Unable to load BOM";
+
     document.getElementById("mfgReviewMaterials").innerHTML =
       `<tr><td colspan="6" class="p-3 text-red-600">${_mfgReviewText(error?.message || "Could not load BOM details.")}</td></tr>`;
+
+    if (utilitiesEl) {
+      utilitiesEl.innerHTML =
+        `<p class="text-red-600">${_mfgReviewText(error?.message || "Could not load utilities.")}</p>`;
+    }
+
     if (message) {
-      message.textContent = error?.message || "Could not load BOM details.";
+      message.textContent =
+        error?.message || "Could not load BOM details.";
+
       message.classList.remove("hidden");
     }
   }
 }
+
 
 async function openManufacturingOrderModal() {
   const cid =
@@ -132457,10 +134734,10 @@ async function openManufacturingOrderModal() {
   modal.id = "mfgOrderModal";
 
   modal.className =
-    "fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4";
+    "fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto";
 
   modal.innerHTML = `
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[94vh] overflow-auto">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl overflow-auto my-auto" style="max-height:94vh;">
 
       <div class="flex items-center justify-between border-b px-4 py-3">
 
@@ -132544,6 +134821,21 @@ async function openManufacturingOrderModal() {
             </div>
           </div>
 
+          <div>
+            <h4 class="font-semibold text-gray-800 mb-2">
+              Utilities
+            </h4>
+
+            <div
+              id="mfgReviewUtilities"
+              class="text-sm text-gray-600">
+
+              <p class="text-gray-400">
+                Select a BOM to review its utilities.
+              </p>
+
+            </div>
+          </div>
           <p id="mfgReviewNote" class="text-xs text-gray-500"></p>
         </div>
 
@@ -134196,8 +136488,24 @@ async function openManufacturingOrderDetail(orderId) {
         </div>
 
 
-        <!-- PRODUCTION STAGES -->
-        <div class="mt-6 border rounded-lg" id="mfgProductionStages">
+        <!-- PRODUCTION STAGES TOGGLE (optional) -->
+        <div class="mt-6 border rounded-lg mfg-stages-toggle-card">
+          <label class="flex items-start gap-3 px-4 py-3 cursor-pointer select-none">
+            <input type="checkbox" data-mfg-stages-toggle class="mt-0.5 scale-110">
+            <div>
+              <div class="font-semibold">Track production stages &amp; timers (optional)</div>
+              <div class="text-xs text-slate-500 mt-1">
+                Tick this only if you want to track actual stage durations
+                against configured standards and monitor machinery
+                efficiency. Leave unticked to skip — the rest of the
+                production order is unaffected.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <!-- PRODUCTION STAGES (hidden until the toggle above is ticked) -->
+        <div class="mt-6 border rounded-lg hidden" id="mfgProductionStages">
           <div class="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3">
             <div>
               <div class="font-semibold">Production Stages & Timers</div>
@@ -134222,14 +136530,16 @@ async function openManufacturingOrderDetail(orderId) {
                 <span class="block text-slate-600 mb-1">Stage Name</span>
                 <input data-mfg-standard-name
                   class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="e.g. Mixing">
+                  placeholder="e.g. Mixing"
+                  autocomplete="off">
               </label>
 
               <label class="text-xs">
-                <span class="block text-slate-600 mb-1">Stage Code</span>
+                <span class="block text-slate-600 mb-1">Stage Code <span class="text-slate-400 font-normal">(auto)</span></span>
                 <input data-mfg-standard-code
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="e.g. MIXING">
+                  readonly
+                  class="w-full border rounded px-2 py-2 text-sm bg-slate-50 cursor-not-allowed text-slate-600"
+                  placeholder="MX-001">
               </label>
 
               <label class="text-xs">
@@ -134245,10 +136555,21 @@ async function openManufacturingOrderDetail(orderId) {
               </label>
 
               <label class="text-xs">
-                <span class="block text-slate-600 mb-1">Default Equipment</span>
-                <input data-mfg-standard-equipment
-                  class="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="e.g. Mixer 1">
+                <span class="block text-slate-600 mb-1">Default Machine / Asset</span>
+                <select data-mfg-standard-equipment
+                  class="w-full border rounded px-2 py-2 text-sm bg-white">
+                  <option value="">-- None / Manual --</option>
+                  ${
+                    (Array.isArray(availableAssets) ? availableAssets : []).map(a => `
+                      <option
+                        value="${esc(a.asset_name || "")}"
+                        data-asset-id="${esc(a.id)}"
+                        data-asset-code="${esc(a.asset_code || "")}">
+                        ${esc(a.asset_code || "")}${a.asset_code ? " - " : ""}${esc(a.asset_name || "")}
+                      </option>
+                    `).join("")
+                  }
+                </select>
               </label>
             </div>
 
@@ -134262,6 +136583,7 @@ async function openManufacturingOrderDetail(orderId) {
             <p class="text-xs text-slate-500 mt-2">
               Standards saved here apply to this BOM. Configure each stage once,
               then apply the standards to production orders using this BOM.
+              The stage code is generated automatically from the stage name.
             </p>
           </div>
 
@@ -135584,8 +137906,103 @@ async function openManufacturingOrderDetail(orderId) {
 
 
   /* -------------------------------------------------------
-     PRODUCTION STAGE TIMERS
+     PRODUCTION STAGES TOGGLE (hidden by default)
+     - Default: collapsed. User ticks the checkbox to expand.
+     - Choice is remembered per company in localStorage.
   ------------------------------------------------------- */
+  (function setupMfgStagesToggle() {
+    const toggle = modal.querySelector("[data-mfg-stages-toggle]");
+    const stagesPanel = modal.querySelector("#mfgProductionStages");
+    if (!toggle || !stagesPanel) return;
+
+    const storageKey = `fs_mfg_show_stages_${cid || 0}`;
+
+    // Restore previous preference (default = hidden).
+    let saved = null;
+    try {
+      saved = localStorage.getItem(storageKey);
+    } catch (_) {}
+
+    const initiallyOpen = saved === "1";
+    toggle.checked = initiallyOpen;
+    stagesPanel.classList.toggle("hidden", !initiallyOpen);
+
+    toggle.addEventListener("change", () => {
+      const open = !!toggle.checked;
+      stagesPanel.classList.toggle("hidden", !open);
+      try {
+        localStorage.setItem(storageKey, open ? "1" : "0");
+      } catch (_) {}
+
+      // First time the user expands: lazy-load the standards + stages.
+      if (open && !modal.dataset.mfgStagesLoaded) {
+        modal.dataset.mfgStagesLoaded = "1";
+        loadMfgStageStandards?.();
+        loadMfgStages?.();
+      }
+    });
+
+    // If user previously chose to show stages, lazy-load immediately.
+    if (initiallyOpen) {
+      modal.dataset.mfgStagesLoaded = "1";
+      loadMfgStageStandards?.();
+      loadMfgStages?.();
+    }
+  })();
+
+  /* Auto-generate the Stage Code from the Stage Name as the user types.
+     The code field is readonly in the template — this is what fills it. */
+  (function setupMfgStageCodeAutogen() {
+    const nameInput = modal.querySelector("[data-mfg-standard-name]");
+    const codeInput = modal.querySelector("[data-mfg-standard-code]");
+    if (!nameInput || !codeInput) return;
+
+    let sequenceCounter = 0;
+    const pad = (n, len = 3) => String(n).padStart(len, "0");
+
+    const slugify = (s) =>
+      String(s || "")
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+
+    nameInput.addEventListener("input", () => {
+      const name = nameInput.value;
+      if (!name) {
+        codeInput.value = "";
+        return;
+      }
+      const prefix = slugify(name).slice(0, 12) || "STAGE";
+      sequenceCounter += 1;
+      codeInput.value = `${prefix}-${pad(sequenceCounter)}`;
+    });
+  })();
+
+
+  /* -------------------------------------------------------
+     PRODUCTION STAGE TIMERS (incl. live countdown)
+  ------------------------------------------------------- */
+  // Tracks active setInterval handles so we can clear them on reload / close.
+  window.__mfgStageTimers = window.__mfgStageTimers || {};
+
+  function clearAllMfgStageTimers() {
+    try {
+      Object.keys(window.__mfgStageTimers || {}).forEach((key) => {
+        const t = window.__mfgStageTimers[key];
+        if (t && typeof t.intervalId === "number") {
+          clearInterval(t.intervalId);
+        }
+        delete window.__mfgStageTimers[key];
+      });
+    } catch (_) {}
+  }
+
+  // Clean up timers when the modal is closed.
+  modal.querySelectorAll("[data-close]").forEach(btn => {
+    btn.addEventListener("click", clearAllMfgStageTimers);
+  });
+
   const mfgStageList = modal.querySelector("[data-mfg-stage-list]");
 
   if (mfgStageList) {
@@ -135638,7 +138055,176 @@ async function openManufacturingOrderDetail(orderId) {
       return response;
     };
 
+    // ───────────────────────────────────────────────────────────
+    // STAGE STANDARDS LIST (Configure-a-Stage-Standard card)
+    // ───────────────────────────────────────────────────────────
+    const mfgStageStandardsHost =
+      modal.querySelector("[data-mfg-stage-standards]");
+
+    const loadMfgStageStandards = async () => {
+      if (!mfgStageStandardsHost) return;
+      mfgStageStandardsHost.innerHTML =
+        '<div class="text-sm text-slate-500">Loading stage standards…</div>';
+
+      try {
+        const result = await stageRequest(standardsUrl);
+        const rows = stageRows(result, "standards");
+        if (!rows.length) {
+          mfgStageStandardsHost.innerHTML =
+            '<div class="text-sm text-slate-500">No stage standards configured yet for this BOM.</div>';
+          return;
+        }
+
+        mfgStageStandardsHost.innerHTML = rows
+          .map((row) => {
+            const seq = Number(row.sequence_no || 0);
+            const minutes = Number(row.standard_minutes || 0);
+            const equip =
+              row.equipment_name ||
+              row.equipment ||
+              (row.equipment_asset_id ? `Asset #${row.equipment_asset_id}` : "—");
+            return `
+              <div class="border rounded p-2 text-sm flex flex-wrap items-center gap-3 justify-between">
+                <div class="flex flex-wrap items-center gap-3">
+                  <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-mono">#${stageEscape(seq)}</span>
+                  <div>
+                    <div class="font-medium">${stageEscape(row.stage_name || "Stage")}</div>
+                    <div class="text-[11px] text-slate-500">
+                      ${stageEscape(row.stage_code || "")} · ${minutes} min · Equip: ${stageEscape(equip)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+      } catch (err) {
+        console.error("[manufacturing stages] standards load failed:", err);
+        mfgStageStandardsHost.innerHTML =
+          `<div class="text-sm text-red-600">Could not load stage standards: ${stageEscape(err?.message || String(err))}</div>`;
+      }
+    };
+    window.loadMfgStageStandards = loadMfgStageStandards;
+
+    // ───────────────────────────────────────────────────────────
+    // LIVE COUNTDOWN HELPERS
+    // ───────────────────────────────────────────────────────────
+    // Always clear running intervals before re-rendering, otherwise
+    // every reload of the stage list would leak a setInterval per card.
+    const clearRunningStageTimers = () => {
+      try {
+        Object.keys(window.__mfgStageTimers || {}).forEach((key) => {
+          const t = window.__mfgStageTimers[key];
+          if (t && typeof t.intervalId === "number") {
+            clearInterval(t.intervalId);
+          }
+          delete window.__mfgStageTimers[key];
+        });
+      } catch (_) {}
+    };
+
+    const formatCountdown = (seconds) => {
+      // Negative seconds = "overtime" — prefix with minus sign so the
+      // user can see how far past the standard they've run.
+      const total = Number(seconds) || 0;
+      const negative = total < 0;
+      const abs = Math.abs(total);
+      const h = Math.floor(abs / 3600);
+      const m = Math.floor((abs % 3600) / 60);
+      const s = Math.floor(abs % 60);
+      const mm = String(m).padStart(2, "0");
+      const ss = String(s).padStart(2, "0");
+      const body = h ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+      return (negative ? "-" : "") + body;
+    };
+
+    // Re-render one stage card's elapsed + countdown cells, and toggle
+    // the overdue banner / warning classes when the standard is exceeded.
+    const tickStageCard = (card, opts) => {
+      if (!card) return;
+      const standardSeconds = Number(opts.standardSeconds) || 0;
+      const baseElapsed = Number(opts.baseElapsedSeconds) || 0;
+      const startedAt = Number(opts.startedAtMs) || Date.now();
+      const isRunning = !!opts.running;
+
+      const elapsedEl = card.querySelector("[data-stage-elapsed-display]");
+      const countEl = card.querySelector("[data-stage-countdown-display]");
+      const bannerEl = card.querySelector("[data-stage-overdue-banner]");
+
+      // If paused/completed, we just render the snapshot once and don't tick.
+      const liveElapsed = isRunning
+        ? baseElapsed + Math.floor((Date.now() - startedAt) / 1000)
+        : baseElapsed;
+      const remaining = standardSeconds - liveElapsed;
+
+      if (elapsedEl) {
+        elapsedEl.textContent = stageDuration(liveElapsed);
+      }
+
+      if (countEl) {
+        countEl.textContent = formatCountdown(remaining);
+        countEl.classList.remove(
+          "text-slate-700",
+          "text-amber-700",
+          "text-red-700"
+        );
+        if (standardSeconds <= 0) {
+          // No standard configured → neutral.
+          countEl.textContent = "—";
+          countEl.classList.add("text-slate-700");
+        } else if (remaining > 60) {
+          countEl.classList.add("text-slate-700");
+        } else if (remaining > 0) {
+          // Final minute — amber hint, no warning yet.
+          countEl.classList.add("text-amber-700");
+        } else {
+          // Standard reached / exceeded → red, but the stage keeps running.
+          countEl.classList.add("text-red-700");
+          card.classList.add("mfg-stage-overdue");
+        }
+      }
+
+      // Show / refresh the overdue banner the moment standard time is hit.
+      // We DO NOT stop the timer — the user may legitimately need to let the
+      // machine keep running past its configured standard duration.
+      if (standardSeconds > 0 && remaining <= 0) {
+        if (!bannerEl) {
+          const newBanner = document.createElement("div");
+          newBanner.setAttribute("data-stage-overdue-banner", "");
+          newBanner.className =
+            "mfg-stage-overdue-banner mt-2 px-3 py-2 rounded border border-amber-300 bg-amber-50 text-amber-800 text-xs flex items-start gap-2";
+          const overtimeSec = Math.abs(remaining);
+          newBanner.innerHTML = `
+            <span class="text-base leading-none">⚠</span>
+            <div>
+              <div class="font-semibold">Standard time reached</div>
+              <div class="mt-0.5">
+                The machine may still be running. Overtime:
+                <strong data-stage-overtime>${formatCountdown(-overtimeSec)}</strong>
+                — you can keep going and complete the stage when it's actually done.
+              </div>
+            </div>
+          `;
+          // Insert right after the elapsed/countdown row.
+          const headRow = card.querySelector(".mfg-stage-timer-row");
+          if (headRow && headRow.nextSibling) {
+            headRow.parentNode.insertBefore(newBanner, headRow.nextSibling);
+          } else {
+            card.appendChild(newBanner);
+          }
+        } else {
+          const overtimeEl = bannerEl.querySelector("[data-stage-overtime]");
+          if (overtimeEl) {
+            overtimeEl.textContent = formatCountdown(remaining); // remaining is negative
+          }
+        }
+      }
+    };
+
     const loadMfgStages = async () => {
+      // Stop any previously running tickers before re-rendering.
+      clearRunningStageTimers();
+
       mfgStageList.innerHTML =
         '<div class="text-sm text-slate-500">Loading production stages…</div>';
 
@@ -135657,8 +138243,12 @@ async function openManufacturingOrderDetail(orderId) {
           const status = String(stage.status || "pending").toLowerCase();
           const elapsed = Number(stage.elapsed_seconds || 0);
           const standard = Number(stage.standard_minutes || 45);
+          const standardSeconds = Math.max(0, Math.floor(standard * 60));
           const operator = stage.operator_name || "";
           const equipment = stage.equipment_name || "";
+          const isRunning = status === "running";
+          const remaining = standardSeconds - elapsed;
+          const isAlreadyOverdue = standardSeconds > 0 && remaining <= 0 && (isRunning);
 
           const actions = status === "pending"
             ? [["start", "Start"]]
@@ -135669,15 +138259,13 @@ async function openManufacturingOrderDetail(orderId) {
                 : [];
 
           return `
-            <div class="border rounded-lg p-3 mb-3" data-mfg-stage-card="${stageEscape(id)}">
+            <div class="border rounded-lg p-3 mb-3 ${isAlreadyOverdue ? "mfg-stage-overdue" : ""}"
+                 data-mfg-stage-card="${stageEscape(id)}">
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div class="font-semibold">${stageEscape(stage.stage_name || stage.name || stage.stage_code || "Production Stage")}</div>
                   <div class="text-xs text-slate-500">
                     Status: ${stageEscape(status)} · Standard: ${standard} min
-                  </div>
-                  <div class="text-sm mt-1">
-                    Elapsed: <strong>${stageDuration(elapsed)}</strong>
                   </div>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -135691,6 +138279,36 @@ async function openManufacturingOrderDetail(orderId) {
                   `).join("")}
                 </div>
               </div>
+
+              <div class="mfg-stage-timer-row grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                <div class="text-sm">
+                  <div class="text-[11px] uppercase tracking-wide text-slate-500">Elapsed</div>
+                  <div class="font-semibold text-slate-700 tabular-nums"
+                       data-stage-elapsed-display>${stageDuration(elapsed)}</div>
+                </div>
+                <div class="text-sm">
+                  <div class="text-[11px] uppercase tracking-wide text-slate-500">
+                    Countdown (standard ${standard} min)
+                  </div>
+                  <div class="font-semibold tabular-nums ${remaining > 60 ? "text-slate-700" : remaining > 0 ? "text-amber-700" : "text-red-700"}"
+                       data-stage-countdown-display>${standardSeconds > 0 ? formatCountdown(remaining) : "—"}</div>
+                </div>
+              </div>
+
+              ${isAlreadyOverdue ? `
+                <div class="mfg-stage-overdue-banner mt-2 px-3 py-2 rounded border border-amber-300 bg-amber-50 text-amber-800 text-xs flex items-start gap-2"
+                     data-stage-overdue-banner>
+                  <span class="text-base leading-none">⚠</span>
+                  <div>
+                    <div class="font-semibold">Standard time reached</div>
+                    <div class="mt-0.5">
+                      The machine may still be running. Overtime:
+                      <strong data-stage-overtime>${formatCountdown(remaining)}</strong>
+                      — you can keep going and complete the stage when it's actually done.
+                    </div>
+                  </div>
+                </div>
+              ` : ""}
 
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
                 <label class="text-xs">Operator
@@ -135721,6 +138339,51 @@ async function openManufacturingOrderDetail(orderId) {
             </div>
           `;
         }).join("");
+
+        // Start live tickers for every running stage.
+        stages.forEach((stage) => {
+          const id = stage.id ?? stage.stage_id;
+          const status = String(stage.status || "pending").toLowerCase();
+          if (status !== "running") return;
+
+          const card = mfgStageList.querySelector(
+            `[data-mfg-stage-card="${CSS.escape(String(id))}"]`
+          );
+          if (!card) return;
+
+          const standardSeconds = Math.max(
+            0,
+            Math.floor(Number(stage.standard_minutes || 0) * 60)
+          );
+          const baseElapsed = Number(stage.elapsed_seconds || 0);
+          const startedAtMs = Date.now();
+
+          // Render once immediately so the user sees correct numbers before
+          // the first 1-second tick.
+          tickStageCard(card, {
+            standardSeconds,
+            baseElapsedSeconds: baseElapsed,
+            startedAtMs,
+            running: true,
+          });
+
+          const intervalId = setInterval(() => {
+            // If the card has been replaced (e.g. after a reload), stop ticking.
+            if (!document.body.contains(card)) {
+              clearInterval(intervalId);
+              delete window.__mfgStageTimers[id];
+              return;
+            }
+            tickStageCard(card, {
+              standardSeconds,
+              baseElapsedSeconds: baseElapsed,
+              startedAtMs,
+              running: true,
+            });
+          }, 1000);
+
+          window.__mfgStageTimers[id] = { intervalId, card };
+        });
       } catch (error) {
         console.error("[manufacturing stages] Load failed:", error);
         mfgStageList.innerHTML = `
@@ -135729,6 +138392,7 @@ async function openManufacturingOrderDetail(orderId) {
           </div>`;
       }
     };
+    window.loadMfgStages = loadMfgStages;
 
     modal.querySelector("[data-mfg-apply-stage-standards]")
       ?.addEventListener("click", async () => {
@@ -135749,21 +138413,41 @@ async function openManufacturingOrderDetail(orderId) {
         const field = (selector) =>
           modal.querySelector(selector)?.value?.trim() || "";
 
-        const stageName = field("[data-mfg-stage-name]");
-        const stageCode = field("[data-mfg-stage-code]")
-          .toUpperCase()
-          .replace(/[^A-Z0-9_-]/g, "_");
-        const sequence = Number(field("[data-mfg-stage-sequence]") || 1);
-        const minutes = Number(field("[data-mfg-stage-minutes]") || 45);
-        const equipment = field("[data-mfg-stage-equipment]");
+        // FIX: the template uses data-mfg-standard-* (not data-mfg-stage-*).
+        // The previous handler read from non-existent selectors so saving
+        // silently no-op'd. Read from the correct ones here.
+        const stageName = field("[data-mfg-standard-name]");
+        const stageCode = field("[data-mfg-standard-code]");
+        const sequence = Number(field("[data-mfg-standard-sequence]") || 1);
+        const minutes = Number(field("[data-mfg-standard-minutes]") || 45);
 
-        if (!stageName || !stageCode) {
-          alert("Enter both a stage name and stage code.");
+        // The Default Equipment field is now a <select> populated with
+        // company fixed assets. The option's value is the asset name, and
+        // it carries the asset_id + asset_code in data-* attributes.
+        const equipSelect =
+          modal.querySelector("[data-mfg-standard-equipment]");
+        const equipment = equipSelect?.value?.trim() || "";
+        const selectedOpt = equipSelect?.selectedOptions?.[0];
+        const assetId = selectedOpt?.dataset?.assetId
+          ? Number(selectedOpt.dataset.assetId)
+          : null;
+        const assetCode = selectedOpt?.dataset?.assetCode || "";
+
+        if (!stageName) {
+          alert("Enter a stage name.");
+          modal.querySelector("[data-mfg-standard-name]")?.focus();
+          return;
+        }
+
+        if (!stageCode) {
+          alert("Stage code could not be generated. Type the stage name first.");
+          modal.querySelector("[data-mfg-standard-name]")?.focus();
           return;
         }
 
         if (!Number.isFinite(minutes) || minutes < 1) {
           alert("Standard minutes must be at least 1.");
+          modal.querySelector("[data-mfg-standard-minutes]")?.focus();
           return;
         }
 
@@ -135777,17 +138461,23 @@ async function openManufacturingOrderDetail(orderId) {
               sequence_no: sequence,
               standard_minutes: minutes,
               equipment_name: equipment,
+              // Send the asset id/code too — backend can ignore them if it
+              // doesn't yet persist them, but if it does, the link is saved.
+              equipment_asset_id: assetId,
+              equipment_asset_code: assetCode || null,
               active: true
             })
           });
 
-          modal.querySelector("[data-mfg-stage-name]").value = "";
-          modal.querySelector("[data-mfg-stage-code]").value = "";
-          modal.querySelector("[data-mfg-stage-sequence]").value = "1";
-          modal.querySelector("[data-mfg-stage-minutes]").value = "45";
-          modal.querySelector("[data-mfg-stage-equipment]").value = "";
+          // Reset the form for the next entry.
+          modal.querySelector("[data-mfg-standard-name]").value = "";
+          modal.querySelector("[data-mfg-standard-code]").value = "";
+          modal.querySelector("[data-mfg-standard-sequence]").value = "1";
+          modal.querySelector("[data-mfg-standard-minutes]").value = "45";
+          if (equipSelect) equipSelect.value = "";
 
-          alert("Stage standard saved.");
+          showToast?.("Stage standard saved.", "ok");
+          await loadMfgStageStandards?.();
           await loadMfgStages();
         } catch (error) {
           console.error("[manufacturing stages] Save standard failed:", error);
@@ -135839,7 +138529,12 @@ async function openManufacturingOrderDetail(orderId) {
       }
     });
 
-    loadMfgStages();
+    // NOTE: loadMfgStages() is intentionally NOT called unconditionally here.
+    // The "Production Stages & Timers" section is hidden by default behind
+    // the [data-mfg-stages-toggle] checkbox, and the standards + stages are
+    // lazy-loaded the first time the user expands it (see setupMfgStagesToggle
+    // above). This avoids an unnecessary API round-trip for users who don't
+    // track stage timing.
   }
 }
 // =====================================================
