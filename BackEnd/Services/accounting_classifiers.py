@@ -851,6 +851,13 @@ def _coa_role_from_text(
     # ----------------------------
     name_text = (name or "").strip().lower()
 
+    # Use account name and description for specific posting-role detection.
+    # Do not let broad COA section/category labels determine a specific role.
+    account_text = " ".join([
+        (name or ""),
+        (description or ""),
+    ]).lower()
+
     is_accum = any(k in name_text for k in (
         "accumulated depreciation",
         "accum depreciation",
@@ -1494,7 +1501,12 @@ def _coa_role_from_text(
         ):
             return "direct_materials_cost"
 
-        if has_any("cost of sales", "cost of goods sold", "cogs", "stock purchases"):
+        if any(term in account_text for term in (
+            "cost of sales",
+            "cost of goods sold",
+            "cogs",
+            "stock purchases",
+        )):
             return "cogs"
 
         if has_any("subcontractor", "subcontractor payments", "direct subcontractor"):
@@ -1853,6 +1865,22 @@ def _coa_role_from_text(
 
             return "lessor_security_deposit_current"
 
+    # ------------------------------------------------------------
+    # IFRS 16 LESSOR SECURITY DEPOSIT DISCOUNTING
+    # Day 1 financing benefit on interest-free refundable deposits
+    # ------------------------------------------------------------
+
+    if is_income and has_any(
+        "security deposit discount gain",
+        "lease security deposit discount gain",
+        "refundable deposit discount gain",
+        "discount on refundable lease deposit",
+        "initial recognition gain on security deposit",
+        "security deposit present value gain",
+        "lease deposit financing benefit",
+    ):
+        return "lessor_security_deposit_discount_gain"
+    
     # IFRS 16 disposal gain account
     # Only classify this account when its COA standard is IFRS 16.
     if (
@@ -2042,22 +2070,20 @@ def _coa_role_from_text(
     # ----------------------------
     # POS / inventory cost of sales
     # ----------------------------
-    if (
-        "cost of sales" in sec
-        or "cost of sales" in cat
-        or "cogs" in sec
-        or "cogs" in cat
-        or has_any(
-            "cost of goods sold",
-            "cost of sales",
-            "cogs",
-            "merchandise cost",
-            "inventory cost",
-            "goods sold",
-        )
-    ):
+    # Only classify an account as inventory COGS when its actual
+    # name or description identifies it as a cost-of-sales account.
+    # Never use generic COA section/category labels for this role.
+    if any(term in account_text for term in (
+        "cost of goods sold",
+        "cost of sales",
+        "inventory cost of sales",
+        "inventory cost",
+        "merchandise cost of sales",
+        "merchandise cost",
+        "goods sold",
+        "cogs",
+    )):
         return "inventory_cost_of_sales"
-
     # ----------------------------
     # IFRS 15 / contract revenue
     # ----------------------------

@@ -80742,12 +80742,65 @@ class DatabaseService:
                         "before automatic Day 1 posting."
                     )
 
-                if deposit_preview.get("discount_deferred"):
+                discount_deferred = self._bool(
+                    deposit_preview.get("discount_deferred")
+                )
+
+                discount_difference = round(
+                    deposit_amount - deposit_liability,
+                    2,
+                )
+
+                if discount_deferred and classification == "operating":
+                    if discount_difference <= 0:
+                        raise ValueError(
+                            "A positive security deposit discount difference "
+                            "is required."
+                        )
+
+                    discount_code = str(
+                        lease.get("security_deposit_discount_account_code") or ""
+                    ).strip()
+
+                    if not discount_code:
+                        raise ValueError(
+                            "Configure a deferred rental income account for "
+                            "the discounted security deposit."
+                        )
+
+                    discount_coa = self.fetch_one(
+                        f"""
+                        SELECT code
+                        FROM {self.company_schema(company_id)}.coa
+                        WHERE code = %s
+                        AND posting = TRUE
+                        LIMIT 1
+                        """,
+                        (discount_code,),
+                        cur=cur,
+                    )
+
+                    if not discount_coa:
+                        raise ValueError(
+                            f"Deferred rental income account {discount_code} "
+                            "is not a valid posting account."
+                        )
+
+                    lines.append({
+                        "account_code": discount_code,
+                        "debit": 0.0,
+                        "credit": discount_difference,
+                        "memo": (
+                            "Deferred rental income arising from the "
+                            "discounted refundable security deposit"
+                        ),
+                    })
+
+                elif discount_deferred and classification == "finance":
                     raise ValueError(
-                        "The discounted security deposit cannot be "
-                        "automatically posted yet. The accounting treatment "
-                        "for the difference between cash received and the "
-                        "initial deposit liability must first be configured."
+                        "Discounted security deposit accounting for finance "
+                        "leases must be incorporated into the net investment "
+                        "measurement before automatic posting."
                     )
 
                 deposit_liability = round(float(
@@ -80919,13 +80972,6 @@ class DatabaseService:
                         "security deposit liability"
                     ),
                 })
-
-                if round(deposit_amount - deposit_liability, 2) != 0:
-                    raise ValueError(
-                        "The security deposit cash receipt and initial "
-                        "liability do not match. Additional accounting "
-                        "treatment is required before posting."
-                    )
 
             # ---------------------------------------------------------
             # FINAL JOURNAL VALIDATION
