@@ -3460,6 +3460,413 @@ def api_auth_resend_confirm():
 
     return jsonify({"message": "If that email exists, a confirmation email has been sent."}), 200
 
+
+# ============================================================
+# SIGNIN FINALIZATION HELPER
+# ============================================================
+# Shared between:
+#   - /api/auth/signin        (when otp_enabled=False: OTP step skipped)
+#   - /api/auth/signin/verify-otp (after OTP verified)
+#
+# Responsibilities:
+#   1. Resolve the user's primary/native membership (or ops membership).
+#   2. Build the allowed_company_ids list.
+#   3. Register / refresh the trusted-device fingerprint.
+#   4. Update last_login_at + last_activity_at.
+#   5. Mint the JWT.
+#
+# Returns: {
+#   "token": <jwt>,
+#   "response": {
+#       "message": "signin OK",
+#       "token": <jwt>,
+#       "product": "finsage" | "FinSage Nexus",
+#       "user": { ... }
+#   }
+# }
+#
+# Raises PermissionError when a hard access gate fails; the caller
+# must convert that into the appropriate 4xx response.
+# ============================================================
+def _finalize_signin_session(
+    *,
+    user,
+    user_id,
+    is_ops_signin,
+    device_id_raw=None,
+    client_ip=None,
+    user_agent=None,
+):
+    base_role = str(user.get("user_role") or "viewer").strip()
+    user_type = str(user.get("user_type") or "Enterprise").strip()
+    product = "ops" if is_ops_signin else "finsage"
+
+    primary_mem = None
+
+    if is_ops_signin:
+        primary_mem = db_service.fetch_one(
+            """
+            SELECT
+                cu.company_id,
+                cu.role,
+                cu.access_scope,
+                cu.membership_kind,
+                cu.is_primary,
+                cu.product_access,
+                cu.ops_is_active
+            FROM public.company_users cu
+            WHERE cu.user_id = %s
+              AND cu.is_active = TRUE
+              AND cu.is_primary = TRUE
+              AND COALESCE(cu.access_scope, 'core') = 'core'
+            ORDER BY
+                CASE WHEN cu.membership_kind = 'primary'
+                     THEN 0 ELSE 1 END,
+                cu.company_id
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+
+        if not primary_mem:
+            primary_mem = db_service.fetch_one(
+                """
+                SELECT
+                    cu.company_id,
+                    cu.role,
+                    cu.access_scope,
+                    cu.membership_kind,
+                    cu.is_primary,
+                    cu.product_access,
+                    cu.ops_is_active
+                FROM public.company_users cu
+                JOIN public.companies c
+                  ON c.id = cu.company_id
+                WHERE cu.user_id = %s
+                  AND cu.is_active = TRUE
+                  AND COALESCE(cu.access_scope, 'core') = 'core'
+                  AND (
+                      c.owner_user_id = cu.user_id
+                      OR cu.membership_kind = 'primary'
+                  )
+                ORDER BY
+                    CASE WHEN c.owner_user_id = cu.user_id
+                         THEN 0 ELSE 1 END,
+                    CASE WHEN cu.membership_kind = 'primary'
+                         THEN 0 ELSE 1 END,
+                    cu.company_id
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+    else:
+        memberships = db_service.fetch_all(
+            """
+            SELECT
+                company_id,
+                role,
+                access_scope,
+                is_primary,
+                membership_kind
+            FROM public.company_users
+            WHERE user_id = %s
+              AND is_active = TRUE
+            ORDER BY company_id
+            """,
+            (user_id,),
+        ) or []
+
+        if not memberships:
+            raise PermissionError({
+                "error": "No active company membership is available.",
+                "code": "NO_ACTIVE_COMPANY",
+            })
+
+        primary_memberships = [
+            row for row in memberships if bool(row.get("is_primary"))
+        ]
+
+        if len(memberships) > 1 and len(primary_memberships) != 1:
+            raise PermissionError({
+                "error": (
+                    "Your account's primary company configuration "
+                    "must be corrected before signing in."
+                ),
+                "code": "PRIMARY_COMPANY_REQUIRED",
+            })
+
+        primary_mem = (
+            primary_memberships[0]
+            if primary_memberships
+            else memberships[0]
+        )
+
+    if is_ops_signin:
+        allowed_rows = db_service.fetch_all(
+            """
+            SELECT DISTINCT company_id
+            FROM public.company_users
+            WHERE user_id = %s
+              AND is_active = TRUE
+              AND COALESCE(access_scope, 'core') = 'core'
+            ORDER BY company_id
+            """,
+            (user_id,),
+        ) or []
+    else:
+        allowed_rows = db_service.fetch_all(
+            """
+            SELECT company_id
+            FROM public.company_users
+            WHERE user_id = %s
+              AND is_active = TRUE
+            ORDER BY company_id
+            """,
+            (user_id,),
+        ) or []
+
+    allowed_company_ids = sorted({
+        int(row["company_id"])
+        for row in allowed_rows
+        if row.get("company_id") is not None
+    })
+
+    company_id = (
+        int(primary_mem["company_id"])
+        if primary_mem and primary_mem.get("company_id") is not None
+        else None
+    )
+
+    if is_ops_signin:
+        if not company_id:
+            raise PermissionError({
+                "error": "No primary company is available for FinSage Nexus.",
+                "code": "OPS_NO_PRIMARY_COMPANY",
+            })
+
+        if not db_service.user_has_ops_access(company_id, user_id):
+            raise PermissionError({
+                "error": "Your account does not have FinSage Nexus access.",
+                "code": "OPS_ACCESS_DENIED",
+            })
+
+    if primary_mem:
+        user_role = normalize_role(primary_mem.get("role") or base_role)
+        access_scope = str(
+            primary_mem.get("access_scope") or "core"
+        ).strip().lower()
+    else:
+        user_role = normalize_role(base_role)
+        access_scope = "core"
+
+    if is_ops_signin:
+        access_scope = "core"
+
+    dashboards = get_dashboard_access(user_role, access_scope)
+    default_dashboard = resolve_default_dashboard(
+        user_type=user_type,
+        role=user_role,
+        access_scope=access_scope,
+    )
+
+    owned_rows = db_service.fetch_all(
+        """
+        SELECT id AS company_id
+        FROM public.companies
+        WHERE owner_user_id = %s
+        ORDER BY id
+        """,
+        (user_id,),
+    ) or []
+
+    allowed_company_ids = sorted(
+        set(allowed_company_ids)
+        | {
+            int(row["company_id"])
+            for row in owned_rows
+            if row.get("company_id") is not None
+        }
+        | ({company_id} if company_id is not None else set())
+    )
+
+    company_name = None
+    industry = None
+    sub_industry = None
+
+    if company_id is not None:
+        company = db_service.fetch_one(
+            """
+            SELECT name, industry, sub_industry
+            FROM public.companies
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (company_id,),
+        )
+
+        if company:
+            company_name = company.get("name")
+            industry = company.get("industry")
+            sub_industry = company.get("sub_industry")
+
+    # Register / refresh the trusted-device fingerprint.
+    # Device tracking failures must NEVER block sign-in.
+    try:
+        device_id = None
+        if device_id_raw:
+            try:
+                device_id = str(uuid.UUID(str(device_id_raw)))
+            except (ValueError, TypeError, AttributeError):
+                device_id = None
+
+        if device_id:
+            new_device = db_service.fetch_one(
+                """
+                INSERT INTO public.auth_trusted_devices (
+                    user_id,
+                    product,
+                    device_id,
+                    last_ip,
+                    user_agent
+                )
+                VALUES (%s, %s, %s::uuid, %s::inet, %s)
+                ON CONFLICT (user_id, product, device_id)
+                DO NOTHING
+                RETURNING id
+                """,
+                (
+                    user_id,
+                    product,
+                    device_id,
+                    client_ip,
+                    user_agent,
+                ),
+            )
+
+            if new_device:
+                try:
+                    from html import escape
+
+                    safe_product = (
+                        "FinSage Nexus"
+                        if is_ops_signin
+                        else "FinSage"
+                    )
+                    safe_ip = escape(client_ip or "Unavailable")
+                    safe_agent = escape(user_agent or "Unavailable")
+
+                    send_mail(
+                        to_email=user["email"],
+                        subject=(
+                            f"New device sign-in to {safe_product}"
+                        ),
+                        text_body=(
+                            f"A new browser/device signed in to "
+                            f"{safe_product} using your account.\n\n"
+                            f"IP address: {client_ip or 'Unavailable'}\n"
+                            f"Browser/device: "
+                            f"{user_agent or 'Unavailable'}\n\n"
+                            "If this wasn't you, change your "
+                            "password and contact support."
+                        ),
+                        html_body=(
+                            "<p>A new browser/device signed in to "
+                            f"{safe_product} using your account.</p>"
+                            f"<p><strong>IP address:</strong> "
+                            f"{safe_ip}<br>"
+                            f"<strong>Browser/device:</strong> "
+                            f"{safe_agent}</p>"
+                            "<p>If this wasn't you, change your "
+                            "password and contact support.</p>"
+                        ),
+                    )
+                except Exception:
+                    current_app.logger.exception(
+                        "[AUTH] New-device alert email failed "
+                        "for user %s",
+                        user_id,
+                    )
+            else:
+                db_service.execute_sql(
+                    """
+                    UPDATE public.auth_trusted_devices
+                    SET last_seen_at = NOW(),
+                        last_ip = %s::inet,
+                        user_agent = %s
+                    WHERE user_id = %s
+                      AND product = %s
+                      AND device_id = %s::uuid
+                    """,
+                    (
+                        client_ip,
+                        user_agent,
+                        user_id,
+                        product,
+                        device_id,
+                    ),
+                )
+    except Exception:
+        current_app.logger.exception(
+            "[AUTH] Device tracking failed for user %s",
+            user_id,
+        )
+
+    token = make_jwt(
+        user_id=user_id,
+        email=user["email"],
+        role=user_role,
+        user_type=user_type,
+        company_id=company_id,
+        access_scope=access_scope,
+        allowed_company_ids=allowed_company_ids,
+    )
+
+    try:
+        db_service.execute_sql(
+            """
+            UPDATE public.users
+            SET last_login_at = NOW(),
+                last_activity_at = NOW()
+            WHERE id = %s
+            """,
+            (user_id,),
+        )
+    except Exception:
+        current_app.logger.exception(
+            "[AUTH] Could not update login activity for user %s",
+            user_id,
+        )
+
+    response_payload = {
+        "message": "signin OK",
+        "token": token,
+        "product": "FinSage Nexus" if is_ops_signin else "finsage",
+        "user": {
+            "id": user_id,
+            "email": user["email"],
+            "role": user_role,
+            "user_type": user_type,
+            "access_scope": access_scope,
+            "is_confirmed": bool(user.get("is_confirmed")),
+            "company_id": company_id,
+            "primary_company_id": company_id,
+            "company_name": company_name,
+            "industry": industry,
+            "sub_industry": sub_industry,
+            "allowed_company_ids": allowed_company_ids,
+            "dashboards": dashboards,
+            "default_dashboard": default_dashboard,
+            # Surface the user's security preferences so the client
+            # can configure its idle-lock engine immediately.
+            "otp_enabled": bool(user.get("otp_enabled", True)),
+            "session_lock_enabled": bool(user.get("session_lock_enabled", True)),
+            "idle_lock_minutes": int(user.get("idle_lock_minutes") or 10),
+        },
+    }
+
+    return {"token": token, "response": response_payload}
+
+
 @app.route("/api/auth/signin", methods=["POST", "OPTIONS"])
 @cross_origin(
     origins=[
@@ -3827,6 +4234,54 @@ def api_auth_signin():
                 _password_age_days = 0
 
         _password_expired = _force_change or _password_age_days >= PASSWORD_EXPIRY_DAYS
+
+        # =========================================================
+        # OPTIONAL OTP STEP
+        #
+        # If the user has explicitly turned OFF OTP for sign-in
+        # (security preferences -> otp_enabled = False) AND the
+        # password is NOT expired, we issue the JWT directly and
+        # skip the email OTP challenge entirely.
+        #
+        # Password-expiry flow ALWAYS requires an OTP challenge,
+        # because that OTP is also used to authorize the password
+        # change at /api/auth/signin/force-change-password.
+        #
+        # FUTURE (different-device enforcement):
+        #   When the requesting device_id is not in
+        #   auth_trusted_devices for this user/product, OTP must
+        #   be enforced regardless of otp_enabled.
+        # =========================================================
+        _user_otp_enabled = bool(user.get("otp_enabled", True))
+
+        # Track device fingerprint for the upcoming "different device"
+        # enforcement. Currently only used for the new-device alert.
+        _device_id_raw = str(data.get("device_id") or "").strip()
+
+        if (not _user_otp_enabled) and (not _password_expired):
+            current_app.logger.info(
+                "[AUTH] OTP step skipped for user %s (otp_enabled=False, password current)",
+                user_id,
+            )
+
+            # Finalize the session without an OTP challenge.
+            try:
+                finalized = _finalize_signin_session(
+                    user=user,
+                    user_id=user_id,
+                    is_ops_signin=is_ops_signin,
+                    device_id_raw=_device_id_raw,
+                    client_ip=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent", "")[:1000],
+                )
+            except PermissionError as pe:
+                err_body = pe.args[0] if pe.args else {"error": "Access denied."}
+                status = 403
+                if isinstance(err_body, dict) and err_body.get("code") == "NO_ACTIVE_COMPANY":
+                    status = 403
+                return jsonify(err_body), status
+
+            return jsonify(finalized["response"]), 200
 
         # Send OTP after all existing access checks pass.
         try:
@@ -4361,6 +4816,11 @@ def api_auth_signin_verify_otp():
                 "allowed_company_ids": allowed_company_ids,
                 "dashboards": dashboards,
                 "default_dashboard": default_dashboard,
+                # Surface the user's security preferences so the client
+                # can configure its idle-lock engine immediately.
+                "otp_enabled": bool(user.get("otp_enabled", True)),
+                "session_lock_enabled": bool(user.get("session_lock_enabled", True)),
+                "idle_lock_minutes": int(user.get("idle_lock_minutes") or 10),
             },
         }), 200
 
@@ -4542,6 +5002,10 @@ def api_auth_me():
             "password_age_days": _calc_password_age(user),
             "password_expiring_soon": 80 <= _calc_password_age(user) < 90,
             "password_expired": bool(user.get("force_password_change")) or _calc_password_age(user) >= 90,
+            # Security preferences surfaced to the client.
+            "otp_enabled": bool(user.get("otp_enabled", True)),
+            "session_lock_enabled": bool(user.get("session_lock_enabled", True)),
+            "idle_lock_minutes": int(user.get("idle_lock_minutes") or 10),
         }
 
         app.logger.warning(
@@ -4654,6 +5118,10 @@ def api_auth_me():
         "dashboards": dashboards,
         "permissions": permissions,
         "default_dashboard": default_dashboard,
+        # Security preferences surfaced to the client.
+        "otp_enabled": bool(user.get("otp_enabled", True)),
+        "session_lock_enabled": bool(user.get("session_lock_enabled", True)),
+        "idle_lock_minutes": int(user.get("idle_lock_minutes") or 10),
     }
 
     return jsonify(out), 200
@@ -4816,6 +5284,46 @@ def api_auth_reauth():
 
         user_id = int(user["id"])
         user_email = str(user["email"]).strip()
+
+        # =========================================================
+        # OPTIONAL OTP STEP FOR SESSION UNLOCK
+        #
+        # If the user has turned OFF OTP (otp_enabled=False) we
+        # unlock the session as soon as the password has been
+        # verified. No email challenge is issued.
+        #
+        # Future enhancement:
+        #   When OTP-on-different-device is implemented, even
+        #   otp_enabled=False users will need to complete the OTP
+        #   step when unlocking from a new device.
+        # =========================================================
+        _user_otp_enabled = bool(user.get("otp_enabled", True))
+
+        if not _user_otp_enabled:
+            current_app.logger.info(
+                "[AUTH] Session-unlock OTP skipped for user %s (otp_enabled=False)",
+                user_id,
+            )
+
+            try:
+                db_service.execute_sql(
+                    """
+                    UPDATE public.users
+                    SET last_activity_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (user_id,),
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "[AUTH] Could not update activity after session unlock"
+                )
+
+            return jsonify({
+                "ok": True,
+                "otp_required": False,
+                "message": "Session unlocked.",
+            }), 200
 
         try:
             challenge_id = issue_email_otp(
@@ -5362,6 +5870,128 @@ def api_change_email_verify():
     except Exception:
         current_app.logger.exception("[AUTH] Change email verify failed")
         return jsonify({"error": "Could not verify and update email."}), 500
+
+
+# ============================================================
+# SECURITY PREFERENCES (optional OTP / session lock)
+# ============================================================
+# GET  /api/auth/security-preferences
+#     Returns the user's security preference flags.
+#
+# PUT  /api/auth/security-preferences
+#     Partial update of the user's security preferences.
+#     Body (all fields optional):
+#         {
+#             "otp_enabled":            true|false,
+#             "session_lock_enabled":   true|false,
+#             "idle_lock_minutes":      <int 1..240>
+#         }
+#
+# Defaults when fields are missing on the users row:
+#     otp_enabled          = true
+#     session_lock_enabled = true
+#     idle_lock_minutes    = 10
+#
+# Future enhancement:
+#   Even when otp_enabled = false, OTP will be enforced on sign-in
+#   from an unrecognised device (device_id not in
+#   auth_trusted_devices). The toggle here is purely the user's
+#   standing preference for the trusted-device path.
+# ============================================================
+@app.route("/api/auth/security-preferences", methods=["GET", "OPTIONS"])
+@require_auth
+def api_get_security_preferences():
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        payload = getattr(request, "jwt_payload", {}) or {}
+        user_id = payload.get("user_id") or payload.get("sub")
+
+        if not user_id:
+            return jsonify({"error": "Not authenticated."}), 401
+
+        prefs = db_service.get_user_security_preferences(int(user_id))
+
+        return jsonify({
+            "ok": True,
+            "preferences": prefs,
+        }), 200
+
+    except Exception:
+        current_app.logger.exception(
+            "[AUTH] Could not load security preferences"
+        )
+        return jsonify({
+            "error": "Could not load security preferences."
+        }), 500
+
+
+@app.route("/api/auth/security-preferences", methods=["PUT", "OPTIONS"])
+@require_auth
+def api_update_security_preferences():
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        payload = getattr(request, "jwt_payload", {}) or {}
+        user_id = payload.get("user_id") or payload.get("sub")
+
+        if not user_id:
+            return jsonify({"error": "Not authenticated."}), 401
+
+        body = request.get_json(silent=True) or {}
+
+        otp_enabled = body.get("otp_enabled")
+        session_lock_enabled = body.get("session_lock_enabled")
+        idle_lock_minutes = body.get("idle_lock_minutes")
+
+        # Type-coerce / validate only the keys the caller actually sent.
+        if otp_enabled is not None:
+            if not isinstance(otp_enabled, bool):
+                return jsonify({
+                    "error": "otp_enabled must be a boolean."
+                }), 400
+
+        if session_lock_enabled is not None:
+            if not isinstance(session_lock_enabled, bool):
+                return jsonify({
+                    "error": "session_lock_enabled must be a boolean."
+                }), 400
+
+        if idle_lock_minutes is not None:
+            try:
+                idle_lock_minutes = int(idle_lock_minutes)
+            except (TypeError, ValueError):
+                return jsonify({
+                    "error": "idle_lock_minutes must be an integer between 1 and 240."
+                }), 400
+
+        prefs = db_service.update_user_security_preferences(
+            int(user_id),
+            otp_enabled=otp_enabled,
+            session_lock_enabled=session_lock_enabled,
+            idle_lock_minutes=idle_lock_minutes,
+        )
+
+        current_app.logger.info(
+            "[AUTH] Security preferences updated user_id=%s prefs=%s",
+            user_id,
+            prefs,
+        )
+
+        return jsonify({
+            "ok": True,
+            "preferences": prefs,
+        }), 200
+
+    except Exception:
+        current_app.logger.exception(
+            "[AUTH] Could not update security preferences"
+        )
+        return jsonify({
+            "error": "Could not update security preferences."
+        }), 500
 
 
 # ────────────────────────────────────────────────────────────────

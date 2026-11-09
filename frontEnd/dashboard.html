@@ -29416,6 +29416,81 @@ body{
                   </div>
                 </div>
 
+                <!-- ===================================================
+                     SECURITY PREFERENCES
+                     Two checkboxes:
+                       1. Enable OTP for sign-in (otp_enabled)
+                       2. Enable session lock after inactivity (session_lock_enabled)
+                     When #2 is on, an "Idle lock minutes" input lets
+                     the user pick the timeout (1..240 minutes,
+                     defaults to 10).
+
+                     Future enhancement:
+                       When the user signs in from a different device,
+                       OTP will be enforced regardless of #1.
+                     =================================================== -->
+                <div class="rounded-xl border border-slate-200 p-3 mb-4">
+                  <h4 class="text-sm font-semibold text-slate-700 mb-2">Security</h4>
+                  <p class="text-[11px] text-slate-500 mb-3">
+                    Control how FinSage verifies your identity. When OTP is
+                    off, you will not be sent a verification code on sign-in
+                    (the session is still locked after the idle timeout
+                    below if that option is enabled).
+                  </p>
+
+                  <form id="accountSecurityPrefsForm" class="space-y-3">
+                    <!-- OTP for sign in -->
+                    <label class="flex items-start gap-3 cursor-pointer">
+                      <input type="checkbox" id="accOtpEnabled"
+                        class="mt-[2px] w-4 h-4 accent-[var(--fs-navy)]" />
+                      <span>
+                        <span class="block text-sm font-medium text-slate-800">
+                          Enable OTP for sign in
+                        </span>
+                        <span class="block text-[11px] text-slate-500">
+                          When ticked, you receive a one-time code by email
+                          each time you sign in. Untick to skip the OTP
+                          step (less secure).
+                        </span>
+                      </span>
+                    </label>
+
+                    <!-- Session lock -->
+                    <label class="flex items-start gap-3 cursor-pointer">
+                      <input type="checkbox" id="accSessionLockEnabled"
+                        class="mt-[2px] w-4 h-4 accent-[var(--fs-navy)]" />
+                      <span>
+                        <span class="block text-sm font-medium text-slate-800">
+                          Enable session lock
+                        </span>
+                        <span class="block text-[11px] text-slate-500">
+                          When ticked, FinSage locks your session after the
+                          idle timeout below. Untick to never auto-lock.
+                        </span>
+                      </span>
+                    </label>
+
+                    <!-- Idle lock minutes (only used when session lock is on) -->
+                    <div id="accIdleLockRow" class="flex items-center gap-2 pl-7">
+                      <label for="accIdleLockMinutes" class="text-xs text-slate-600">
+                        Lock after
+                      </label>
+                      <input type="number" id="accIdleLockMinutes" min="1" max="240" step="1"
+                        value="10"
+                        class="w-20 border rounded-lg px-2 py-1 text-sm" />
+                      <span class="text-xs text-slate-600">minutes of inactivity</span>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                      <button type="submit"
+                        class="inline-flex items-center px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">
+                        Save security preferences
+                      </button>
+                      <span id="accSecurityPrefsMsg" class="text-xs"></span>
+                    </div>
+                  </form>
+                </div>
+
                 <!-- Login alerts -->
                 <div class="border-t pt-3 mt-3 text-xs text-slate-500 space-y-2">
                   <div class="flex items-center justify-between">

@@ -8678,6 +8678,31 @@ function bindSessionUnlockForm() {
           }
         );
 
+        // ============================================================
+        // OPTIONAL OTP FOR SESSION UNLOCK
+        //
+        // If the user has turned OFF OTP (otp_enabled = false),
+        // the backend unlocks the session as soon as the password
+        // is verified, and returns { otp_required: false }.
+        // We do NOT enter the OTP step in that case.
+        // ============================================================
+        if (res?.ok && res?.otp_required === false) {
+          stopCountdown();
+          challengeId = "";
+
+          setMessage(
+            res.message || "Session unlocked successfully.",
+            "success"
+          );
+
+          clearOtpBoxes();
+
+          // Backend has cleared the lock state.
+          unlockSession();
+
+          return;
+        }
+
         if (!res?.otp_required || !res?.challenge_id) {
           throw new Error(
             "Email verification could not be started. Please check the session verification backend."
@@ -8830,18 +8855,87 @@ function bindAccountMenuNavigation() {
 } 
 
 (function setupIdleLock() {
-  const IDLE_LIMIT_MS = 10 * 60 * 1000;
+  // ============================================================
+  // IDLE SESSION LOCK ENGINE
+  //
+  // Honours the per-user security preference session_lock_enabled:
+  //
+  //   - When the user has session_lock_enabled = false (set in
+  //     Account settings -> Security), the idle timer is NEVER
+  //     armed and the session is not auto-locked for inactivity.
+  //   - When session_lock_enabled = true (default), the idle
+  //     timer fires after idle_lock_minutes (default 10) of
+  //     inactivity and locks the session.
+  //
+  // The user's preferences are read from:
+  //   1. window.FS_USER_SESSION_LOCK_ENABLED / FS_USER_IDLE_LOCK_MINUTES
+  //      (set immediately after signin, before /api/auth/me lands)
+  //   2. window.currentUser.session_lock_enabled / idle_lock_minutes
+  //      (populated by /api/auth/me on every page load)
+  //
+  // applyIdleLockPreferences() re-arms the timer whenever the
+  // user updates their preferences via Account settings.
+  // ============================================================
+  const DEFAULT_IDLE_LIMIT_MS = 10 * 60 * 1000;
   let idleTimer = null;
+  let currentIdleLimitMs = DEFAULT_IDLE_LIMIT_MS;
+
+  function resolveIdleLimitMs() {
+    // 1. window.currentUser (most authoritative, refreshed by /api/auth/me)
+    const cu = window.currentUser || {};
+    if (typeof cu.session_lock_enabled === "boolean" && !cu.session_lock_enabled) {
+      return null; // disabled
+    }
+    if (Number.isFinite(cu.idle_lock_minutes)) {
+      const m = Number(cu.idle_lock_minutes);
+      if (m > 0) return m * 60 * 1000;
+    }
+
+    // 2. window.FS_USER_* set right after signin
+    if (typeof window.FS_USER_SESSION_LOCK_ENABLED === "boolean" && !window.FS_USER_SESSION_LOCK_ENABLED) {
+      return null;
+    }
+    if (Number.isFinite(window.FS_USER_IDLE_LOCK_MINUTES)) {
+      const m = Number(window.FS_USER_IDLE_LOCK_MINUTES);
+      if (m > 0) return m * 60 * 1000;
+    }
+
+    return DEFAULT_IDLE_LIMIT_MS;
+  }
+
+  function isSessionLockEnabled() {
+    return resolveIdleLimitMs() !== null;
+  }
 
   function triggerIdleLock() {
     if (sessionStorage.getItem("fs_session_locked") === "1") return;
+
+    // Final guard: respect the live preference at the moment the
+    // timer would have fired (the user might have just toggled
+    // it off via Account settings).
+    if (!isSessionLockEnabled()) {
+      return;
+    }
+
     lockSession("idle");
   }
 
   function resetIdleTimer() {
     clearTimeout(idleTimer);
+    idleTimer = null;
+
     if (sessionStorage.getItem("fs_session_locked") === "1") return;
-    idleTimer = setTimeout(triggerIdleLock, IDLE_LIMIT_MS);
+
+    const limitMs = resolveIdleLimitMs();
+
+    // session_lock_enabled = false -> do not arm the timer.
+    if (limitMs === null) {
+      currentIdleLimitMs = 0;
+      return;
+    }
+
+    currentIdleLimitMs = limitMs;
+    idleTimer = setTimeout(triggerIdleLock, limitMs);
   }
 
   ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach((eventName) => {
@@ -8849,6 +8943,14 @@ function bindAccountMenuNavigation() {
   });
 
   window.resetIdleTimer = resetIdleTimer;
+
+  // Public hook: call this whenever the user's security preferences
+  // change (signin completed, /api/auth/me landed, or Account
+  // settings saved) so the timer reflects the new state.
+  window.applyIdleLockPreferences = function applyIdleLockPreferences() {
+    resetIdleTimer();
+  };
+
   resetIdleTimer();
 
   if (sessionStorage.getItem("fs_session_locked") === "1") {
@@ -9121,10 +9223,205 @@ function bindAccountChangeEmailForm() {
 function initAccountSettingsForms() {
   bindAccountChangePasswordForm();
   bindAccountChangeEmailForm();
+  bindAccountSecurityPreferencesForm();
 
   const user = window.currentUser || {};
   showPasswordExpiryBanner(user);
+
+  // Hydrate the security preferences checkboxes from the loaded
+  // user. The form binding above will also fetch the latest values
+  // from the backend the first time it renders.
+  hydrateAccountSecurityPreferencesUI();
 }
+
+// ============================================================
+// ACCOUNT SETTINGS -> SECURITY PREFERENCES
+//
+// Two checkboxes that the user controls:
+//   - "Enable OTP for sign in" (otp_enabled)
+//   - "Enable session lock"    (session_lock_enabled)
+//
+// The optional "Idle lock minutes" input lets the user pick how
+// long the session can sit idle before it is locked (only used
+// when session_lock_enabled = true). Defaults to 10 minutes.
+//
+// Future enhancement (NOT in this change):
+//   Even when otp_enabled = false, OTP will be enforced on
+//   sign-in from an unrecognised device (device_id not in
+//   auth_trusted_devices). The toggle here is the user's standing
+//   preference for trusted-device sign-ins only.
+// ============================================================
+function bindAccountSecurityPreferencesForm() {
+  const form = document.getElementById("accountSecurityPrefsForm");
+  if (!form || form.dataset.bound === "1") return;
+  form.dataset.bound = "1";
+
+  const otpCheckbox = document.getElementById("accOtpEnabled");
+  const lockCheckbox = document.getElementById("accSessionLockEnabled");
+  const idleMinutesInput = document.getElementById("accIdleLockMinutes");
+  const msg = document.getElementById("accSecurityPrefsMsg");
+  const idleRow = document.getElementById("accIdleLockRow");
+
+  function syncIdleRowVisibility() {
+    if (!lockCheckbox || !idleRow) return;
+    idleRow.style.display = lockCheckbox.checked ? "" : "none";
+  }
+
+  if (lockCheckbox) {
+    lockCheckbox.addEventListener("change", syncIdleRowVisibility);
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    if (msg) {
+      msg.textContent = "Saving...";
+      msg.className = "text-xs text-slate-600";
+    }
+
+    const payload = {};
+
+    if (otpCheckbox) {
+      payload.otp_enabled = !!otpCheckbox.checked;
+    }
+    if (lockCheckbox) {
+      payload.session_lock_enabled = !!lockCheckbox.checked;
+    }
+    if (idleMinutesInput && lockCheckbox && lockCheckbox.checked) {
+      const minutes = parseInt(idleMinutesInput.value, 10);
+      if (!Number.isFinite(minutes) || minutes < 1 || minutes > 240) {
+        if (msg) {
+          msg.textContent = "Idle lock minutes must be between 1 and 240.";
+          msg.className = "text-xs text-red-600";
+        }
+        return;
+      }
+      payload.idle_lock_minutes = minutes;
+    }
+
+    try {
+      const res = await apiFetch("/api/auth/security-preferences", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+
+      if (res?.ok && res?.preferences) {
+        const prefs = res.preferences;
+
+        // Update the in-memory user object so the rest of the app
+        // sees the new state immediately (and the idle-lock engine
+        // can re-arm).
+        if (window.currentUser) {
+          window.currentUser.otp_enabled = !!prefs.otp_enabled;
+          window.currentUser.session_lock_enabled = !!prefs.session_lock_enabled;
+          window.currentUser.idle_lock_minutes = Number(prefs.idle_lock_minutes) || 10;
+        }
+
+        window.FS_USER_OTP_ENABLED = !!prefs.otp_enabled;
+        window.FS_USER_SESSION_LOCK_ENABLED = !!prefs.session_lock_enabled;
+        window.FS_USER_IDLE_LOCK_MINUTES = Number(prefs.idle_lock_minutes) || 10;
+
+        // Re-arm the idle timer with the new preferences.
+        try {
+          if (typeof window.applyIdleLockPreferences === "function") {
+            window.applyIdleLockPreferences();
+          }
+        } catch (e) {
+          console.warn("[SecurityPrefs] applyIdleLockPreferences failed", e);
+        }
+
+        if (msg) {
+          msg.textContent = "Security preferences saved.";
+          msg.className = "text-xs text-emerald-700";
+        }
+
+        // Re-sync the UI with the canonical values returned by
+        // the backend (in case of clamping / defaulting).
+        hydrateAccountSecurityPreferencesUI(prefs);
+      } else {
+        if (msg) {
+          msg.textContent = res?.error || "Could not save security preferences.";
+          msg.className = "text-xs text-red-600";
+        }
+      }
+    } catch (err) {
+      if (msg) {
+        msg.textContent = err?.message || "Could not save security preferences.";
+        msg.className = "text-xs text-red-600";
+      }
+    }
+  });
+
+  syncIdleRowVisibility();
+}
+
+function hydrateAccountSecurityPreferencesUI(prefs) {
+  // Prefer explicitly-passed prefs; otherwise fall back to window.currentUser,
+  // then to the FS_USER_* globals set right after signin.
+  const src = prefs || window.currentUser || {};
+
+  const otpCheckbox = document.getElementById("accOtpEnabled");
+  const lockCheckbox = document.getElementById("accSessionLockEnabled");
+  const idleMinutesInput = document.getElementById("accIdleLockMinutes");
+  const idleRow = document.getElementById("accIdleLockRow");
+
+  let otpEnabled = src.otp_enabled;
+  if (typeof otpEnabled !== "boolean") {
+    otpEnabled = typeof window.FS_USER_OTP_ENABLED === "boolean"
+      ? window.FS_USER_OTP_ENABLED
+      : true;
+  }
+
+  let lockEnabled = src.session_lock_enabled;
+  if (typeof lockEnabled !== "boolean") {
+    lockEnabled = typeof window.FS_USER_SESSION_LOCK_ENABLED === "boolean"
+      ? window.FS_USER_SESSION_LOCK_ENABLED
+      : true;
+  }
+
+  let idleMinutes = src.idle_lock_minutes;
+  if (!Number.isFinite(idleMinutes)) {
+    idleMinutes = Number.isFinite(window.FS_USER_IDLE_LOCK_MINUTES)
+      ? window.FS_USER_IDLE_LOCK_MINUTES
+      : 10;
+  }
+
+  if (otpCheckbox) otpCheckbox.checked = !!otpEnabled;
+  if (lockCheckbox) lockCheckbox.checked = !!lockEnabled;
+  if (idleMinutesInput) idleMinutesInput.value = Number(idleMinutes) || 10;
+
+  if (idleRow) {
+    idleRow.style.display = lockEnabled ? "" : "none";
+  }
+}
+
+// Lazy-load security preferences from the backend the first
+// time the Account settings screen is opened, so the checkboxes
+// show authoritative values (not just whatever was on the JWT).
+async function ensureAccountSecurityPreferencesLoaded() {
+  if (window.__FS_SECURITY_PREFS_LOADED__) return;
+  window.__FS_SECURITY_PREFS_LOADED__ = true;
+
+  try {
+    const res = await apiFetch("/api/auth/security-preferences", {
+      method: "GET",
+    });
+
+    if (res?.ok && res?.preferences) {
+      hydrateAccountSecurityPreferencesUI(res.preferences);
+    }
+  } catch (err) {
+    console.warn("[SecurityPrefs] load failed", err);
+  }
+}
+
+window.ensureAccountSecurityPreferencesLoaded =
+  ensureAccountSecurityPreferencesLoaded;
+window.hydrateAccountSecurityPreferencesUI =
+  hydrateAccountSecurityPreferencesUI;
+window.bindAccountSecurityPreferencesForm =
+  bindAccountSecurityPreferencesForm;
+
   // ==========================================================
   // 12) STORAGE KEYS + AUTH REQUIRED SCREENS
   // ==========================================================
@@ -9220,6 +9517,31 @@ function bindHeaderAuthButtons() {
     try {
       const me = await window.apiFetch(window.ENDPOINTS.auth.me, { method: "GET" });
       window.currentUser = me;
+
+      // ============================================================
+      // Propagate the user's security preferences to globals so
+      // the idle-lock engine and Account settings UI can read them
+      // without repeatedly chasing window.currentUser.
+      // ============================================================
+      if (me && typeof me.otp_enabled === "boolean") {
+        window.FS_USER_OTP_ENABLED = me.otp_enabled;
+      }
+      if (me && typeof me.session_lock_enabled === "boolean") {
+        window.FS_USER_SESSION_LOCK_ENABLED = me.session_lock_enabled;
+      }
+      if (me && Number.isFinite(me.idle_lock_minutes)) {
+        window.FS_USER_IDLE_LOCK_MINUTES = Number(me.idle_lock_minutes);
+      }
+
+      // Re-arm the idle-lock timer with the freshly loaded prefs.
+      try {
+        if (typeof window.applyIdleLockPreferences === "function") {
+          window.applyIdleLockPreferences();
+        }
+      } catch (e) {
+        console.warn("[Auth] applyIdleLockPreferences failed after /me", e);
+      }
+
       console.log("[Auth] User loaded successfully:", me);
       return me;
     } catch (err) {
@@ -9249,12 +9571,61 @@ function bindHeaderAuthButtons() {
         return;
       }
 
+      // ============================================================
+      // OPTIONAL OTP STEP
+      //
+      // When the user has otp_enabled = false, the backend returns
+      // the JWT directly: { token, user }.
+      //
+      // When otp_enabled = true, the backend returns
+      // { otp_required: true, challenge_id } and we must redirect
+      // the user to the dedicated signin.html page to complete
+      // the email OTP step.
+      // ============================================================
+      if (data.otp_required && data.challenge_id && !data.token) {
+        const signinUrl =
+          (window.getAppBasePath ? window.getAppBasePath() : "") +
+          "/signin.html?challenge_id=" +
+          encodeURIComponent(data.challenge_id) +
+          "&email=" +
+          encodeURIComponent(email);
+
+        if (data.password_expired) {
+          // Password-expiry path still goes through OTP, then the
+          // user is asked to change their password.
+          window.location.replace(signinUrl + "&force_change=1");
+        } else {
+          window.location.replace(signinUrl);
+        }
+        return;
+      }
+
+      if (!data.token) {
+        alert(data.error || "Login failed. Please try again.");
+        return;
+      }
+
       setToken(data.token, true);
       localStorage.setItem("token", data.token);
 
       store.set("userEmail", email);
 
       const user = data.user || {};
+
+      // ============================================================
+      // SECURITY PREFERENCES — captured from the signin response
+      // so the client idle-lock engine can be configured before
+      // the next /api/auth/me refresh lands.
+      // ============================================================
+      if (typeof user.otp_enabled === "boolean") {
+        window.FS_USER_OTP_ENABLED = user.otp_enabled;
+      }
+      if (typeof user.session_lock_enabled === "boolean") {
+        window.FS_USER_SESSION_LOCK_ENABLED = user.session_lock_enabled;
+      }
+      if (Number.isFinite(user.idle_lock_minutes)) {
+        window.FS_USER_IDLE_LOCK_MINUTES = Number(user.idle_lock_minutes);
+      }
 
       const companyName = user.company_name || (user.company && user.company.name);
 
@@ -9284,6 +9655,16 @@ function bindHeaderAuthButtons() {
       }
 
       if (!store.get(K.TRIAL)) store.set(K.TRIAL, "1");
+
+      // Re-apply the idle-lock engine with the user's preferences
+      // as soon as we have them.
+      try {
+        if (typeof window.applyIdleLockPreferences === "function") {
+          window.applyIdleLockPreferences();
+        }
+      } catch (e) {
+        console.warn("[Auth] applyIdleLockPreferences failed", e);
+      }
 
       // if you have applyLoggedInUI elsewhere, keep it
       if (typeof applyLoggedInUI === "function") applyLoggedInUI();
@@ -13704,6 +14085,12 @@ async function switchScreen(
           window.hydrateAccountSettings?.();
           if (typeof initAccountSettingsForms === "function") {
             initAccountSettingsForms();
+          }
+          // Pull the authoritative security preferences from the
+          // backend the first time the screen is opened so the
+          // checkboxes are never out-of-sync with the database.
+          if (typeof window.ensureAccountSecurityPreferencesLoaded === "function") {
+            window.ensureAccountSecurityPreferencesLoaded();
           }
         } catch (e) {
           console.warn("Account settings hydrate failed:", e);
