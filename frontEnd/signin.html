@@ -1077,10 +1077,15 @@
     setStatus("");
 
     try {
+      // Send the device fingerprint on the initial signin call too,
+      // so the backend can register/refresh the trusted-device row
+      // even when OTP is skipped (otp_enabled = false).
+      const deviceId = getOrCreateSigninDeviceId();
+
       const res = await fetch(`${API_BASE}/api/auth/signin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, product })
+        body: JSON.stringify({ email, password, product, device_id: deviceId })
       });
 
       const data = await readJsonResponse(res);
@@ -1133,9 +1138,29 @@
         return;
       }
 
-      // Do not accept the old password-only sign-in response.
+      // ============================================================
+      // OTP SKIPPED PATH
+      //
+      // When the user has otp_enabled = false (set in Account settings
+      // -> Security), the backend returns the JWT directly without
+      // issuing an OTP challenge:
+      //
+      //   { token: "<jwt>", user: { ... otp_enabled, session_lock_enabled, idle_lock_minutes } }
+      //
+      // In that case we finalise the sign-in immediately. The
+      // security-preference fields ride inside data.user, so they
+      // are persisted into localStorage("fs_user") by finishSignIn()
+      // and the idle-lock engine on dashboard.html will pick them up
+      // on the next page load.
+      // ============================================================
+      if (data.token && data.user) {
+        finishSignIn(data, email);
+        return;
+      }
+
+      // Truly unexpected response shape.
       throw new Error(
-        "The server did not request email verification. Sign-in was stopped."
+        "The server returned an unexpected sign-in response. Please try again."
       );
 
     } catch (err) {
