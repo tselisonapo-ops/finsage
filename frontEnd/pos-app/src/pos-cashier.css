@@ -1,23 +1,13 @@
 /* ============================================================
    POS CASHIER SCREEN — responsive layout + sticky command bar
    ============================================================
-   Drop this file next to your other POS stylesheets (e.g. pos.css)
-   and import it once from the cashier screen entry, e.g.:
+   v2: fixes edge spacing — everything stays inside the page
+   padding. The command bar no longer bleeds to the viewport
+   edges. The POS grid (left panel + cart) is now fully
+   responsive with proper gaps and breakpoints.
 
+   Import from CashierScreen.jsx:
        import "./pos-cashier.css";
-
-   What it adds:
-     1. Responsive layout for the cashier screen at every
-        breakpoint (large desktop → tablet → phone).
-     2. A single sticky "command bar" that combines the old
-        .pos-header (hero) and .status-strip (KPIs) into one
-        element that:
-          - Sticks to the top of the viewport (position: sticky).
-          - Can be PINNED (always visible, default) or UNPINNED
-            (auto-collapses when the cashier scrolls down, peeks
-            when they scroll up or hover the bar).
-          - Has explicit pin (📌 / 📍) and collapse (▲ / ▼)
-            buttons so the cashier can override the auto behaviour.
 
    State classes applied by CashierScreen.jsx:
      .pos-command-bar              (always)
@@ -27,17 +17,14 @@
    ============================================================ */
 
 /* ------------------------------------------------------------
-   1. Layout shell
+   1. Page shell — edge spacing on all sides
    ------------------------------------------------------------ */
 
 .pos-page {
-  /* The page itself just needs to be a normal block container.
-     The command bar sticks inside the viewport, not inside a
-     scroll container, so we leave the body as the scroller. */
   width: 100%;
-  max-width: 1680px;
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 0 16px 32px;
+  padding: 12px 20px 32px;
   box-sizing: border-box;
 }
 
@@ -54,20 +41,20 @@
   flex-direction: column;
   gap: 0;
 
-  margin: 0 -16px 16px; /* bleed to the edges of .pos-page padding */
+  /* NO negative margin — stay inside the page padding so there
+     is visible space on the left and right edges. */
+  margin: 0 0 16px;
   padding: 14px 18px 12px;
 
   background: linear-gradient(135deg, #073f34 0%, #075b49 58%, #087968 100%);
   color: #fff;
 
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 0 0 16px 16px;
+  border-radius: 14px;
   box-shadow: 0 10px 24px rgba(7, 63, 52, 0.18);
 
-  /* Smooth open/close transition for the KPI strip + brand area */
   transition: max-height 0.22s ease, padding 0.22s ease,
-    box-shadow 0.18s ease, opacity 0.18s ease, transform 0.22s ease;
-  max-height: 320px; /* generous ceiling; the KPI strip decides actual height */
+    box-shadow 0.18s ease, opacity 0.18s ease;
+  max-height: 340px;
   overflow: hidden;
 }
 
@@ -159,8 +146,6 @@
   transform: translateY(-1px);
 }
 
-/* Keep the existing .header-actions styling intact but make sure
-   it sits nicely on the green background. */
 .pos-cmd-top .header-actions {
   display: flex;
   align-items: center;
@@ -194,13 +179,11 @@
 
 .pos-cmd-kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
-
-  /* Animate the strip open/closed independently of the bar */
   transition: opacity 0.18s ease, max-height 0.22s ease,
     margin-top 0.22s ease, padding-top 0.22s ease;
   max-height: 200px;
@@ -252,21 +235,14 @@
    3. Pin / collapse / peek states
    ------------------------------------------------------------ */
 
-/* When pinned: bar stays put (default sticky already does this).
-   We just make sure it has full opacity and a stronger shadow so
-   it reads as "locked" to the user. */
 .pos-command-bar.is-pinned {
   box-shadow: 0 12px 28px rgba(7, 63, 52, 0.28);
 }
 
-/* When unpinned AND expanded: same look as pinned, but the
-   scroll listener may collapse it at any moment. */
 .pos-command-bar.is-unpinned.is-expanded {
   box-shadow: 0 8px 22px rgba(7, 63, 52, 0.22);
 }
 
-/* Collapsed: shrink the bar to a slim ribbon. Hide the KPI
-   strip and the tagline, shrink the brand to a single line. */
 .pos-command-bar.is-collapsed {
   max-height: 52px;
   padding-top: 8px;
@@ -290,11 +266,8 @@
   font-size: 0.95rem;
 }
 
-/* Peeking: the bar was collapsed but is now temporarily expanded
-   because the user scrolled up or hovered it. Restore full
-   height with a soft fade-in. */
 .pos-command-bar.is-collapsed.is-peeking {
-  max-height: 320px;
+  max-height: 340px;
   box-shadow: 0 14px 32px rgba(7, 63, 52, 0.32);
 }
 
@@ -311,53 +284,167 @@
 }
 
 /* ------------------------------------------------------------
-   4. Responsive — tablet (≤1024px)
+   4. POS Grid — two-column layout (left panel + cart)
+   This section makes the main work area fully responsive.
    ------------------------------------------------------------ */
 
-@media (max-width: 1024px) {
+.pos-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(340px, 1.1fr);
+  gap: 16px;
+  align-items: stretch;
+  width: 100%;
+}
+
+/* Left panel (scan + quick actions + product list) */
+.left-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Cart / right panel */
+.cart-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+  border: 1px solid #dce6e2;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* Make the cart table scroll internally on small screens
+   instead of stretching the page wider. */
+.cart-table {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Product / menu grids */
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+/* Quick actions row */
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-actions button {
+  flex: 1 1 auto;
+  min-width: 90px;
+}
+
+/* Scan card */
+.scan-card {
+  background: #fff;
+  border: 1px solid #dce6e2;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+/* Summary card */
+.summary-card {
+  padding: 14px;
+}
+
+/* Payment bar */
+.payment-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-top: 1px solid #dce6e2;
+  background: #f8faf9;
+}
+
+.payment-bar button {
+  flex: 1 1 auto;
+  min-width: 100px;
+}
+
+/* Empty state */
+.empty-state {
+  padding: 32px 16px;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------
+   5. Responsive — laptop / small desktop (≤1280px)
+   ------------------------------------------------------------ */
+
+@media (max-width: 1280px) {
   .pos-page {
-    padding: 0 12px 24px;
+    padding: 10px 16px 28px;
   }
 
-  .pos-command-bar {
-    margin: 0 -12px 12px;
-    padding: 12px 14px 10px;
-    border-radius: 0 0 14px 14px;
+  .pos-grid {
+    grid-template-columns: minmax(280px, 1fr) minmax(300px, 1.1fr);
+    gap: 14px;
   }
 
-  .pos-cmd-top {
-    gap: 10px;
-  }
-
-  .pos-cmd-brand h1 {
-    font-size: clamp(1rem, 2.6vw, 1.4rem);
-  }
-
-  .pos-cmd-kpis {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  .menu-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     gap: 8px;
   }
 }
 
 /* ------------------------------------------------------------
-   5. Responsive — phone (≤768px)
+   6. Responsive — tablet (≤1024px)
+   ------------------------------------------------------------ */
+
+@media (max-width: 1024px) {
+  .pos-page {
+    padding: 8px 14px 24px;
+  }
+
+  .pos-command-bar {
+    padding: 12px 14px 10px;
+  }
+
+  .pos-cmd-brand h1 {
+    font-size: clamp(1rem, 2.6vw, 1.3rem);
+  }
+
+  .pos-cmd-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+  }
+
+  /* Two-column grid tightens */
+  .pos-grid {
+    grid-template-columns: minmax(260px, 1fr) minmax(280px, 1fr);
+    gap: 12px;
+  }
+
+  .menu-grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  }
+}
+
+/* ------------------------------------------------------------
+   7. Responsive — phone landscape & portrait (≤768px)
    ------------------------------------------------------------ */
 
 @media (max-width: 768px) {
   .pos-page {
-    padding: 0 8px 16px;
+    padding: 8px 10px 20px;
   }
 
-  /* Collapse the command bar by default on phones so it doesn't
-     eat vertical real estate. The cashier can still pin/expand
-     it via the buttons. */
   .pos-command-bar {
-    margin: 0 -8px 10px;
     padding: 10px 12px 8px;
-    border-radius: 0 0 12px 12px;
   }
 
-  /* Stack brand / controls / nav vertically. */
+  /* Stack brand / controls / nav vertically */
   .pos-cmd-top {
     flex-direction: column;
     align-items: stretch;
@@ -377,7 +464,6 @@
     font-size: 0.72rem;
   }
 
-  /* Pin/collapse controls + nav on one row. */
   .pos-cmd-controls,
   .pos-cmd-top .header-actions {
     justify-content: flex-start;
@@ -392,7 +478,7 @@
     font-size: 0.78rem;
   }
 
-  /* KPI strip becomes a 2-column grid that wraps. */
+  /* KPI strip becomes a 2-column grid */
   .pos-cmd-kpis {
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
@@ -404,19 +490,56 @@
     font-size: 0.85rem;
   }
 
-  /* Collapsed state on phones is even slimmer. */
   .pos-command-bar.is-collapsed {
     max-height: 48px;
+  }
+
+  /* Stack the grid: left panel on top, cart below */
+  .pos-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Cart panel gets a max-height so the page doesn't become
+     endlessly tall on phones — the cart scrolls internally. */
+  .cart-panel {
+    max-height: 70vh;
+  }
+
+  .menu-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+  }
+
+  /* Quick actions wrap into a 2-column grid on phones */
+  .quick-actions button {
+    flex: 1 1 40%;
+    min-width: 0;
+  }
+
+  /* Payment bar wraps buttons */
+  .payment-bar {
+    flex-direction: column;
+  }
+
+  .payment-bar button {
+    width: 100%;
+    flex: 1 1 100%;
   }
 }
 
 /* ------------------------------------------------------------
-   6. Responsive — small phone (≤420px)
+   8. Responsive — small phone (≤420px)
    ------------------------------------------------------------ */
 
 @media (max-width: 420px) {
+  .pos-page {
+    padding: 6px 8px 16px;
+  }
+
   .pos-command-bar {
     padding: 8px 10px 6px;
+    border-radius: 12px;
   }
 
   .pos-cmd-brand h1 {
@@ -430,7 +553,6 @@
     font-size: 0.9rem;
   }
 
-  /* Single-column KPI strip so each value gets a full row. */
   .pos-cmd-kpis {
     grid-template-columns: 1fr;
     gap: 6px;
@@ -443,10 +565,19 @@
   .pos-kpi > strong {
     font-size: 0.8rem;
   }
+
+  .menu-grid {
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 6px;
+  }
+
+  .quick-actions button {
+    flex: 1 1 100%;
+  }
 }
 
 /* ------------------------------------------------------------
-   7. Reduced motion
+   9. Reduced motion
    ------------------------------------------------------------ */
 
 @media (prefers-reduced-motion: reduce) {
@@ -460,15 +591,8 @@
 }
 
 /* ------------------------------------------------------------
-   8. Legacy compatibility
-   ------------------------------------------------------------
-   The original markup used .pos-header and .status-strip. The
-   refactor moves all of that into .pos-command-bar, but other
-   POS screens (CustomerScreen, PriceCheckScreen, QuoteScreen,
-   ReturnScreen, OrderScreen) still emit those classes. Keep
-   them working by aliasing the same look onto the legacy
-   selectors. These rules are intentionally kept simple so they
-   don't fight the new command-bar styles above. */
+   10. Legacy compatibility
+   ------------------------------------------------------------ */
 
 .pos-header {
   display: flex;
@@ -508,7 +632,7 @@
 
 .status-strip.compact {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
   margin: 0 0 14px;
   padding: 12px 14px;
