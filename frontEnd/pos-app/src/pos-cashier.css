@@ -1,0 +1,551 @@
+/* ============================================================
+   POS CASHIER SCREEN — responsive layout + sticky command bar
+   ============================================================
+   Drop this file next to your other POS stylesheets (e.g. pos.css)
+   and import it once from the cashier screen entry, e.g.:
+
+       import "./pos-cashier.css";
+
+   What it adds:
+     1. Responsive layout for the cashier screen at every
+        breakpoint (large desktop → tablet → phone).
+     2. A single sticky "command bar" that combines the old
+        .pos-header (hero) and .status-strip (KPIs) into one
+        element that:
+          - Sticks to the top of the viewport (position: sticky).
+          - Can be PINNED (always visible, default) or UNPINNED
+            (auto-collapses when the cashier scrolls down, peeks
+            when they scroll up or hover the bar).
+          - Has explicit pin (📌 / 📍) and collapse (▲ / ▼)
+            buttons so the cashier can override the auto behaviour.
+
+   State classes applied by CashierScreen.jsx:
+     .pos-command-bar              (always)
+     .is-pinned / .is-unpinned    (pin toggle)
+     .is-expanded / .is-collapsed (collapse toggle)
+     .is-peeking                  (transient hover / scroll-up peek)
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   1. Layout shell
+   ------------------------------------------------------------ */
+
+.pos-page {
+  /* The page itself just needs to be a normal block container.
+     The command bar sticks inside the viewport, not inside a
+     scroll container, so we leave the body as the scroller. */
+  width: 100%;
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: 0 16px 32px;
+  box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------
+   2. The combined command bar (hero + KPIs + pin controls)
+   ------------------------------------------------------------ */
+
+.pos-command-bar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+
+  margin: 0 -16px 16px; /* bleed to the edges of .pos-page padding */
+  padding: 14px 18px 12px;
+
+  background: linear-gradient(135deg, #073f34 0%, #075b49 58%, #087968 100%);
+  color: #fff;
+
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 10px 24px rgba(7, 63, 52, 0.18);
+
+  /* Smooth open/close transition for the KPI strip + brand area */
+  transition: max-height 0.22s ease, padding 0.22s ease,
+    box-shadow 0.18s ease, opacity 0.18s ease, transform 0.22s ease;
+  max-height: 320px; /* generous ceiling; the KPI strip decides actual height */
+  overflow: hidden;
+}
+
+/* --- Top row: brand + sync + controls + nav --- */
+
+.pos-cmd-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pos-cmd-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.pos-cmd-brand .eyebrow {
+  color: #8de8d9;
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pos-cmd-brand h1 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.4vw, 1.6rem);
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  line-height: 1.15;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pos-cmd-tagline {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.4;
+}
+
+.pos-sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.pos-cmd-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pos-cmd-pin,
+.pos-cmd-collapse {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.pos-cmd-pin:hover,
+.pos-cmd-collapse:hover {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+/* Keep the existing .header-actions styling intact but make sure
+   it sits nicely on the green background. */
+.pos-cmd-top .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pos-cmd-top .header-actions button,
+.pos-cmd-top .header-actions a {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.pos-cmd-top .header-actions button:hover,
+.pos-cmd-top .header-actions a:hover {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+/* --- Bottom row: KPI strip --- */
+
+.pos-cmd-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+
+  /* Animate the strip open/closed independently of the bar */
+  transition: opacity 0.18s ease, max-height 0.22s ease,
+    margin-top 0.22s ease, padding-top 0.22s ease;
+  max-height: 200px;
+  overflow: hidden;
+}
+
+.pos-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pos-kpi > span {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pos-kpi > strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pos-kpi-terminal select.compact-select,
+.pos-kpi-terminal .scan-input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.95);
+  color: #073f34;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------
+   3. Pin / collapse / peek states
+   ------------------------------------------------------------ */
+
+/* When pinned: bar stays put (default sticky already does this).
+   We just make sure it has full opacity and a stronger shadow so
+   it reads as "locked" to the user. */
+.pos-command-bar.is-pinned {
+  box-shadow: 0 12px 28px rgba(7, 63, 52, 0.28);
+}
+
+/* When unpinned AND expanded: same look as pinned, but the
+   scroll listener may collapse it at any moment. */
+.pos-command-bar.is-unpinned.is-expanded {
+  box-shadow: 0 8px 22px rgba(7, 63, 52, 0.22);
+}
+
+/* Collapsed: shrink the bar to a slim ribbon. Hide the KPI
+   strip and the tagline, shrink the brand to a single line. */
+.pos-command-bar.is-collapsed {
+  max-height: 52px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  box-shadow: 0 4px 12px rgba(7, 63, 52, 0.18);
+}
+
+.pos-command-bar.is-collapsed .pos-cmd-kpis {
+  max-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  opacity: 0;
+  border-top-color: transparent;
+}
+
+.pos-command-bar.is-collapsed .pos-cmd-tagline {
+  display: none;
+}
+
+.pos-command-bar.is-collapsed .pos-cmd-brand h1 {
+  font-size: 0.95rem;
+}
+
+/* Peeking: the bar was collapsed but is now temporarily expanded
+   because the user scrolled up or hovered it. Restore full
+   height with a soft fade-in. */
+.pos-command-bar.is-collapsed.is-peeking {
+  max-height: 320px;
+  box-shadow: 0 14px 32px rgba(7, 63, 52, 0.32);
+}
+
+.pos-command-bar.is-collapsed.is-peeking .pos-cmd-kpis {
+  max-height: 200px;
+  margin-top: 12px;
+  padding-top: 12px;
+  opacity: 1;
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+
+.pos-command-bar.is-collapsed.is-peeking .pos-cmd-tagline {
+  display: block;
+}
+
+/* ------------------------------------------------------------
+   4. Responsive — tablet (≤1024px)
+   ------------------------------------------------------------ */
+
+@media (max-width: 1024px) {
+  .pos-page {
+    padding: 0 12px 24px;
+  }
+
+  .pos-command-bar {
+    margin: 0 -12px 12px;
+    padding: 12px 14px 10px;
+    border-radius: 0 0 14px 14px;
+  }
+
+  .pos-cmd-top {
+    gap: 10px;
+  }
+
+  .pos-cmd-brand h1 {
+    font-size: clamp(1rem, 2.6vw, 1.4rem);
+  }
+
+  .pos-cmd-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+  }
+}
+
+/* ------------------------------------------------------------
+   5. Responsive — phone (≤768px)
+   ------------------------------------------------------------ */
+
+@media (max-width: 768px) {
+  .pos-page {
+    padding: 0 8px 16px;
+  }
+
+  /* Collapse the command bar by default on phones so it doesn't
+     eat vertical real estate. The cashier can still pin/expand
+     it via the buttons. */
+  .pos-command-bar {
+    margin: 0 -8px 10px;
+    padding: 10px 12px 8px;
+    border-radius: 0 0 12px 12px;
+  }
+
+  /* Stack brand / controls / nav vertically. */
+  .pos-cmd-top {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .pos-cmd-brand {
+    flex: 1 1 auto;
+  }
+
+  .pos-cmd-brand h1 {
+    font-size: 1.05rem;
+    white-space: normal;
+  }
+
+  .pos-cmd-tagline {
+    font-size: 0.72rem;
+  }
+
+  /* Pin/collapse controls + nav on one row. */
+  .pos-cmd-controls,
+  .pos-cmd-top .header-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .pos-cmd-top .header-actions button,
+  .pos-cmd-top .header-actions a {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 8px 10px;
+    font-size: 0.78rem;
+  }
+
+  /* KPI strip becomes a 2-column grid that wraps. */
+  .pos-cmd-kpis {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+
+  .pos-kpi > strong {
+    font-size: 0.85rem;
+  }
+
+  /* Collapsed state on phones is even slimmer. */
+  .pos-command-bar.is-collapsed {
+    max-height: 48px;
+  }
+}
+
+/* ------------------------------------------------------------
+   6. Responsive — small phone (≤420px)
+   ------------------------------------------------------------ */
+
+@media (max-width: 420px) {
+  .pos-command-bar {
+    padding: 8px 10px 6px;
+  }
+
+  .pos-cmd-brand h1 {
+    font-size: 0.98rem;
+  }
+
+  .pos-cmd-pin,
+  .pos-cmd-collapse {
+    width: 32px;
+    height: 32px;
+    font-size: 0.9rem;
+  }
+
+  /* Single-column KPI strip so each value gets a full row. */
+  .pos-cmd-kpis {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .pos-kpi > span {
+    font-size: 0.6rem;
+  }
+
+  .pos-kpi > strong {
+    font-size: 0.8rem;
+  }
+}
+
+/* ------------------------------------------------------------
+   7. Reduced motion
+   ------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .pos-command-bar,
+  .pos-command-bar *,
+  .pos-command-bar *::before,
+  .pos-command-bar *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* ------------------------------------------------------------
+   8. Legacy compatibility
+   ------------------------------------------------------------
+   The original markup used .pos-header and .status-strip. The
+   refactor moves all of that into .pos-command-bar, but other
+   POS screens (CustomerScreen, PriceCheckScreen, QuoteScreen,
+   ReturnScreen, OrderScreen) still emit those classes. Keep
+   them working by aliasing the same look onto the legacy
+   selectors. These rules are intentionally kept simple so they
+   don't fight the new command-bar styles above. */
+
+.pos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #073f34 0%, #075b49 58%, #087968 100%);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(7, 63, 52, 0.18);
+}
+
+.pos-header .eyebrow {
+  color: #8de8d9;
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pos-header h1 {
+  margin: 2px 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: #fff;
+}
+
+.pos-header p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.status-strip.compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f4f7f5;
+  border: 1px solid #dce6e2;
+}
+
+.status-strip.compact > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.status-strip.compact > div > span {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #687a75;
+}
+
+.status-strip.compact > div > strong {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #172b27;
+}
+
+@media (max-width: 768px) {
+  .pos-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+
+  .status-strip.compact {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

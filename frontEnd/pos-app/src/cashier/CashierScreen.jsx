@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getCompanyContext, getPosMode, companyUsesInventory, getCurrency } from "../config.js";import { money } from "../utils/currency.js";
 import { posApi } from "../services/posApi.js";
 import { OrderScreen } from "./OrderScreen.jsx";
@@ -8,6 +8,10 @@ import {
   getPendingOfflineSales,
   updateOfflineSale,
 } from "../utils/posOfflineDb.js";
+
+// Responsive cashier layout + sticky command bar (hero + KPIs
+// combined, with pin / collapse / peek behaviour).
+import "../pos-cashier.css";
 
 const fsToken =
   sessionStorage.getItem("fs_user_token") ||
@@ -73,6 +77,98 @@ export function CashierPage() {
     { payment_method: "cash", amount: "" },
     { payment_method: "card", amount: "" },
   ]);
+
+  // ============================================================
+  // COMMAND BAR (combined hero + KPIs) — pin / collapse / peek
+  //
+  // pinned (default true)  : the command bar is always visible at
+  //                          the top of the viewport.
+  // collapsed (default false): when unpinned, the bar shrinks to a
+  //                          slim ribbon so it doesn't obscure the
+  //                          sale/cart area.
+  // peeking                : transient state — when the bar is
+  //                          collapsed and the user scrolls back up
+  //                          or hovers near the top edge, the bar
+  //                          expands again until they move away.
+  //
+  // The pattern mirrors the FinSage dashboard header
+  // (#appHeader .header-collapsed / .header-peek) so cashiers get
+  // the same muscle memory as on the main app.
+  // ============================================================
+  const [commandBarPinned, setCommandBarPinned] = useState(
+    () => localStorage.getItem("pos_cmd_pinned") !== "false"
+  );
+  const [commandBarCollapsed, setCommandBarCollapsed] = useState(
+    () => localStorage.getItem("pos_cmd_collapsed") === "true"
+  );
+  const [commandBarPeeking, setCommandBarPeeking] = useState(false);
+  const lastScrollY = useRef(0);
+
+  // Persist pin/collapse so a refresh keeps the cashier's choice.
+  useEffect(() => {
+    localStorage.setItem("pos_cmd_pinned", String(commandBarPinned));
+  }, [commandBarPinned]);
+
+  useEffect(() => {
+    localStorage.setItem("pos_cmd_collapsed", String(commandBarCollapsed));
+  }, [commandBarCollapsed]);
+
+  // Auto-collapse when the user scrolls down, auto-peek when they
+  // scroll back up — but ONLY when the bar is unpinned.
+  useEffect(() => {
+    function handleScroll() {
+      if (commandBarPinned) return;
+
+      const y = window.scrollY || document.documentElement.scrollTop;
+      const prev = lastScrollY.current;
+      lastScrollY.current = y;
+
+      // Scrolling down past 12px -> collapse + stop peeking.
+      if (y > prev && y > 12) {
+        if (!commandBarCollapsed) setCommandBarCollapsed(true);
+        if (commandBarPeeking) setCommandBarPeeking(false);
+        return;
+      }
+
+      // Scrolling up -> peek so the user can grab the bar again.
+      if (y < prev && y > 0) {
+        if (commandBarCollapsed && !commandBarPeeking) {
+          setCommandBarPeeking(true);
+        }
+      }
+    }
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [commandBarPinned, commandBarCollapsed, commandBarPeeking]);
+
+  // Click handlers for the pin / collapse buttons.
+  function togglePin() {
+    const next = !commandBarPinned;
+    setCommandBarPinned(next);
+
+    // If the user re-pins, immediately expand and stop peeking.
+    if (next) {
+      setCommandBarCollapsed(false);
+      setCommandBarPeeking(false);
+    }
+  }
+
+  function toggleCollapse() {
+    const next = !commandBarCollapsed;
+    setCommandBarCollapsed(next);
+    setCommandBarPeeking(false);
+  }
+
+  // Build the className for the combined command bar based on state.
+  const commandBarClass = [
+    "pos-command-bar",
+    commandBarPinned ? "is-pinned" : "is-unpinned",
+    commandBarCollapsed ? "is-collapsed" : "is-expanded",
+    commandBarPeeking ? "is-peeking" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   useEffect(() => {
     function handlePosAuthRequired() {
@@ -865,118 +961,170 @@ export function CashierPage() {
 
   return (
     <main className="pos-page">
-      <header className="pos-header">
-        <div>
-          <span className="eyebrow">
-            {
-              mode === "club"
-                ? "Club / Bar POS"
-                : mode === "restaurant"
-                ? "Restaurant POS"
-                : mode === "service"
-                ? "Service POS"
-                : "Retail POS"
-            }
-          </span>
+      <header
+        className={commandBarClass}
+        onMouseEnter={() => {
+          // When the bar is collapsed (unpinned), hovering it peeks it.
+          if (!commandBarPinned && commandBarCollapsed && !commandBarPeeking) {
+            setCommandBarPeeking(true);
+          }
+        }}
+        onMouseLeave={() => {
+          // Stop peeking when the mouse leaves, unless the bar is pinned.
+          if (!commandBarPinned && commandBarPeeking) {
+            setCommandBarPeeking(false);
+          }
+        }}
+      >
+        {/* Top row: brand + sync badge + pin/collapse controls + action nav */}
+        <div className="pos-cmd-top">
+          <div className="pos-cmd-brand">
+            <span className="eyebrow">
+              {
+                mode === "club"
+                  ? "Club / Bar POS"
+                  : mode === "restaurant"
+                  ? "Restaurant POS"
+                  : mode === "service"
+                  ? "Service POS"
+                  : "Retail POS"
+              }
+            </span>
 
-          <h1>{company?.name || "FinSage POS"}</h1>
+            <h1>{company?.name || "FinSage POS"}</h1>
 
-          <p>
-            {
-              mode === "club"
-                ? "Bar tabs, food orders and cashier workspace"
-                : mode === "restaurant"
-                ? "Order taking and billing workspace"
-                : mode === "service"
-                ? "Service sales workspace"
-                : "Cashier sales workspace"
-            }
-          </p>
-        </div>
+            <p className="pos-cmd-tagline">
+              {
+                mode === "club"
+                  ? "Bar tabs, food orders and cashier workspace"
+                  : mode === "restaurant"
+                  ? "Order taking and billing workspace"
+                  : mode === "service"
+                  ? "Service sales workspace"
+                  : "Cashier sales workspace"
+              }
+            </p>
+          </div>
 
-        <div className="pos-sync-badge">
-          {isOnline ? "ONLINE" : "OFFLINE"}
-          {pendingOfflineCount > 0 ? ` • ${pendingOfflineCount} unsynced` : ""}
-        </div>
+          <div className="pos-sync-badge">
+            {isOnline ? "ONLINE" : "OFFLINE"}
+            {pendingOfflineCount > 0 ? ` • ${pendingOfflineCount} unsynced` : ""}
+          </div>
 
-        <nav className="header-actions">
-          {!isPosSuperUser && (
-            signedIn ? (
-              <>
-                <button onClick={signOut}>
-                  Sign Out
-                  {cashier?.name ? ` (${cashier.name})` : ""}
+          <div className="pos-cmd-controls">
+            <button
+              type="button"
+              className="pos-cmd-pin"
+              onClick={togglePin}
+              title={commandBarPinned ? "Unpin (auto-hide on scroll)" : "Pin (always visible)"}
+              aria-label={commandBarPinned ? "Unpin command bar" : "Pin command bar"}
+            >
+              {commandBarPinned ? "📌" : "📍"}
+            </button>
+
+            <button
+              type="button"
+              className="pos-cmd-collapse"
+              onClick={toggleCollapse}
+              title={commandBarCollapsed ? "Expand" : "Collapse"}
+              aria-label={commandBarCollapsed ? "Expand command bar" : "Collapse command bar"}
+            >
+              {commandBarCollapsed ? "▼" : "▲"}
+            </button>
+          </div>
+
+          <nav className="header-actions">
+            {!isPosSuperUser && (
+              signedIn ? (
+                <>
+                  <button onClick={signOut}>
+                    Sign Out
+                    {cashier?.name ? ` (${cashier.name})` : ""}
+                  </button>
+
+                  <button onClick={clockedIn ? clockOut : clockIn}>
+                    {clockedIn ? "Clock Out" : "Clock In"}
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => setShowSignin(true)}>
+                  Cashier Sign In
                 </button>
+              )
+            )}
 
-                <button onClick={clockedIn ? clockOut : clockIn}>
-                  {clockedIn ? "Clock Out" : "Clock In"}
+            {isRestaurantLike && signedIn && (
+              <button onClick={() => setActivePanel("orders")}>
+                Orders
+              </button>
+            )}
+
+            {isFsUser && (
+              <>
+                <a href="#/manager">Manager Workspace</a>
+
+                <button onClick={() => (window.location.href = "/dashboard")}>
+                  Back to FinSage
                 </button>
               </>
-            ) : (
-              <button onClick={() => setShowSignin(true)}>
-                Cashier Sign In
-              </button>
-            )
-          )}
-
-          {isRestaurantLike && signedIn && (
-            <button onClick={() => setActivePanel("orders")}>
-              Orders
-            </button>
-          )}
-
-          {isFsUser && (
-            <>
-              <a href="#/manager">Manager Workspace</a>
-
-              <button onClick={() => (window.location.href = "/dashboard")}>
-                Back to FinSage
-              </button>
-            </>
-          )}
-        </nav>
-      </header>
-
-      <section className="status-strip compact">
-        <div><span>POS Mode</span><strong>{mode === "restaurant" ? "Restaurant" : "Retail"}</strong></div>
-        <div><span>Inventory</span><strong>{usesInventory ? "Enabled" : "Service Only"}</strong></div>
-        <div>
-          <span>
-            {isWaiter ? "Waiter" : isPosSuperUser ? "Super User" : "Cashier"}
-          </span>
-          <strong>
-            {isPosSuperUser
-              ? fsUser?.first_name ||
-                fsUser?.email ||
-                "FinSage Super User"
-              : signedIn
-              ? cashier?.name ||
-                cashier?.employee_code ||
-                "Signed In"
-              : "Not Signed In"}
-          </strong>
+            )}
+          </nav>
         </div>
-        <div><span>Currency</span><strong>{getCurrency(company)}</strong></div>
 
-      {(signedIn || isPosSuperUser) && (
-        <div>
-          <span>Terminal</span>
-            <select
-              className="scan-input compact-select"
-              value={activeTerminal?.id || ""}
-              onChange={(e) => {
-                const terminal = terminals.find((x) => Number(x.id) === Number(e.target.value));
-                setActiveTerminal(terminal || null);
-              }}
-            >
-              <option value="">Select Terminal</option>
-              {terminals.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+        {/* Bottom row: KPI strip (collapses to nothing when collapsed) */}
+        <div className="pos-cmd-kpis">
+          <div className="pos-kpi">
+            <span>POS Mode</span>
+            <strong>{mode === "restaurant" ? "Restaurant" : "Retail"}</strong>
           </div>
-        )}
-      </section>
+
+          <div className="pos-kpi">
+            <span>Inventory</span>
+            <strong>{usesInventory ? "Enabled" : "Service Only"}</strong>
+          </div>
+
+          <div className="pos-kpi">
+            <span>
+              {isWaiter ? "Waiter" : isPosSuperUser ? "Super User" : "Cashier"}
+            </span>
+            <strong>
+              {isPosSuperUser
+                ? fsUser?.first_name ||
+                  fsUser?.email ||
+                  "FinSage Super User"
+                : signedIn
+                ? cashier?.name ||
+                  cashier?.employee_code ||
+                  "Signed In"
+                : "Not Signed In"}
+            </strong>
+          </div>
+
+          <div className="pos-kpi">
+            <span>Currency</span>
+            <strong>{getCurrency(company)}</strong>
+          </div>
+
+          {(signedIn || isPosSuperUser) && (
+            <div className="pos-kpi pos-kpi-terminal">
+              <span>Terminal</span>
+              <select
+                className="scan-input compact-select"
+                value={activeTerminal?.id || ""}
+                onChange={(e) => {
+                  const terminal = terminals.find((x) => Number(x.id) === Number(e.target.value));
+                  setActiveTerminal(terminal || null);
+                }}
+              >
+                <option value="">Select Terminal</option>
+                {terminals.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      </header>
 
       {message && <div className="pos-message">{message}</div>}
 
