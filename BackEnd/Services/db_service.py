@@ -81152,17 +81152,16 @@ class DatabaseService:
         cur=None,
     ):
         schema = f"company_{int(company_id)}"
-        where = ["l.company_id=%(company_id)s"]
+        where = [
+            "l.company_id=%(company_id)s",
+            "l.status='active'",
+        ]
 
         params = {
             "company_id": int(company_id),
             "limit": int(limit),
             "offset": int(offset),
         }
-
-        if status:
-            where.append("l.status=%(status)s")
-            params["status"] = status
 
         if classification:
             where.append("""
